@@ -53,6 +53,42 @@ All notable user-facing changes are documented here. The project follows [Semant
   arrival order, so a backdated timestamp cannot jump the queue; persisted records
   are cross-checked against every duplicated column on read; and the intake schema
   no longer admits contradictory states.
+- **A coordinator rebind could widen a tool ceiling by clearing its allow list.**
+  An absent or empty allow list imposes no restriction, so dropping a populated one
+  is now refused (`coordinator_rebind_clears_allowlist`). Resume drains held intent
+  to exhaustion instead of stopping at a page cap, and fails loudly rather than
+  half-resuming. Coordinator fingerprints are computed over the normalised
+  authority, so identities bound by 0.7.46 with unordered effect lists no longer
+  require a policy rebind after upgrade — and the equivalence test is shared, so a
+  row written by 0.7.46 is not a `coordinator_write_lost` conflict just because it
+  was found by losing an insert race instead of reading the slot.
+- **A failed `BEGIN` poisoned the database connection.** The transaction marker was
+  claimed before `BEGIN` and the statement sat outside the `try/finally`, so a
+  `BEGIN` that gave up on a busy writer left every later transaction failing with a
+  misleading "nested transactions are not allowed". The marker is now claimed only
+  after a successful `BEGIN`, genuine lock contention surfaces as
+  `runtime_transaction_busy` — decided by SQLite's **result code**, on both runtimes
+  this ships on: Node's `errcode` and `bun:sqlite`'s `errno` (extended codes land on
+  their primaries, so `SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and
+  `SQLITE_LOCKED_SHAREDCACHE` all count), then a symbolic `SQLITE_BUSY*` /
+  `SQLITE_LOCKED*` / `SQLITE_PROTOCOL*` name, with anchored message text used only
+  when an error carries neither. A code **or** a SQLite result name wins over the text
+  in both directions, so a permanent error — `SQLITE_FULL`, `SQLITE_CANTOPEN` — quoting
+  "database is locked" is not mistaken for contention, and `bun:sqlite`'s symbolic
+  `code` is read as the result name it is while Node's own `ERR_SQLITE_ERROR` is not.
+  Any other `BEGIN` failure keeps its own error instead of looking retryable. A contended connection then refuses further write-mode `BEGIN`s for one
+  second (`TRANSACTION_BUSY_BACKOFF_MS`), so retries **inside that window** fail fast
+  rather than paying the 5-second busy timeout once per attempt; a retry after the
+  window can pay it again. The window is measured with `process.hrtime` and belongs to
+  the clock that armed it, so neither a system clock change nor an injected test clock
+  can extend, shorten or clear another caller's throttle, and a clock that returns a
+  non-finite number is refused rather than trusted (`runtime_transaction_clock_invalid`)
+  wherever throttle state is read or armed — reading a pending deadline, and arming a
+  fresh one. The only transaction that never consults the clock is a **successful
+  `BEGIN` with no pending deadline**, so this guards the seam, not every `BEGIN`. `DEFERRED`
+  transactions are exempt: they take no write lock. The throttle is per connection
+  object in this process — it is not cross-process, and it does not leak to another
+  connection to the same database.
 
 ## 0.7.0 - 2026-09-11
 

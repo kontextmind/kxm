@@ -213,21 +213,213 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
 
 const activeTransactions = new WeakSet<DatabaseSync>();
 
+/**
+ * How long a connection refuses to retry a `BEGIN` that lost the write race.
+ *
+ * SQLite's busy timeout is per connection, so a `BEGIN` against a locked
+ * database waits the full timeout before failing. Callers that recover from a
+ * lost write open several transactions in a row; without this window each of
+ * them pays the timeout, and a suite run showed that turning one 4-second test
+ * into 17 minutes. The old code got that speed by accident — it left the
+ * connection permanently marked as in-transaction after a failed `BEGIN`, which
+ * is the defect fixed below — so the backoff replaces the fast-fail without
+ * re-introducing the poison.
+ *
+ * Two limits, both deliberate:
+ * - It is a **throttle, not a queue**. A caller whose lock cleared 1 ms later is
+ *   still refused for the rest of the window; the refusal is explicit
+ *   (`runtime_transaction_busy`, message says `retry deferred`) and bounded by
+ *   this constant. A retry after the window may pay the busy timeout again.
+ * - It is **per connection object, in this process**. It is not a cross-process
+ *   backoff and does not leak to another connection to the same file.
+ */
+export const TRANSACTION_BUSY_BACKOFF_MS = 1_000;
+
+/**
+ * Monotonic elapsed time, deliberately not `Date.now()`.
+ *
+ * A wall-clock step backwards would otherwise keep a long-gone write lock
+ * refusing transactions until real time caught up, and a step forward would end
+ * the throttle early. `hrtime.bigint()` is relative to an arbitrary past origin
+ * and never moves backwards, so the window is bounded by
+ * {@link TRANSACTION_BUSY_BACKOFF_MS} no matter what the system clock does.
+ *
+ * Injectable: production callers never pass it, and a test drives it directly so
+ * the window is stepped rather than raced or slept through.
+ */
+export type MonotonicClock = () => number;
+
+function monotonicNowMs(): number {
+  return Number(process.hrtime.bigint() / 1_000_000n);
+}
+
+/**
+ * Pending throttle per connection, **keyed by the clock that armed it**.
+ *
+ * The nesting is the fix, not tidiness. A deadline is a number from *some* clock,
+ * and the injectable `clock` exists only so a test can step the window; comparing
+ * a deadline armed by one clock against a reading taken from another is how an
+ * injected "one hour from now" throttles a production caller that never passed a
+ * clock at all — and how that same caller could clear a deadline it never armed.
+ * Each clock domain therefore gets its own deadline and can only read, expire or
+ * replace its own. The inner map is **weak in the clock**: it keeps no otherwise
+ * unreachable clock function alive, so an attempt that builds a fresh closure per
+ * call leaves nothing behind once that closure is collected. A clock that *is*
+ * retained keeps its entry until it expires or is replaced — collection is neither
+ * immediate nor size-bounded, and no committed test measures any of this, because no
+ * production caller passes a clock.
+ */
+const transactionThrottles = new WeakMap<DatabaseSync, WeakMap<MonotonicClock, number>>();
+
+/**
+ * A clock reading this helper can reason about.
+ *
+ * Scope, stated precisely. The clock is consulted in **two** places: to read a pending
+ * deadline, and to arm a fresh one. So the only transaction that never calls it is a
+ * **successful `BEGIN` with no pending deadline** — an uncontended one on a quiet
+ * connection, which runs its `work()` untouched even if the injected clock is broken.
+ * Freshly contended transactions *do* reach the guard, because arming needs a reading.
+ * Production cannot reach the failure at all: the default is `hrtime`, which is finite.
+ * The guard exists so the injectable seam cannot become a silent bypass.
+ */
+function finiteNow(clock: MonotonicClock, label: string): number {
+  const now = clock();
+  if (typeof now !== "number" || !Number.isFinite(now)) {
+    throw databaseError(
+      "runtime_transaction_clock_invalid",
+      "transaction",
+      `${label} must return a finite monotonic number; got ${String(now)}`,
+    );
+  }
+  return now;
+}
+
+/**
+ * Is this `BEGIN` failure contention for the write lock, as opposed to a
+ * programming or environment error?
+ *
+ * Only contention may be retried, and only contention earns the throttle window.
+ * Anything else — "cannot start a transaction within a transaction", a closed
+ * connection, a miscompiled statement — must surface unchanged, or a permanent
+ * bug looks like a transient one and the caller retries forever.
+ *
+ * SQLite's **numeric result code decides** where one exists, because it is stable
+ * across versions while message text is not: the primary code is `code & 0xff`, so
+ * extended forms land on their primaries — `SQLITE_BUSY_RECOVERY` (261) and
+ * `SQLITE_BUSY_SNAPSHOT` (517) on `SQLITE_BUSY` (5), `SQLITE_LOCKED_SHAREDCACHE`
+ * (262) on `SQLITE_LOCKED` (6). `SQLITE_PROTOCOL` (15) is included deliberately:
+ * SQLite raises it when repeated attempts to start a transaction under WAL exhaust
+ * the retry count, which is a lock-acquisition retry condition, not a broken
+ * database.
+ *
+ * Where both runtimes expose one, **the number wins over the text**: Node spells it
+ * `errcode`, `bun:sqlite` spells it `errno` (verified on Bun 1.3.14, where a shared-
+ * cache `BEGIN` arrives as `errno: 262`, `code: "SQLITE_LOCKED_SHAREDCACHE"`,
+ * message "database schema is locked: shared"). A symbolic `code`/`name` of the form
+ * `SQLITE_BUSY*`/`SQLITE_LOCKED*`/`SQLITE_PROTOCOL*` is accepted next, and bare
+ * message matching is the last resort — applied only when neither exists, so a
+ * wrapper that merely quotes "database is locked" alongside a permanent code is not
+ * mistaken for contention.
+ *
+ * Deliberately **not** contention: `SQLITE_FULL` / "database or disk is full",
+ * "unable to open database file", and WAL shared-memory I/O failures. Those stay
+ * broken until something outside this connection changes.
+ */
+/** Node: `errcode`. Bun: `errno`. Both spell the extended code as a number. */
+const CONTENTION_PRIMARY_CODES: readonly number[] = [5, 6, 15];
+/** `bun:sqlite` puts the symbolic name in `code`; Node puts its own kind there. */
+const CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z0-9]+)?$/;
+/** Any SQLite result name. If one is present it decides, so text cannot argue. */
+const SQLITE_RESULT_NAMES = /^SQLITE_[A-Z][A-Z0-9_]*$/;
+const CONTENTION_MESSAGES =
+  /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
+
+export function isTransactionContention(error: unknown): boolean {
+  const carrier = error as { errcode?: unknown; errCode?: unknown; errno?: unknown; code?: unknown; name?: unknown }
+    | undefined;
+  // A numeric code wins first, then a symbolic result name, and both win **over the
+  // message**: `errno` is what `bun:sqlite` exposes for the extended result code while
+  // its `code` field holds the symbolic name, and Node spells the number `errcode`.
+  // Text is consulted only when the error carries neither, so no wrapper quoting an
+  // older "database is locked" can outvote a code on either runtime.
+  for (const value of [carrier?.errcode, carrier?.errCode, carrier?.errno]) {
+    if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 0xff);
+  }
+  for (const value of [carrier?.code, carrier?.name]) {
+    // A result **name** is as authoritative as a number, and in both directions:
+    // `SQLITE_FULL` wearing a "database is locked" message is not contention. Node
+    // spells its own error kind `ERR_SQLITE_ERROR`, which is deliberately not a
+    // SQLite result name and so never reaches a verdict here.
+    if (typeof value === "string" && SQLITE_RESULT_NAMES.test(value)) {
+      return CONTENTION_SYMBOLIC_NAMES.test(value);
+    }
+  }
+  return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
+}
+
 export function withDatabaseTransaction<T>(
   database: DatabaseSync,
   work: () => T,
   mode: "IMMEDIATE" | "DEFERRED" | "EXCLUSIVE" = "IMMEDIATE",
+  clock: MonotonicClock = monotonicNowMs,
 ): T {
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
+  // A DEFERRED BEGIN takes no write lock and cannot lose the race, so throttling
+  // it would deny legitimate work for no protective reason.
+  if (mode !== "DEFERRED") {
+    const deadlines = transactionThrottles.get(database);
+    const until = deadlines?.get(clock);
+    if (until !== undefined) {
+      const remaining = until - finiteNow(clock, "the transaction clock");
+      if (remaining > 0) {
+        throw databaseError(
+          "runtime_transaction_busy",
+          "transaction",
+          `a previous BEGIN was blocked on this database; retry deferred ${String(remaining)}ms`,
+        );
+      }
+      deadlines?.delete(clock);
+    }
+  }
+  // Claim the marker only once BEGIN has succeeded. If BEGIN throws — another
+  // writer held the database past the busy timeout — a connection that never
+  // entered a transaction must not be left permanently marked as inside one,
+  // which would fail every later transaction on it with a misleading
+  // "nested" error. `finally` cannot cover this: it only runs after the try.
+  try {
+    database.exec(`BEGIN ${mode}`);
+  } catch (error) {
+    if (!isTransactionContention(error)) throw error;
+    const now = finiteNow(clock, "the transaction clock");
+    let deadlines = transactionThrottles.get(database);
+    if (deadlines === undefined) {
+      deadlines = new WeakMap<MonotonicClock, number>();
+      transactionThrottles.set(database, deadlines);
+    }
+    deadlines.set(clock, now + TRANSACTION_BUSY_BACKOFF_MS);
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `BEGIN ${mode} blocked by another transaction: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   activeTransactions.add(database);
-  database.exec(`BEGIN ${mode}`);
+  // A successful write-mode BEGIN means this connection is holding the slot, so any
+  // earlier contention is over. A DEFERRED success proves nothing about the write
+  // lock and must not clear a throttle that another caller's contention armed.
+  if (mode !== "DEFERRED") transactionThrottles.get(database)?.delete(clock);
   try {
     const result = work();
     database.exec("COMMIT");
     return result;
   } catch (error) {
+    // A failed ROLLBACK usually means the connection is gone. Clearing the marker
+    // is bookkeeping, not proof: it does **not** show SQLite exited the
+    // transaction, and nothing here invalidates a handle whose rollback failed.
+    // Pre-existing, named rather than papered over — the caller receives the
+    // original error.
     try { database.exec("ROLLBACK"); } catch { /* ignore rollback error if connection dead */ }
     throw error;
   } finally {
