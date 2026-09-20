@@ -30,10 +30,11 @@ does exist:
 - **Backups stay whole.** The hub state set is copied as documented in
   [`docs/operations.md`](../operations.md); a single `kxm.db` copy is not a
   backup.
-- **Newer-than-known versions still refuse.** The stamp is read to make the
-  decision, and the file is opened to read it, but neither the application schema
-  nor its version stamp is changed: a store ahead of this build is refused
-  without downgrade, not silently reshaped or stamped backward to match.
+- **Out-of-range versions refuse without touching the file.** The stamp is read
+  before anything that can modify the store, so a database this build refuses —
+  older or newer — comes back byte-identical: neither its schema nor its
+  `user_version` changes, and it is not converted to WAL as a side effect of being
+  rejected. A store ahead of this build is refused without downgrade.
 - **Schema changes are additive-and-replace, not in-place.** Land the new
   definition, delete the local state, and let the process that owns each store
   recreate it — `kxm hub start` for hub state, the Runtime for registry and
