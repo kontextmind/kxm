@@ -765,7 +765,7 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
       assert.equal(reads, 0, `a DEFERRED transaction must read the clock zero times, saw ${String(reads)}`);
 
       // The row the round-11 probe measured and the committed test did not: a
-      // DEFERRED success while another domain holds a pending deadline. Zero reads
+      // DEFERRED success while the *same* domain holds a pending deadline. Zero reads
       // is what the table in the code comment claims, so it has to be counted here.
       const pending = new KxmDatabaseSync(join(stateRoot, "deferred-pending.db"));
       const pendingLock = new KxmDatabaseSync(join(stateRoot, "deferred-pending.db"));
@@ -826,9 +826,9 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
           /blocked by another transaction/);
         assert.equal(stepReads, 2,
           `an expired deadline followed by renewed contention reads twice in that call, saw ${String(stepReads)}`);
-        // Zero-read paths: a nested rejection and a permanent BEGIN failure never reach a
-        // reading, which is what makes the old "only an uncontended success skips it"
-        // wording wrong in the other direction.
+        // Zero reads: a nested rejection always, and a permanent BEGIN failure whenever no
+        // deadline is pending — which is what makes the old "only an uncontended success
+        // skips it" wording wrong in the other direction.
         let untouched = 0;
         const counting2 = () => { untouched += 1; return Number(process.hrtime.bigint() / 1_000_000n); };
         assert.match(String(captureError(() => withDatabaseTransaction(busy, () => {
@@ -872,7 +872,9 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
 
 test("the throttle is scoped to the modes that can lose the write race", () => {
   // The check used to run before the mode was considered, so a DEFERRED
-  // transaction — which takes no write lock and cannot lose a race — was refused
+  // transaction, which takes no write lock, was refused — note that a `BEGIN DEFERRED`
+  // can still fail on shared-cache schema contention, and that failure does read the
+  // clock and arm a deadline; what DEFERRED skips is the check, not the arming.
   // by another caller's contention. A plain file connection with no busy timeout
   // makes the blocked BEGIN fail at once, so this is deterministic.
   const { root, stateRoot } = engineProject("kxm-intake-txn-mode-");

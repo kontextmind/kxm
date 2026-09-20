@@ -10,7 +10,7 @@ created: "2026-09-18"
 updated: "2026-09-19"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Twelve passes of an independent critic on the M1+M6 intake contract: BLOCK, then eight rounds of STILL BLOCKED — on the fix, on the closure of the fix, on the injectable seam that closure introduced, on bun:sqlite's error shape, and then five rounds in which the only defects were this record's own claims, snippets that could not run and counts that were not asserted — reaching CLOSED on substance in round 10 and wording-complete in round 12. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
+summary: "Fourteen passes of an independent critic on the M1+M6 intake contract: BLOCK, then rounds of STILL BLOCKED — on the fix, on the closure of the fix, on the injectable seam that closure introduced, and on bun:sqlite's error shape; then six rounds (9–14) whose only defects were this record's own claims: snippets that could not run, counts that were not asserted, and corrections that claimed completeness. CLOSED on substance at round 10. Every finding reproduced. Critic opinion, not assignment, witness or acceptance proof."
 tags: ["review", "runtime", "intake", "harnesses"]
 related:
   - ../implementation-plan.md
@@ -466,7 +466,9 @@ a three-item enumeration of zero-read paths that quietly absorbed two measured-b
 asserted cases (round 12). Round 12's ruling: the enumerations state their conditions
 and both reproduction blocks were executed to produce the output printed under them. Round
 13 then caught two things in the correction itself: this intro still said "six passes" three
-rounds after that stopped being true, and the sentence above claimed **every** count had an
+rounds after that stopped being true — and rounds 13 and 14 found the same shape again, so
+the truthful form is that this file's own pass count trails reality by one round each time I
+write it — and the sentence above claimed **every** count had an
 assertion when two of them — a clean success and a permanent failure that follow an expired
 deadline — are measured by the reviewer and asserted nowhere in the committed suite. Those
 two are now labelled as such in every place they appear; the honest form of the claim is
