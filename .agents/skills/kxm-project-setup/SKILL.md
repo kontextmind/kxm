@@ -1,21 +1,19 @@
 ---
 name: kxm-project-setup
-description: Initialize, migrate, review permission changes, configure, and add shell completion for KXM projects.
+description: Initialize, review permission changes, configure, and add shell completion for KXM projects.
 ---
 
 # KXM Project Setup
 
 Use the current CLI. Inspect `kxm <command> --help` before mutations. Do not
-invent `force`, domain-trust, or extra migrate verbs.
+invent `force`, domain-trust, or legacy-migration verbs: this build converts
+nothing.
 
 ## Commands
 
 | Command | Purpose | Options / arguments |
 |---|---|---|
-| `kxm init` | Create, validate, or plan migration of a KXM project | `--json`, `--dry-run`, `--name`, `--project-id`, `--repository <id=absolute-path>` |
-| `kxm migrate plan` | Compute the legacy-to-KXM plan without writes | `--json` |
-| `kxm migrate apply` | Install a reviewed migration with a hash-linked receipt | `--decisions <file>`, `--project-id`, `--name` |
-| `kxm migrate verify` | Verify a migration receipt | `--json` |
+| `kxm init` | Create, validate, repair, or join a KXM project (a legacy tree is reported as `mode: "legacy"` and never converted) | `--json`, `--dry-run`, `--name`, `--project-id`, `--repository <id=absolute-path>` |
 | `kxm trust diff` | Structured permission diff against a Git revision | `--base <revision>` |
 | `kxm trust check` | Fail when the working tree expands permissions | `--base <revision>` |
 | `kxm config get <key>` | Get a configuration value | `--json` |
@@ -25,7 +23,6 @@ invent `force`, domain-trust, or extra migrate verbs.
 
 ```bash
 kxm init --dry-run --json
-kxm migrate plan --json
 kxm trust diff --base HEAD --json
 kxm config list --json
 kxm completion install

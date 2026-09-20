@@ -469,6 +469,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   and `bun install` links the workspace; the installer and CI legs stay `npm ci` on Node
   22.19.0/24 until a separate change carries its own CI evidence, because Pi loads this
   extension under Node and `npm pack` is the release path.
+- **No project-file migration either (operator, 2026-09-20).** With the schema lanes gone,
+  `kxm migrate` had nothing left to convert into, so the command, `migrate.ts`, its suite, the
+  three `kxm.migration-*.v1` schemas and their registry validators, and the receipt helpers are
+  deleted. Legacy `.kxm/config` JSON now fails closed at load with `legacy_state_unsupported`;
+  `kxm init` reports `mode: "legacy"` and writes nothing; `kxm migrate` is an unknown command
+  and a test keeps it that way. `docs/contracts/migration.md` becomes a supported/refused
+  matrix. The packed-install trust and run-lifecycle fixture is now authored by `kxm init`
+  directly rather than produced by a migration, so that coverage was moved, not dropped.
+  Restoring conversion needs a written decision first (see the doc's closing section).
 
 ### Landed in this tree (unreleased)
 
@@ -2216,7 +2225,9 @@ from planned behavior.
 
 Implement restricted YAML loading, project/repository discovery, resource
 resolution, templates, three-way reconciliation, and idempotent `kxm init`.
-Support create, join, repair, resume, and legacy JSON migration.
+Support create, join, repair, and resume. Legacy JSON conversion was **removed**
+by the single-operator decision (see **Decided** below): nothing migrates, older
+state is refused.
 
 **Implemented slices:** restricted parsing, exact-schema and semantic bundle
 validation, path-derived discovery, deterministic configuration hashing, init
@@ -2227,21 +2238,21 @@ and repair operations, and exact whole-file three-way template reconciliation.
 Automatic repair is limited to conflict-free changes whose conservative
 authority projection is unchanged; provenance-free files, overlapping edits,
 template deletions, and authority changes remain non-mutating plans. Bounded
-legacy JSON conversion is implemented: `kxm migrate plan|apply|verify`
-converts `agents.json`, `gates.json`, and workflow-definition JSON into
-validated KXM resources with explicit operator decisions for terminal
-status, transition budgets, evidence-policy strengthening, secret-reference
-drops, narrowed permission ceilings, and identity mapping, then installs
-atomically with a hash-linked `kxm.migration-receipt.v1` that keeps legacy
-inputs read-only. The permission-diff trust workflow is implemented:
+legacy JSON conversion was implemented earlier (`kxm migrate plan|apply|verify`
+plus `kxm.migration-plan.v1` / `-decision.v1` / `-receipt.v1`) and has since been
+**deleted**: this build carries no conversion path, a tree with legacy
+`.kxm/config` JSON fails closed with `legacy_state_unsupported`, `kxm init`
+reports such a tree as `mode: "legacy"` without writing, and an older stamped
+SQLite store is refused with `runtime_schema_outdated` instead of being upgraded.
+The permission-diff trust workflow is implemented:
 structured field-addressed authority projections per resource kind, a
 deterministic `kxm.permission-diff.v1` report classifying every change as
 expansion, narrowing, or neutral across conservative lattices (repository
 access, network, budgets, quorums, snapshots, secrets) with everything else
 fail-closed to expansion, `kxm trust diff|check` against a base Git revision,
 and template repair blocking issues enriched with the exact field-level diff.
-Database/WAL migration and active-run cutover remain later-phase work; the
-Phase 1 gate passes for configuration and initialization.
+Database/WAL migration and active-run cutover are **out of scope by decision**,
+not deferred work; the Phase 1 gate passes for configuration and initialization.
 
 **Gate:** a project can be reproduced from Git on a second machine without a
 hub and without overwriting edited files.
@@ -2419,7 +2430,7 @@ visible local status (`kxm dash`). `fix.yaml` is not required to run live.
 ## Phase 5: multi-repository local release
 
 Ship the local Runtime track publicly beside, not on top of, the legacy hub
-engine. Explicit `kxm init`/migration receipts activate KXM resources per
+engine. Explicit `kxm init` receipts activate KXM resources per
 project; existing hub runs, `kxm hub …`, and the `kxm_*` tools remain on their current contracts.
 
 Implement worktrees, dirty snapshots, one-writer leases, multi-repository

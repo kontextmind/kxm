@@ -7,7 +7,7 @@
  * - Role & workflow governance (`kxm role`, `kxm workflow`, `kxm gate`, `kxm signal`)
  * - Task & goal management (`kxm goal`, `kxm task`, `kxm suggest`, `kxm studio`)
  * - Knowledge, skills, and memory (`kxm context`, `kxm skills`, `kxm memory`)
- * - KXM runtime & initialization (`kxm init`, `kxm migrate`, `kxm trust`, `kxm run`, `kxm harness`)
+ * - KXM runtime & initialization (`kxm init`, `kxm trust`, `kxm run`, `kxm harness`)
  * - Hub, workers, and dashboard (`kxm hub`, `kxm worker`, `kxm dash`, `kxm session`, `kxm auth`)
  * - System, update, and configuration (`kxm update`, `kxm config`, `kxm completion`, `kxm improve`)
  */
@@ -98,10 +98,7 @@ import {
 
 import {
   cmdKxmInit,
-  cmdKxmMigratePlan,
-  cmdKxmMigrateApply,
-  cmdKxmMigrateVerify,
-  cmdBackup,
+cmdBackup,
   cmdRestore,
   cmdKxmTrust,
   cmdKxmRun,
@@ -334,7 +331,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .helpCommand("help", "Show help");
   addGlobalOptions(program);
 
-  program.command("init").description("Create, validate, or plan migration of a KXM project")
+  program.command("init").description("Create, validate, repair, or join a KXM project")
     .option("--json", "Print machine-readable JSON")
     .option("--dry-run", "Plan without making changes")
     .option("--name <name>", "Project display name for a new project")
@@ -345,24 +342,6 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
         maybeOfferCompletionInstall,
         maybeOfferGuideSetup,
       });
-    });
-
-  const migrate = addGlobalOptions(program.command("migrate").description("Plan, apply, and verify legacy JSON configuration migration"));
-  migrate.helpCommand("help", "Show migrate help");
-  addGlobalOptions(migrate.command("plan").description("Compute the deterministic legacy-to-KXM migration plan without writes"))
-    .action(async function migratePlanAction(this: Command) {
-      result.code = await cmdKxmMigratePlan(runtimeFrom(ctx, this));
-    });
-  addGlobalOptions(migrate.command("apply").description("Install a reviewed migration with a hash-linked receipt"))
-    .option("--decisions <file>", "Reviewed kxm.migration-decision.v1 YAML file")
-    .option("--project-id <id>", "Stable project ID for controlled provisioning")
-    .option("--name <name>", "Project display name")
-    .action(async function migrateApplyAction(this: Command, options: { decisions?: string; projectId?: string; name?: string }) {
-      result.code = await cmdKxmMigrateApply(runtimeFrom(ctx, this), options);
-    });
-  addGlobalOptions(migrate.command("verify").description("Verify a migration receipt against current sources and target bundle"))
-    .action(async function migrateVerifyAction(this: Command) {
-      result.code = await cmdKxmMigrateVerify(runtimeFrom(ctx, this));
     });
 
   addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of all stores with a hashed manifest"))

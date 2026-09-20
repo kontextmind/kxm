@@ -35,7 +35,7 @@ describe('KXM Skill Suite', () => {
   it('should cover all 30 current top-level commands exactly once', () => {
     // Define the expected top-level commands based on the plan
     const expectedCommands = [
-      'init', 'migrate', 'trust', 'config', 'completion',
+      'init', 'trust', 'config', 'completion',
       'harness', 'auth', 'update', 'runtime', 'agent',
       'hub', 'backup', 'restore',
       'session', 'dash', 'studio',

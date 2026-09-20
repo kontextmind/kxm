@@ -2,7 +2,6 @@ export type SupportedShell = "bash" | "zsh" | "fish";
 
 const TOP_LEVEL_COMMANDS = [
   "init",
-  "migrate",
   "backup",
   "restore",
   "run",
@@ -36,7 +35,6 @@ const TOP_LEVEL_COMMANDS = [
 
 const SUBCOMMANDS: Record<string, string[]> = {
   runs: ["status", "cancel", "list"],
-  migrate: ["plan", "apply", "verify"],
   harness: ["list"],
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],
@@ -132,7 +130,6 @@ _kxm() {
   local -a commands
   commands=(
     'init:Create or validate a KXM project'
-    'migrate:Plan, apply, and verify legacy configuration migration'
     'backup:Create a verified SQLite backup manifest'
     'restore:Restore SQLite stores from a backup manifest'
     'run:Create a KXM workflow run'

@@ -14,9 +14,6 @@ Runtime-local records, and JSON events/results for the planned KXM contract.
 | `template-provenance.schema.json` | `kxm.template-provenance.v1` |
 | `local-repository-bindings.schema.json` | `kxm.local-repository-bindings.v1` |
 | `init-operation.schema.json` | `kxm.init-operation.v1` |
-| `migration-plan.schema.json` | `kxm.migration-plan.v1` |
-| `migration-decision.schema.json` | `kxm.migration-decision.v1` |
-| `migration-receipt.schema.json` | `kxm.migration-receipt.v1` |
 | `permission-diff.schema.json` | `kxm.permission-diff.v1` |
 | `run-event.schema.json` | `kxm.run-event.v1` |
 | `coordinator.schema.json` | `kxm.coordinator.v1` |

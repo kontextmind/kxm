@@ -575,104 +575,10 @@ test("sync-safe schema rejects raw or host-sensitive escape fields", () => {
   }
 });
 
-test("migration plan, decision, and receipt contracts validate and fail closed", () => {
+test("permission-diff contracts validate and reject unknown versions, fields, directions, pointers, and extras", () => {
+  // These cases used to ride inside the migration-contract test and were removed with it.
+  // They guard the trust report itself, so they stand alone now.
   const { ajv } = createValidator();
-  const fileRecord = (path: string) => ({
-    path,
-    sha256: `sha256:${"a".repeat(64)}`,
-    bytes: 12,
-  });
-  const plan = {
-    schema: "kxm.migration-plan.v1",
-    projectId: "prj_mig0123456789abcdef0123456789abcdef",
-    projectName: "Migrated project",
-    sourceDigest: `sha256:${"b".repeat(64)}`,
-    sources: [fileRecord(".kxm/config/agents.json")],
-    resources: [fileRecord(".kxm/project.yaml"), fileRecord(".kxm/repo/repo.yaml")],
-    ambiguities: [{
-      key: "terminal:fix:plan:blocked",
-      category: "terminal-status",
-      sourcePath: ".kxm/config/workflows/fix.json",
-      message: "choose the terminal status",
-      allowedValues: ["completed", "failed"],
-    }],
-    unmapped: [{
-      sourcePath: ".kxm/config/workflows/fix.json",
-      jsonPointer: "/0/secretEnv",
-      valueSha256: `sha256:${"c".repeat(64)}`,
-      sensitive: true,
-    }],
-    renames: [{ from: "Reviewer One", to: "reviewer-one", kind: "agent" }],
-    permissionChanges: [{
-      sourcePath: ".kxm/config/agents.json",
-      targetPath: ".kxm/agents/writer.yaml",
-      direction: "narrowing",
-      summary: "narrowed ceiling",
-      decisionKey: "permission:writer",
-    }],
-    canApply: false,
-  };
-  const validatePlan = ajv.getSchema("https://schemas.kxm.dev/migration-plan.schema.json");
-  assert(validatePlan);
-  assert(validatePlan(plan), ajv.errorsText(validatePlan.errors));
-
-  for (const mutate of [
-    (value: JsonObject): void => { value.schema = "kxm.migration-plan.v2"; },
-    (value: JsonObject): void => { value.extra = true; },
-    (value: JsonObject): void => { (value.ambiguities as JsonObject[])[0]!.category = "invented"; },
-    (value: JsonObject): void => { (value.ambiguities as JsonObject[])[0]!.key = "has spaces"; },
-    (value: JsonObject): void => { (value.sources as JsonObject[])[0]!.path = "../escape.json"; },
-    (value: JsonObject): void => { (value.unmapped as JsonObject[])[0]!.jsonPointer = "not-a-pointer"; },
-  ]) {
-    const invalid = structuredClone(plan);
-    mutate(invalid);
-    assert.equal(validatePlan(invalid), false, "invalid migration plan unexpectedly validated");
-  }
-
-  const decision = {
-    schema: "kxm.migration-decision.v1",
-    projectId: "prj_mig0123456789abcdef0123456789abcdef",
-    projectName: "Migrated project",
-    sourceDigest: `sha256:${"b".repeat(64)}`,
-    resolutions: { "terminal:fix:plan:blocked": "failed", "backedge:fix:verify:retry": 3 },
-  };
-  const validateDecision = ajv.getSchema("https://schemas.kxm.dev/migration-decision.schema.json");
-  assert(validateDecision);
-  assert(validateDecision(decision), ajv.errorsText(validateDecision.errors));
-  for (const mutate of [
-    (value: JsonObject): void => { value.sourceDigest = "not-a-hash"; },
-    (value: JsonObject): void => { (value.resolutions as JsonObject)["bad key"] = "failed"; },
-    (value: JsonObject): void => { (value.resolutions as JsonObject)["backedge:fix:verify:retry"] = 0; },
-  ]) {
-    const invalid = structuredClone(decision);
-    mutate(invalid);
-    assert.equal(validateDecision(invalid), false, "invalid migration decision unexpectedly validated");
-  }
-
-  const receipt = {
-    schema: "kxm.migration-receipt.v1",
-    migrationId: "mig_0123456789abcdef0123456789abcdef",
-    projectId: "prj_mig0123456789abcdef0123456789abcdef",
-    sourceDigest: `sha256:${"b".repeat(64)}`,
-    decisionDigest: `sha256:${"d".repeat(64)}`,
-    configRevision: `sha256:${"e".repeat(64)}`,
-    sources: [fileRecord(".kxm/config/agents.json")],
-    resources: [fileRecord(".kxm/project.yaml"), fileRecord(".kxm/repo/repo.yaml")],
-    receiptSha256: `sha256:${"f".repeat(64)}`,
-  };
-  const validateReceipt = ajv.getSchema("https://schemas.kxm.dev/migration-receipt.schema.json");
-  assert(validateReceipt);
-  assert(validateReceipt(receipt), ajv.errorsText(validateReceipt.errors));
-  for (const mutate of [
-    (value: JsonObject): void => { delete value.receiptSha256; },
-    (value: JsonObject): void => { value.migrationId = "not-an-id"; },
-    (value: JsonObject): void => { value.unexpected = []; },
-  ]) {
-    const invalid = structuredClone(receipt);
-    mutate(invalid);
-    assert.equal(validateReceipt(invalid), false, "invalid migration receipt unexpectedly validated");
-  }
-
   const permissionDiff = {
     schema: "kxm.permission-diff.v1",
     baseRevision: `sha256:${"a".repeat(64)}`,

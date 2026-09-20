@@ -11507,7 +11507,7 @@ function openDatabase(file, description, spec) {
       throw databaseError(
         "runtime_schema_outdated",
         file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh \u2014 upgrading old state in place is deliberately unsupported`
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for registry/event stores); \`kxm init\` is project-only and rebuilds no database \u2014 upgrading old state in place is deliberately unsupported`
       );
     }
     if (spec.tables) {
