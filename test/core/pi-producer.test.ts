@@ -62,7 +62,7 @@ function createMockPiProcess(
               }) + "\n");
               stdout.write(JSON.stringify({
                 type: "turn_end",
-                message: { role: "assistant", content: 'Work complete. {"outcome": "passed"}' },
+                message: { role: "assistant", content: 'Work complete.\n{"outcome": "passed"}' },
               }) + "\n");
               stdout.write(JSON.stringify({ type: "agent_end", willRetry: false }) + "\n");
               stdout.write(JSON.stringify({ type: "agent_settled" }) + "\n");
@@ -111,7 +111,7 @@ function settledUsageProcess() {
     });
     emit({
       type: "turn_end",
-      message: { role: "assistant", content: 'Finished implementation. {"outcome": "passed"}' },
+      message: { role: "assistant", content: 'Finished implementation.\n{"outcome": "passed"}' },
     });
     emit({ type: "agent_end", willRetry: false });
     emit({ type: "agent_settled" });
@@ -664,7 +664,7 @@ test("Pi producer executes end-to-end inside KXM engine driver", async () => {
           });
           emit({
             type: "turn_end",
-            message: { role: "assistant", content: 'Completed. {"outcome": "passed"}' },
+            message: { role: "assistant", content: 'Completed.\n{"outcome": "passed"}' },
           });
           emit({ type: "agent_end", willRetry: false });
           emit({ type: "agent_settled" });
@@ -786,7 +786,7 @@ test("PiSession direct methods and event handling edge cases", async () => {
     "data",
     JSON.stringify({
       type: "turn_end",
-      message: { role: "assistant", content: 'Result is {"outcome": "failed"}' },
+      message: { role: "assistant", content: 'Result is failed\n{"outcome": "failed"}' },
     }) + "\n",
   );
   proc.stdout.emit("data", JSON.stringify({ type: "agent_settled" }) + "\n");
@@ -997,4 +997,40 @@ test("prose and empty replies cannot mint a passing outcome", async () => {
   );
   assert.equal(await settle('{"outcome": "blocked"}', ["passed", "blocked"]), "blocked", "a declared blocked result is honoured");
   assert.equal(await settle("status: ok\n{\"outcome\": \"passed\"}", ["passed", "blocked"]), "passed", "a result block inside prose still counts");
+
+  // Cancellation must never borrow a success. Both abort paths used to fall through to
+  // `allowedOutcomes[0]` when the step declared neither `cancelled` nor `failed` — so killing a
+  // step whose only declared outcome was `passed` reported `passed`.
+  const preAborted = new AbortController();
+  preAborted.abort();
+  const passOnlyCancelled = await session.prompt("stop me", ["passed", "blocked"], preAborted.signal);
+  assert.equal(passOnlyCancelled.outcome, "cancelled", "a cancel is a cancel, not the first declared outcome");
+  assert.notEqual(passOnlyCancelled.outcome, "passed");
+
+  const inFlightController = new AbortController();
+  const inFlight = session.prompt("long task", ["passed", "blocked"], inFlightController.signal);
+  inFlightController.abort();
+  proc.stdout.emit("data", JSON.stringify({ type: "turn_end", message: { role: "assistant", content: "" } }) + "\n");
+  proc.stdout.emit("data", JSON.stringify({ type: "agent_settled" }) + "\n");
+  const inFlightResult = await inFlight;
+  assert.equal(inFlightResult.outcome, "cancelled", "an aborted in-flight turn reports cancelled, not passed");
+  assert.notEqual(inFlightResult.outcome, "passed");
+
+  assert.equal(
+    await settle('Example of the protocol: {"outcome": "passed"}. Actual result:\n{"outcome": "failed"}', ["passed", "failed"]),
+    "failed",
+    "a quoted example must not outrank the declared final result",
+  );
+  assert.equal(
+    await settle("transcript echo {\"outcome\": \"passed\"} then nothing", ["passed", "failed"]),
+    "failed",
+    "a block that is not the final standalone line declares nothing",
+  );
+  assert.equal(
+    await settle('Earlier in the reply:\n{"outcome": "passed"}\nAfter thinking it through:\n{"outcome": "blocked"}', ["passed", "blocked"]),
+    "blocked",
+    "with more than one standalone result, the last one is the answer",
+  );
+
+
 });

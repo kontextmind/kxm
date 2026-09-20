@@ -82,27 +82,52 @@ function extractText(content: unknown): string {
   return "";
 }
 
-const EMBEDDED_OUTCOME_JSON = /\{\s*"outcome"\s*:\s*"([^"]+)"\s*\}/;
+function asJsonObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function outcomeField(value: Record<string, unknown>): string | undefined {
+  const outcome = value.outcome;
+  return typeof outcome === "string" ? outcome : undefined;
+}
+
+/**
+ * The result a reply actually declares, or `undefined` when it declares none.
+ *
+ * Two shapes count: the whole reply is one JSON object, or a **standalone** result object on a
+ * line of its own — and when there is more than one of those, the **last** one wins, because
+ * that is where a reply puts its answer after showing an example. What is deliberately not
+ * accepted: an outcome *word* anywhere in prose, and an object embedded mid-sentence, so
+ * `Example: {"outcome": "passed"}. Actual result: {"outcome": "failed"}` declares nothing at
+ * all and settles as `failed` rather than letting the illustration outrank the answer.
+ */
+function declaredOutcomeOf(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const whole = asJsonObject(trimmed);
+  if (whole) return outcomeField(whole);
+  let declared: string | undefined;
+  for (const line of trimmed.split(/\r?\n/)) {
+    const candidate = asJsonObject(line.trim());
+    if (candidate) {
+      const outcome = outcomeField(candidate);
+      if (outcome !== undefined) declared = outcome;
+    }
+  }
+  return declared;
+}
 
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
-  // Structured result only. Two shapes count: a reply that is one JSON object, and a reply
-  // whose prose carries an explicit `{"outcome": "..."}` result block. What does **not** count
-  // is an outcome *word* appearing anywhere in the text — "the tests did not pass" used to
-  // settle a step as `passed` — and an empty or unstructured reply no longer defaults to
-  // success either. Undeclared here means failed; if a step does not declare `failed`, the
-  // engine records `outcome_unknown` and terminates the assignment as failed anyway.
-  const trimmed = text.trim();
-  let declared: string | undefined;
-  try {
-    const parsed: unknown = JSON.parse(trimmed);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const outcome = (parsed as Record<string, unknown>).outcome;
-      if (typeof outcome === "string") declared = outcome;
-    }
-  } catch {
-    const embedded = EMBEDDED_OUTCOME_JSON.exec(trimmed);
-    if (embedded) declared = embedded[1];
-  }
+  // Structured result only. What does **not** count: an outcome *word* anywhere in the text —
+  // "the tests did not pass" used to settle a step as `passed` — and an empty or unstructured
+  // reply, which used to default to success. Undeclared here means `failed`; if the step does
+  // not declare `failed` the engine records `outcome_unknown` and terminates as `failed` anyway.
+  const declared = declaredOutcomeOf(text);
   return declared !== undefined && allowedOutcomes.includes(declared) ? declared : "failed";
 }
 
@@ -263,9 +288,11 @@ export class PiSession {
       const isAborted = active.aborted || active.signal?.aborted;
       let outcome: string;
       if (isAborted) {
-        outcome = active.allowedOutcomes.includes("cancelled")
-          ? "cancelled"
-          : (active.allowedOutcomes.includes("failed") ? "failed" : active.allowedOutcomes[0]!);
+        // A cancel is a cancel. The old chain fell through to `allowedOutcomes[0]` when the
+        // step declared neither `cancelled` nor `failed`, so aborting a step whose only
+        // declared outcome was `passed` reported `passed`. Returning `cancelled` instead lets
+        // the engine record `outcome_unknown` and terminate `failed` — never a borrowed success.
+        outcome = "cancelled";
       } else {
         outcome = determineOutcome(active.text, active.allowedOutcomes);
       }
@@ -324,8 +351,8 @@ export class PiSession {
       throw new Error("pi_session_busy");
     }
     if (signal?.aborted) {
-      const outcome = allowedOutcomes.includes("cancelled") ? "cancelled" : (allowedOutcomes.includes("failed") ? "failed" : allowedOutcomes[0]!);
-      return { outcome, text: "aborted", usage: {} };
+      // Same rule as the in-flight abort: never fall back to the first declared outcome.
+      return { outcome: "cancelled", text: "aborted", usage: {} };
     }
 
     this.status = "busy";

@@ -47,7 +47,15 @@ All notable user-facing changes are documented here. The project follows [Semant
   `result_recorded` is defined. Three usage-capture fixtures that had been replying in prose now
   declare their result, which is what they were always supposed to do; the new test in
   `test/core/pi-producer.test.ts` covers prose, empty, out-of-vocabulary, and both accepted
-  structured shapes.
+  structured shapes. Review of that first cut found two more ways to mint success, both now
+  closed: a result block was matched **anywhere** in the reply, so
+  `Example: {"outcome": "passed"}. Actual result: {"outcome": "failed"}` returned `passed`;
+  a declaration is now a standalone JSON object — the whole reply, or one object on its own
+  line, with the **last** such object winning so an illustration cannot outrank the answer.
+  And cancellation fell through to `allowedOutcomes[0]` when a step declared neither
+  `cancelled` nor `failed`, so aborting a `passed`-only step reported `passed`; a cancel now
+  reports `cancelled` unconditionally and the engine terminates it `failed` when the step
+  does not declare that outcome.
 
 - **`kxm migrate` is gone, and so is the state that only it could unlock.** Deleting the
   migration lanes left a converter with nothing to convert into: `plugins/kxm/src/migrate.ts`
