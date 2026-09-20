@@ -158,6 +158,81 @@ operator believe something false rather than merely incomplete:
   ([pi-producer.ts:85](../plugins/kxm/src/pi-producer.ts)). Standalone Studio has the same class
   of bug in its mutation fallback. Hosted surfaces may not inherit either.
 
+## Splitting work across boxes
+
+A tenant has one hub, but not one machine: the portal backend, this box's Runtime, and worker
+boxes all attach to the same hub. The failure mode is an operator reading "agents run on
+multiple hosts" as "stages run on multiple hosts". They do not.
+
+**What a stage can and cannot do.** `agent`/`moa` steps resolve to a local role and execute
+through a producer that spawns a child on the box that owns the run
+([pi-producer.ts:503](../plugins/kxm/src/pi-producer.ts)); every drive and receipt path is
+guarded by `run.homeRuntimeId === context.homeRuntimeId`
+([engine.ts:255](../plugins/kxm/src/engine.ts)). The engine contains no peer or remote
+dispatch. A stage never runs on another box's CPU, and a remote box takes part by being an
+**online peer in the hub** (`requireAgent`, `findTarget` → `target_not_found`,
+[hub.ts:680](../plugins/kxm/src/hub.ts)) and by **owning its own runs**.
+
+**Two stores, and the boundary that looks like data loss.**
+
+| Lives here | Owned by |
+|---|---|
+| Run events, drive/receipt records, projections, gate evidence | the **Runtime event store on the box that owns the run** (`homeRuntimeId`) |
+| Agents and online state, peer messages, workflow runs, checkpoints, waits and signals, hub-side evidence | the **hub store** (one per tenant box) |
+
+`kxm runs get <id>` on another box will not find a run started here. That is correct, not
+loss. Anything meant to be visible across boxes has to travel as a **message**, a
+**checkpoint**, or a **signal**.
+
+**The rule of thumb.** Same box → make it a **stage**. Different box → make it a **message
+plus a signal**: `kxm peer send --target <agent>` hands work to a Pi process running there,
+which does it with its own supervisor, session history and provider auth, then reports through
+`kxm workflow checkpoint --run-id … --stage-id … --status passed --evidence …` and
+`kxm workflow signal <runId> <signalKey> …`, which is what resumes a `wait` step here.
+Evidence refs, not prose, are what keeps a reported pass from becoming a claim.
+
+**Deliberately not available yet.**
+
+- *Scheduling a stage onto a remote box's CPU* is the Phase 6 contract — verified workspace
+  transfer, event cursors, reattachment, uncertain-effect recovery, secret grants.
+  `kxm ssh run|file` already gives primitives and a receipt, but a connection lost mid-effect
+  is not recoverable by contract. That is a decision, not a workaround: if a step needs it,
+  Phase 6 should arrive on purpose.
+- *A supervisor reachable across hosts.* Its boundary is a `0600` token file on loopback plus
+  an HMAC proof; on a network that proof becomes the entire defence against an on-path
+  impostor. Put a hub, or a local client, on that box instead.
+- *A second hub per tenant.* A remote box is a **client** of the tenant hub with a project
+  credential, so `context_isolation_violation` is what keeps its context reads inside the
+  project — not a tenant id in the hub.
+
+## The two decisions, settled
+
+1. **The tenant owns the reverse-proxy configuration; KXM owns the contract, not the
+   config.** Generating proxy files would make every upstream Caddy/nginx/Traefik/Authentik
+   change ours, and a generated config reads as authoritative while one missing
+   `request_header` directive silently re-opens header forgery. What generalises is a
+   checklist, shipped as a `docs/operations.md` section with one labelled *example, not
+   generated config* per stack: hub and supervisor bind loopback and publish no port; the
+   proxy strips client-supplied identity, tenant, agent, caller and `Authorization` headers
+   and then injects its own validated values; the proxy never injects the hub admin bearer,
+   which would flatten every Authentik user to admin; TLS terminates at the proxy. The S5
+   deployed witness proves it — unauthenticated denied, wrong tenant denied, and a forged
+   identity or `Authorization` header cannot survive the proxy.
+2. **`kxm hub bind` keeps its meaning, and the portal backend is just another machine
+   client.** It writes a URL and probes `/health`; it stores no secret
+   ([cli/hub.ts:194](../plugins/kxm/src/cli/hub.ts)), and credentials resolve separately
+   through the existing precedence. So the portal backend binds to loopback per tenant
+   workspace, and the tenant→endpoint and tenant→project maps live in the **portal's**
+   config, never in KXM and never supplied by a browser. Two tightenings, both on existing
+   verbs, no `kxm hub auth` family: (a) refuse a non-loopback bind when no credential can be
+   resolved, mirroring the rule the hub applies to itself
+   ([hub.ts:468](../plugins/kxm/src/hub.ts)) and naming the fix in the error; (b) label the
+   binding loopback or remote in `kxm hub view` and `kxm session brief`, so
+   "attached across a network to a hub I cannot authenticate to" is visible without reading
+   files. What stays out: redefining `bind` for split-box transport — that is a Phase 6/8
+   question about TLS and token scoping, and making the local case depend on the remote one
+   is the mistake to avoid.
+
 ## Explicitly not in this plan
 
 Hub user accounts or tables; per-user RBAC; a tenant table; SCIM; hub-side OIDC login, refresh,
@@ -174,20 +249,6 @@ machine-credential rotation through browser commands.
 
 ## Deferred hardening (backlog, not plan)
 
-Proxy header stripping proven by an integration fixture; timing-safe comparison of the proxy
-secret; credential-store corruption recovery; rotation overlap window; `kxm doctor` as a real
-command (there is none today) rather than `hub auth status` doing double duty. Track in
+Proxy header stripping proven by an integration fixture at the deployed edge; credential-store corruption recovery; rotation overlap window; `kxm doctor` as a real
+command (there is none today) rather than stretching `kxm hub view` into two jobs. Track in
 **Still open**; none of it blocks S1–S5.
-
-## Two things to settle before the read slice, while they are still cheap
-
-1. **Who owns the tenant's reverse-proxy configuration.** We generate a reviewable snippet, or
-   the tenant's existing proxy stays theirs and we document exactly which values to paste.
-   Decide once, in `docs/operations.md`; deciding it late is what turns a config file into a
-   rewrite.
-2. **What `kxm hub bind` means for a hosted tenant.** The portal backend, not a browser, is the
-   client; the binding must be server-held and project-fixed so no path lets a browser choose
-   which tenant's credential or upstream is used.
-
-Both are small enough that the mistake is not difficulty, it is drift: leave them implicit and
-each deployment invents an answer.
