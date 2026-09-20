@@ -530,4 +530,12 @@ test("portal reads distinguish hub metadata from Runtime run state and unavailab
   assert.match(formatTenantStatus(disjoint), /independent id spaces/, "the prose says what unverified means");
   assert.match(formatTenantStatus(foldFailedOnly), /1 cached \(fold failed, not state\)/, "the prose never calls a cached row authoritative");
   assert.match(formatTenantStatus(foldFailedOnly), /could not be verified \(runtime fold failed\)/, "the prose names the fold failure, not the id-space reason");
+  const mixedDisagree = await assemble({
+    runtime: { listRuns: async () => [
+      { runId: "run_1", status: "failed", homeRuntimeId: "rt_box", source: "runtime-authoritative" as const },
+      { runId: "run_2", status: "completed", homeRuntimeId: "rt_box", projectionError: "run_events_illegal", source: "runtime-cached" as const },
+    ] },
+  });
+  assert.match(formatTenantStatus(mixedDisagree), /disagree \(1 unverified: fold failed\)/,
+    "a disagreement line also carries the unverified folds it is standing next to");
 });

@@ -355,7 +355,7 @@ export function formatTenantStatus(payload: TenantStatusPayload): string {
     : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
   const comparisonLine = payload.runComparison.state === "compared"
     ? payload.runComparison.discrepancies && payload.runComparison.discrepancies.length > 0
-      ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree`
+      ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree${payload.runComparison.unverifiedFoldRuns ? ` (${payload.runComparison.unverifiedFoldRuns} unverified: fold failed)` : ""}`
       : `cross-check: ${payload.runComparison.matched} matched run(s) agree${payload.runComparison.unverifiedFoldRuns ? ` (${payload.runComparison.unverifiedFoldRuns} unverified: fold failed)` : ""}`
     : payload.runComparison.state === "unverified"
       ? payload.runComparison.reason === "runtime_fold_failed"
