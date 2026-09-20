@@ -23112,16 +23112,17 @@ function planKxmInitialization(start = process.cwd(), options = {}) {
       return { mode: "ready", inspectedFrom, projectRoot, changesRequired: false, issues: [], legacyInputs: [], configRevision: bundle.configRevision };
     } catch (error) {
       if (!(error instanceof KxmConfigError)) throw error;
+      const legacyIssues = error.issues.filter((candidate) => candidate.code === "legacy_state_unsupported");
       const legacyInputs = legacyInputsAt(projectRoot);
-      if (legacyInputs.length > 0) {
+      if (legacyInputs.length > 0 || legacyIssues.length > 0) {
         return {
           mode: "legacy",
           inspectedFrom,
           projectRoot,
           legacyRoot: projectRoot,
           changesRequired: true,
-          issues: [...error.issues, issue2("discovery", "legacy_state_unsupported", ".kxm", "legacy configuration is present and this build does not migrate it: initialise a fresh project directory and carry over the YAML definitions you want to keep")],
-          legacyInputs
+          issues: [...error.issues, ...legacyInputs.length > 0 ? [issue2("discovery", "legacy_state_unsupported", ".kxm", "legacy configuration is present and this build does not migrate it: initialise a fresh project directory and carry over the YAML definitions you want to keep")] : []],
+          legacyInputs: [.../* @__PURE__ */ new Set([...legacyInputs, ...legacyIssues.map((candidate) => candidate.file)])]
         };
       }
       return { mode: "repair", inspectedFrom, projectRoot, changesRequired: true, issues: error.issues, legacyInputs: [] };
@@ -23637,7 +23638,7 @@ function openDatabase(file, description, spec) {
       throw databaseError(
         "runtime_schema_outdated",
         file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh \u2014 upgrading old state in place is deliberately unsupported`
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for registry/event stores); \`kxm init\` is project-only and rebuilds no database \u2014 upgrading old state in place is deliberately unsupported`
       );
     }
     if (spec.tables) {

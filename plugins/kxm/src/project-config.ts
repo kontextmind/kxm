@@ -1497,16 +1497,23 @@ export function planKxmInitialization(start = process.cwd(), options: KxmConfigO
       return { mode: "ready", inspectedFrom, projectRoot, changesRequired: false, issues: [], legacyInputs: [], configRevision: bundle.configRevision };
     } catch (error) {
       if (!(error instanceof KxmConfigError)) throw error;
+      const legacyIssues = error.issues.filter((candidate) => candidate.code === "legacy_state_unsupported");
       const legacyInputs = legacyInputsAt(projectRoot);
-      if (legacyInputs.length > 0) {
+      if (legacyInputs.length > 0 || legacyIssues.length > 0) {
+        // Terminal for **any** legacy input, including one that lives in a bound member
+        // worktree. Classifying a member's legacy JSON as `repair` let init take the
+        // mutation lock and resume an interrupted create/repair journal, installing
+        // resources into a tree the loader had just refused.
         return {
           mode: "legacy",
           inspectedFrom,
           projectRoot,
           legacyRoot: projectRoot,
           changesRequired: true,
-          issues: [...error.issues, issue("discovery", "legacy_state_unsupported", ".kxm", "legacy configuration is present and this build does not migrate it: initialise a fresh project directory and carry over the YAML definitions you want to keep")],
-          legacyInputs,
+          issues: [...error.issues, ...(legacyInputs.length > 0
+            ? [issue("discovery", "legacy_state_unsupported", ".kxm", "legacy configuration is present and this build does not migrate it: initialise a fresh project directory and carry over the YAML definitions you want to keep")]
+            : [])],
+          legacyInputs: [...new Set([...legacyInputs, ...legacyIssues.map((candidate) => candidate.file)])],
         };
       }
       return { mode: "repair", inspectedFrom, projectRoot, changesRequired: true, issues: error.issues, legacyInputs: [] };

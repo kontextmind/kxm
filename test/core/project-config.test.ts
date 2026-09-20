@@ -439,6 +439,81 @@ test("KXM template repair blocks overlapping edits and authority expansion witho
   }
 });
 
+type LegacyCase = { kind: "repair" | "empty"; location: "control" | "member"; dryRun: boolean };
+
+test("legacy init preserves pending transactions and never acquires the mutation lock", () => {
+  // Parameterized so no recovery route can quietly keep writing: a legacy tree must be
+  // classified terminally — whether the legacy JSON sits in the control root or in a bound
+  // member worktree, whether the pending journal is a real interrupted repair or an empty
+  // transaction record, and in both dry-run and live. Nothing may change on disk and no
+  // resume may be reported: `resumePending` / `transactionKind` are what reaching the
+  // mutation lock would look like from here.
+  //
+  // The repair journal is built from the historical-template fixture, whose project declares
+  // only the control repository — so the repair case is control-only and the member case runs
+  // against the full fixture with an empty journal. The interrupted-create case (no
+  // project.yaml, hence no bindings to resolve) is the next test.
+  const cases: LegacyCase[] = [
+    { kind: "empty", location: "control", dryRun: false },
+    { kind: "empty", location: "control", dryRun: true },
+    { kind: "empty", location: "member", dryRun: false },
+    { kind: "empty", location: "member", dryRun: true },
+    { kind: "repair", location: "control", dryRun: false },
+    { kind: "repair", location: "control", dryRun: true },
+  ];
+  for (const { kind, location, dryRun } of cases) {
+    const label = `kind=${kind} legacyIn=${location} dryRun=${dryRun}`;
+    const stateRoot = mkdtempSync(join(tmpdir(), "kxm-legacy-matrix-state-"));
+    try {
+      const root = mkdtempSync(join(tmpdir(), "kxm-legacy-matrix-"));
+      makeGitRoot(root);
+      if (kind === "repair") {
+        historicalRepairProject(root, {
+          projectId: "prj_01JLEGMATRIXREPAIR00000000",
+          projectName: "Legacy Matrix",
+          localStateRoot: stateRoot,
+        });
+        assert.throws(
+          () => initializeKxmProject(root, { localStateRoot: stateRoot, templateVariant: "v2", testFaultAt: "prepared" }),
+          /injected init fault/,
+          `${label}: an interrupted repair journal must exist first`,
+        );
+      } else {
+        cpSync(fixture, root, { recursive: true });
+        makeGitRoot(join(root, "repositories", "api"));
+        mkdirSync(kxmInitTransactionPath(root), { recursive: true });
+      }
+      try {
+        assert.equal(existsSync(kxmInitTransactionPath(root)), true, `${label}: journal must exist to prove it survives`);
+        const legacyDir = location === "control"
+          ? join(root, ".kxm", "config")
+          : join(root, "repositories", "api", ".kxm", "config");
+        mkdirSync(legacyDir, { recursive: true });
+        writeFileSync(join(legacyDir, "agents.json"), "[]\n");
+
+        const projectBefore = snapshotFiles(root);
+        const stateBefore = snapshotFiles(stateRoot);
+        const result = initializeKxmProject(root, { localStateRoot: stateRoot, ...(dryRun ? { dryRun: true } : {}) });
+
+        assert.equal(result.action, "planned", `${label}: legacy state is never applied`);
+        assert.equal(result.plan.mode, "legacy", `${label}: any legacy input is terminal, not a repair`);
+        assert.equal(result.resumePending, undefined, `${label}: a legacy tree must not be resumed`);
+        assert.equal(result.transactionKind, undefined, `${label}: no transaction may be claimed`);
+        assert.ok(
+          result.plan.legacyInputs.some((input) => input.includes("agents.json")),
+          `${label}: the report must name the legacy input, wherever it lives`,
+        );
+        assert.deepEqual(snapshotFiles(root), projectBefore, `${label}: the project tree must be untouched`);
+        assert.deepEqual(snapshotFiles(stateRoot), stateBefore, `${label}: host-local state must be untouched`);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(stateRoot, { recursive: true, force: true });
+    }
+  }
+});
+
 test("KXM init leaves an interrupted create journal untouched in a legacy tree", () => {
   // Ordering guard: classification used to happen after the recovery branch, so a tree with
   // legacy .kxm/config JSON plus an interrupted create made init take the project mutation

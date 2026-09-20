@@ -33,7 +33,9 @@ does exist:
 - **Newer-than-known versions still refuse.** A store stamped ahead of this
   build is not opened, read, or downgraded.
 - **Schema changes are additive-and-replace, not in-place.** Land the new
-  definition, delete or recreate the local state, and let `kxm init` rebuild.
+  definition, delete the local state, and let the process that owns each store
+  recreate it — `kxm hub start` for hub state, the Runtime for registry and
+  event stores. `kxm init` is project-only and rebuilds no database.
   Nothing in the runtime may rewrite an existing store's shape.
 
 ## If this ever changes
