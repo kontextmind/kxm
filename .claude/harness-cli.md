@@ -69,7 +69,7 @@ They do not mint assignment, witness, or acceptance proof. Normal entry is
 `just assign` with a closed manifest; then `just witness`, `just attribute`,
 `just observe-cost`, `just accept`, `just plan-current`, and
 `just change-report` (positional quoted arguments). There is **no** `impl-pi`
-writer fallback. If `grok` is logged out, stop. Two attempts by default; a
+writer fallback. If `grok` is logged out, do not bill Grok through another harness: take an **admitted** relief route from Tracking, or stop and name the limits hit. Two attempts by default; a
 third only with new evidence or a changed approach, then relief.
 
 **Provider-native rule.** Anthropic → Claude CLI; OpenAI → Codex; xAI → Grok

@@ -34732,8 +34732,9 @@ Follow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:
 [\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).
 
 You are the **planner / architecture critic** unless the human explicitly asks
-you to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`).
-If \`grok\` is logged out, fail closed; do not fall back to Pi. Your reviews are
+you to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) \u2014 a starting
+rotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;
+use a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are
 artifacts, not hub \`peer-reply\` evidence.
 `;
   const claudeExisted = existsSync25(claudePath);

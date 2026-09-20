@@ -365,7 +365,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; create
 
   // 2. CLAUDE.md
   const claudePath = join(root, "CLAUDE.md");
-  const claudeHeader = `# KXM (Claude)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nYou are the **planner / architecture critic** unless the human explicitly asks\nyou to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`).\nIf \`grok\` is logged out, fail closed; do not fall back to Pi. Your reviews are\nartifacts, not hub \`peer-reply\` evidence.\n`;
+  const claudeHeader = `# KXM (Claude)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nYou are the **planner / architecture critic** unless the human explicitly asks\nyou to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) — a starting\nrotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;\nuse a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are\nartifacts, not hub \`peer-reply\` evidence.\n`;
   const claudeExisted = existsSync(claudePath);
   if (updateHarnessDocument(claudePath, block, claudeHeader)) {
     if (claudeExisted) updated.push("CLAUDE.md");
