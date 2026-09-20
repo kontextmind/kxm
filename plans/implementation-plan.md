@@ -376,36 +376,37 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   stay absent, and the Decided entry above names them.
   **What is gated now:**
   - *Per recipe, not per file; normalized text plus the interpreter's own parse.* The
-    file-wide brake in #179 was the wrong shape: the rule is that transport recipes must
-    not mint assignment, witness or acceptance proof. Five review rounds then showed that
-    rule escaping a text gate eleven ways: `just  assign`; `just -- assign`; a
+    file-wide brake in #179 was the wrong shape: the rule is that transport recipes must not
+    mint assignment, witness or acceptance proof. Six review rounds then showed that rule
+    escaping a text gate in thirteen ways — `just  assign`; `just -- assign`; a
     `\`-continuation; repointing `run :=`; `set allow-duplicate-variables` with a second
-    binding; a duplicate header with a trailing comment; `EXTRA:` and `extra_recipe:` names
-    a lowercase-hyphen parser never saw; an `alias`; a continued `mod`; a verb hidden
-    between `just` and options at any distance; and a script path split by concatenation.
-    A sixth round added three more, and one of its own findings was worse than any of
-    mine: **the commit that introduced the normalization gate deleted both dotenv tests**
-    while claiming, in its own commit message and in these documents, that they were the
-    fix. They are restored, and the dotenv brake now lives *inside* the shared gate so the
-    `--dump` pass enforces it too — `set dotenv-load` appears verbatim in dump output, and
-    a source-only brake would have waved it through.
-    What closes the rest is not a bigger regex. The file is **normalized** (continuations
-    folded, comments stripped) and then gated twice — once on normalized text, once on
-    **`just --dump`**, the interpreter's own rendering, skipped with a visible reason where
-    the binary is absent. The recipe inventory accepts quiet (`@name:`) and dependency-list
-    (`name: (dep)`) headers, because a dependency *is* a call and an unrecognized header hid
-    both the recipe and its body; the name set must **equal** a pinned list; duplicate
-    headers and duplicate `run :=` bindings are refused; `set allow-duplicate*`,
-    `import`/`mod` in any spelling and `alias` are refused; and the forbidden-substring and
-    `just … <verb>` checks run against the **raw** body, because stripping comments first is
-    what let `@echo "\" #" ; …` hide an executable suffix behind a quote the stripper
-    believed it had closed.
-    **What that is not**: a proof about execution. A body can still assemble a command at
-    runtime from variables or a decoder, and anyone who can edit this file can already do
-    anything the file can do. The gate's job is drift and ordinary indirection — keeping
-    "the docs say X, the code does Y" from merging quietly — not adversarial sandboxing,
-    which is a Phase 11 concern living in `plugins/kxm/src/sandbox.ts`. Each of the eleven
-    escapes above is now a mutation that turns the gate red, verified by running them.
+    binding; a duplicate header with a trailing comment; `EXTRA:`/`extra_recipe:` names a
+    lowercase-hyphen parser never saw; an `alias`; a continued `mod`; a verb hidden between
+    `just` and its options; a path split by concatenation; **a quiet recipe (`@extra:`)**; and
+    **ordinary dependency declarations** (`extra: default`, `extra: (default) (witness "…")`,
+    `extra: && (witness "…")`), each of the last three executed under `just` 1.58.0, reaching
+    `completion_missing` while both inventory passes stayed green. The sixth round also found
+    that **the commit which introduced the normalization gate had deleted both dotenv
+    tests** while its message and these documents cited them as the fix; they are restored.
+    What closes the class is not a bigger regex. The file is normalized (continuations folded,
+    comments stripped) and gated twice — normalized text, and **`just --dump`**, the
+    interpreter's own rendering, skipped with a visible reason where the binary is absent. A
+    recipe header is `[@]name [params]: [anything]` and **everything after the colon is a
+    call**: it is scanned like a body, which is what the single-parenthesis pattern missed. The
+    name set must equal a pinned list; duplicate headers and duplicate `run :=` bindings are
+    refused; `set allow-duplicate*`, `import`/`mod` in any spelling (including `import"x"`
+    with no space) and `alias` are refused; `run :=` and `dispatch` are asserted exactly; and
+    the forbidden-substring and `just … <verb>` checks run against each non-proof body's
+    **raw** text, because stripping comments first is what let an escaped quote hide an
+    executable suffix — and that suffix survives `--dump` verbatim, so the second pass
+    preserves the gap rather than catching it.
+    **Where the redundancy actually is**, since the round asked: on the same text the distance
+    rule rejects nothing the substring list does not already reject, `"assignment-"` is
+    subsumed by `"assign"`, and the arity bounds overlap the exact header/body pins. They are
+    kept as depth, not sold as independent coverage. And this is drift protection, not a
+    sandbox: a body can still assemble a command at runtime, and anyone who can edit the file
+    can already do anything the file can do. Each escape above is a mutation that now turns the
+    gate red — verified by running them, not by reasoning about them.
   - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
     fenced line with an optional `#` — must exist as a recipe. The scan is token-level:
     leading interpreter options and their path-like values are skipped

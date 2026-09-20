@@ -58,7 +58,8 @@ and models are admitted with strict permission and vendor boundaries:
 ## 2. The developer loop
 
 > **Environment.** These recipes do **not** auto-load a `.env` from the working
-> directory. An untracked, gitignored file must not be able to set `NODE_OPTIONS`
+> directory, and neither the source text nor `just --dump` is allowed to enable it. An
+> untracked, gitignored file must not be able to set `NODE_OPTIONS`
 > and execute code before the runner validates anything — `just --dotenv-path /abs/.env assign …` is the explicit
 > opt-in (`--dotenv-path` both selects and locates the file in `just` 1.58). Arguments are passed
 > positionally and quoted, so a path is never re-read as shell source; the runner's

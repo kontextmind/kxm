@@ -1508,26 +1508,31 @@ function assertDeclaredSurface(text: string, rawText = text): void {
 
   // Every header, in any case or spelling the parser accepts. Uppercase and
   // underscore names were demonstrated to slip past a lowercase-hyphen-only parser.
-  // A recipe header ends in `:`, optionally followed by a dependency list — and a
-  // dependency **is** a call, so `(witness "…")` had to be in the inventory or the whole
-  // recipe, body and all, stayed invisible to every check below. Leading `@` marks a
-  // quiet recipe, which is the other declaration form a plain parser misses. This is
-  // what separates `verify:` from `run := "..."`, `set dotenv-load := true` and
-  // `alias sneaky := witness`, all of which an "identifier then colon" pattern matches.
-  const headerPattern = /^@?([A-Za-z_][A-Za-z0-9_-]*)(?!\s*:=)[^(:]*:\s*(?:\([^)]*\))?$/;
-  const headers = lines
-    .map((line) => line.match(headerPattern))
-    .filter((m): m is RegExpMatchArray => m !== null)
-    .map((m) => m[1] as string);
-  const dependencyCalls = lines
-    .map((line) => line.match(headerPattern)?.[0]?.split("(")[1])
-    .filter((part): part is string => part !== undefined)
-    .join(" ");
+  // A recipe header is `[@]name [params]: [dependencies…]` — the colon is the anchor, and
+  // **anything after it is a call**. Accepting only one trailing parenthesized group was
+  // demonstrated to miss `extra: default`, `extra: (default) (witness "…")` and
+  // `extra: && (witness "…")`, each of which parsed, executed the runner, and passed both
+  // inventory passes. Variable bindings, settings and aliases are excluded by the `:=`
+  // lookahead and by requiring no `=` before the colon.
+  // `[^:\n]*` keeps parameters with `=` in them (CWD=".") legal, while the `:=` filter
+  // above is what excludes bindings and settings.
+  const headerPattern = /^@?([A-Za-z_][A-Za-z0-9_-]*)([^:\n]*):(.*)$/;
+  // `:=` anywhere is a binding or a setting, never a recipe header.
+  const headerLines = lines.filter((line) =>
+    !line.includes(":=") && !/^\s/.test(line) && headerPattern.test(line));
+  const headers = headerLines
+    .map((line) => line.match(headerPattern)?.[1])
+    .filter((name): name is string => name !== undefined);
+  // The part after the colon, plus any `(...)` group, is scanned like a body.
+  const dependencyCalls = headerLines
+    .map((line) => line.match(headerPattern)?.[3] ?? "")
+    .join("\n");
   for (const token of FORBIDDEN_TRANSPORT_TOKENS) {
     assert.doesNotMatch(dependencyCalls, new RegExp(token.replace(/[-.]/g, "\$&"), "i"),
       `a recipe dependency calls the forbidden token "${token}"`);
   }
   assert.doesNotMatch(dependencyCalls, FORWARDING_PATTERN, "a recipe dependency forwards into a proof recipe");
+
   const unique = new Set(headers);
   assert.equal(headers.length, unique.size, "a recipe header appears twice; the last one wins");
   const unexpected = headers.filter((name) => !EXPECTED_RECIPES.includes(name));
@@ -1570,7 +1575,7 @@ function assertDeclaredSurface(text: string, rawText = text): void {
   }
 }
 
-/** Recipe body lines from already-normalized text. */
+/** Recipe body lines from already-normalized text, using the same header form. */
 function recipeBodyFromNormalized(name: string, lines: string[]): string[] {
   const start = lines.findIndex((line) => new RegExp(`^${name}[^\n:]*:`).test(line));
   if (start < 0) return [];
