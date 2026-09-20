@@ -11,11 +11,16 @@ All notable user-facing changes are documented here. The project follows [Semant
   = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser
   session; a reverse-proxy contract states what must hold without shipping generated proxy
   config) and a rewritten *Backup and restore* that enumerates every path a tenant owns —
-  hub database, Runtime `registry.db`, each project's `run-events.db` **and its
-  `.run-prompts.json` sidecar**, bindings, workspace config, machine-level hub binding and
-  credential records, assets and logs. The previous recipe stopped the hub and copied
-  `kxm.db`, which is a hub-only backup: a restore can pass every hub check and still lose
-  run history and the prompts that explain it.
+  the two state roots a tenant actually has — host-local `$KXM_STATE_HOME` (Runtime
+  `registry.db`, per-project `run-events.db` **and its `.run-prompts.json` sidecar**,
+  repository bindings) and workspace `.kxm/state` (hub database, worker session routing and
+  recovery manifests, config, goals, memory, candidates, assets, logs) — plus what is
+  disposable (PID/claim files, `session-brief.json`, the re-generable supervisor token). It
+  also states the choice the Pi-session policy already leaves open: model histories are not
+  a system of record, so backing them up is a decision to record, not a default. The previous
+  recipe stopped the hub and copied `kxm.db`, which is a hub-only backup: a restore can pass
+  every hub check and still lose run history, the prompts that explain it, and the bindings
+  that make the box reproducible.
 
 - **Terminal component kit package:** `@kontextmind/tui` (`packages/core/tui`, also
   exposed as the `@kontextmind/kxm/tui` export) ships the reusable Pi-renderer-based

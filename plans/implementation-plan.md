@@ -369,14 +369,22 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   portal) and explicitly no generated proxy config, because a generated config reads as
   authoritative while one missing directive silently re-opens header forgery.
   The backup section previously described stopping the hub and copying `kxm.db`. That is a
-  **hub-only** backup: run events and their prompt sidecars live in
-  `runtime/projects/<key>/run-events.db(.run-prompts.json)`, the project registry in
-  `runtime/registry.db`, and bindings, workspace config and machine-level credential records
-  elsewhere — so a restore that passes every hub check can still lose Runtime history, and
-  an operator only finds out during an incident. It now enumerates the whole tenant state set
-  with the loss consequence per path, keeps restore verification (read back a run, its drive
-  receipt, and that prompt text survives), and states plainly that routine unattended
-  recovery is **not** claimed — automated store discovery is a tracked post-MVP item.
+  **hub-only** backup, and the first rewrite of it still named one root while the tenant has
+  two: host-local `$KXM_STATE_HOME` carries `runtime/registry.db` (whose **registry rows**
+  hold the supervisor identity and claim — there is no `supervisor.json`),
+  `runtime/projects/<key>/run-events.db` with a sidecar named by appending
+  `.run-prompts.json` to the whole database filename, and
+  `projects/<hash>/repository-bindings.json`; workspace `.kxm/state` carries the hub
+  database, worker routing/recovery manifests, Pi sessions, config, goals, memory,
+  candidates, assets and logs. Documenting one root and copying the other is exactly how a
+  backup goes missing while looking complete. The table is now split by root, names what is
+  disposable (PID/claim files, `session-brief.json`, the re-generable supervisor token),
+  applies WAL-consistent copying to **every** SQLite store, and states explicitly that
+  backing up Pi model histories is a recorded decision under existing policy rather than a
+  default — histories are not a system of record, but the binding manifests that make
+  routing resumable are. Restore verification stays concrete (read back a run, its drive
+  receipt, and confirm prompt text survives), and routine unattended recovery remains **not**
+  claimed: automated store discovery is a tracked post-MVP item.
   `kxm hub bind` gained the client-side mirror of the rule the hub already enforced on its own
   listener: a **remote** URL with no resolvable credential is refused
   (`hub_bind_unauthenticated`) instead of being stored and failing later like a network fault;
@@ -386,6 +394,17 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `loopback` or `remote` — a trust distinction that was previously invisible — with
   `localhost`/`127.0.0.1`/`::1`/`*.localhost` loopback and `0.0.0.0`, LAN and hostnames
   remote.
+  Review round one on this slice also found the guard itself too weak in three ways, now
+  fixed and asserted: a persisted record holding **another** project's token counted as a
+  credential and let a doomed binding be stored, so the check resolves against the active
+  project and an override URL alone no longer unlocks it; a malformed `hub-env.json` threw
+  `HubEnvError` past the command and printed neither payload nor prose, and is now a
+  readable `hub_credential_unreadable` refusal that confirms nothing was written; and
+  `hub view` labelled the *stored binding* while `KXM_SERVER_URL` sent the request somewhere
+  else, so it now labels the effective URL with `source: "env"` — and the session brief's
+  text and widget surfaces carry `/remote`, because a distinction that exists only in JSON
+  is a distinction nobody reads.
+
   Gate: existing `npm run verify`, no new npm script or CI job, and **one** named test
   (`hub bind refuses a remote hub with no credential and labels the binding scope`, in the
   existing CLI suite) — which also had to update the neighbouring bind test to carry a token,

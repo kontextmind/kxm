@@ -201,16 +201,31 @@ export function resolveHubCredentials(options: ResolveHubCredentialsOptions = {}
  * started fresh (generated token persisted) accepts authenticated client
  * commands without the operator exporting the token. */
 /**
- * Can this machine authenticate to a hub at all, the way one-shot clients resolve it:
- * explicit `KXM_AUTH_TOKEN`, else the persisted record's admin token, else any persisted
- * project token. Read-only — it never generates or writes, so a refusal can tell the
- * operator to configure something rather than having silently configured it for them.
+ * Can this machine authenticate to a hub at all, following the same precedence one-shot
+ * clients use: explicit `KXM_AUTH_TOKEN`, else the persisted record's admin token, else a
+ * persisted **project** token. Read-only on purpose — a refusal has to tell the operator
+ * to configure something, not reveal that the tool quietly configured it for them.
+ *
+ * Pass `project` when the caller knows which project will authenticate. A record holding
+ * only another project's token cannot authorise this one, and a guard that counts it as a
+ * credential stores a binding that will fail exactly like the one it prevented.
  */
-export function hasClientHubCredential(env: NodeJS.ProcessEnv = process.env): boolean {
+export function hasClientHubCredential(env: NodeJS.ProcessEnv = process.env, project?: string): boolean {
   if (env.KXM_AUTH_TOKEN?.trim()) return true;
-  const record = readHubEnvRecord(env);
+  let record: HubEnvRecord | undefined;
+  try {
+    record = readHubEnvRecord(env);
+  } catch (error) {
+    // A malformed or invalid record is a configuration failure, not "no credential".
+    // Letting it surface as an uncaught throw would print neither JSON nor prose.
+    throw new HubEnvError(
+      `${error instanceof Error ? error.message : String(error)}; refusing to guess a credential — repair or remove ${hubEnvFile(env)}`,
+    );
+  }
   if (record?.authToken?.trim()) return true;
-  return Object.values(record?.projectTokens ?? {}).some((token) => typeof token === "string" && token.trim().length > 0);
+  const tokens = record?.projectTokens ?? {};
+  if (project !== undefined) return typeof tokens[project] === "string" && tokens[project].trim().length > 0;
+  return Object.values(tokens).some((token) => typeof token === "string" && token.trim().length > 0);
 }
 
 export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: string): string | undefined {

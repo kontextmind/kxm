@@ -107,16 +107,20 @@ export async function cmdStatus(runtime: Runtime): Promise<number> {
   const ready = await hubGet(`${runtime.serverUrl}/ready`, runtime.fetchImpl);
   // Scope on the status line deliberately: "attached across a network" and "attached on
   // this box" are otherwise indistinguishable, and only one of them ships a token.
-  const bindingScope = runtime.boundHubUrl ? hubBindingScope(runtime.boundHubUrl) : undefined;
+  // Scope is a property of the URL actually contacted, not of whichever file the
+  // binding came from: KXM_SERVER_URL overrides the binding, and labelling the binding
+  // while probing an override would report "loopback" about a remote request.
+  const effectiveScope = hubBindingScope(runtime.serverUrl);
+  const overridden = Boolean(runtime.boundHubUrl && runtime.boundHubUrl !== runtime.serverUrl);
   const payload = {
     ok: health.ok && ready.ok,
     command: "hub view",
-    ...(runtime.boundHubUrl ? { binding: { url: runtime.boundHubUrl, scope: bindingScope } } : {}),
+    target: { url: runtime.serverUrl, scope: effectiveScope, ...(overridden ? { source: "env" } : {}) },
     health: health.body,
     ready: ready.body,
   };
   print(runtime.io, runtime.json, payload,
-    `hub health=${health.ok} ready=${ready.ok}${bindingScope ? ` · ${bindingScope} hub` : ""}`);
+    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""}`);
   return payload.ok ? 0 : 1;
 }
 
@@ -226,7 +230,32 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string): Promise<numb
   // A remote binding puts a bearer on a network path, so refuse it when this machine has
   // nothing to authenticate with. A stored-but-unusable URL reads later like a network
   // fault and the operator debugs the wrong thing. Loopback is unaffected.
-  if (scope === "remote" && !hasClientHubCredential(runtime.env)) {
+  // The project that will actually authenticate: a record holding only another
+  // project's token cannot authorise this one.
+  const bindProject = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
+  let credentialReady = false;
+  try {
+    credentialReady = hasClientHubCredential(runtime.env, bindProject);
+  } catch (error) {
+    // A malformed record is its own readable failure. Letting it throw past here would
+    // print neither the JSON payload nor the prose line an operator could act on.
+    print(
+      runtime.io,
+      runtime.json,
+      {
+        ok: false,
+        command: "hub bind",
+        error: "hub_credential_unreadable",
+        url,
+        scope,
+        nextAction: "repair_hub_env_record",
+        hint: `${error instanceof Error ? error.message : String(error)}; no binding was written`,
+      },
+      `cannot read the hub credential: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return 2;
+  }
+  if (scope === "remote" && !credentialReady) {
     print(
       runtime.io,
       runtime.json,
@@ -236,13 +265,14 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string): Promise<numb
         error: "hub_bind_unauthenticated",
         url,
         scope,
+        project: bindProject,
         // The hint is in the payload, not only in the prose line: under --json the prose
         // is suppressed, and a machine-readable refusal that names no next step is the
         // one kind of error that gets debugged by reading source.
         nextAction: "export_kxm_auth_token",
-        hint: HUB_BIND_UNAUTHENTICATED_HINT,
+        hint: `${HUB_BIND_UNAUTHENTICATED_HINT} (needs a token for project ${bindProject})`,
       },
-      `refusing to bind remote hub ${url} with no credential; ${HUB_BIND_UNAUTHENTICATED_HINT}`,
+      `refusing to bind remote hub ${url} with no credential for project ${bindProject}; ${HUB_BIND_UNAUTHENTICATED_HINT}`,
     );
     return 2;
   }

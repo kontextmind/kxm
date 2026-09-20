@@ -36775,9 +36775,10 @@ var MAX_SESSION_BRIEF_PLANS = 5;
 var SESSION_BRIEF_SCHEMA = "kxm.session-brief.v1";
 var DEFAULT_SESSION_BRIEF_STALE_SECONDS = 5;
 function hubPrefix(hub) {
-  if (hub?.state === "on" || hub?.state === void 0 && hub?.online === true) return "kxm hub:on";
-  if (hub?.state === "off" || hub?.state === void 0 && hub?.online === false) return "kxm hub:off";
-  if (hub?.state === "unknown") return "kxm hub:unknown";
+  const suffix = hub?.scope === "remote" ? "/remote" : "";
+  if (hub?.state === "on" || hub?.state === void 0 && hub?.online === true) return `kxm hub:on${suffix}`;
+  if (hub?.state === "off" || hub?.state === void 0 && hub?.online === false) return `kxm hub:off${suffix}`;
+  if (hub?.state === "unknown") return `kxm hub:unknown${suffix}`;
   return "kxm";
 }
 function truncate(value, width) {
