@@ -10,33 +10,28 @@ All notable user-facing changes are documented here. The project follows [Semant
   `docs/operations.md` gained a *Per-tenant hosted deployment* section (one tenant = one box
   = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser
   session; a reverse-proxy contract states what must hold without shipping generated proxy
-  config) and a rewritten *Backup and restore* that enumerates the tenant's state by root —
-  the six roots a tenant actually has — the fixed checkout tree under `.kxm` (project,
-  role, route, price and provenance definition, goals, tasks, memory, candidates, skills),
-  the workspace directories (config, logs, assets, state), host-local `$KXM_STATE_HOME` (Runtime
-  `registry.db`, per-project `run-events.db` **and its `.run-prompts.json` sidecar**,
-  repository bindings, `update.yaml`), the project's `.kxm` directory (config, agents,
-  workflows, roles, producers, repo bindings, provenance, goals, tasks, memory,
-  candidates, skills, assets, logs and local telemetry), the workspace *state* directory
-  `.kxm/state` (hub database, worker routing/recovery manifests, Pi sessions), and user
-  configuration `~/.config/kxm`, and a separate federated-telemetry root resolved from an
-  explicit directory else `XDG_CONFIG_HOME`/`HOME` (not `KXM_USER_CONFIG_DIR`, so it can
-  land outside user config) — plus what is disposable (PID/claim files,
-  `session-brief.json`, the re-generable supervisor token). It
-  also states the choice the Pi-session policy already leaves open: model histories are not
-  a system of record, so backing them up is a decision to record, not a default. The previous
-  recipe stopped the hub and copied `kxm.db`, which is a hub-only backup: a restore can pass
-  every hub check and still lose run history, the prompts that explain it, and the bindings
-  that make the box reproducible.
-
-- **Terminal component kit package:** `@kontextmind/tui` (`packages/core/tui`, also
-  exposed as the `@kontextmind/kxm/tui` export) ships the reusable Pi-renderer-based
-  terminal components in the package layer shape (`src/{types,tui,services,adapters,exports}`,
-  `tests/{unit,helpers}`), enforced by `test/core/package-layers.test.ts`.
-- **Per-package workspace tooling:** nx + Bun workspace wiring (`nx.json`,
-  `bunfig.toml`, `packages/*/project.json`, `scripts/build-package.mjs`) with
-  `npm run build:packages|test:packages|check:packages`. Bun is installer and task
-  runner only; tests, the hub, and the CLI remain on Node.
+  config) and a rewritten *Backup and restore* that enumerates tenant state **by root**,
+  because the roots are not interchangeable and two of them are easy to mistake for one:
+  `$R` the fixed checkout `.kxm` tree (project, model, role, route, price and provenance
+  definition, environment, goals, tasks, memory, improvement candidates, skills — none of
+  which follow any workspace override); `$D` the workspace directories (config, logs,
+  assets, state — moved by `--workspace`/`KXM_WORKSPACE_DIR`, each individually
+  overridable, and `--workspace` ignores those overrides); `$W` the workspace state
+  directory (hub database, worker routing and recovery manifests, Pi sessions); `$S`
+  host-local machine state (`KXM_STATE_HOME`, absolute or rejected: Runtime `registry.db`
+  holding the supervisor claim as a registry row, per-project `run-events.db` **and its
+  full-filename `.run-prompts.json` sidecar**, repository bindings, `update.yaml`, hub
+  binding and credential records); `$C` user configuration; and `$T` federated telemetry,
+  resolved independently of `$C` and written by an exporter that currently has no
+  production caller. It separates recovery-critical manifests from Pi model histories whose
+  backup is an existing policy **choice**, marks what is disposable (PID and claim files,
+  `session-brief.json`, the re-generable supervisor token), applies WAL consistency to
+  every SQLite store, records each override as part of the backup, and notes that a bound
+  member repository's own `.kxm/repo/` files live on that member's filesystem — so copying
+  the binding JSON alone is not a restore path for an external member. The previous recipe
+  stopped the hub and copied `kxm.db`, which is a hub-only backup: a restore can pass every
+  hub check and still lose run history, the prompts that explain it, the project definition,
+  and the bindings that make the box reproducible.
 
 ### Changed
 

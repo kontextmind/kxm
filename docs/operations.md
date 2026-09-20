@@ -259,10 +259,12 @@ a backup goes missing while looking complete:
 | `$S/update.yaml` | release/update configuration consumed by the updater | the box reverts to defaults on the next update path |
 | `$W/pi-sessions/<workerKey>/{default,runs/<runId>}/` | Pi model histories | **optional by existing policy** (see *Workflow-specific Pi sessions*): never a system of record — decide and record, do not silently widen scope |
 | `$W/worker-session-binding-<workerKey>.json` (+ `.corrupt-*`), `worker-context-*.json`, `worker-recovery-*.json` | routing and recovery manifests | not optional: these are what make worker routing resumable after a restart |
-| `$R/.kxm/…` project definition: `project.yaml`, `config.yaml`, `agents/`, `workflows/`, `gates.yaml`, `roles/`, `role-hosts.yaml` (or `.json`), `producers.yaml`, `roster.yaml`, `routes.yaml`, `prices.yaml`, `repo/`, `template-provenance.yaml` | project, role, route, price and provenance definition | the tenant stops being reproducible — and a restore without `roster.yaml`/`routes.yaml`/`prices.yaml` comes back with **different admission and cost behaviour** while reporting itself healthy |
+| `$R/.kxm/…` project definition: `project.yaml`, `config.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `roles/`, `role-hosts.yaml` (or `.json`), `producers.yaml`, `roster.yaml`, `routes.yaml`, `prices.yaml`, `repo/`, `project/env.yaml`, `template-provenance.yaml` | project, role, route, price and provenance definition | the tenant stops being reproducible — and a restore without `roster.yaml`/`routes.yaml`/`prices.yaml` comes back with **different admission and cost behaviour** while reporting itself healthy |
 | `$R/.kxm/goals/`, `tasks/`, `memory/` (with `memory/candidates/`), `skills/` (candidate/promoted/rejected, history, patches) | durable work and learning records | open goals/tasks and approved memory disappear |
-| `$D/assets/` — retrospectives, improvements, artifacts, evidence | exported evidence | provenance and the ability to audit a past decision |
-| `$D/logs/` (hub structured log at `KXM_LOG_PATH`) and `$D/logs/telemetry.jsonl` | operator logs and **local** usage accounting — the spend numbers routing reports read | no local accounting to reconcile against |
+| `$R/.kxm/candidates/` — improvement candidate JSON and their diffs, **default only**: `kxm improve report --out-dir` relocates this directory outside every root listed here | the improvement queue itself | proposed fixes nobody was told about |
+| each bound member repository's own `$memberRepo/.kxm/repo/repo.yaml` and `.kxm/repo/env.yaml` | member repository definition and environment | for **externally bound** members, the binding JSON alone is not enough — these files live on the member's own filesystem and need their own backup or an explicit, checked reconstruction prerequisite |
+| `$D/assets/` (default; `KXM_ASSETS_DIR` relocates it) — retrospectives, improvements, artifacts, evidence | exported evidence | provenance and the ability to audit a past decision |
+| `$D/logs/` (default; `KXM_LOGS_DIR` relocates the directory and `KXM_LOG_PATH` the hub log) and `$D/logs/telemetry.jsonl` | operator logs and **local** usage accounting — the spend numbers routing reports read | no local accounting to reconcile against |
 | `KXM_WORKER_LOG_PATH` / `KXM_AGENT_LOG_PATH` targets (defaulting under `$D/logs`) | per-worker lifecycle and raw Pi output | worker diagnostics; **separate overrides, not local accounting** |
 | `$T/model-metrics.jsonl` | **federated** metrics only. Absent almost everywhere: the exporter exists and `telemetry.federated` defaults to `true` in the shipped config, but **no hub or CLI path calls it today**, so absence is the normal state rather than evidence someone opted out. A different file from local accounting, which is `$D/logs/telemetry.jsonl` | cross-machine reporting continuity, and a privacy boundary worth naming: federated records are separate, with `anonymize` defaulting to `true` |
 | `$S/hub-binding.json`, `$S/hub-env.json`, `$C/session.token` | host hub URL, credentials, local session token | a re-bind and a token rotation. **Secrets:** prefer regeneration to shipping them off-box, and never commit them |
@@ -270,8 +272,11 @@ a backup goes missing while looking complete:
 
 **Overrides are part of the backup record.** `KXM_WORKSPACE_DIR` (and the `--workspace`
 flag, which additionally **ignores** the per-directory variables) moves every `$D`
-directory at once — but not `$R`, so the fixed project tree must still be backed up from
-the checkout even when the workspace was relocated elsewhere. `KXM_STATE_HOME` moves `$S`
+**default** at once; a directory with its own override stays where that variable points.
+Neither moves `$R`, so the fixed project tree must still be backed up from the checkout even
+when the workspace was relocated elsewhere — and copying the whole checkout is what protects
+`$R`'s default locations, which is why an enumerated-paths backup should be re-checked
+against this table whenever a loader grows a file. `KXM_STATE_HOME` moves `$S`
 only if absolute. An explicit telemetry directory is likewise joined with `telemetry/`,
 not used verbatim.
 `KXM_DATA_PATH`, `KXM_STATE_DIR`, `KXM_CONFIG_DIR`, `KXM_ASSETS_DIR`, `KXM_LOGS_DIR`,
