@@ -358,6 +358,107 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **The documented `just` entry points existed only in the docs (2026-09-19):**
+  `just assign|witness|accept|attribute|observe-cost|change-report|plan-current`
+  are named as the normal developer entry by `AGENTS.md`, the Decided entry above,
+  `docs/assignment-runner.md`, `docs/contracts/routing.md`, `.claude/harness-cli.md`
+  and the CHANGELOG. None of them was in `justfile`: PR #179 deleted the recipes and
+  inverted the covering test into `doesNotMatch(just, /assignment-run\.mjs/)` with
+  no doc sweep and no Tracking decision recorded, so for eight days the documented
+  entry point was a broken command and the brake enforced the wrong shape. Restored:
+  **headers and bodies verbatim** from `bce478a^`, same argument order as
+  `assignment-run.mjs`'s own `CLI_USAGE` (the comments and section order are new), plus
+  `just docker-install-smoke`, which `scripts/docker-install-smoke.mjs` had been
+  advertising in its header since it landed. #179's own plan text shows an unfinished
+  retirement discussion, so the honest description is that this **resolves
+  contradictory retirement and workflow records** rather than proving no retirement
+  was ever contemplated — no still-applicable decision requires these entry points to
+  stay absent, and the Decided entry above names them.
+  **What is gated now:**
+  - *Per recipe, not per file; and the load-bearing gate parses nothing.* The #179
+    file-wide brake was the wrong shape: the rule is that transport recipes must not mint
+    assignment, witness or acceptance proof. Seven review rounds then produced fourteen
+    demonstrated escapes from one text gate after another — `just  assign`; `just -- assign`;
+    a `\` continuation; repointing `run :=`; `set allow-duplicate-variables` with a second
+    binding; a duplicate header with a trailing comment; `EXTRA:`/`extra_recipe:` names a
+    lowercase-hyphen parser never saw; `alias`; a continued `mod`; a verb hidden between
+    `just` and its options; a path split by concatenation; `@extra:` quiet recipes; bare,
+    multiple and `&&` dependency forms; `extra X=":=":` where the filter that excludes
+    bindings also discards a legitimate default; a triple-quoted default that puts the name
+    and the colon on different lines; and `@verify:`, a quiet redefinition whose body the
+    reader could not find. Every one reached `assignment-run.mjs` under real `just` 1.58.0
+    while the static gates stayed green.
+    The answer is not a better parser. **Every line in the file that mentions
+    `assignment-run.mjs` must be one of the seven pinned proof bodies, and there must be
+    exactly seven** — a multiset over raw text that asks nothing about what a line *means*,
+    so the escapes above cannot hide from it by being unreadable to a parser. Proof recipes
+    may not be renamed or given new call sites without editing this assertion; verified that
+    **and it does not do it alone**: moving `witness`'s body into `check-generated` leaves
+    the seven-line multiset identical, so the pin passes and the non-proof-body token check
+    plus the per-recipe body pins are what reject it. The layers are stated separately rather
+    than sold as one airtight gate. Column-0 comments are
+    documentation and excluded, because a gate that rejects the sentence explaining it gets
+    worked around rather than obeyed.
+    Around that pin: the file is normalized (continuations folded, comments stripped) and
+    re-checked against **`just --dump`**, the interpreter's own rendering, skipped with a
+    visible reason where the binary is absent; the recipe name set must equal a pinned list;
+    duplicate headers and duplicate `run :=` bindings are refused; `set allow-duplicate*`,
+    `import`/`mod` in any spelling and `alias` are refused; `run :=` and `dispatch` are
+    asserted exactly; non-proof bodies are token-checked against **raw** text, because
+    comment-stripping first is what let an escaped quote hide an executable suffix that
+    `--dump` reproduced verbatim.
+    **The stated limit, which is the point of stopping here:** this is drift protection, not
+    a sandbox. A body can build a command at runtime from variables, a decoder or `sh -c`, and
+    anyone who can edit this file can already do anything it can do. What the pin guarantees is precise: the
+    multiset of non-comment lines containing the literal runner filename (after trimming
+    whitespace and one leading `@`) is exactly the seven proof bodies. A call assembled at
+    runtime, or a filename built from pieces, is outside any text gate including this one.
+    Further parser hardening was declined after round 7 rather than accepted as finished.
+
+  - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
+    fenced line with an optional `#` — must exist as a recipe. The scan is token-level:
+    leading interpreter options and their path-like values are skipped
+    (`just --quiet witness …` and `just --dotenv-path /abs/.env witness …` both name
+    `witness`), alternations are read per token so `just impl|plan brief.md` keeps
+    `plan`, a glob alternative (`review-*`) is skipped rather than demanding a recipe
+    called `review-`, and a pipeline further along the line is not an alternation. Prose,
+    headings and captured `just --list` output are not parsed: a document that names a
+    recipe only in prose is not gated, and a backticked adverbial phrase — "just in
+    case" inside code spans — would ask for a recipe called `in`. Both edges are
+    deliberate and both are fixture-tested, as are the accepted shapes above.
+  - *No auto-loaded `.env`.* `set dotenv-load` is **removed**, after review found it let
+    a gitignored `.env` in whatever directory `just` ran in set `NODE_OPTIONS`, whose
+    value the interpreter executes *before any script body* — ahead of the runner's
+    identity, tree, roster and critic validation, and ahead of the `shell: false` on the
+    spawns that follow (auth probes synchronously, harness execution asynchronously).
+    Gated twice. The textual brake rejects **any** `set dotenv*` spelling — bare,
+    `:= true`, with a trailing comment, and the filename/required/override variants —
+    while still allowing a comment that merely mentions the removed setting. The
+    real-`just` probe no longer reads an environment string: the preload module **writes
+    a marker file itself**, so the assertion is that injected code ran, and every
+    negative is paired with a control on the same entry point — explicit
+    `--dotenv-path` applies and executes; a justfile with the setting re-added executes;
+    and the real `witness` recipe is run **both ways**, refusing a missing record
+    directory without a marker and *with* a marker once dotenv is re-enabled. That last
+    control is what the first version of this probe lacked: only the probe script wrote
+    the marker, so the witness arm could not have detected a preload at all.
+    Opt-in is `just --dotenv-path /abs/.env assign …`; `--dotenv` is not a separate flag
+    in the installed 1.58, and the earlier note here published a command that exits 2. An
+    explicit opt-in **executes what it points at** — including `--dotenv-path
+    /dev/stdin`, which a reviewer used to run a preload through the real `witness` recipe.
+    That is the point of "explicit": the gate is about a file nobody chose.
+    Explicitly **out of scope**, because it is an operator trust decision rather than a
+    gate: an inherited `NODE_OPTIONS`, `PATH`, `KXM_*` or `JUST_DOTENV_COMMAND` in the
+    parent environment, and whatever a reviewed helper script chooses to do.
+  - The smoke recipe is pinned to the command it advertises, not merely to its name.
+  **Not done here:** `observe --record-dir` is a real `assignment-run.mjs` subcommand
+  with no documented recipe, so none was invented; `accept` writes JSON by default but
+  has no `--json` **flag**, and its optional `--observed-pr`/`--observed-ci` still
+  require the direct script call, as `docs/contracts/routing.md` already says; nothing
+  pins *argument order* between the justfile and that document, only verbs, flags and
+  arity; and inherited-environment hardening past dotenv (what a witness hands to a
+  harness) is its own trust decision.
+
 - **Runtime intake contract: coordinator identity, idempotent ingress and the
   pause rule (unified plan M1 + M6, the durable half of M2; 2026-09-18):** the
   first slice of the proposed M0/M1/M6 product path, at the contract layer only.
