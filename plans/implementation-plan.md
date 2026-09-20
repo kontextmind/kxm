@@ -58,13 +58,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   coordinator inboxes, engine comparisons and optional runtime experiments.
   Its supporting-reference map links the six research reports and six thematic
   designs. Read it for scope/order; record selected slices and actual status here.
-- **Hosting (outside the fork catalog):**
-  [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md) is proposed scope for hosting
-  KXM beside `kxmd-portal` — one tenant per box, Authentik at the edge, token auth
-  unchanged, no PostgreSQL write path, two MVP slices — with its design record at
-  [reviews/authentik-hosting-design-astra.md](reviews/authentik-hosting-design-astra.md).
-  It is not a second backlog: accepted slices and status belong here, and it touches
-  Phase 8 and Phase 10 without changing either gate.
 - **Research and thematic designs:** source findings, candidate contracts and
   experiment matrices remain supporting evidence. Their old milestone/stage
   tables do not create another backlog. The provider draft's AGY/Kimi-to-Pi
@@ -118,55 +111,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   a phase gate, or keep a slice in an ambiguous in-review state. Deferred work
   must be listed here under **Still open** with an owner/trigger or remain
   historical.
-- **Per-tenant hosting: tenancy is the machine, hosting is optional, the hub keeps
-  SQLite (2026-09-20, proposed in
-  [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md); design record
-  [reviews/authentik-hosting-design-astra.md](reviews/authentik-hosting-design-astra.md)):**
-  four rulings, each because a smaller one was possible.
-  **(1) One tenant = one box = one hub = one `kxm.db`.** The hub gets a tenant *label*, not a
-  tenant table, and capacity is counted as incremental disk + bandwidth on a box already
-  provisioned for `kxmd-portal` — not as another VM, container, sidecar or always-on service.
-  **(2) Hosting is additive.** `KXM_AUTH_TOKEN`, `KXM_PROJECT_TOKENS`, the generated-and-persisted
-  record, `kxm hub bind`, and the loopback convenience keep working unmodified; `kxm hub start`
-  on a laptop must not change behaviour or credential precedence. Activation is explicit and
-  inspectable — never inferred from which env vars happen to be set — and fails in both
-  directions: a hosted hub with a broken proxy refuses rather than downgrading to token-only, a
-  local hub never starts trusting identity headers. **(3) Authentik stays at the edge.** It owns
-  browser sessions and forwards validated identity to the hub over loopback; the hub adds no
-  user accounts, per-user RBAC, SCIM, OIDC callback, refresh, session store, cookie framework or
-  cookie crypto, binds no public listener, and exposes `/kxm/` browser routes on its existing
-  listener only — with browser credentials unable to satisfy `/v1/` and a failed browser
-  assertion never falling back to bearer. **(4) No PostgreSQL write path, and if we ever add
-  it, one database per hub as an exported projection — never as the hub's store.** The measured
-  reason, since this is the answer the operator asked for rather than a hedge: 120
-  prepared-statement call sites, 15 tables, 9 files importing `sqlite.ts`, hub store **v3** and
-  event store **v5** with v6 pending, plus `VACUUM INTO` backup/restore and the transaction
-  semantics just hardened over five review passes. The single-tenant file *is* the isolation,
-  backup, restore and migration unit. Cross-hub visibility for the portal uses read models that
-  already exist (`/v1/ops/snapshot`, `/v1/events`, `/v1/agents`, `/v1/messages`,
-  `/v1/workflows`, `/v1/improvements`) with the tenant hub's own token; portal aggregation
-  belongs to the portal's database, not the hub's. Trigger for the projection slice: real
-  cross-hub SQL analytics/reporting, or a hub count that per-box reads cannot serve. A shared
-  multi-tenant hub database is ruled out, not deferred: it turns one-box isolation into a
-  per-query invariant where one missing `tenant_id` predicate is a cross-tenant incident, and it
-  makes hub migrations coordinated releases.
-  **MVP is two slices, zero schema change, one named test each, no new npm script or CI job**
-  (`npm run verify` stays the only commit gate): **A** mode + browser boundary + read-only
-  hosted surface + `kxm hub auth setup|status|rotate|revoke|disable`; **B** a handful of real
-  actions chosen by use plus `kxm hub footprint` so the disk/bandwidth claim is measured rather
-  than argued. **A's gate is a shipped gate, not a new one:** Phase 10 already requires that
-  every web mutation be audited and reproducible through the command API, and today's Studio
-  mutation fallback answers `ok: true, mappedToCli: true` without executing anything
-  (`studio-layout.ts:410`, with no `onMutation` supplied at `cli/tasks.ts`). Hosted Studio must
-  not inherit a success path that lies — that is the one place where deferring is a false
-  economy, because every later improvement cycle inherits its bad data. **What the design pass
-  corrected about my own brief:** `kxm auth token` manages a local session token, not
-  `KXM_AUTH_TOKEN`; Studio is a separate server today; `kxm dash` is a terminal UI that rejects
-  `--json`; the hub store is v3 while the event store is v5. Six proposed slices were compressed
-  to two, and the rest — dashboard read models beyond Studio's needs, proxy template generation,
-  standalone Studio hardening — lands through use, on the improvement cycle the operator asked
-  for rather than in front of it.
-
 - **Role configuration governance archive (2026-09-12):** Eddie archived
   [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
   after #192 (role hosts, TerminalReceipt, autoResumeLimit / audit
@@ -613,7 +557,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   resume with the project still paused afterwards, and both forced-write fixtures now
   obtain their `false` from the real guarded SQL rather than from an authored return.
 
-- **Run-duration budgets are testable without racing the machine (2026-09-17):
+- **Run-duration budgets are testable without racing the machine (2026-09-17):**
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
   "completes inside budget" case asserts the *minimum* of project 40 and workflow
   5000, i.e. a **40 ms** budget, so its simulated producer had to settle inside a
@@ -1422,24 +1366,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Still open
 
-- **Per-tenant hosting slices (owner: hub/CLI maintainer; trigger: the first tenant VM
-  to host, which is the point of doing this at all):** proposed in
-  [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md). **Slice A** — explicit mode
-  activation, `/kxm/` browser boundary on the existing loopback listener, proxy credential and
-  tenant/subject validation, `kxm hub auth setup|status|rotate|revoke|disable`, read-only hosted
-  Studio. **Slice B** — the four or five browser actions chosen by actual use, each mapped to a
-  real command and receipt, plus `kxm hub footprint` so the disk/bandwidth claim is measured.
-  Zero schema change in both. Two things must be resolved before Slice A merges, and both are
-  small enough that deciding them late is what makes them expensive: where the tenant's reverse
-  proxy config lives (generated by us, or owned by the tenant with documented values to paste),
-  and what `kxm hub bind` means on the portal side once a hub is hosted.
-  **Deferred hardening, backlog not critical path:** proxy header-stripping proven by an
-  integration fixture; timing-safe proxy secret comparison; credential-store corruption
-  recovery; rotation overlap window; a real `kxm doctor` (there is none today) instead of
-  `hub auth status` doing double duty; standalone Studio hardening; PostgreSQL as an *exported
-  projection* per hub, triggered only by real cross-hub SQL analytics or a hub count that
-  per-box `/v1` reads cannot serve.
-
 - **Package restructure and Bun toolchain (owner: build/runtime maintainer):**
   the layout questions this bullet used to hold are now answered by the tree,
   not by preference: Bun is installer and task runner only (`bunfig.toml` states
@@ -2137,12 +2063,7 @@ and cannot activate without the same Git review path.
 
 Build project, Runtime, run, configuration, repository, model, timing, cost,
 artifact, memory, and improvement views from the same read models and command
-APIs as the TUI. Add TLS and RBAC before non-loopback deployment. Per-tenant
-hosting ([plan-per-tenant-hosting.md](plan-per-tenant-hosting.md)) is the near-term
-route here: tenancy is the machine, Authentik gates the browser at the reverse proxy,
-and the hub holds no user accounts or RBAC table. Its **gate already forbids what the
-current Studio mutation fallback does** — answering `ok: true, mappedToCli: true`
-without executing (`studio-layout.ts:410`) — so hosted Studio may not inherit that path.
+APIs as the TUI. Add TLS and RBAC before non-loopback deployment.
 
 **Gate:** every web mutation is audited and reproducible through the command
 API; no web-only workflow logic exists.
