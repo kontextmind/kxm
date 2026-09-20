@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
+import { writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
 import { cmdKxmRunStatus, kxmDriveCliSeams } from "../../plugins/kxm/src/cli/project.ts";
 import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
@@ -592,6 +593,7 @@ test("kxm tenant status reports each source independently and never starts a sup
   const cwd = mkdtempSync(join(tmpdir(), "kxm-tenant-cli-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-tenant-cli-state-"));
   const elsewhere = mkdtempSync(join(tmpdir(), "kxm-tenant-elsewhere-"));
+  let credRoot: string | undefined;
   try {
     makeGitRoot(cwd);
     initializeKxmProject(cwd, { projectId: "prj_01JTENANTCLITEST000000000", projectName: "Tenant CLI" });
@@ -612,6 +614,17 @@ test("kxm tenant status reports each source independently and never starts a sup
     assert.equal(down.payload.runtime.reason, "runtime_supervisor_not_running", "a read attaches; it never conjures a supervisor");
     assert.equal(down.payload.degraded, true);
 
+    // Admin-only resolution, pinned: a persisted record holds both an admin and a project
+    // token, and the snapshot route is admin-scoped — the request must carry the admin
+    // token. Restoring project-first resolution fails the assertion below.
+    credRoot = mkdtempSync(join(tmpdir(), "kxm-tenant-cred-"));
+    writeHubEnvRecord(
+      { schema: "kxm.hub-env.v1", createdAt: "2026-09-20T00:00:00.000Z", authToken: "kxm_admin_test", projectTokens: { prj_01JTENANTCLITEST000000000: "kxm_proj_test" } },
+      { KXM_STATE_HOME: credRoot },
+    );
+    let sentAuthorization: string | undefined;
+    const adminEnv = { KXM_STATE_HOME: credRoot, KXM_SERVER_URL: "http://127.0.0.1:7331" };
+
     const snapshot = {
       project: "prj_01JTENANTCLITEST000000000",
       fetchedAt: "2026-09-20T12:00:00.000Z",
@@ -623,10 +636,17 @@ test("kxm tenant status reports each source independently and never starts a sup
     };
     const partialIo = capture();
     assert.equal(
-      await runCli(["tenant", "status", "--json"], env, { ...partialIo, fetchImpl: async () => new Response(JSON.stringify(snapshot), { status: 200 }) }, cwd),
+      await runCli(["tenant", "status", "--json"], adminEnv, {
+        ...partialIo,
+        fetchImpl: (async (_input: unknown, init?: RequestInit) => {
+          sentAuthorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+          return new Response(JSON.stringify(snapshot), { status: 200 });
+        }) as unknown as NonNullable<CliIo["fetchImpl"]>,
+      }, cwd),
       0,
       "a partial read is a successful read of what was seen",
     );
+    assert.equal(sentAuthorization, "Bearer kxm_admin_test", "the snapshot read carries the admin token, never the project token");
     const partial = JSON.parse(partialIo.read().stdout) as {
       ok: boolean;
       hub: { state: string; value: { runs: Array<{ source: string }> } };
@@ -640,7 +660,7 @@ test("kxm tenant status reports each source independently and never starts a sup
     assert.equal(partial.runtime.reason, "runtime_supervisor_not_running");
     assert.equal(partial.degraded, true);
   } finally {
-    for (const dir of [cwd, stateRoot, elsewhere]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [cwd, stateRoot, elsewhere, ...(credRoot !== undefined ? [credRoot] : [])]) rmSync(dir, { recursive: true, force: true });
   }
 });
 

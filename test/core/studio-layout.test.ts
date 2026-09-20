@@ -479,6 +479,39 @@ test("portal reads distinguish hub metadata from Runtime run state and unavailab
   assert.deepEqual(disjoint.runComparison, { state: "unverified", reason: "run_identity_link_absent", matched: 0 },
     "no shared ids means the populations did not intersect — that is not agreement");
 
+  // A row whose fold failed is the cache, not state: it must be labelled runtime-cached,
+  // excluded from the authoritative comparison, and never allow "agree" to print over a
+  // corrupt event log.
+  const foldFailedOnly = await assemble({
+    runtime: { listRuns: async () => [{ runId: "run_1", status: "completed", homeRuntimeId: "rt_box", projectionError: "run_events_corrupt", source: "runtime-cached" as const }] },
+  });
+  const cachedRun = foldFailedOnly.runtime.value?.runs[0];
+  assert.equal(cachedRun?.source, "runtime-cached", "a failed fold labels the row as the cache");
+  assert.deepEqual(foldFailedOnly.runComparison, { state: "unverified", reason: "runtime_fold_failed", matched: 0, unverifiedFoldRuns: 1 },
+    "a shared id whose fold failed is unverified, not agreement");
+  assert.equal(foldFailedOnly.degraded, false, "a cached row is still a read; degraded tracks source reachability");
+
+  const mixedFold = await assemble({
+    runtime: { listRuns: async () => [
+      { runId: "run_1", status: "completed", homeRuntimeId: "rt_box", source: "runtime-authoritative" as const },
+      { runId: "run_2", status: "failed", homeRuntimeId: "rt_box", projectionError: "run_events_corrupt", source: "runtime-cached" as const },
+    ] },
+  });
+  assert.deepEqual(mixedFold.runComparison, { state: "compared", matched: 1, unverifiedFoldRuns: 1 },
+    "clean folds compare; the failed one is counted as unverified, not as agreement");
+
+  const bodyDeadline = await assemble({
+    hubTimeoutMs: 30,
+    fetchImpl: (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw Object.assign(new Error("body abandoned"), { name: "TimeoutError" });
+      },
+    })) as unknown as typeof fetch,
+  });
+  assert.equal(bodyDeadline.hub.reason, "hub_timeout", "a deadline that expires mid-body is a timeout, not malformed content");
+
   const runtimeDown = await assemble({
     hubUrl: "http://10.0.0.5:7331",
     runtime: {

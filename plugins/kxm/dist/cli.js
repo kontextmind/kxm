@@ -31813,7 +31813,11 @@ async function assembleTenantStatus(input) {
       let body;
       try {
         body = await response.json();
-      } catch {
+      } catch (error) {
+        const name = error instanceof Error ? error.name : void 0;
+        if (name === "TimeoutError" || name === "AbortError") {
+          return { state: "unavailable", observedAt: attemptedAt, reason: "hub_timeout" };
+        }
         return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
       }
       if (!isObject(body) || typeof body.project !== "string" || typeof body.fetchedAt !== "string" || !Array.isArray(body.agents) || !Array.isArray(body.runs) || !Array.isArray(body.plans ?? []) || typeof body.openMessageTotal !== "number" || typeof body.runTotal !== "number") {
@@ -31887,7 +31891,11 @@ async function assembleTenantStatus(input) {
       reason: !hub.value ? `hub_${hub.reason ?? "unavailable"}` : `runtime_${runtime.reason ?? "unavailable"}`
     };
   } else {
-    const authoritative = new Map(runtime.value.runs.map((run) => [run.runId, run.status]));
+    const authoritative = new Map(
+      runtime.value.runs.filter((run) => run.projectionError === void 0).map((run) => [run.runId, run.status])
+    );
+    const hubIds = new Set(hub.value.runs.map((run) => run.id));
+    const foldFailed = runtime.value.runs.filter((run) => run.projectionError !== void 0 && hubIds.has(run.runId));
     const discrepancies = [];
     let matched = 0;
     for (const projected of hub.value.runs) {
@@ -31898,7 +31906,16 @@ async function assembleTenantStatus(input) {
         discrepancies.push({ runId: projected.id, hubStatus: projected.status, runtimeStatus });
       }
     }
-    runComparison = matched === 0 ? { state: "unverified", reason: "run_identity_link_absent", matched: 0 } : { state: "compared", matched, ...discrepancies.length > 0 ? { discrepancies } : {} };
+    if (matched > 0) {
+      runComparison = {
+        state: "compared",
+        matched,
+        ...foldFailed.length > 0 ? { unverifiedFoldRuns: foldFailed.length } : {},
+        ...discrepancies.length > 0 ? { discrepancies } : {}
+      };
+    } else {
+      runComparison = foldFailed.length > 0 ? { state: "unverified", reason: "runtime_fold_failed", matched: 0, unverifiedFoldRuns: foldFailed.length } : { state: "unverified", reason: "run_identity_link_absent", matched: 0 };
+    }
   }
   return {
     schema: TENANT_STATUS_SCHEMA,
@@ -32399,7 +32416,7 @@ async function cmdKxmRunList(runtime) {
       runtime.io,
       runtime.json,
       { ok: true, command: "runs list", runs },
-      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}`).join("\n")
+      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}${run.projectionError ? `  [state unverified: ${run.projectionError}]` : ""}`).join("\n")
     );
     return 0;
   } catch (error) {
@@ -32447,7 +32464,7 @@ async function cmdTenantStatus(runtime) {
             ...typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {},
             ...typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {},
             ...typeof run.projectionError === "string" ? { projectionError: run.projectionError } : {},
-            source: "runtime-authoritative"
+            source: typeof run.projectionError === "string" ? "runtime-cached" : "runtime-authoritative"
           }));
         }
       }

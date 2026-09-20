@@ -80,7 +80,9 @@ export interface TenantRuntimeRun {
   /** Set when the stored row exists but the event-log fold refused; `status` is then the
    * cached row, and a consumer must not present it as folded state. */
   projectionError?: string | undefined;
-  source: "runtime-authoritative";
+  /** `runtime-cached` exactly when `projectionError` is set: the row is the cache, not the
+   * folded state, and neither the label nor the cross-check may treat it as authoritative. */
+  source: "runtime-authoritative" | "runtime-cached";
 }
 
 export interface TenantRuntimeValue {
@@ -105,6 +107,9 @@ export interface TenantRunComparison {
   state: "compared" | "unverified" | "unavailable";
   reason?: string;
   matched?: number;
+  /** Shared ids whose Runtime row failed to fold: present in both stores, but the
+   * authoritative side could not be read, so those runs are unverified rather than agreed. */
+  unverifiedFoldRuns?: number;
   discrepancies?: TenantRunDiscrepancy[];
 }
 
@@ -189,7 +194,13 @@ export async function assembleTenantStatus(input: {
       let body: unknown;
       try {
         body = await response.json();
-      } catch {
+      } catch (error) {
+        // A deadline can expire mid-body; that is a timeout, not malformed content, and
+        // classifying it as `hub_response_invalid` would hide the one fact that matters.
+        const name = error instanceof Error ? error.name : undefined;
+        if (name === "TimeoutError" || name === "AbortError") {
+          return { state: "unavailable", observedAt: attemptedAt, reason: "hub_timeout" };
+        }
         // Reachable but not a JSON document: a different failure than a dead socket.
         return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
       }
@@ -281,7 +292,16 @@ export async function assembleTenantStatus(input: {
       reason: !hub.value ? `hub_${hub.reason ?? "unavailable"}` : `runtime_${runtime.reason ?? "unavailable"}`,
     };
   } else {
-    const authoritative = new Map(runtime.value.runs.map((run) => [run.runId, run.status] as const));
+    // Only cleanly folded rows are authoritative. A row whose fold failed is the cache, and
+    // counting it as agreement is precisely the lie this comparison exists to prevent: a
+    // corrupt event log under a hub run's id would otherwise print "agree".
+    const authoritative = new Map(
+      runtime.value.runs
+        .filter((run) => run.projectionError === undefined)
+        .map((run) => [run.runId, run.status] as const),
+    );
+    const hubIds = new Set(hub.value.runs.map((run) => run.id));
+    const foldFailed = runtime.value.runs.filter((run) => run.projectionError !== undefined && hubIds.has(run.runId));
     const discrepancies: TenantRunDiscrepancy[] = [];
     let matched = 0;
     for (const projected of hub.value.runs) {
@@ -292,9 +312,18 @@ export async function assembleTenantStatus(input: {
         discrepancies.push({ runId: projected.id, hubStatus: projected.status, runtimeStatus });
       }
     }
-    runComparison = matched === 0
-      ? { state: "unverified", reason: "run_identity_link_absent", matched: 0 }
-      : { state: "compared", matched, ...(discrepancies.length > 0 ? { discrepancies } : {}) };
+    if (matched > 0) {
+      runComparison = {
+        state: "compared",
+        matched,
+        ...(foldFailed.length > 0 ? { unverifiedFoldRuns: foldFailed.length } : {}),
+        ...(discrepancies.length > 0 ? { discrepancies } : {}),
+      };
+    } else {
+      runComparison = foldFailed.length > 0
+        ? { state: "unverified", reason: "runtime_fold_failed", matched: 0, unverifiedFoldRuns: foldFailed.length }
+        : { state: "unverified", reason: "run_identity_link_absent", matched: 0 };
+    }
   }
 
   return {

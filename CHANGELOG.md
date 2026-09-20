@@ -48,9 +48,12 @@ All notable user-facing changes are documented here. The project follows [Semant
   aborting the Runtime read with it. Reads run concurrently with a 5 s hub deadline, a 200 with an
   unusable body is `hub_response_invalid` rather than a healthy empty snapshot, and Runtime rows are
   event-log folded (the listing endpoint now folds, so a cached row can no longer be presented as
-  state). The cross-check is honest about id spaces: hub runs and Runtime runs mint ids independently,
-  so zero shared ids reports `unverified` (`run_identity_link_absent`) — never agreement — and only
-  shared ids are compared. The Runtime read **attaches** to a live supervisor
+  state). A run whose fold refuses is labelled `runtime-cached` — the cache, not state — and is
+  excluded from the cross-check, which reports `unverifiedFoldRuns` (or `runtime_fold_failed`)
+  instead of letting a corrupt event log print "agree"; `kxm runs list` names the same failure on
+  the row instead of hiding it. The cross-check is honest about id spaces: hub runs and Runtime
+  runs mint ids independently, so zero shared ids reports `unverified` (`run_identity_link_absent`)
+  — never agreement — and only cleanly folded shared ids are compared. The Runtime read **attaches** to a live supervisor
   (`attachKxmSupervisor`, new) and never starts one — a portal poller must not conjure a daemon, and
   "nothing is running" is an answer to render, not a condition to repair. Exits non-zero only when
   neither source could be read.

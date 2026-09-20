@@ -571,12 +571,14 @@ export async function cmdKxmRunList(runtime: Runtime): Promise<number> {
     const projectId = String(bundle.project.value.id);
     const supervisor = await ensureKxmSupervisor({ env: runtime.env });
     const result = await kxmRuntimeRequest(supervisor, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(projectRoot)}`);
-    const runs = (result.runs ?? []) as Array<{ runId: string; status: string; workflowId: string; createdAt: string }>;
+    const runs = (result.runs ?? []) as Array<{ runId: string; status: string; workflowId: string; createdAt: string; projectionError?: string }>;
     print(
       runtime.io,
       runtime.json,
       { ok: true, command: "runs list", runs },
-      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}`).join("\n"),
+      runs.length === 0
+        ? "no runs"
+        : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}${run.projectionError ? `  [state unverified: ${run.projectionError}]` : ""}`).join("\n"),
     );
     return 0;
   } catch (error) {
@@ -628,7 +630,7 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
             ...(typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {}),
             ...(typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {}),
             ...(typeof run.projectionError === "string" ? { projectionError: run.projectionError } : {}),
-            source: "runtime-authoritative" as const,
+            source: (typeof run.projectionError === "string" ? "runtime-cached" : "runtime-authoritative") as "runtime-cached" | "runtime-authoritative",
           }));
         },
       },
