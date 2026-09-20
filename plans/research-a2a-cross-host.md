@@ -7,20 +7,22 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-17"
-updated: "2026-09-17"
+updated: "2026-09-20"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Web research with options, trade-offs and recommendations for agent-to-agent communication across hosts and the surrounding control plane: context, memory, restarts, discovery, coordination, tasks, plans, steering, improvement, wiki, MCP apps, telemetry, secrets, per-account hosting and agent lifecycle."
+summary: "Web research with options, trade-offs and recommendations for agent-to-agent communication across hosts and the surrounding control plane: context, memory, restarts, discovery, coordination, tasks, plans, steering, improvement, wiki, MCP apps, telemetry, secrets, per-account hosting and agent lifecycle. Reconciled against Tracking on 2026-09-20; schedules nothing."
 tags: ["research", "a2a", "cross-host", "transport", "memory", "telemetry", "steering", "wiki", "mcp", "secrets", "hosting", "lifecycle"]
 related:
   - implementation-plan.md
+  - plan-per-tenant-hosting.md
   - plan-unified-kxm-milestones.md
   - plan-ssh-remote-execution.md
   - plan-agent-communication-steering.md
   - research-memory-studio-forks.md
   - research-agent-producer-architecture.md
-  - ../docs/vnext/architecture.md
-  - ../docs/vnext/synchronization.md
+  - ../docs/contracts/architecture.md
+  - ../docs/contracts/synchronization.md
+  - ../docs/agent-communication-envelopes-and-gates.md
 depends_on: []
 blocked_by: []
 details:
@@ -29,13 +31,18 @@ details:
   baseline_commit: "77beda4"
   method: "six parallel primary-source research passes, reconciled; unverified items listed"
   platform_repos: ["kontextmind/dev-vm-platform", "kontextmind/kxmd-auth", "kontextmind/kxmd-portal"]
+  reconciled_against: "implementation-plan.md Tracking, 2026-09-20"
+  reconciled_at_commit: "87b428f"
+  sequencing_status: "2026-09-17 M0–M9 mapping rejected; delivery is Tracking's S0–S5 queue"
+  contracts_path: "docs/vnext/ was renamed to docs/contracts/; body wording left as dated"
 ---
 
 # Research: cross-host agent communication and the hosted control plane
 
 Tracking: [`implementation-plan.md`](implementation-plan.md). This is a
-research record, not an execution tracker; the sequencing section at the end
-is a proposal for Tracking to accept or reject.
+research record, not an execution tracker; the Status against Tracking
+section is the reading guide; the sequencing section at the end records a
+rejected proposal.
 
 Research date 2026-09-17. Every version and date was checked against a
 primary source on that day unless marked unverified. Recommendations are
@@ -46,57 +53,105 @@ credentials and repository contents stay Runtime-local; memory and learned
 content never grant tools, secrets, approvals or policy; learned executable
 behavior activates only through a reviewed Git change.
 
+## Status against Tracking (2026-09-20)
+
+This section is the reading guide for everything below it. [Tracking](implementation-plan.md#tracking-working-tree-not-a-release)
+is the only execution tracker; this file schedules nothing, and the dated
+bodies in §1 to §18 are unchanged 2026-09-17 web-source evidence. Where a
+body and this section disagree, this section is current.
+
+- **Delivery is S0–S5.** Tracking's "The one queue" is the only delivery
+  sequence. S0, S1 (PR #253) and S3 (PR #256) are delivered; S2 (portal reads
+  authoritative state) is next. No topic in this file is in that queue, and
+  S0–S5 make zero event-store or hub-store schema change, so every table,
+  endpoint and lease proposed below is outside MVP by construction.
+- **Hosting is one tenant, one box, one hub.** The hub carries a tenant
+  label, binds loopback, and interprets no browser identity; Authentik and the
+  portal own the browser; the portal's server-side backend is the hub's hosted
+  client with existing machine credentials; there is no PostgreSQL write path.
+  §16's `kxm-hubs` VM with per-account hub processes, §16's hub-as-OAuth-2.1
+  resource server with RFC 9728 metadata, and §18's ledger, firewall and
+  split-DNS changes are superseded by those rulings. Hub-side JWT verification,
+  token broker and OIDC callback are rejected, not deferred; reopening any of
+  them needs a new written decision in Tracking.
+- **Cross-host today is `kxm peer`.** Live agent-to-agent traffic is
+  `kxm peer send`, `await`, `reply` and `fanout` over the hub HTTP API with
+  the existing bearer tokens, and in-hub handoffs use the
+  `kxm.assignment-request.v1` envelope family. The signed outbox and inbox,
+  roster, presence leases and fenced run leases in §1, §2, §3 and §6 belong to
+  Phase 8 (distributed synchronization), which stays post-MVP. Remote MCP on
+  the hub (§1, §14) is not selected and has no trigger.
+- **A2A Protocol is a projection of the journal, never its transport.** That
+  2026-09-17 reconciliation stands. No Agent Card, A2A binding or push surface
+  is scheduled; the mapping is documented here and implemented only when a
+  concrete external caller exists and Tracking records that decision.
+- **Coordinator inboxes and steering are post-MVP behind triggers.** §3 waits
+  on Tracking's coordinator intake dispatch or rebinding trigger; §11 waits on
+  "polling proved insufficient". `plan-agent-communication-steering.md` is a
+  design reference, not a backlog. Polling is the MVP visibility model.
+- **Wiki compile and ingest (§13) are unselected.** The "punt until public
+  npm" reason expired when `@kontextmind/kxm@0.7.0` shipped. Expiry is not
+  selection; a new decision is required.
+- **Peer-reply evidence (§8, §9).** `producerPolicy.acceptedStatuses` is a
+  recorded gap with its trigger in Tracking, not scheduled work; nothing here
+  changes settlement semantics.
+- **Naming.** Where the dated bodies say "vNext contracts" they mean the
+  contracts now under `docs/contracts/`. The product is KXM; no old name in
+  the bodies is a current surface.
+- **Sequencing.** The M0–M9 mapping at the end of this file is the rejected
+  2026-09-17 proposal, kept for the record. The current mapping is in
+  "Sequencing against Tracking (2026-09-20)".
+
 ## Summary of recommendations
 
-| # | Topic | Recommendation | First slice | Deferred |
-|---|---|---|---|---|
-| 1 | Transport | Signed pull-first outbox/inbox between Runtimes and hub; hub as remote MCP server for agent calls; SSH or Tailscale as substrate; A2A as an edge projection only | Outbox and peer-link tables, two peer endpoints, tools over Streamable HTTP with bearer token | NATS, SLIM, gRPC, stateless MCP mode, A2A push |
-| 2 | Discovery | Signed roster with pinned keys plus hub presence leases; Tailscale tags for admission; A2A cards only with 1C | `roster.json`, presence heartbeats, `kxm_state` offline view | Registries, DHTs, mDNS |
-| 3 | Coordinator | One coordinator per run under a hub-issued fenced lease; persistent identities with durable inboxes; wake hint plus mandatory polling | `run_lease` with generation, inbox cursors, SSE hint, rate limits | Email/SMS bindings, auto takeover, multi-hub election |
-| 4 | Shared context | Event-sourced outbox plus a capped `kxm.context-bundle.v1` at stage boundaries; digests for blobs | The bundle event with a 16 KB cap | CRDTs, artifact store |
-| 5 | Memory | Git-backed markdown tree with promotion as a reviewed commit; per-Runtime FTS5 cache; `memoryRev` pinned | `memory/` tree, `kxm promote` commit, FTS5 recall | Embeddings, hub store, Mem0/Graphiti/Cognee |
-| 6 | Restarts | Keep the event-sourced Runtime; hub `leases` with fencing; heartbeats mark runs orphaned; Restate-style pause for unknown effects; Claude `SessionStore` mirror | Leases table, heartbeat rows, session mirror | Restate, Temporal, auto migration |
-| 7 | Telemetry | OTel-shaped JSONL as source of truth; trace-context contract; journal kept separate; Phoenix as first sink | Trace ids on every record, `TRACEPARENT` at spawn, cursor exporter | Native SDK, Langfuse v4 |
-| 8 | Workflows and gates | Gates as in-toto signed receipts; two-phase transitions; declarative stage graph with lint | `kxm.receipt.v1`, per-host keys, `kxm workflow lint` | A2A bindings, m-of-n UI |
-| 9 | Tasks and goals | Hub journal as claim authority with leases and fencing; git for intent; trackers as projections | `attempts` table and claim protocol | Postgres, NATS, Beads |
-| 10 | Plans | Git-authoritative plans with digest read model, schema lint, digest-bound tasks with drift flags | `revision` digest, `kxm plan lint`, `stale` flag | OpenSpec layout, CRDT |
-| 11 | Steering | Hub-relayed signed envelopes bound to attempt and fence with queued, acknowledged, applied states; tool narrowing at the Runtime | `seq`/`fence`/`ttl` on steer, ack and applied receipts, `PreToolUse` enforcement | Cedar/OPA, direct mTLS |
-| 12 | Improvement | ACE-style delta candidates from each host, hub dedupe, PR-only activation; eval runner second | `kxm improve` deltas, weekly PR | GEPA/DSPy loops |
-| 13 | Wiki | Git-backed `docs/kb/` with provenance and `written_by`; hub as index and linter | `kxm kb lint`, `kxm kb index`, `kxm kb compile` design (shipping stays punted until public npm) | Graphs, CRDT editing, hosted mirrors |
-| 14 | MCP apps | Remote MCP hub plus stdio shim first; read-only app views over Studio read models second | Streamable HTTP endpoint, shim forwarding | Decision apps, A2A |
-| 15 | Secrets | Hub owns references and grants, never values; Proton Pass PAT per workspace as interim resolver; gitleaks gate | Env schema, `pass://` resolver, gitleaks gate | Hub-native store, OpenBao |
-| 16 | Hosted hub | One `kxm-hubs` VM on VLAN 30 with a hub process and SQLite per account; Authentik tokens; Caddy route; local Runtime per workspace | Systemd template, route, provider, roster enrol | Postgres RLS, Tailscale on workspaces |
-| 17 | Agent lifecycle | Four classes (`task`, `session`, `resident`, `daemon`); "always-on" is a hub-side `resident` identity, not a process; Runtime launches systemd transient units inside workspace VMs; hub is the only scheduler and lease authority; cross-host launch is an admitted command with a spawn lease | `kxm.agent-spec/v1` with `task` and `session`, `kxm agent run --spec`, `POST /v1/launches`, `lost` state, orphan reconciliation | Hub cron, VM wake-on-launch, Podman, Firecracker, orchestrators |
-| 18 | Platform fit | The kxmd platform fits; three configuration changes needed | Ledger entry, one firewall rule, split DNS | Nothing architectural |
+| # | Topic | Recommendation | First slice | Deferred | Status (2026-09-20) |
+|---|---|---|---|---|---|
+| 1 | Transport | Signed pull-first outbox/inbox between Runtimes and hub; hub as remote MCP server for agent calls; SSH or Tailscale as substrate; A2A as an edge projection only | Outbox and peer-link tables, two peer endpoints, tools over Streamable HTTP with bearer token | NATS, SLIM, gRPC, stateless MCP mode, A2A push | Post-MVP (Phase 8); remote MCP and RFC 9728 not selected; A2A projection ruling kept |
+| 2 | Discovery | Signed roster with pinned keys plus hub presence leases; Tailscale tags for admission; A2A cards only with 1C | `roster.json`, presence heartbeats, `kxm_state` offline view | Registries, DHTs, mDNS | Post-MVP (Phase 8); per-workspace roster assumed §16, superseded there |
+| 3 | Coordinator | One coordinator per run under a hub-issued fenced lease; persistent identities with durable inboxes; wake hint plus mandatory polling | `run_lease` with generation, inbox cursors, SSE hint, rate limits | Email/SMS bindings, auto takeover, multi-hub election | Post-MVP; trigger: coordinator intake dispatch or rebinding selected |
+| 4 | Shared context | Event-sourced outbox plus a capped `kxm.context-bundle.v1` at stage boundaries; digests for blobs | The bundle event with a 16 KB cap | CRDTs, artifact store | Not selected (Phase 9 / proposed M5 scope) |
+| 5 | Memory | Git-backed markdown tree with promotion as a reviewed commit; per-Runtime FTS5 cache; `memoryRev` pinned | `memory/` tree, `kxm promote` commit, FTS5 recall | Embeddings, hub store, Mem0/Graphiti/Cognee | Not selected (Phase 9 / proposed M5 scope) |
+| 6 | Restarts | Keep the event-sourced Runtime; hub `leases` with fencing; heartbeats mark runs orphaned; Restate-style pause for unknown effects; Claude `SessionStore` mirror | Leases table, heartbeat rows, session mirror | Restate, Temporal, auto migration | Local restart path exists (S1); cross-host leases post-MVP (Phase 8) |
+| 7 | Telemetry | OTel-shaped JSONL as source of truth; trace-context contract; journal kept separate; Phoenix as first sink | Trace ids on every record, `TRACEPARENT` at spawn, cursor exporter | Native SDK, Langfuse v4 | Not selected; cost tracking is a Decided requirement, the exporter is not |
+| 8 | Workflows and gates | Gates as in-toto signed receipts; two-phase transitions; declarative stage graph with lint | `kxm.receipt.v1`, per-host keys, `kxm workflow lint` | A2A bindings, m-of-n UI | Existing receipts unchanged; signed receipts and lint not selected |
+| 9 | Tasks and goals | Hub journal as claim authority with leases and fencing; git for intent; trackers as projections | `attempts` table and claim protocol | Postgres, NATS, Beads | Not selected; peer-evidence gap recorded with trigger; Postgres ruled out as write path |
+| 10 | Plans | Git-authoritative plans with digest read model, schema lint, digest-bound tasks with drift flags | `revision` digest, `kxm plan lint`, `stale` flag | OpenSpec layout, CRDT | Plan authority settled by S0 prose; digest and lint not selected |
+| 11 | Steering | Hub-relayed signed envelopes bound to attempt and fence with queued, acknowledged, applied states; tool narrowing at the Runtime | `seq`/`fence`/`ttl` on steer, ack and applied receipts, `PreToolUse` enforcement | Cedar/OPA, direct mTLS | Post-MVP; trigger: polling proved insufficient; design reference only |
+| 12 | Improvement | ACE-style delta candidates from each host, hub dedupe, PR-only activation; eval runner second | `kxm improve` deltas, weekly PR | GEPA/DSPy loops | Not selected (Phase 9) |
+| 13 | Wiki | Git-backed `docs/kb/` with provenance and `written_by`; hub as index and linter | `kxm kb lint`, `kxm kb index`, `kxm kb compile` design (shipping stays punted until public npm) | Graphs, CRDT editing, hosted mirrors | Unselected; npm reason expired, no new decision |
+| 14 | MCP apps | Remote MCP hub plus stdio shim first; read-only app views over Studio read models second | Streamable HTTP endpoint, shim forwarding | Decision apps, A2A | Superseded for MVP by S2 portal reads; remote MCP not selected |
+| 15 | Secrets | Hub owns references and grants, never values; Proton Pass PAT per workspace as interim resolver; gitleaks gate | Env schema, `pass://` resolver, gitleaks gate | Hub-native store, OpenBao | Not selected; rotation stays with existing token resolution |
+| 16 | Hosted hub | One `kxm-hubs` VM on VLAN 30 with a hub process and SQLite per account; Authentik tokens; Caddy route; local Runtime per workspace | Systemd template, route, provider, roster enrol | Postgres RLS, Tailscale on workspaces | Superseded by the four per-tenant hosting rulings |
+| 17 | Agent lifecycle | Four classes (`task`, `session`, `resident`, `daemon`); "always-on" is a hub-side `resident` identity, not a process; Runtime launches systemd transient units inside workspace VMs; hub is the only scheduler and lease authority; cross-host launch is an admitted command with a spawn lease | `kxm.agent-spec/v1` with `task` and `session`, `kxm agent run --spec`, `POST /v1/launches`, `lost` state, orphan reconciliation | Hub cron, VM wake-on-launch, Podman, Firecracker, orchestrators | Not selected; VM launch substrate superseded with §16; taxonomy stays hypothesis |
+| 18 | Platform fit | The kxmd platform fits; three configuration changes needed | Ledger entry, one firewall rule, split DNS | Nothing architectural | Superseded; tenant box is already provisioned; S5 owns edge DNS/TLS/Authentik |
 
 ## How the pieces fit
 
 ```text
-workstation / cloud sandbox            workspace VM (VLAN 50)
-  harness + stdio shim ──MCP/HTTPS──┐     Runtime (event store, worktrees,
-  kxm login (device code)           │     harness sessions, secret resolver,
-                                    │     redactor, host key)
-                                    │        │ signed outbox/inbox, cursors
-                                    ▼        ▼ receipts, presence, steering acks
-                      Caddy VM 230  hub-<account>.kxmd.dev
-                                    │
-                      kxm-hubs VM (VLAN 30): kxm-hub@<account>
-                        SQLite journal: leases, attempts, receipts, inbox,
-                        presence, read models, FTS5 index
-                        git: memory/, plans/, docs/kb/   ← reviewed changes
-                        Litestream + git push → VLAN 31
-                                    │
-                      Authentik (tokens)   CP-10 broker (values, later)
+tenant box (one tenant = one box = one hub; Tracking rulings 2026-09-20)
+  reverse proxy + Authentik ── TLS and browser sessions on the portal's own routes
+        │ server-side only
+  portal backend ── existing machine credentials ──► hub (loopback)
+                                                        ▲
+  Runtime (loopback) ── execution, worktrees, harness ──┘
+  state set: .kxm/state/kxm.db, Runtime registry, per-project event stores,
+             bindings, prompt sidecars, configuration (backed up as one set)
+
+operator laptop (default, unchanged)
+  kxm hub start ── local token-authenticated hub
+  kxm peer send / await / reply / fanout ── over the hub HTTP API, bearer tokens
+  kxm hub bind <url> ── labelled loopback or remote; refused without a credential
+
+not drawn, not scheduled: signed outbox/inbox, roster, fenced leases (Phase 8);
+remote MCP on the hub (no decision); A2A Protocol (projection only, on demand)
 ```
 
-Four layers, each with one owner. The network layer (Caddy, OPNsense, later
-Tailscale for outside hosts) admits connections. The call layer (remote MCP
-on the hub) is how an agent on any host uses KXM tools. The sync layer (the
-signed outbox and inbox) is how a Runtime and its hub exchange durable facts
-at least once, in order, with cursors. The authority layer is split three
-ways: the Runtime writes a run's events, the hub writes coordination state,
-and git writes reviewed behavior. Everything below elaborates one cell of
-that picture.
+Two shapes, no third. The hosted shape adds one supervised process to a box
+the portal already owns; the browser never reaches the hub, and the hub
+never interprets browser identity. The local shape is what every existing
+command does today. The rest of this file describes mechanisms that would
+sit between Runtimes and a hub on different hosts; none of them exists, and
+Tracking has selected none of them.
 
 ## 1. Cross-host transport and protocol
 
@@ -1656,6 +1711,17 @@ API-key harness path exists.
 
 ## 16. Hosted per-account hub topology
 
+**Superseded on 2026-09-20.** The topology below (one `kxm-hubs` VM on
+VLAN 30, a hub process and SQLite tree per account, the hub verifying
+Authentik tokens as an OAuth 2.1 resource server, roster enrolment from
+workspace VMs) predates the four per-tenant hosting rulings in
+[Tracking](implementation-plan.md#decided) and
+[plan-per-tenant-hosting.md](plan-per-tenant-hosting.md): one tenant is one
+box with one loopback hub and a tenant label, Authentik and the portal own
+the browser, the hub interprets no browser identity, and there is no
+PostgreSQL write path. It is kept as dated evidence for the option
+comparison; nothing in it is scheduled, and its "First slice" is not a slice.
+
 ### State of the art (2026)
 
 Small operators choose one SQLite database per tenant over shared Postgres
@@ -2107,6 +2173,8 @@ Three things must change on the platform side:
 
 ### Recommended setup, in order
 
+This ten-step list targets the superseded §16 topology and is retained as dated evidence only; see Status against Tracking.
+
 1. **Hub VM.** Clone `kxm-hubs` on VLAN 30; install Node 24 and
    `@kontextmind/kxm`; `kxm-hub@<account>.service` template with
    `StateDirectory`, `DynamicUser`, `MemoryMax=384M`; Litestream per account
@@ -2151,7 +2219,7 @@ NATS, Temporal or A2A, or move the Claude Code channel off local stdio.
 ## Cross-cutting design rules
 
 These rules fall out of every topic above. They are the contract that makes
-the fourteen recommendations compose.
+the eighteen recommendations compose.
 
 1. **One writer per fact.** The home Runtime is the only writer for a run's
    events, context bundles, memory proposals and spans; the hub is the only
@@ -2225,11 +2293,30 @@ the fourteen recommendations compose.
   Authorization stable date (2026-06-18), Obsidian Local REST API plugin
   version, the autoresearch overfit incident.
 
-## Proposed sequencing (not a tracker change)
+## Sequencing against Tracking (2026-09-20)
 
-This maps first slices onto the existing M0 to M9 catalog and phase gates.
-It is a proposal for [Tracking](implementation-plan.md#tracking-working-tree-not-a-release)
-to accept or reject; it does not create a backlog.
+Delivery is S0–S5 in [Tracking](implementation-plan.md#still-open). This
+table says where each topic stands. It schedules nothing; a topic moves only
+when Tracking records a decision or its named trigger fires.
+
+| Topics | Disposition | Decided where |
+|---|---|---|
+| 6 (local restart path), 10 (plan authority) | Touched by delivered S1 and S0; nothing further selected | Tracking, Landed in this tree |
+| 14 (read-only views) | The MVP read surface is S2 portal reads through the portal backend, not MCP apps | Tracking queue, S2 |
+| 18 (edge DNS, TLS, Authentik) | S5 on the tenant's existing proxy; the platform changes in §18 are superseded | Tracking queue, S5 |
+| 3 | Post-MVP; trigger: coordinator intake dispatch or rebinding selected | Tracking, Explicitly not MVP |
+| 11 | Post-MVP; trigger: polling proved insufficient; design reference in `plan-agent-communication-steering.md` | Tracking, Explicitly not MVP |
+| 8, 9 (peer-reply evidence) | Recorded gap; trigger: first workflow that gates acceptance on peer review | Tracking, recorded gap |
+| 1, 2, 4, 6 (cross-host leases) | Post-MVP Phase 8 distributed synchronization; not selected | Tracking, hub local is the default |
+| 5, 12 | Phase 9 reviewed improvement; not selected | Tracking, Explicitly not MVP |
+| 13 | Unselected; the public-npm punt expired and a new decision is required | Tracking, public npm prerequisite |
+| 1 and 14 (remote MCP on the hub), 7, 8 (signed receipts), 10 (digest, lint), 15, 17 (taxonomy) | Not selected; no trigger; needs a new written decision | Tracking, Related plans |
+| 16, 17 (VM launch substrate), 18 (platform changes) | Superseded by the four per-tenant hosting rulings | Tracking, Decided |
+
+### Rejected proposal (2026-09-17): mapping onto M0–M9
+
+Kept for the record. Tracking did not accept it; M0–M9 numbering is proposed
+scope, not delivery order.
 
 | Order | Slice | Topics | Fits |
 |---|---|---|---|
