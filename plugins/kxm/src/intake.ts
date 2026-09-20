@@ -98,7 +98,45 @@ const ACTOR_ID_RE = /^.{1,200}$/;
 
 /** Canonical SHA-256 over the authority ceiling — the coordinator's fingerprint. */
 export function kxmCeilingHash(authority: KxmCoordinatorAuthority): string {
-  return `sha256:${createHash("sha256").update(stableStringify(authority), "utf8").digest("hex")}`;
+  return `sha256:${createHash("sha256").update(stableStringify(normalizeAuthority(authority)), "utf8").digest("hex")}`;
+}
+
+/**
+ * Does an already-stored coordinator express this ceiling?
+ *
+ * A row written before set normalisation existed carries a fingerprint that
+ * `kxmCeilingHash` no longer reproduces, so comparing the stored hash alone is
+ * not enough: recompute over the authority it kept. Every path that asks this
+ * question — the initial slot lookup and **both** lost-write read-backs — must
+ * go through here, or an upgrade makes the same row equivalent on lookup and a
+ * `coordinator_write_lost` conflict on the race path.
+ *
+ * A legacy row is returned as stored, so its `ceilingHash` is historical: a
+ * caller must not assume every persisted hash uses today's algorithm.
+ */
+function ceilingsMatch(stored: KxmCoordinatorRecord, ceilingHash: string): boolean {
+  return stored.ceilingHash === ceilingHash || kxmCeilingHash(stored.authority) === ceilingHash;
+}
+
+function normalizeAuthority(authority: KxmCoordinatorAuthority): KxmCoordinatorAuthority {
+  const tools = authority.tools;
+  return {
+    repositoryAccess: authority.repositoryAccess,
+    effects: canonicalSet(authority.effects ?? []),
+    ...(tools !== undefined
+      ? {
+          tools: {
+            ...(tools.preset !== undefined ? { preset: tools.preset } : {}),
+            ...(tools.allow !== undefined ? { allow: canonicalSet(tools.allow) } : {}),
+            ...(tools.deny !== undefined ? { deny: canonicalSet(tools.deny) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function canonicalSet(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
 }
 
 /**
@@ -131,7 +169,7 @@ export function bindKxmCoordinator(
 
   if (existing) {
     const current = JSON.parse(existing.record) as KxmCoordinatorRecord;
-    if (current.ceilingHash === ceilingHash) {
+    if (ceilingsMatch(current, ceilingHash)) {
       return { coordinator: current, created: false };
     }
     if (!input.rebind) {
@@ -169,11 +207,11 @@ export function bindKxmCoordinator(
       record: kxmCanonicalJson(record as unknown as JsonValue),
     });
     if (!replaced) {
-      // Another process got the same policy through. Return its identity when it
-      // reached the ceiling we asked for; anything else is a real conflict.
+      // Another process reached the same ceiling first. Return its identity when it
+      // is the ceiling we asked for; anything else is a real conflict.
       const winner = context.eventStore.coordinatorInSlot(context.projectId, role, channel);
       const record2 = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
-      if (record2 && record2.ceilingHash === ceilingHash) {
+      if (record2 && ceilingsMatch(record2, ceilingHash)) {
         return { coordinator: record2, created: false };
       }
       throw runtimeError("coordinator_write_lost", existing.coordinatorId, "the coordinator slot changed underneath this rebind");
@@ -196,7 +234,7 @@ export function bindKxmCoordinator(
     configRevision: context.configRevision,
     ceilingHash,
   };
-  return { ...persistCoordinator(context, record), created: true };
+  return persistCoordinator(context, record);
 }
 
 /** Resolve a coordinator by id; unknown identity fails closed. */
@@ -210,10 +248,15 @@ export function resolveKxmCoordinator(context: KxmRuntimeContext, coordinatorId:
  * Accept one internal message at the intake boundary.
  *
  * Duplicate ingress (same idempotency key, same content) returns the original
- * record and cannot create another task. The same key with **different** content
+ * record and cannot produce a second admission record. This layer deduplicates
+ * *intake and admission*; creating a task is the M2 consumer's job, so nothing here can
+ * promise anything about tasks. The same key with **different** content
  * is rejected: a reused key must not smuggle a different payload. Payloads
- * classified `secret` are never persisted — only their hash, so intake cannot
- * become a secret store. While the project is paused the message is durable with
+ * classified `secret` are never persisted — only their hash, so a caller that
+ * classifies honestly gets a store that will not hold that payload. The scope is
+ * exactly that: classification is caller-asserted, so this is a storage decision
+ * under a label, not secret detection, and intake is still not a place to keep
+ * credentials. While the project is paused the message is durable with
  * a held dispatch intent instead of being dropped.
  */
 export function acceptKxmIntakeMessage(
@@ -429,28 +472,45 @@ export function isKxmProjectPaused(context: KxmRuntimeContext): boolean {
   return context.eventStore.projectControl(context.projectId)?.paused === true;
 }
 
+/** How many held rows one drain page reads. Bounds a page, not the whole drain. */
+const INTAKE_DRAIN_PAGE_ROWS = 500;
+
 function releaseHeldIntake(context: KxmRuntimeContext, now: string): KxmIntakeMessage[] {
   const released: KxmIntakeMessage[] = [];
   // Drain every held row. A paging loop, not a single capped page: stranding the
   // 501st message behind a "resume releases held intent" claim is a lie of omission.
-  for (let page = 0; page < 1000; page += 1) {
-    const held = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 500);
-    if (held.length === 0) break;
+  //
+  // What is still true after that fix: the loop holds one write transaction and
+  // retains every released message, so total work and memory grow with the held
+  // backlog even though each read is bounded. Measured on an in-memory store: 150k
+  // held rows with 64-byte payloads took 4.5 s synchronously and ~95 MiB of heap;
+  // 500k maximum-size payloads would retain ~7.6 GiB before any database overhead,
+  // and an allocation failure will not reliably arrive as `intake_drain_stalled`.
+  // Resume is finite because the write lock keeps ingress out of the loop, so this
+  // is a throughput and memory limit, not a correctness hole. Bounding it is a
+  // pre-condition of M2 sustained traffic, not of this contract — see "Still open".
+  for (;;) {
+    const held = context.eventStore.intakeInStates(context.projectId, ["held_paused"], INTAKE_DRAIN_PAGE_ROWS);
+    if (held.length === 0) return released;
+    let progressed = false;
     for (const row of held) {
       const message = JSON.parse(row.record) as KxmIntakeMessage;
       const next: KxmIntakeMessage = { ...message, dispatch: { state: "ready", updatedAt: now } };
       validateIntakeMessage(next, next.messageId);
       if (context.eventStore.updateIntakeDispatch(row.messageId, "held_paused", { state: "ready", record: kxmCanonicalJson(next as unknown as JsonValue) })) {
         released.push(next);
+        progressed = true;
       }
     }
-    const stillHeld = context.eventStore.intakeInStates(context.projectId, ["held_paused"], 1).length;
-    if (stillHeld === 0) break;
+    if (!progressed) {
+      // Cannot move anything: fail loudly inside the caller's transaction, which
+      // rolls the resume back, rather than half-resuming and leaving rows held.
+      throw runtimeError("intake_drain_stalled", context.projectId, `held intake did not drain; ${String(held.length)} row(s) still held`);
+    }
   }
-  return released;
 }
 
-function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRecord): { coordinator: KxmCoordinatorRecord } {
+function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRecord): { coordinator: KxmCoordinatorRecord; created: boolean } {
   validateCoordinator(record, record.coordinatorId);
   const inserted = context.eventStore.insertCoordinatorIfAbsent({
     coordinatorId: record.coordinatorId,
@@ -462,13 +522,13 @@ function persistCoordinator(context: KxmRuntimeContext, record: KxmCoordinatorRe
     boundAt: record.boundAt,
     record: kxmCanonicalJson(record as unknown as JsonValue),
   });
-  if (inserted) return { coordinator: record };
+  if (inserted) return { coordinator: record, created: true };
   // Lost the race for an empty slot: binding is create-once, so the winner is the
   // answer whenever it reached the same ceiling. Only a different ceiling is a
-  // conflict worth reporting.
+  // conflict worth reporting. The loser must not report that it created anything.
   const winner = context.eventStore.coordinatorInSlot(record.projectId, record.role, record.channel);
   const won = winner ? (JSON.parse(winner.record) as KxmCoordinatorRecord) : undefined;
-  if (won && won.ceilingHash === record.ceilingHash) return { coordinator: won };
+  if (won && ceilingsMatch(won, record.ceilingHash)) return { coordinator: won, created: false };
   throw runtimeError("coordinator_write_lost", record.coordinatorId, "the coordinator slot was claimed by a different ceiling");
 }
 
@@ -501,6 +561,12 @@ function assertCeilingNotWidened(
     const newlyAllowed = (nextTools.allow ?? []).filter((tool) => !allowedBefore.has(tool));
     if (newlyAllowed.length > 0) {
       throw runtimeError("coordinator_rebind_widens_tools", coordinatorId, `a rebind may not allow new tools: ${newlyAllowed.join(", ")}`);
+    }
+    // Tool evaluation applies no allowlist restriction when the list is empty or
+    // absent (`commands.ts` gates only on a non-empty allow list), so dropping a
+    // populated list is a widening even though every entry it named is gone.
+    if (allowedBefore.size > 0 && (nextTools.allow ?? []).length === 0) {
+      throw runtimeError("coordinator_rebind_clears_allowlist", coordinatorId, "a rebind may not drop or empty a populated allow list; an absent allow list imposes no restriction");
     }
     const deniedBefore = new Set(previousTools.deny ?? []);
     const undenied = [...deniedBefore].filter((tool) => !(nextTools.deny ?? []).includes(tool));
@@ -540,24 +606,9 @@ function validateAuthority(authority: KxmCoordinatorAuthority): KxmCoordinatorAu
   }
   // Sets are stored canonically: order and repeats carry no authority, and leaving
   // them as supplied would let an equivalent ceiling masquerade as a rebind.
-  return {
-    repositoryAccess: authority.repositoryAccess,
-    effects: canonicalSet(effects),
-    ...(tools !== undefined
-      ? {
-          tools: {
-            ...(tools.preset !== undefined ? { preset: tools.preset } : {}),
-            ...(tools.allow !== undefined ? { allow: canonicalSet(tools.allow) } : {}),
-            ...(tools.deny !== undefined ? { deny: canonicalSet(tools.deny) } : {}),
-          },
-        }
-      : {}),
-  };
+  return normalizeAuthority(authority);
 }
 
-function canonicalSet(values: readonly string[]): string[] {
-  return [...new Set(values)].sort();
-}
 
 function validateActor<T extends { kind: KxmCoordinatorRecord["boundBy"]["kind"]; id: string }>(actor: T, field: string): T {
   const kinds: string[] = ["human", "runtime", "hub", "agent", "adapter"];

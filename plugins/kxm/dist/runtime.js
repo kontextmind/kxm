@@ -17816,12 +17816,76 @@ function openDatabase(file, description, spec) {
   }
 }
 var activeTransactions = /* @__PURE__ */ new WeakSet();
-function withDatabaseTransaction(database, work, mode = "IMMEDIATE") {
+var TRANSACTION_BUSY_BACKOFF_MS = 1e3;
+function monotonicNowMs() {
+  return Number(process.hrtime.bigint() / 1000000n);
+}
+var transactionThrottles = /* @__PURE__ */ new WeakMap();
+function finiteNow(clock, label) {
+  const now = clock();
+  if (typeof now !== "number" || !Number.isFinite(now)) {
+    throw databaseError(
+      "runtime_transaction_clock_invalid",
+      "transaction",
+      `${label} must return a finite monotonic number; got ${String(now)}`
+    );
+  }
+  return now;
+}
+var CONTENTION_PRIMARY_CODES = [5, 6, 15];
+var CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z0-9]+)?$/;
+var SQLITE_RESULT_NAMES = /^SQLITE_[A-Z][A-Z0-9_]*$/;
+var CONTENTION_MESSAGES = /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
+function isTransactionContention(error) {
+  const carrier = error;
+  for (const value of [carrier?.errcode, carrier?.errCode, carrier?.errno]) {
+    if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 255);
+  }
+  for (const value of [carrier?.code, carrier?.name]) {
+    if (typeof value === "string" && SQLITE_RESULT_NAMES.test(value)) {
+      return CONTENTION_SYMBOLIC_NAMES.test(value);
+    }
+  }
+  return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
+}
+function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = monotonicNowMs) {
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
+  if (mode !== "DEFERRED") {
+    const deadlines = transactionThrottles.get(database);
+    const until = deadlines?.get(clock);
+    if (until !== void 0) {
+      const remaining = until - finiteNow(clock, "the transaction clock");
+      if (remaining > 0) {
+        throw databaseError(
+          "runtime_transaction_busy",
+          "transaction",
+          `a previous BEGIN was blocked on this database; retry deferred ${String(remaining)}ms`
+        );
+      }
+      deadlines?.delete(clock);
+    }
+  }
+  try {
+    database.exec(`BEGIN ${mode}`);
+  } catch (error) {
+    if (!isTransactionContention(error)) throw error;
+    const now = finiteNow(clock, "the transaction clock");
+    let deadlines = transactionThrottles.get(database);
+    if (deadlines === void 0) {
+      deadlines = /* @__PURE__ */ new WeakMap();
+      transactionThrottles.set(database, deadlines);
+    }
+    deadlines.set(clock, now + TRANSACTION_BUSY_BACKOFF_MS);
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `BEGIN ${mode} blocked by another transaction: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
   activeTransactions.add(database);
-  database.exec(`BEGIN ${mode}`);
+  if (mode !== "DEFERRED") transactionThrottles.get(database)?.delete(clock);
   try {
     const result = work();
     database.exec("COMMIT");
@@ -18998,7 +19062,14 @@ var KxmRunEventStore = class {
     `).get(projectId, coordinatorId, idempotencyKey);
     return row ? intakeFromRow(row) : void 0;
   }
-  /** Intake rows in the given dispatch states, in arrival order (replay-safe). */
+  /**
+   * Intake rows in the given dispatch states, in arrival order (replay-safe).
+   *
+   * `rowid` gives same-store arrival order, which is what queue priority needs
+   * here. It is **not** a durable sequence: this repository backs stores up with
+   * `VACUUM INTO`, and a vacuum may renumber implicit rowids. An explicit
+   * immutable arrival sequence is tracked in the plan's schema-v6 follow-ups.
+   */
   intakeInStates(projectId, states, limit = 100) {
     if (states.length === 0) return [];
     const placeholders = states.map(() => "?").join(", ");
@@ -30289,6 +30360,7 @@ export {
   SUBAGENT_TYPES,
   SteelClient,
   SubagentManager,
+  TRANSACTION_BUSY_BACKOFF_MS,
   VIEWPORT_PRESETS,
   WIN_NPM_INNER_EXE,
   acceptKxmRun,
@@ -30344,6 +30416,7 @@ export {
   hashKxmTokenProof,
   isKnownHarnessId,
   isKxmRuntimeContextClosed,
+  isTransactionContention,
   isWindowsHarnessShim,
   kxmDeclaredExecutorIds,
   kxmDeclaredRepositoryIds,
