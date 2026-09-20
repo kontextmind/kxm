@@ -143,11 +143,9 @@ export class ExternalEffectsLedger {
       );
       CREATE INDEX IF NOT EXISTS idx_ext_effects_run ON external_effects(run_id);
     `);
-    try {
-      this.db.exec(`ALTER TABLE external_effects ADD COLUMN last_heartbeat_at TEXT;`);
-    } catch {
-      // Column already present in schema
-    }
+    // No in-place `ALTER TABLE ... ADD COLUMN` here. The column is declared in the
+    // schema above, so a fresh store has it and an older store is refused by the
+    // shared `user_version` gate rather than quietly reshaped under our feet.
   }
 
   /**

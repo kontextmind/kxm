@@ -16,7 +16,7 @@ Presence of KXM documents does not activate new behavior.
 | Long-lived manually started Pi workers | Runtime-managed run-scoped sessions | Existing worker mode remains available during compatibility release |
 | Shared/off workflow Pi history | `{run, agent, instance, scopeEpoch}` sessions | Never import shared conversation history into a narrower run scope |
 | Hub-owned workflow state | Home Runtime event log with hub projection | Import completed history as legacy records; active-run cutover requires quiescence |
-| SQLite schema v3 `kxm.db` | Runtime registry, per-project event stores, hub registry/project stores | **No in-place schema migration.** A store stamped behind the current build fails closed with `runtime_schema_outdated` and the file is left exactly as found; re-init instead. Stepwise migration lanes were removed 2026-09-20 under the single-operator decision (see [implementation-plan.md](../../plans/implementation-plan.md) → Decided) |
+| SQLite schema v3 `kxm.db` | Runtime registry, per-project event stores, hub registry/project stores | **No in-place schema migration.** A store stamped behind the current build fails closed with `runtime_schema_outdated` and the refusal never advances `user_version` (opening the file may still checkpoint WAL sidecars, so the whole state set is the backup unit); re-init instead. Stepwise lanes were removed 2026-09-20 under the single-operator decision from the hub store, the per-project event store, and the external-effects `ALTER TABLE` add-column; the Runtime registry never carried a stepwise lane (see [implementation-plan.md](../../plans/implementation-plan.md) → Decided) |
 | Full peer message bodies in hub DB | Summary-first sync events | Existing bodies remain protected legacy data and are not re-emitted automatically |
 | Project tokens/manual environment auth | Runtime enrollment and scoped credentials | Preserve current mode until enrollment is confirmed; never copy tokens into Git |
 | `.kxm/config/env.example` | Built-in defaults plus optional scoped env YAML | Import only explicit portable differences; secrets become references |
@@ -27,12 +27,13 @@ Presence of KXM documents does not activate new behavior.
 ## Compatibility releases and activation
 
 > **Scope note (2026-09-20).** This matrix documents the Mesh/v0.5 → KXM cutover. KXM has
-> one operator and no external installs, so **schema migration lanes and old-state
-> compatibility are out of scope** and have been deleted where they existed: stores refuse
-> an older stamp rather than upgrading, and the coordinator fingerprint no longer
-> recomputes to forgive pre-canonicalisation rows. What remains here describes the
-> **project/content** cutover (`kxm migrate`, `kxm init --migrate`), which is the next
-> thing to retire, not a promise that the runtime will read old databases.
+> one operator and no external installs, so **schema migration and old-state tolerance are
+> out of scope** and the lanes that existed are gone: stores refuse an older stamp rather
+> than upgrading, the external-effects store no longer adds a column in place, and the
+> coordinator fingerprint no longer recomputes to forgive pre-canonicalisation rows. What
+> remains here describes the **project/content** cutover, which the follow-up cut removes
+> along with `kxm migrate`. Nothing here promises that the runtime will read an old
+> database.
 
 Local Runtime support may ship publicly before hub KXM, but it remains beside
 existing hub contracts and stores. Old command names are not preserved. A project
