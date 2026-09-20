@@ -88,9 +88,11 @@ All notable user-facing changes are documented here. The project follows [Semant
   successful write-mode transactions with no pending deadline, successful `DEFERRED`
   transactions with or without one, permanent `BEGIN` failures with no pending deadline, and
   a nested-transaction rejection; a `DEFERRED` transaction skips the deadline check, but a
-  contended `BEGIN DEFERRED` failure still reads the clock and arms a deadline, and a clean
-  success or permanent failure that follows an expired deadline reads it once. So this guards
-  the seam rather than every transaction. The throttle is per connection
+  contended `BEGIN DEFERRED` failure still reads the clock and arms a deadline. Two further
+  cases are measured rather than asserted by the committed suite — a clean success, and a
+  permanent failure, each following an expired deadline, read it once. So this guards the
+  seam rather than every transaction, and the counts we assert are named separately from the
+  counts we observed. The throttle is per connection
   object in this process — it is not cross-process, and it does not leak to another
   connection to the same database.
 

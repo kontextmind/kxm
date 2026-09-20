@@ -24,7 +24,7 @@ details:
 
 # Codex gpt-6-astra review of the Runtime intake contract (#248)
 
-Six passes: **BLOCK** on the contract, **STILL BLOCKED** on the fix, **STILL BLOCKED** on
+Thirteen passes: **BLOCK** on the contract, then **STILL BLOCKED** on the fix, on
 the closure of that fix, **STILL BLOCKED** on the closure of *that* (the injectable seam
 my own round-3 fix introduced), **STILL BLOCKED** on a runtime this repository also ships
 on, and **CLOSED** on the closure of that. Each pass reviewed the previous pass's claims as well as the
@@ -423,7 +423,7 @@ a.exec("CREATE TABLE shared.t (x)");
 const b = new DatabaseSync(":memory:");
 b.exec("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared");
 try { b.exec("BEGIN IMMEDIATE"); } catch (e) { console.log(e.errcode, e.code, e.message); }
-// Node 24.15.0: 262 ERR_SQLITE_ERROR  "database schema is locked: shared"
+// Node 24.15.0, stdout exactly: 262 ERR_SQLITE_ERROR database schema is locked: shared
 ```
 
 ```ts
@@ -463,9 +463,14 @@ reproduction that exited 0 because its own `catch` swallowed its `ReferenceError
 and 11 — twice, in the sentence written to fix it), an ordering field no fixture disagreed
 about (rounds 9–11), a read budget described rather than counted (rounds 10–11), and finally
 a three-item enumeration of zero-read paths that quietly absorbed two measured-but-not-
-asserted cases (round 12). Round 12's ruling: every claimed count now has an assertion, the
-enumerations state their conditions, and both reproduction blocks were executed to produce
-the output printed under them.
+asserted cases (round 12). Round 12's ruling: the enumerations state their conditions
+and both reproduction blocks were executed to produce the output printed under them. Round
+13 then caught two things in the correction itself: this intro still said "six passes" three
+rounds after that stopped being true, and the sentence above claimed **every** count had an
+assertion when two of them — a clean success and a permanent failure that follow an expired
+deadline — are measured by the reviewer and asserted nowhere in the committed suite. Those
+two are now labelled as such in every place they appear; the honest form of the claim is
+"the counts we assert", not "the counts we measured".
 
 The pattern is worth naming for the next contract, because it cost six rounds: **a correction
 written in the shape of a correction is not a correction.** Each of those six had a
