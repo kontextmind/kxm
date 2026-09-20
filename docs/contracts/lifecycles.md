@@ -105,11 +105,18 @@ created → accepted → dispatched → executing → result_recorded → termin
 | `blocked_uncertain` | A dependent effect cannot be reconciled safely |
 | `terminal` | The logical assignment outcome is final and immutable: passed, failed, or cancelled |
 
-A producer reply becomes a terminal outcome **only** through a declared result: a reply that
-is one JSON object, or prose carrying an explicit `{"outcome": "…"}` result block. Naming an
-outcome *word* anywhere in a reply is not a result — `"the gate did not pass, so I would not
-call this passed"` must not advance a step — and an empty or unstructured reply is never
-treated as success. A declared outcome outside the step's declared set is not accepted either:
+A producer reply becomes a terminal outcome **only** through a declared result: the reply is
+one JSON object, or it carries a `{"outcome": "…"}` object **on a line of its own**. With more
+than one such line the last one is the answer; if anything after it still looks like an outcome
+key — an inline `Actual result: {"outcome": "failed"}`, a pretty-printed object, a second
+mention — the reply is **ambiguous and settles `failed`**, because guessing which declaration
+was meant is the behaviour this rule removes. Ordinary trailing prose (a sign-off, a token
+count) does not disturb a declared result.
+
+Naming an outcome *word* anywhere in a reply is not a result — `"the gate did not pass, so I
+would not call this passed"` must not advance a step — and an empty or unstructured reply is
+never treated as success. A declared outcome outside the step's declared set is not accepted
+either:
 the assignment is recorded `outcome_unknown` and terminates as `failed`, which is also what
 happens when a step declares no `failed` transition. Producers do not guess on the model's
 behalf, and no fallback path mints `passed`.

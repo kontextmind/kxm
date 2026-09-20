@@ -27930,15 +27930,16 @@ function declaredOutcomeOf(text) {
   if (!trimmed) return void 0;
   const whole = asJsonObject2(trimmed);
   if (whole) return outcomeField(whole);
-  let declared;
-  for (const line of trimmed.split(/\r?\n/)) {
-    const candidate = asJsonObject2(line.trim());
-    if (candidate) {
-      const outcome = outcomeField(candidate);
-      if (outcome !== void 0) declared = outcome;
-    }
+  const lines = trimmed.split(/\r?\n/);
+  let declaration;
+  for (let index = 0; index < lines.length; index += 1) {
+    const outcome = outcomeField(asJsonObject2(lines[index].trim()) ?? {});
+    if (outcome !== void 0) declaration = { index, outcome };
   }
-  return declared;
+  if (!declaration) return void 0;
+  const tail = lines.slice(declaration.index + 1).join("\n");
+  if (/"outcome"\s*:/.test(tail)) return void 0;
+  return declaration.outcome;
 }
 function determineOutcome2(text, allowedOutcomes) {
   const declared = declaredOutcomeOf(text);

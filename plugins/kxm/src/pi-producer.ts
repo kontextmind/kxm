@@ -101,8 +101,10 @@ function outcomeField(value: Record<string, unknown>): string | undefined {
  *
  * Two shapes count: the whole reply is one JSON object, or a **standalone** result object on a
  * line of its own — and when there is more than one of those, the **last** one wins, because
- * that is where a reply puts its answer after showing an example. What is deliberately not
- * accepted: an outcome *word* anywhere in prose, and an object embedded mid-sentence, so
+ * that is where a reply puts its answer after showing an example. If anything in the tail after
+ * that declaration still looks like an outcome key, the reply is **ambiguous and settles
+ * `failed`**. What is deliberately not accepted: an outcome *word* anywhere in prose, and an
+ * object embedded mid-sentence, so
  * `Example: {"outcome": "passed"}. Actual result: {"outcome": "failed"}` declares nothing at
  * all and settles as `failed` rather than letting the illustration outrank the answer.
  */
@@ -111,15 +113,22 @@ function declaredOutcomeOf(text: string): string | undefined {
   if (!trimmed) return undefined;
   const whole = asJsonObject(trimmed);
   if (whole) return outcomeField(whole);
-  let declared: string | undefined;
-  for (const line of trimmed.split(/\r?\n/)) {
-    const candidate = asJsonObject(line.trim());
-    if (candidate) {
-      const outcome = outcomeField(candidate);
-      if (outcome !== undefined) declared = outcome;
-    }
+  const lines = trimmed.split(/\r?\n/);
+  let declaration: { index: number; outcome: string } | undefined;
+  for (let index = 0; index < lines.length; index += 1) {
+    const outcome = outcomeField(asJsonObject(lines[index]!.trim()) ?? {});
+    if (outcome !== undefined) declaration = { index, outcome };
   }
-  return declared;
+  if (!declaration) return undefined;
+  // Ambiguity after the declaration fails closed. Anything in the tail that still looks like
+  // an outcome key — an inline `Actual result: {"outcome": "failed"}` on the next line, a
+  // pretty-printed object, or a second mention — means we cannot tell which one the reply is
+  // reporting, and guessing is exactly the behaviour this function exists to remove. Trailing
+  // prose that says nothing about outcomes is fine, which is what lets a real reply put its
+  // usage or sign-off after the result block.
+  const tail = lines.slice(declaration.index + 1).join("\n");
+  if (/"outcome"\s*:/.test(tail)) return undefined;
+  return declaration.outcome;
 }
 
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {

@@ -1032,5 +1032,30 @@ test("prose and empty replies cannot mint a passing outcome", async () => {
     "with more than one standalone result, the last one is the answer",
   );
 
+  // Reviewer reproductions: a standalone illustration followed by an inline or
+  // pretty-printed actual result. Both must fail closed rather than keep the earlier success,
+  // and neither may be resolved by "take the last thing that looked like a result", because
+  // the later declaration is not on a line of its own.
+  assert.equal(
+    await settle('Example:\n{"outcome": "passed"}\nActual result: {"outcome": "failed"}', ["passed", "failed"]),
+    "failed",
+    "an illustration must not survive a later inline result",
+  );
+  assert.equal(
+    await settle('Example:\n{"outcome": "passed"}\nReal:\n{\n  "outcome": "failed"\n}', ["passed", "failed"]),
+    "failed",
+    "a later pretty-printed object makes the reply ambiguous, which is not a pass",
+  );
+  assert.equal(
+    await settle('{"outcome": "passed"}\nNote: I also considered "outcome": "blocked" earlier.', ["passed", "blocked"]),
+    "failed",
+    "any further outcome-shaped mention after the declaration is ambiguity, not detail",
+  );
+  assert.equal(
+    await settle('{"outcome": "passed"}\n\nUsage: 1200 tokens, 3 files changed.', ["passed", "blocked"]),
+    "passed",
+    "ordinary trailing prose after a declared result is still a valid reply",
+  );
+
 
 });
