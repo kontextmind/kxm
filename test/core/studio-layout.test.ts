@@ -3,6 +3,8 @@ import test from "node:test";
 import { parse } from "yaml";
 import { compileKxmWorkflow } from "../../plugins/kxm/src/engine-compile.ts";
 import { generateStudioLayout, STUDIO_LAYOUT_SCHEMA, createStudioServer } from "../../plugins/kxm/src/studio-layout.ts";
+import { assembleTenantStatus, formatTenantStatus } from "../../plugins/kxm/src/tenant-status.ts";
+import { runtimeError } from "../../plugins/kxm/src/runtime-store.ts";
 
 test("generateStudioLayout compiles plan into Decision D14 DAG, stepper, and Temporal swimlanes", () => {
   const yamlContent = `
@@ -362,3 +364,96 @@ test("CLI studio serve launches server and handles error gracefully", async () =
 
 
 
+
+test("portal reads distinguish hub metadata from Runtime run state and unavailable upstreams", async () => {
+  // The property S2 exists for: a portal must never render the hub's projection of a run as
+  // if it were the run. Every value carries the authority that produced it, an unreadable
+  // upstream is reported as unavailable with a stable reason instead of being filled from
+  // the other source, and the two sources disagreeing is surfaced as data, not hidden.
+  const hubSnapshot = {
+    project: "prj_01JTENANTSTATUS000000000",
+    fetchedAt: "2026-09-20T12:00:00.000Z",
+    agents: [
+      { id: "a1", name: "coordinator", online: true },
+      { id: "a2", name: "implementer", online: false },
+    ],
+    openMessageTotal: 3,
+    runTotal: 2,
+    runs: [
+      { id: "run_1", status: "completed", definitionId: "default", updatedAt: "2026-09-20T11:00:00.000Z" },
+      { id: "run_2", status: "running", definitionId: "default", currentStage: "review" },
+    ],
+  };
+  const runtimeRuns = [
+    { runId: "run_1", status: "completed", homeRuntimeId: "rt_box", workflowId: "default", source: "runtime-authoritative" as const },
+    { runId: "run_2", status: "failed", homeRuntimeId: "rt_box", workflowId: "default", source: "runtime-authoritative" as const },
+  ];
+  const okFetch: typeof fetch = (async (url: RequestInfo | URL) => {
+    assert.match(String(url), /\/v1\/ops\/snapshot\?project=/, "the hub read must go to the existing ops snapshot route");
+    return new Response(JSON.stringify(hubSnapshot), { status: 200 });
+  }) as typeof fetch;
+
+  const both = await assembleTenantStatus({
+    project: "prj_01JTENANTSTATUS000000000",
+    hubUrl: "http://127.0.0.1:7331",
+    token: "token",
+    fetchImpl: okFetch,
+    runtime: { listRuns: async () => runtimeRuns },
+    now: () => new Date("2026-09-20T12:00:01.000Z"),
+  });
+  assert.equal(both.schema, "kxm.tenant-status.v1");
+  assert.equal(both.bindingScope, "loopback", "loopback binding is labelled so the portal can show it");
+  assert.equal(both.degraded, false);
+  assert.equal(both.hub.state, "ok");
+  assert.equal(both.hub.value?.agents.online, 1);
+  assert.equal(both.hub.value?.agents.total, 2);
+  for (const run of both.hub.value?.runs ?? []) assert.equal(run.source, "hub-projection", "hub runs are labelled as projections");
+  assert.equal(both.runtime.state, "ok");
+  for (const run of both.runtime.value?.runs ?? []) assert.equal(run.source, "runtime-authoritative", "runtime runs are labelled authoritative");
+  assert.deepEqual(both.discrepancies, [
+    { runId: "run_2", hubStatus: "running", runtimeStatus: "failed" },
+  ], "a disagreement between projection and authoritative state is surfaced, not averaged");
+
+  const hubDown = await assembleTenantStatus({
+    project: "prj_01JTENANTSTATUS000000000",
+    hubUrl: "http://127.0.0.1:7331",
+    fetchImpl: (async () => { throw new Error("connection refused"); }) as unknown as typeof fetch,
+    runtime: { listRuns: async () => runtimeRuns },
+    now: () => new Date("2026-09-20T12:00:01.000Z"),
+  });
+  assert.equal(hubDown.hub.state, "unavailable");
+  assert.equal(hubDown.hub.reason, "hub_unreachable");
+  assert.equal(hubDown.hub.value, undefined, "an unreachable hub contributes no values at all");
+  assert.equal(hubDown.runtime.state, "ok", "runtime state survives the hub being down");
+  assert.equal(hubDown.degraded, true);
+  assert.deepEqual(hubDown.discrepancies, [], "no hub projection means no fabricated agreement either");
+
+  const unauthorized = await assembleTenantStatus({
+    project: "prj_01JTENANTSTATUS000000000",
+    hubUrl: "http://127.0.0.1:7331",
+    fetchImpl: (async () => new Response("denied", { status: 401 })) as unknown as typeof fetch,
+    runtime: { listRuns: async () => [] },
+    now: () => new Date("2026-09-20T12:00:01.000Z"),
+  });
+  assert.equal(unauthorized.hub.reason, "hub_unauthorized", "401 is a credential problem, not a reachability one");
+
+  const runtimeDown = await assembleTenantStatus({
+    project: "prj_01JTENANTSTATUS000000000",
+    hubUrl: "http://10.0.0.5:7331",
+    token: "token",
+    fetchImpl: okFetch,
+    runtime: {
+      listRuns: async () => {
+        throw runtimeError("runtime_supervisor_not_running", "runtime", "no live runtime supervisor on this box");
+      },
+    },
+    now: () => new Date("2026-09-20T12:00:01.000Z"),
+  });
+  assert.equal(runtimeDown.bindingScope, "remote", "a remote hub binding is labelled, because only loopback ships without a token");
+  assert.equal(runtimeDown.runtime.state, "unavailable");
+  assert.equal(runtimeDown.runtime.reason, "runtime_supervisor_not_running", "the reader's own reason code survives into the view");
+  assert.equal(runtimeDown.hub.state, "ok", "hub metadata survives the runtime being down");
+  assert.equal(runtimeDown.degraded, true);
+  assert.match(formatTenantStatus(runtimeDown), /runtime unavailable \(runtime_supervisor_not_running\)/);
+  assert.match(formatTenantStatus(runtimeDown), /hub 1\/2 agents online/);
+});

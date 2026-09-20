@@ -16,11 +16,14 @@ import { diffKxmProjectAgainstRevision, formatKxmPermissionDiff } from "../permi
 import { readKxmLocalBindings, kxmUserStateRoot } from "../bindings.ts";
 import { loadKxmProject } from "../project-config.ts";
 import {
+  attachKxmSupervisor,
   ensureKxmSupervisor,
   kxmRuntimeRequest,
   kxmSupervisorStatus,
 } from "../runtime-supervisor.ts";
-import { kxmRuntimePaths } from "../runtime-store.ts";
+import { kxmRuntimePaths, runtimeError } from "../runtime-store.ts";
+import { assembleTenantStatus, formatTenantStatus } from "../tenant-status.ts";
+import { resolveClientHubAuthToken } from "../hub-env.ts";
 import {
   formatHarnessInventory,
   probeHarnessesAsync,
@@ -582,6 +585,77 @@ export async function cmdKxmRunList(runtime: Runtime): Promise<number> {
       return 1;
     }
     print(runtime.io, runtime.json, { ok: false, command: "runs list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
+    return 1;
+  }
+}
+
+export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
+  let projectRoot: string | undefined;
+  let projectId: string;
+  try {
+    projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? undefined;
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "project_required" }, "kxm tenant status requires a KXM project (run kxm init first)");
+      return 1;
+    }
+    const bundle = loadKxmProject(projectRoot, {});
+    projectId = String(bundle.project.value.id);
+    const root = projectRoot;
+
+    // A malformed hub-env record is a configuration failure with a specific repair, not a
+    // generic IO failure; surface its message instead of swallowing it into hub_unauthorized.
+    let token: string | undefined;
+    try {
+      token = resolveClientHubAuthToken(runtime.env, projectId);
+    } catch (error) {
+      throw runtimeError("hub_credential_unreadable", "hub-env", error instanceof Error ? error.message : String(error));
+    }
+
+    const payload = await assembleTenantStatus({
+      project: projectId,
+      hubUrl: runtime.serverUrl,
+      token,
+      fetchImpl: runtime.fetchImpl,
+      runtime: {
+        listRuns: async () => {
+          // Attach only: a status read must never conjure a supervisor. "Nothing is
+          // running" is an answer the portal can render, not a condition to repair.
+          const handle = await attachKxmSupervisor({ env: runtime.env });
+          if (!handle) {
+            throw runtimeError("runtime_supervisor_not_running", "runtime", "no live runtime supervisor on this box");
+          }
+          const result = await kxmRuntimeRequest(handle, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(root)}`);
+          const runs = (result.runs ?? []) as Array<Record<string, unknown>>;
+          return runs.map((run) => ({
+            runId: String(run.runId ?? ""),
+            status: String(run.status ?? "unknown"),
+            homeRuntimeId: String(run.homeRuntimeId ?? ""),
+            ...(typeof run.workflowId === "string" ? { workflowId: run.workflowId } : {}),
+            ...(typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {}),
+            ...(typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {}),
+            source: "runtime-authoritative" as const,
+          }));
+        },
+      },
+    });
+
+    if (payload.hub.state !== "ok" && payload.runtime.state !== "ok") {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "tenant status", error: "tenant_status_no_source", payload },
+        `neither source could be read: hub ${payload.hub.reason ?? "unknown"}, runtime ${payload.runtime.reason ?? "unknown"}`,
+      );
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: true, command: "tenant status", ...payload }, formatTenantStatus(payload));
+    return 0;
+  } catch (error) {
+    if (error instanceof KxmConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_failed", issues: error.issues }, `tenant status failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_io_failed" }, "tenant status failed because a local operation did not complete");
     return 1;
   }
 }

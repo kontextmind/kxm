@@ -13,6 +13,7 @@ npm run verify
 
 | Feature | Automated evidence |
 |---|---|
+| Portal tenant read composes two labelled authorities: hub runs carry `hub-projection`, Runtime runs carry `runtime-authoritative`; a down hub leaves runtime state readable and vice versa with stable reasons; projection/authoritative disagreements surface as `discrepancies`; binding scope is labelled loopback/remote | `test/core/studio-layout.test.ts` |
 | Structured-result settlement only: outcome words in prose, empty replies, and outcomes outside the step's declared set all fail closed; a declared JSON object and a JSON result block inside prose both settle, and the engine records `outcome_unknown` and terminates `failed` | `test/core/pi-producer.test.ts`, `test/core/engine.test.ts` |
 | Health, readiness, metrics, request IDs, security headers | `test/core/hub-api.test.ts` |
 | Shared and per-project authentication, project isolation | `test/core/hub-api.test.ts` |

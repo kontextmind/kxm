@@ -25725,6 +25725,15 @@ async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) 
 function hashKxmTokenProof(token, nonce) {
   return createHmac("sha256", token).update(`kxm-runtime-token-proof\0${nonce}`, "utf8").digest("hex");
 }
+async function attachKxmSupervisor(options = {}) {
+  const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
+  const status = kxmSupervisorStatus(paths);
+  if (!status.running || !status.port || !status.runtimeId) return void 0;
+  const token = readKxmSupervisorToken(paths);
+  if (!token) return void 0;
+  if (!await probeSupervisor(status.port, status.runtimeId, token)) return void 0;
+  return { runtimeId: status.runtimeId, port: status.port, token, started: false };
+}
 async function ensureKxmSupervisor(options = {}) {
   const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
   const status = kxmSupervisorStatus(paths);
@@ -31761,6 +31770,106 @@ function initializeKxmProject(start = process.cwd(), options = {}) {
   return withKxmLocalBindingLock(gitRoot, storeOptions, (lock) => initializeKxmProjectAtGitRoot(start, gitRoot, options, lock));
 }
 
+// plugins/kxm/src/tenant-status.ts
+var TENANT_STATUS_SCHEMA = "kxm.tenant-status.v1";
+function hubSourceReason(status) {
+  if (status === 401 || status === 403) return "hub_unauthorized";
+  if (status === 404) return "hub_not_found";
+  return `hub_http_${status}`;
+}
+function asString(value) {
+  return typeof value === "string" && value.length > 0 ? value : void 0;
+}
+async function assembleTenantStatus(input) {
+  const now = input.now ?? (() => /* @__PURE__ */ new Date());
+  const base = input.hubUrl.replace(/\/$/, "");
+  const at = () => now().toISOString();
+  let hub = { state: "unavailable", observedAt: at(), reason: "hub_unreachable" };
+  try {
+    const response = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
+      headers: {
+        ...input.token ? { authorization: `Bearer ${input.token}` } : {}
+      }
+    });
+    if (!response.ok) {
+      hub = { state: "unavailable", observedAt: at(), reason: hubSourceReason(response.status) };
+    } else {
+      const body = await response.json();
+      const echoedProject = asString(body.project);
+      if (echoedProject !== void 0 && echoedProject !== input.project) {
+        hub = { state: "unavailable", observedAt: at(), reason: "hub_project_mismatch" };
+      } else {
+        const agents = Array.isArray(body.agents) ? body.agents : [];
+        const runs = Array.isArray(body.runs) ? body.runs : [];
+        hub = {
+          state: "ok",
+          observedAt: at(),
+          value: {
+            project: echoedProject ?? input.project,
+            fetchedAt: asString(body.fetchedAt) ?? at(),
+            agents: {
+              online: agents.filter((agent) => agent.online === true).length,
+              total: agents.length
+            },
+            openMessageTotal: typeof body.openMessageTotal === "number" ? body.openMessageTotal : 0,
+            runTotal: typeof body.runTotal === "number" ? body.runTotal : runs.length,
+            runs: runs.map((run) => ({
+              id: asString(run.id) ?? "",
+              status: asString(run.status) ?? "unknown",
+              definitionId: asString(run.definitionId) ?? "",
+              ...asString(run.currentStage) ? { currentStage: asString(run.currentStage) } : {},
+              ...asString(run.updatedAt) ? { updatedAt: asString(run.updatedAt) } : {},
+              source: "hub-projection"
+            }))
+          }
+        };
+      }
+    }
+  } catch {
+    hub = { state: "unavailable", observedAt: at(), reason: "hub_unreachable" };
+  }
+  let runtime = { state: "unavailable", observedAt: at(), reason: "runtime_unavailable" };
+  try {
+    const runs = await input.runtime.listRuns();
+    runtime = { state: "ok", observedAt: at(), value: { runs } };
+  } catch (error) {
+    const code = error instanceof Error && "issues" in error && Array.isArray(error.issues) && typeof error.issues[0]?.code === "string" ? error.issues[0].code : void 0;
+    runtime = { state: "unavailable", observedAt: at(), reason: code ?? "runtime_unavailable" };
+  }
+  const discrepancies = [];
+  if (hub.value && runtime.value) {
+    const authoritative = new Map(runtime.value.runs.map((run) => [run.runId, run.status]));
+    for (const projected of hub.value.runs) {
+      const runtimeStatus = authoritative.get(projected.id);
+      if (runtimeStatus !== void 0 && runtimeStatus !== projected.status) {
+        discrepancies.push({ runId: projected.id, hubStatus: projected.status, runtimeStatus });
+      }
+    }
+  }
+  return {
+    schema: TENANT_STATUS_SCHEMA,
+    project: input.project,
+    generatedAt: at(),
+    hubUrl: input.hubUrl,
+    bindingScope: hubBindingScope(input.hubUrl),
+    hub,
+    runtime,
+    discrepancies,
+    degraded: hub.state !== "ok" || runtime.state !== "ok"
+  };
+}
+function formatTenantStatus(payload) {
+  const hubLine = payload.hub.state === "ok" && payload.hub.value ? `hub ${payload.hub.value.agents.online}/${payload.hub.value.agents.total} agents online, ${payload.hub.value.runs.length} runs (projection), ${payload.hub.value.openMessageTotal} open messages` : `hub unavailable (${payload.hub.reason ?? "unknown"})`;
+  const runtimeLine = payload.runtime.state === "ok" && payload.runtime.value ? `runtime ${payload.runtime.value.runs.length} runs (authoritative, on this box)` : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
+  const discrepancyLine = payload.discrepancies.length > 0 ? `${payload.discrepancies.length} run(s) disagree between hub projection and runtime state` : "hub projection and runtime state agree";
+  return [
+    `tenant ${payload.project} @ ${payload.hubUrl} (${payload.bindingScope})`,
+    hubLine,
+    runtimeLine,
+    discrepancyLine
+  ].join("\n");
+}
+
 // plugins/kxm/src/cli/project.ts
 var kxmDriveCliSeams = {};
 function initPlanPayload(plan) {
@@ -32245,6 +32354,69 @@ async function cmdKxmRunList(runtime) {
       return 1;
     }
     print(runtime.io, runtime.json, { ok: false, command: "runs list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
+    return 1;
+  }
+}
+async function cmdTenantStatus(runtime) {
+  let projectRoot;
+  let projectId;
+  try {
+    projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? void 0;
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "project_required" }, "kxm tenant status requires a KXM project (run kxm init first)");
+      return 1;
+    }
+    const bundle = loadKxmProject(projectRoot, {});
+    projectId = String(bundle.project.value.id);
+    const root = projectRoot;
+    let token;
+    try {
+      token = resolveClientHubAuthToken(runtime.env, projectId);
+    } catch (error) {
+      throw runtimeError("hub_credential_unreadable", "hub-env", error instanceof Error ? error.message : String(error));
+    }
+    const payload = await assembleTenantStatus({
+      project: projectId,
+      hubUrl: runtime.serverUrl,
+      token,
+      fetchImpl: runtime.fetchImpl,
+      runtime: {
+        listRuns: async () => {
+          const handle = await attachKxmSupervisor({ env: runtime.env });
+          if (!handle) {
+            throw runtimeError("runtime_supervisor_not_running", "runtime", "no live runtime supervisor on this box");
+          }
+          const result = await kxmRuntimeRequest(handle, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(root)}`);
+          const runs = result.runs ?? [];
+          return runs.map((run) => ({
+            runId: String(run.runId ?? ""),
+            status: String(run.status ?? "unknown"),
+            homeRuntimeId: String(run.homeRuntimeId ?? ""),
+            ...typeof run.workflowId === "string" ? { workflowId: run.workflowId } : {},
+            ...typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {},
+            ...typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {},
+            source: "runtime-authoritative"
+          }));
+        }
+      }
+    });
+    if (payload.hub.state !== "ok" && payload.runtime.state !== "ok") {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "tenant status", error: "tenant_status_no_source", payload },
+        `neither source could be read: hub ${payload.hub.reason ?? "unknown"}, runtime ${payload.runtime.reason ?? "unknown"}`
+      );
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: true, command: "tenant status", ...payload }, formatTenantStatus(payload));
+    return 0;
+  } catch (error) {
+    if (error instanceof KxmConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_failed", issues: error.issues }, `tenant status failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_io_failed" }, "tenant status failed because a local operation did not complete");
     return 1;
   }
 }
@@ -45628,6 +45800,7 @@ var TOP_LEVEL_COMMANDS = [
   "restore",
   "run",
   "runs",
+  "tenant",
   "harness",
   "update",
   "runtime",
@@ -45656,6 +45829,7 @@ var TOP_LEVEL_COMMANDS = [
 ];
 var SUBCOMMANDS = {
   runs: ["status", "cancel", "list"],
+  tenant: ["status"],
   harness: ["list"],
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],
@@ -47371,6 +47545,11 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project")).action(async function runListAction() {
     result.code = await cmdKxmRunList(runtimeFrom(ctx, this));
+  });
+  const tenantCmd = addGlobalOptions(program2.command("tenant").description("Composed tenant reads for machine clients (portal)"));
+  tenantCmd.helpCommand("help", "Show tenant help");
+  addGlobalOptions(tenantCmd.command("status").description("Read hub metadata and authoritative Runtime run state as one labeled view")).action(async function tenantStatusAction() {
+    result.code = await cmdTenantStatus(runtimeFrom(ctx, this));
   });
   const modelsCmd = addGlobalOptions(program2.command("models").description("Manage model catalogs, roles, and route state"));
   modelsCmd.action(async function modelsScreenAction() {

@@ -35,6 +35,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **`kxm tenant status`: one composed read for the portal, with the authorities labelled.**
+  The portal needs hub metadata (roster, message queue, the hub's run projection) *and* the
+  Runtime's authoritative run state, and the failure mode S2 exists to prevent is rendering
+  one as the other. The new command reads both and labels every value with its source
+  (`hub-projection` vs `runtime-authoritative`); an unreadable upstream becomes
+  `unavailable` with a stable reason instead of being filled from the surviving source;
+  projection/authoritative disagreements are listed as `discrepancies` rather than averaged;
+  and `degraded` marks a partial read so `ok: true` never means "everything was seen". The
+  hub read reuses the existing admin-token precedence; the Runtime read **attaches** to a
+  live supervisor (`attachKxmSupervisor`, new) and never starts one — a portal poller must
+  not conjure a daemon, and "nothing is running" is an answer to render, not a condition to
+  repair. Exits non-zero only when neither source could be read.
+
 - **A Pi producer reply can no longer mint its own success.** `determineOutcome` scanned the
   reply for any declared outcome *word* and, failing that, returned `passed`. So
   `"the gate did not pass, so I would not call this passed"` settled the step as passed — the

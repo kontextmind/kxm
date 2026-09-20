@@ -179,6 +179,28 @@ export interface KxmSupervisorHandle {
   started: boolean;
 }
 
+/**
+ * Attach to a live supervisor, or return `undefined`. Never starts one.
+ *
+ * `ensureKxmSupervisor` is for operators: an absent supervisor is a problem to fix, so it
+ * spawns. A poller — the portal tenant read, a status screen — has the opposite contract:
+ * polling must not conjure a daemon, and "nothing is running" is an answer to report, not
+ * a condition to repair. Returns `undefined` for every not-running shape: no claim, a
+ * supervisor registered but dead, a missing token file, or a probe that fails the
+ * token-proof challenge.
+ */
+export async function attachKxmSupervisor(
+  options: { stateRoot?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<KxmSupervisorHandle | undefined> {
+  const paths = kxmRuntimePaths(options.stateRoot !== undefined ? { stateRoot: options.stateRoot } : { ...(options.env ? { env: options.env } : {}) });
+  const status = kxmSupervisorStatus(paths);
+  if (!status.running || !status.port || !status.runtimeId) return undefined;
+  const token = readKxmSupervisorToken(paths);
+  if (!token) return undefined;
+  if (!(await probeSupervisor(status.port, status.runtimeId, token))) return undefined;
+  return { runtimeId: status.runtimeId, port: status.port, token, started: false };
+}
+
 /** Ensure a supervisor is running: reuse a live one, otherwise auto-start. */
 export async function ensureKxmSupervisor(
   options: { stateRoot?: string; env?: NodeJS.ProcessEnv; spawnImpl?: (scriptPath: string, env: NodeJS.ProcessEnv) => number } = {},
