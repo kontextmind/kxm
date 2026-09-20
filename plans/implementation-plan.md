@@ -88,6 +88,24 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Decided
 
+- **Single operator: no migrations, no legacy support, minimal tests (2026-09-20).**
+  Nobody else runs this. Old state is deleted and re-created, not upgraded, and nothing
+  carries a second shape of anything for the sake of a file that no longer exists. Applied
+  immediately: the stepwise schema-migration lanes are gone (`DatabaseMigrationStep`,
+  `migrations` on the store spec, `HUB_STORE_MIGRATIONS`, `EVENT_STORE_MIGRATIONS`) — an
+  older stamped database now fails closed with `runtime_schema_outdated` telling the
+  operator to delete the file or re-init, and refuses without relabelling it, because a
+  version bump without the schema underneath shows up later as a query against columns
+  that are not there. Gone too: the pre-canonicalisation coordinator fingerprint
+  tolerance, which existed only to forgive rows written by a released 0.7.46 — a stale
+  coordinator is re-bound, and `ceilingsMatch` compares the stored fingerprint.
+  **Test policy that follows from it:** one focused named test per behaviour that can
+  actually break, in an existing suite, chosen for what it would catch — not one test per
+  review comment. Deleting a compatibility path deletes its tests rather than converting
+  them, and the remaining race tests lost their legacy fixtures with it.
+  What this does **not** license: weakening fail-closed brakes, dropping the fixed witness
+  or the two-critic acceptance, or shipping a claim a mutation run has not checked.
+
 - **Future coordinator inboxes and Studio (operator, 2026-09-14):** investigate
   persistent primary/coordinator identities with internal inboxes, then optional
   email and SMS bindings independent of model or native session. Messages enter
@@ -1815,9 +1833,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   intermediate ceilings/reasons are erased — keep immutable versions plus an
   active-slot pointer (schema v6). (2) **Record digest:** records carry no digest
   column, so payload-only offline tampering is undetected; the intake test asserts
-  this gap today. (3) **Populated v4 → v5 migration fixture** proving row
-  preservation and fresh/migrated equivalence, and a shared (cycle-free) constant
-  so the `database.ts` restore ceiling cannot drift from the store version. (4) A
+  this gap today. (3) **Shared (cycle-free) constant** so the `database.ts` restore
+  ceiling cannot drift from the store version. The populated v4 → v5 migration fixture this
+  item also asked for is **withdrawd by the single-operator decision** (2026-09-20): there
+  are no migration lanes left to test. (4) A
   **two-process barrier test** for concurrent ingress, binding and admission: the
   current proofs are transactional-by-construction plus sequential races. (5) The
   **byte bound must also hold on read**, which needs

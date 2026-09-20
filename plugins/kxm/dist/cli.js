@@ -23767,20 +23767,11 @@ function openDatabase(file, description, spec) {
       database.exec(spec.schema);
       database.exec(`PRAGMA user_version = ${spec.version}`);
     } else if (version < spec.version) {
-      let currentVersion = version;
-      while (currentVersion < spec.version) {
-        const step = spec.migrations?.find((m2) => m2.fromVersion === currentVersion);
-        if (!step) {
-          throw databaseError(
-            "runtime_schema_outdated",
-            file,
-            `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`
-          );
-        }
-        step.migrate(database);
-        currentVersion = step.toVersion;
-        database.exec(`PRAGMA user_version = ${currentVersion}`);
-      }
+      throw databaseError(
+        "runtime_schema_outdated",
+        file,
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh \u2014 upgrading old state in place is deliberately unsupported`
+      );
     }
     if (spec.tables) {
       verifyExpectedTables(database, file, description, spec.tables);

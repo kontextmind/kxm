@@ -35,6 +35,17 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **No migrations, no legacy state handling (single-operator tool).** Stepwise schema
+  migration lanes are removed from the hub store, the Runtime registry and the event store.
+  A database stamped behind this build now fails closed with `runtime_schema_outdated` and
+  a message that says to delete the state file or re-run `kxm init` — and the refusal
+  leaves the file untouched, because relabelling a store it refused to open would hide the
+  problem until a query hits a missing column. The coordinator fingerprint no longer
+  recomputes over stored authority to forgive rows written before set canonicalisation: a
+  stale coordinator is re-bound. Intake tests go from 23 to 22; the two forced-race tests
+  now win against ordinary current-format rows, and one refusal test asserts the untouched
+  stamp.
+
 - **`kxm hub bind` no longer stores a remote URL it cannot authenticate to.** A remote
   binding is a deliberate network decision, so it is now refused when no credential resolves
   (explicit `KXM_AUTH_TOKEN`, or the persisted hub record's admin or project tokens) —

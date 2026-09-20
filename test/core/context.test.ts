@@ -272,18 +272,19 @@ test("context items persist project-isolated across restarts", () => {
     assert.equal(second.listContextItems("kxm", ["evidence"]).length, 1);
     second.close();
 
-    // v0.4 databases upgrade in place to the context schema.
+    // An older stamped database is refused, not upgraded in place: there are no
+    // migration lanes left to test, and the refusal must leave the file alone.
     const legacy = join(directory, "legacy.db");
     const database = new DatabaseSync(legacy);
     database.exec("PRAGMA user_version = 2");
     database.close();
-    const upgraded = new MeshStore(legacy);
-    const version = (upgraded as unknown as { database: DatabaseSync }).database
-      .prepare("PRAGMA user_version")
-      .get() as { user_version: number };
-    assert.equal(version.user_version, 3);
-    assert.equal(upgraded.listContextItems("kxm").length, 0);
-    upgraded.close();
+    assert.throws(() => new MeshStore(legacy), /runtime_schema_outdated/);
+    const after = new DatabaseSync(legacy);
+    try {
+      assert.equal((after.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 2);
+    } finally {
+      after.close();
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

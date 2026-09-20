@@ -14,17 +14,10 @@ import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
 import { KxmConfigError, type KxmConfigIssue } from "./project-config.ts";
 
-export interface DatabaseMigrationStep {
-  fromVersion: number;
-  toVersion: number;
-  migrate: (database: DatabaseSync) => void;
-}
-
 export interface DatabaseSchemaSpec {
   schema: string;
   version: number;
   tables?: Readonly<Record<string, readonly string[]>>;
-  migrations?: readonly DatabaseMigrationStep[];
   timeoutMs?: number;
 }
 
@@ -179,20 +172,15 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
       database.exec(spec.schema);
       database.exec(`PRAGMA user_version = ${spec.version}`);
     } else if (version < spec.version) {
-      let currentVersion = version;
-      while (currentVersion < spec.version) {
-        const step = spec.migrations?.find((m) => m.fromVersion === currentVersion);
-        if (!step) {
-          throw databaseError(
-            "runtime_schema_outdated",
-            file,
-            `${description} schema version ${version} is older than ${spec.version}; no migration lane, backup and restore remain E6`,
-          );
-        }
-        step.migrate(database);
-        currentVersion = step.toVersion;
-        database.exec(`PRAGMA user_version = ${currentVersion}`);
-      }
+      // No migration lanes. This is a single-operator tool: an older database is
+      // re-initialised, not upgraded in place, and the code never carries two schema
+      // shapes at once. Silently accepting an older file would mean every query has to
+      // work against shapes it no longer tests.
+      throw databaseError(
+        "runtime_schema_outdated",
+        file,
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh — upgrading old state in place is deliberately unsupported`,
+      );
     }
 
     if (spec.tables) {

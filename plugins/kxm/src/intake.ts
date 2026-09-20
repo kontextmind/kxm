@@ -102,20 +102,15 @@ export function kxmCeilingHash(authority: KxmCoordinatorAuthority): string {
 }
 
 /**
- * Does an already-stored coordinator express this ceiling?
+ * Does a stored coordinator already express the ceiling being requested?
  *
- * A row written before set normalisation existed carries a fingerprint that
- * `kxmCeilingHash` no longer reproduces, so comparing the stored hash alone is
- * not enough: recompute over the authority it kept. Every path that asks this
- * question — the initial slot lookup and **both** lost-write read-backs — must
- * go through here, or an upgrade makes the same row equivalent on lookup and a
- * `coordinator_write_lost` conflict on the race path.
- *
- * A legacy row is returned as stored, so its `ceilingHash` is historical: a
- * caller must not assume every persisted hash uses today's algorithm.
+ * Stored fingerprint only. Recomputing the fingerprint over the stored authority — the
+ * previous behaviour — existed to tolerate rows written before set canonicalisation, and
+ * that compatibility is gone with the single-operator decision: no migration lanes, no
+ * second schema or hash shape carried forward. A stale row is re-bound, not forgiven.
  */
 function ceilingsMatch(stored: KxmCoordinatorRecord, ceilingHash: string): boolean {
-  return stored.ceilingHash === ceilingHash || kxmCeilingHash(stored.authority) === ceilingHash;
+  return stored.ceilingHash === ceilingHash;
 }
 
 function normalizeAuthority(authority: KxmCoordinatorAuthority): KxmCoordinatorAuthority {
