@@ -77,7 +77,20 @@ for implementation, planning, and architecture review; low for CLI review.
 
 **Provider-native harness:** If the model’s provider has its own harness and that harness is **installed and logged in**, use it — not Pi’s copy of the same provider. That is why `kxm harness list` checks auth.
 
-Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → **agy (Antigravity CLI)** (`agy`, Antigravity OAuth) as an admitted native Google subscription writer/experiment edit route for Gemini kebab ids only (not a worker; starting rotation remains Grok; the deprecated `gemini` CLI catalog entry stays); xAI → **Grok CLI** (`grok`, OAuth to `auth.x.ai`), which superseded Pi for the writer role on 2026-09-04.
+Current admitted routes are **not listed here.** They change and this file
+drifted when they were duplicated here, so read them from their single authority:
+**Tracking → Decided** in
+[`plans/implementation-plan.md`](plans/implementation-plan.md) for product
+direction, and `kxm harness list` plus `pi auth check --provider <id>` for what is
+installed and authenticated on this machine right now. The rule that does not
+change: if a provider has its own harness and that harness is installed **and**
+logged in, use it rather than Pi's copy of the same provider, and fail closed
+rather than silently billing another vendor's key when it is missing or logged
+out. Two named exceptions to the native-preference rule, per the current
+decision: Google goes through the `antigravity` **Pi provider** and not a
+shell-out to the `agy` CLI (which stays a catalog helper, with the deprecated
+`gemini` entry kept), and the Claude bridge stays experiment-only. Neither grants
+new writer eligibility, and no provider migration is scheduled for hosting.
 
 **Aggregators are Pi *providers*, not a second coding harness.** There is no
 OpenRouter or Nous `kxm agent worker` CLI and no fake Nous harness. Pi is
@@ -103,7 +116,7 @@ Two helper prefixes are allowlisted after fail-closed `pi auth check
 Same auth-or-fail-closed rule. Other `nous-portal` or OpenRouter writer
 routes need reviewed admission.
 
-If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — today that is whatever `pi auth check` covers beyond Anthropic (Claude CLI), OpenAI (Codex), xAI (Grok CLI), Moonshot (Kimi), and Google (agy / Antigravity CLI; deprecated Gemini CLI catalog remains).
+If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — the current list of those, and the reviewed exceptions to it, come from **Tracking → Decided** and `pi auth check`, not from this file.
 
 **Harness ≠ long-lived worker.** Moving the writer role to the Grok CLI does not make `grok` a supervised RPC worker: `kxm agent worker` / `pi --mode rpc` is still Pi-only. The Grok CLI is a one-shot headless writer (`grok --prompt-file`). `agy` is also one-shot headless (`agy -p`), not a worker. Do not declare a `grok` or `agy` long-lived worker until one exists and is tested.
 

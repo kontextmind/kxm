@@ -121,9 +121,9 @@ slice establishes them.
 | M4 | One browser service | M0 browser lease/compatibility and M1 backend readiness | 4, 10, 11 admission |
 | M5 | Scoped recall, retrieval and recoverable learning candidates | M0 redaction, M1 scope and optional-component identity | 9 |
 | M6 | Portable skills, approved workflows and wake policy | Existing Runtime policy; M1 identity, M2 events only where used | 3, 4, 7, 9, 11 restrictions |
-| M7 | Studio over shared task, inbox and artifact APIs | M0 UI boundary, M2 snapshot/replay; other services only for their panels | 10 |
+| M7 | Studio over shared task, inbox and artifact APIs; **hosted operator surface is the tenant portal reading/driving the loopback hub, which is the MVP path** | M0 UI boundary; polling run/receipt state first, snapshot/replay only when an observed gap needs it; other services only for their panels | 10 |
 | M8 | Native/provider setup and optional external integrations | M1 readiness, M0 secret handling, M6 authorization where effects require it | 4, 9, 11 admission |
-| M9 | Evidence for the declared release capabilities/platforms | Selected scope's contracts and all applicable canonical blockers/gates | 5 and every affected gate |
+| M9 | Evidence for the declared release capabilities/platforms, **including the selected Linux hosted tenant deployment and one restore witness** | Selected scope's contracts and all applicable canonical blockers/gates | 5 and every affected gate |
 
 ### First product slice
 
@@ -144,12 +144,25 @@ payload rejected; correct project/cwd; useful progress before final; no persiste
 secrets; invalid finals and missing handlers cannot succeed; viewer reconnect
 recovers terminal facts; pause blocks both fresh dispatch and bridge resume.
 Verify the actual package surface used. External accounts and full Studio editing
-are outside this first slice.
+are outside this packet.
 
-### Next and later
+### Scheduling authority: none (demoted 2026-09-20)
 
-Next, extend that fixture for the early Pi RPC / supervised Pi SDK / released
-OpenCode 2.0.3 comparison before choosing a deeper engine dependency. Test child
+This catalog is proposed scope and contract dependency only. **The single ordered queue is
+"Still open → The one queue" in
+[`implementation-plan.md`](implementation-plan.md)**, and nothing below schedules ahead of it.
+Two things that used to read as next-up are explicitly not: the engine comparison and any
+streaming/steering breadth. Both are post-MVP and start on an observed trigger — a reproduced
+limitation of the retained route, or polling proven insufficient after the portal read/drive
+slices ship. Hosting is not a parallel catalogue either: the per-tenant deployment sits in
+**M7** (the portal is the operator surface; the hub binds loopback and holds no browser
+identity) and **M9** (a declared Linux hosted deployment, its evidence, and the
+stopped-state backup/restore witness), while coordinator-inbox and replay work stays in M2/M3
+behind its consumer trigger. Rationale and boundary:
+[`plan-per-tenant-hosting.md`](plan-per-tenant-hosting.md).
+
+Before any deeper engine dependency is chosen, extend that fixture for the early Pi RPC /
+supervised Pi SDK / released OpenCode 2.0.3 comparison. Test child
 assignment, correction, restart ambiguity, cleanup and installation; retain the
 full [engine decision matrix](research-kxm-harness-strategy.md). In parallel,
 Codex and Claude are the first **new native output adapters**; their admission

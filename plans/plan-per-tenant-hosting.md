@@ -43,9 +43,12 @@ One tenant = one box = one hub process = one `.kxm/state/kxm.db`. The hub gets a
 label**, not a tenant table. Nothing in the hub stores another tenant's rows, so nothing in
 the hub can leak them.
 
-Consequence for capacity: the tenant's box is already provisioned for the portal. The hub is
-**incremental disk and bandwidth on that box**, not another VM, not another container, not
-another always-on service. Any design that implies one is wrong by construction.
+Consequence for capacity: the tenant's box is already provisioned for the portal, so the hub
+adds **no VM line item** to the plan. It is incremental disk, bandwidth and one supervised
+process — the hub **is** an additional always-on service on that box and is counted as such in
+RAM and restart behaviour; only the machine is not new. What is not incremental is any second
+browser, second database or second authentication system: any design that adds one is wrong by
+construction.
 
 ### 2. Auth stays exactly as it is; hosting is additive
 
@@ -59,16 +62,22 @@ set, and never silently downgraded (a hosted hub with a broken proxy must fail c
 the fix) nor silently upgraded (a local hub must not start trusting identity headers). One
 command answers "which mode am I in, and why".
 
-### 3. Authentik owns the browser; the hub owns authorization over its own data
+### 3. Authentik owns the browser; the portal backend is the hub's client
 
-Authentik terminates the browser session at the tenant's existing reverse proxy and forwards
-validated identity to the hub on loopback. The hub does **not** implement an OIDC callback,
-refresh tokens, a session store, cookie crypto, user accounts, per-user RBAC, or SCIM. It
-validates what arrives, on loopback only, and refuses the rest.
+Authentik authenticates and authorizes browsers at the tenant's existing reverse proxy, on the
+portal's own routes. **The hub never interprets browser identity.** The portal's server-side
+backend calls the loopback hub and supervisor with existing machine credentials, and the browser
+talks only to the portal. The hub binds loopback and exposes no public listener.
 
-Machine clients (portal backend, CLI, agents, MCP, Pi) keep using bearer/agent credentials on
-the existing `/v1/` surface. A browser credential never satisfies `/v1/`, and a failed browser
-assertion never falls back to bearer auth.
+What the hub does **not** build, and this is the cut that the replan made against my own first
+draft of this file: no `/kxm/` browser surface, no hub-side tenant/subject/capability validation,
+no viewer-vs-admin credential kinds, no `kxm hub auth setup|status|rotate|revoke|disable`, no
+OIDC callback, refresh, session store, cookie framework or cookie crypto, no SCIM, no user
+table. That duplicated the boundary the portal and Authentik already own and pulled a credential
+lifecycle into the critical path. The only failure-mode rule that survives: **a hosted
+deployment's browser-auth outage denies browser access; it must not stop the hub serving
+authorized machine clients**, because killing local token clients to protect a browser path is a
+new way to be down.
 
 ### 4. No PostgreSQL for the hub — and if we ever need it, one database per hub
 
@@ -76,16 +85,19 @@ Measured coupling, not taste:
 
 | Fact | Count |
 |---|---|
-| `DatabaseSync` prepared-statement call sites in `plugins/kxm/src` | 120 |
-| Distinct `CREATE TABLE` targets | 15 |
-| Files importing the SQLite shim (`sqlite.ts`) | 9 |
+| Prepared-statement call sites in the five coupled files (`sqlite.ts`, `database.ts`, `runtime-store.ts`, `store.ts`, `local-snapshot.ts`) | 105, plus 41 `.exec(...)` |
+| Lexical `.prepare(` across `plugins/kxm/src` | 120 (includes the shim's forwarding call) |
+| Distinct literal `CREATE TABLE` targets | 23 — 7 hub, 2 registry, 13 event store, 1 external-effects |
 | Hub store schema | `HUB_STORE_SCHEMA_VERSION = 3` ([store.ts:13](../plugins/kxm/src/store.ts)) |
 | Runtime event store schema | v5, with v6 follow-ups already open ([runtime-store.ts](../plugins/kxm/src/runtime-store.ts), [implementation-plan.md](implementation-plan.md) Still open) |
 | Backup/restore | `VACUUM INTO` + integrity check + manifest + restore ceiling ([database.ts:490](../plugins/kxm/src/database.ts)) |
 | Transaction semantics we just hardened | `BEGIN IMMEDIATE`, per-connection busy throttle, contention classification by SQLite result code ([database.ts](../plugins/kxm/src/database.ts)) |
 
-The single-tenant file *is* the isolation boundary, the backup unit, the restore unit, and the
-migration unit. Replacing it means either rewriting those 120 call sites and every migration
+The tenant box owns the complete state set — hub database, Runtime registry, per-project event
+stores, bindings, prompt sidecars and configuration — and that set, not one file, is what gets
+backed up and restored. Separate boxes sharply reduce blast radius; they do **not** prove the
+portal cannot pick the wrong tenant's credential, which is a real failure mode and the reason
+bindings are server-held and fixed rather than browser-supplied. Replacing it means either rewriting those 120 call sites and every migration
 lane, or maintaining two engines and doubling every test and backup path. That is not an MVP
 cost, and it buys the operator nothing on day one: the hub's read models are already reachable
 over HTTP.
@@ -112,61 +124,47 @@ If the answer is refused: the thing that breaks first is not performance, it is 
 migrations become coordinated releases across tenants, and every table added from now on needs a
 tenant column, a backfill, and an RLS policy on the day it is written.
 
-## MVP: two slices
+## Delivery: none of it is scheduled here
 
-Both keep the event-store and hub-store schema at their current versions. Zero migration. One
-named test each; `npm run verify` stays the only commit gate and the CI legs stay as they are —
-no new scripts, no new jobs.
+The ordered queue lives in
+[`implementation-plan.md`](implementation-plan.md) under **Still open → The one queue**
+(S0–S5), and that is the only delivery sequence. What this file contributes is the boundary and
+the storage ruling; the slices are named there, not duplicated here.
 
-### Slice A — mode, boundary, and the browser surface that only reads (hub + CLI)
+Two of them are worth a sentence because they are the whole MVP, and both are portal-side work
+against APIs that already exist:
 
-- Files: new `plugins/kxm/src/hub-auth.ts` (mode, config, credential validation); `hub.ts`
-  (mount `/kxm/` on the **existing** listener; validate loopback peer, proxy credential,
-  tenant match, subject, viewer/admin capability); `cli/hub.ts` + `cli.ts` (`kxm hub auth
-  setup|status|rotate|revoke|disable`, `--json`, non-interactive, secrets from stdin only);
-  `redact.ts` (proxy credential, browser credentials, session tokens); docs.
-- Behaviour: hosted mode adds `/kxm/` browser routes and nothing else. Browser credentials
-  cannot touch `/v1/`. Machine auth is untouched. With no config, the binary behaves as today.
-- UI: the browser gets real states, not a token box — signed-out-with-proxy-link, proxied as
-  viewer (read-only chrome, mutations disabled with a reason), wrong-tenant, expired,
-  misconfigured-hub. Tenant name is in the header on every screen: an operator must never guess
-  which hub they are looking at.
-- **MVP gate for Slice A:** the existing fallback that answers a Studio mutation with
-  `ok: true, mappedToCli: true` without executing anything ([studio-layout.ts:410](../plugins/kxm/src/studio-layout.ts),
-  no `onMutation` supplied at [cli/tasks.ts](../plugins/kxm/src/cli/tasks.ts)) must not exist on
-  the hosted path. A hosted mutation either executes with a real command receipt or returns a
-  refusal. This is the one place where "we'll fix it later" is a false economy: a UI that lies
-  about success makes every later improvement cycle guesswork.
-- Named test: `hub-hosted-auth.test.ts` — public bind refused; forged/absent/mismatched proxy
-  credential refused; wrong tenant refused; viewer mutation refused *before* any side effect;
-  failed browser assertion never falls back to bearer; local mode byte-identical.
+- **Read:** the portal shows tenant label, connectivity, agents, runs, current status and the
+  latest receipt, distinguishing hub metadata from Runtime run state, with stale and unavailable
+  explicit rather than blank. Polling is enough; SSE, replay and backpressure are not in the MVP.
+- **Drive:** create, drive, cancel — three actions, existing command IDs and drive receipts,
+  `202` rendered as started/pending and never as completed, and handoff, refusal and uncertain
+  states preserved. No checkpoint, no "mark passed", no retry, no arbitrary CLI, no config edit.
 
-### Slice B — a handful of real actions, and the numbers we priced on (hub + CLI)
+Two correctness facts the replan found and that the queue now gates, because they make an
+operator believe something false rather than merely incomplete:
 
-- Files: the closed typed command adapter for `/kxm/api` (each entry maps to an existing CLI
-  command service and returns its real receipt); `cli/hub.ts` for `kxm hub footprint [--json]`;
-  Studio actions for exactly those commands.
-- Scope by use, not by surface: start with the four or five actions the operator actually
-  performs from a browser — approve/reject an inbox item, retry or cancel a run, set pause,
-  open a plan. Nothing else is wired until it is asked for.
-- Named test: `studio-command-parity.test.ts` — every advertised action maps to a real command
-  and a real receipt; no placeholder success; viewer rejected before side effect.
-- Footprint reporting ships with it because the capacity claim in decision 1 is otherwise
-  unmeasured: one command reports actual bytes (db + WAL + logs + retained messages + artifacts,
-  counted once, `unknown` where unavailable) and external response volume, so disk/bandwidth
-  budgeting is measured rather than argued.
-
-Everything else in the longer design — dashboard read models beyond what Studio needs, extra
-credentials, proxy template generation, hardening of the standalone Studio — is post-MVP and
-lands through use.
+- A drive is **asynchronous**; a refresh, timeout or vague answer must not cause a repeat of the
+  work or a claim that it passed. Poll the authoritative receipt after refresh; never
+  auto-retry an uncertain effect.
+- The selected Pi route currently infers success: `determineOutcome` can take an outcome **word**
+  out of prose and otherwise returns `passed`
+  ([pi-producer.ts:85](../plugins/kxm/src/pi-producer.ts)). Standalone Studio has the same class
+  of bug in its mutation fallback. Hosted surfaces may not inherit either.
 
 ## Explicitly not in this plan
 
 Hub user accounts or tables; per-user RBAC; a tenant table; SCIM; hub-side OIDC login, refresh,
-introspection, cookie framework or session store; a public hub listener; a new outpost,
-sidecar, container or VM; a general "forward this URL / run this CLI string" endpoint; a new
-per-tenant rate-limit engine; a multi-process or HA hub; automatic pruning of evidence or
-artifacts; **any** change to the hub or event-store schema; **any** PostgreSQL write path.
+introspection, cookie framework or session store; **hub-side interpretation of browser identity
+headers, viewer/admin credential kinds and a `kxm hub auth` verb family** (all deleted from this
+plan by the replan: the portal and Authentik already own that boundary, and a hub-side copy
+brings a credential lifecycle into the critical path for no new capability); a public hub
+listener; a new outpost, sidecar, container or VM; a general "forward this URL / run this CLI
+string" endpoint; a new per-tenant rate-limit engine; a multi-process or HA hub; automatic
+pruning of evidence or artifacts; `kxm hub footprint` as a product command (capacity comes from
+filesystem sizes and existing proxy counters until a repeated manual measurement justifies the
+command); **any** change to the hub or event-store schema; **any** PostgreSQL write path;
+machine-credential rotation through browser commands.
 
 ## Deferred hardening (backlog, not plan)
 
@@ -175,9 +173,15 @@ secret; credential-store corruption recovery; rotation overlap window; `kxm doct
 command (there is none today) rather than `hub auth status` doing double duty. Track in
 **Still open**; none of it blocks Slice A or B.
 
-## Open item to resolve before Slice A merges
+## Two things to settle before the read slice, while they are still cheap
 
-Where the proxy configuration itself lives (generated by us vs. owned by the tenant's existing
-proxy with documented values to paste), and what `kxm hub bind` does on the portal side once a
-hub is hosted. Both are small; both are the kind of thing that turns into a rewrite if we let
-them.
+1. **Who owns the tenant's reverse-proxy configuration.** We generate a reviewable snippet, or
+   the tenant's existing proxy stays theirs and we document exactly which values to paste.
+   Decide once, in `docs/operations.md`; deciding it late is what turns a config file into a
+   rewrite.
+2. **What `kxm hub bind` means for a hosted tenant.** The portal backend, not a browser, is the
+   client; the binding must be server-held and project-fixed so no path lets a browser choose
+   which tenant's credential or upstream is used.
+
+Both are small enough that the mistake is not difficulty, it is drift: leave them implicit and
+each deployment invents an answer.

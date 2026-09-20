@@ -358,10 +358,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (`role_roster_conflicts_with_agent`) between `.kxm/roles/writer.yaml` and agent
   definitions; mandates raw uncompressed byte fidelity (RTK bypass) for verification
   gates and critics; and enforces strict pinned SSH host key policy rejecting TOFU.
-- **Hub local is MVP.** `kxm init` is project-only. `kxm hub bind <url>` binds
-  this host to a running hub. Session brief, Pi status line, and `/kxm` read
-  the local hub snapshot. Local Runtime in-harness insights and SSH/HTTPS hub
-  install are after MVP.
+- **Hub local is the default; a hosted tenant box is now a selected MVP path
+  (2026-09-20, replaces "SSH/HTTPS hub install are after MVP").** `kxm init` is
+  project-only. `kxm hub bind <url>` binds this host to a running hub. Session brief,
+  Pi status line, and `/kxm` read the local hub snapshot. **Local token-authenticated
+  operation stays the default and unmodified.** The selected hosted MVP runs the hub and
+  a local Runtime on a tenant's existing box behind that tenant's portal, with Authentik
+  authenticating browsers at the edge. Remote workflow execution (Phase 6) and
+  distributed synchronization (Phase 8) remain post-MVP: reaching a tenant box does not
+  pass either gate.
 - **Platform pause (operator, 2026-09-05):** Windows CI legs, hosted Windows
   probes, and release automation are paused, not deprecated. Active verification
   runs on the ARC runner scale set kontextmind-doks (DOKS, 0..4 ephemeral
@@ -413,6 +418,50 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   extension under Node and `npm pack` is the release path.
 
 ### Landed in this tree (unreleased)
+
+- **S0: plan authority reconciled, and the queue replaced the two competing
+  “first product” sequences (2026-09-20; design record
+  [reviews/plan-set-reprioritization-astra.md](reviews/plan-set-reprioritization-astra.md)):**
+  all 19 plan summaries were read, twelve named contradictions were resolved with the
+  exact edit each required, and every document got an operation — keep, merge, split,
+  demote to reference, or archive with a stub. The rulings that change what anyone can
+  schedule: **Tracking owns execution order**; the unified catalog is proposed scope
+  only and its “first product slice” and “Next” language now point at the single queue;
+  the per-tenant hosting draft keeps the boundary and the storage rationale and **loses
+  its own slice sequence**.
+  What got cut, including from work in flight: the hub-side browser-authentication
+  subsystem, five `kxm hub auth` verbs, viewer/admin credential kinds and
+  `kxm hub footprint` are deleted from the plan, because the portal and Authentik already
+  own that boundary — a hub-side copy would have added a credential lifecycle to the
+  critical path for no new capability. The KB’s staged hub-side JWT verification and
+  token broker are **rejected, not deferred**, with the technical reasons kept (unsigned
+  session tokens, static project tokens read at startup, a fixed-string client token) so
+  the rejection stays auditable; only the timing-safe Studio compare survives as a
+  hardening note. Coordinator inbox and replay/streaming moved post-MVP behind their
+  triggers; polling is the MVP visibility model.
+  Stale status was the other class of contradiction and it was not benign: **Phase 11
+  listed B2 durable receipts and B3 run-duration budgets as remaining after both were
+  accepted** (2026-09-16 `task_9076be56b581`, and #246); Phase 4 still listed an
+  implemented Pi RPC adapter and Phase 3 said both “still refuses gates” and “fulfils the
+  gate” in one section; and the Studio entry claimed mutations on the authenticated
+  command API while the standalone CLI wires no handler and the server fallback answers
+  `ok: true, mappedToCli: true` without executing. Each is corrected to what the code
+  does, with Phase 10 rather than Phase 6 named for Studio, and the Studio claim becomes
+  the reason S2/S4 may not inherit an unwired success path.
+  `AGENTS.md` stopped carrying a second copy of the rotation and provider policy: its
+  stale Google line named a CLI route the current decision had already superseded, which
+  is what duplication does. It now states the invariants (native harness when installed
+  **and** logged in; fail closed rather than silently billing another vendor;
+  `kxm harness list` and Tracking are the authorities) and points for the mutable list,
+  keeping the reviewed exceptions visible without granting eligibility. Deliberate
+  deviation from the design record, recorded rather than hidden: the pass also proposed
+  making the emitter own the whole session-brief prefix. The drift was the **copy**, so
+  deleting the copy fixes it; generating operator prose from a tracker would add a
+  build-time coupling and a template to maintain for no additional authority. Trigger to
+  revisit: the second time a hand-maintained section contradicts Tracking.
+  Gates: this is documentation and generated-instruction work, so it ships on the
+  existing `npm run verify` and the existing CI legs — no new script, job or test file,
+  consistent with the cross-cutting-gate replacement above.
 
 - **Runtime intake contract: coordinator identity, idempotent ingress and the
   pause rule (unified plan M1 + M6, the durable half of M2; 2026-09-18):** the
@@ -670,6 +719,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `test/core/studio-layout.test.ts`, and CLI experience tests (72 targeted
   tests passed). This closes the recent progress-visibility slice; it does not
   claim the Phase 4 live Pi adapter gate.
+  **Corrected 2026-09-20 against what the code does:** layout generation and an
+  embedded Studio shell exist, but the standalone CLI supplies neither a state handler
+  nor an `onMutation` callback, so the server's fallback answers `ok: true,
+  mappedToCli: true` having executed nothing (`studio-layout.ts:410`,
+  `cli/tasks.ts:302`). The mutation-parity claim above therefore holds for the hub
+  command API, **not** for standalone Studio, and the Phase 6 attribution in the entry
+  below is wrong — Studio is Phase 10. Hosted admin uses the portal integration
+  (Tracking queue S2/S4), and no unavailable action may report success. Fixing
+  standalone Studio is post-MVP unless we actually select it for use.
 - **Control plane, 5-layer memory, and external idempotency (2026-09-08):**
   - **Memory Arbiter & `_shared` scope:** Updated `plugins/kxm/src/context.ts` to allow `_shared` defaults alongside project identifiers without tripping `context_isolation_violation`; updated `plugins/kxm/src/arbiter.ts` to rank project-specific knowledge ahead of shared defaults; added `memoryRecordToContextItem()` and connected `.kxm/memory/` into `plugins/kxm/src/hub.ts:projectContextPool()`. Verified in `test/core/arbiter.test.ts`.
   - **Formal Context Packet & Structured Handoffs:** Added schemas `schemas/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`). Added builder and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`. Integrated formal packets and antecedent handoffs directly into `plugins/kxm/src/engine.ts:birthMember`. Verified in `test/core/context-packet.test.ts`.
@@ -1284,23 +1342,52 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Still open
 
-- **Per-tenant hosting slices (owner: hub/CLI maintainer; trigger: the first tenant VM
-  to host, which is the point of doing this at all):** proposed in
-  [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md). **Slice A** — explicit mode
-  activation, `/kxm/` browser boundary on the existing loopback listener, proxy credential and
-  tenant/subject validation, `kxm hub auth setup|status|rotate|revoke|disable`, read-only hosted
-  Studio. **Slice B** — the four or five browser actions chosen by actual use, each mapped to a
-  real command and receipt, plus `kxm hub footprint` so the disk/bandwidth claim is measured.
-  Zero schema change in both. Two things must be resolved before Slice A merges, and both are
-  small enough that deciding them late is what makes them expensive: where the tenant's reverse
-  proxy config lives (generated by us, or owned by the tenant with documented values to paste),
-  and what `kxm hub bind` means on the portal side once a hub is hosted.
-  **Deferred hardening, backlog not critical path:** proxy header-stripping proven by an
-  integration fixture; timing-safe proxy secret comparison; credential-store corruption
-  recovery; rotation overlap window; a real `kxm doctor` (there is none today) instead of
-  `hub auth status` doing double duty; standalone Studio hardening; PostgreSQL as an *exported
-  projection* per hub, triggered only by real cross-hub SQL analytics or a hub count that
-  per-box `/v1` reads cannot serve.
+- **The one queue (replanned 2026-09-20; design record
+  [reviews/plan-set-reprioritization-astra.md](reviews/plan-set-reprioritization-astra.md)).**
+  S0–S5 are selected MVP work in order; everything after them starts only on its stated
+  trigger, and no step adds an npm script, CI job or platform leg (see Cross-cutting test
+  gates). S1 uses a provisioned tenant box; S2/S4 need the portal checkout. **Zero
+  event-store or hub-store schema change in S0–S5.**
+
+  | # | Deliver | Unblocked by | Proof | One named test |
+  |---|---|---|---|---|
+  | S0 | Reconcile plan authority: this queue, the gate/decision contradictions above, catalog demotion, AGENTS prose and regeneration | this replan | coherent tracker, catalog and generated artifacts through existing `verify` | none — prose and generated output, existing gate covers it |
+  | S1 | Hub + local Runtime running on the tenant box: service account, persisted state paths, loopback listeners, existing restart path, one project and the slim `default` workflow, one hosting recipe in `docs/operations.md` | a provisioned box and a selected authenticated route | restart the services; readiness, persisted credentials, retained run identity | none — deployment witness; existing behavioural gate |
+  | S2 | Portal reads authoritative state: tenant label, connectivity, agents, runs, current status, latest receipt — hub metadata distinguished from Runtime run state, stale/unavailable explicit, polling | S1, portal router access | the read plus a browser comparison against the same run's CLI/API state | append `portal reads distinguish hub metadata from Runtime run state and unavailable upstreams` to `test/core/studio-layout.test.ts` |
+  | S3 | Strict outcome on the selected Pi route — prose word-matching and default-pass removed | existing Pi producer fixture | negative outcome test plus selected-route live execution in S5 | `Pi final prose or malformed outcome cannot pass an assignment` in `test/core/pi-producer.test.ts` |
+  | S4 | Portal drives one workflow: create, drive, cancel only, reusing existing command/run/drive IDs and receipts; 202 is started, never completed | S2, S3, exact project binding | command-parity test plus existing duplicate-drive, shutdown and receipt coverage | `portal create-drive-cancel preserves command identity and reports authoritative settlement` in `test/core/studio-layout.test.ts` |
+  | S5 | Edge authentication and first real use: HTTPS + Authentik on the tenant's existing proxy, tenant-admin only, hub and supervisor stay private, documented stopped-state backup and **one restore before first use** | S4, tenant DNS/TLS/Authentik config | deployed witness: unauthenticated access denied, wrong tenant denied, logout/revocation, refresh mid-run, one real `default` run, one usable restore | none — named deployment witness, no new suite |
+
+  **Explicitly not MVP, with its trigger:** post-MVP closes observed first-use failures
+  (one focused regression per repair; scheduler/supervisor timing moves here unless it
+  fails a current gate, and gets a barrier or injectable clock, never a wider timeout);
+  automated backup discovery (trigger: routine unattended recovery — today's discovery
+  looks at project-local `runtime/events/*.db` while Runtime opens
+  `runtime/projects/<key>/run-events.db`, so the existing "all stores" fixture must not be
+  read as deployed coverage); the v6 identity/history slice (trigger: selecting coordinator
+  intake dispatch or rebinding — one test, `v5 coordinator rebind preserves historical
+  identity after migration`, **v5→v6 approved here**); durable arrival order and bounded
+  intake release (same consumer, before sustained traffic); the internal intake consumer
+  (trigger: queued intake actually needed, after the two above); one progress improvement
+  then one supported control (trigger: polling proved insufficient); a reporting projection
+  on `kxm-dev-svr` (trigger below); intake digests, rare-contention reproductions and
+  rollback-handle hardening as **separate named items**, not one bundled v6; and the older
+  Phase 6/7/8/9, M7 breadth, M8 integrations and platform-qualification backlog, which keeps
+  its homes and is **not** a hidden chain in front of hosting.
+
+  **Postgres, answered rather than deferred:** SQLite stays authoritative on the tenant box.
+  Neither a shared multi-tenant hub database nor a PostgreSQL database per hub becomes the
+  hub's store. Smallest cross-hub visibility is a portal-owned list of tenant endpoints read
+  by each tenant's own portal backend; do not centralize raw events, prompts or credentials,
+  and never expose hub or supervisor ports. A disposable per-hub reporting projection on
+  `kxm-dev-svr` is allowed **only** when a concrete report needs retained cross-hub history
+  that bounded summaries cannot answer, or measured polling misses an agreed refresh target
+  after bounding and caching — hub count alone is not a trigger. Planning allowance 2–5 days
+  for one bounded report, discardable and rebuildable, no hub downtime on its failure. If the
+  operator insists on Postgres as primary storage now, this stops being the fast hosting MVP:
+  synchronous APIs, transaction semantics, SQLite dialect, direct readers, migrations and
+  `VACUUM INTO` backup need their own storage-migration plan measured in weeks, and the v6
+  identity work must then be reconciled with it rather than ported twice.
 
 - **Package restructure and Bun toolchain (owner: build/runtime maintainer):**
   the layout questions this bullet used to hold are now answered by the tree,
@@ -1376,9 +1463,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   | M8 | Auth/integration maintainer | Capability readiness, secret handling and applicable authorization; native/provider setup, quota, Confluence, then external coordinator email/SMS transports |
   | M9 | Release maintainer | Declare release capabilities/platforms; require their dependencies and all applicable canonical blockers/gates, actual tarball and exact-candidate acceptance |
 
-  First proposed product slice: minimal M0/M1/M6 contracts → internal coordinator
-  message through existing authorized Runtime/Pi route and M2 events → thin M7
-  Studio replay. Begin with deterministic fixtures; live dispatch retains its
+  First proposed product slice: **superseded 2026-09-20 — the ordered queue at
+  "Still open" is the only delivery sequence.** Coordinator inbox work moved
+  post-MVP behind its consumer trigger; the portal read/drive path (S2/S4) is what
+  ships first. Begin with deterministic fixtures; live dispatch retains its
   existing authorization/admission requirements. Duplicate input cannot create
   another task; pause blocks fresh dispatch and bridge resume. No external account
   is needed. Read-only Studio does not wait for full editing or every service.
@@ -1868,7 +1956,9 @@ Unhosted harness/model pair rejection at assignment and exact-context Pi auth pr
 **Routing records v2 and price catalog (implemented via D5 / issue #91, unreleased):**
 `routing.attempt.recorded` events carry `kxm.routing-record.v2` (harness, provider, model, tokens, latency, cost basis, cost USD); missing `costBasis` fails closed at attempt settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch (`budget_model_cost`); dated and hashed price catalog `.kxm/prices.yaml` (`kxm.prices.v1`).
 
-**Still this phase:** Pi RPC adapter, per-run sessions, the rest of the `/kxm`
+**Still this phase (relabelled 2026-09-20: the Pi RPC adapter and the one-shot
+non-Pi adapters below already exist in tree — see Landed; what remains is exact-route
+live acceptance and specified UX gaps, not rebuilding them):** per-run sessions, the rest of the `/kxm`
 menu (hub/workflows/agents completions wrapping CLI), validated YAML editors
 (enable/disable harnesses and models by editing Git files, not a parallel
 store), and live assignment dispatch that binds harness from auth inventory
@@ -2001,8 +2091,11 @@ forward-port at 96e8e0ac; the live Claude write-refusal witness (model-reached
 proof plus refusal) holds acceptance at e3d8a64b; price-catalog integrity
 beyond the one-shot path holds acceptance at 17efb783; drive decoupling B1
 (engine-owned sessions, bounded truthful shutdown) holds acceptance at
-d590d27f, with B2 durable receipts, B3 run-duration budget, and B4 surfaces
-remaining. No Phase 11 gate PASS.
+d590d27f. **B2 durable receipts is accepted (2026-09-16, task_9076be56b581 slice B2)
+and B3 run-duration budgets is accepted (2026-09-17, #246)** — they were still listed as
+remaining here, which is the contradiction, not the work. What is genuinely open in this
+phase is B4 surfaces and the isolation/takeover proposals below. **No Phase 11 gate
+PASS.**
 
 **Proposed M2/M3 delivery packets (2026-09-14):** add incremental native event
 decoding, durable stream cursors, exact workspace/session binding, and separately
@@ -2024,19 +2117,18 @@ not pass this gate.
 
 ## Cross-cutting test gates
 
-Every phase adds:
+**Replaced 2026-09-20 under the operator's "keep pipelines slim" brief.** The list
+below used to require that every phase add unit, schema, property/model, forced-crash,
+Windows-and-Linux, cross-project security, redaction and coverage-matrix tests, and run
+`npm run validate`. This text replaces it, explicitly, rather than satisfying it by
+renaming tests.
 
-- unit and schema tests;
-- property/model tests for state machines;
-- forced-crash and duplicate-command tests;
-- Windows and Linux path/process tests;
-- cross-project security tests;
-- redaction and no-secret-output tests;
-- opt-in real harness/external integration tests where deterministic fakes are
-  insufficient;
-- documentation and migration updates in the same change.
-- every source file is inside the coverage include unless excluded with a
-  reason (B1). Coverage still only measures modules some test loaded.
-
-Generated package artifacts remain reproducible and the existing `npm run
-validate` gate remains green throughout migration.
+Run the existing `npm run verify` commit gate and the existing CI jobs (`validate:pr` on
+Node 22.19.0 and 24, Docs lint, Classify changes, Plugin validation; `validate:ci` on
+main pushes; nightly keeps the coverage floors). Each slice adds at most **one** focused
+named test, inside an existing suite, reusing existing coverage and fixtures. No new npm
+script, CI job, platform leg, broad test file or coverage ratchet for the hosted MVP.
+New live evidence is limited to the selected route and the deployment boundary.
+Unselected-platform and broad hardening evidence remains post-MVP and is never implied
+PASS. Documentation and migration updates still land in the same change, and generated
+artifacts stay reproducible with every existing gate green.
