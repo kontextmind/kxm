@@ -365,7 +365,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; create
 
   // 2. CLAUDE.md
   const claudePath = join(root, "CLAUDE.md");
-  const claudeHeader = `# KXM (Claude)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nYou are the **planner / architecture critic** unless the human explicitly asks\nyou to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`).\nIf \`grok\` is logged out, fail closed; do not fall back to Pi. Your reviews are\nartifacts, not hub \`peer-reply\` evidence.\n`;
+  const claudeHeader = `# KXM (Claude)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nYou are the **planner / architecture critic** unless the human explicitly asks\nyou to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) — a starting\nrotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;\nuse a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are\nartifacts, not hub \`peer-reply\` evidence.\n`;
   const claudeExisted = existsSync(claudePath);
   if (updateHarnessDocument(claudePath, block, claudeHeader)) {
     if (claudeExisted) updated.push("CLAUDE.md");
@@ -374,7 +374,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; create
 
   // 3. GEMINI.md
   const geminiPath = join(root, "GEMINI.md");
-  const geminiHeader = `# KXM (Gemini / Antigravity)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nGoogle / Antigravity CLI (\`agy\`) is an admitted native writer and experiment edit route\nfor Gemini models. Starting rotation remains Grok.\n`;
+  const geminiHeader = `# KXM (Gemini / Antigravity)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nGoogle goes through the \`antigravity\` **Pi provider** (Tracking \u2192 Decided,\n2026-09-15); \`agy\` stays a harness catalog/helper entry, not the admission path.\nCurrent admissions come from Tracking and \`kxm harness list\`. Starting rotation\nremains Grok.\n`;
   const geminiExisted = existsSync(geminiPath);
   if (updateHarnessDocument(geminiPath, block, geminiHeader)) {
     if (geminiExisted) updated.push("GEMINI.md");
