@@ -237,10 +237,10 @@ missing while looking complete:
 | `$S/update.yaml` | release/update configuration consumed by the updater | the box reverts to defaults on the next update path |
 | `$W/pi-sessions/<workerKey>/{default,runs/<runId>}/` | Pi model histories | **optional by existing policy** (see *Workflow-specific Pi sessions*): never a system of record — decide and record, do not silently widen scope |
 | `$W/worker-session-binding-<workerKey>.json` (+ `.corrupt-*`), `worker-context-*.json`, `worker-recovery-*.json` | routing and recovery manifests | not optional: these are what make worker routing resumable after a restart |
-| `$X/project.yaml`, `$X/config/` (or `KXM_CONFIG_DIR`), `$X/agents/`, `$X/workflows/`, `$X/gates.yaml`, `$X/roles/`, `$X/role-hosts.yaml`, `$X/producers.yaml`, `$X/repo/`, `$X/template-provenance.yaml`, `$X/config.yaml` | project, role, route, repository and provenance definition | the tenant stops being reproducible |
+| `$X/project.yaml`, `$X/config/` (or `KXM_CONFIG_DIR`), `$X/config.yaml`, `$X/agents/`, `$X/workflows/`, `$X/gates.yaml`, `$X/roles/`, `$X/role-hosts.yaml` (or `.json`), `$X/producers.yaml`, `$X/roster.yaml`, `$X/routes.yaml`, `$X/prices.yaml`, `$X/repo/`, `$X/template-provenance.yaml` | project, role, route, repository and provenance definition | the tenant stops being reproducible |
 | `$X/goals/`, `$X/tasks/`, `$X/memory/`, `$X/candidates/`, `$X/skills/` (candidate/promoted/rejected, history, patches) | durable work and learning records | open goals/tasks and approved memory disappear |
 | `$X/assets/` (or `KXM_ASSETS_DIR`) — retrospectives, improvements, artifacts, evidence — and `$X/logs/` (or `KXM_LOGS_DIR`), `$X/logs/telemetry.jsonl` (`KXM_WORKER_LOG_PATH`, `KXM_AGENT_LOG_PATH`) | exported evidence, operator history, and **local** usage accounting | provenance, spend history and the ability to audit a past decision |
-| `$C/telemetry/model-metrics.jsonl` (or `KXM_USER_TELEMETRY_DIR`; falls back to `$X/logs/telemetry.jsonl`) | **federated** metrics only | cross-machine reporting continuity; this is shared, opt-in state, not local accounting |
+| `$C/telemetry/model-metrics.jsonl` — written by `exportFederatedTelemetry` to `$XDG_CONFIG_HOME/kxm/telemetry`, or `~/.config/kxm/telemetry`, or an explicit global directory | **federated** metrics only. Absent on most boxes: the exporter is implemented and `telemetry.federated` defaults to `true` in the shipped config, but no hub or CLI path calls it today, so its absence is normal and its presence means something opted in. Not local accounting, which is `$X/logs/telemetry.jsonl` | cross-machine reporting continuity, and a privacy boundary worth naming: federated records are a **different file** from local accounting, with `anonymize` defaulting to `true` |
 | `$S/hub-binding.json`, `$S/hub-env.json`, `$C/session.token` | host hub URL, credentials, local session token | a re-bind and a token rotation. **Secrets:** prefer regeneration to shipping them off-box, and never commit them |
 | `$C` global roles/workflows/host configuration | user-level defaults | operator conventions |
 
@@ -258,9 +258,12 @@ restore lands in the wrong place.
 
 1. Stop the hub gracefully (`kxm hub stop` or `SIGTERM`) and let the supervisor settle
    children; both close their databases.
-2. Copy the whole set above as one tree (both roots, `$S` and `$W`), or use `VACUUM INTO`
-   per database for a compact, consistent single-file snapshot of each. The hub's own backup path already writes a
-   hashed manifest and records a schema version ceiling; keep that manifest with the files.
+2. Copy the whole set above as one tree — **all four roots**, `$S`, `$X`, `$W` and `$C` —
+   or take `VACUUM INTO` snapshots per database. Snapshots do **not** replace the file copy:
+   configuration, repository bindings, prompt sidecars and routing manifests are not
+   databases, and a snapshot-only backup reproduces exactly the failure this section
+   exists to remove. The hub's own backup path already writes a hashed manifest and records
+   a schema version ceiling; keep that manifest with the files.
 3. Record the package version, configuration revision and schema versions beside the copy.
    A restore that cannot state which release produced it is not a restore path.
 4. Keep at least one rotation, and bound retention explicitly — run events and prompt

@@ -10,7 +10,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   `docs/operations.md` gained a *Per-tenant hosted deployment* section (one tenant = one box
   = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser
   session; a reverse-proxy contract states what must hold without shipping generated proxy
-  config) and a rewritten *Backup and restore* that enumerates every path a tenant owns —
+  config) and a rewritten *Backup and restore* that enumerates the tenant's state by root —
   the four roots a tenant actually has — host-local `$KXM_STATE_HOME` (Runtime
   `registry.db`, per-project `run-events.db` **and its `.run-prompts.json` sidecar**,
   repository bindings, `update.yaml`), the project's `.kxm` directory (config, agents,
@@ -47,9 +47,11 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **`kxm hub view` and the session brief label the binding `loopback` or `remote`.**
   "Attached across a network" and "attached on this box" looked identical before, and only
   one of them puts a bearer on a wire. `localhost`, `127.0.0.1`, `::1` and `*.localhost` are
-  loopback; `0.0.0.0`, LAN addresses and host names are remote. Only remote binds consult a
-  credential at all: a damaged host record must not cost a local operator their start, and
-  the first cut of the guard did exactly that.
+  loopback; `0.0.0.0`, LAN addresses and host names are remote. The **bind** guard is
+  scoped to remote URLs — a damaged host record must not cost a local operator their start,
+  and the first cut of the guard did exactly that. That is a statement about `hub bind`
+  only: other client paths resolve credentials whatever the scope, so loopback commands can
+  still fail on a malformed record.
 
 - **Naming sweep:** the retired `vnext` naming is gone from file and folder names,
   symbols, constants, schema `$id` segments, and error codes (`vnext_*` is now

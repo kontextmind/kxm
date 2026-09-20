@@ -310,9 +310,9 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
     assert.equal(hubBindingScope("http://0.0.0.0:7331"), "remote");
     assert.equal(hubBindingScope("http://192.168.1.20:7331"), "remote");
 
-    // 0b. A damaged host credential record is a remote concern. Loopback never puts a
-    //     bearer on a wire, so it must keep binding — the first cut of the guard read
-    //     the record first and cost local operators their start.
+    // 0b. A damaged host credential record is a remote concern **for bind**. A loopback
+    //     URL puts no bearer on a wire, so it must keep binding — the first cut of the
+    //     guard read the record before checking scope and cost local operators their start.
     const brokenLocal = mkdtempSync(join(tmpdir(), "kxm-hub-bind-broken-local-"));
     cleanup.push(brokenLocal);
     writeFileSync(join(brokenLocal, "hub-env.json"), "{malformed");

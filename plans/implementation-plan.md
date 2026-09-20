@@ -410,7 +410,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   is a distinction nobody reads. The second round then caught a **regression my own fix
   had introduced**: the guard resolved credentials *before* it checked scope, so a damaged
   host record began refusing **loopback** binds that had always worked; resolution is now
-  remote-only, with its own case. That round also found my rewritten test had dropped the
+  remote-only, with its own case. The claim was then narrowed rather than repeated: that is
+  a property of the **bind** guard, not of loopback — other client paths call
+  `resolveClientHubAuthToken` whatever the scope, so loopback commands can still fail on a
+  malformed record, and a comment implying otherwise would be the same class of overstatement
+  one line away. That round also found my rewritten test had dropped the
   `localhost` and `[::1]` scope assertions while still claiming to cover them — restoring
   the literals is the difference between a test that names its cases and one that merely
   passes.

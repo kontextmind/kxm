@@ -227,14 +227,15 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string): Promise<numb
     throw error;
   }
   const scope = hubBindingScope(url);
-  // A remote binding puts a bearer on a network path, so refuse it when this machine has
-  // nothing to authenticate with. A stored-but-unusable URL reads later like a network
-  // fault and the operator debugs the wrong thing. Loopback is unaffected.
-  // Credential resolution is a **remote**-only concern: a loopback hub URL never puts a
-  // bearer on a wire, so a damaged host record must not cost an operator their local
-  // start. The first version of this guard resolved credentials before checking scope
-  // and turned an unreadable record into a refusal for loopback too — a regression
-  // against behaviour that predates this slice.
+  // Scope-scoped on purpose, and only for **this command**. A remote binding puts a
+  // bearer on a network path, so it is refused when nothing can authenticate it; a
+  // stored-but-unusable URL otherwise reads later like a network fault and gets debugged
+  // as one. Loopback is not consulted here because a loopback URL puts nothing on a wire —
+  // not because credentials are never resolved locally: other client paths still call
+  // `resolveClientHubAuthToken` regardless of scope, so a damaged host record can still
+  // fail `kxm peer list` on loopback. Narrowing the claim is the point; the first version
+  // of this guard checked the record *before* the scope and refused loopback binds that had
+  // always worked, which is a regression against behaviour predating this slice.
   if (scope === "remote") {
     // The project that will actually authenticate: a record holding only another
     // project's token cannot authorise this one.
