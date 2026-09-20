@@ -6,7 +6,10 @@ use. If the routing table and this file disagree, `AGENTS.md` wins. Agents are
 a rotation; Grok is the currently admitted native writer, not a fixed sole
 writer.
 
-Snapshot date: **2026-09-08** (agy helper admission). Catalog/auth rows below
+Snapshot date: **2026-09-08** (agy helper admission). **Admission authority (2026-09-20):**
+this file documents what each CLI *can* do; it does not decide what is *admitted*. Google's
+admitted route is the `antigravity` Pi provider (Tracking → Decided, 2026-09-15); the `agy`
+rows below are catalog/helper capability, not a writer admission. Catalog/auth rows below
 are corrected from `plugins/kxm/src/vnext-harness.ts` and helper argv (M5
 docs). Codex flags were re-audited against official online docs and installed
 CLI **0.153.4 on 2026-09-10**; that does not refresh the other rows. Re-probe

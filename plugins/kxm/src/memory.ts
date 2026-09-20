@@ -374,7 +374,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; create
 
   // 3. GEMINI.md
   const geminiPath = join(root, "GEMINI.md");
-  const geminiHeader = `# KXM (Gemini / Antigravity)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nGoogle / Antigravity CLI (\`agy\`) is an admitted native writer and experiment edit route\nfor Gemini models. Starting rotation remains Grok.\n`;
+  const geminiHeader = `# KXM (Gemini / Antigravity)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nGoogle goes through the \`antigravity\` **Pi provider** (Tracking \u2192 Decided,\n2026-09-15); \`agy\` stays a harness catalog/helper entry, not the admission path.\nCurrent admissions come from Tracking and \`kxm harness list\`. Starting rotation\nremains Grok.\n`;
   const geminiExisted = existsSync(geminiPath);
   if (updateHarnessDocument(geminiPath, block, geminiHeader)) {
     if (geminiExisted) updated.push("GEMINI.md");

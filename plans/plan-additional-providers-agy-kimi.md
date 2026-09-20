@@ -39,7 +39,7 @@ Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
 ## 1. Objective
 
-Identify reusable streaming, schema handling, diagnostics and quota contracts while preserving native harness sessions and credentials. Google remains on authenticated `agy`; Kimi controls require separate installed-version, authentication and lifecycle evidence. Only Pi is currently admitted as a supervised long-lived RPC worker. Direct Pi-provider integration was an earlier alternative, not the selected route for replacing these native harnesses.
+Identify reusable streaming, schema handling, diagnostics and quota contracts while preserving native harness sessions and credentials. *(Superseded by the 2026-09-15 decision: Google's admitted route is the `antigravity` **Pi provider**; `agy` is catalog/helper capability, not the admission path. Original text:)* Google remained on authenticated `agy`; Kimi controls require separate installed-version, authentication and lifecycle evidence. Only Pi is currently admitted as a supervised long-lived RPC worker. Direct Pi-provider integration was an earlier alternative, not the selected route for replacing these native harnesses.
 
 ---
 

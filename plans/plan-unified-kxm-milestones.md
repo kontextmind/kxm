@@ -425,7 +425,8 @@ answer. Read-only Studio can ship before the editor and optional service panels.
 
 **Scope:** optional adapters using the shared identity, policy and receipt owners.
 
-- Preserve native Google/AGY and other native auth routes. Integrate useful Nous
+- Preserve native Google/AGY **auth state and the `agy` helper entry**. The admitted Google
+  route is the `antigravity` Pi provider (Tracking → Decided, 2026-09-15), not a CLI shell-out. Integrate useful Nous
   login/refresh and provider catalog behavior into KXM setup only for explicitly
   hosted provider routes. Do not migrate native credentials into Pi to gain features.
 - Add masked local secret entry, scoped credential references and value-free
