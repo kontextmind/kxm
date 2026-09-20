@@ -988,13 +988,18 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
     { code: "ERR_SQLITE_ERROR" })), true);
 
-  // **Precedence**, not just recognition: agreeing examples prove nothing about the
-  // order, so these disagree on purpose. Delete the `errno` lookup and the first one
-  // flips; move the symbolic name ahead of the number and the second one flips.
+  // **Precedence**, and which fixture owns which mutation — an earlier version of this
+  // comment had the mapping backwards, and a wrong comment about coverage is worse than no
+  // comment because it survives every mutation run.
+  //   • delete the `errno` lookup            -> the second assertion below flips
+  //   • symbolic name ahead of the number    -> the second assertion flips
+  //   • drop `errcode`, or `errCode` before it -> the third and fourth flip
+  // This first one is *recognition* of an extended contention code, not precedence: both
+  // of its fields say contention, so it passes whether the number or the name wins.
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
-    { code: "SQLITE_LOCKED_SHAREDCACHE", errno: 5 })), true, "bun's number beats its own name");
+    { code: "SQLITE_LOCKED_SHAREDCACHE", errno: 5 })), true, "extended contention codes classify, whichever field carries them");
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
-    { code: "SQLITE_BUSY", errno: 13 })), false, "a permanent number beats a busy name");
+    { code: "SQLITE_BUSY", errno: 13 })), false, "a permanent number beats a busy name (the precedence mutation lands here)");
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
     { errcode: 13, errno: 5 })), false, "the first integer value in the list decides; `errno` must not override it");
   // The direction the two agreeing fixtures above cannot test: a permanent *name*

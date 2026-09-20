@@ -10,7 +10,7 @@ created: "2026-09-18"
 updated: "2026-09-19"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Fourteen passes of an independent critic on the M1+M6 intake contract: BLOCK, then rounds of STILL BLOCKED — on the fix, on the closure of the fix, on the injectable seam that closure introduced, and on bun:sqlite's error shape; then six rounds (9–14) whose only defects were this record's own claims: snippets that could not run, counts that were not asserted, and corrections that claimed completeness. CLOSED on substance at round 10. Every finding reproduced. Critic opinion, not assignment, witness or acceptance proof."
+summary: "Every critic pass on the M1+M6 intake contract, in order, below. Substance CLOSED at pass 10; the passes after it found only evidence defects — a snippet that could not run, a field order nothing pinned, counts described rather than counted, and twice a correction that claimed completeness. Critic opinion, not assignment, witness or acceptance proof."
 tags: ["review", "runtime", "intake", "harnesses"]
 related:
   - ../implementation-plan.md
