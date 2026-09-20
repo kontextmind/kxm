@@ -151,7 +151,7 @@ export async function cmdKxmInit(
       return finishInit(0, `init plan: ${initialized.plan.mode}`);
     }
     const next = initialized.plan.mode === "legacy"
-      ? "legacy state requires reviewed migration; conversion is not available in this implementation slice"
+      ? "legacy state is not migrated by this build: initialise a fresh project directory and copy the YAML definitions you want to keep"
       : initialized.repairPlan?.issues.length
         ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved"
         : "partial or provenance-free KXM state requires explicit repair; no files were overwritten";

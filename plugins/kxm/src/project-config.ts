@@ -1353,6 +1353,18 @@ export function loadKxmProject(projectRoot: string, options: KxmConfigOptions = 
         continue;
       }
     }
+    // A member worktree is authoritative for its own repo.yaml/env.yaml, so the legacy
+    // refusal has to cover it too — checking only the control root let a member full of
+    // legacy JSON load normally. Throws before a single byte of that member is read.
+    const memberLegacy = binding === root ? [] : legacyConfigFilesAt(binding);
+    if (memberLegacy.length > 0) {
+      throw new KxmConfigError(memberLegacy.map((file) => issue(
+        "semantic",
+        "legacy_state_unsupported",
+        `${repositoryId}/${file}`,
+        `repository ${repositoryId} holds legacy JSON configuration and this build does not migrate it: delete those files once their YAML replacements exist, or bind a clean worktree`,
+      )));
+    }
     const foldedBinding = canonicalHostPath(binding).toLocaleLowerCase("en-US");
     const priorBinding = seenBindings.get(foldedBinding);
     if (priorBinding && priorBinding !== repositoryId) {

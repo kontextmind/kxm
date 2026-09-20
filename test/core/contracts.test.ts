@@ -574,3 +574,47 @@ test("sync-safe schema rejects raw or host-sensitive escape fields", () => {
     assert.equal(validate(unsafe), false, "unsafe sync payload unexpectedly validated");
   }
 });
+
+test("permission-diff contracts validate and reject unknown versions, fields, directions, pointers, and extras", () => {
+  // These cases used to ride inside the migration-contract test and were removed with it.
+  // They guard the trust report itself, so they stand alone now.
+  const { ajv } = createValidator();
+  const permissionDiff = {
+    schema: "kxm.permission-diff.v1",
+    baseRevision: `sha256:${"a".repeat(64)}`,
+    candidateRevision: `sha256:${"b".repeat(64)}`,
+    changes: [{
+      resource: ".kxm/agents/coordinator.yaml",
+      path: "/network",
+      field: "network",
+      direction: "expansion",
+      summary: "network changed provider-only -> host",
+      baseValueSha256: `sha256:${"c".repeat(64)}`,
+      candidateValueSha256: `sha256:${"d".repeat(64)}`,
+    }],
+    expansions: [{
+      resource: ".kxm/agents/coordinator.yaml",
+      path: "/network",
+      field: "network",
+      direction: "expansion",
+      summary: "network changed provider-only -> host",
+    }],
+    narrowings: [],
+    neutralChanges: [],
+    requiresReview: true,
+  };
+  const validatePermissionDiff = ajv.getSchema("https://schemas.kxm.dev/permission-diff.schema.json");
+  assert(validatePermissionDiff);
+  assert(validatePermissionDiff(permissionDiff), ajv.errorsText(validatePermissionDiff.errors));
+  for (const mutate of [
+    (value: JsonObject): void => { value.schema = "kxm.permission-diff.v2"; },
+    (value: JsonObject): void => { (value.changes as JsonObject[])[0]!.field = "invented"; },
+    (value: JsonObject): void => { (value.changes as JsonObject[])[0]!.direction = "sideways"; },
+    (value: JsonObject): void => { (value.changes as JsonObject[])[0]!.path = "not-a-pointer"; },
+    (value: JsonObject): void => { value.extra = true; },
+  ]) {
+    const invalid = structuredClone(permissionDiff);
+    mutate(invalid);
+    assert.equal(validatePermissionDiff(invalid), false, "invalid permission diff unexpectedly validated");
+  }
+});

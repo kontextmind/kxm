@@ -14,7 +14,7 @@ authority, admit writers, or replace `.kxm/roster.yaml` trusted policy.
 
 The KXM Agent Skills suite is organized by functional areas:
 
-- **Project Setup**: Use `kxm-project-setup` for `init`, `migrate`, `trust`, `config`, `completion`
+- **Project Setup**: Use `kxm-project-setup` for `init`, `trust`, `config`, `completion`
 - **Harness & Auth**: Use `kxm-harness-auth` for `harness`, `auth`, `update`, `runtime`, `agent`
 - **Hub Operations**: Use `kxm-hub-ops` for `hub`, `backup`, `restore`
 - **Session Management**: Use `kxm-session` for `session`, `dash`, `studio`

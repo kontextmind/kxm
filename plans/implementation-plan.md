@@ -2430,7 +2430,7 @@ visible local status (`kxm dash`). `fix.yaml` is not required to run live.
 ## Phase 5: multi-repository local release
 
 Ship the local Runtime track publicly beside, not on top of, the legacy hub
-engine. Explicit `kxm init`/migration receipts activate KXM resources per
+engine. Explicit `kxm init` receipts activate KXM resources per
 project; existing hub runs, `kxm hub …`, and the `kxm_*` tools remain on their current contracts.
 
 Implement worktrees, dirty snapshots, one-writer leases, multi-repository

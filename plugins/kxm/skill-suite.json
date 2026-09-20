@@ -13,8 +13,8 @@
     {
       "name": "kxm-project-setup",
       "path": "./skills/kxm-project-setup",
-      "ownedCommands": ["init", "migrate", "trust", "config", "completion"],
-      "intent": "Initialize, migrate, review permission changes, configure, and add shell completion"
+      "ownedCommands": ["init", "trust", "config", "completion"],
+      "intent": "Initialize, review permission changes, configure, and add shell completion"
     },
     {
       "name": "kxm-harness-auth",

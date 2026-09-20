@@ -22996,6 +22996,15 @@ function loadKxmProject(projectRoot, options = {}) {
         continue;
       }
     }
+    const memberLegacy = binding === root ? [] : legacyConfigFilesAt(binding);
+    if (memberLegacy.length > 0) {
+      throw new KxmConfigError(memberLegacy.map((file) => issue2(
+        "semantic",
+        "legacy_state_unsupported",
+        `${repositoryId}/${file}`,
+        `repository ${repositoryId} holds legacy JSON configuration and this build does not migrate it: delete those files once their YAML replacements exist, or bind a clean worktree`
+      )));
+    }
     const foldedBinding = canonicalHostPath(binding).toLocaleLowerCase("en-US");
     const priorBinding = seenBindings.get(foldedBinding);
     if (priorBinding && priorBinding !== repositoryId) {
@@ -31541,17 +31550,20 @@ function initializeKxmProjectAtGitRoot(start, gitRoot, options, mutationLock) {
   ]);
   const loaderOptions2 = configOptions(options, repositoryBindings);
   const transactionOptions = repairOptions(options, repositoryBindings);
+  const plan = planKxmInitialization(start, loaderOptions2);
+  if (plan.mode === "legacy") {
+    return { action: "planned", plan, ...plan.projectRoot ? { projectRoot: plan.projectRoot } : {}, files: [] };
+  }
   if (hasKxmInitTransaction(gitRoot)) {
     const operation = inspectKxmInitTransaction(gitRoot, options.schemasDir);
-    const plan2 = planKxmInitialization(start, loaderOptions2);
     if (!operation) {
-      if (options.dryRun) return { action: "planned", plan: plan2, projectRoot: gitRoot, resumePending: true, files: [] };
+      if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, resumePending: true, files: [] };
       if (!mutationLock) throw new Error("project mutation lock is required to clean an empty transaction");
       resumeKxmInitTransaction(gitRoot, transactionOptions);
     } else if (options.dryRun) {
       return {
         action: "planned",
-        plan: plan2,
+        plan,
         projectRoot: gitRoot,
         resumePending: true,
         transactionKind: operation.kind,
@@ -31599,10 +31611,6 @@ function initializeKxmProjectAtGitRoot(start, gitRoot, options, mutationLock) {
         files: result.files
       };
     }
-  }
-  const plan = planKxmInitialization(start, loaderOptions2);
-  if (plan.mode === "legacy") {
-    return { action: "planned", plan, ...plan.projectRoot ? { projectRoot: plan.projectRoot } : {}, files: [] };
   }
   if (plan.mode === "repair") {
     const projectRoot = plan.projectRoot ?? gitRoot;
@@ -31849,7 +31857,7 @@ async function cmdKxmInit(runtime, options, postHooks) {
     if (runtime.dryRun) {
       return finishInit(0, `init plan: ${initialized.plan.mode}`);
     }
-    const next = initialized.plan.mode === "legacy" ? "legacy state requires reviewed migration; conversion is not available in this implementation slice" : initialized.repairPlan?.issues.length ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved" : "partial or provenance-free KXM state requires explicit repair; no files were overwritten";
+    const next = initialized.plan.mode === "legacy" ? "legacy state is not migrated by this build: initialise a fresh project directory and copy the YAML definitions you want to keep" : initialized.repairPlan?.issues.length ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved" : "partial or provenance-free KXM state requires explicit repair; no files were overwritten";
     return finishInit(1, next);
   } catch (error) {
     if (error instanceof KxmConfigError) {

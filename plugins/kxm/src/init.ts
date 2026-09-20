@@ -207,9 +207,18 @@ function initializeKxmProjectAtGitRoot(
   const loaderOptions = configOptions(options, repositoryBindings);
   const transactionOptions = repairOptions(options, repositoryBindings);
 
+  const plan = planKxmInitialization(start, loaderOptions);
+  if (plan.mode === "legacy") {
+    // Classified **before** any transaction or lock work. A legacy tree used to reach the
+    // recovery branch first, so an interrupted create/repair journal made ordinary init
+    // acquire the project mutation lock, clean or resume the transaction, and write files
+    // while reporting `mode: "legacy"`. Nothing is resumed, cleaned, or written here: the
+    // pending journal stays exactly as it is until the legacy inputs are dealt with.
+    return { action: "planned", plan, ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}), files: [] };
+  }
+
   if (hasKxmInitTransaction(gitRoot)) {
     const operation = inspectKxmInitTransaction(gitRoot, options.schemasDir);
-    const plan = planKxmInitialization(start, loaderOptions);
     if (!operation) {
       if (options.dryRun) return { action: "planned", plan, projectRoot: gitRoot, resumePending: true, files: [] };
       if (!mutationLock) throw new Error("project mutation lock is required to clean an empty transaction");
@@ -265,12 +274,6 @@ function initializeKxmProjectAtGitRoot(
         files: result.files,
       };
     }
-  }
-
-  const plan = planKxmInitialization(start, loaderOptions);
-  if (plan.mode === "legacy") {
-    // Reported, never applied: this build has no migration path.
-    return { action: "planned", plan, ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}), files: [] };
   }
 
   if (plan.mode === "repair") {

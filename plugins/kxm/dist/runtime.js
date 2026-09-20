@@ -17417,6 +17417,15 @@ function loadKxmProject(projectRoot, options = {}) {
         continue;
       }
     }
+    const memberLegacy = binding === root ? [] : legacyConfigFilesAt(binding);
+    if (memberLegacy.length > 0) {
+      throw new KxmConfigError(memberLegacy.map((file) => issue2(
+        "semantic",
+        "legacy_state_unsupported",
+        `${repositoryId}/${file}`,
+        `repository ${repositoryId} holds legacy JSON configuration and this build does not migrate it: delete those files once their YAML replacements exist, or bind a clean worktree`
+      )));
+    }
     const foldedBinding = canonicalHostPath(binding).toLocaleLowerCase("en-US");
     const priorBinding = seenBindings.get(foldedBinding);
     if (priorBinding && priorBinding !== repositoryId) {
