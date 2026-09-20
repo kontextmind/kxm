@@ -62,7 +62,7 @@ function createMockPiProcess(
               }) + "\n");
               stdout.write(JSON.stringify({
                 type: "turn_end",
-                message: { role: "assistant", content: "Work passed successfully." },
+                message: { role: "assistant", content: 'Work complete. {"outcome": "passed"}' },
               }) + "\n");
               stdout.write(JSON.stringify({ type: "agent_end", willRetry: false }) + "\n");
               stdout.write(JSON.stringify({ type: "agent_settled" }) + "\n");
@@ -111,7 +111,7 @@ function settledUsageProcess() {
     });
     emit({
       type: "turn_end",
-      message: { role: "assistant", content: "Finished implementation. passed" },
+      message: { role: "assistant", content: 'Finished implementation. {"outcome": "passed"}' },
     });
     emit({ type: "agent_end", willRetry: false });
     emit({ type: "agent_settled" });
@@ -664,7 +664,7 @@ test("Pi producer executes end-to-end inside KXM engine driver", async () => {
           });
           emit({
             type: "turn_end",
-            message: { role: "assistant", content: "Completed. passed" },
+            message: { role: "assistant", content: 'Completed. {"outcome": "passed"}' },
           });
           emit({ type: "agent_end", willRetry: false });
           emit({ type: "agent_settled" });
@@ -747,7 +747,7 @@ test("PiSession direct methods and event handling edge cases", async () => {
       type: "turn_end",
       message: {
         role: "assistant",
-        content: [{ text: "part 1" }, { text: "outcome: passed" }],
+        content: [{ text: "part 1" }, { text: '{"outcome": "passed"}' }],
       },
     }) + "\n",
   );
@@ -777,7 +777,7 @@ test("PiSession direct methods and event handling edge cases", async () => {
   // Emit agent_settled
   proc.stdout.emit("data", JSON.stringify({ type: "agent_settled" }) + "\n");
   const promptResult = await promptPromise;
-  assert.equal(promptResult.outcome, "passed");
+  assert.equal(promptResult.outcome, "passed", "a declared result block still settles across concatenated parts");
   assert.equal(promptResult.usage?.contextUsage?.tokens, 120);
 
   // Test determineOutcome with JSON outcome
@@ -959,4 +959,42 @@ smokeTest("real Pi RPC dispatch behind KXM_SMOKE", async () => {
   } finally {
     await producer.close();
   }
+});
+
+test("prose and empty replies cannot mint a passing outcome", async () => {
+  // Only a declared result settles a step. determineOutcome used to scan the reply for outcome
+  // *words* and, finding none, fall back to `passed` — so "the gate did not pass" advanced the
+  // workflow as success, and so did returning nothing at all.
+  const { process: proc } = createMockPiProcess(() => {});
+  const session = new PiSession({
+    key: "outcome_key",
+    displayName: "outcome_display",
+    runId: "run_outcome",
+    agentId: "implementer",
+    instanceNo: 1,
+    scopeEpoch: 1,
+    process: proc,
+  });
+
+  const settle = async (content: string, allowedOutcomes: readonly string[]): Promise<string> => {
+    const pending = session.prompt("continue", allowedOutcomes);
+    proc.stdout.emit("data", JSON.stringify({ type: "turn_end", message: { role: "assistant", content } }) + "\n");
+    proc.stdout.emit("data", JSON.stringify({ type: "agent_settled" }) + "\n");
+    return (await pending).outcome;
+  };
+
+  assert.equal(
+    await settle("I ran the suite; the gate did not pass, so I would not call this passed.", ["passed", "blocked"]),
+    "failed",
+    "naming an outcome word in prose is not a result",
+  );
+  assert.equal(await settle("", ["passed", "blocked"]), "failed", "an empty reply must not default to success");
+  assert.equal(await settle("done", ["passed", "blocked"]), "failed", "an unstructured reply is not a pass");
+  assert.equal(
+    await settle('{"outcome": "mostly-fine"}', ["passed", "blocked"]),
+    "failed",
+    "an outcome outside the declared set cannot advance the step",
+  );
+  assert.equal(await settle('{"outcome": "blocked"}', ["passed", "blocked"]), "blocked", "a declared blocked result is honoured");
+  assert.equal(await settle("status: ok\n{\"outcome\": \"passed\"}", ["passed", "blocked"]), "passed", "a result block inside prose still counts");
 });

@@ -27913,20 +27913,21 @@ function extractText(content) {
   }
   return "";
 }
+var EMBEDDED_OUTCOME_JSON = /\{\s*"outcome"\s*:\s*"([^"]+)"\s*\}/;
 function determineOutcome2(text, allowedOutcomes) {
-  const normalized = text.trim();
-  const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
-  if (jsonMatch && allowedOutcomes.includes(jsonMatch[1])) {
-    return jsonMatch[1];
-  }
-  for (const outcome of allowedOutcomes) {
-    const regex = new RegExp(`\\b${outcome}\\b`, "i");
-    if (regex.test(normalized)) {
-      return outcome;
+  const trimmed = text.trim();
+  let declared;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const outcome = parsed.outcome;
+      if (typeof outcome === "string") declared = outcome;
     }
+  } catch {
+    const embedded = EMBEDDED_OUTCOME_JSON.exec(trimmed);
+    if (embedded) declared = embedded[1];
   }
-  if (allowedOutcomes.includes("passed")) return "passed";
-  return allowedOutcomes[0] ?? "completed";
+  return declared !== void 0 && allowedOutcomes.includes(declared) ? declared : "failed";
 }
 var PiSession = class {
   key;

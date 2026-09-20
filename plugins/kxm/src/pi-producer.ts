@@ -82,20 +82,28 @@ function extractText(content: unknown): string {
   return "";
 }
 
+const EMBEDDED_OUTCOME_JSON = /\{\s*"outcome"\s*:\s*"([^"]+)"\s*\}/;
+
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
-  const normalized = text.trim();
-  const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
-  if (jsonMatch && allowedOutcomes.includes(jsonMatch[1]!)) {
-    return jsonMatch[1]!;
-  }
-  for (const outcome of allowedOutcomes) {
-    const regex = new RegExp(`\\b${outcome}\\b`, "i");
-    if (regex.test(normalized)) {
-      return outcome;
+  // Structured result only. Two shapes count: a reply that is one JSON object, and a reply
+  // whose prose carries an explicit `{"outcome": "..."}` result block. What does **not** count
+  // is an outcome *word* appearing anywhere in the text — "the tests did not pass" used to
+  // settle a step as `passed` — and an empty or unstructured reply no longer defaults to
+  // success either. Undeclared here means failed; if a step does not declare `failed`, the
+  // engine records `outcome_unknown` and terminates the assignment as failed anyway.
+  const trimmed = text.trim();
+  let declared: string | undefined;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const outcome = (parsed as Record<string, unknown>).outcome;
+      if (typeof outcome === "string") declared = outcome;
     }
+  } catch {
+    const embedded = EMBEDDED_OUTCOME_JSON.exec(trimmed);
+    if (embedded) declared = embedded[1];
   }
-  if (allowedOutcomes.includes("passed")) return "passed";
-  return allowedOutcomes[0] ?? "completed";
+  return declared !== undefined && allowedOutcomes.includes(declared) ? declared : "failed";
 }
 
 export class PiSession {

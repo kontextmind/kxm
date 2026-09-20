@@ -105,6 +105,15 @@ created → accepted → dispatched → executing → result_recorded → termin
 | `blocked_uncertain` | A dependent effect cannot be reconciled safely |
 | `terminal` | The logical assignment outcome is final and immutable: passed, failed, or cancelled |
 
+A producer reply becomes a terminal outcome **only** through a declared result: a reply that
+is one JSON object, or prose carrying an explicit `{"outcome": "…"}` result block. Naming an
+outcome *word* anywhere in a reply is not a result — `"the gate did not pass, so I would not
+call this passed"` must not advance a step — and an empty or unstructured reply is never
+treated as success. A declared outcome outside the step's declared set is not accepted either:
+the assignment is recorded `outcome_unknown` and terminates as `failed`, which is also what
+happens when a step declares no `failed` transition. Producers do not guess on the model's
+behalf, and no fallback path mints `passed`.
+
 `assignmentId` remains stable. A retry moves the nonterminal assignment through
 `retry_pending` to `accepted`, creates a new `attemptId`, and never rewrites or
 exits the previous attempt's terminal state. The effective
