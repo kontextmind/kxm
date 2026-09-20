@@ -439,7 +439,41 @@ test("KXM template repair blocks overlapping edits and authority expansion witho
   }
 });
 
-type LegacyCase = { kind: "repair" | "empty"; location: "control" | "member"; dryRun: boolean };
+function memberRepairJournal(root: string, stateRoot: string): void {
+  // A bound member worktree plus a **real** interrupted repair journal. The template project
+  // declares only the control repository, so the member is added the way the full fixture has
+  // it — portable pathHint, its own Git root, matching projectId — before the repair is
+  // interrupted. This is the intersection that used to be missing: a member's legacy JSON
+  // falling through to `repair` is precisely what reaches lock acquisition.
+  const projectId = "prj_01JMEMBERREPAIR0000000000";
+  for (const [path, bytes] of renderKxmTemplate(projectId, "Member Repair", "v1").files) {
+    const file = join(root, path);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, bytes);
+  }
+  writeFileSync(join(root, ".kxm/gates.yaml"), "schema: kxm.gate-registry.v1\ngates:\n  test:\n    kind: command\n    argv: [npm, test]\n    timeoutMs: 3600000\n");
+  cpSync(join(fixture, "repositories", "api", ".kxm"), join(root, "repositories", "api", ".kxm"), { recursive: true });
+  makeGitRoot(join(root, "repositories", "api"));
+  const projectFile = join(root, ".kxm", "project.yaml");
+  writeFileSync(projectFile, readFileSync(projectFile, "utf8").replace(
+    "  - id: control\n    role: control\n    required: true\n    pathHint: .\n",
+    "  - id: control\n    role: control\n    required: true\n    pathHint: .\n  - id: api\n    role: member\n    required: true\n    pathHint: repositories/api\n",
+  ));
+  const memberRepoFile = join(root, "repositories", "api", ".kxm", "repo", "repo.yaml");
+  writeFileSync(memberRepoFile, readFileSync(memberRepoFile, "utf8").replace(/^projectId: .*$/m, `projectId: ${projectId}`), "utf8");
+  assert.throws(
+    () => initializeKxmProject(root, { localStateRoot: stateRoot, templateVariant: "v2", testFaultAt: "prepared" }),
+    /injected init fault/,
+    "an interrupted repair journal must exist before the legacy check",
+  );
+}
+
+const EXPECTED_LEGACY_INPUT = {
+  control: ".kxm/config/agents.json",
+  member: "api/.kxm/config/agents.json",
+} as const;
+
+type LegacyCase = { kind: "repair" | "empty" | "member-repair"; location: "control" | "member"; dryRun: boolean };
 
 test("legacy init preserves pending transactions and never acquires the mutation lock", () => {
   // Parameterized so no recovery route can quietly keep writing: a legacy tree must be
@@ -460,6 +494,8 @@ test("legacy init preserves pending transactions and never acquires the mutation
     { kind: "empty", location: "member", dryRun: true },
     { kind: "repair", location: "control", dryRun: false },
     { kind: "repair", location: "control", dryRun: true },
+    { kind: "member-repair", location: "member", dryRun: false },
+    { kind: "member-repair", location: "member", dryRun: true },
   ];
   for (const { kind, location, dryRun } of cases) {
     const label = `kind=${kind} legacyIn=${location} dryRun=${dryRun}`;
@@ -467,7 +503,9 @@ test("legacy init preserves pending transactions and never acquires the mutation
     try {
       const root = mkdtempSync(join(tmpdir(), "kxm-legacy-matrix-"));
       makeGitRoot(root);
-      if (kind === "repair") {
+      if (kind === "member-repair") {
+        memberRepairJournal(root, stateRoot);
+      } else if (kind === "repair") {
         historicalRepairProject(root, {
           projectId: "prj_01JLEGMATRIXREPAIR00000000",
           projectName: "Legacy Matrix",
@@ -499,9 +537,17 @@ test("legacy init preserves pending transactions and never acquires the mutation
         assert.equal(result.plan.mode, "legacy", `${label}: any legacy input is terminal, not a repair`);
         assert.equal(result.resumePending, undefined, `${label}: a legacy tree must not be resumed`);
         assert.equal(result.transactionKind, undefined, `${label}: no transaction may be claimed`);
+        // Exact identity, not a substring: a member path must stay repository-qualified so a
+        // consumer can tell which worktree holds the legacy state, and the control root keeps
+        // its project-relative form.
         assert.ok(
-          result.plan.legacyInputs.some((input) => input.includes("agents.json")),
-          `${label}: the report must name the legacy input, wherever it lives`,
+          result.plan.legacyInputs.includes(EXPECTED_LEGACY_INPUT[location]),
+          `${label}: expected ${EXPECTED_LEGACY_INPUT[location]}, got ${JSON.stringify(result.plan.legacyInputs)}`,
+        );
+        assert.equal(
+          existsSync(kxmInitTransactionPath(root)),
+          true,
+          `${label}: the pending journal must still be there — an empty directory left behind by cleanup would pass a snapshot check`,
         );
         assert.deepEqual(snapshotFiles(root), projectBefore, `${label}: the project tree must be untouched`);
         assert.deepEqual(snapshotFiles(stateRoot), stateBefore, `${label}: host-local state must be untouched`);

@@ -1813,7 +1813,20 @@ test(`store brakes: registry v1 stays valid; event store v${KXM_EVENT_STORE_SCHE
     prior.close();
     assert.throws(
       () => new KxmRunEventStore(v2),
-      new RegExp(`runtime_schema_outdated[\\s\\S]*this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}[\\s\\S]*start fresh`),
+      (error: unknown) => {
+        // Pin the whole recovery story, not just the code: an operator reading this message
+        // must be sent to the process that owns the store, and told plainly that init will not
+        // rebuild it. Wording drift here used to be free.
+        const message = error instanceof Error ? error.message : String(error);
+        assert.match(message, /runtime_schema_outdated/);
+        assert.match(message, new RegExp(`this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}`));
+        assert.match(message, /start fresh/);
+        assert.match(message, /kxm hub start/);
+        assert.match(message, /Runtime for registry\/event stores/);
+        assert.match(message, /`kxm init` is project-only and rebuilds no database/);
+        assert.doesNotMatch(message, /or re-run `kxm init`/, "init must not be offered as a database recovery path");
+        return true;
+      },
     );
 
     const newer = join(stateRoot, "v99-events.db");
