@@ -10,7 +10,7 @@ created: "2026-09-20"
 updated: "2026-09-20"
 authority: "hypothesis"
 confidence: "medium"
-summary: "Proposed scope for hosting KXM per tenant with kxmd-portal: one tenant = one box = one hub, Authentik gates the browser at the reverse proxy, existing static-token auth stays the default, hub state stays SQLite, and cross-hub visibility comes from existing /v1 read models rather than a new database. Two MVP slices, the rest explicitly deferred."
+summary: "Rationale and boundary for hosting KXM beside kxmd-portal: one tenant per box, Authentik at the edge, existing static-token auth unchanged, hub state stays SQLite, and the portal backend — not a new hub auth subsystem — is the hosted client of the loopback hub. Delivery order lives only in implementation-plan.md's queue (S0–S5); this file keeps no schedule of any kind, including slice counts."
 tags: ["hub", "studio", "auth", "hosting", "mvp"]
 related:
   - implementation-plan.md
@@ -113,8 +113,10 @@ over HTTP.
    `/v1/messages`, `/v1/workflows`, `/v1/improvements` — which the portal reads with the tenant
    hub's own token. Portal-side aggregation belongs in the portal's database, wherever the
    portal wants it, and that choice is not the hub's problem.
-2. **Later, on a named trigger:** if we need cross-hub SQL analytics/reporting, or the hub count
-   outgrows per-box reads, add **one PostgreSQL database per hub**, populated by a **projection
+2. **Later, on a named trigger:** if a concrete report needs retained cross-hub history that
+   bounded summaries cannot answer, or measured polling misses an agreed refresh target after
+   bounding and caching, add **one PostgreSQL database per hub**, populated by a **projection
+   (the trigger is Tracking's, in the same words on purpose — hub count alone is not one)**
    exported from the hub's event log** — never as the hub's write path. Per-hub database (not a
    shared multi-tenant schema) because: our migrations are still moving (v6 pending) and a shared
    schema forces every tenant into lockstep; blast radius and restore are per tenant anyway; and

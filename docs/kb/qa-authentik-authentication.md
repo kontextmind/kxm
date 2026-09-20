@@ -60,8 +60,9 @@ A small broker (could be a new hub route or a sidecar) accepts an Authentik ID t
 
 ## Recommendation (replaced 2026-09-20)
 
-The options **above** are **superseded**, and deliberately left visible because they were the
-plausible answer for a month and someone will meet them again: **do not build a hub-side JWT verifier, a
+Options **2 and 3**, and the staged recommendation that used to sit in this section, are
+**superseded** — option 1 above is the selected shape, not a rejected one. They stay visible
+because they were the plausible answer for a month and someone will meet them again: **do not build a hub-side JWT verifier, a
 token broker, per-user project tokens, or signed session/attempt token issuance as hosting
 prerequisites.** They were a reasonable answer to "one hub, many users"; they are the wrong
 answer to the deployment we actually have, which is **one tenant per box**.

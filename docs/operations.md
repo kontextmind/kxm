@@ -146,6 +146,14 @@ Recommended alerts:
 
 ## Backup and restore
 
+> **Hub-only today, and labelled as such.** The recipe below stops the hub and copies
+> `.kxm/state/kxm.db`. That is not the whole tenant state set: the Runtime keeps its own
+> `registry.db`, per-project event stores under the user state root, prompt sidecars,
+> bindings and configuration. A restore that follows only these steps can bring the hub back
+> while losing Runtime history. Queue step **S1** replaces this section with a stopped-state
+> procedure covering the full set, and **S5** proves it with one deployed restore before real
+> use; until S1 lands, treat this as the hub database only.
+
 SQLite runs in WAL mode. The safest simple backup is a coordinated copy while the hub is stopped:
 
 1. Stop the hub gracefully.

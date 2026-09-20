@@ -53,9 +53,10 @@ evidence.
 attempts are exhausted or failed. Immediately try the next suggested eligible
 authenticated model and transfer findings. Preserve every attempt, candidate,
 failed check, and cost record. Prefer an authenticated native subscription for
-the same model. The narrowly admitted Pi writer is OpenRouter Qwen
-`qwen/qwen3-coder-plus`, which has no supported native route here; other models
-require reviewed admission. Identity, witness, both critics, and acceptance
+the same model. Which aggregator routes are admitted as writers, and on what
+exact-model conditions, is an admission decision: read **Tracking → Decided**. What stays
+here is the mechanics — provider login, `pi auth check`, and never billing one vendor
+through another's harness. Identity, witness, both critics, and acceptance
 remain mandatory.
 New-model comparisons are bounded experiments, not fanout on every task. The
 standalone `just assign` command does not automatically schedule failover.
@@ -106,9 +107,9 @@ Two helper prefixes are allowlisted after fail-closed `pi auth check
 --provider <id>`:
 
 - **OpenRouter** (`openrouter/…`): `/login openrouter` or
-  `OPENROUTER_API_KEY`. Bills OpenRouter credit. The narrowly admitted Pi
-  writer remains `openrouter/qwen/qwen3-coder-plus` with exact model auth
-  and edit permission.
+  `OPENROUTER_API_KEY`. Bills OpenRouter credit. Whether a specific OpenRouter
+  model is an admitted writer, with which permission, is decided in **Tracking →
+  Decided**, not here; this section is setup and refusal mechanics.
 - **Nous Research Portal** (`nous-portal/…`): install
   `@jayteelabs/pi-nous-portal-provider` (`pi install
   npm:@jayteelabs/pi-nous-portal-provider`), then `/login` → subscription

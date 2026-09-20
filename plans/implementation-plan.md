@@ -201,12 +201,17 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `in_progress` and `.kxm/role-hosts.yaml` is not committed on main. Do not
   schedule work from the archived plan.
 - Product name is **KXM**. Do not present Mesh or pi-extensions as the product.
-- **Antigravity routes through the pi-antigravity Pi-provider pattern
+- **Antigravity routes through the pi-antigravity Pi-provider pattern *(the current
+  Google route; the `agy`-CLI admission quoted below is its own superseded history —
+  read the 2026-09-15 entry as the decision and any older "AGY is the sole Google
+  harness" line as the state before it)*
   (2026-09-15, supersedes the 2026-09-11 review rejection):** Google
   integration is the `antigravity` Pi provider (Google OAuth, direct Cloud
   Code Assist API, dynamic catalog) via the pi-antigravity plugin — now being
   vendored into plugins/kxm — never a shell-out to the agy CLI. The agy CLI
-  stays a harness catalog/helper entry, not the admission path. Pi's bundled
+  stays a harness catalog/helper entry, not the admission path; where an older entry below
+  still says "AGY is the sole Google harness" or calls a native Google CLI an admitted
+  writer, that entry predates this decision and is historical. Pi's bundled
   google/* key stays braked. Code admission (harness-run allowlist +
   native-vendor carve-out + roster-policy segment rules) accepted at
   d998b7c7 (task_antigravity-pi-provider); the roster.json route and writer
@@ -262,10 +267,14 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   one-shot headless writer, not a supervised long-lived worker. The repo
   `scripts/harness-run.mjs` helper is a bounded dev dispatcher (auth preflight,
   verified pairs, private sidecars), not a Phase 11 product adapter.
-  **agy (Antigravity CLI, 2026-09-08):** admitted native Google subscription
+  **agy (Antigravity CLI, 2026-09-08) — historical, superseded by the 2026-09-15
+  pi-antigravity decision above:** admitted native Google subscription
   writer/experiment edit route for Gemini kebab ids only. One-shot headless
   CLI, not a worker. Starting rotation unchanged (Grok remains first).
-  The deprecated Gemini CLI is removed; AGY is the sole Google harness.
+  The deprecated Gemini CLI is removed; AGY is the sole Google harness. *(Superseded:
+  the current decision routes Google through the `antigravity` Pi provider, keeps `agy` as
+  a catalog helper, and retains the deprecated `gemini` catalog entry — the sentence above
+  is kept because the decision history in this file is the audit trail.)*
 - **Developer assignment runner (issue 127, unreleased):** normal entry is
   `just assign` with a closed `kxm.assignment.v1` manifest and
   `task_dir/plan-current.json`. Fixed `just witness` verifies the exact
@@ -949,7 +958,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   changes affect configuration and tool-policy hashes; timeout-only
   decreases narrow permission budgets. The current `v4-registry` template
   declares `npm test`; historical template bytes and provenance are retained.
-  Execution and attempt-bound evidence are still open, and #89 remains open.
+  Execution and attempt-bound evidence were still open at that slice, and #89 was open —
+  *(historical: the driver entry under Landed fulfils the Phase 3 gate sentence and issue #89
+  is closed as of 2026-09-20)*.
 - **D3 S2 pins/store/replay:** run plans pin `kxm.run-plan.v2` with the exact
   registry hash, referenced gate definitions and control-root key. Event store
   schema 3 adds immutable `gate_attempts`, `gate_observations` and
@@ -961,7 +972,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   evaluated settlement keeps the observation and fails the run when a
   transition budget is exhausted. Proven no-start settles truthfully without
   an executing event; uncertain observations freeze without evidence. The
-  engine still refuses gate dispatch; #89 remains open.
+  engine then refused gate dispatch and #89 was open *(historical; see the two lines
+  above)*.
 - **D3 S3 artifacts-exist dispatch and orphan-visible preflight:** drive, step,
   and scheduler admit once and evaluate `artifacts-exist` under control
   `.kxm/assets` with lexical+realpath containment. Every pinned path is
@@ -977,7 +989,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   execution is implemented in this tree (unreleased). *(Historical at that slice:
   a later entry in this phase states the Gate sentence is fulfilled, and issue #89,
   "D3: engine: gate registry and evidence", is **closed** as of 2026-09-20.)*
-  D4 recovery and #89 remain open.
+  D4 recovery and #89 were then open *(historical; #89 is closed)*.
 - **D3 S4 command execution (implemented, unreleased):** POSIX command gates
   spawn with `shell: false` and detached process groups, arm exact admission
   holds through evaluated settlement, and record immutable hashed
@@ -1009,7 +1021,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `owned` index. `executing_unrecorded` stays the singleton exception only.
   Uninvoked starting agents and failed durable settlement
   stay unresolved with `attempt_unreconciled` rather than a fabricated
-  terminal run. Full D4, default/fix driver gate, evidence, retries,
+  terminal run. *(Status at that slice; the driver entry under Landed supersedes it.)*
+  Full D4, default/fix driver gate, evidence, retries,
   approvals, waits, budgets, and recovery remain open. Operator-prioritized
   roster/routing planning is next after this slice is accepted; it is not
   implemented here and does not pass a product Phase 4 gate.
@@ -1380,11 +1393,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   | # | Deliver | Unblocked by | Proof | One named test |
   |---|---|---|---|---|
   | S0 | Reconcile plan authority: this queue, the gate/decision contradictions above, catalog demotion, AGENTS prose and regeneration | this replan | coherent tracker, catalog and generated artifacts through existing `verify` | none — prose and generated output, existing gate covers it |
-  | S1 | Hub + local Runtime running on the tenant box: service account, persisted state paths, loopback listeners, existing restart path, one project and the slim `default` workflow, one hosting recipe in `docs/operations.md` | a provisioned box and a selected authenticated route | restart the services; readiness, persisted credentials, retained run identity | none — deployment witness; existing behavioural gate |
+  | S1 | Hub + local Runtime running on the tenant box: service account, persisted state paths, loopback listeners, existing restart path, one project and the slim `default` workflow, **and the hosting recipe plus the stopped-state backup/restore procedure for the whole tenant state set in `docs/operations.md`** (the existing recipe is hub-only — it stops the hub and copies `.kxm/state/kxm.db`, which is insufficient once Runtime registry, per-project event stores and prompt sidecars are in scope; S1 replaces or extends it and labels it until then) | a provisioned box and a selected authenticated route | restart the services; readiness, persisted credentials, retained run identity | none — deployment witness; existing behavioural gate |
   | S2 | Portal reads authoritative state: tenant label, connectivity, agents, runs, current status, latest receipt — hub metadata distinguished from Runtime run state, stale/unavailable explicit, polling | S1, portal router access | the read plus a browser comparison against the same run's CLI/API state | append `portal reads distinguish hub metadata from Runtime run state and unavailable upstreams` to `test/core/studio-layout.test.ts` |
   | S3 | Strict outcome on the selected Pi route — prose word-matching and default-pass removed | existing Pi producer fixture | negative outcome test plus selected-route live execution in S5 | `Pi final prose or malformed outcome cannot pass an assignment` in `test/core/pi-producer.test.ts` |
   | S4 | Portal drives one workflow: create, drive, cancel only, reusing existing command/run/drive IDs and receipts; 202 is started, never completed | S2, S3, exact project binding | command-parity test plus existing duplicate-drive, shutdown and receipt coverage | `portal create-drive-cancel preserves command identity and reports authoritative settlement` in `test/core/studio-layout.test.ts` |
-  | S5 | Edge authentication and first real use: HTTPS + Authentik on the tenant's existing proxy, tenant-admin only, hub and supervisor stay private, documented stopped-state backup and **one restore before first use** | S4, tenant DNS/TLS/Authentik config | deployed witness: unauthenticated access denied, wrong tenant denied, logout/revocation, refresh mid-run, one real `default` run, one usable restore | none — named deployment witness, no new suite |
+  | S5 | Edge authentication and first real use: HTTPS + Authentik on the tenant's existing proxy, tenant-admin only, hub and supervisor stay private, and **the deployed restore witness** — one restore performed with S1's procedure before first use (procedure authoring is S1's; S5 proves it on the box) | S4, tenant DNS/TLS/Authentik config | deployed witness: unauthenticated access denied, wrong tenant denied, logout/revocation, refresh mid-run, one real `default` run, one usable restore | none — named deployment witness, no new suite |
 
   **Explicitly not MVP, with its trigger:** post-MVP closes observed first-use failures
   (one focused regression per repair; scheduler/supervisor timing moves here unless it
@@ -1926,7 +1939,8 @@ model-free agent/moa join-all panels with target-bounded births, a
 maxParallel window, per-member settlement, one join commit, freeze after
 outcome/terminal/cancel intent, fail-closed capability/settlement, exact
 pending-owner drain, and minted capability-hash bind through invoke.
-No new events or run-state fields. Full D4, remaining joins, approval,
+No new events or run-state fields. *(Historical slice status; superseded where the driver
+  entry under Landed states the Phase 3 gate fulfilled.)* Full D4, remaining joins, approval,
 waits, duration/cost budgets, recovery, and the model-free driver remain
 open. Roster/routing is not implemented in this slice and does not pass
 Phase 4. *(Historical: issue #89 is since **closed**, and a later entry in this phase states
