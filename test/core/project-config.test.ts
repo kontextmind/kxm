@@ -718,7 +718,7 @@ test("KXM project mutation lock rejects linked Git-metadata parents", () => {
   }
 });
 
-test("KXM initialization planning is read-only and classifies create, migrate, ready, and repair", () => {
+test("KXM initialization planning is read-only and classifies create, legacy, ready, and repair", () => {
   const createRoot = mkdtempSync(join(tmpdir(), "kxm-create-"));
   const legacyRoot = mkdtempSync(join(tmpdir(), "kxm-legacy-"));
   const readyRoot = temporaryFixture("kxm-ready-");
@@ -736,7 +736,11 @@ test("KXM initialization planning is read-only and classifies create, migrate, r
     mkdirSync(join(legacyRoot, ".kxm", "config"), { recursive: true });
     writeFileSync(join(legacyRoot, ".kxm", "config", "agents.json"), "[]\n");
     const migration = planKxmInitialization(legacyRoot);
-    assert.equal(migration.mode, "migrate");
+    assert.equal(migration.mode, "legacy");
+    assert.ok(
+      migration.issues.some((issue) => issue.code === "legacy_state_unsupported"),
+      "a legacy-only tree is reported as unsupported, never offered as a migration",
+    );
     assert.deepEqual(migration.legacyInputs, [".kxm/config/agents.json"]);
 
     const nestedControlPath = join(readyRoot, "packages", "nested");
@@ -759,8 +763,8 @@ test("KXM initialization planning is read-only and classifies create, migrate, r
 
     mkdirSync(join(readyRoot, ".kxm", "config"), { recursive: true });
     writeFileSync(join(readyRoot, ".kxm", "config", "agents.json"), "[]\n");
-    assert.throws(() => loadKxmProject(readyRoot), (error) => issueCodes(error).includes("legacy_kxm_conflict"));
-    assert.equal(planKxmInitialization(readyRoot).mode, "migrate");
+    assert.throws(() => loadKxmProject(readyRoot), (error) => issueCodes(error).includes("legacy_state_unsupported"));
+    assert.equal(planKxmInitialization(readyRoot).mode, "legacy", "a mixed YAML+legacy tree is unsupported, not migratable");
   } finally {
     for (const root of [createRoot, legacyRoot, readyRoot, repairRoot, nonGitRoot, invalidGitRoot]) rmSync(root, { recursive: true, force: true });
   }

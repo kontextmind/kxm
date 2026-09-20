@@ -142,9 +142,6 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(existsSync(join(packageRoot, "schemas", "project.schema.json")), true);
     assert.equal(existsSync(join(packageRoot, "schemas", "template-provenance.schema.json")), true);
     assert.equal(existsSync(join(packageRoot, "schemas", "init-operation.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "migration-plan.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "migration-decision.schema.json")), true);
-    assert.equal(existsSync(join(packageRoot, "schemas", "migration-receipt.schema.json")), true);
 
     const unsupportedWorkspace = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "--workspace", join(kxmProject, "wrong"), "init", "--json",
@@ -204,80 +201,89 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert.equal(packedJoinRepeated.status, 0, `${packedJoinRepeated.stderr}\n${packedJoinRepeated.stdout}`);
     assert.match(packedJoinRepeated.stdout, /"action":"validated"/);
 
-    // Packed consumer: legacy JSON migration plan/apply/verify round trip.
-    const legacyConsumer = join(consumer, "legacy-project");
-    mkdirSync(join(legacyConsumer, ".kxm", "config", "workflows"), { recursive: true });
-    makeGitRoot(legacyConsumer);
-    writeFileSync(join(legacyConsumer, ".kxm", "config", "agents.json"), JSON.stringify({
-      schema: "kxm.agents.v1",
-      agents: [{ name: "writer", kind: "agent", driver: "ai", purpose: "Writes" }],
-    }));
-    writeFileSync(join(legacyConsumer, ".kxm", "config", "workflows", "fix.json"), JSON.stringify([{
-      id: "fix",
-      target: "writer",
-      maxTransitions: 4,
-      stages: [{
-        id: "plan",
-        instructions: "Plan the fix.",
-        on: { passed: "$terminal", blocked: "$terminal" },
-      }],
-    }]));
-    const migratePlan = spawnSync(process.execPath, [
-      join(packageRoot, "scripts", "kxm.mjs"), "migrate", "plan", "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
-    assert.equal(migratePlan.status, 1, `${migratePlan.stderr}\n${migratePlan.stdout}`);
-    const migratePlanPayload = JSON.parse(migratePlan.stderr) as {
-      plan: { canApply: boolean; projectId: string; projectName: string; sourceDigest: string; ambiguities: Array<{ key: string; allowedValues: Array<string | number> }> };
-    };
-    assert.equal(migratePlanPayload.plan.canApply, false);
-    const packedResolutions: Record<string, string | number> = {};
-    for (const ambiguity of migratePlanPayload.plan.ambiguities) packedResolutions[ambiguity.key] = ambiguity.allowedValues[0]!;
-    const packedDecisions = join(legacyConsumer, "decisions.yaml");
-    writeFileSync(packedDecisions, [
-      "schema: kxm.migration-decision.v1",
-      `projectId: ${migratePlanPayload.plan.projectId}`,
-      `projectName: ${migratePlanPayload.plan.projectName}`,
-      `sourceDigest: ${migratePlanPayload.plan.sourceDigest}`,
-      "resolutions:",
-      ...Object.entries(packedResolutions).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`),
+    // Packed consumer: a natively initialised project that carries the writer agent and
+    // the `fix` workflow the trust and run-lifecycle sections below exercise. This block
+    // used to build the same tree through `kxm migrate plan/apply/verify`; that legacy
+    // conversion path was deleted under the single-operator decision, so the fixture is
+    // authored directly and the downstream coverage is unchanged.
+    const nativeConsumer = join(consumer, "native-project");
+    mkdirSync(nativeConsumer);
+    makeGitRoot(nativeConsumer);
+    const nativeInit = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "init", "--json",
+      "--name", "Native Project", "--project-id", "prj_01JNATIVEPROJECT0000000000",
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(nativeInit.status, 0, `${nativeInit.stderr}\n${nativeInit.stdout}`);
+    const agentDir = join(nativeConsumer, ".kxm", "agents");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, "writer.yaml"), [
+      "schema: kxm.agent.v1",
+      "purpose: Writes and verifies the change.",
+      "tools:",
+      "  preset: workspace-writer",
+      "defaultRepositoryAccess: write",
+      "network: provider-only",
+      "resultSchema: kxm.assignment-result.v1",
       "",
     ].join("\n"));
-    const migrateApply = spawnSync(process.execPath, [
-      join(packageRoot, "scripts", "kxm.mjs"), "migrate", "apply", "--json", "--decisions", packedDecisions,
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
-    assert.equal(migrateApply.status, 0, `${migrateApply.stderr}\n${migrateApply.stdout}`);
-    assert.match(migrateApply.stdout, /"action":"applied"/);
-    assert.equal(existsSync(join(legacyConsumer, ".kxm", "migration-receipt.yaml")), true);
-    const migrateVerify = spawnSync(process.execPath, [
-      join(packageRoot, "scripts", "kxm.mjs"), "migrate", "verify", "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
-    assert.equal(migrateVerify.status, 0, `${migrateVerify.stderr}\n${migrateVerify.stdout}`);
-    assert.match(migrateVerify.stdout, /"ok":true/);
+    const workflowDir = join(nativeConsumer, ".kxm", "workflows");
+    mkdirSync(workflowDir, { recursive: true });
+    writeFileSync(join(workflowDir, "fix.yaml"), [
+      "schema: kxm.workflow.v1",
+      "description: Plan, implement, and verify one bounded change.",
+      "coordinator: writer",
+      "limits:",
+      "  maxTransitions: 4",
+      "steps:",
+      "  - id: plan",
+      "    kind: agent",
+      "    agent: writer",
+      "    maxAttempts: 1",
+      "    timeoutMs: 1200000",
+      "    requiredEvidence:",
+      "      - key: plan",
+      "        kind: artifact",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "      blocked:",
+      "        target: $terminal",
+      "        terminalStatus: failed",
+      "",
+    ].join("\n"));
+    // Re-running init loads the whole bundle: it is the check that the fixture above is
+    // a valid project, so a broken agent/workflow file cannot slip through silently.
+    const nativeValidated = spawnSync(process.execPath, [
+      join(packageRoot, "scripts", "kxm.mjs"), "init", "--json",
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment });
+    assert.equal(nativeValidated.status, 0, `${nativeValidated.stderr}\n${nativeValidated.stdout}`);
+    assert.match(nativeValidated.stdout, /"action":"validated"/);
 
     // Packed consumer: trust diff/check against HEAD on the migrated project.
-    // Commit the migrated tree first so HEAD is a loadable KXM base, then
+    // Commit the native tree first so HEAD is a loadable KXM base, then
     // expand a permission and observe the check fail until committed.
-    spawnSync("git", ["-C", legacyConsumer, "add", "-A"], { windowsHide: true });
-    const migratedCommit = spawnSync("git", ["-C", legacyConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "migrated"], { windowsHide: true });
-    assert.equal(migratedCommit.status, 0, migratedCommit.stderr as unknown as string);
+    spawnSync("git", ["-C", nativeConsumer, "add", "-A"], { windowsHide: true });
+    const nativeCommit = spawnSync("git", ["-C", nativeConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "initialise"], { windowsHide: true });
+    assert.equal(nativeCommit.status, 0, nativeCommit.stderr as unknown as string);
     const trustClean = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "trust", "check", "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment });
     assert.equal(trustClean.status, 0, `${trustClean.stderr}\n${trustClean.stdout}`);
     assert.match(trustClean.stdout, /"requiresReview":false/);
-    const trustAgentFile = join(legacyConsumer, ".kxm", "agents", "writer.yaml");
+    const trustAgentFile = join(nativeConsumer, ".kxm", "agents", "writer.yaml");
     writeFileSync(trustAgentFile, readFileSync(trustAgentFile, "utf8").replace("network: provider-only", "network: host"), "utf8");
     const trustExpanded = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "trust", "check", "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment });
     assert.equal(trustExpanded.status, 1, `${trustExpanded.stderr}\n${trustExpanded.stdout}`);
     assert.match(trustExpanded.stderr, /"requiresReview":true/);
-    spawnSync("git", ["-C", legacyConsumer, "add", "-A"], { windowsHide: true });
-    const trustCommit = spawnSync("git", ["-C", legacyConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "grant host network"], { windowsHide: true });
+    spawnSync("git", ["-C", nativeConsumer, "add", "-A"], { windowsHide: true });
+    const trustCommit = spawnSync("git", ["-C", nativeConsumer, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "grant host network"], { windowsHide: true });
     assert.equal(trustCommit.status, 0, trustCommit.stderr as unknown as string);
     const trustCommitted = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "trust", "check", "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment });
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment });
     assert.equal(trustCommitted.status, 0, `${trustCommitted.stderr}\n${trustCommitted.stdout}`);
     assert.match(trustCommitted.stdout, /"requiresReview":false/);
     assert.equal(existsSync(join(packageRoot, "schemas", "permission-diff.schema.json")), true);
@@ -285,7 +291,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     // Packed consumer: KXM run lifecycle with an auto-started supervisor.
     const packedRun = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "run", "fix", "--json", "smoke the runtime",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 120_000 });
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment, timeout: 120_000 });
     assert.equal(packedRun.status, 0, `${packedRun.stderr}\n${packedRun.stdout}`);
     const packedRunPayload = JSON.parse(packedRun.stdout) as { run: { runId: string; status: string }; supervisor: { started: boolean } };
     assert.equal(packedRunPayload.run.status, "created");
@@ -293,17 +299,17 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
     assert(!packedRun.stdout.includes("smoke the runtime"), "prompt content never appears in output");
     const packedRunsList = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "runs", "list", "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
     assert.equal(packedRunsList.status, 0, `${packedRunsList.stderr}\n${packedRunsList.stdout}`);
     assert.match(packedRunsList.stdout, new RegExp(packedRunPayload.run.runId));
     const packedCancel = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "runs", "cancel", packedRunPayload.run.runId, "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
     assert.equal(packedCancel.status, 0, `${packedCancel.stderr}\n${packedCancel.stdout}`);
     assert.match(packedCancel.stdout, /"status":"cancelled"/);
     const packedStop = spawnSync(process.execPath, [
       join(packageRoot, "scripts", "kxm.mjs"), "runtime", "stop", "--json",
-    ], { cwd: legacyConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
+    ], { cwd: nativeConsumer, encoding: "utf8", env: joinEnvironment, timeout: 60_000 });
     assert.equal(packedStop.status, 0, `${packedStop.stderr}\n${packedStop.stdout}`);
     assert.equal(existsSync(join(packageRoot, "plugins", "kxm", "dist", "runtime-supervisor.js")), true);
 

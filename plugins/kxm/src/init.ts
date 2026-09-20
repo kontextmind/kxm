@@ -268,7 +268,8 @@ function initializeKxmProjectAtGitRoot(
   }
 
   const plan = planKxmInitialization(start, loaderOptions);
-  if (plan.mode === "migrate") {
+  if (plan.mode === "legacy") {
+    // Reported, never applied: this build has no migration path.
     return { action: "planned", plan, ...(plan.projectRoot ? { projectRoot: plan.projectRoot } : {}), files: [] };
   }
 

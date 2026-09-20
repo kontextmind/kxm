@@ -12,7 +12,6 @@ import {
   type KxmInitializationPlan,
 } from "../project-config.ts";
 import { initializeKxmProject } from "../init.ts";
-import { applyKxmMigration, planKxmMigration, verifyKxmMigration } from "../migrate.ts";
 import { diffKxmProjectAgainstRevision, formatKxmPermissionDiff } from "../permission.ts";
 import { readKxmLocalBindings, kxmUserStateRoot } from "../bindings.ts";
 import { loadKxmProject } from "../project-config.ts";
@@ -151,7 +150,7 @@ export async function cmdKxmInit(
     if (runtime.dryRun) {
       return finishInit(0, `init plan: ${initialized.plan.mode}`);
     }
-    const next = initialized.plan.mode === "migrate"
+    const next = initialized.plan.mode === "legacy"
       ? "legacy state requires reviewed migration; conversion is not available in this implementation slice"
       : initialized.repairPlan?.issues.length
         ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved"
@@ -174,136 +173,6 @@ export async function cmdKxmInit(
     }, "KXM initialization failed because a local filesystem operation did not complete");
     return 1;
   }
-}
-
-export async function cmdKxmMigratePlan(runtime: Runtime): Promise<number> {
-  if (runtime.workspaceFlag !== undefined) {
-    print(runtime.io, runtime.json, {
-      ok: false,
-      command: "migrate plan",
-      error: "workspace_option_unsupported",
-    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
-    return 2;
-  }
-  try {
-    const result = planKxmMigration(runtime.cwd, {});
-    const ambiguities = (result.plan.ambiguities as Array<{ key: string; message: string }> | undefined) ?? [];
-    const unmapped = (result.plan.unmapped as unknown[] | undefined) ?? [];
-    const payload = {
-      ok: result.plan.canApply === true,
-      command: "migrate plan",
-      plan: result.plan,
-      plannedOnly: result.plan.canApply !== true,
-    };
-    if (result.plan.canApply === true) {
-      print(runtime.io, runtime.json, payload, `migration plan: ${ambiguities.length} ambiguities, ${unmapped.length} preserved fields; ready to apply`);
-      return 0;
-    }
-    print(
-      runtime.io,
-      runtime.json,
-      payload,
-      `migration plan requires ${ambiguities.length} reviewed decision(s):\n${ambiguities.map((candidate) => `  - ${candidate.key}: ${candidate.message}`).join("\n")}`,
-    );
-    return 1;
-  } catch (error) {
-    if (error instanceof KxmConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "migrate plan", error: "migration_plan_failed", issues: error.issues }, `migration plan failed: ${error.message}`);
-      return 1;
-    }
-    print(runtime.io, runtime.json, { ok: false, command: "migrate plan", error: "migration_plan_io_failed" }, "migration plan failed because a local filesystem operation did not complete");
-    return 1;
-  }
-}
-
-export async function cmdKxmMigrateApply(runtime: Runtime, options: { decisions?: string | undefined; projectId?: string | undefined; name?: string | undefined }): Promise<number> {
-  if (runtime.workspaceFlag !== undefined) {
-    print(runtime.io, runtime.json, {
-      ok: false,
-      command: "migrate apply",
-      error: "workspace_option_unsupported",
-    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
-    return 2;
-  }
-  try {
-    const result = applyKxmMigration(runtime.cwd, {
-      ...(options.decisions?.trim() ? { decisionsFile: options.decisions.trim() } : {}),
-      ...(options.projectId?.trim() ? { projectId: options.projectId.trim() } : {}),
-      ...(options.name?.trim() ? { projectName: options.name.trim() } : {}),
-      localStateRoot: kxmUserStateRoot({ env: runtime.env }),
-      dryRun: runtime.dryRun,
-    });
-    const payload = {
-      ok: result.action !== "planned" || (runtime.dryRun === true && result.plan?.canApply === true),
-      command: "migrate apply",
-      action: result.action,
-      files: result.files,
-      ...(result.configRevision ? { configRevision: result.configRevision } : {}),
-      ...(result.receiptPath ? { receiptPath: result.receiptPath } : {}),
-      plannedOnly: result.action === "planned",
-    };
-    if (result.action === "applied") {
-      print(runtime.io, runtime.json, payload, `migration applied: ${result.files.length} resources installed, receipt at ${result.receiptPath ?? ""}`);
-      return 0;
-    }
-    if (result.action === "already-migrated") {
-      print(runtime.io, runtime.json, payload, "migration receipt already exists; nothing to apply");
-      return 0;
-    }
-    if (runtime.dryRun && result.plan?.canApply === true) {
-      print(runtime.io, runtime.json, payload, `migration dry run: ${result.files.length} resources would be installed`);
-      return 0;
-    }
-    const ambiguities = (result.plan?.ambiguities as Array<{ key: string; message: string }> | undefined) ?? [];
-    print(
-      runtime.io,
-      runtime.json,
-      { ...payload, plan: result.plan },
-      `migration blocked by ${ambiguities.length} unresolved decision(s); review 'kxm migrate plan' and pass --decisions:\n${ambiguities.map((candidate) => `  - ${candidate.key}: ${candidate.message}`).join("\n")}`,
-    );
-    return 1;
-  } catch (error) {
-    if (error instanceof KxmConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "migrate apply", error: "migration_apply_failed", issues: error.issues }, `migration apply failed: ${error.message}`);
-      return 1;
-    }
-    print(runtime.io, runtime.json, { ok: false, command: "migrate apply", error: "migration_apply_io_failed" }, "migration apply failed because a local filesystem operation did not complete");
-    return 1;
-  }
-}
-
-export async function cmdKxmMigrateVerify(runtime: Runtime): Promise<number> {
-  if (runtime.workspaceFlag !== undefined) {
-    print(runtime.io, runtime.json, {
-      ok: false,
-      command: "migrate verify",
-      error: "workspace_option_unsupported",
-    }, "kxm migrate discovers the authoritative Git root from the current directory; --workspace is not supported");
-    return 2;
-  }
-  let result: ReturnType<typeof verifyKxmMigration>;
-  try {
-    result = verifyKxmMigration(runtime.cwd, {});
-  } catch (error) {
-    if (error instanceof KxmConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "migrate verify", error: "migration_verify_failed", issues: error.issues }, `migration verification failed: ${error.message}`);
-      return 1;
-    }
-    print(runtime.io, runtime.json, { ok: false, command: "migrate verify", error: "migration_verify_io_failed" }, "migration verification failed because a local filesystem operation did not complete");
-    return 1;
-  }
-  const payload = {
-    ok: result.ok,
-    command: "migrate verify",
-    ...(result.configRevision ? { configRevision: result.configRevision } : {}),
-    issues: result.issues,
-  };
-  if (result.ok) {
-    print(runtime.io, runtime.json, payload, `migration receipt verified: legacy sources unchanged, target bundle matches ${result.configRevision ?? ""}`);
-    return 0;
-  }
-  print(runtime.io, runtime.json, payload, `migration verification failed:\n${result.issues.map((issue) => `  - ${issue.file}: ${issue.code}: ${issue.message}`).join("\n")}`);
-  return 1;
 }
 
 export async function cmdBackup(runtime: Runtime, options: { out?: string | undefined }): Promise<number> {

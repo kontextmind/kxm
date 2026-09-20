@@ -58,7 +58,6 @@ export interface KxmProjectBundle {
   environments: readonly KxmResource[];
   gateRegistry?: KxmResource;
   templateProvenance?: JsonObject;
-  migrationReceipt?: JsonObject;
   resources: readonly KxmResource[];
   configRevision: string;
 }
@@ -69,11 +68,9 @@ export interface KxmConfigOptions {
   registeredExecutors?: Iterable<string>;
   registeredToolPresets?: Iterable<string>;
   registeredHarnesses?: Iterable<string>;
-  /** Internal: migration apply validates the staged target before the receipt exists. */
-  allowUnreceiptedLegacyConfig?: boolean;
 }
 
-export type KxmInitializationMode = "create" | "migrate" | "repair" | "ready";
+export type KxmInitializationMode = "create" | "legacy" | "repair" | "ready";
 
 export interface KxmInitializationPlan {
   mode: KxmInitializationMode;
@@ -161,9 +158,6 @@ export class KxmSchemaRegistry {
   readonly localBindingsValidator: ValidateFunction;
   readonly templateProvenanceValidator: ValidateFunction;
   readonly initOperationValidator: ValidateFunction;
-  readonly migrationPlanValidator: ValidateFunction;
-  readonly migrationDecisionValidator: ValidateFunction;
-  readonly migrationReceiptValidator: ValidateFunction;
   readonly permissionDiffValidator: ValidateFunction;
   readonly runEventValidator: ValidateFunction;
   readonly driveReceiptValidator: ValidateFunction;
@@ -181,9 +175,6 @@ export class KxmSchemaRegistry {
     const localBindingsFile = "local-repository-bindings.schema.json";
     const templateProvenanceFile = "template-provenance.schema.json";
     const initOperationFile = "init-operation.schema.json";
-    const migrationPlanFile = "migration-plan.schema.json";
-    const migrationDecisionFile = "migration-decision.schema.json";
-    const migrationReceiptFile = "migration-receipt.schema.json";
     const permissionDiffFile = "permission-diff.schema.json";
     const runEventFile = "run-event.schema.json";
     const driveReceiptFile = "drive-receipt.schema.json";
@@ -192,9 +183,6 @@ export class KxmSchemaRegistry {
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationPlanFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationDecisionFile)));
-    this.ajv.addSchema(readJsonObject(join(this.schemasDir, migrationReceiptFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, permissionDiffFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, runEventFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, driveReceiptFile)));
@@ -208,9 +196,6 @@ export class KxmSchemaRegistry {
     const localBindingsValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${localBindingsFile}`);
     const templateProvenanceValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${templateProvenanceFile}`);
     const initOperationValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${initOperationFile}`);
-    const migrationPlanValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${migrationPlanFile}`);
-    const migrationDecisionValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${migrationDecisionFile}`);
-    const migrationReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${migrationReceiptFile}`);
     const permissionDiffValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${permissionDiffFile}`);
     const runEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${runEventFile}`);
     const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${driveReceiptFile}`);
@@ -219,9 +204,6 @@ export class KxmSchemaRegistry {
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
-    if (!migrationPlanValidator) throw new Error(`schema did not compile: ${migrationPlanFile}`);
-    if (!migrationDecisionValidator) throw new Error(`schema did not compile: ${migrationDecisionFile}`);
-    if (!migrationReceiptValidator) throw new Error(`schema did not compile: ${migrationReceiptFile}`);
     if (!permissionDiffValidator) throw new Error(`schema did not compile: ${permissionDiffFile}`);
     if (!runEventValidator) throw new Error(`schema did not compile: ${runEventFile}`);
     if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
@@ -230,9 +212,6 @@ export class KxmSchemaRegistry {
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
-    this.migrationPlanValidator = migrationPlanValidator;
-    this.migrationDecisionValidator = migrationDecisionValidator;
-    this.migrationReceiptValidator = migrationReceiptValidator;
     this.permissionDiffValidator = permissionDiffValidator;
     this.runEventValidator = runEventValidator;
     this.driveReceiptValidator = driveReceiptValidator;
@@ -261,18 +240,6 @@ export class KxmSchemaRegistry {
 
   validateInitOperation(value: JsonObject, file: string): KxmConfigIssue[] {
     return this.validateAuxiliary(value, file, "kxm.init-operation.v1", this.initOperationValidator);
-  }
-
-  validateMigrationPlan(value: JsonObject, file: string): KxmConfigIssue[] {
-    return this.validateAuxiliary(value, file, "kxm.migration-plan.v1", this.migrationPlanValidator);
-  }
-
-  validateMigrationDecision(value: JsonObject, file: string): KxmConfigIssue[] {
-    return this.validateAuxiliary(value, file, "kxm.migration-decision.v1", this.migrationDecisionValidator);
-  }
-
-  validateMigrationReceipt(value: JsonObject, file: string): KxmConfigIssue[] {
-    return this.validateAuxiliary(value, file, "kxm.migration-receipt.v1", this.migrationReceiptValidator);
   }
 
   validatePermissionDiff(value: JsonObject, file: string): KxmConfigIssue[] {
@@ -1279,11 +1246,17 @@ export function assertNoRegisteredGates(options: object): void {
 export function loadKxmProject(projectRoot: string, options: KxmConfigOptions = {}): KxmProjectBundle {
   assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
-  let migrationReceipt: JsonObject | undefined;
-  if (legacyConfigFilesAt(root).length > 0 && options.allowUnreceiptedLegacyConfig !== true) {
-    const receiptCheck = readKxmMigrationReceipt(root, options);
-    if (receiptCheck.issues.length > 0) throw new KxmConfigError(receiptCheck.issues);
-    migrationReceipt = receiptCheck.receipt;
+  const legacyPresent = legacyConfigFilesAt(root);
+  if (legacyPresent.length > 0) {
+    // Nothing can unlock this any more. The migration path was deleted under the
+    // single-operator decision, so a tree still holding legacy JSON fails closed here
+    // rather than being loadable on proof of a past conversion.
+    throw new KxmConfigError(legacyPresent.map((file) => issue(
+      "semantic",
+      "legacy_state_unsupported",
+      file,
+      "legacy JSON configuration is present and this build does not migrate it: delete these files once their YAML replacements exist in .kxm/, or initialise a fresh project",
+    )));
   }
   const registry = new KxmSchemaRegistry(options.schemasDir);
   const project = readResource(registry, root, join(root, ".kxm", "project.yaml"), ".kxm/project.yaml", "project");
@@ -1295,9 +1268,6 @@ export function loadKxmProject(projectRoot: string, options: KxmConfigOptions = 
     if (provenanceProjectId !== stringValue(project.value.id)) {
       earlyIssues.push(issue("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
     }
-  }
-  if (migrationReceipt && stringValue(migrationReceipt.projectId) !== stringValue(project.value.id)) {
-    earlyIssues.push(issue("semantic", "migration_project_mismatch", KXM_MIGRATION_RECEIPT_PATH, "migration receipt belongs to a different project identity"));
   }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories")
     .map((candidate) => stringValue(objectValue(candidate)?.id))
@@ -1434,64 +1404,12 @@ export function loadKxmProject(projectRoot: string, options: KxmConfigOptions = 
     environments,
     ...(gateRegistry ? { gateRegistry } : {}),
     ...(templateProvenance === undefined ? {} : { templateProvenance }),
-    ...(migrationReceipt === undefined ? {} : { migrationReceipt }),
     resources,
     configRevision: bundleRevision(resources),
   };
 }
 
-/**
- * Fully verify a migration receipt against the loaded target bundle: target
- * revision and per-resource bytes. Load-time coexistence only pins the
- * legacy sources; this stricter check backs `kxm migrate verify`.
- */
-export function verifyKxmMigrationReceiptTarget(
-  root: string,
-  receipt: JsonObject,
-  resources: readonly KxmResource[],
-  configRevision: string,
-): KxmConfigIssue[] {
-  const issues: KxmConfigIssue[] = [];
-  if (receipt.configRevision !== configRevision) {
-    issues.push(issue("semantic", "migration_target_changed", KXM_MIGRATION_RECEIPT_PATH, "target configuration revision no longer matches the migration receipt"));
-  }
-  const declared = new Map<string, JsonObject>();
-  for (const candidate of Array.isArray(receipt.resources) ? receipt.resources : []) {
-    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-      const record = candidate as JsonObject;
-      if (typeof record.path === "string") declared.set(record.path, record);
-    }
-  }
-  const installedPaths = new Set<string>();
-  for (const resource of resources) {
-    // Repository resources are loaded from their bound worktree paths; only
-    // control-tree files participate in receipt byte checks.
-    const relative = resource.file.startsWith(root) ? relativePortable(root, resource.file) : undefined;
-    if (!relative) continue;
-    installedPaths.add(relative);
-    const record = declared.get(relative);
-    if (!record) {
-      issues.push(issue("semantic", "migration_target_unreceipted", relative, "installed resource is not covered by the migration receipt"));
-      continue;
-    }
-    const current = hashFileRecord(root, relative);
-    if (!current || current.sha256 !== record.sha256 || current.bytes !== record.bytes) {
-      issues.push(issue("semantic", "migration_target_modified", relative, "installed resource bytes differ from the migration receipt"));
-    }
-  }
-  for (const path of declared.keys()) {
-    if (!installedPaths.has(path)) {
-      issues.push(issue("semantic", "migration_target_missing", path, "receipt-covered resource is not part of the validated configuration"));
-    }
-  }
-  return sortIssues(issues);
-}
 
-function relativePortable(root: string, absolute: string): string | undefined {
-  const rel = relative(root, absolute);
-  if (!rel || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return undefined;
-  return rel.split(sep).join("/");
-}
 
 function legacyInputsAt(root: string): string[] {
   const candidates = [
@@ -1503,7 +1421,6 @@ function legacyInputsAt(root: string): string[] {
   return candidates.filter((candidate) => existsSync(join(root, ...candidate.split("/"))));
 }
 
-export const KXM_MIGRATION_RECEIPT_PATH = ".kxm/migration-receipt.yaml";
 const LEGACY_CONFIG_FILES = [".kxm/config/agents.json", ".kxm/config/gates.json"] as const;
 
 /** Individual legacy configuration files (not directories, not runtime state) that a migration receipt must cover. */
@@ -1540,83 +1457,9 @@ export function legacyConfigFilesAt(root: string): string[] {
   return files;
 }
 
-export interface KxmMigrationReceiptCheck {
-  receipt?: JsonObject;
-  issues: KxmConfigIssue[];
-}
 
-function hashFileRecord(root: string, relativePath: string): { path: string; sha256: string; bytes: number } | undefined {
-  const absolute = join(root, ...relativePath.split("/"));
-  if (!existsSync(absolute)) return undefined;
-  const bytes = readFileSync(absolute);
-  return {
-    path: relativePath,
-    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-    bytes: bytes.byteLength,
-  };
-}
 
-export function migrationReceiptSelfHash(receipt: JsonObject): string {
-  const { receiptSha256: _ignored, ...unsigned } = receipt;
-  return `sha256:${createHash("sha256").update(kxmCanonicalJson(unsigned as JsonObject), "utf8").digest("hex")}`;
-}
 
-/**
- * Read and structurally verify a migration receipt: schema, self-hash, and
- * exact coverage of the legacy configuration files still present. Does not
- * compare the target configuration revision (computed by the caller).
- */
-export function readKxmMigrationReceipt(root: string, options: KxmConfigOptions = {}): KxmMigrationReceiptCheck {
-  const receiptPath = join(root, ...KXM_MIGRATION_RECEIPT_PATH.split("/"));
-  const legacyFiles = legacyConfigFilesAt(root);
-  if (!existsSync(receiptPath)) {
-    return {
-      issues: legacyFiles.map((file) => issue("semantic", "legacy_kxm_conflict", file, "legacy and KXM configuration cannot coexist before an accepted migration receipt")),
-    };
-  }
-  const receiptStat = lstatSync(receiptPath);
-  if (receiptStat.isSymbolicLink() || !receiptStat.isFile()) {
-    return { issues: [issue("path", "migration_receipt_invalid", KXM_MIGRATION_RECEIPT_PATH, "migration receipt must be a regular file, not a link")] };
-  }
-  let receipt: JsonObject;
-  try {
-    receipt = parseRestrictedYaml(readFileSync(receiptPath), KXM_MIGRATION_RECEIPT_PATH);
-  } catch (error) {
-    if (error instanceof KxmConfigError) return { issues: [...error.issues] };
-    throw error;
-  }
-  const registry = new KxmSchemaRegistry(options.schemasDir);
-  const schemaIssues = registry.validateMigrationReceipt(receipt, KXM_MIGRATION_RECEIPT_PATH);
-  if (schemaIssues.length > 0) return { issues: schemaIssues };
-  if (receipt.receiptSha256 !== migrationReceiptSelfHash(receipt)) {
-    return { issues: [issue("semantic", "migration_receipt_hash_mismatch", KXM_MIGRATION_RECEIPT_PATH, "receipt self-hash does not match its content")] };
-  }
-  const sources = (Array.isArray(receipt.sources) ? receipt.sources : [])
-    .map((candidate) => (candidate && typeof candidate === "object" && !Array.isArray(candidate) ? (candidate as JsonObject).path : undefined))
-    .filter((candidate): candidate is string => typeof candidate === "string")
-    .sort(compareCodeUnits);
-  const issues: KxmConfigIssue[] = [];
-  const declared = new Set(sources);
-  for (const file of legacyFiles) {
-    if (!declared.has(file)) {
-      issues.push(issue("semantic", "migration_source_unmigrated", file, "legacy configuration file is not covered by the migration receipt"));
-      continue;
-    }
-    const record = (Array.isArray(receipt.sources) ? receipt.sources : [])
-      .map((candidate) => (candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate as JsonObject : undefined))
-      .find((candidate) => candidate?.path === file);
-    const current = hashFileRecord(root, file);
-    if (!current || current.sha256 !== record?.sha256 || current.bytes !== record?.bytes) {
-      issues.push(issue("semantic", "migration_source_changed", file, "legacy configuration changed after the migration receipt was issued"));
-    }
-  }
-  for (const file of sources) {
-    if (!legacyFiles.includes(file)) {
-      issues.push(issue("semantic", "migration_source_missing", file, "receipt covers a legacy configuration file that no longer exists"));
-    }
-  }
-  return issues.length > 0 ? { issues } : { receipt, issues: [] };
-}
 
 function discoverLegacyRoot(start: string): { root: string; inputs: string[] } | undefined {
   let initial = resolve(start);
@@ -1628,7 +1471,11 @@ function discoverLegacyRoot(start: string): { root: string; inputs: string[] } |
   return inputs.length > 0 ? { root: candidate, inputs } : undefined;
 }
 
-/** Classify init without changing files. Applying create/repair/migration is a separate, explicit operation. */
+/**
+ * Classify init without changing files. Applying create/repair is a separate, explicit
+ * operation; a legacy-only tree is **reported and never written** — this build carries no
+ * migration path, so init says what to do instead of doing it.
+ */
 export function planKxmInitialization(start = process.cwd(), options: KxmConfigOptions = {}): KxmInitializationPlan {
   const inspectedFrom = resolve(start);
   const projectRoot = discoverKxmProjectRoot(inspectedFrom);
@@ -1640,14 +1487,29 @@ export function planKxmInitialization(start = process.cwd(), options: KxmConfigO
       if (!(error instanceof KxmConfigError)) throw error;
       const legacyInputs = legacyInputsAt(projectRoot);
       if (legacyInputs.length > 0) {
-        return { mode: "migrate", inspectedFrom, projectRoot, legacyRoot: projectRoot, changesRequired: true, issues: error.issues, legacyInputs };
+        return {
+          mode: "legacy",
+          inspectedFrom,
+          projectRoot,
+          legacyRoot: projectRoot,
+          changesRequired: true,
+          issues: [...error.issues, issue("discovery", "legacy_state_unsupported", ".kxm", "legacy configuration is present and this build does not migrate it: initialise a fresh project directory and carry over the YAML definitions you want to keep")],
+          legacyInputs,
+        };
       }
       return { mode: "repair", inspectedFrom, projectRoot, changesRequired: true, issues: error.issues, legacyInputs: [] };
     }
   }
   const legacy = discoverLegacyRoot(inspectedFrom);
   if (legacy) {
-    return { mode: "migrate", inspectedFrom, legacyRoot: legacy.root, changesRequired: true, issues: [], legacyInputs: legacy.inputs };
+    return {
+      mode: "legacy",
+      inspectedFrom,
+      legacyRoot: legacy.root,
+      changesRequired: true,
+      issues: [issue("discovery", "legacy_state_unsupported", legacy.root, "legacy KXM/Mesh configuration discovered; this build does not migrate it — initialise a fresh project directory and copy the YAML definitions you want to keep")],
+      legacyInputs: legacy.inputs,
+    };
   }
   const gitRoot = discoverGitRoot(inspectedFrom);
   const candidateRoot = gitRoot ?? inspectedFrom;

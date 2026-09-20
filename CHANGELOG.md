@@ -35,6 +35,23 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **`kxm migrate` is gone, and so is the state that only it could unlock.** Deleting the
+  migration lanes left a converter with nothing to convert into: `plugins/kxm/src/migrate.ts`
+  (1,848 lines), its 1,598-line suite, the `migrate plan|apply|verify` commands, the
+  `kxm.migration-plan.v1` / `-decision.v1` / `-receipt.v1` schemas and their registry
+  validators, the receipt reader / self-hash / byte-record helpers, and the
+  `.kxm/migration-receipt.yaml` path are all removed. A tree that still holds legacy
+  `.kxm/config` JSON now fails closed at load with `legacy_state_unsupported`, one issue per
+  legacy file, and no receipt, plan, or option unlocks it — previously a verified receipt made
+  a mixed tree loadable, which is exactly the dual-read surface this decision retires.
+  `kxm init` classifies such a tree as `mode: "legacy"` (was `"migrate"`), reports
+  `legacyInputs`, and writes nothing. `docs/contracts/migration.md` is rewritten as a
+  supported/refused matrix instead of a conversion spec, and the packed-install suite now
+  builds its trust and run-lifecycle fixture by initialising a project directly, so that
+  coverage survived rather than being deleted with the command. A new test asserts
+  `kxm migrate` is rejected as an unknown command: a retired verb must fail loudly, not
+  resolve to nothing.
+
 - **No schema migration lanes, no legacy stamp tolerance (single-operator tool).** Stepwise
   schema migration lanes are removed from the hub store and the per-project event store, and
   the external-effects store no longer runs an in-place `ALTER TABLE ... ADD COLUMN` whose
@@ -42,7 +59,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   ever fire on an older store; the store has no production caller yet, so this closes the
   lane rather than fixing a live upgrade).
   A database stamped behind this build now fails closed with `runtime_schema_outdated` and
-  a message that says to delete the state file or re-run `kxm init` — and the refusal never
+  a message naming the process that recreates the store (`kxm hub start` for hub state, the Runtime for registry/event stores; `kxm init` is project-only) — and the refusal never
   advances `user_version`, so the store stays identifiably old (WAL sidecars may still be
   checkpointed by opening the file, so the whole state set remains the backup unit — see
   [`docs/operations.md`](docs/operations.md)). Relabelling a store it refused to open would
