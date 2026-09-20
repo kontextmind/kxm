@@ -30,7 +30,9 @@ Existing claims inside preserved candidate lines are research claims, not dispat
 
 ## Selection Policy
 
-Candidate selection is measured per role. Filter stages are optional and are not mandatory Tier-0 gating. Prefer a provider-native authenticated subscription when Tracking says that harness is eligible. For Gemini candidates (`google/*`), the admitted native subscription harness on this runner is `agy` (Antigravity CLI, `agy -p`), not the OpenRouter provider id, when Tracking lists agy as eligible. Do not change the candidate ids themselves (they are dated research). Evidence and review remain workflow-specific. Both the Fable architecture critic and the Sol CLI critic remain required for this developer assignment runner.
+Candidate selection is measured per role. Filter stages are optional and are not mandatory Tier-0 gating. Prefer a provider-native authenticated subscription when Tracking says that harness is eligible. For Gemini candidates (`google/*`), the admitted route is the bundled `antigravity` **Pi
+provider** (Tracking → Decided, 2026-09-15) — not the OpenRouter provider id, and not a
+shell-out to `agy`, which stays a catalog/helper entry. Do not change the candidate ids themselves (they are dated research). Evidence and review remain workflow-specific. Both the Fable architecture critic and the Sol CLI critic remain required for this developer assignment runner.
 
 ### Cost band reference (dated candidates)
 

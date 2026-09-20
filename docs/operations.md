@@ -146,6 +146,14 @@ Recommended alerts:
 
 ## Backup and restore
 
+> **Hub-only today, and labelled as such.** The recipe below stops the hub and copies
+> `.kxm/state/kxm.db`. That is not the whole tenant state set: the Runtime keeps its own
+> `registry.db`, per-project event stores under the user state root, prompt sidecars,
+> bindings and configuration. A restore that follows only these steps can bring the hub back
+> while losing Runtime history. Queue step **S1** replaces this section with a stopped-state
+> procedure covering the full set, and **S5** proves it with one deployed restore before real
+> use; until S1 lands, treat this as the hub database only.
+
 SQLite runs in WAL mode. The safest simple backup is a coordinated copy while the hub is stopped:
 
 1. Stop the hub gracefully.
@@ -233,5 +241,5 @@ place from v0.4 databases.
 - [What is all stored on the hub?](kb/qa-what-the-hub-stores.md)
 - [Storage engine — SQLite vs DuckDB](kb/qa-sqlite-vs-duckdb.md)
 - [Hub on a public host — multiple users and projects?](kb/qa-hub-on-a-public-host.md)
-- [Authentik (OIDC) for user/role/agent authentication](kb/qa-authentik-authentication.md)
+- [Authentik at the edge: why the hub owns no browser identity](kb/qa-authentik-authentication.md)
 - [Extension install → kxm CLI bootstrap + hub auto-connect](kb/qa-extension-install-and-hub-bootstrap.md)

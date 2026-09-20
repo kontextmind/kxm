@@ -10,7 +10,7 @@ created: "2026-09-17"
 updated: "2026-09-18"
 authority: "instruction"
 confidence: "reviewed"
-summary: "One hub is one process and one SQLite database behind a TLS proxy; it is not multi-tenant and must never be exposed directly to the public internet."
+summary: "One hub is one process and one state set per tenant box behind a TLS proxy; it is not multi-tenant and must never be exposed directly to the public internet. Hosting tenancy is the machine plus the portal, and the hub binds loopback."
 tags: ["hub", "deployment", "security"]
 related: ["docs/operations.md", "docs/kb/qa-authentik-authentication.md", "docs/kb/qa-what-the-hub-stores.md"]
 ---
