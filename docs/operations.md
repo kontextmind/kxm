@@ -300,12 +300,16 @@ restore lands somewhere the running service will not look.
 
 **Back up (stopped-state recipe):**
 
-1. Stop **both** services and wait. `kxm hub stop` covers the hub and its worker PID
-   claims; the Runtime supervisor is a **separate** process with its own databases, stopped
-   by `kxm runtime stop` — and that call acknowledges that shutdown was *initiated*, not
-   that the databases are closed. Confirm the supervisor is gone (its status/claim no longer
-   reports live) before copying; copying `registry.db` or a project event store while its
-   writer is still alive yields a backup that restores to a torn database.
+1. Stop **both** services, confirm they are down, and **keep them down until the copy
+   finishes**. `kxm hub stop` covers the hub and its worker PID claims; the Runtime
+   supervisor is a **separate** process owning `registry.db` and the project event stores,
+   stopped by `kxm runtime stop` — and that call acknowledges shutdown *initiated*, not
+   databases closed. So: verify neither reports live, then suspend whatever would start them
+   again — the service manager's auto-restart, hub autostart on login, and any client that
+   would reconnect and begin new work (a bound CLI, MCP server or Pi worker restarting a
+   supervisor on demand). A manager that respawns the hub halfway through a copy produces a
+   backup that is internally inconsistent across files, which is precisely the failure mode
+   this recipe is otherwise careful about. Only then copy.
 2. Copy the whole set above as one tree — **every root**, `$R`, `$D`, `$W`, `$S`, `$C` and
    `$T` — or take `VACUUM INTO` snapshots per database. **Snapshots replace the database
    copies, not the file copy**: configuration, repository bindings, prompt sidecars,
