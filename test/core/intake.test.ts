@@ -988,14 +988,15 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
     { code: "ERR_SQLITE_ERROR" })), true);
 
-  // **Precedence**, and which fixture owns which mutation — an earlier version of this
-  // comment had the mapping backwards, and a wrong comment about coverage is worse than no
-  // comment because it survives every mutation run.
-  //   • delete the `errno` lookup            -> the second assertion below flips
-  //   • symbolic name ahead of the number    -> the second assertion flips
-  //   • drop `errcode`, or `errCode` before it -> the third and fourth flip
-  // This first one is *recognition* of an extended contention code, not precedence: both
-  // of its fields say contention, so it passes whether the number or the name wins.
+  // **Precedence.** Each mutation below was executed and its first failing assertion
+  // recorded, rather than reasoned out — an earlier version of this comment had the mapping
+  // backwards twice, and a coverage comment is the one artefact no mutation run can fail:
+  //   • delete the `errno` lookup           -> "a permanent number beats a busy name"
+  //   • symbolic name ahead of the number   -> the same assertion
+  //   • delete the `errcode` lookup         -> "SQLITE_LOCKED_SHAREDCACHE"
+  //   • `errCode` ahead of `errcode`        -> "a present `errcode` decides before `errCode`"
+  // The first assertion in this block is *recognition* of an extended contention code, not
+  // precedence: both of its fields say contention, so it reads the same whichever wins.
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
     { code: "SQLITE_LOCKED_SHAREDCACHE", errno: 5 })), true, "extended contention codes classify, whichever field carries them");
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
