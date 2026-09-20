@@ -6,7 +6,6 @@ import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 import {
   openDatabase,
   withDatabaseTransaction,
-  type DatabaseMigrationStep,
   type DatabaseSchemaSpec,
 } from "./database.ts";
 
@@ -73,101 +72,10 @@ export const HUB_STORE_SCHEMA_V3 = `
   CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
 `;
 
-export const HUB_STORE_MIGRATIONS: readonly DatabaseMigrationStep[] = Object.freeze([
-  {
-    fromVersion: 1,
-    toVersion: 2,
-    migrate: (db: DatabaseSync) => {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS agents (
-          id TEXT PRIMARY KEY,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS messages (
-          id TEXT PRIMARY KEY,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS workflow_runs (
-          id TEXT PRIMARY KEY,
-          definition_id TEXT NOT NULL,
-          delivery_id TEXT NOT NULL,
-          record TEXT NOT NULL,
-          UNIQUE(definition_id, delivery_id)
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS workflow_journal (
-          id TEXT PRIMARY KEY,
-          run_id TEXT NOT NULL,
-          category TEXT NOT NULL,
-          area TEXT NOT NULL,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE INDEX IF NOT EXISTS workflow_journal_run_id ON workflow_journal(run_id);
-      `);
-    },
-  },
-  {
-    fromVersion: 2,
-    toVersion: 3,
-    migrate: (db: DatabaseSync) => {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS agents (
-          id TEXT PRIMARY KEY,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS messages (
-          id TEXT PRIMARY KEY,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS workflow_runs (
-          id TEXT PRIMARY KEY,
-          definition_id TEXT NOT NULL,
-          delivery_id TEXT NOT NULL,
-          record TEXT NOT NULL,
-          UNIQUE(definition_id, delivery_id)
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS workflow_journal (
-          id TEXT PRIMARY KEY,
-          run_id TEXT NOT NULL,
-          category TEXT NOT NULL,
-          area TEXT NOT NULL,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE INDEX IF NOT EXISTS workflow_journal_run_id ON workflow_journal(run_id);
-        CREATE TABLE IF NOT EXISTS context_items (
-          id TEXT PRIMARY KEY,
-          project TEXT NOT NULL,
-          kind TEXT NOT NULL,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
-        CREATE UNIQUE INDEX IF NOT EXISTS messages_from_idempotency
-        ON messages(
-          json_extract(record, '$.from'),
-          json_extract(record, '$.idempotencyKey')
-        ) WHERE json_extract(record, '$.idempotencyKey') IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS messages_to_seq
-        ON messages(
-          json_extract(record, '$.to'),
-          COALESCE(json_extract(record, '$.seq'), 0)
-        );
-        CREATE TABLE IF NOT EXISTS consumer_cursors (
-          agent_id TEXT PRIMARY KEY,
-          cursor INTEGER NOT NULL
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS agent_sequences (
-          agent_id TEXT PRIMARY KEY,
-          next_seq INTEGER NOT NULL
-        ) STRICT;
-      `);
-    },
-  },
-]);
-
 export const HUB_STORE_SCHEMA_SPEC: DatabaseSchemaSpec = Object.freeze({
   schema: HUB_STORE_SCHEMA_V3,
   version: HUB_STORE_SCHEMA_VERSION,
   tables: HUB_STORE_TABLES,
-  migrations: HUB_STORE_MIGRATIONS,
 });
 
 export interface StoredAgent extends AgentRecord {

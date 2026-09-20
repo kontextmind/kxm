@@ -3,6 +3,7 @@ import test from "node:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
 import {
   ExternalEffectsLedger,
   deterministicRunBranch,
@@ -368,3 +369,58 @@ test("cleanupMergedRunBranch handles failure modes gracefully", () => {
   assert.match(failRemoteDel.error || "", /failed_to_delete_remote_branch/);
 });
 
+test("an external-effects file written by the pre-refusal build is refused, not reshaped", () => {
+  // Reproduction of the review finding: the ledger used to open its file with a bare
+  // `new DatabaseSync`, so an older external_effects table (no last_heartbeat_at) survived
+  // construction and only blew up later inside claimEffect as a raw SQL error. Opening now
+  // goes through the shared version/shape gate, so the stale file is rejected up front and
+  // left untouched.
+  const dir = mkdtempSync(join(tmpdir(), "kxm-effects-stale-"));
+  try {
+    const file = join(dir, "effects.db");
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`
+      CREATE TABLE external_effects (
+        effect_key TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        step_id TEXT NOT NULL,
+        attempt_id TEXT NOT NULL,
+        action_kind TEXT NOT NULL,
+        target_ref TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        receipt_payload TEXT NOT NULL,
+        executed_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+    `);
+    legacy.close();
+
+    assert.throws(
+      () => new ExternalEffectsLedger(file),
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        assert.match(message, /runtime_schema_shape_invalid/, `expected a shape refusal, got: ${message}`);
+        return true;
+      },
+      "a stale ledger file must be refused at open time",
+    );
+
+    const inspection = new DatabaseSync(file);
+    try {
+      const version = inspection.prepare("PRAGMA user_version").get() as { user_version: number };
+      assert.equal(version.user_version, 0, "refusal must not stamp the store it rejected");
+      const columns = (inspection.prepare("PRAGMA table_info(external_effects)").all() as Array<{ name: string }>)
+        .map((column) => column.name);
+      assert.ok(
+        !columns.includes("last_heartbeat_at"),
+        "refusal must not add the column it used to migrate in place",
+      );
+      assert.equal(columns.length, 11, "the rejected store must keep its original shape");
+    } finally {
+      inspection.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

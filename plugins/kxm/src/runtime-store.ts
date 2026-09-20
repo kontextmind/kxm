@@ -782,74 +782,6 @@ CREATE TABLE project_controls (
 ) STRICT;
 `;
 
-const COORDINATOR_INTAKE_DDL = `
-CREATE TABLE IF NOT EXISTS coordinators (
-  coordinator_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  role TEXT NOT NULL,
-  channel TEXT NOT NULL,
-  ceiling_hash TEXT NOT NULL,
-  config_revision TEXT NOT NULL,
-  bound_at TEXT NOT NULL,
-  schema TEXT NOT NULL,
-  record TEXT NOT NULL
-) STRICT;
-CREATE UNIQUE INDEX IF NOT EXISTS coordinators_slot ON coordinators(project_id, role, channel);
-CREATE TABLE IF NOT EXISTS intake_messages (
-  message_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  coordinator_id TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL,
-  content_hash TEXT NOT NULL,
-  received_at TEXT NOT NULL,
-  dispatch_state TEXT NOT NULL CHECK (dispatch_state IN ('ready','held_paused','admitted','refused')),
-  schema TEXT NOT NULL,
-  record TEXT NOT NULL
-) STRICT;
-CREATE UNIQUE INDEX IF NOT EXISTS intake_idempotency ON intake_messages(project_id, coordinator_id, idempotency_key);
-CREATE INDEX IF NOT EXISTS intake_dispatch ON intake_messages(project_id, dispatch_state, received_at, message_id);
-CREATE TABLE IF NOT EXISTS project_controls (
-  project_id TEXT PRIMARY KEY,
-  paused INTEGER NOT NULL CHECK (paused IN (0, 1)),
-  reason TEXT,
-  updated_at TEXT NOT NULL,
-  actor TEXT NOT NULL,
-  schema TEXT NOT NULL,
-  record TEXT NOT NULL
-) STRICT;
-`;
-
-const DRIVE_RECEIPTS_DDL = `
-CREATE TABLE IF NOT EXISTS drive_receipts (
-  drive_id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL,
-  project_id TEXT NOT NULL,
-  opened_sequence INTEGER NOT NULL,
-  last_sequence INTEGER NOT NULL,
-  closed_at TEXT NOT NULL,
-  schema TEXT NOT NULL,
-  receipt TEXT NOT NULL
-) STRICT;
-CREATE INDEX IF NOT EXISTS drive_receipts_run ON drive_receipts(run_id);
-`;
-
-const EVENT_STORE_MIGRATIONS = [
-  {
-    fromVersion: 3,
-    toVersion: 4,
-    migrate(database: DatabaseSync): void {
-      database.exec(DRIVE_RECEIPTS_DDL);
-    },
-  },
-  {
-    fromVersion: 4,
-    toVersion: 5,
-    migrate(database: DatabaseSync): void {
-      database.exec(COORDINATOR_INTAKE_DDL);
-    },
-  },
-];
-
 /** One persisted coordinator identity (`kxm.coordinator.v1`). */
 export interface KxmCoordinatorRow {
   coordinatorId: string;
@@ -894,7 +826,6 @@ export class KxmRunEventStore {
       schema: EVENT_STORE_SCHEMA,
       version: KXM_EVENT_STORE_SCHEMA_VERSION,
       tables: EVENT_STORE_TABLES,
-      migrations: EVENT_STORE_MIGRATIONS,
     });
   }
 

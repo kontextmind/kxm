@@ -485,60 +485,13 @@ test("a duplicate may not be re-labelled, and a persisted record that disagrees 
   }
 });
 
-test("a coordinator written before set canonicalisation still matches an equivalent bind", () => {
-  // Rows created by the released 0.7.46 code hashed the authority as supplied, so
-  // an unsorted `effects` list carries a fingerprint the canonicaliser will not
-  // reproduce. Upgrading must not force every one of them through a policy rebind.
-  const { root, stateRoot, context } = intakeContext("kxm-intake-legacy-hash-");
-  const legacyEffects = ["zeta", "alpha"];
-  const legacyHash = `sha256:${createHash("sha256")
-    .update(kxmCanonicalJson({ repositoryAccess: "none", effects: legacyEffects } as unknown as JsonValue), "utf8")
-    .digest("hex")}`;
-  try {
-    const legacy = {
-      schema: "kxm.coordinator.v1",
-      coordinatorId: "crd_legacy0000000000000000000000",
-      projectId: context.projectId,
-      role: "legacy",
-      channel: "primary",
-      authority: { repositoryAccess: "none", effects: legacyEffects },
-      boundAt: "2026-09-17T00:00:00.000Z",
-      boundBy: { kind: "human", id: "root" },
-      configRevision: legacyHash,
-      ceilingHash: legacyHash,
-    };
-    context.eventStore.insertCoordinatorIfAbsent({
-      coordinatorId: legacy.coordinatorId,
-      projectId: legacy.projectId,
-      role: legacy.role,
-      channel: legacy.channel,
-      ceilingHash: legacy.ceilingHash,
-      configRevision: legacy.configRevision,
-      boundAt: legacy.boundAt,
-      record: kxmCanonicalJson(legacy as unknown as JsonValue),
-    });
-
-    assert.notEqual(legacyHash, kxmCeilingHash({ repositoryAccess: "none", effects: legacyEffects }),
-      "the legacy fingerprint really does differ from the canonical one");
-    const rebound = bindKxmCoordinator(context, {
-      role: "legacy",
-      authority: { repositoryAccess: "none", effects: legacyEffects },
-      actor: OPERATOR,
-    });
-    assert.equal(rebound.created, false, "an equivalent authority must not demand a policy rebind after upgrade");
-    assert.equal(rebound.coordinator.coordinatorId, legacy.coordinatorId);
-  } finally {
-    closeIntakeContext(context);
-    removeTempDir(root, stateRoot);
-  }
-});
-
 /** The first config-issue code of a KxmConfigError, or `undefined` for anything else. */
 function errorCodeOf(error: unknown): string | undefined {
   const issue = (error as { issues?: Array<{ code?: string }> } | undefined)?.issues?.[0];
   return typeof issue?.code === "string" ? issue.code : undefined;
 }
 
+/** Run `work`, returning the thrown error and how long it took — timing is reported, never asserted. */
 function captureError(work: () => unknown): { error: unknown; ms: number } {
   const startedAt = Date.now();
   try {
@@ -549,6 +502,7 @@ function captureError(work: () => unknown): { error: unknown; ms: number } {
   }
 }
 
+/** The deferred window a throttle refusal reports, or NaN when it says something else. */
 function deferredMsOf(error: unknown): number {
   const message = error instanceof Error ? error.message : "";
   return Number(/retry deferred (\d+)ms/.exec(message)?.[1] ?? Number.NaN);
@@ -1066,131 +1020,112 @@ test("a transaction that fails at COMMIT still leaves the connection usable", ()
   }
 });
 
-test("a lost create race against a legacy-format coordinator stays idempotent", () => {
-  // The initial lookup accepts a pre-normalisation row; the read-back after a lost
-  // INSERT OR IGNORE asked the same question a second way and used to answer it
-  // differently, turning an idempotent bind into coordinator_write_lost.
-  const { root, stateRoot, context } = intakeContext("kxm-intake-legacy-race-");
-  const legacyEffects = ["zeta", "alpha"];
-  const legacyHash = `sha256:${createHash("sha256")
-    .update(kxmCanonicalJson({ repositoryAccess: "none", effects: legacyEffects } as unknown as JsonValue), "utf8")
-    .digest("hex")}`;
+test("a lost create race against an equivalent coordinator stays idempotent", () => {
+  // The loser of the slot insert must return the winner and say it created nothing.
+  // It used to be written against a pre-canonicalisation fingerprint; that compatibility
+  // is gone with the single-operator decision, so the winner here is an ordinary current
+  // row and the assertion is purely about the race.
+  const { root, stateRoot, context } = intakeContext("kxm-intake-create-race-");
+  const sharedAuthority: KxmCoordinatorAuthority = { repositoryAccess: "none", effects: ["alpha", "zeta"] };
+  const sharedHash = kxmCeilingHash(sharedAuthority);
+  const winnerId = "crd_winnerrace0000000000000000000";
   try {
-    const legacyRow = {
-      coordinatorId: "crd_legacyrace0000000000000000",
+    const winnerRow = {
+      coordinatorId: winnerId,
       projectId: context.projectId,
       role: "racer",
       channel: "primary",
-      ceilingHash: legacyHash,
-      configRevision: legacyHash,
+      ceilingHash: sharedHash,
+      configRevision: sharedHash,
       boundAt: "2026-09-17T00:00:00.000Z",
       record: kxmCanonicalJson({
         schema: "kxm.coordinator.v1",
-        coordinatorId: "crd_legacyrace0000000000000000",
+        coordinatorId: winnerId,
         projectId: context.projectId,
         role: "racer",
         channel: "primary",
-        authority: { repositoryAccess: "none", effects: legacyEffects },
+        authority: sharedAuthority,
         boundAt: "2026-09-17T00:00:00.000Z",
         boundBy: { kind: "human", id: "root" },
-        configRevision: legacyHash,
-        ceilingHash: legacyHash,
+        configRevision: sharedHash,
+        ceilingHash: sharedHash,
       } as unknown as JsonValue),
     };
-    assert.notEqual(legacyHash, kxmCeilingHash({ repositoryAccess: "none", effects: legacyEffects }));
-
     const realInsert = context.eventStore.insertCoordinatorIfAbsent.bind(context.eventStore);
-    let loser = false;
+    let lost = false;
     context.eventStore.insertCoordinatorIfAbsent = (row) => {
-      if (!loser) {
-        // Install the winner the way a competing process would, then run **this**
-        // call's insert for real and hand back whatever SQLite says. The `false` is
-        // not authored here; `INSERT OR IGNORE` against a taken slot produces it.
-        loser = true;
-        realInsert(legacyRow);
+      if (!lost) {
+        lost = true;
+        realInsert(winnerRow);
       }
+      // Our own insert runs for real against a slot that is now taken, so the `false` is
+      // SQLite's verdict rather than an authored return value.
       return realInsert(row);
     };
     try {
-      const bound = bindKxmCoordinator(context, {
-        role: "racer",
-        authority: { repositoryAccess: "none", effects: legacyEffects },
-        actor: OPERATOR,
-      });
+      const bound = bindKxmCoordinator(context, { role: "racer", authority: sharedAuthority, actor: OPERATOR });
       assert.equal(bound.created, false, "the loser did not create anything");
-      assert.equal(bound.coordinator.coordinatorId, legacyRow.coordinatorId);
+      assert.equal(bound.coordinator.coordinatorId, winnerId);
     } finally {
       delete (context.eventStore as unknown as { insertCoordinatorIfAbsent?: unknown }).insertCoordinatorIfAbsent;
     }
-    // And the slot really is the legacy row: no second identity was minted.
-    assert.equal(context.eventStore.coordinatorInSlot(context.projectId, "racer", "primary")?.coordinatorId, legacyRow.coordinatorId);
+    assert.equal(context.eventStore.coordinatorInSlot(context.projectId, "racer", "primary")?.coordinatorId, winnerId);
   } finally {
     closeIntakeContext(context);
     removeTempDir(root, stateRoot);
   }
 });
 
-test("a lost rebind write against a legacy-format winner stays idempotent", () => {
-  // Same defect shape as the create race, second read-back: the slot lookup saw one
-  // row, a third process replaced it with a legacy-fingerprint equivalent, and the
-  // rebind's own read-back answered "conflict" to a question the lookup had already
-  // answered "equivalent".
-  const { root, stateRoot, context } = intakeContext("kxm-intake-legacy-rebind-");
-  const legacyEffects = ["zeta", "alpha"];
-  const legacyHash = `sha256:${createHash("sha256")
-    .update(kxmCanonicalJson({ repositoryAccess: "none", effects: legacyEffects } as unknown as JsonValue), "utf8")
-    .digest("hex")}`;
-  const legacyId = "crd_legacyrebind000000000000000";
+test("a lost rebind write against an equivalent winner stays idempotent", () => {
+  // Second read-back, same contract: the rebind that lost its guarded update returns the
+  // row that won the slot, and reports that it created nothing.
+  const { root, stateRoot, context } = intakeContext("kxm-intake-rebind-race-");
+  const startAuthority: KxmCoordinatorAuthority = { repositoryAccess: "none", effects: ["alpha", "zeta", "beta"] };
+  const narrowedAuthority: KxmCoordinatorAuthority = { repositoryAccess: "none", effects: ["alpha", "zeta"] };
+  const narrowedHash = kxmCeilingHash(narrowedAuthority);
+  const winnerId = "crd_rebindwinner00000000000000000";
   try {
-    const first = bindKxmCoordinator(context, {
-      role: "rebound",
-      authority: { repositoryAccess: "none", effects: ["alpha", "zeta", "beta"] },
-      actor: OPERATOR,
-    });
+    const first = bindKxmCoordinator(context, { role: "rebound", authority: startAuthority, actor: OPERATOR });
     assert.equal(first.created, true);
-
-    const legacyRow = {
-      coordinatorId: legacyId,
-      projectId: context.projectId,
-      role: "rebound",
-      channel: "primary",
-      ceilingHash: legacyHash,
-      configRevision: legacyHash,
-      boundAt: "2026-09-17T00:00:00.000Z",
-      record: kxmCanonicalJson({
-        schema: "kxm.coordinator.v1",
-        coordinatorId: legacyId,
-        projectId: context.projectId,
-        role: "rebound",
-        channel: "primary",
-        authority: { repositoryAccess: "none", effects: legacyEffects },
-        boundAt: "2026-09-17T00:00:00.000Z",
-        boundBy: { kind: "human", id: "root" },
-        configRevision: legacyHash,
-        ceilingHash: legacyHash,
-      } as unknown as JsonValue),
-    };
     const store = context.eventStore;
     const realReplace = store.replaceCoordinatorInSlot.bind(store);
-    assert.notEqual(legacyHash, kxmCeilingHash({ repositoryAccess: "none", effects: legacyEffects }),
-      "the fixture must really be a pre-normalisation fingerprint");
     try {
       store.replaceCoordinatorInSlot = (expectedId, row) => {
-        // A competing process installs the legacy equivalent in this exact moment, so
-        // our own guarded update — run for real against a slot that no longer holds
-        // the row it expected — is what reports the loss.
-        realReplace(expectedId, legacyRow);
+        // A competing process installs the equivalent narrowed row first, so our own
+        // guarded update — run for real against a slot it no longer recognises — is what
+        // reports the loss.
+        realReplace(expectedId, {
+          coordinatorId: winnerId,
+          projectId: context.projectId,
+          role: "rebound",
+          channel: "primary",
+          ceilingHash: narrowedHash,
+          configRevision: narrowedHash,
+          boundAt: "2026-09-17T00:00:00.000Z",
+          record: kxmCanonicalJson({
+            schema: "kxm.coordinator.v1",
+            coordinatorId: winnerId,
+            projectId: context.projectId,
+            role: "rebound",
+            channel: "primary",
+            authority: narrowedAuthority,
+            boundAt: "2026-09-17T00:00:00.000Z",
+            boundBy: { kind: "human", id: "root" },
+            configRevision: narrowedHash,
+            ceilingHash: narrowedHash,
+          } as unknown as JsonValue),
+        });
         return realReplace(expectedId, row);
       };
       const rebound = bindKxmCoordinator(context, {
         role: "rebound",
-        authority: { repositoryAccess: "none", effects: ["alpha", "zeta"] },
+        authority: narrowedAuthority,
         actor: OPERATOR,
         rebind: { approvedBy: OPERATOR, reason: "reviewed narrowing" },
       });
       assert.equal(rebound.created, false, "a lost rebind did not create anything");
-      assert.equal(rebound.coordinator.coordinatorId, legacyId);
-      assert.equal(store.coordinatorInSlot(context.projectId, "rebound", "primary")?.coordinatorId, legacyId);
+      assert.equal(rebound.coordinator.coordinatorId, winnerId);
+      assert.equal(store.coordinatorInSlot(context.projectId, "rebound", "primary")?.coordinatorId, winnerId);
     } finally {
       delete (store as unknown as { replaceCoordinatorInSlot?: unknown }).replaceCoordinatorInSlot;
     }

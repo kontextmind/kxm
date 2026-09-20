@@ -1429,44 +1429,34 @@ test("insertDriveReceipt is insert-once and rejects oversized receipts without t
   }
 });
 
-test("pre-B2 event stores migrate additively and old projections stay canonical", async () => {
-  const { root, stateRoot } = engineProject("kxm-engine-drive-receipt-replay-");
+test("an event store left behind the current schema is refused, not upgraded in place", async () => {
+  // Single-operator tool: no migration lanes, so a store stamped behind the build fails
+  // closed and stays exactly as it was. The old version of this test asserted the
+  // additive v3→v4 lane; the property worth keeping is the refusal and the untouched file.
+  const { root, stateRoot } = engineProject("kxm-engine-store-outdated-");
   try {
     const bundle = loadKxmProject(root);
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     let storePath: string;
-    let runId: string;
     try {
-      const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "pre-b2" });
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "stale stamp" });
       pinKxmCompiledPlan(context, bundle, accepted.run.runId);
       const driven = await driveKxmRun(context, accepted.run.runId, outcomes(["passed"]));
       assert.equal(driven.state.status, "completed");
-      assert.equal(driven.state.drive, undefined);
-      runId = accepted.run.runId;
       storePath = context.eventStore.path;
-      const stored = context.eventStore.runState(runId)!;
       closeKxmRuntimeContext(context);
-      const db = new DatabaseSync(storePath);
-      db.exec("DROP TABLE IF EXISTS drive_receipts");
-      db.exec("PRAGMA user_version = 3");
-      db.close();
-      assert.equal(userVersion(storePath), 3);
-      const reopened = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
-      try {
-        assert.equal(userVersion(storePath), KXM_EVENT_STORE_SCHEMA_VERSION);
-        const folded = foldStoredKxmRun(reopened, reopened.eventStore.run(runId)!);
-        assert.equal(folded.status, "completed");
-        assert.equal(folded.drive, undefined);
-        assert.equal(reopened.eventStore.runState(runId)!.state, stored.state);
-        rebuildKxmRunProjection(reopened, runId);
-        assert.equal(reopened.eventStore.runState(runId)!.state, stored.state);
-      } finally {
-        closeKxmRuntimeContext(reopened);
-      }
     } catch (error) {
       try { closeKxmRuntimeContext(context); } catch { /* closed */ }
       throw error;
     }
+    const before = userVersion(storePath);
+    const db = new DatabaseSync(storePath);
+    db.exec("PRAGMA user_version = 3");
+    db.close();
+
+    assert.throws(() => openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME }), /runtime_schema_outdated/);
+    assert.equal(userVersion(storePath), 3, "a refusal must not relabel the file it refused to open");
+    void before;
   } finally {
     removeTempDir(root, stateRoot);
   }
@@ -1812,13 +1802,19 @@ test(`store brakes: registry v1 stays valid; event store v${KXM_EVENT_STORE_SCHE
     // Spelled from the constant, not a literal: the brake must still say
     // "fail closed" after a reviewed version bump instead of going red on
     // wording.
-    assert.throws(() => new KxmRunEventStore(v1), new RegExp(`runtime_schema_outdated[\\s\\S]*older than ${KXM_EVENT_STORE_SCHEMA_VERSION}[\\s\\S]*E6`));
+    assert.throws(
+      () => new KxmRunEventStore(v1),
+      new RegExp(`runtime_schema_outdated[\\s\\S]*is schema version 1; this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}`),
+    );
 
     const v2 = join(stateRoot, "v2-events.db");
     const prior = new DatabaseSync(v2);
     prior.exec("PRAGMA user_version = 2");
     prior.close();
-    assert.throws(() => new KxmRunEventStore(v2), new RegExp(`runtime_schema_outdated[\\s\\S]*older than ${KXM_EVENT_STORE_SCHEMA_VERSION}[\\s\\S]*no migration lane`));
+    assert.throws(
+      () => new KxmRunEventStore(v2),
+      new RegExp(`runtime_schema_outdated[\\s\\S]*this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}[\\s\\S]*start fresh`),
+    );
 
     const newer = join(stateRoot, "v99-events.db");
     const bump = new DatabaseSync(newer);

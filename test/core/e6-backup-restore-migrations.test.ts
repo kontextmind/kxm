@@ -131,103 +131,32 @@ test("withDatabaseTransaction enforces nesting guard and handles rollback", () =
   }
 });
 
-test("a v2-stamped fixture migrates to v3 with data preserved, never relabelled without migration", () => {
-  const env = setupTestEnv();
+test("an older stamped database is refused rather than upgraded in place", () => {
+  // Single-operator tool: no migration lanes and no dual-shape queries. An older file is
+  // re-initialised, and the error says so instead of quietly stamping it forward — a
+  // version bump without the schema underneath would fail later in some query that
+  // assumes columns that are not there.
+  const dir = mkdtempSync(join(tmpdir(), "kxm-e6-outdated-"));
   try {
-    const dbPath = join(env.dir, "kxm-v2.db");
-    // Create a authentic v2 database fixture
-    const seedDb = new DatabaseSync(dbPath);
-    seedDb.exec(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE agents (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;
-      CREATE TABLE messages (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;
-      CREATE TABLE workflow_runs (
-        id TEXT PRIMARY KEY,
-        definition_id TEXT NOT NULL,
-        delivery_id TEXT NOT NULL,
-        record TEXT NOT NULL,
-        UNIQUE(definition_id, delivery_id)
-      ) STRICT;
-      CREATE TABLE workflow_journal (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        category TEXT NOT NULL,
-        area TEXT NOT NULL,
-        record TEXT NOT NULL
-      ) STRICT;
-      CREATE INDEX workflow_journal_run_id ON workflow_journal(run_id);
-      PRAGMA user_version = 2;
-    `);
-    // Seed v2 data
-    seedDb.prepare("INSERT INTO agents (id, record) VALUES (?, ?)").run(
-      "agent_alpha",
-      JSON.stringify({ id: "agent_alpha", key: "k1", name: "Alpha", role: "worker" }),
-    );
-    seedDb.prepare("INSERT INTO messages (id, record) VALUES (?, ?)").run(
-      "msg_1",
-      JSON.stringify({ id: "msg_1", from: "agent_alpha", to: "agent_beta", content: "hello", seq: 1 }),
-    );
-    seedDb.close();
+    const dbPath = join(dir, "legacy.db");
+    const legacy = new DatabaseSync(dbPath);
+    legacy.exec("PRAGMA user_version = 2;");
+    legacy.exec("CREATE TABLE agents (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;");
+    legacy.close();
 
-    // Verify initial v2 state
-    const checkDb = new DatabaseSync(dbPath);
-    const initialVersion = (checkDb.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-    assert.equal(initialVersion, 2);
-    checkDb.close();
-
-    // 1. Opening with a spec that has NO migration lane must refuse and NOT relabel!
-    const noMigrationSpec: DatabaseSchemaSpec = {
-      schema: "CREATE TABLE dummy (id TEXT);",
-      version: 3,
-    };
     assert.throws(
-      () => openDatabase(dbPath, "test db", noMigrationSpec),
-      /schema version 2 is older than 3/,
+      () => openDatabase(dbPath, "legacy db", { schema: "CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;", version: 3 }),
+      /is schema version 2; this build requires 3/,
     );
-    // Verify it was NEVER relabelled
-    const checkUnmodified = new DatabaseSync(dbPath);
-    const versionStillTwo = (checkUnmodified.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-    assert.equal(versionStillTwo, 2, "user_version must remain 2 after refusal, never relabelled");
-    checkUnmodified.close();
-
-    // 2. Opening with MeshStore stepwise-migrates from v2 to v3!
-    const store = new MeshStore(dbPath);
+    // Refusal must not mutate the file: no silent relabelling.
+    const after = new DatabaseSync(dbPath);
     try {
-      assert.equal(store.persistent, true);
-      // Existing v2 data is intact
-      const agent = store.agents.get("agent_alpha");
-      assert.ok(agent);
-      assert.equal(agent.name, "Alpha");
-      const msg = store.messages.get("msg_1");
-      assert.ok(msg);
-      assert.equal(msg.content, "hello");
-
-      // New v3 tables exist and can be written to
-      store.saveContextItem({
-        id: "ctx_1",
-        project: "test_proj",
-        kind: "knowledge",
-        observedAt: "2026-09-08T12:00:00.000Z",
-        summary: "Context item after migration",
-        provenance: { sourceType: "tool", sourceRef: "ref_1" },
-        authority: "instruction",
-        confidence: "verified",
-        status: "current",
-      });
-      const ctx = store.getContextItem("ctx_1", "test_proj");
-      assert.ok(ctx);
-      assert.equal(ctx.summary, "Context item after migration");
+      assert.equal(Number((after.prepare("PRAGMA user_version").get() as { user_version: number }).user_version), 2);
     } finally {
-      store.close();
+      after.close();
     }
-
-    // 3. Verify user_version is now stamped to 3
-    const finalDb = new DatabaseSync(dbPath);
-    const finalVersion = (finalDb.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-    assert.equal(finalVersion, 3);
-    finalDb.close();
   } finally {
-    env.cleanup();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -552,8 +481,8 @@ test("openDatabase and restoreDatabaseFile fail closed on invalid shapes, newer 
     outDb.exec("PRAGMA user_version = 1;");
     outDb.close();
     assert.throws(
-      () => openDatabase(outdatedDbPath, "outdated db", { schema: "", version: 3, migrations: [] }),
-      /schema version 1 is older than 3; no migration lane/,
+      () => openDatabase(outdatedDbPath, "outdated db", { schema: "", version: 3 }),
+      /is schema version 1; this build requires 3/,
     );
 
     // 5. Missing columns in expected tables
