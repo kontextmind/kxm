@@ -15,7 +15,9 @@ Read this first. Then follow
   `kxm hub bind <url>` binds this host to a running hub; `kxm init` is project-only.
 - DB: `.kxm/state/kxm.db`
 - Plugin / npm: `kxm` / `@kontextmind/kxm`
-- Punt wiki compile/ingest and npm update-source until a **public npm** release.
+- Wiki compile/ingest and the npm update-source stay **unselected**. The **public npm**
+  release they were punted behind is satisfied (2026-09-17), so that punt is no longer a
+  reason; they return only by a new decision, not by a prerequisite expiring.
 
 ## Who does what
 
@@ -25,6 +27,11 @@ Root may change agents without asking again. Capability and auth checks stay
 fail-closed. Different providers supply independent review. This is developer
 orchestration policy for the issue 127 runner, not a Phase 4/11 product
 router.
+
+Current **admissions** — who is allowed to write now, relief routes, exceptions — are not
+listed here; that list changed three times in a week and this table went stale with it. Read
+**Tracking → Decided** and `kxm harness list`. What stays here is the shape: a starting
+rotation per role, and a writer that is never also a critic.
 
 | Role | Starting rotation | Why |
 |---|---|---|

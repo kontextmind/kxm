@@ -125,7 +125,12 @@ slice establishes them.
 | M8 | Native/provider setup and optional external integrations | M1 readiness, M0 secret handling, M6 authorization where effects require it | 4, 9, 11 admission |
 | M9 | Evidence for the declared release capabilities/platforms, **including the selected Linux hosted tenant deployment and one restore witness** | Selected scope's contracts and all applicable canonical blockers/gates | 5 and every affected gate |
 
-### First product slice
+### First product slice — **superseded; the queue in Tracking is the only sequence**
+
+The numbered sequence below was written before the hosted MVP was selected and is kept as
+proposed-scope reasoning, not as a plan of record: **do not schedule from it**. S0–S5 in
+[`implementation-plan.md`](implementation-plan.md) (Still open → The one queue) decides
+order, and coordinator-inbox and replay work sit behind their post-MVP triggers there.
 
 1. Repair typed Pi outcomes, secret persistence and Studio's missing-handler
    result; represent unintegrated controls as unavailable (M0).
@@ -203,9 +208,14 @@ ideas. Voice and managed mail-server deployment remain later research.
 - Preserve accepted A1 async probes, escalation after child close, conservative
   descendant settlement, bounded/redacted owner-only one-shot evidence v2,
   unaudited-permission refusal, one-shot price integrity and supervisor rejection
-  handling. These are not new TODOs. Remaining live Claude write refusal, HTTP
-  drive lifetime, wider price coverage, Fable failure and canonical acceptance
-  contradictions stay open; no Phase 11 PASS is implied.
+  handling. These are not new TODOs. **Status corrected 2026-09-20: three of the five
+  items this line called "remaining" are accepted** — the live Claude write-refusal
+  witness (2026-09-15, `task_p11-claude-write-refusal`, `e3d8a64b`), drive decoupling
+  B1–B4 including HTTP drive lifetime (2026-09-16, `task_9076be56b581`), and price-catalog
+  integrity beyond the one-shot path (`17efb783`). Only the Fable failure and the canonical
+  acceptance contradictions remain, and both are named in
+  [`implementation-plan.md`](implementation-plan.md) Still open rather than here. No Phase 11
+  PASS is implied by any of this.
 
 **Exit evidence:** defect reproductions become meaningful regressions; invalid
 finals, missing handlers and unknown effects stay unsuccessful; no secret fixture

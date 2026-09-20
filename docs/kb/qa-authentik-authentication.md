@@ -19,7 +19,11 @@ related: ["docs/operations.md", "docs/kb/qa-hub-on-a-public-host.md", "plans/pla
 
 > Researched by `claude --model fable` (planner, read-only) · 2026-09-17 · task_c0bb05339e15 · root review: pending
 
-**Short answer:** Yes, but not by swapping the hub's checks for OIDC. The hub has one shared-secret model, and the safest hook is a token broker that exchanges Authentik identity for the kxm tokens the hub already understands. Proxy forward-auth is the zero-code first step for humans; hub-side JWT validation is a later, additive gate.
+**Short answer, as of 2026-09-20: no hub-side identity subsystem at all.** Authentik
+authenticates browsers at the tenant's reverse proxy and the portal's own backend calls the
+loopback hub with the machine tokens that already work. The token-broker and JWT
+recommendations that used to sit in this answer are **rejected**, not deferred; they were
+plausible for a shared multi-tenant hub, which is not what we are deploying. Proxy forward-auth is the zero-code first step for humans; hub-side JWT validation is a later, additive gate.
 
 ## What exists today
 
@@ -39,18 +43,18 @@ The hub knows about three credentials. None of them carries a user identity, a r
 
 Authentik's proxy outpost authenticates browser sessions and passes headers upstream. The hub ignores those headers today, so the proxy must still inject the hub bearer token, or clients must still send it. Covers: Studio, `/v1/ops/*` dashboards, human CLI users via a browser-capable flow. Does not cover: agents (they present `x-kxm-agent-*` headers plus a bearer, not a cookie), and it gives the hub no per-user identity for logging. Effort: low, config only. Risk: low if the hub keeps its token check; medium if someone sets the proxy to add the admin token for every authenticated user, which flattens all Authentik users to admin. Non-loopback bind already requires a token (`hub.ts:468`), so the proxy cannot make the hub anonymous.
 
-### 2. Hub validates Authentik-issued JWTs (OIDC discovery + JWKS)
+### 2. Hub validates Authentik-issued JWTs (OIDC discovery + JWKS) — **rejected 2026-09-20; a new decision is required to revisit**
 
 Add a second accepted credential in `bearerToken`'s callers: if the bearer parses as a JWT, verify `iss`, `aud`, `exp`, and signature against a cached JWKS from `<issuer>/.well-known/openid-configuration`; else fall through to the existing `safeTokenEqual` path. Code changes: a new `oidc.ts` (discovery, JWKS cache, verify via `node:crypto` `createPublicKey` from JWK, or add `jose`), new `MeshHubOptions.oidc` and `KXM_OIDC_ISSUER` / `KXM_OIDC_AUDIENCE` env in `server.ts` and `hub-env.ts`, and changes to `requireAdminAuth` and `requireProjectAuth` to accept a verified claim set. Mapping: `groups` claim to admin (e.g. `kxm-admin`) and to project scope (e.g. `kxm-project:<name>`). Client side: `HubClient.authToken` (`client.ts:539`) already sends any string as bearer, so a client can pass an Authentik access token unchanged. Effort: medium, roughly 300 to 500 lines plus tests. Risk: medium. New network dependency at auth time (JWKS fetch must fail closed, never skip), clock skew, and the hub must reject `alg: none` and HS256. Agent registration would gain a real principal to store on the agent record (`sub`, `preferred_username`), which the schema can absorb since records are opaque JSON (`store.ts:26`).
 
-### 3. Token-broker mapping (Authentik users/groups mint per-user or per-agent kxm tokens)
+### 3. Token-broker mapping (Authentik users/groups mint per-user or per-agent kxm tokens) — **rejected 2026-09-20; a new decision is required to revisit**
 
 A small broker (could be a new hub route or a sidecar) accepts an Authentik ID token, verifies it as in option 2, then issues the tokens the runtime already consumes: a project token entry for `requireProjectAuth`, and a `kxm.session-token.v1` with a `toolPolicy` derived from the user's group (`mintSessionToken`, `commands.ts:944`). Mapping table: Authentik group to kxm role id (`role.ts:63` ids `writer`, `planner`, `critic-*`, `verifier`), role `tools` block to `ToolPolicy`, and group to project list to `projectTokens`. Today project tokens are a static map read at startup (`hub.ts:385`), so per-user project tokens need either a dynamic token store in `MeshStore` or short-lived tokens the hub can look up. Session tokens are unsigned (`commands.ts:977`), so a broker-issued one only means something if `parseSessionToken` gains signature verification; otherwise any local process can forge the same payload. Effort: medium to high, because it touches token storage, signing, and revocation. Risk: medium. Benefit: agents and humans converge on one identity source without changing every hub route.
 
 ## Recommendation (replaced 2026-09-20)
 
-The staging below is **superseded**, and deliberately left visible because it was the plausible
-answer for a month and someone will meet it again: **do not build a hub-side JWT verifier, a
+The options **above** are **superseded**, and deliberately left visible because they were the
+plausible answer for a month and someone will meet them again: **do not build a hub-side JWT verifier, a
 token broker, per-user project tokens, or signed session/attempt token issuance as hosting
 prerequisites.** They were a reasonable answer to "one hub, many users"; they are the wrong
 answer to the deployment we actually have, which is **one tenant per box**.
@@ -64,11 +68,13 @@ answer to the deployment we actually have, which is **one tenant per box**.
    generated-and-persisted token, project tokens read at startup, and the local loopback
    convenience. A browser-path outage denies browsers; it must not stop authorized machine
    clients.
-3. **Not scheduled, only triggered:** hub-side JWT verification, group-to-`ToolPolicy`
-   mapping, token signing, dynamic per-user token stores, and OAuth2 client-credentials or
-   device-flow login for agents. Each returns to the queue only if a real requirement appears
-   that the portal boundary cannot meet — for example genuine per-user attribution of hub
-   writes inside KXM itself, which per-box tenancy does not need.
+3. **Rejected, not deferred:** hub-side JWT verification, group-to-`ToolPolicy` mapping,
+   token signing, dynamic per-user token stores, and OAuth2 client-credentials or
+   device-flow login for agents. These are not waiting for a trigger; they are the wrong
+   shape for a per-tenant hub, and reopening any of them needs a **new written decision**
+   that says what the portal boundary cannot do — for example genuine per-user attribution
+   of hub writes inside KXM itself, which per-box tenancy does not need. Until such a
+   decision exists, treat every mention of them in this file as history.
 
 The technical observations underneath remain accurate and are the reason the option is *cheap to
 reject*: unsigned session tokens (`commands.ts:977`), static project tokens read at startup
