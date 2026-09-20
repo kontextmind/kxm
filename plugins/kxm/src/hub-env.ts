@@ -200,6 +200,19 @@ export function resolveHubCredentials(options: ResolveHubCredentialsOptions = {}
  * matches the credential precedence `kxm hub start` announces, so a hub
  * started fresh (generated token persisted) accepts authenticated client
  * commands without the operator exporting the token. */
+/**
+ * Can this machine authenticate to a hub at all, the way one-shot clients resolve it:
+ * explicit `KXM_AUTH_TOKEN`, else the persisted record's admin token, else any persisted
+ * project token. Read-only — it never generates or writes, so a refusal can tell the
+ * operator to configure something rather than having silently configured it for them.
+ */
+export function hasClientHubCredential(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.KXM_AUTH_TOKEN?.trim()) return true;
+  const record = readHubEnvRecord(env);
+  if (record?.authToken?.trim()) return true;
+  return Object.values(record?.projectTokens ?? {}).some((token) => typeof token === "string" && token.trim().length > 0);
+}
+
 export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: string): string | undefined {
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;

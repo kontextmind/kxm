@@ -19657,6 +19657,12 @@ function readHubEnvRecord(env = process.env) {
     ...record.projectTokens !== void 0 ? { projectTokens: record.projectTokens } : {}
   };
 }
+function hasClientHubCredential(env = process.env) {
+  if (env.KXM_AUTH_TOKEN?.trim()) return true;
+  const record = readHubEnvRecord(env);
+  if (record?.authToken?.trim()) return true;
+  return Object.values(record?.projectTokens ?? {}).some((token) => typeof token === "string" && token.trim().length > 0);
+}
 function resolveClientHubAuthToken(env, project) {
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
@@ -26097,6 +26103,17 @@ function validateHubUrl(raw) {
     throw new HubBindingError("hub_url_invalid");
   }
   return parsed.href.replace(/\/$/, "");
+}
+function hubBindingScope(url) {
+  let host;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return "remote";
+  }
+  if (host === "localhost" || host === "::1" || host === "[::1]" || host.endsWith(".localhost")) return "loopback";
+  const v4 = /^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/.exec(host);
+  return v4 && [v4[1], v4[2], v4[3]].every((part) => Number(part) <= 255) ? "loopback" : "remote";
 }
 function isIsoTimestamp(value) {
   if (Number.isNaN(Date.parse(value))) return false;
@@ -45845,8 +45862,20 @@ async function refreshKxmUpdateNotice(runtime, config) {
 async function cmdStatus(runtime) {
   const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl);
   const ready = await hubGet(`${runtime.serverUrl}/ready`, runtime.fetchImpl);
-  const payload = { ok: health.ok && ready.ok, command: "hub view", health: health.body, ready: ready.body };
-  print(runtime.io, runtime.json, payload, `hub health=${health.ok} ready=${ready.ok}`);
+  const bindingScope = runtime.boundHubUrl ? hubBindingScope(runtime.boundHubUrl) : void 0;
+  const payload = {
+    ok: health.ok && ready.ok,
+    command: "hub view",
+    ...runtime.boundHubUrl ? { binding: { url: runtime.boundHubUrl, scope: bindingScope } } : {},
+    health: health.body,
+    ready: ready.body
+  };
+  print(
+    runtime.io,
+    runtime.json,
+    payload,
+    `hub health=${health.ok} ready=${ready.ok}${bindingScope ? ` \xB7 ${bindingScope} hub` : ""}`
+  );
   return payload.ok ? 0 : 1;
 }
 async function cmdDash(runtime, options = {}) {
@@ -45931,6 +45960,7 @@ function formatHubBindHealth(health) {
   if (health === "off") return "health=off (nothing answered; run kxm hub start)";
   return "health=unknown (no reply within 300 ms)";
 }
+var HUB_BIND_UNAUTHENTICATED_HINT = "export KXM_AUTH_TOKEN (or point KXM_STATE_HOME at the hub-env record that already holds one), then re-run; the hub itself requires a token beyond loopback";
 async function cmdHubBind(runtime, rawUrl) {
   let url;
   try {
@@ -45947,14 +45977,40 @@ async function cmdHubBind(runtime, rawUrl) {
     }
     throw error;
   }
+  const scope = hubBindingScope(url);
+  if (scope === "remote" && !hasClientHubCredential(runtime.env)) {
+    print(
+      runtime.io,
+      runtime.json,
+      {
+        ok: false,
+        command: "hub bind",
+        error: "hub_bind_unauthenticated",
+        url,
+        scope,
+        // The hint is in the payload, not only in the prose line: under --json the prose
+        // is suppressed, and a machine-readable refusal that names no next step is the
+        // one kind of error that gets debugged by reading source.
+        nextAction: "export_kxm_auth_token",
+        hint: HUB_BIND_UNAUTHENTICATED_HINT
+      },
+      `refusing to bind remote hub ${url} with no credential; ${HUB_BIND_UNAUTHENTICATED_HINT}`
+    );
+    return 2;
+  }
   const file = hubBindingFile(runtime.env);
   if (runtime.dryRun) {
-    print(runtime.io, runtime.json, { ok: true, command: "hub bind", dryRun: true, url, file }, `would bind hub ${url}`);
+    print(runtime.io, runtime.json, { ok: true, command: "hub bind", dryRun: true, url, scope, file }, `would bind hub ${url} (${scope})`);
     return 0;
   }
   writeHubBinding({ schema: HUB_BINDING_SCHEMA, url, boundAt: (/* @__PURE__ */ new Date()).toISOString() }, runtime.env);
   const { health, probeMs } = await probeHubHealth(url, runtime.fetchImpl);
-  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, file, health, probeMs }, `bound hub ${url} \xB7 ${formatHubBindHealth(health)}`);
+  print(
+    runtime.io,
+    runtime.json,
+    { ok: true, command: "hub bind", url, scope, file, health, probeMs },
+    `bound hub ${url} \xB7 ${scope} \xB7 ${formatHubBindHealth(health)}${scope === "remote" ? " \xB7 token leaves this machine" : ""}`
+  );
   return 0;
 }
 async function cmdHubUnbind(runtime) {
@@ -46268,7 +46324,8 @@ async function cmdSessionBrief(runtime, options = {}) {
       state: health,
       evidence: health === "unknown" ? "timeout" : "probed",
       online: health === "on",
-      url: targetUrl
+      url: targetUrl,
+      scope: hubBindingScope(targetUrl)
     };
   } else {
     hub = { state: "off", evidence: "unconfigured", online: false };

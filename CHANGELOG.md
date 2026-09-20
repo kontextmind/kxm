@@ -6,6 +6,17 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Per-tenant hosting operations, and a backup that covers the whole state set.**
+  `docs/operations.md` gained a *Per-tenant hosted deployment* section (one tenant = one box
+  = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser
+  session; a reverse-proxy contract states what must hold without shipping generated proxy
+  config) and a rewritten *Backup and restore* that enumerates every path a tenant owns —
+  hub database, Runtime `registry.db`, each project's `run-events.db` **and its
+  `.run-prompts.json` sidecar**, bindings, workspace config, machine-level hub binding and
+  credential records, assets and logs. The previous recipe stopped the hub and copied
+  `kxm.db`, which is a hub-only backup: a restore can pass every hub check and still lose
+  run history and the prompts that explain it.
+
 - **Terminal component kit package:** `@kontextmind/tui` (`packages/core/tui`, also
   exposed as the `@kontextmind/kxm/tui` export) ships the reusable Pi-renderer-based
   terminal components in the package layer shape (`src/{types,tui,services,adapters,exports}`,
@@ -16,6 +27,19 @@ All notable user-facing changes are documented here. The project follows [Semant
   runner only; tests, the hub, and the CLI remain on Node.
 
 ### Changed
+
+- **`kxm hub bind` no longer stores a remote URL it cannot authenticate to.** A remote
+  binding is a deliberate network decision, so it is now refused when no credential resolves
+  (explicit `KXM_AUTH_TOKEN`, or the persisted hub record's admin or project tokens) —
+  mirroring the rule the hub already applies to its own listener, which refuses to bind
+  beyond loopback without a token. The refusal carries `nextAction` and the same hint string
+  in both the JSON payload and the prose line, so `--json` consumers are not left with a bare
+  code and no way forward; a stored-but-unusable binding otherwise reads later like a
+  network fault and gets debugged as one.
+- **`kxm hub view` and the session brief label the binding `loopback` or `remote`.**
+  "Attached across a network" and "attached on this box" looked identical before, and only
+  one of them puts a bearer on a wire. `localhost`, `127.0.0.1`, `::1` and `*.localhost` are
+  loopback; `0.0.0.0`, LAN addresses and host names are remote.
 
 - **Naming sweep:** the retired `vnext` naming is gone from file and folder names,
   symbols, constants, schema `$id` segments, and error codes (`vnext_*` is now

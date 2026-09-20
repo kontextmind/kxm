@@ -9,6 +9,7 @@ import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/sr
 import { cmdKxmRunStatus, kxmDriveCliSeams } from "../../plugins/kxm/src/cli/project.ts";
 import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
+import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { stringify } from "yaml";
 
@@ -222,7 +223,10 @@ test("init rejects --hub and --hub-url as unknown options", async () => {
 
 test("hub bind writes the host binding and reports unknown for a blackholed URL within a second", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "kxm-hub-bind-"));
-  const env = { KXM_STATE_HOME: tmp };
+  // This URL is beyond loopback, and a remote binding now requires a resolvable
+  // credential (see the refusal test below), so the probe behaviour under test here is
+  // exercised with one present rather than by loosening the rule.
+  const env = { KXM_STATE_HOME: tmp, KXM_AUTH_TOKEN: "bind-probe-token" };
   const url = "http://10.255.255.1:7331";
   const bindingPath = join(tmp, "hub-binding.json");
   const abortingFetch: NonNullable<CliIo["fetchImpl"]> = (_input, init) => new Promise((_resolve, reject) => {
@@ -238,6 +242,7 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
     assert.equal(await runCli(["hub", "bind", url], env, { ...unknown, fetchImpl: abortingFetch }), 0);
     assert.ok(Date.now() - started < 1000);
     assert.match(unknown.read().stdout, /health=unknown \(no reply within 300 ms\)/);
+    assert.match(unknown.read().stdout, /remote/);
     const record = JSON.parse(readFileSync(bindingPath, "utf8")) as { schema: string; url: string; boundAt: string };
     assert.equal(record.schema, "kxm.hub-binding.v1");
     assert.equal(record.url, url);
@@ -282,6 +287,60 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
     const invalid = capture();
     assert.equal(await runCli(["hub", "--json", "bind", "ftp://x"], env, invalid), 2);
     assert.match(invalid.read().stderr, /hub_url_invalid/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("hub bind refuses a remote hub with no credential and labels the binding scope", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "kxm-hub-bind-scope-"));
+  const stateOnly = { KXM_STATE_HOME: tmp };
+  const bindingPath = join(tmp, "hub-binding.json");
+  const replyingFetch: NonNullable<CliIo["fetchImpl"]> = async () =>
+    new Response(JSON.stringify({ ok: true }), { status: 200 });
+  try {
+    // Remote, nothing to authenticate with: refused before anything is written, and the
+    // message names the fix rather than describing the failure.
+    const refused = capture();
+    assert.equal(await runCli(["hub", "--json", "bind", "http://10.255.255.1:7331"], stateOnly,
+      { ...refused, fetchImpl: replyingFetch }), 2);
+    // An ok:false payload lands on stderr under --json, as with other refusals.
+    const refusal = `${refused.read().stderr}${refused.read().stdout}`;
+    assert.match(refusal, /hub_bind_unauthenticated/);
+    // The hint has to be in the payload: --json suppresses the prose line, so a refusal
+    // that only explains itself in prose is unreadable to the thing that got refused.
+    assert.match(refusal, /"nextAction":"export_kxm_auth_token"/);
+    assert.match(refusal, /KXM_AUTH_TOKEN/);
+    assert.equal(existsSync(bindingPath), false, "a refused bind must not persist a URL");
+
+    // Same host on loopback is never a network path, so the rule must not reach it.
+    const local = capture();
+    assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"], stateOnly,
+      { ...local, fetchImpl: replyingFetch }), 0);
+    assert.match(local.read().stdout, /bound hub http:\/\/127\.0\.0\.1:7331 · loopback/);
+    assert.doesNotMatch(local.read().stdout, /token leaves this machine/);
+
+    // The scope function is the whole rule, so the names that count are pinned here
+    // rather than inferred from one literal: `localhost` and an IPv6 loopback are not a
+    // network path, and `0.0.0.0` is not either — it is every interface, which is worse.
+    assert.equal(hubBindingScope("http://localhost:7331"), "loopback");
+    assert.equal(hubBindingScope("http://[::1]:7331"), "loopback");
+    assert.equal(hubBindingScope("http://0.0.0.0:7331"), "remote");
+    assert.equal(hubBindingScope("http://192.168.1.20:7331"), "remote");
+    assert.equal(hubBindingScope("https://acme.example/hub"), "remote");
+
+    // With a credential present, the remote bind is allowed and says what it now means.
+    const remote = capture();
+    assert.equal(await runCli(["hub", "bind", "http://10.255.255.1:7331"],
+      { ...stateOnly, KXM_AUTH_TOKEN: "tenant-token" }, { ...remote, fetchImpl: replyingFetch }), 0);
+    assert.match(remote.read().stdout, /remote · health=on · token leaves this machine/);
+
+    // And the status line carries the scope, so "across a network" is never invisible.
+    const view = capture();
+    assert.equal(await runCli(["hub", "--json", "view"], { ...stateOnly, KXM_AUTH_TOKEN: "tenant-token" },
+      { ...view, fetchImpl: replyingFetch }), 0);
+    const seen = JSON.parse(view.read().stdout) as { binding?: { url?: string; scope?: string } };
+    assert.equal(seen.binding?.scope, "remote");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

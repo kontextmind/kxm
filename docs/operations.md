@@ -144,20 +144,122 @@ Recommended alerts:
 - waiting-run count or workflow wait timeouts rise beyond the expected external-system latency.
 - quorum degradation approvals occur outside a declared incident or change window.
 
+## Per-tenant hosted deployment
+
+One tenant is one machine: one hub process, one Runtime supervisor, one SQLite state set.
+Tenancy is the box, not a table — the hub has no tenant column and no user accounts, and
+`kxm hub bind` still means *this machine's client attaches to that hub URL*. The portal
+(kontextmind/kxmd-portal) is the multi-tenant, multi-user surface; browsers never talk to
+the hub.
+
+Topology on the tenant box:
+
+```text
+browser ──HTTPS──▶ reverse proxy + Authentik ──▶ portal (users, sessions, tenant directory)
+                                                   │
+                                                   │  server-side, loopback
+                                                   ▼
+                                    hub 127.0.0.1:7331  ·  Runtime supervisor (loopback)
+```
+
+1. **Service account, not root.** Run the hub and Runtime under a dedicated unprivileged
+   account. Workflow session isolation is a routing and cross-run safety mechanism, not a
+   sandbox against a hostile same-OS process (see
+   [architecture.md](architecture.md)); a model with shell access can reach anything its
+   own account can reach, so untrusted workers need separate accounts or containers.
+2. **Stable paths, declared explicitly** rather than inherited from a home directory:
+   `KXM_WORKSPACE_DIR`, `KXM_STATE_DIR`, `KXM_DATA_PATH`, `KXM_LOG_PATH`, and
+   `KXM_STATE_HOME` for the machine-level hub credential and binding records. Pin
+   `KXM_HOST=127.0.0.1`.
+3. **Loopback listeners only.** The hub and the supervisor expose no public port; nothing
+   is load-balanced across hubs. The hub keeps one writer per database.
+4. **One project, the slim workflow.** `kxm init` the workspace, then start the hub with
+   `kxm hub start` and confirm with `kxm hub view` — the status line reports the binding as
+   `loopback` or `remote`, so an operator can see which side of the trust line they are on
+   without reading files. `kxm hub bind` refuses a **remote** URL when the machine has no
+   credential to authenticate with, because a stored-but-unusable URL later reads as a
+   network fault and gets debugged as one.
+5. **Restart recovery is the existing one:** the PID claim file, dead-claim reclaim and
+   graceful `SIGTERM` shutdown described under *PID claims and restart recovery*. Do not
+   add a second service manager for the hub; use the tenant's existing one.
+
+### Reverse-proxy contract
+
+The tenant's proxy owns TLS and the browser session. KXM ships no proxy configuration,
+because a generated config reads as authoritative while one missing directive silently
+re-opens header forgery. What must hold, whatever the stack:
+
+- The hub and supervisor ports are **not** reachable from outside the box.
+- The proxy **strips** client-supplied identity, tenant, agent, caller and `Authorization`
+  headers before injecting its own validated values. The hub must never see a
+  browser-forged `x-kxm-agent-id`, `x-kxm-caller-id` or bearer.
+- The proxy **never injects the hub admin token on a user's behalf**. That flattens every
+  authenticated user in the tenant to hub admin and destroys attribution.
+- Machine credentials stay server-side in the portal process. A browser must not hold,
+  echo, or be redirected with a hub bearer.
+- `kxm hub bind` on a remote hub URL therefore requires an explicit credential, and a
+  refusal names the fix instead of only the failure.
+
+Example (illustrative shape — not generated config, not tested by this repository's CI):
+Authentik's embedded proxy answers a forward-auth subrequest per request; the tenant proxy
+`proxy_cache_bypass`/`auth_request`-style gate allows only the portal's routes and keeps
+`/v1/*` and the supervisor off the public interface entirely.
+
 ## Backup and restore
 
-SQLite runs in WAL mode. The safest simple backup is a coordinated copy while the hub is stopped:
+> **This section covers the whole tenant state set, on purpose.** A recipe that copies only
+> `.kxm/state/kxm.db` is a hub-only backup: it silently omits the Runtime registry,
+> per-project event stores, prompt sidecars, bindings and configuration, so a restore that
+> passes every hub check can still lose run history. Verify with a real restore before first
+> hosted use, not after an incident.
 
-1. Stop the hub gracefully.
-2. Copy `.kxm/state/kxm.db` to protected backup storage.
-3. Keep the backup with the application version and configuration used to create it.
-4. Restart the hub and confirm `/ready` returns `ok: true`.
+SQLite runs in WAL mode, so a consistent copy requires a stopped service (or a SQLite-aware
+online tool). Stop the hub and the Runtime supervisor first.
 
-For online backups, use a SQLite-aware backup tool or snapshot the database, `-wal`, and `-shm` files consistently. A plain copy of only `kxm.db` while the service is writing may omit committed WAL data.
+**What a tenant backup contains** (paths relative to the state root; `KXM_STATE_HOME` for
+the machine-level records, `KXM_STATE_DIR`/workspace `.kxm/state` for the rest):
 
-To restore, stop the hub, preserve the current files for rollback, place the restored database at `.kxm/state/kxm.db` or the configured `KXM_DATA_PATH`, and start the same or newer compatible release. The runtime refuses a database whose schema version is newer than it supports.
+| Path | Contents | Loss means |
+|---|---|---|
+| `.kxm/state/kxm.db` (+ `-wal`/`-shm`) | hub store: agents, messages, workflow runs, checkpoints | hub history and delivery state |
+| `runtime/registry.db` | Runtime project registry | which projects this Runtime knows |
+| `runtime/projects/<projectKey>/run-events.db` (+ its `.run-prompts.json` sidecar) | event-sourced run state, receipts, gate evidence, intake, **and prompt text** | run history *and* the prompts that explain it |
+| `runtime/supervisor.token`, `supervisor.json`/PID claim files | supervisor credential + claim | the token is secret and re-generable; the claim is not |
+| `.kxm/` workspace config: `project.yaml`, `agents/`, `workflows/`, `gates.yaml`, `roster.yaml`, `routes.yaml`, `prices.yaml` | project and route definition | the tenant stops being reproducible |
+| `$KXM_STATE_HOME/hub-binding.json`, `hub-env.json` | this machine's hub URL + credentials | a re-bind, and a token rotation |
+| `.kxm/assets/`, `.kxm/logs/`, retrospectives, candidates | evidence and learning records | provenance and improvement history |
 
-Test restoration periodically. A backup that has never been restored is not a verified recovery path.
+**Back up (stopped-state recipe):**
+
+1. Stop the hub gracefully (`kxm hub stop` or `SIGTERM`) and let the supervisor settle
+   children; both close their databases.
+2. Copy the whole set above as one tree, or use `VACUUM INTO` per database for a compact,
+   consistent single-file snapshot of each. The hub's own backup path already writes a
+   hashed manifest and records a schema version ceiling; keep that manifest with the files.
+3. Record the package version, configuration revision and schema versions beside the copy.
+   A restore that cannot state which release produced it is not a restore path.
+4. Keep at least one rotation, and bound retention explicitly — run events and prompt
+   sidecars grow, and unbounded retention is how a tenant box fills up.
+
+**Restore:**
+
+1. Stop the services. Move the current state aside rather than overwriting it.
+2. Place each file back at its recorded path (`KXM_DATA_PATH`, the Runtime registry, each
+   project event store **with its sidecar**, config, bindings).
+3. Start the hub and confirm `/ready`, then `kxm hub view` — including that the reported
+   binding scope is what the environment actually is.
+4. Read back a run and its drive receipt, and confirm prompt text is present. Restoring
+   databases without their sidecars leaves runs whose prompts are gone; that is a partial
+   restore, not a success.
+
+The runtime refuses a database whose schema version is newer than it supports, so
+restore order is: matching-or-newer release, then data. Online backups need a
+SQLite-aware tool or a consistent snapshot of each database with its `-wal` and `-shm`;
+a plain copy of a live `kxm.db` can omit committed WAL data.
+
+Test restoration periodically. Routine unattended recovery (automated discovery of every
+Runtime store plus sidecars) is deliberately **not** claimed here: it is a tracked
+post-MVP item, and today this procedure is executed stopped and by hand.
 
 ## Upgrade and rollback
 

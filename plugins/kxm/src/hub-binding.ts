@@ -7,6 +7,15 @@ export const HUB_HEALTH_PROBE_MS = 300;
 
 export type HubHealth = "on" | "off" | "unknown";
 
+/**
+ * Where a bound hub sits relative to this machine — a trust question, not a cosmetic one.
+ * A loopback URL never puts a bearer on a network; a remote URL means the operator chose
+ * to. `kxm hub bind` therefore refuses a remote URL it cannot authenticate, mirroring the
+ * rule the hub applies to its own listener ("KXM_AUTH_TOKEN is required when binding
+ * beyond localhost").
+ */
+export type HubBindingScope = "loopback" | "remote";
+
 export interface HubBindingRecord {
   schema: typeof HUB_BINDING_SCHEMA;
   url: string;
@@ -60,6 +69,19 @@ export function validateHubUrl(raw: string): string {
     throw new HubBindingError("hub_url_invalid");
   }
   return parsed.href.replace(/\/$/, "");
+}
+
+/** Loopback literals only; `0.0.0.0`, a LAN address or a hostname are all remote. */
+export function hubBindingScope(url: string): HubBindingScope {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return "remote";
+  }
+  if (host === "localhost" || host === "::1" || host === "[::1]" || host.endsWith(".localhost")) return "loopback";
+  const v4 = /^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/.exec(host);
+  return v4 && [v4[1], v4[2], v4[3]].every((part) => Number(part) <= 255) ? "loopback" : "remote";
 }
 
 function isIsoTimestamp(value: string): boolean {

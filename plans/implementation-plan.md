@@ -358,6 +358,41 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **S1 hosting slice: the tenant-box recipe, a state-set-wide backup, and two `hub bind`
+  tightenings (2026-09-20; queue in Still open, boundary in
+  [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md)):** one tenant is one box — one
+  hub, one Runtime, one state set, no tenant table and no hub user accounts — and the
+  documented topology keeps hub and supervisor loopback-only with the tenant's proxy owning
+  TLS and browser sessions. KXM ships the proxy **contract** (strip client identity,
+  agent, caller and `Authorization` before injecting validated values; never inject the hub
+  admin token per user; publish no hub port; keep machine credentials server-side in the
+  portal) and explicitly no generated proxy config, because a generated config reads as
+  authoritative while one missing directive silently re-opens header forgery.
+  The backup section previously described stopping the hub and copying `kxm.db`. That is a
+  **hub-only** backup: run events and their prompt sidecars live in
+  `runtime/projects/<key>/run-events.db(.run-prompts.json)`, the project registry in
+  `runtime/registry.db`, and bindings, workspace config and machine-level credential records
+  elsewhere — so a restore that passes every hub check can still lose Runtime history, and
+  an operator only finds out during an incident. It now enumerates the whole tenant state set
+  with the loss consequence per path, keeps restore verification (read back a run, its drive
+  receipt, and that prompt text survives), and states plainly that routine unattended
+  recovery is **not** claimed — automated store discovery is a tracked post-MVP item.
+  `kxm hub bind` gained the client-side mirror of the rule the hub already enforced on its own
+  listener: a **remote** URL with no resolvable credential is refused
+  (`hub_bind_unauthenticated`) instead of being stored and failing later like a network fault;
+  the refusal carries `nextAction` and the same hint string in both the JSON payload and the
+  prose line, because a machine-readable refusal that explains itself only in prose is
+  debugged by reading source. `kxm hub view` and the session brief now label the binding
+  `loopback` or `remote` — a trust distinction that was previously invisible — with
+  `localhost`/`127.0.0.1`/`::1`/`*.localhost` loopback and `0.0.0.0`, LAN and hostnames
+  remote.
+  Gate: existing `npm run verify`, no new npm script or CI job, and **one** named test
+  (`hub bind refuses a remote hub with no credential and labels the binding scope`, in the
+  existing CLI suite) — which also had to update the neighbouring bind test to carry a token,
+  since that test was exercising probe timing against a LAN address the new rule now refuses.
+  Mutation-checked: dropping the guard, hard-coding the reported scope, and mislabelling
+  `localhost`/`::1` each turn the new test red; zero schema change, zero new dependency.
+
 - **The documented `just` entry points existed only in the docs (2026-09-19):**
   `just assign|witness|accept|attribute|observe-cost|change-report|plan-current`
   are named as the normal developer entry by `AGENTS.md`, the Decided entry above,

@@ -42,6 +42,8 @@ export interface SessionHubStatus {
   evidence: "probed" | "bound" | "cached" | "unconfigured" | "process" | "timeout";
   online?: boolean;
   url?: string;
+  /** Loopback or remote, so a brief never reads the same on both. */
+  scope?: "loopback" | "remote";
 }
 
 export interface SessionShipStatus {
