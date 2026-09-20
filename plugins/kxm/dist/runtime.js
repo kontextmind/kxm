@@ -17761,8 +17761,18 @@ function openDatabase(file, description, spec) {
   }
   const database = new DatabaseSync(file);
   let transaction = false;
+  const refusal = (version) => version > spec.version ? databaseError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`) : databaseError(
+    "runtime_schema_outdated",
+    file,
+    `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh \u2014 upgrading old state in place is deliberately unsupported`
+  );
   try {
     database.exec(`PRAGMA busy_timeout = ${spec.timeoutMs ?? 5e3}`);
+    const stamp = database.prepare("PRAGMA user_version").get();
+    const stampedVersion = stamp?.user_version ?? 0;
+    if (stampedVersion > spec.version || stampedVersion > 0 && stampedVersion < spec.version) {
+      throw refusal(stampedVersion);
+    }
     if (!isMemory) {
       ensureWalJournalMode(database, file, description, spec.timeoutMs);
     }
@@ -17773,7 +17783,7 @@ function openDatabase(file, description, spec) {
     const row = database.prepare("PRAGMA user_version").get();
     const version = row?.user_version ?? 0;
     if (version > spec.version) {
-      throw databaseError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
+      throw refusal(version);
     }
     if (version === 0) {
       const existing = userTables(database);
@@ -17783,11 +17793,7 @@ function openDatabase(file, description, spec) {
       database.exec(spec.schema);
       database.exec(`PRAGMA user_version = ${spec.version}`);
     } else if (version < spec.version) {
-      throw databaseError(
-        "runtime_schema_outdated",
-        file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh \u2014 upgrading old state in place is deliberately unsupported`
-      );
+      throw refusal(version);
     }
     if (spec.tables) {
       verifyExpectedTables(database, file, description, spec.tables);

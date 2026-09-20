@@ -147,8 +147,24 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
 
   const database = new DatabaseSync(file);
   let transaction = false;
+  const refusal = (version: number): Error => (version > spec.version
+    ? databaseError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`)
+    : databaseError(
+      "runtime_schema_outdated",
+      file,
+      `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh — upgrading old state in place is deliberately unsupported`,
+    ));
   try {
     database.exec(`PRAGMA busy_timeout = ${spec.timeoutMs ?? 5000}`);
+    // Read the stamp **before** anything that can modify the file. Enabling WAL rewrites the
+    // database header, so a store we intend to refuse must not be changed by the act of
+    // refusing it — the build that owns that stamp may still need to open it, and "we left it
+    // alone" has to be true rather than approximately true.
+    const stamp = database.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
+    const stampedVersion = stamp?.user_version ?? 0;
+    if (stampedVersion > spec.version || (stampedVersion > 0 && stampedVersion < spec.version)) {
+      throw refusal(stampedVersion);
+    }
     if (!isMemory) {
       ensureWalJournalMode(database, file, description, spec.timeoutMs);
     }
@@ -161,7 +177,7 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
     const version = row?.user_version ?? 0;
 
     if (version > spec.version) {
-      throw databaseError("runtime_schema_newer", file, `${description} schema version ${version} is newer than this runtime supports`);
+      throw refusal(version);
     }
 
     if (version === 0) {
@@ -175,12 +191,9 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
       // No migration lanes. This is a single-operator tool: an older database is
       // re-initialised, not upgraded in place, and the code never carries two schema
       // shapes at once. Silently accepting an older file would mean every query has to
-      // work against shapes it no longer tests.
-      throw databaseError(
-        "runtime_schema_outdated",
-        file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file (or re-run \`kxm init\`) to start fresh — upgrading old state in place is deliberately unsupported`,
-      );
+      // work against shapes it no longer tests. Re-checked under the write lock because a
+      // concurrent owner could have stamped the file between the pre-flight read and here.
+      throw refusal(version);
     }
 
     if (spec.tables) {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -1815,6 +1816,27 @@ test(`store brakes: registry v1 stays valid; event store v${KXM_EVENT_STORE_SCHE
       () => new KxmRunEventStore(v2),
       new RegExp(`runtime_schema_outdated[\\s\\S]*this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}[\\s\\S]*start fresh`),
     );
+    {
+      // The refusal must cost the rejected file nothing at all. Enabling WAL rewrites the
+      // database header, so the stamp is now read before any journal-mode change: a store this
+      // build refuses has to stay byte-identical for the build that owns it. Comparing the
+      // whole file is the point — an assertion on user_version alone would pass after WAL had
+      // already been switched on underneath.
+      const before = createHash("sha256").update(readFileSync(v2)).digest("hex");
+      const refused = new DatabaseSync(v2, { readOnly: true });
+      try {
+        const mode = refused.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+        assert.notEqual(mode.journal_mode, "wal", "a refused store must not have been converted to WAL");
+      } finally {
+        refused.close();
+      }
+      assert.throws(() => new KxmRunEventStore(v2), /runtime_schema_outdated/);
+      assert.equal(
+        createHash("sha256").update(readFileSync(v2)).digest("hex"),
+        before,
+        "refusing an older store must leave the file exactly as found",
+      );
+    }
 
     const newer = join(stateRoot, "v99-events.db");
     const bump = new DatabaseSync(newer);
