@@ -583,11 +583,12 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   invented path resolution (`KXM_USER_TELEMETRY_DIR`, a fallback to local
   `logs/telemetry.jsonl`) that the exporter does not implement. Telemetry therefore got its
   **own root** (`$T`), resolved from an explicit global directory else
-  `XDG_CONFIG_HOME`/`HOME` — **not** from `KXM_USER_TELEMETRY_DIR`, so it can sit outside
+  `XDG_CONFIG_HOME`/`HOME` — **not** from `KXM_USER_CONFIG_DIR`, so it can sit outside
   `$C` — with its no-production-caller status stated, and `KXM_WORKSPACE_DIR` was added as
-  the override that relocates `$X` and every workspace-derived default with it. Final count:
-  **five** roots (`$S`, `$X`, `$W`, `$C`, `$T`), and the wording is "snapshots replace the
-  database copies, not the file copy", which is what `VACUUM INTO` can and cannot do. The
+  the override that relocates the workspace directories **but not the fixed checkout tree**.
+  Final count: **six** roots (`$R`, `$D`, `$W`, `$S`, `$C`, `$T`), and the wording is
+  "snapshots replace the database copies, not the file copy", which is exactly what
+  `VACUUM INTO` can and cannot do. The
   same round narrowed my claim that "loopback never consults a credential": true of the
   bind guard, false of `kxm peer list` and every other path that calls
   `resolveClientHubAuthToken` — a scoped claim is checkable, an unscoped one is the same
