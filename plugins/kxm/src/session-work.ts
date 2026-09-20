@@ -42,6 +42,8 @@ export interface SessionHubStatus {
   evidence: "probed" | "bound" | "cached" | "unconfigured" | "process" | "timeout";
   online?: boolean;
   url?: string;
+  /** Loopback or remote, so a brief never reads the same on both. */
+  scope?: "loopback" | "remote";
 }
 
 export interface SessionShipStatus {
@@ -65,9 +67,13 @@ export interface SessionBrief {
 }
 
 function hubPrefix(hub?: Partial<SessionHubStatus>): string {
-  if (hub?.state === "on" || (hub?.state === undefined && hub?.online === true)) return "kxm hub:on";
-  if (hub?.state === "off" || (hub?.state === undefined && hub?.online === false)) return "kxm hub:off";
-  if (hub?.state === "unknown") return "kxm hub:unknown";
+  // A remote hub carries a bearer over a network; a loopback one does not. The JSON
+  // said so while every text surface printed the same bytes for both, which is the
+  // distinction an operator actually reads.
+  const suffix = hub?.scope === "remote" ? "/remote" : "";
+  if (hub?.state === "on" || (hub?.state === undefined && hub?.online === true)) return `kxm hub:on${suffix}`;
+  if (hub?.state === "off" || (hub?.state === undefined && hub?.online === false)) return `kxm hub:off${suffix}`;
+  if (hub?.state === "unknown") return `kxm hub:unknown${suffix}`;
   return "kxm";
 }
 

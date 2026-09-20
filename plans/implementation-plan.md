@@ -498,6 +498,104 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   existing `npm run verify` and the existing CI legs — no new script, job or test file,
   consistent with the cross-cutting-gate replacement above.
 
+- **S1 hosting slice: the tenant-box recipe, a state-set-wide backup, and two `hub bind`
+  tightenings (2026-09-20; queue in Still open, boundary in
+  [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md)):** one tenant is one box — one
+  hub, one Runtime, one state set, no tenant table and no hub user accounts — and the
+  documented topology keeps hub and supervisor loopback-only with the tenant's proxy owning
+  TLS and browser sessions. KXM ships the proxy **contract** (strip client identity,
+  agent, caller and `Authorization` before injecting validated values; never inject the hub
+  admin token per user; publish no hub port; keep machine credentials server-side in the
+  portal) and explicitly no generated proxy config, because a generated config reads as
+  authoritative while one missing directive silently re-opens header forgery.
+  The backup section previously described stopping the hub and copying `kxm.db`. That is a
+  **hub-only** backup, and my own rewrites of it were wrong twice before they were right:
+  first "two roots", then "four", then a single `$X` that conflated the **fixed** checkout
+  tree with the **relocatable** workspace directories. A tenant has **six** roots, and two of
+  them are easy to mistake for one. `$R/.kxm` is fixed to the checkout and holds the project
+  definition — project/config/agents/workflows/gates/roles/role-hosts/producers/roster/
+  routes/prices/repo/template-provenance — plus goals, tasks, memory, candidates and skills;
+  `$D` is the workspace directories root (`--workspace` or `KXM_WORKSPACE_DIR`, else
+  `$R/.kxm`) yielding `config/`, `logs/`, `assets/`, `state/`; `--workspace` derives all four
+  while **ignoring** the per-directory variables, and relocating `$D` is not the same as
+  relocating one target — `KXM_STATE_DIR` alone leaves `$D` at its default and moves only
+  `$W`; `$S` is `KXM_STATE_DIR` when set, else `$D/state`
+  (and `--workspace` derives it, ignoring that variable); `$S` is host-local
+  `KXM_STATE_HOME`, which must be **absolute** — a relative value is rejected outright,
+  while a relative `XDG_STATE_HOME`/`LOCALAPPDATA` **base** falls back silently, so an
+  env-derived path can quietly name the default location instead`$S` carries `runtime/registry.db` (whose **registry rows** hold the supervisor
+  identity and claim — there is no `supervisor.json`), per-project `run-events.db` with a
+  sidecar named by appending `.run-prompts.json` to the **whole** database filename,
+  `projects/<hash>/repository-bindings.json`, `update.yaml`, and the hub binding/env records;
+  `$C` is user configuration; and `$T` is **federated telemetry**, resolved from an explicit
+  directory joined with `telemetry/`, else `XDG_CONFIG_HOME`/`HOME` — **not**
+  `KXM_USER_CONFIG_DIR`, so it can sit outside `$C` — and with **no production caller
+  today**, so its absence is the normal state rather than evidence of an opt-out; local
+  accounting is a different file, in `$D/logs`. The trap worth naming for an operator:
+  relocating the workspace does **not** relocate `$R`, so a backup of `$D` alone silently
+  omits the entire project definition. The table now separates recovery-critical routing
+  manifests from Pi model histories whose backup remains an existing policy **choice**,
+  marks what is disposable (PID/claim files, `session-brief.json`, the re-generable
+  supervisor token), applies WAL-consistent copying to every SQLite store rather than the
+  hub's alone, records every override with the backup, and keeps restore verification
+  concrete: read back a run, its drive receipt, and confirm prompt text survives. Routine
+  unattended recovery remains **not** claimed — automated store discovery is a tracked
+  post-MVP item.
+  `kxm hub bind` gained the client-side mirror of the rule the hub already enforced on its own
+  listener: a **remote** URL with no resolvable credential is refused
+  (`hub_bind_unauthenticated`) instead of being stored and failing later like a network fault;
+  the refusal carries `nextAction` and the same hint string in both the JSON payload and the
+  prose line, because a machine-readable refusal that explains itself only in prose is
+  debugged by reading source. `kxm hub view` and the session brief now label the binding
+  `loopback` or `remote` — a trust distinction that was previously invisible — with
+  `localhost`/`127.0.0.1`/`::1`/`*.localhost` loopback and `0.0.0.0`, LAN and hostnames
+  remote.
+  Review round one on this slice also found the guard itself too weak in three ways, now
+  fixed and asserted: a persisted record holding **another** project's token counted as a
+  credential and let a doomed binding be stored, so the check resolves against the active
+  project and an override URL alone no longer unlocks it; a malformed `hub-env.json` threw
+  `HubEnvError` past the command and printed neither payload nor prose, and is now a
+  readable `hub_credential_unreadable` refusal that confirms nothing was written; and
+  `hub view` labelled the *stored binding* while `KXM_SERVER_URL` sent the request somewhere
+  else, so it now labels the effective URL with `source: "env"` — and the session brief's
+  text and widget surfaces carry `/remote`, because a distinction that exists only in JSON
+  is a distinction nobody reads. The second round then caught a **regression my own fix
+  had introduced**: the guard resolved credentials *before* it checked scope, so a damaged
+  host record began refusing **loopback** binds that had always worked; resolution is now
+  remote-only, with its own case. The claim was then narrowed rather than repeated: that is
+  a property of the **bind** guard, not of loopback — other client paths call
+  `resolveClientHubAuthToken` whatever the scope, so loopback commands can still fail on a
+  malformed record, and a comment implying otherwise would be the same class of overstatement
+  one line away. That round also found my rewritten test had dropped the
+  `localhost` and `[::1]` scope assertions while still claiming to cover them — restoring
+  the literals is the difference between a test that names its cases and one that merely
+  passes.
+
+  Gate: existing `npm run verify`, no new npm script or CI job, and **one** named test
+  (`hub bind refuses a remote hub with no credential and labels the binding scope`, in the
+  existing CLI suite) — which also had to update the neighbouring bind test to carry a token,
+  since that test was exercising probe timing against a LAN address the new rule now refuses.
+  Mutation-checked: dropping the guard, hard-coding the reported scope, and mislabelling
+  `localhost`/`::1` each turn the new test red; zero schema change, zero new dependency.
+  Rounds three and four then attacked the documentation rather than the code, and it did not
+  survive: the copy step said "both roots" while the table above it defined four; the
+  rewrite had dropped `roster.yaml`, `routes.yaml` and `prices.yaml`, which are the route
+  and price authorities — a tenant restored without them comes back with different
+  admission and cost behaviour and reports itself healthy; and the federated telemetry row
+  invented path resolution (`KXM_USER_TELEMETRY_DIR`, a fallback to local
+  `logs/telemetry.jsonl`) that the exporter does not implement. Telemetry therefore got its
+  **own root** (`$T`), resolved from an explicit global directory else
+  `XDG_CONFIG_HOME`/`HOME` — **not** from `KXM_USER_CONFIG_DIR`, so it can sit outside
+  `$C` — with its no-production-caller status stated, and `KXM_WORKSPACE_DIR` was added as
+  the override that relocates the workspace directories **but not the fixed checkout tree**.
+  Final count: **six** roots (`$R`, `$D`, `$W`, `$S`, `$C`, `$T`), and the wording is
+  "snapshots replace the database copies, not the file copy", which is exactly what
+  `VACUUM INTO` can and cannot do. The
+  same round narrowed my claim that "loopback never consults a credential": true of the
+  bind guard, false of `kxm peer list` and every other path that calls
+  `resolveClientHubAuthToken` — a scoped claim is checkable, an unscoped one is the same
+  overstatement from a different sentence.
+
 - **The documented `just` entry points existed only in the docs (2026-09-19):**
   `just assign|witness|accept|attribute|observe-cost|change-report|plan-current`
   are named as the normal developer entry by `AGENTS.md`, the Decided entry above,
@@ -1637,7 +1735,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   | # | Deliver | Unblocked by | Proof | One named test |
   |---|---|---|---|---|
   | S0 | Reconcile plan authority: this queue, the gate/decision contradictions above, catalog demotion, AGENTS prose and regeneration | this replan | coherent tracker, catalog and generated artifacts through existing `verify` | none — prose and generated output, existing gate covers it |
-  | S1 | Hub + local Runtime on the tenant box: service account, persisted state paths, loopback listeners, existing restart path, one project and the slim `default` workflow; **the hosting recipe and the stopped-state backup/restore procedure for the whole tenant state set** in `docs/operations.md` (today's recipe is hub-only — stops the hub, copies `.kxm/state/kxm.db` — and is labelled as such until S1 replaces it); **the reverse-proxy contract** as invariants plus one labelled example and no generated config; and the two `kxm hub bind` tightenings settled in [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md) — refuse a non-loopback bind with no resolvable credential, naming the fix, and label the binding loopback or remote in `kxm hub view` and `kxm session brief` | a provisioned box and a selected authenticated route | restart the services; readiness, persisted credentials, retained run identity | none — deployment witness; existing behavioural gate |
+  | S1 **(delivered: PR #253)** | Hub + local Runtime on the tenant box: service account, persisted state paths, loopback listeners, existing restart path, one project and the slim `default` workflow; **the hosting recipe and the stopped-state backup/restore procedure for the whole tenant state set** in `docs/operations.md` (the recipe S1 replaced stopped the hub and copied `.kxm/state/kxm.db`, which is hub-only; `docs/operations.md` now enumerates all six roots); **the reverse-proxy contract** as invariants plus one labelled example and no generated config; and the two `kxm hub bind` tightenings settled in [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md) — refuse a non-loopback bind with no resolvable credential, naming the fix, and label the binding loopback or remote in `kxm hub view` and `kxm session brief` | a provisioned box and a selected authenticated route | restart the services; readiness, persisted credentials, retained run identity | none — deployment witness; existing behavioural gate |
   | S2 | Portal reads authoritative state: tenant label, connectivity, agents, runs, current status, latest receipt — hub metadata distinguished from Runtime run state, stale/unavailable explicit, polling | S1, portal router access | the read plus a browser comparison against the same run's CLI/API state | append `portal reads distinguish hub metadata from Runtime run state and unavailable upstreams` to `test/core/studio-layout.test.ts` |
   | S3 | Strict outcome on the selected Pi route — prose word-matching and default-pass removed | existing Pi producer fixture | negative outcome test plus selected-route live execution in S5 | `Pi final prose or malformed outcome cannot pass an assignment` in `test/core/pi-producer.test.ts` |
   | S4 | Portal drives one workflow: create, drive, cancel only, reusing existing command/run/drive IDs and receipts; 202 is started, never completed | S2, S3, exact project binding | command-parity test plus existing duplicate-drive, shutdown and receipt coverage | `portal create-drive-cancel preserves command identity and reports authoritative settlement` in `test/core/studio-layout.test.ts` |

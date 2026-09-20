@@ -9,6 +9,7 @@ import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/sr
 import { cmdKxmRunStatus, kxmDriveCliSeams } from "../../plugins/kxm/src/cli/project.ts";
 import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
+import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { stringify } from "yaml";
 
@@ -222,7 +223,10 @@ test("init rejects --hub and --hub-url as unknown options", async () => {
 
 test("hub bind writes the host binding and reports unknown for a blackholed URL within a second", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "kxm-hub-bind-"));
-  const env = { KXM_STATE_HOME: tmp };
+  // This URL is beyond loopback, and a remote binding now requires a resolvable
+  // credential (see the refusal test below), so the probe behaviour under test here is
+  // exercised with one present rather than by loosening the rule.
+  const env = { KXM_STATE_HOME: tmp, KXM_AUTH_TOKEN: "bind-probe-token" };
   const url = "http://10.255.255.1:7331";
   const bindingPath = join(tmp, "hub-binding.json");
   const abortingFetch: NonNullable<CliIo["fetchImpl"]> = (_input, init) => new Promise((_resolve, reject) => {
@@ -238,6 +242,7 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
     assert.equal(await runCli(["hub", "bind", url], env, { ...unknown, fetchImpl: abortingFetch }), 0);
     assert.ok(Date.now() - started < 1000);
     assert.match(unknown.read().stdout, /health=unknown \(no reply within 300 ms\)/);
+    assert.match(unknown.read().stdout, /remote/);
     const record = JSON.parse(readFileSync(bindingPath, "utf8")) as { schema: string; url: string; boundAt: string };
     assert.equal(record.schema, "kxm.hub-binding.v1");
     assert.equal(record.url, url);
@@ -284,6 +289,129 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
     assert.match(invalid.read().stderr, /hub_url_invalid/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("hub bind refuses a remote hub with no credential and labels the binding scope", async () => {
+  // Each case gets its own machine state root: a shared one makes the assertions about
+  // "was anything written" depend on the case that ran before it.
+  const fresh = () => ({ dir: mkdtempSync(join(tmpdir(), "kxm-hub-bind-")), env: {} as NodeJS.ProcessEnv });
+  const replyingFetch: NonNullable<CliIo["fetchImpl"]> = async (input) => {
+    if (String(input).endsWith("/ready")) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    return new Response(JSON.stringify({ ok: true, agents: [], inbox: [] }), { status: 200 });
+  };
+  const cleanup: string[] = [];
+  try {
+    // 0. Scope is asserted on the literals themselves before anything consumes it: a
+    //    version of this test that only exercised 127.0.0.1 passed while `localhost`
+    //    and the IPv6 form were treated as remote.
+    assert.equal(hubBindingScope("http://localhost:7331"), "loopback");
+    assert.equal(hubBindingScope("http://[::1]:7331"), "loopback");
+    assert.equal(hubBindingScope("http://0.0.0.0:7331"), "remote");
+    assert.equal(hubBindingScope("http://192.168.1.20:7331"), "remote");
+
+    // 0b. A damaged host credential record is a remote concern **for bind**. A loopback
+    //     URL puts no bearer on a wire, so it must keep binding — the first cut of the
+    //     guard read the record before checking scope and cost local operators their start.
+    const brokenLocal = mkdtempSync(join(tmpdir(), "kxm-hub-bind-broken-local-"));
+    cleanup.push(brokenLocal);
+    writeFileSync(join(brokenLocal, "hub-env.json"), "{malformed");
+    const brokenLocalIo = capture();
+    assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"],
+      { KXM_STATE_HOME: brokenLocal }, { ...brokenLocalIo, fetchImpl: replyingFetch }), 0);
+    assert.match(brokenLocalIo.read().stdout, /loopback · health=on/);
+    assert.equal(existsSync(join(brokenLocal, "hub-binding.json")), true);
+
+    // 1. Remote, no credential: refused, payload carries the code, the fix and the
+    //    project that needs a token, and nothing is persisted.
+    const refused = fresh();
+    cleanup.push(refused.dir);
+    refused.env = { KXM_STATE_HOME: refused.dir };
+    const refusedIo = capture();
+    assert.equal(await runCli(["hub", "--json", "bind", "http://10.255.255.1:7331"], refused.env,
+      { ...refusedIo, fetchImpl: replyingFetch }), 2);
+    const refusedText = `${refusedIo.read().stderr}${refusedIo.read().stdout}`;
+    assert.match(refusedText, /hub_bind_unauthenticated/);
+    assert.match(refusedText, /"nextAction":"export_kxm_auth_token"/);
+    assert.match(refusedText, /KXM_AUTH_TOKEN/);
+    assert.match(refusedText, /"project":/);
+    assert.equal(existsSync(join(refused.dir, "hub-binding.json")), false);
+
+    // 2. Loopback is not a network path, so the rule must not reach it.
+    const local = fresh();
+    cleanup.push(local.dir);
+    const localIo = capture();
+    assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"], { KXM_STATE_HOME: local.dir },
+      { ...localIo, fetchImpl: replyingFetch }), 0);
+    assert.match(localIo.read().stdout, /loopback · health=on/);
+    assert.doesNotMatch(localIo.read().stdout, /token leaves this machine/);
+
+    // 3. Credential present for the *active* project: allowed, and it says what changed.
+    const credentialed = fresh();
+    cleanup.push(credentialed.dir);
+    const credIo = capture();
+    assert.equal(await runCli(["hub", "bind", "http://10.255.255.1:7331"],
+      { KXM_STATE_HOME: credentialed.dir, KXM_PROJECT: "acme", KXM_AUTH_TOKEN: "tenant-token" },
+      { ...credIo, fetchImpl: replyingFetch }), 0);
+    assert.match(credIo.read().stdout, /remote · health=on · token leaves this machine/);
+
+    // 4. A record holding only another project's token cannot authorise this one.
+    const wrongProject = fresh();
+    cleanup.push(wrongProject.dir);
+    writeFileSync(join(wrongProject.dir, "hub-env.json"), JSON.stringify({
+      schema: "kxm.hub-env.v1",
+      createdAt: "2026-09-20T00:00:00.000Z",
+      projectTokens: { other: "test-project-secret" },
+    }));
+    const wrongIo = capture();
+    assert.equal(await runCli(["hub", "--json", "bind", "http://10.255.255.1:7331"],
+      { KXM_STATE_HOME: wrongProject.dir, KXM_PROJECT: "acme" },
+      { ...wrongIo, fetchImpl: replyingFetch }), 2);
+    assert.match(`${wrongIo.read().stderr}${wrongIo.read().stdout}`, /hub_bind_unauthenticated/);
+    assert.equal(existsSync(join(wrongProject.dir, "hub-binding.json")), false);
+
+    // 5. A malformed record is a readable configuration failure, not an uncaught throw.
+    const broken = fresh();
+    cleanup.push(broken.dir);
+    writeFileSync(join(broken.dir, "hub-env.json"), "{malformed");
+    const brokenIo = capture();
+    assert.equal(await runCli(["hub", "--json", "bind", "http://10.255.255.1:7331"],
+      { KXM_STATE_HOME: broken.dir }, { ...brokenIo, fetchImpl: replyingFetch }), 2);
+    const brokenText = `${brokenIo.read().stderr}${brokenIo.read().stdout}`;
+    assert.match(brokenText, /hub_credential_unreadable/);
+    assert.match(brokenText, /no binding was written/);
+
+    // 6. Scope is the URL actually contacted. `KXM_SERVER_URL` overrides the stored
+    //    binding, so a loopback binding plus a remote override reports `remote`.
+    const override = fresh();
+    cleanup.push(override.dir);
+    const bindIo = capture();
+    assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"], { KXM_STATE_HOME: override.dir },
+      { ...bindIo, fetchImpl: replyingFetch }), 0);
+    const viewIo = capture();
+    assert.equal(await runCli(["hub", "--json", "view"],
+      { KXM_STATE_HOME: override.dir, KXM_SERVER_URL: "http://10.255.255.1:7331" },
+      { ...viewIo, fetchImpl: replyingFetch }), 0);
+    const target = (JSON.parse(viewIo.read().stdout) as {
+      target?: { url?: string; scope?: string; source?: string };
+    }).target;
+    assert.equal(target?.scope, "remote");
+    assert.equal(target?.url, "http://10.255.255.1:7331");
+    assert.equal(target?.source, "env");
+
+    // 7. The text surfaces carry it too; a distinction that only exists in JSON is a
+    //    distinction nobody reads.
+    const remoteBrief = capture();
+    assert.equal(await runCli(["session", "brief", "--status"],
+      { KXM_STATE_HOME: override.dir, KXM_SERVER_URL: "http://10.255.255.1:7331" },
+      { ...remoteBrief, fetchImpl: replyingFetch }), 0);
+    assert.match(remoteBrief.read().stdout, /hub:on\/remote/);
+    const localBrief = capture();
+    assert.equal(await runCli(["session", "brief", "--status"], { KXM_STATE_HOME: override.dir },
+      { ...localBrief, fetchImpl: replyingFetch }), 0);
+    assert.match(localBrief.read().stdout, /hub:on(?!\/remote)/);
+  } finally {
+    for (const dir of cleanup) rmSync(dir, { recursive: true, force: true });
   }
 });
 

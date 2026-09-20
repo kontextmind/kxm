@@ -144,28 +144,204 @@ Recommended alerts:
 - waiting-run count or workflow wait timeouts rise beyond the expected external-system latency.
 - quorum degradation approvals occur outside a declared incident or change window.
 
+## Per-tenant hosted deployment
+
+One tenant is one machine: one hub process, one Runtime supervisor, one SQLite state set.
+Tenancy is the box, not a table — the hub has no tenant column and no user accounts, and
+`kxm hub bind` still means *this machine's client attaches to that hub URL*. The portal
+(kontextmind/kxmd-portal) is the multi-tenant, multi-user surface; browsers never talk to
+the hub.
+
+Topology on the tenant box:
+
+```text
+browser ──HTTPS──▶ reverse proxy + Authentik ──▶ portal (users, sessions, tenant directory)
+                                                   │
+                                                   │  server-side, loopback
+                                                   ▼
+                                    hub 127.0.0.1:7331  ·  Runtime supervisor (loopback)
+```
+
+1. **Service account, not root.** Run the hub and Runtime under a dedicated unprivileged
+   account. Workflow session isolation is a routing and cross-run safety mechanism, not a
+   sandbox against a hostile same-OS process (see
+   [architecture.md](architecture.md)); a model with shell access can reach anything its
+   own account can reach, so untrusted workers need separate accounts or containers.
+2. **Stable paths, declared explicitly** rather than inherited from a home directory:
+   `KXM_WORKSPACE_DIR`, `KXM_STATE_DIR`, `KXM_DATA_PATH`, `KXM_LOG_PATH`, and
+   `KXM_STATE_HOME` for the machine-level hub credential and binding records. Pin
+   `KXM_HOST=127.0.0.1`.
+3. **Loopback listeners only.** The hub and the supervisor expose no public port; nothing
+   is load-balanced across hubs. The hub keeps one writer per database.
+4. **One project, the slim workflow.** `kxm init` the workspace, then start the hub with
+   `kxm hub start` and confirm with `kxm hub view` — the status line reports the binding as
+   `loopback` or `remote`, so an operator can see which side of the trust line they are on
+   without reading files. `kxm hub bind` refuses a **remote** URL when the machine has no
+   credential to authenticate with, because a stored-but-unusable URL later reads as a
+   network fault and gets debugged as one.
+5. **Restart recovery is the existing one:** the PID claim file, dead-claim reclaim and
+   graceful `SIGTERM` shutdown described under *PID claims and restart recovery*. Do not
+   add a second service manager for the hub; use the tenant's existing one.
+
+### Reverse-proxy contract
+
+The tenant's proxy owns TLS and the browser session. KXM ships no proxy configuration,
+because a generated config reads as authoritative while one missing directive silently
+re-opens header forgery. What must hold, whatever the stack:
+
+- The hub and supervisor ports are **not** reachable from outside the box.
+- The proxy **strips** client-supplied identity, tenant, agent, caller and `Authorization`
+  headers before injecting its own validated values. The hub must never see a
+  browser-forged `x-kxm-agent-id`, `x-kxm-caller-id` or bearer.
+- The proxy **never injects the hub admin token on a user's behalf**. That flattens every
+  authenticated user in the tenant to hub admin and destroys attribution.
+- Machine credentials stay server-side in the portal process. A browser must not hold,
+  echo, or be redirected with a hub bearer.
+- `kxm hub bind` on a remote hub URL therefore requires an explicit credential, and a
+  refusal names the fix instead of only the failure.
+
+Example (illustrative shape — not generated config, not tested by this repository's CI):
+Authentik's embedded proxy answers a forward-auth subrequest per request; the tenant proxy
+`proxy_cache_bypass`/`auth_request`-style gate allows only the portal's routes and keeps
+`/v1/*` and the supervisor off the public interface entirely.
+
 ## Backup and restore
 
-> **Hub-only today, and labelled as such.** The recipe below stops the hub and copies
-> `.kxm/state/kxm.db`. That is not the whole tenant state set: the Runtime keeps its own
-> `registry.db`, per-project event stores under the user state root, prompt sidecars,
-> bindings and configuration. A restore that follows only these steps can bring the hub back
-> while losing Runtime history. Queue step **S1** replaces this section with a stopped-state
-> procedure covering the full set, and **S5** proves it with one deployed restore before real
-> use; until S1 lands, treat this as the hub database only.
+> **This section covers the whole tenant state set, on purpose.** A recipe that copies only
+> `.kxm/state/kxm.db` is a hub-only backup: it silently omits the Runtime registry,
+> per-project event stores, prompt sidecars, bindings and configuration, so a restore that
+> passes every hub check can still lose run history. Verify with a real restore before first
+> hosted use, not after an incident.
 
-SQLite runs in WAL mode. The safest simple backup is a coordinated copy while the hub is stopped:
+SQLite runs in WAL mode, so a consistent copy requires a stopped service (or a SQLite-aware
+online tool). Stop the hub and the Runtime supervisor first.
 
-1. Stop the hub gracefully.
-2. Copy `.kxm/state/kxm.db` to protected backup storage.
-3. Keep the backup with the application version and configuration used to create it.
-4. Restart the hub and confirm `/ready` returns `ok: true`.
+**What a tenant backup contains.** Six roots — one fixed to the checkout, one for the
+workspace directories, and four more that can each sit anywhere — and confusing them is how
+a backup goes missing while looking complete:
 
-For online backups, use a SQLite-aware backup tool or snapshot the database, `-wal`, and `-shm` files consistently. A plain copy of only `kxm.db` while the service is writing may omit committed WAL data.
+- **`$S`** — host-local machine state: `$KXM_STATE_HOME` **when set**, and it must be an
+  absolute path — a relative value is **rejected** with `local_state_root_not_absolute`, not
+  redirected. When unset, the default is `~/.local/state/kxm` on Linux (honouring
+  `XDG_STATE_HOME`), `~/Library/Application Support/KXM` on macOS, or
+  `%LOCALAPPDATA%\KXM` on Windows. The silent case to know about is a relative
+  `XDG_STATE_HOME`/`LOCALAPPDATA` **base**: that falls back to the default without error,
+  so a backup path derived from it can quietly point somewhere else.
+- **`$R`** — the checkout root. Everything below it is **fixed to the repository and does
+  not follow any workspace override**: `$R/.kxm/project.yaml`, `$R/.kxm/config.yaml`,
+  `$R/.kxm/agents/`, `$R/.kxm/workflows/`, `$R/.kxm/gates.yaml`, `$R/.kxm/roles/`,
+  `$R/.kxm/role-hosts.yaml` (or `.json`), `$R/.kxm/producers.yaml`, `$R/.kxm/roster.yaml`,
+  `$R/.kxm/routes.yaml`, `$R/.kxm/prices.yaml`, `$R/.kxm/repo/`,
+  `$R/.kxm/template-provenance.yaml`, plus the durable work and learning records
+  `$R/.kxm/goals/`, `$R/.kxm/tasks/`, `$R/.kxm/memory/` (with `memory/candidates/`) and
+  `$R/.kxm/skills/`. Conflating these with the next root is how a backup omits the project
+  definition while believing it copied the project.
+- **`$D`** — the **workspace directories**, resolved from `--workspace` or
+  `KXM_WORKSPACE_DIR`, else `$R/.kxm`, relative to `KXM_WORKDIR`/cwd:
+  `$D/config`, `$D/logs`, `$D/assets`, `$D/state`. `--workspace` **derives all four** and
+  ignores the per-directory variables; otherwise `KXM_CONFIG_DIR`, `KXM_LOGS_DIR`,
+  `KXM_ASSETS_DIR` and `KXM_STATE_DIR` override each one independently, and
+  `KXM_DATA_PATH`/`KXM_LOG_PATH` move two files again inside that. `$D` therefore **defaults to `$R/.kxm`**, and the two
+  move together only when the *workspace* is relocated: `KXM_WORKSPACE_DIR` (or
+  `--workspace`) moves `$D` and every default beneath it, while `KXM_CONFIG_DIR`,
+  `KXM_LOGS_DIR`, `KXM_ASSETS_DIR`, `KXM_STATE_DIR`, `KXM_DATA_PATH` and `KXM_LOG_PATH`
+  move **their own target and nothing else** — `KXM_STATE_DIR=/srv/state` alone leaves `$D`
+  at `$R/.kxm` and shifts only `$W`. A backup that assumes one shared location starts
+  omitting the other in exactly that case, which is why every row below is labelled as a
+  default.
+- **`$W`** — the workspace *state* directory: `KXM_STATE_DIR` when set, else `$D/state`
+  (and `--workspace` derives it, ignoring that variable). It holds the
+  hub database, worker routing/recovery manifests and Pi sessions.
+- **`$C`** — user configuration: `KXM_USER_CONFIG_DIR`, else `~/.config/kxm`.
+- **`$T`** — federated telemetry output: an explicit global directory joined with
+  **`telemetry/`**, else `$XDG_CONFIG_HOME/kxm/telemetry`, else `~/.config/kxm/telemetry`.
+  It is built from `XDG_CONFIG_HOME`/`HOME`, **not** from `KXM_USER_CONFIG_DIR`, so `$T` can
+  land outside `$C`; and it is a *different file* from local accounting in `$D/logs`.
 
-To restore, stop the hub, preserve the current files for rollback, place the restored database at `.kxm/state/kxm.db` or the configured `KXM_DATA_PATH`, and start the same or newer compatible release. The runtime refuses a database whose schema version is newer than it supports.
+| Path | Contents | Loss means |
+|---|---|---|
+| `$W/kxm.db` (+ `-wal`, `-shm`, or `KXM_DATA_PATH`) | hub store: agents, messages, workflow runs, checkpoints, gate evidence | hub history and delivery state |
+| `$S/runtime/registry.db` | Runtime registry, including the **supervisor identity and claim row** | which projects this Runtime knows; the claim is a registry row — there is no `supervisor.json` |
+| `$S/runtime/projects/<projectKey>/run-events.db` (+ `-wal`/`-shm`) | event-sourced run state, commands, drives, receipts, gate evidence, intake, coordinators, pause control | run history and every receipt that proves it |
+| `$S/runtime/projects/<projectKey>/run-events.db.run-prompts.json` | prompt text; the sidecar name appends to the **full** database filename | the prompts that explain the runs — restoring databases without sidecars is a partial restore |
+| `$S/projects/<control-root-hash>/repository-bindings.json` | host-local member repository paths | member bindings are host state, outside the project tree |
+| `$S/update.yaml` | release/update configuration consumed by the updater | the box reverts to defaults on the next update path |
+| `$W/pi-sessions/<workerKey>/{default,runs/<runId>}/` | Pi model histories | **optional by existing policy** (see *Workflow-specific Pi sessions*): never a system of record — decide and record, do not silently widen scope |
+| `$W/worker-session-binding-<workerKey>.json` (+ `.corrupt-*`), `worker-context-*.json`, `worker-recovery-*.json` | routing and recovery manifests | not optional: these are what make worker routing resumable after a restart |
+| `$R/.kxm/…` project definition: `project.yaml`, `config.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `roles/`, `role-hosts.yaml` (or `.json`), `producers.yaml`, `roster.yaml`, `routes.yaml`, `prices.yaml`, `repo/`, `project/env.yaml`, `template-provenance.yaml` | project, role, route, price and provenance definition | the tenant stops being reproducible — and a restore without `roster.yaml`/`routes.yaml`/`prices.yaml` comes back with **different admission and cost behaviour** while reporting itself healthy |
+| `$R/.kxm/goals/`, `tasks/`, `memory/` (with `memory/candidates/`), `skills/` (candidate/promoted/rejected, history, patches) | durable work and learning records | open goals/tasks and approved memory disappear |
+| `$R/.kxm/candidates/` — improvement candidate JSON and their diffs, **default only**: `kxm improve report --out-dir` relocates this directory outside every root listed here | the improvement queue itself | proposed fixes nobody was told about |
+| each bound member repository's own `$memberRepo/.kxm/repo/repo.yaml` and `.kxm/repo/env.yaml` | member repository definition and environment | for **externally bound** members, the binding JSON alone is not enough — these files live on the member's own filesystem and need their own backup or an explicit, checked reconstruction prerequisite |
+| `$D/assets/` (default; `KXM_ASSETS_DIR` relocates it) — retrospectives, improvements, artifacts, evidence | exported evidence | provenance and the ability to audit a past decision |
+| `$D/logs/` (default; `KXM_LOGS_DIR` relocates the directory and `KXM_LOG_PATH` the hub log) and `$D/logs/telemetry.jsonl` | operator logs and **local** usage accounting — the spend numbers routing reports read | no local accounting to reconcile against |
+| `KXM_WORKER_LOG_PATH` / `KXM_AGENT_LOG_PATH` targets (defaulting under `$D/logs`) | per-worker lifecycle and raw Pi output | worker diagnostics; **separate overrides, not local accounting** |
+| `$T/model-metrics.jsonl` | **federated** metrics only. Absent almost everywhere: the exporter exists and `telemetry.federated` defaults to `true` in the shipped config, but **no hub or CLI path calls it today**, so absence is the normal state rather than evidence someone opted out. A different file from local accounting, which is `$D/logs/telemetry.jsonl` | cross-machine reporting continuity, and a privacy boundary worth naming: federated records are separate, with `anonymize` defaulting to `true` |
+| `$S/hub-binding.json`, `$S/hub-env.json`, `$C/session.token` | host hub URL, credentials, local session token | a re-bind and a token rotation. **Secrets:** prefer regeneration to shipping them off-box, and never commit them |
+| `$C` global roles/workflows/host configuration | user-level defaults | operator conventions |
 
-Test restoration periodically. A backup that has never been restored is not a verified recovery path.
+**Overrides are part of the backup record.** `KXM_WORKSPACE_DIR` (and the `--workspace`
+flag, which additionally **ignores** the per-directory variables) moves every `$D`
+**default** at once; a directory with its own override stays where that variable points.
+Neither moves `$R`, so the fixed project tree must still be backed up from the checkout even
+when the workspace was relocated elsewhere — and copying the whole checkout is what protects
+`$R`'s default locations, which is why an enumerated-paths backup should be re-checked
+against this table whenever a loader grows a file. `KXM_STATE_HOME` moves `$S`
+only if absolute. An explicit telemetry directory is likewise joined with `telemetry/`,
+not used verbatim.
+`KXM_DATA_PATH`, `KXM_STATE_DIR`, `KXM_CONFIG_DIR`, `KXM_ASSETS_DIR`, `KXM_LOGS_DIR`,
+`KXM_LOG_PATH`, `KXM_WORKER_LOG_PATH`, `KXM_AGENT_LOG_PATH` or an explicit telemetry
+directory each relocate one more thing. Record every override **with** the backup, or a
+restore lands somewhere the running service will not look.
+
+**Disposable, not backup material:** `session-brief.json`, `update-check.json`,
+`*.error`, PID/claim files such as `hub.pid` and `worker-<key>.pid`, and
+`supervisor.token` (host-local secret, re-generated on start). WAL-consistent copying or
+`VACUUM INTO` applies to **every** SQLite file above, not only the hub database.
+
+**Back up (stopped-state recipe):**
+
+1. Stop **both** services, confirm they are down, and **keep them down until the copy
+   finishes**. `kxm hub stop` covers the hub and its worker PID claims; the Runtime
+   supervisor is a **separate** process owning `registry.db` and the project event stores,
+   stopped by `kxm runtime stop` — and that call acknowledges shutdown *initiated*, not
+   databases closed. So: verify neither reports live, then suspend whatever would start them
+   again — the service manager's auto-restart, hub autostart on login, and any client that
+   would reconnect and begin new work (a bound CLI, MCP server or Pi worker restarting a
+   supervisor on demand). A manager that respawns the hub halfway through a copy produces a
+   backup that is internally inconsistent across files, which is precisely the failure mode
+   this recipe is otherwise careful about. Only then copy.
+2. Copy the whole set above as one tree — **every root**, `$R`, `$D`, `$W`, `$S`, `$C` and
+   `$T` — or take `VACUUM INTO` snapshots per database. **Snapshots replace the database
+   copies, not the file copy**: configuration, repository bindings, prompt sidecars,
+   routing manifests and update configuration are not databases, so a snapshot-only backup
+   reproduces exactly the failure this section exists to remove. The hub's own backup path already writes a hashed manifest and records
+   a schema version ceiling; keep that manifest with the files.
+3. Record the package version, configuration revision and schema versions beside the copy.
+   A restore that cannot state which release produced it is not a restore path.
+4. Keep at least one rotation, and bound retention explicitly — run events and prompt
+   sidecars grow, and unbounded retention is how a tenant box fills up.
+
+**Restore:**
+
+1. Stop the services. Move the current state aside rather than overwriting it.
+2. Place each file back at its recorded path under the right root — `KXM_DATA_PATH`, the
+   Runtime registry and each project event store **with its sidecar**, repository bindings
+   under `$S/projects/…`, config, and `$S/runtime/registry.db` so the supervisor claim
+   returns with it.
+3. Start the hub and confirm `/ready`, then `kxm hub view` — including that the reported
+   binding scope is what the environment actually is.
+4. Read back a run and its drive receipt, and confirm prompt text is present. Restoring
+   databases without their sidecars leaves runs whose prompts are gone; that is a partial
+   restore, not a success.
+
+The runtime refuses a database whose schema version is newer than it supports, so
+restore order is: matching-or-newer release, then data. Online backups need a
+SQLite-aware tool or a consistent snapshot of each database with its `-wal` and `-shm`;
+a plain copy of a live `kxm.db` can omit committed WAL data.
+
+Test restoration periodically. Routine unattended recovery (automated discovery of every
+Runtime store plus sidecars) is deliberately **not** claimed here: it is a tracked
+post-MVP item, and today this procedure is executed stopped and by hand.
 
 ## Upgrade and rollback
 

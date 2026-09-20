@@ -4,8 +4,9 @@ argument-hint: <unit id or task description>
 ---
 
 Dispatch implementation work to **Grok**, the **starting** writer per `AGENTS.md`,
-through the native `grok` CLI — not a sole writer: after a failed or exhausted route, move
-to the next **admitted** authenticated route in Tracking rather than stopping. Read
+through the native `grok` CLI. Grok is not a sole writer: after a failed or exhausted
+route, move to the next **admitted** authenticated route in Tracking → Decided rather than
+stopping, and never bill one vendor through another's harness. Read
 `.claude/harness-cli.md` for the exact invocation mechanics before launching.
 
 Task: $ARGUMENTS

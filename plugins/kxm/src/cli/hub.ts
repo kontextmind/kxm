@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join, resolve } from "node:path";
 import { redactSecrets } from "../redact.ts";
 import { defaultProjectName } from "../project-name.ts";
-import { resolveClientHubAuthToken } from "../hub-env.ts";
+import { hasClientHubCredential, resolveClientHubAuthToken } from "../hub-env.ts";
 import { agentWorker, type Worker } from "../envelope.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "../tui.ts";
 import { formatSessionBriefText, loadSessionBriefAsync, type SessionHubStatus } from "../session-work.ts";
@@ -12,6 +12,7 @@ import {
   HubBindingError,
   hubBindingFile,
   probeHubHealth,
+  hubBindingScope,
   readHubBinding,
   removeHubBinding,
   validateHubUrl,
@@ -104,8 +105,22 @@ export async function refreshKxmUpdateNotice(runtime: Runtime, config?: KxmUpdat
 export async function cmdStatus(runtime: Runtime): Promise<number> {
   const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl);
   const ready = await hubGet(`${runtime.serverUrl}/ready`, runtime.fetchImpl);
-  const payload = { ok: health.ok && ready.ok, command: "hub view", health: health.body, ready: ready.body };
-  print(runtime.io, runtime.json, payload, `hub health=${health.ok} ready=${ready.ok}`);
+  // Scope on the status line deliberately: "attached across a network" and "attached on
+  // this box" are otherwise indistinguishable, and only one of them ships a token.
+  // Scope is a property of the URL actually contacted, not of whichever file the
+  // binding came from: KXM_SERVER_URL overrides the binding, and labelling the binding
+  // while probing an override would report "loopback" about a remote request.
+  const effectiveScope = hubBindingScope(runtime.serverUrl);
+  const overridden = Boolean(runtime.boundHubUrl && runtime.boundHubUrl !== runtime.serverUrl);
+  const payload = {
+    ok: health.ok && ready.ok,
+    command: "hub view",
+    target: { url: runtime.serverUrl, scope: effectiveScope, ...(overridden ? { source: "env" } : {}) },
+    health: health.body,
+    ready: ready.body,
+  };
+  print(runtime.io, runtime.json, payload,
+    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""}`);
   return payload.ok ? 0 : 1;
 }
 
@@ -191,6 +206,10 @@ export function formatHubBindHealth(health: HubHealth): string {
   return "health=unknown (no reply within 300 ms)";
 }
 
+/** Kept in one place so the JSON payload and the prose line cannot drift apart. */
+const HUB_BIND_UNAUTHENTICATED_HINT =
+  "export KXM_AUTH_TOKEN (or point KXM_STATE_HOME at the hub-env record that already holds one), then re-run; the hub itself requires a token beyond loopback";
+
 export async function cmdHubBind(runtime: Runtime, rawUrl: string): Promise<number> {
   let url: string;
   try {
@@ -207,14 +226,73 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string): Promise<numb
     }
     throw error;
   }
+  const scope = hubBindingScope(url);
+  // Scope-scoped on purpose, and only for **this command**. A remote binding puts a
+  // bearer on a network path, so it is refused when nothing can authenticate it; a
+  // stored-but-unusable URL otherwise reads later like a network fault and gets debugged
+  // as one. Loopback is not consulted here because a loopback URL puts nothing on a wire —
+  // not because credentials are never resolved locally: other client paths still call
+  // `resolveClientHubAuthToken` regardless of scope, so a damaged host record can still
+  // fail `kxm peer list` on loopback. Narrowing the claim is the point; the first version
+  // of this guard checked the record *before* the scope and refused loopback binds that had
+  // always worked, which is a regression against behaviour predating this slice.
+  if (scope === "remote") {
+    // The project that will actually authenticate: a record holding only another
+    // project's token cannot authorise this one.
+    const bindProject = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
+    let credentialReady = false;
+    try {
+      credentialReady = hasClientHubCredential(runtime.env, bindProject);
+    } catch (error) {
+      // A malformed record is a readable configuration failure, not an uncaught throw
+      // past a user-facing entry point.
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: false,
+          command: "hub bind",
+          error: "hub_credential_unreadable",
+          url,
+          scope,
+          nextAction: "repair_hub_env_record",
+          hint: `${error instanceof Error ? error.message : String(error)}; no binding was written`,
+        },
+        `cannot read the hub credential: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 2;
+    }
+    if (!credentialReady) {
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: false,
+          command: "hub bind",
+          error: "hub_bind_unauthenticated",
+          url,
+          scope,
+          project: bindProject,
+          // The hint belongs in the payload, not only the prose line: under --json the
+          // prose is suppressed, and a refusal that names no next step gets debugged by
+          // reading source.
+          nextAction: "export_kxm_auth_token",
+          hint: `${HUB_BIND_UNAUTHENTICATED_HINT} (needs a token for project ${bindProject})`,
+        },
+        `refusing to bind remote hub ${url} with no credential for project ${bindProject}; ${HUB_BIND_UNAUTHENTICATED_HINT}`,
+      );
+      return 2;
+    }
+  }
   const file = hubBindingFile(runtime.env);
   if (runtime.dryRun) {
-    print(runtime.io, runtime.json, { ok: true, command: "hub bind", dryRun: true, url, file }, `would bind hub ${url}`);
+    print(runtime.io, runtime.json, { ok: true, command: "hub bind", dryRun: true, url, scope, file }, `would bind hub ${url} (${scope})`);
     return 0;
   }
   writeHubBinding({ schema: HUB_BINDING_SCHEMA, url, boundAt: new Date().toISOString() }, runtime.env);
   const { health, probeMs } = await probeHubHealth(url, runtime.fetchImpl);
-  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, file, health, probeMs }, `bound hub ${url} · ${formatHubBindHealth(health)}`);
+  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, scope, file, health, probeMs },
+    `bound hub ${url} · ${scope} · ${formatHubBindHealth(health)}${scope === "remote" ? " · token leaves this machine" : ""}`);
   return 0;
 }
 
@@ -540,6 +618,7 @@ export async function cmdSessionBrief(runtime: Runtime, options: { status?: bool
       evidence: health === "unknown" ? "timeout" : "probed",
       online: health === "on",
       url: targetUrl,
+      scope: hubBindingScope(targetUrl),
     };
   } else {
     hub = { state: "off", evidence: "unconfigured", online: false };
