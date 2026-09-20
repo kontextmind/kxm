@@ -241,9 +241,14 @@ a backup goes missing while looking complete:
   `$D/config`, `$D/logs`, `$D/assets`, `$D/state`. `--workspace` **derives all four** and
   ignores the per-directory variables; otherwise `KXM_CONFIG_DIR`, `KXM_LOGS_DIR`,
   `KXM_ASSETS_DIR` and `KXM_STATE_DIR` override each one independently, and
-  `KXM_DATA_PATH`/`KXM_LOG_PATH` move two files again inside that. `$D` therefore
-  **defaults to `$R/.kxm`** and diverges from it the moment any of those is set — which is
-  exactly when a backup that assumes one location starts silently omitting the other.
+  `KXM_DATA_PATH`/`KXM_LOG_PATH` move two files again inside that. `$D` therefore **defaults to `$R/.kxm`**, and the two
+  move together only when the *workspace* is relocated: `KXM_WORKSPACE_DIR` (or
+  `--workspace`) moves `$D` and every default beneath it, while `KXM_CONFIG_DIR`,
+  `KXM_LOGS_DIR`, `KXM_ASSETS_DIR`, `KXM_STATE_DIR`, `KXM_DATA_PATH` and `KXM_LOG_PATH`
+  move **their own target and nothing else** — `KXM_STATE_DIR=/srv/state` alone leaves `$D`
+  at `$R/.kxm` and shifts only `$W`. A backup that assumes one shared location starts
+  omitting the other in exactly that case, which is why every row below is labelled as a
+  default.
 - **`$W`** — the workspace *state* directory: `KXM_STATE_DIR` when set, else `$D/state`
   (and `--workspace` derives it, ignoring that variable). It holds the
   hub database, worker routing/recovery manifests and Pi sessions.

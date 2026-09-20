@@ -516,8 +516,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   definition — project/config/agents/workflows/gates/roles/role-hosts/producers/roster/
   routes/prices/repo/template-provenance — plus goals, tasks, memory, candidates and skills;
   `$D` is the workspace directories root (`--workspace` or `KXM_WORKSPACE_DIR`, else
-  `$R/.kxm`) yielding `config/`, `logs/`, `assets/`, `state/`, and `--workspace` derives all
-  four while **ignoring** the per-directory variables; `$W` is `KXM_STATE_DIR` when set, else `$D/state`
+  `$R/.kxm`) yielding `config/`, `logs/`, `assets/`, `state/`; `--workspace` derives all four
+  while **ignoring** the per-directory variables, and relocating `$D` is not the same as
+  relocating one target — `KXM_STATE_DIR` alone leaves `$D` at its default and moves only
+  `$W`; `$S` is `KXM_STATE_DIR` when set, else `$D/state`
   (and `--workspace` derives it, ignoring that variable); `$S` is host-local
   `KXM_STATE_HOME`, which must be **absolute** — a relative value is rejected outright,
   while a relative `XDG_STATE_HOME`/`LOCALAPPDATA` **base** falls back silently, so an
