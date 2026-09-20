@@ -31931,8 +31931,12 @@ async function assembleTenantStatus(input) {
 }
 function formatTenantStatus(payload) {
   const hubLine = payload.hub.state === "ok" && payload.hub.value ? `hub ${payload.hub.value.agents.filter((agent) => agent.online).length}/${payload.hub.value.agents.length} agents online, ${payload.hub.value.runs.length} hub runs, ${payload.hub.value.openMessageTotal} open messages` : `hub unavailable (${payload.hub.reason ?? "unknown"})`;
-  const runtimeLine = payload.runtime.state === "ok" && payload.runtime.value ? `runtime ${payload.runtime.value.runs.length} runs (authoritative, on this box)` : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
-  const comparisonLine = payload.runComparison.state === "compared" ? payload.runComparison.discrepancies && payload.runComparison.discrepancies.length > 0 ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree` : `cross-check: ${payload.runComparison.matched} matched run(s) agree` : payload.runComparison.state === "unverified" ? "cross-check: unavailable \u2014 no run id appears in both sources (independent id spaces)" : `cross-check: unavailable (${payload.runComparison.reason ?? "unknown"})`;
+  const runtimeLine = payload.runtime.state === "ok" && payload.runtime.value ? (() => {
+    const cached = payload.runtime.value.runs.filter((run) => run.projectionError !== void 0).length;
+    const authoritative = payload.runtime.value.runs.length - cached;
+    return `runtime ${authoritative} runs (authoritative, on this box)${cached > 0 ? `, ${cached} cached (fold failed, not state)` : ""}`;
+  })() : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
+  const comparisonLine = payload.runComparison.state === "compared" ? payload.runComparison.discrepancies && payload.runComparison.discrepancies.length > 0 ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree` : `cross-check: ${payload.runComparison.matched} matched run(s) agree${payload.runComparison.unverifiedFoldRuns ? ` (${payload.runComparison.unverifiedFoldRuns} unverified: fold failed)` : ""}` : payload.runComparison.state === "unverified" ? payload.runComparison.reason === "runtime_fold_failed" ? `cross-check: unavailable \u2014 ${payload.runComparison.unverifiedFoldRuns ?? 0} shared run(s) could not be verified (runtime fold failed)` : "cross-check: unavailable \u2014 no run id appears in both sources (independent id spaces)" : `cross-check: unavailable (${payload.runComparison.reason ?? "unknown"})`;
   return [
     `tenant ${payload.project} @ ${payload.hubUrl} (${payload.bindingScope})`,
     hubLine,

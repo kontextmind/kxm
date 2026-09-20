@@ -345,14 +345,22 @@ export function formatTenantStatus(payload: TenantStatusPayload): string {
     ? `hub ${payload.hub.value.agents.filter((agent) => agent.online).length}/${payload.hub.value.agents.length} agents online, ${payload.hub.value.runs.length} hub runs, ${payload.hub.value.openMessageTotal} open messages`
     : `hub unavailable (${payload.hub.reason ?? "unknown"})`;
   const runtimeLine = payload.runtime.state === "ok" && payload.runtime.value
-    ? `runtime ${payload.runtime.value.runs.length} runs (authoritative, on this box)`
+    ? (() => {
+      const cached = payload.runtime.value!.runs.filter((run) => run.projectionError !== undefined).length;
+      const authoritative = payload.runtime.value!.runs.length - cached;
+      // A fold-failed row is the cache; printing it under "authoritative" would put the
+      // lie back in exactly the place an operator reads first.
+      return `runtime ${authoritative} runs (authoritative, on this box)${cached > 0 ? `, ${cached} cached (fold failed, not state)` : ""}`;
+    })()
     : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
   const comparisonLine = payload.runComparison.state === "compared"
     ? payload.runComparison.discrepancies && payload.runComparison.discrepancies.length > 0
       ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree`
-      : `cross-check: ${payload.runComparison.matched} matched run(s) agree`
+      : `cross-check: ${payload.runComparison.matched} matched run(s) agree${payload.runComparison.unverifiedFoldRuns ? ` (${payload.runComparison.unverifiedFoldRuns} unverified: fold failed)` : ""}`
     : payload.runComparison.state === "unverified"
-      ? "cross-check: unavailable — no run id appears in both sources (independent id spaces)"
+      ? payload.runComparison.reason === "runtime_fold_failed"
+        ? `cross-check: unavailable — ${payload.runComparison.unverifiedFoldRuns ?? 0} shared run(s) could not be verified (runtime fold failed)`
+        : "cross-check: unavailable — no run id appears in both sources (independent id spaces)"
       : `cross-check: unavailable (${payload.runComparison.reason ?? "unknown"})`;
   return [
     `tenant ${payload.project} @ ${payload.hubUrl} (${payload.bindingScope})`,

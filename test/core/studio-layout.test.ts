@@ -528,4 +528,6 @@ test("portal reads distinguish hub metadata from Runtime run state and unavailab
   assert.match(formatTenantStatus(runtimeDown), /runtime unavailable \(runtime_supervisor_not_running\)/);
   assert.match(formatTenantStatus(runtimeDown), /agents online/);
   assert.match(formatTenantStatus(disjoint), /independent id spaces/, "the prose says what unverified means");
+  assert.match(formatTenantStatus(foldFailedOnly), /1 cached \(fold failed, not state\)/, "the prose never calls a cached row authoritative");
+  assert.match(formatTenantStatus(foldFailedOnly), /could not be verified \(runtime fold failed\)/, "the prose names the fold failure, not the id-space reason");
 });
