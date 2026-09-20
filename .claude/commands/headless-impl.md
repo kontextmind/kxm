@@ -3,8 +3,10 @@ description: Dispatch an implementation unit to the designated writer (Grok CLI)
 argument-hint: <unit id or task description>
 ---
 
-Dispatch implementation work to **Grok**, the designated sole writer per
-`AGENTS.md`, through the native `grok` CLI. Read `.claude/harness-cli.md` for the
+Dispatch implementation work to **Grok**, the **starting** writer rotation per
+`AGENTS.md`, through the native `grok` CLI. Grok is not a sole writer: after a failed or
+exhausted route, take the next **admitted** authenticated route from Tracking → Decided
+rather than stopping, and never bill one vendor through another's harness. Read `.claude/harness-cli.md` for the
 exact invocation mechanics before launching.
 
 Task: $ARGUMENTS
