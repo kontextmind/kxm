@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-17"
+updated: "2026-09-20"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -23,6 +23,7 @@ related:
   - plan-additional-providers-agy-kimi.md
   - plan-agent-communication-steering.md
   - plan-ssh-remote-execution.md
+  - research-a2a-cross-host.md
   - plan-token-reduction-rtk-ai.md
   - plan-usage-cost-quota-tracking.md
   - plan-workflow-modes-selective-loading.md
@@ -68,6 +69,17 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   [reviews/authentik-hosting-design-astra.md](reviews/authentik-hosting-design-astra.md).
   It is not a second backlog: accepted slices and status belong here, and it touches
   Phase 8 and Phase 10 without changing either gate.
+- **Cross-host / A2A research:** [research-a2a-cross-host.md](research-a2a-cross-host.md)
+  is a 2026-09-17 web-source record, recovered from the uncommitted
+  `claude/a2a-host-communication-7efe50` worktree and reconciled against this tracker on
+  2026-09-20. Its **Status against Tracking** section and the status column of its
+  recommendations table mirror this tracker and create no backlog. Its M0–M9 sequencing
+  is recorded there as a rejected proposal; A2A remains a projection of the journal, never
+  its transport; coordinator inboxes and steering stay post-MVP behind their triggers;
+  remote MCP on the hub and wiki compile are unselected with no trigger. Its hosted-hub
+  topology (one `kxm-hubs` VM, per-account processes, hub as OAuth resource server) is
+  superseded by the four per-tenant hosting rulings below and
+  [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md).
 - **Research and thematic designs:** source findings, candidate contracts and
   experiment matrices remain supporting evidence. Their old milestone/stage
   tables do not create another backlog. The provider draft's AGY/Kimi-to-Pi
