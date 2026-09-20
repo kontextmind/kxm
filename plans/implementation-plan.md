@@ -1007,8 +1007,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   Donor tree `048fa056c3e07a6bcc8079775377508e15baeaa7` (native Grok plus
   GLM OpenRouter experiment) is retained as provenance, not acceptance.
   D4 `blocked_uncertain` recovery, remaining joins, approval, waits,
-  duration/cost budgets, and the full Phase 3 driver remain open. Issue #89
-  remains open.
+  duration/cost budgets, and the full Phase 3 driver were then open, and issue #89 was
+  open *(historical at that slice; the driver record under Landed fulfils the Phase 3 gate
+  sentence and #89 closed on 2026-09-08)*.
 - **D4 U2a-2 model-free join-all panel dispatch (implemented, unreleased):**
   agent/moa `join: all` steps birth exactly `assignments.target` members
   through a `maxParallel` window, settle each owner separately, and join
@@ -1355,7 +1356,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `cancel_pending_foreign`); there is no live-owner reset and no D4
   adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
   pins and stops fail-closed at start because it declares run duration
-  limits. D3/D4 and the rest of Phase 3 remain open. The developer runner
+  limits. D3/D4 and the rest of Phase 3 were then open *(historical at that slice — the
+  later driver record fulfils the gate; #89 closed 2026-09-08)*. The developer runner
   prerequisite merged in PR #129; it does not satisfy this engine gate.
   Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
   classify/docs/plugin) before the pause; the post-merge main Windows Node 24
@@ -1915,8 +1917,8 @@ identity/pin/replay mismatch, and blocks new command gates when an unowned or
 uncertain attempt remains. Owned non-uncertain controllers are ordinary
 concurrency. Cross-process revoke keeps a complete observation as proof-only
 cancel. S4 command spawn is implemented in this tree (unreleased). D4
-recovery stays deferred; the Phase 3 execution/evidence gate is not claimed
-passed.
+recovery was then deferred and the Phase 3 execution/evidence gate was not claimed
+passed *(historical at that slice; a later record in this phase fulfils it)*.
 
 **D3 S4 (implemented, unreleased):** command gates spawn POSIX children with
 `shell: false` and detached groups, keep the admission hold through
