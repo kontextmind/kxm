@@ -517,11 +517,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   routes/prices/repo/template-provenance — plus goals, tasks, memory, candidates and skills;
   `$D` is the workspace directories root (`--workspace` or `KXM_WORKSPACE_DIR`, else
   `$R/.kxm`) yielding `config/`, `logs/`, `assets/`, `state/`, and `--workspace` derives all
-  four while **ignoring** the per-directory variables; `$W` is `$D/state` (hub database,
-  worker routing/recovery manifests, Pi sessions); `$S` is host-local `KXM_STATE_HOME`,
-  honoured only when absolute — a relative `XDG_STATE_HOME`/`LOCALAPPDATA` base falls back
-  silently, so a backup path derived from an env var can quietly point at the default
-  location. `$S` carries `runtime/registry.db` (whose **registry rows** hold the supervisor
+  four while **ignoring** the per-directory variables; `$W` is `KXM_STATE_DIR` when set, else `$D/state`
+  (and `--workspace` derives it, ignoring that variable); `$S` is host-local
+  `KXM_STATE_HOME`, which must be **absolute** — a relative value is rejected outright,
+  while a relative `XDG_STATE_HOME`/`LOCALAPPDATA` **base** falls back silently, so an
+  env-derived path can quietly name the default location instead`$S` carries `runtime/registry.db` (whose **registry rows** hold the supervisor
   identity and claim — there is no `supervisor.json`), per-project `run-events.db` with a
   sidecar named by appending `.run-prompts.json` to the **whole** database filename,
   `projects/<hash>/repository-bindings.json`, `update.yaml`, and the hub binding/env records;

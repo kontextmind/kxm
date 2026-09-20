@@ -220,11 +220,13 @@ online tool). Stop the hub and the Runtime supervisor first.
 workspace directories, and four more that can each sit anywhere — and confusing them is how
 a backup goes missing while looking complete:
 
-- **`$S`** — host-local machine state: `$KXM_STATE_HOME` when it is an **absolute** path,
-  else `~/.local/state/kxm` on Linux (honouring `XDG_STATE_HOME`),
-  `~/Library/Application Support/KXM` on macOS, `%LOCALAPPDATA%\KXM` on Windows. A relative
-  `XDG_STATE_HOME`/`LOCALAPPDATA` base silently falls back to the default — worth knowing
-  before trusting a backup path you derived from an env var.
+- **`$S`** — host-local machine state: `$KXM_STATE_HOME` **when set**, and it must be an
+  absolute path — a relative value is **rejected** with `local_state_root_not_absolute`, not
+  redirected. When unset, the default is `~/.local/state/kxm` on Linux (honouring
+  `XDG_STATE_HOME`), `~/Library/Application Support/KXM` on macOS, or
+  `%LOCALAPPDATA%\KXM` on Windows. The silent case to know about is a relative
+  `XDG_STATE_HOME`/`LOCALAPPDATA` **base**: that falls back to the default without error,
+  so a backup path derived from it can quietly point somewhere else.
 - **`$R`** — the checkout root. Everything below it is **fixed to the repository and does
   not follow any workspace override**: `$R/.kxm/project.yaml`, `$R/.kxm/config.yaml`,
   `$R/.kxm/agents/`, `$R/.kxm/workflows/`, `$R/.kxm/gates.yaml`, `$R/.kxm/roles/`,
@@ -239,9 +241,11 @@ a backup goes missing while looking complete:
   `$D/config`, `$D/logs`, `$D/assets`, `$D/state`. `--workspace` **derives all four** and
   ignores the per-directory variables; otherwise `KXM_CONFIG_DIR`, `KXM_LOGS_DIR`,
   `KXM_ASSETS_DIR` and `KXM_STATE_DIR` override each one independently, and
-  `KXM_DATA_PATH`/`KXM_LOG_PATH` move two files again inside that. So `$D` and `$R` are
-  frequently the same directory and just as frequently are not.
-- **`$W`** — the workspace *state* directory: `$D/state` (or `KXM_STATE_DIR`). It holds the
+  `KXM_DATA_PATH`/`KXM_LOG_PATH` move two files again inside that. `$D` therefore
+  **defaults to `$R/.kxm`** and diverges from it the moment any of those is set — which is
+  exactly when a backup that assumes one location starts silently omitting the other.
+- **`$W`** — the workspace *state* directory: `KXM_STATE_DIR` when set, else `$D/state`
+  (and `--workspace` derives it, ignoring that variable). It holds the
   hub database, worker routing/recovery manifests and Pi sessions.
 - **`$C`** — user configuration: `KXM_USER_CONFIG_DIR`, else `~/.config/kxm`.
 - **`$T`** — federated telemetry output: an explicit global directory joined with
@@ -291,8 +295,12 @@ restore lands somewhere the running service will not look.
 
 **Back up (stopped-state recipe):**
 
-1. Stop the hub gracefully (`kxm hub stop` or `SIGTERM`) and let the supervisor settle
-   children; both close their databases.
+1. Stop **both** services and wait. `kxm hub stop` covers the hub and its worker PID
+   claims; the Runtime supervisor is a **separate** process with its own databases, stopped
+   by `kxm runtime stop` — and that call acknowledges that shutdown was *initiated*, not
+   that the databases are closed. Confirm the supervisor is gone (its status/claim no longer
+   reports live) before copying; copying `registry.db` or a project event store while its
+   writer is still alive yields a backup that restores to a torn database.
 2. Copy the whole set above as one tree — **every root**, `$R`, `$D`, `$W`, `$S`, `$C` and
    `$T` — or take `VACUUM INTO` snapshots per database. **Snapshots replace the database
    copies, not the file copy**: configuration, repository bindings, prompt sidecars,
