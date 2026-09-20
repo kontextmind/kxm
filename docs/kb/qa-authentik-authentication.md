@@ -8,18 +8,24 @@ status: "draft"
 owner: "@operator"
 created: "2026-09-17"
 updated: "2026-09-18"
-authority: "instruction"
-confidence: "reviewed"
-summary: "Yes, but not by swapping the hub's checks for OIDC — the safest hook is a token broker that exchanges Authentik identity for the kxm tokens the hub already understands."
+authority: "hypothesis"
+confidence: "uncertain"
+summary: "Authentik authenticates browsers at the reverse proxy and the tenant portal's backend calls the loopback hub with existing machine tokens. KXM does not interpret browser identity headers, and the hub-side JWT verification and token broker once recommended here are rejected, not deferred."
 tags: ["hub", "authentik", "oidc", "auth"]
-related: ["docs/operations.md", "docs/kb/qa-hub-on-a-public-host.md"]
+related: ["docs/operations.md", "docs/kb/qa-hub-on-a-public-host.md", "plans/plan-per-tenant-hosting.md", "plans/implementation-plan.md"]
 ---
 
 # Q&A: Authentik (OIDC) for user/role/agent authentication
 
 > Researched by `claude --model fable` (planner, read-only) · 2026-09-17 · task_c0bb05339e15 · root review: pending
 
-**Short answer:** Yes, but not by swapping the hub's checks for OIDC. The hub has one shared-secret model, and the safest hook is a token broker that exchanges Authentik identity for the kxm tokens the hub already understands. Proxy forward-auth is the zero-code first step for humans; hub-side JWT validation is a later, additive gate.
+**Short answer, as of 2026-09-20: no hub-side identity subsystem at all.** Authentik
+authenticates browsers at the tenant's reverse proxy and the portal's own backend calls the
+loopback hub with the machine tokens that already work. The token-broker and JWT
+recommendations that used to sit in this answer are **rejected**, not deferred; they were
+plausible for a shared multi-tenant hub, which is not what we are deploying. Option 1 below —
+forward-auth at the existing proxy, hub unchanged — is the **selected** shape; options 2 and 3
+are rejections, not stages.
 
 ## What exists today
 
@@ -35,30 +41,57 @@ The hub knows about three credentials. None of them carries a user identity, a r
 
 ## Integration options
 
-### 1. Reverse-proxy forward-auth (Authentik outpost at the proxy; hub unchanged)
+### 1. Reverse-proxy forward-auth (Authentik outpost at the proxy; hub unchanged) — **selected shape at the edge**
 
-Authentik's proxy outpost authenticates browser sessions and passes headers upstream. The hub ignores those headers today, so the proxy must still inject the hub bearer token, or clients must still send it. Covers: Studio, `/v1/ops/*` dashboards, human CLI users via a browser-capable flow. Does not cover: agents (they present `x-kxm-agent-*` headers plus a bearer, not a cookie), and it gives the hub no per-user identity for logging. Effort: low, config only. Risk: low if the hub keeps its token check; medium if someone sets the proxy to add the admin token for every authenticated user, which flattens all Authentik users to admin. Non-loopback bind already requires a token (`hub.ts:468`), so the proxy cannot make the hub anonymous.
+Authentik's proxy outpost authenticates browser sessions and passes headers upstream. The hub ignores those headers today, and under the per-tenant decision it keeps ignoring
+them: the **portal's own backend** holds the hub bearer server-side and calls loopback, while
+the proxy's job is to keep the hub's routes off the public interface entirely. Do not
+configure the proxy to inject the admin token on behalf of every user — that flattens all
+Authentik users to hub admin. What this option does **not** give the hub is per-user identity
+for logging, which is the portal's to record. Effort: low, config only. Risk: low if the hub keeps its token check; medium if someone sets the proxy to add the admin token for every authenticated user, which flattens all Authentik users to admin. Non-loopback bind already requires a token (`hub.ts:468`), so the proxy cannot make the hub anonymous.
 
-### 2. Hub validates Authentik-issued JWTs (OIDC discovery + JWKS)
+### 2. Hub validates Authentik-issued JWTs (OIDC discovery + JWKS) — **rejected 2026-09-20; a new decision is required to revisit**
 
 Add a second accepted credential in `bearerToken`'s callers: if the bearer parses as a JWT, verify `iss`, `aud`, `exp`, and signature against a cached JWKS from `<issuer>/.well-known/openid-configuration`; else fall through to the existing `safeTokenEqual` path. Code changes: a new `oidc.ts` (discovery, JWKS cache, verify via `node:crypto` `createPublicKey` from JWK, or add `jose`), new `MeshHubOptions.oidc` and `KXM_OIDC_ISSUER` / `KXM_OIDC_AUDIENCE` env in `server.ts` and `hub-env.ts`, and changes to `requireAdminAuth` and `requireProjectAuth` to accept a verified claim set. Mapping: `groups` claim to admin (e.g. `kxm-admin`) and to project scope (e.g. `kxm-project:<name>`). Client side: `HubClient.authToken` (`client.ts:539`) already sends any string as bearer, so a client can pass an Authentik access token unchanged. Effort: medium, roughly 300 to 500 lines plus tests. Risk: medium. New network dependency at auth time (JWKS fetch must fail closed, never skip), clock skew, and the hub must reject `alg: none` and HS256. Agent registration would gain a real principal to store on the agent record (`sub`, `preferred_username`), which the schema can absorb since records are opaque JSON (`store.ts:26`).
 
-### 3. Token-broker mapping (Authentik users/groups mint per-user or per-agent kxm tokens)
+### 3. Token-broker mapping (Authentik users/groups mint per-user or per-agent kxm tokens) — **rejected 2026-09-20; a new decision is required to revisit**
 
 A small broker (could be a new hub route or a sidecar) accepts an Authentik ID token, verifies it as in option 2, then issues the tokens the runtime already consumes: a project token entry for `requireProjectAuth`, and a `kxm.session-token.v1` with a `toolPolicy` derived from the user's group (`mintSessionToken`, `commands.ts:944`). Mapping table: Authentik group to kxm role id (`role.ts:63` ids `writer`, `planner`, `critic-*`, `verifier`), role `tools` block to `ToolPolicy`, and group to project list to `projectTokens`. Today project tokens are a static map read at startup (`hub.ts:385`), so per-user project tokens need either a dynamic token store in `MeshStore` or short-lived tokens the hub can look up. Session tokens are unsigned (`commands.ts:977`), so a broker-issued one only means something if `parseSessionToken` gains signature verification; otherwise any local process can forge the same payload. Effort: medium to high, because it touches token storage, signing, and revocation. Risk: medium. Benefit: agents and humans converge on one identity source without changing every hub route.
 
-## Recommendation
+## Recommendation (replaced 2026-09-20)
 
-Phased, honoring the fail-closed rules:
+Options **2 and 3**, and the staged recommendation that used to sit in this section, are
+**superseded** — option 1 above is the selected shape, not a rejected one. They stay visible
+because they were the plausible answer for a month and someone will meet them again: **do not build a hub-side JWT verifier, a
+token broker, per-user project tokens, or signed session/attempt token issuance as hosting
+prerequisites.** They were a reasonable answer to "one hub, many users"; they are the wrong
+answer to the deployment we actually have, which is **one tenant per box**.
 
-1. **Phase 1, now: forward-auth for human surfaces only.** Put Authentik in front of Studio and `/v1/ops/*` on any non-loopback deployment. Keep `KXM_AUTH_TOKEN` mandatory; the proxy never substitutes for it. This adds SSO without touching `hub.ts`. Fix the plain-string compare in `studio-layout.ts:350` to use `timingSafeStringCompare` while there.
-2. **Phase 2: hub-side JWT verification as an additive gate.** Implement option 2 with a hard rule: if `KXM_OIDC_ISSUER` is set and discovery or JWKS fetch fails, the JWT path returns 401, and the static-token path still works. Never let loopback plus OIDC config produce anonymous admin. Record the verified `sub` on the agent record at registration for provenance.
-3. **Phase 3 (defer): broker-issued signed session and attempt tokens.** Sign `kxm.session-token.v1` and `kxm.attempt-token.v1` payloads and verify in `enforceToolPolicy` before mapping Authentik groups to `ToolPolicy`. Until tokens are signed, group-to-policy mapping is advisory, not enforcement, because the check is client-side and forgeable.
+1. **Now:** Authentik authenticates and authorizes browsers at the tenant's existing reverse
+   proxy, on the **portal's** routes. The portal's server-side backend calls the loopback hub
+   and supervisor using the machine credentials that already work (`KXM_AUTH_TOKEN`,
+   `KXM_PROJECT_TOKENS`, the persisted hub env record). The hub binds loopback and exposes no
+   public listener. Nothing in `hub.ts` changes, and no browser identity header reaches it.
+2. **What stays as-is, unmodified:** the admin-token requirement for non-loopback binding, the
+   generated-and-persisted token, project tokens read at startup, and the local loopback
+   convenience. A browser-path outage denies browsers; it must not stop authorized machine
+   clients.
+3. **Rejected, not deferred:** hub-side JWT verification, group-to-`ToolPolicy` mapping,
+   token signing, dynamic per-user token stores, and OAuth2 client-credentials or
+   device-flow login for agents. These are not waiting for a trigger; they are the wrong
+   shape for a per-tenant hub, and reopening any of them needs a **new written decision**
+   that says what the portal boundary cannot do — for example genuine per-user attribution
+   of hub writes inside KXM itself, which per-box tenancy does not need. Until such a
+   decision exists, treat every mention of them in this file as history.
 
-Defer any attempt to remove the static token entirely; it is the only credential the auto-start path (`hub-autostart.ts:175`) and the persisted client resolver (`hub-env.ts:203`) know how to pass.
+The technical observations underneath remain accurate and are the reason the option is *cheap to
+reject*: unsigned session tokens (`commands.ts:977`), static project tokens read at startup
+(`hub.ts:385`), a fixed-string `HubClient.authToken`, and a plain-string compare in
+`studio-layout.ts:350`. **One item is kept as a live hardening note, not a hosting
+prerequisite:** make that Studio compare timing-safe.
 
 ## Agent auth specifically
 
 Running agents today authenticate non-interactively with whatever string lands in `HubClient.authToken`, resolved by `resolveClientHubAuthToken` (`hub-env.ts:203`): `KXM_AUTH_TOKEN` env, else the persisted project token, else the persisted admin token. The MCP server (`mcp-server.ts:84`) and the Pi extension (`extension.ts:709`) both use this. Pi worker children inherit `process.env` unchanged (`pi-producer.ts:504`), so they get the same token as the supervisor. Tool policy for workers comes from `KXM_ATTEMPT_TOKEN`, which is minted only in tests today (`test/core/commands-policy.test.ts:60`); no runtime path in `plugins/kxm/src` calls `mintAttemptToken`, so engine issuance is planned but not wired.
 
-With Authentik, agents should use the OAuth2 client-credentials grant (one Authentik application per agent class, or per role such as `writer` and `verifier`), obtain an access token at spawn, and pass it as `KXM_AUTH_TOKEN` to the child. This needs option 2 in the hub so the token verifies, and a refresh hook in `HubClient` since `headers()` reads a fixed string (`client.ts:539`) and access tokens expire. Device-code flow is the fallback for Claude Code sessions that start from a human terminal. Whether Authentik's client-credentials tokens carry `groups` claims by default is unknown from this repo; it must be confirmed against the Authentik provider config before mapping roles from claims.
+**Superseded paragraph, kept for the record (see the recommendation above):** with Authentik, agents should use the OAuth2 client-credentials grant (one Authentik application per agent class, or per role such as `writer` and `verifier`), obtain an access token at spawn, and pass it as `KXM_AUTH_TOKEN` to the child. This needs option 2 in the hub so the token verifies, and a refresh hook in `HubClient` since `headers()` reads a fixed string (`client.ts:539`) and access tokens expire. Device-code flow is the fallback for Claude Code sessions that start from a human terminal. Whether Authentik's client-credentials tokens carry `groups` claims by default is unknown from this repo; it must be confirmed against the Authentik provider config before mapping roles from claims.

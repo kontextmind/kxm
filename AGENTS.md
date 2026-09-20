@@ -15,7 +15,9 @@ Read this first. Then follow
   `kxm hub bind <url>` binds this host to a running hub; `kxm init` is project-only.
 - DB: `.kxm/state/kxm.db`
 - Plugin / npm: `kxm` / `@kontextmind/kxm`
-- Punt wiki compile/ingest and npm update-source until a **public npm** release.
+- Wiki compile/ingest and the npm update-source stay **unselected**. The **public npm**
+  release they were punted behind is satisfied (2026-09-17), so that punt is no longer a
+  reason; they return only by a new decision, not by a prerequisite expiring.
 
 ## Who does what
 
@@ -26,9 +28,14 @@ fail-closed. Different providers supply independent review. This is developer
 orchestration policy for the issue 127 runner, not a Phase 4/11 product
 router.
 
+Current **admissions** — who is allowed to write now, relief routes, exceptions — are not
+listed here; that list changed three times in a week and this table went stale with it. Read
+**Tracking → Decided** and `kxm harness list`. What stays here is the shape: a starting
+rotation per role, and a writer that is never also a critic.
+
 | Role | Starting rotation | Why |
 |---|---|---|
-| **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Currently admitted native writer on this runner. Fast at repo-shaped edits. After failure, immediately use the next eligible authenticated model. Qwen `qwen/qwen3-coder-plus` is admitted through OpenRouter/Pi with exact model auth; never bill Grok through Pi. Not a fixed sole writer. |
+| **Implement / write code** | Grok (`grok --model grok-4.6`), headless, as the **starting** rotation | Fast at repo-shaped edits. This is a default, not an admission: which routes are admitted right now, including any Pi-provider relief writer and its exact-model conditions, comes from **Tracking → Decided** and `kxm harness list`. After a failure, use the next eligible authenticated model rather than stopping. Never bill one vendor through another harness. Not a fixed sole writer. |
 | **Plan** | **Claude Fable** (`claude --model fable`) | Architecture and permissions; independent of the writer. |
 | **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. Both designated critics are required for acceptance on this runner; a single critic is at most preliminary triage. |
 | **Portability / mapping** | **Kimi** only when the task is Windows/path/CLI-portability | Not a default reviewer. |
@@ -46,9 +53,10 @@ evidence.
 attempts are exhausted or failed. Immediately try the next suggested eligible
 authenticated model and transfer findings. Preserve every attempt, candidate,
 failed check, and cost record. Prefer an authenticated native subscription for
-the same model. The narrowly admitted Pi writer is OpenRouter Qwen
-`qwen/qwen3-coder-plus`, which has no supported native route here; other models
-require reviewed admission. Identity, witness, both critics, and acceptance
+the same model. Which aggregator routes are admitted as writers, and on what
+exact-model conditions, is an admission decision: read **Tracking → Decided**. What stays
+here is the mechanics — provider login, `pi auth check`, and never billing one vendor
+through another's harness. Identity, witness, both critics, and acceptance
 remain mandatory.
 New-model comparisons are bounded experiments, not fanout on every task. The
 standalone `just assign` command does not automatically schedule failover.
@@ -77,7 +85,20 @@ for implementation, planning, and architecture review; low for CLI review.
 
 **Provider-native harness:** If the model’s provider has its own harness and that harness is **installed and logged in**, use it — not Pi’s copy of the same provider. That is why `kxm harness list` checks auth.
 
-Examples: Anthropic → Claude CLI (subscription); OpenAI → Codex; Moonshot → Kimi; Google → **agy (Antigravity CLI)** (`agy`, Antigravity OAuth) as an admitted native Google subscription writer/experiment edit route for Gemini kebab ids only (not a worker; starting rotation remains Grok; the deprecated `gemini` CLI catalog entry stays); xAI → **Grok CLI** (`grok`, OAuth to `auth.x.ai`), which superseded Pi for the writer role on 2026-09-04.
+Current admitted routes are **not listed here.** They change and this file
+drifted when they were duplicated here, so read them from their single authority:
+**Tracking → Decided** in
+[`plans/implementation-plan.md`](plans/implementation-plan.md) for product
+direction, and `kxm harness list` plus `pi auth check --provider <id>` for what is
+installed and authenticated on this machine right now. The rule that does not
+change: if a provider has its own harness and that harness is installed **and**
+logged in, use it rather than Pi's copy of the same provider, and fail closed
+rather than silently billing another vendor's key when it is missing or logged
+out. Two named exceptions to the native-preference rule, per the current
+decision: Google goes through the `antigravity` **Pi provider** and not a
+shell-out to the `agy` CLI (which stays a catalog helper, with the deprecated
+`gemini` entry kept), and the Claude bridge stays experiment-only. Neither grants
+new writer eligibility, and no provider migration is scheduled for hosting.
 
 **Aggregators are Pi *providers*, not a second coding harness.** There is no
 OpenRouter or Nous `kxm agent worker` CLI and no fake Nous harness. Pi is
@@ -86,9 +107,9 @@ Two helper prefixes are allowlisted after fail-closed `pi auth check
 --provider <id>`:
 
 - **OpenRouter** (`openrouter/…`): `/login openrouter` or
-  `OPENROUTER_API_KEY`. Bills OpenRouter credit. The narrowly admitted Pi
-  writer remains `openrouter/qwen/qwen3-coder-plus` with exact model auth
-  and edit permission.
+  `OPENROUTER_API_KEY`. Bills OpenRouter credit. Whether a specific OpenRouter
+  model is an admitted writer, with which permission, is decided in **Tracking →
+  Decided**, not here; this section is setup and refusal mechanics.
 - **Nous Research Portal** (`nous-portal/…`): install
   `@jayteelabs/pi-nous-portal-provider` (`pi install
   npm:@jayteelabs/pi-nous-portal-provider`), then `/login` → subscription
@@ -103,7 +124,7 @@ Two helper prefixes are allowlisted after fail-closed `pi auth check
 Same auth-or-fail-closed rule. Other `nous-portal` or OpenRouter writer
 routes need reviewed admission.
 
-If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — today that is whatever `pi auth check` covers beyond Anthropic (Claude CLI), OpenAI (Codex), xAI (Grok CLI), Moonshot (Kimi), and Google (agy / Antigravity CLI; deprecated Gemini CLI catalog remains).
+If the native harness is missing or logged out, do **not** silently bill through Pi’s other-provider key. Fail closed or ask to log in. Pi remains default only for providers it actually hosts that have **no** authenticated native harness — the current list of those, and the reviewed exceptions to it, come from **Tracking → Decided** and `pi auth check`, not from this file.
 
 **Harness ≠ long-lived worker.** Moving the writer role to the Grok CLI does not make `grok` a supervised RPC worker: `kxm agent worker` / `pi --mode rpc` is still Pi-only. The Grok CLI is a one-shot headless writer (`grok --prompt-file`). `agy` is also one-shot headless (`agy -p`), not a worker. Do not declare a `grok` or `agy` long-lived worker until one exists and is tested.
 

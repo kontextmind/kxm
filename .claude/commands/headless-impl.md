@@ -3,19 +3,21 @@ description: Dispatch an implementation unit to the designated writer (Grok CLI)
 argument-hint: <unit id or task description>
 ---
 
-Dispatch implementation work to **Grok**, the **starting** writer rotation per
-`AGENTS.md`, through the native `grok` CLI. Grok is not a sole writer: after a failed or
-exhausted route, take the next **admitted** authenticated route from Tracking → Decided
-rather than stopping, and never bill one vendor through another's harness. Read `.claude/harness-cli.md` for the
-exact invocation mechanics before launching.
+Dispatch implementation work to **Grok**, the **starting** writer per `AGENTS.md`,
+through the native `grok` CLI. Grok is not a sole writer: after a failed or exhausted
+route, move to the next **admitted** authenticated route in Tracking → Decided rather than
+stopping, and never bill one vendor through another's harness. Read
+`.claude/harness-cli.md` for the exact invocation mechanics before launching.
 
 Task: $ARGUMENTS
 
 Do this:
 
 1. **Confirm auth.** `grok models` must report a logged-in account and list
-   `grok-4.6`. If it does not, **stop**. Do not fall back to
-   `pi --model xai/grok-4.6` or any other provider.
+   `grok-4.6`. If it does not, do **not** silently bill Grok through another harness
+   (`pi --model xai/...` is exactly that). Either take a route Tracking **admits** for that
+   purpose, with its own auth check and cost record, or stop and say which limits were hit.
+   Fail-closed means no unadmitted fallback, not no relief route.
 2. **Isolate.** Put the lane in its own git worktree branched from `origin/main`
    (or resume the existing one if this unit already has a branch). Never run a
    writer in a tree another lane is using.

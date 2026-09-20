@@ -378,5 +378,5 @@ place from v0.4 databases.
 - [What is all stored on the hub?](kb/qa-what-the-hub-stores.md)
 - [Storage engine — SQLite vs DuckDB](kb/qa-sqlite-vs-duckdb.md)
 - [Hub on a public host — multiple users and projects?](kb/qa-hub-on-a-public-host.md)
-- [Authentik (OIDC) for user/role/agent authentication](kb/qa-authentik-authentication.md)
+- [Authentik at the edge: why the hub owns no browser identity](kb/qa-authentik-authentication.md)
 - [Extension install → kxm CLI bootstrap + hub auto-connect](kb/qa-extension-install-and-hub-bootstrap.md)

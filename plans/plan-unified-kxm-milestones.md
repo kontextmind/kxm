@@ -121,11 +121,16 @@ slice establishes them.
 | M4 | One browser service | M0 browser lease/compatibility and M1 backend readiness | 4, 10, 11 admission |
 | M5 | Scoped recall, retrieval and recoverable learning candidates | M0 redaction, M1 scope and optional-component identity | 9 |
 | M6 | Portable skills, approved workflows and wake policy | Existing Runtime policy; M1 identity, M2 events only where used | 3, 4, 7, 9, 11 restrictions |
-| M7 | Studio over shared task, inbox and artifact APIs | M0 UI boundary, M2 snapshot/replay; other services only for their panels | 10 |
+| M7 | Studio over shared task, inbox and artifact APIs; **hosted operator surface is the tenant portal reading/driving the loopback hub, which is the MVP path** | M0 UI boundary; polling run/receipt state first, snapshot/replay only when an observed gap needs it; other services only for their panels | 10 |
 | M8 | Native/provider setup and optional external integrations | M1 readiness, M0 secret handling, M6 authorization where effects require it | 4, 9, 11 admission |
-| M9 | Evidence for the declared release capabilities/platforms | Selected scope's contracts and all applicable canonical blockers/gates | 5 and every affected gate |
+| M9 | Evidence for the declared release capabilities/platforms, **including the selected Linux hosted tenant deployment and one restore witness** | Selected scope's contracts and all applicable canonical blockers/gates | 5 and every affected gate |
 
-### First product slice
+### First product slice — **superseded; the queue in Tracking is the only sequence**
+
+The numbered sequence below was written before the hosted MVP was selected and is kept as
+proposed-scope reasoning, not as a plan of record: **do not schedule from it**. S0–S5 in
+[`implementation-plan.md`](implementation-plan.md) (Still open → The one queue) decides
+order, and coordinator-inbox and replay work sit behind their post-MVP triggers there.
 
 1. Repair typed Pi outcomes, secret persistence and Studio's missing-handler
    result; represent unintegrated controls as unavailable (M0).
@@ -144,12 +149,25 @@ payload rejected; correct project/cwd; useful progress before final; no persiste
 secrets; invalid finals and missing handlers cannot succeed; viewer reconnect
 recovers terminal facts; pause blocks both fresh dispatch and bridge resume.
 Verify the actual package surface used. External accounts and full Studio editing
-are outside this first slice.
+are outside this packet.
 
-### Next and later
+### Scheduling authority: none (demoted 2026-09-20)
 
-Next, extend that fixture for the early Pi RPC / supervised Pi SDK / released
-OpenCode 2.0.3 comparison before choosing a deeper engine dependency. Test child
+This catalog is proposed scope and contract dependency only. **The single ordered queue is
+"Still open → The one queue" in
+[`implementation-plan.md`](implementation-plan.md)**, and nothing below schedules ahead of it.
+Two things that used to read as next-up are explicitly not: the engine comparison and any
+streaming/steering breadth. Both are post-MVP and start on an observed trigger — a reproduced
+limitation of the retained route, or polling proven insufficient after the portal read/drive
+slices ship. Hosting is not a parallel catalogue either: the per-tenant deployment sits in
+**M7** (the portal is the operator surface; the hub binds loopback and holds no browser
+identity) and **M9** (a declared Linux hosted deployment, its evidence, and the
+stopped-state backup/restore witness), while coordinator-inbox and replay work stays in M2/M3
+behind its consumer trigger. Rationale and boundary:
+[`plan-per-tenant-hosting.md`](plan-per-tenant-hosting.md).
+
+Before any deeper engine dependency is chosen, extend that fixture for the early Pi RPC /
+supervised Pi SDK / released OpenCode 2.0.3 comparison. Test child
 assignment, correction, restart ambiguity, cleanup and installation; retain the
 full [engine decision matrix](research-kxm-harness-strategy.md). In parallel,
 Codex and Claude are the first **new native output adapters**; their admission
@@ -190,9 +208,14 @@ ideas. Voice and managed mail-server deployment remain later research.
 - Preserve accepted A1 async probes, escalation after child close, conservative
   descendant settlement, bounded/redacted owner-only one-shot evidence v2,
   unaudited-permission refusal, one-shot price integrity and supervisor rejection
-  handling. These are not new TODOs. Remaining live Claude write refusal, HTTP
-  drive lifetime, wider price coverage, Fable failure and canonical acceptance
-  contradictions stay open; no Phase 11 PASS is implied.
+  handling. These are not new TODOs. **Status corrected 2026-09-20: three of the five
+  items this line called "remaining" are accepted** — the live Claude write-refusal
+  witness (2026-09-15, `task_p11-claude-write-refusal`, `e3d8a64b`), drive decoupling
+  B1–B4 including HTTP drive lifetime (2026-09-16, `task_9076be56b581`), and price-catalog
+  integrity beyond the one-shot path (`17efb783`). Only the Fable failure and the canonical
+  acceptance contradictions remain, and both are named in
+  [`implementation-plan.md`](implementation-plan.md) Still open rather than here. No Phase 11
+  PASS is implied by any of this.
 
 **Exit evidence:** defect reproductions become meaningful regressions; invalid
 finals, missing handlers and unknown effects stay unsuccessful; no secret fixture
@@ -402,7 +425,8 @@ answer. Read-only Studio can ship before the editor and optional service panels.
 
 **Scope:** optional adapters using the shared identity, policy and receipt owners.
 
-- Preserve native Google/AGY and other native auth routes. Integrate useful Nous
+- Preserve native Google/AGY **auth state and the `agy` helper entry**. The admitted Google
+  route is the `antigravity` Pi provider (Tracking → Decided, 2026-09-15), not a CLI shell-out. Integrate useful Nous
   login/refresh and provider catalog behavior into KXM setup only for explicitly
   hosted provider routes. Do not migrate native credentials into Pi to gain features.
 - Add masked local secret entry, scoped credential references and value-free

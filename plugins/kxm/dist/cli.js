@@ -34758,8 +34758,9 @@ Follow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:
 [\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).
 
 You are the **planner / architecture critic** unless the human explicitly asks
-you to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`).
-If \`grok\` is logged out, fail closed; do not fall back to Pi. Your reviews are
+you to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) \u2014 a starting
+rotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;
+use a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are
 artifacts, not hub \`peer-reply\` evidence.
 `;
   const claudeExisted = existsSync25(claudePath);
@@ -34773,8 +34774,10 @@ artifacts, not hub \`peer-reply\` evidence.
 Follow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:
 [\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).
 
-Google / Antigravity CLI (\`agy\`) is an admitted native writer and experiment edit route
-for Gemini models. Starting rotation remains Grok.
+Google goes through the \`antigravity\` **Pi provider** (Tracking \u2192 Decided,
+2026-09-15); \`agy\` stays a harness catalog/helper entry, not the admission path.
+Current admissions come from Tracking and \`kxm harness list\`. Starting rotation
+remains Grok.
 `;
   const geminiExisted = existsSync25(geminiPath);
   if (updateHarnessDocument(geminiPath, block, geminiHeader)) {

@@ -6,7 +6,10 @@ use. If the routing table and this file disagree, `AGENTS.md` wins. Agents are
 a rotation; Grok is the currently admitted native writer, not a fixed sole
 writer.
 
-Snapshot date: **2026-09-08** (agy helper admission). Catalog/auth rows below
+Snapshot date: **2026-09-08** (agy helper admission). **Admission authority (2026-09-20):**
+this file documents what each CLI *can* do; it does not decide what is *admitted*. Google's
+admitted route is the `antigravity` Pi provider (Tracking → Decided, 2026-09-15); the `agy`
+rows below are catalog/helper capability, not a writer admission. Catalog/auth rows below
 are corrected from `plugins/kxm/src/vnext-harness.ts` and helper argv (M5
 docs). Codex flags were re-audited against official online docs and installed
 CLI **0.153.4 on 2026-09-10**; that does not refresh the other rows. Re-probe
@@ -66,13 +69,15 @@ They do not mint assignment, witness, or acceptance proof. Normal entry is
 `just assign` with a closed manifest; then `just witness`, `just attribute`,
 `just observe-cost`, `just accept`, `just plan-current`, and
 `just change-report` (positional quoted arguments). There is **no** `impl-pi`
-writer fallback. If `grok` is logged out, stop. Two attempts by default; a
+writer fallback. If `grok` is logged out, do not bill Grok through another harness: take an **admitted** relief route from Tracking, or stop and name the limits hit. Two attempts by default; a
 third only with new evidence or a changed approach, then relief.
 
 **Provider-native rule.** Anthropic → Claude CLI; OpenAI → Codex; xAI → Grok
-CLI; Moonshot → Kimi CLI when that helper is verified (not today); Google →
-agy (Antigravity CLI) for Gemini writer/experiment edit (starting rotation
-unchanged; deprecated Gemini CLI catalog stays). Pi may run **OpenRouter** after
+CLI; Moonshot → Kimi CLI when that helper is verified (not today); **Google → the
+`antigravity` Pi provider, not a shell-out to the `agy` CLI** (Tracking → Decided,
+2026-09-15; `agy` and the deprecated Gemini CLI remain catalog/helper entries, and the
+`agy` rows in this file state capability, never admission). Starting rotation
+unchanged. Pi may run **OpenRouter** after
 `pi auth check --provider openrouter`, or **Nous Research Portal** after
 `pi install npm:@jayteelabs/pi-nous-portal-provider` and
 `pi auth check --provider nous-portal`. Login: `/login openrouter`, or

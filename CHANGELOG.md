@@ -11,13 +11,15 @@ All notable user-facing changes are documented here. The project follows [Semant
   = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser
   session; a reverse-proxy contract states what must hold without shipping generated proxy
   config) and a rewritten *Backup and restore* that enumerates the tenant's state by root —
-  the four roots a tenant actually has — host-local `$KXM_STATE_HOME` (Runtime
+  the five roots a tenant actually has — host-local `$KXM_STATE_HOME` (Runtime
   `registry.db`, per-project `run-events.db` **and its `.run-prompts.json` sidecar**,
   repository bindings, `update.yaml`), the project's `.kxm` directory (config, agents,
   workflows, roles, producers, repo bindings, provenance, goals, tasks, memory,
   candidates, skills, assets, logs and local telemetry), the workspace *state* directory
   `.kxm/state` (hub database, worker routing/recovery manifests, Pi sessions), and user
-  configuration `~/.config/kxm` — plus what is disposable (PID/claim files,
+  configuration `~/.config/kxm`, and a separate federated-telemetry root resolved from an
+  explicit directory else `XDG_CONFIG_HOME`/`HOME` (not `KXM_USER_CONFIG_DIR`, so it can
+  land outside user config) — plus what is disposable (PID/claim files,
   `session-brief.json`, the re-generable supervisor token). It
   also states the choice the Pi-session policy already leaves open: model histories are not
   a system of record, so backing them up is a decision to record, not a default. The previous
