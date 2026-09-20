@@ -248,7 +248,9 @@ export function resolveKxmCoordinator(context: KxmRuntimeContext, coordinatorId:
  * Accept one internal message at the intake boundary.
  *
  * Duplicate ingress (same idempotency key, same content) returns the original
- * record and cannot create another task. The same key with **different** content
+ * record and cannot produce a second admission record. This layer deduplicates
+ * *intake and admission*; creating a task is the M2 consumer's job, so nothing here can
+ * promise anything about tasks. The same key with **different** content
  * is rejected: a reused key must not smuggle a different payload. Payloads
  * classified `secret` are never persisted — only their hash, so a caller that
  * classifies honestly gets a store that will not hold that payload. The scope is

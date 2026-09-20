@@ -24,9 +24,9 @@ details:
 
 # Codex gpt-6-astra review of the Runtime intake contract (#248)
 
-Thirteen passes: **BLOCK** on the contract, then **STILL BLOCKED** on the fix, on
-the closure of that fix, **STILL BLOCKED** on the closure of *that* (the injectable seam
-my own round-3 fix introduced), **STILL BLOCKED** on a runtime this repository also ships
+Seventeen passes, counted here once and then left alone: **BLOCK** on the contract, then
+**STILL BLOCKED** on the fix, on the closure of that fix, on the injectable seam my own
+round-3 fix introduced, and on a runtime this repository also ships
 on, and **CLOSED** on the closure of that. Each pass reviewed the previous pass's claims as well as the
 code, and each one was right; the tables below are ordered by round, and a later row
 supersedes an earlier **Fixed**.

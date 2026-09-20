@@ -152,7 +152,7 @@ test("duplicate ingress yields one message and one admission record; altered pay
     assert.throws(
       () => admitKxmIntakeRun(context, first.message.messageId, { runId: "run_01JINTAKE111111111111111111" }),
       /intake_second_admission/,
-      "a duplicate must never create a second task",
+      "a duplicate must never produce a second admission record",
     );
     assert.deepEqual(listKxmDispatchableIntake(context).map((m) => m.messageId), [], "an admitted message leaves the dispatchable set");
   } finally {
@@ -1003,7 +1003,7 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
     { code: "SQLITE_BUSY", errno: 13 })), false, "a permanent number beats a busy name (the precedence mutation lands here)");
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
     { errcode: 13, errno: 5 })), false, "the first integer value in the list decides; `errno` must not override it");
-  // The direction the two agreeing fixtures above cannot test: a permanent *name*
+  // The direction the disagreeing fixtures above cannot test: a permanent *name*
   // must not veto a contention *number*. A mutant that checks `SQLITE_FULL` before the
   // numbers and returns false survives every agreeing example.
   assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
