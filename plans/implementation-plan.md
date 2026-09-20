@@ -393,7 +393,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
     exactly seven** — a multiset over raw text that asks nothing about what a line *means*,
     so the escapes above cannot hide from it by being unreadable to a parser. Proof recipes
     may not be renamed or given new call sites without editing this assertion; verified that
-    moving `witness`'s body into `check-generated` trips it as well. Column-0 comments are
+    **and it does not do it alone**: moving `witness`'s body into `check-generated` leaves
+    the seven-line multiset identical, so the pin passes and the non-proof-body token check
+    plus the per-recipe body pins are what reject it. The layers are stated separately rather
+    than sold as one airtight gate. Column-0 comments are
     documentation and excluded, because a gate that rejects the sentence explaining it gets
     worked around rather than obeyed.
     Around that pin: the file is normalized (continuations folded, comments stripped) and
@@ -406,8 +409,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
     `--dump` reproduced verbatim.
     **The stated limit, which is the point of stopping here:** this is drift protection, not
     a sandbox. A body can build a command at runtime from variables, a decoder or `sh -c`, and
-    anyone who can edit this file can already do anything it can do. What the gate guarantees
-    is that no route to the runner appears without someone editing a literal list to allow it.
+    anyone who can edit this file can already do anything it can do. What the pin guarantees is precise: the
+    multiset of non-comment lines containing the literal runner filename (after trimming
+    whitespace and one leading `@`) is exactly the seven proof bodies. A call assembled at
+    runtime, or a filename built from pieces, is outside any text gate including this one.
     Further parser hardening was declined after round 7 rather than accepted as finished.
 
   - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
