@@ -216,25 +216,38 @@ Authentik's embedded proxy answers a forward-auth subrequest per request; the te
 SQLite runs in WAL mode, so a consistent copy requires a stopped service (or a SQLite-aware
 online tool). Stop the hub and the Runtime supervisor first.
 
-**What a tenant backup contains.** Four roots, and confusing them is how a backup goes
-missing while looking complete:
+**What a tenant backup contains.** Six roots — one fixed to the checkout, one for the
+workspace directories, and four more that can each sit anywhere — and confusing them is how
+a backup goes missing while looking complete:
 
-- **`$S`** — host-local machine state: `$KXM_STATE_HOME`, else
-  `~/.local/state/kxm` (Linux, honouring `XDG_STATE_HOME`),
-  `~/Library/Application Support/KXM` (macOS), `%LOCALAPPDATA%\KXM` (Windows).
-- **`$X`** — the project's KXM directory: `KXM_WORKSPACE_DIR` when set, else `.kxm` in the
-  checkout. **`KXM_WORKSPACE_DIR` relocates the other three workspace-derived roots**, so
-  record it with the backup: pointing a restore at `.kxm/…` after a relocation silently
-  restores into the wrong tree.
-- **`$W`** — the *workspace state* directory: `$KXM_STATE_DIR` when set, else
-  `$X/state`. Only the hub database, worker routing/recovery manifests and Pi sessions live
-  here, so `$W` is **not** always a child of `$X`.
-- **`$T`** — federated telemetry output: an explicitly supplied global directory, else
-  `$XDG_CONFIG_HOME/kxm/telemetry`, else `~/.config/kxm/telemetry`. Note the third fallback
-  is built from `XDG_CONFIG_HOME`/`HOME`, **not** from `KXM_USER_CONFIG_DIR` — so `$T` can
-  land outside `$C`, and treating "the two roots of user config" as one is how a telemetry
-  file gets missed by the very backup that lists it.
+- **`$S`** — host-local machine state: `$KXM_STATE_HOME` when it is an **absolute** path,
+  else `~/.local/state/kxm` on Linux (honouring `XDG_STATE_HOME`),
+  `~/Library/Application Support/KXM` on macOS, `%LOCALAPPDATA%\KXM` on Windows. A relative
+  `XDG_STATE_HOME`/`LOCALAPPDATA` base silently falls back to the default — worth knowing
+  before trusting a backup path you derived from an env var.
+- **`$R`** — the checkout root. Everything below it is **fixed to the repository and does
+  not follow any workspace override**: `$R/.kxm/project.yaml`, `$R/.kxm/config.yaml`,
+  `$R/.kxm/agents/`, `$R/.kxm/workflows/`, `$R/.kxm/gates.yaml`, `$R/.kxm/roles/`,
+  `$R/.kxm/role-hosts.yaml` (or `.json`), `$R/.kxm/producers.yaml`, `$R/.kxm/roster.yaml`,
+  `$R/.kxm/routes.yaml`, `$R/.kxm/prices.yaml`, `$R/.kxm/repo/`,
+  `$R/.kxm/template-provenance.yaml`, plus the durable work and learning records
+  `$R/.kxm/goals/`, `$R/.kxm/tasks/`, `$R/.kxm/memory/` (with `memory/candidates/`) and
+  `$R/.kxm/skills/`. Conflating these with the next root is how a backup omits the project
+  definition while believing it copied the project.
+- **`$D`** — the **workspace directories**, resolved from `--workspace` or
+  `KXM_WORKSPACE_DIR`, else `$R/.kxm`, relative to `KXM_WORKDIR`/cwd:
+  `$D/config`, `$D/logs`, `$D/assets`, `$D/state`. `--workspace` **derives all four** and
+  ignores the per-directory variables; otherwise `KXM_CONFIG_DIR`, `KXM_LOGS_DIR`,
+  `KXM_ASSETS_DIR` and `KXM_STATE_DIR` override each one independently, and
+  `KXM_DATA_PATH`/`KXM_LOG_PATH` move two files again inside that. So `$D` and `$R` are
+  frequently the same directory and just as frequently are not.
+- **`$W`** — the workspace *state* directory: `$D/state` (or `KXM_STATE_DIR`). It holds the
+  hub database, worker routing/recovery manifests and Pi sessions.
 - **`$C`** — user configuration: `KXM_USER_CONFIG_DIR`, else `~/.config/kxm`.
+- **`$T`** — federated telemetry output: an explicit global directory joined with
+  **`telemetry/`**, else `$XDG_CONFIG_HOME/kxm/telemetry`, else `~/.config/kxm/telemetry`.
+  It is built from `XDG_CONFIG_HOME`/`HOME`, **not** from `KXM_USER_CONFIG_DIR`, so `$T` can
+  land outside `$C`; and it is a *different file* from local accounting in `$D/logs`.
 
 | Path | Contents | Loss means |
 |---|---|---|
@@ -246,17 +259,21 @@ missing while looking complete:
 | `$S/update.yaml` | release/update configuration consumed by the updater | the box reverts to defaults on the next update path |
 | `$W/pi-sessions/<workerKey>/{default,runs/<runId>}/` | Pi model histories | **optional by existing policy** (see *Workflow-specific Pi sessions*): never a system of record — decide and record, do not silently widen scope |
 | `$W/worker-session-binding-<workerKey>.json` (+ `.corrupt-*`), `worker-context-*.json`, `worker-recovery-*.json` | routing and recovery manifests | not optional: these are what make worker routing resumable after a restart |
-| `$X/project.yaml`, `$X/config/` (or `KXM_CONFIG_DIR`), `$X/config.yaml`, `$X/agents/`, `$X/workflows/`, `$X/gates.yaml`, `$X/roles/`, `$X/role-hosts.yaml` (or `.json`), `$X/producers.yaml`, `$X/roster.yaml`, `$X/routes.yaml`, `$X/prices.yaml`, `$X/repo/`, `$X/template-provenance.yaml` | project, role, route, repository and provenance definition | the tenant stops being reproducible |
-| `$X/goals/`, `$X/tasks/`, `$X/memory/`, `$X/candidates/`, `$X/skills/` (candidate/promoted/rejected, history, patches) | durable work and learning records | open goals/tasks and approved memory disappear |
-| `$X/assets/` (or `KXM_ASSETS_DIR`) — retrospectives, improvements, artifacts, evidence | exported evidence | provenance and the ability to audit a past decision |
-| `$X/logs/` (or `KXM_LOGS_DIR`) and the structured `KXM_LOG_PATH` (hub), plus `telemetry.jsonl` in the logs directory | operator logs and **local** usage accounting — these are the spend numbers routing reports read | no local accounting to reconcile against |
-| `KXM_WORKER_LOG_PATH` / `KXM_AGENT_LOG_PATH` targets (default under the logs directory) | per-worker lifecycle and raw Pi output | worker diagnostics; **separate overrides, not part of local accounting** |
-| `$T/model-metrics.jsonl` — written by `exportFederatedTelemetry` | **federated** metrics only. Absent on most boxes: the exporter is implemented and `telemetry.federated` defaults to `true` in the shipped config, but no hub or CLI path calls it today, so its absence is normal and its presence means something opted in. Not local accounting, which is `$X/logs/telemetry.jsonl` | cross-machine reporting continuity, and a privacy boundary worth naming: federated records are a **different file** from local accounting, with `anonymize` defaulting to `true` |
+| `$R/.kxm/…` project definition: `project.yaml`, `config.yaml`, `agents/`, `workflows/`, `gates.yaml`, `roles/`, `role-hosts.yaml` (or `.json`), `producers.yaml`, `roster.yaml`, `routes.yaml`, `prices.yaml`, `repo/`, `template-provenance.yaml` | project, role, route, price and provenance definition | the tenant stops being reproducible — and a restore without `roster.yaml`/`routes.yaml`/`prices.yaml` comes back with **different admission and cost behaviour** while reporting itself healthy |
+| `$R/.kxm/goals/`, `tasks/`, `memory/` (with `memory/candidates/`), `skills/` (candidate/promoted/rejected, history, patches) | durable work and learning records | open goals/tasks and approved memory disappear |
+| `$D/assets/` — retrospectives, improvements, artifacts, evidence | exported evidence | provenance and the ability to audit a past decision |
+| `$D/logs/` (hub structured log at `KXM_LOG_PATH`) and `$D/logs/telemetry.jsonl` | operator logs and **local** usage accounting — the spend numbers routing reports read | no local accounting to reconcile against |
+| `KXM_WORKER_LOG_PATH` / `KXM_AGENT_LOG_PATH` targets (defaulting under `$D/logs`) | per-worker lifecycle and raw Pi output | worker diagnostics; **separate overrides, not local accounting** |
+| `$T/model-metrics.jsonl` | **federated** metrics only. Absent almost everywhere: the exporter exists and `telemetry.federated` defaults to `true` in the shipped config, but **no hub or CLI path calls it today**, so absence is the normal state rather than evidence someone opted out. A different file from local accounting, which is `$D/logs/telemetry.jsonl` | cross-machine reporting continuity, and a privacy boundary worth naming: federated records are separate, with `anonymize` defaulting to `true` |
 | `$S/hub-binding.json`, `$S/hub-env.json`, `$C/session.token` | host hub URL, credentials, local session token | a re-bind and a token rotation. **Secrets:** prefer regeneration to shipping them off-box, and never commit them |
 | `$C` global roles/workflows/host configuration | user-level defaults | operator conventions |
 
-**Overrides are part of the backup record.** `KXM_WORKSPACE_DIR` moves `$X` and therefore
-the defaults for `$W`, `$C`-adjacent assets and logs; `KXM_STATE_HOME` moves `$S`; and
+**Overrides are part of the backup record.** `KXM_WORKSPACE_DIR` (and the `--workspace`
+flag, which additionally **ignores** the per-directory variables) moves every `$D`
+directory at once — but not `$R`, so the fixed project tree must still be backed up from
+the checkout even when the workspace was relocated elsewhere. `KXM_STATE_HOME` moves `$S`
+only if absolute. An explicit telemetry directory is likewise joined with `telemetry/`,
+not used verbatim.
 `KXM_DATA_PATH`, `KXM_STATE_DIR`, `KXM_CONFIG_DIR`, `KXM_ASSETS_DIR`, `KXM_LOGS_DIR`,
 `KXM_LOG_PATH`, `KXM_WORKER_LOG_PATH`, `KXM_AGENT_LOG_PATH` or an explicit telemetry
 directory each relocate one more thing. Record every override **with** the backup, or a
@@ -271,7 +288,7 @@ restore lands somewhere the running service will not look.
 
 1. Stop the hub gracefully (`kxm hub stop` or `SIGTERM`) and let the supervisor settle
    children; both close their databases.
-2. Copy the whole set above as one tree — **every root**, `$S`, `$X`, `$W`, `$C` and
+2. Copy the whole set above as one tree — **every root**, `$R`, `$D`, `$W`, `$S`, `$C` and
    `$T` — or take `VACUUM INTO` snapshots per database. **Snapshots replace the database
    copies, not the file copy**: configuration, repository bindings, prompt sidecars,
    routing manifests and update configuration are not databases, so a snapshot-only backup

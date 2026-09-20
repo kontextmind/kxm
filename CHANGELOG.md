@@ -11,7 +11,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser
   session; a reverse-proxy contract states what must hold without shipping generated proxy
   config) and a rewritten *Backup and restore* that enumerates the tenant's state by root —
-  the five roots a tenant actually has — host-local `$KXM_STATE_HOME` (Runtime
+  the six roots a tenant actually has — the fixed checkout tree under `.kxm` (project,
+  role, route, price and provenance definition, goals, tasks, memory, candidates, skills),
+  the workspace directories (config, logs, assets, state), host-local `$KXM_STATE_HOME` (Runtime
   `registry.db`, per-project `run-events.db` **and its `.run-prompts.json` sidecar**,
   repository bindings, `update.yaml`), the project's `.kxm` directory (config, agents,
   workflows, roles, producers, repo bindings, provenance, goals, tasks, memory,

@@ -509,26 +509,36 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   portal) and explicitly no generated proxy config, because a generated config reads as
   authoritative while one missing directive silently re-opens header forgery.
   The backup section previously described stopping the hub and copying `kxm.db`. That is a
-  **hub-only** backup, and the first rewrite of it still under-counted: a tenant has
-  **four** roots, and naming one while copying another is exactly how a backup goes
-  missing while looking complete. Host-local `$KXM_STATE_HOME` carries
-  `runtime/registry.db` (whose **registry rows** hold the supervisor identity and claim —
-  there is no `supervisor.json`), `runtime/projects/<key>/run-events.db` with a sidecar
-  named by appending `.run-prompts.json` to the **whole** database filename,
-  `projects/<hash>/repository-bindings.json`, and `update.yaml`; the project's `.kxm`
-  directory carries config, agents, workflows, roles, producers, repo bindings,
-  provenance, goals, tasks, memory, candidates, skills, assets, logs and **local**
-  telemetry; `.kxm/state` carries only the hub database, worker routing/recovery manifests
-  and Pi sessions; and `~/.config/kxm` carries user configuration plus, when opted in, the
-  **federated** `telemetry/model-metrics.jsonl` — a different thing from local accounting,
-  and conflating them would move a tenant's usage records somewhere they never agreed to
-  go. The table now names each root, separates recovery-critical manifests from Pi model
-  histories whose backup is an existing policy **choice**, marks what is disposable
-  (PID/claim files, `session-brief.json`, the re-generable supervisor token), applies
-  WAL-consistent copying to every SQLite store rather than the hub's alone, and requires
-  each path override to be recorded with the backup. Restore verification stays concrete:
-  read back a run, its drive receipt, and confirm prompt text survives. Routine unattended
-  recovery remains **not** claimed — automated store discovery is a tracked post-MVP item.
+  **hub-only** backup, and my own rewrites of it were wrong twice before they were right:
+  first "two roots", then "four", then a single `$X` that conflated the **fixed** checkout
+  tree with the **relocatable** workspace directories. A tenant has **six** roots, and two of
+  them are easy to mistake for one. `$R/.kxm` is fixed to the checkout and holds the project
+  definition — project/config/agents/workflows/gates/roles/role-hosts/producers/roster/
+  routes/prices/repo/template-provenance — plus goals, tasks, memory, candidates and skills;
+  `$D` is the workspace directories root (`--workspace` or `KXM_WORKSPACE_DIR`, else
+  `$R/.kxm`) yielding `config/`, `logs/`, `assets/`, `state/`, and `--workspace` derives all
+  four while **ignoring** the per-directory variables; `$W` is `$D/state` (hub database,
+  worker routing/recovery manifests, Pi sessions); `$S` is host-local `KXM_STATE_HOME`,
+  honoured only when absolute — a relative `XDG_STATE_HOME`/`LOCALAPPDATA` base falls back
+  silently, so a backup path derived from an env var can quietly point at the default
+  location. `$S` carries `runtime/registry.db` (whose **registry rows** hold the supervisor
+  identity and claim — there is no `supervisor.json`), per-project `run-events.db` with a
+  sidecar named by appending `.run-prompts.json` to the **whole** database filename,
+  `projects/<hash>/repository-bindings.json`, `update.yaml`, and the hub binding/env records;
+  `$C` is user configuration; and `$T` is **federated telemetry**, resolved from an explicit
+  directory joined with `telemetry/`, else `XDG_CONFIG_HOME`/`HOME` — **not**
+  `KXM_USER_CONFIG_DIR`, so it can sit outside `$C` — and with **no production caller
+  today**, so its absence is the normal state rather than evidence of an opt-out; local
+  accounting is a different file, in `$D/logs`. The trap worth naming for an operator:
+  relocating the workspace does **not** relocate `$R`, so a backup of `$D` alone silently
+  omits the entire project definition. The table now separates recovery-critical routing
+  manifests from Pi model histories whose backup remains an existing policy **choice**,
+  marks what is disposable (PID/claim files, `session-brief.json`, the re-generable
+  supervisor token), applies WAL-consistent copying to every SQLite store rather than the
+  hub's alone, records every override with the backup, and keeps restore verification
+  concrete: read back a run, its drive receipt, and confirm prompt text survives. Routine
+  unattended recovery remains **not** claimed — automated store discovery is a tracked
+  post-MVP item.
   `kxm hub bind` gained the client-side mirror of the rule the hub already enforced on its own
   listener: a **remote** URL with no resolvable credential is refused
   (`hub_bind_unauthenticated`) instead of being stored and failing later like a network fault;
