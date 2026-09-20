@@ -73,9 +73,11 @@ writer fallback. If `grok` is logged out, stop. Two attempts by default; a
 third only with new evidence or a changed approach, then relief.
 
 **Provider-native rule.** Anthropic → Claude CLI; OpenAI → Codex; xAI → Grok
-CLI; Moonshot → Kimi CLI when that helper is verified (not today); Google →
-agy (Antigravity CLI) for Gemini writer/experiment edit (starting rotation
-unchanged; deprecated Gemini CLI catalog stays). Pi may run **OpenRouter** after
+CLI; Moonshot → Kimi CLI when that helper is verified (not today); **Google → the
+`antigravity` Pi provider, not a shell-out to the `agy` CLI** (Tracking → Decided,
+2026-09-15; `agy` and the deprecated Gemini CLI remain catalog/helper entries, and the
+`agy` rows in this file state capability, never admission). Starting rotation
+unchanged. Pi may run **OpenRouter** after
 `pi auth check --provider openrouter`, or **Nous Research Portal** after
 `pi install npm:@jayteelabs/pi-nous-portal-provider` and
 `pi auth check --provider nous-portal`. Login: `/login openrouter`, or

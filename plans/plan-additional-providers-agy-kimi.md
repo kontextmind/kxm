@@ -29,7 +29,12 @@ Task Reference: `task_providers_agy_kimi`
 Status: Draft / Historical migration objective superseded
 Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
-**Partially superseded design.** Replacing native AGY/Kimi routes with Pi providers is not the current architecture. The [implementation plan](implementation-plan.md) owns decisions, status, owners and phase gates; the [unified plan](plan-unified-kxm-milestones.md) supplies proposed M2/M3/M8 scope and order. Native authentication and admission decisions control. This document retains integration research, not an independent migration backlog or permission to admit providers.
+**Partially superseded design.** Replacing native Kimi routes with Pi providers is not the
+current architecture — but **Google is the stated exception**: its admitted route is the
+`antigravity` Pi provider, decided 2026-09-15, with `agy` kept as a catalog/helper entry.
+The [implementation plan](implementation-plan.md) owns decisions, status, owners, phase gates
+and the one delivery queue; the [unified plan](plan-unified-kxm-milestones.md) supplies
+proposed M2/M3/M8 **scope and contract dependency only**, never order. Native authentication and admission decisions control. This document retains integration research, not an independent migration backlog or permission to admit providers.
 
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 [`plan-usage-cost-quota-tracking.md`](plan-usage-cost-quota-tracking.md)
