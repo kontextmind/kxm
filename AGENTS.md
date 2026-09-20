@@ -35,7 +35,7 @@ rotation per role, and a writer that is never also a critic.
 
 | Role | Starting rotation | Why |
 |---|---|---|
-| **Implement / write code** | **Grok** (`grok --model grok-4.6`), headless | Currently admitted native writer on this runner. Fast at repo-shaped edits. After failure, immediately use the next eligible authenticated model. Qwen `qwen/qwen3-coder-plus` is admitted through OpenRouter/Pi with exact model auth; never bill Grok through Pi. Not a fixed sole writer. |
+| **Implement / write code** | Grok (`grok --model grok-4.6`), headless, as the **starting** rotation | Fast at repo-shaped edits. This is a default, not an admission: which routes are admitted right now, including any Pi-provider relief writer and its exact-model conditions, comes from **Tracking → Decided** and `kxm harness list`. After a failure, use the next eligible authenticated model rather than stopping. Never bill one vendor through another harness. Not a fixed sole writer. |
 | **Plan** | **Claude Fable** (`claude --model fable`) | Architecture and permissions; independent of the writer. |
 | **Review** | **Fable** (architecture/permissions) and **Codex gpt-5.6-sol** (CLI/docs) | Different providers from the writer. Both designated critics are required for acceptance on this runner; a single critic is at most preliminary triage. |
 | **Portability / mapping** | **Kimi** only when the task is Windows/path/CLI-portability | Not a default reviewer. |

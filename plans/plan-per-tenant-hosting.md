@@ -39,9 +39,11 @@ multi-user product surface. The hub is not, and does not need to become one.
 
 ### 1. Tenancy is the machine
 
-One tenant = one box = one hub process = one `.kxm/state/kxm.db`. The hub gets a **tenant
-label**, not a tenant table. Nothing in the hub stores another tenant's rows, so nothing in
-the hub can leak them.
+One tenant = one box = one hub process, whose state set is led by
+`.kxm/state/kxm.db`. The hub gets a **tenant label**, not a tenant table: no hub query
+filters by tenant, because there is only one. What that does **not** buy is proof that a
+request reached the right hub — selecting the wrong tenant's credential is a real failure
+mode, which is why bindings are server-held and project-fixed rather than browser-supplied.
 
 Consequence for capacity: the tenant's box is already provisioned for the portal, so the hub
 adds **no VM line item** to the plan. It is incremental disk, bandwidth and one supervised
@@ -57,10 +59,12 @@ the hub env record, `kxm hub bind <url>`, and the local loopback convenience all
 unmodified, for anyone who does not deploy hosting. `kxm hub start` on a laptop must not change
 behaviour, output, or credential precedence.
 
-Hosting is **explicitly activated**, never inferred from which environment variables happen to be
-set, and never silently downgraded (a hosted hub with a broken proxy must fail closed and name
-the fix) nor silently upgraded (a local hub must not start trusting identity headers). One
-command answers "which mode am I in, and why".
+Hosting is **explicitly activated**, never inferred from which environment variables happen to
+be set, and never silently upgraded (a local hub must not start trusting identity headers).
+**A broken proxy or Authentik denies browser access; it does not disable the hub's existing
+machine clients**, and it must not quietly start accepting unauthenticated traffic either.
+One command answers "which mode am I in, and why", and names what to run when the answer is
+half-configured.
 
 ### 3. Authentik owns the browser; the portal backend is the hub's client
 
@@ -131,8 +135,8 @@ The ordered queue lives in
 (S0–S5), and that is the only delivery sequence. What this file contributes is the boundary and
 the storage ruling; the slices are named there, not duplicated here.
 
-Two of them are worth a sentence because they are the whole MVP, and both are portal-side work
-against APIs that already exist:
+Two queue steps carry the first usable version — the portal's read path and its drive path —
+and both are portal-side work against APIs that already exist:
 
 - **Read:** the portal shows tenant label, connectivity, agents, runs, current status and the
   latest receipt, distinguishing hub metadata from Runtime run state, with stale and unavailable
@@ -171,7 +175,7 @@ machine-credential rotation through browser commands.
 Proxy header stripping proven by an integration fixture; timing-safe comparison of the proxy
 secret; credential-store corruption recovery; rotation overlap window; `kxm doctor` as a real
 command (there is none today) rather than `hub auth status` doing double duty. Track in
-**Still open**; none of it blocks Slice A or B.
+**Still open**; none of it blocks S1–S5.
 
 ## Two things to settle before the read slice, while they are still cheap
 

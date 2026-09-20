@@ -23,7 +23,9 @@ related: ["docs/operations.md", "docs/kb/qa-hub-on-a-public-host.md", "plans/pla
 authenticates browsers at the tenant's reverse proxy and the portal's own backend calls the
 loopback hub with the machine tokens that already work. The token-broker and JWT
 recommendations that used to sit in this answer are **rejected**, not deferred; they were
-plausible for a shared multi-tenant hub, which is not what we are deploying. Proxy forward-auth is the zero-code first step for humans; hub-side JWT validation is a later, additive gate.
+plausible for a shared multi-tenant hub, which is not what we are deploying. Option 1 below —
+forward-auth at the existing proxy, hub unchanged — is the **selected** shape; options 2 and 3
+are rejections, not stages.
 
 ## What exists today
 
@@ -39,9 +41,14 @@ The hub knows about three credentials. None of them carries a user identity, a r
 
 ## Integration options
 
-### 1. Reverse-proxy forward-auth (Authentik outpost at the proxy; hub unchanged)
+### 1. Reverse-proxy forward-auth (Authentik outpost at the proxy; hub unchanged) — **selected shape at the edge**
 
-Authentik's proxy outpost authenticates browser sessions and passes headers upstream. The hub ignores those headers today, so the proxy must still inject the hub bearer token, or clients must still send it. Covers: Studio, `/v1/ops/*` dashboards, human CLI users via a browser-capable flow. Does not cover: agents (they present `x-kxm-agent-*` headers plus a bearer, not a cookie), and it gives the hub no per-user identity for logging. Effort: low, config only. Risk: low if the hub keeps its token check; medium if someone sets the proxy to add the admin token for every authenticated user, which flattens all Authentik users to admin. Non-loopback bind already requires a token (`hub.ts:468`), so the proxy cannot make the hub anonymous.
+Authentik's proxy outpost authenticates browser sessions and passes headers upstream. The hub ignores those headers today, and under the per-tenant decision it keeps ignoring
+them: the **portal's own backend** holds the hub bearer server-side and calls loopback, while
+the proxy's job is to keep the hub's routes off the public interface entirely. Do not
+configure the proxy to inject the admin token on behalf of every user — that flattens all
+Authentik users to hub admin. What this option does **not** give the hub is per-user identity
+for logging, which is the portal's to record. Effort: low, config only. Risk: low if the hub keeps its token check; medium if someone sets the proxy to add the admin token for every authenticated user, which flattens all Authentik users to admin. Non-loopback bind already requires a token (`hub.ts:468`), so the proxy cannot make the hub anonymous.
 
 ### 2. Hub validates Authentik-issued JWTs (OIDC discovery + JWKS) — **rejected 2026-09-20; a new decision is required to revisit**
 
