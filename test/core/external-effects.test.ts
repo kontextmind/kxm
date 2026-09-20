@@ -406,8 +406,20 @@ test("an external-effects file written by the pre-refusal build is refused, not 
       "a stale ledger file must be refused at open time",
     );
 
-    const version = new DatabaseSync(file).prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(version.user_version, 0, "refusal must not stamp the store it rejected");
+    const inspection = new DatabaseSync(file);
+    try {
+      const version = inspection.prepare("PRAGMA user_version").get() as { user_version: number };
+      assert.equal(version.user_version, 0, "refusal must not stamp the store it rejected");
+      const columns = (inspection.prepare("PRAGMA table_info(external_effects)").all() as Array<{ name: string }>)
+        .map((column) => column.name);
+      assert.ok(
+        !columns.includes("last_heartbeat_at"),
+        "refusal must not add the column it used to migrate in place",
+      );
+      assert.equal(columns.length, 11, "the rejected store must keep its original shape");
+    } finally {
+      inspection.close();
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

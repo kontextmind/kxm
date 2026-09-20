@@ -41,6 +41,12 @@ activates `kxm.*.v1` only by an explicit successful `kxm init`/migration receipt
 file presence alone never activates it. Legacy hub runs continue on the legacy
 engine.
 
+> **Superseded (2026-09-20).** The single-operator decision removes legacy readers
+> **without** a compatibility release, so this transition-release list is no longer a plan of
+> record. It stays here to name what was given up: no dual-read window, no `mesh_*` shim, and
+> no period where legacy JSON stays loadable while KXM writes YAML. Anything still holding
+> legacy state is refused rather than served from both shapes.
+
 When Phase 8 activates hub KXM, at least one hub transition release provides:
 
 - current `mesh_*` peer tools;
@@ -135,10 +141,17 @@ installed resource bytes against the receipt. It performs no writes.
 
 ## Database migration
 
-> **Superseded in part (2026-09-20).** The `user_version` checks, WAL handling, and
-> refuse-a-newer-version rules below **are** the implemented contract. The legacy-record
-> import paragraphs describe a cutover that will not happen: this build migrates no
-> database, and an older stamp is refused outright.
+> **Superseded in part (2026-09-20).** What the code guarantees today is narrower than the
+> checklist below and belongs to two different moments:
+>
+> - **Opening a store** verifies `user_version`, refuses a newer-than-known version, and
+>   enables WAL. That is implemented.
+> - **Backing a store up** is where checkpointing, `-wal` handling, integrity verification,
+>   and hash recording happen — see the whole-state-set recipe in
+>   [`docs/operations.md`](../operations.md). Those are **not** properties of an ordinary open.
+>
+> The legacy-record import paragraphs describe a cutover that will not happen: this build
+> migrates no database, and an older stamp is refused outright.
 
 Before any database operation:
 
