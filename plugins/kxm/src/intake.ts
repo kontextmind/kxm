@@ -250,8 +250,11 @@ export function resolveKxmCoordinator(context: KxmRuntimeContext, coordinatorId:
  * Duplicate ingress (same idempotency key, same content) returns the original
  * record and cannot create another task. The same key with **different** content
  * is rejected: a reused key must not smuggle a different payload. Payloads
- * classified `secret` are never persisted — only their hash, so intake cannot
- * become a secret store. While the project is paused the message is durable with
+ * classified `secret` are never persisted — only their hash, so a caller that
+ * classifies honestly gets a store that will not hold that payload. The scope is
+ * exactly that: classification is caller-asserted, so this is a storage decision
+ * under a label, not secret detection, and intake is still not a place to keep
+ * credentials. While the project is paused the message is durable with
  * a held dispatch intent instead of being dropped.
  */
 export function acceptKxmIntakeMessage(

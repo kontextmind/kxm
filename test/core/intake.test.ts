@@ -764,6 +764,32 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
         "DEFERRED skips the deadline check entirely");
       assert.equal(reads, 0, `a DEFERRED transaction must read the clock zero times, saw ${String(reads)}`);
 
+      // The row the round-11 probe measured and the committed test did not: a
+      // DEFERRED success while another domain holds a pending deadline. Zero reads
+      // is what the table in the code comment claims, so it has to be counted here.
+      const pending = new KxmDatabaseSync(join(stateRoot, "deferred-pending.db"));
+      const pendingLock = new KxmDatabaseSync(join(stateRoot, "deferred-pending.db"));
+      try {
+        pending.exec("CREATE TABLE pending (id INTEGER PRIMARY KEY)");
+        pendingLock.exec("BEGIN IMMEDIATE");
+        pendingLock.exec("INSERT INTO pending (id) VALUES (1)");
+        let pendingArmReads = 0;
+        const pendingClock = () => { pendingArmReads += 1; return Number(process.hrtime.bigint() / 1_000_000n); };
+        assert.match(String(captureError(() => withDatabaseTransaction(pending, () => 1, "IMMEDIATE", pendingClock)).error),
+          /blocked by another transaction/, "arm a pending deadline on this connection");
+        const beforeDeferred = pendingArmReads;
+        assert.equal(withDatabaseTransaction(pending, () => "deferred while pending", "DEFERRED", pendingClock),
+          "deferred while pending");
+        assert.equal(pendingArmReads - beforeDeferred, 0,
+          `a DEFERRED success with a pending deadline must read zero times, saw ${String(pendingArmReads - beforeDeferred)}`);
+        assert.match(String(captureError(() => withDatabaseTransaction(pending, () => 2, "IMMEDIATE", pendingClock)).error),
+          /retry deferred/, "and the pending write deadline must survive that DEFERRED success");
+      } finally {
+        try { pendingLock.exec("ROLLBACK"); } catch { /* closed below */ }
+        pending.close();
+        pendingLock.close();
+      }
+
       // The exact read budget on the contention path: one read to arm, one to refuse.
       // Anything more is a read the documents do not claim, and a discarded read is the
       // kind of drift that made the previous two wordings wrong.
@@ -968,7 +994,7 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
     { code: "SQLITE_BUSY", errno: 13 })), false, "a permanent number beats a busy name");
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
-    { errcode: 13, errno: 5 })), false, "the first number found decides; `errno` must not override it");
+    { errcode: 13, errno: 5 })), false, "the first integer value in the list decides; `errno` must not override it");
   // The direction the two agreeing fixtures above cannot test: a permanent *name*
   // must not veto a contention *number*. A mutant that checks `SQLITE_FULL` before the
   // numbers and returns false survives every agreeing example.
@@ -981,7 +1007,7 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
   // and whether a zero is a decision or an absence. `SQLITE_OK` is 0, so treating it as
   // "no code here" and falling through to the message would call a success a lock.
   assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
-    { code: "SQLITE_FULL", name: "SQLITE_BUSY" })), false, "`code` is consulted before `name`");
+    { code: "SQLITE_FULL", name: "SQLITE_BUSY" })), false, "a present `code` decides before `name`");
   assert.equal(isTransactionContention(Object.assign(new Error("text says nothing useful"),
     { code: "SQLITE_BUSY", name: "SQLITE_FULL" })), true, "and the first matching name decides");
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
@@ -993,11 +1019,11 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
 
   // `errCode` had no fixture of its own, so moving or deleting it was untested.
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
-    { errcode: 13, errCode: 5 })), false, "`errcode` is consulted before `errCode`");
+    { errcode: 13, errCode: 5 })), false, "a present `errcode` decides before `errCode`");
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
-    { errCode: 13, errno: 5 })), false, "`errCode` before `errno`");
+    { errCode: 13, errno: 5 })), false, "`errCode` outranks `errno`");
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
-    { errCode: 5, errcode: 13 })), false, "the first field in the list is the only one read");
+    { errCode: 5, errcode: 13 })), false, "the first integer value in the list decides; a later number is not consulted");
   assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
     { errCode: 5 })), true, "and `errCode` is consulted at all, not merely tolerated");
 

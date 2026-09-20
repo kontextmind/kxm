@@ -347,8 +347,11 @@ export function isTransactionContention(error: unknown): boolean {
   // A numeric code wins first, then a symbolic result name, and both win **over the
   // message**: `errno` is what `bun:sqlite` exposes for the extended result code while
   // its `code` field holds the symbolic name, and Node spells the number `errcode`.
-  // Text is consulted only when the error carries neither, so no wrapper quoting an
-  // older "database is locked" can outvote a code on either runtime.
+  // All three properties are read; what the list orders is which **integer value
+  // decides** — a present `errcode` outranks `errCode`, which outranks `errno`, and a
+  // later number is never consulted. Text is consulted only when the error carries
+  // neither a number nor a SQLite result name, so no wrapper quoting an older
+  // "database is locked" can outvote a code on either runtime.
   for (const value of [carrier?.errcode, carrier?.errCode, carrier?.errno]) {
     if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 0xff);
   }
@@ -373,8 +376,11 @@ export function withDatabaseTransaction<T>(
   if (activeTransactions.has(database)) {
     throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
   }
-  // A DEFERRED BEGIN takes no write lock and cannot lose the race, so throttling
-  // it would deny legitimate work for no protective reason.
+  // A DEFERRED BEGIN takes no write lock, so it is exempt from the *check*: refusing
+  // it would deny legitimate work over a contention it did not ask for. Exempt from
+  // the check only — shared-cache schema locks can still make a deferred `BEGIN`
+  // fail, and that failure arms a deadline like any other, because the next attempt
+  // would stall the same way.
   if (mode !== "DEFERRED") {
     const deadlines = transactionThrottles.get(database);
     const until = deadlines?.get(clock);
