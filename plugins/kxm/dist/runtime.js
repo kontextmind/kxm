@@ -27913,20 +27913,37 @@ function extractText(content) {
   }
   return "";
 }
+function asJsonObject2(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function outcomeField(value) {
+  const outcome = value.outcome;
+  return typeof outcome === "string" ? outcome : void 0;
+}
+function declaredOutcomeOf(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return void 0;
+  const whole = asJsonObject2(trimmed);
+  if (whole) return outcomeField(whole);
+  const lines = trimmed.split(/\r?\n/);
+  let declaration;
+  for (let index = 0; index < lines.length; index += 1) {
+    const outcome = outcomeField(asJsonObject2(lines[index].trim()) ?? {});
+    if (outcome !== void 0) declaration = { index, outcome };
+  }
+  if (!declaration) return void 0;
+  const tail = lines.slice(declaration.index + 1).join("\n");
+  if (/"outcome"\s*:/.test(tail)) return void 0;
+  return declaration.outcome;
+}
 function determineOutcome2(text, allowedOutcomes) {
-  const normalized = text.trim();
-  const jsonMatch = /"outcome"\s*:\s*"([^"]+)"/.exec(normalized);
-  if (jsonMatch && allowedOutcomes.includes(jsonMatch[1])) {
-    return jsonMatch[1];
-  }
-  for (const outcome of allowedOutcomes) {
-    const regex = new RegExp(`\\b${outcome}\\b`, "i");
-    if (regex.test(normalized)) {
-      return outcome;
-    }
-  }
-  if (allowedOutcomes.includes("passed")) return "passed";
-  return allowedOutcomes[0] ?? "completed";
+  const declared = declaredOutcomeOf(text);
+  return declared !== void 0 && allowedOutcomes.includes(declared) ? declared : "failed";
 }
 var PiSession = class {
   key;
@@ -28056,7 +28073,7 @@ var PiSession = class {
       const isAborted = active.aborted || active.signal?.aborted;
       let outcome;
       if (isAborted) {
-        outcome = active.allowedOutcomes.includes("cancelled") ? "cancelled" : active.allowedOutcomes.includes("failed") ? "failed" : active.allowedOutcomes[0];
+        outcome = "cancelled";
       } else {
         outcome = determineOutcome2(active.text, active.allowedOutcomes);
       }
@@ -28108,8 +28125,7 @@ var PiSession = class {
       throw new Error("pi_session_busy");
     }
     if (signal?.aborted) {
-      const outcome = allowedOutcomes.includes("cancelled") ? "cancelled" : allowedOutcomes.includes("failed") ? "failed" : allowedOutcomes[0];
-      return { outcome, text: "aborted", usage: {} };
+      return { outcome: "cancelled", text: "aborted", usage: {} };
     }
     this.status = "busy";
     return new Promise((resolve8, reject) => {

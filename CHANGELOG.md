@@ -35,6 +35,30 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **A Pi producer reply can no longer mint its own success.** `determineOutcome` scanned the
+  reply for any declared outcome *word* and, failing that, returned `passed`. So
+  `"the gate did not pass, so I would not call this passed"` settled the step as passed — the
+  word was all it took — and an empty or prose-only reply was passed by default. Only a declared
+  result counts now: a reply that is one JSON object, or prose carrying an explicit
+  `{"outcome": "…"}` block, and only when the step declares that outcome. Anything else is
+  `failed`; an undeclared value still lands in `outcome_unknown` and terminates as `failed`, so a
+  step without a `failed` transition cannot pass on a bad reply either. This matches the rule the
+  one-shot producer already enforced, and `docs/contracts/lifecycles.md` now states it where
+  `result_recorded` is defined. Three usage-capture fixtures that had been replying in prose now
+  declare their result, which is what they were always supposed to do; the new test in
+  `test/core/pi-producer.test.ts` covers prose, empty, out-of-vocabulary, and both accepted
+  structured shapes. Review of that first cut found two more ways to mint success, both now
+  closed: a result block was matched **anywhere** in the reply, so
+  `Example: {"outcome": "passed"}. Actual result: {"outcome": "failed"}` returned `passed`;
+  a declaration is now a standalone JSON object — the whole reply, or one object on its own
+  line, with the **last** such object winning so an illustration cannot outrank the answer, and
+  the whole reply settling `failed` when anything after that line still looks like an outcome
+  key, because at that point the producer cannot tell which declaration was meant.
+  And cancellation fell through to `allowedOutcomes[0]` when a step declared neither
+  `cancelled` nor `failed`, so aborting a `passed`-only step reported `passed`; a cancel now
+  reports `cancelled` unconditionally and the engine terminates it `failed` when the step
+  does not declare that outcome.
+
 - **`kxm migrate` is gone, and so is the state that only it could unlock.** Deleting the
   migration lanes left a converter with nothing to convert into: `plugins/kxm/src/migrate.ts`
   (1,848 lines), its 1,598-line suite, the `migrate plan|apply|verify` commands, the

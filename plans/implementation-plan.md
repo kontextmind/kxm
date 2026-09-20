@@ -1764,9 +1764,23 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   | S0 | Reconcile plan authority: this queue, the gate/decision contradictions above, catalog demotion, AGENTS prose and regeneration | this replan | coherent tracker, catalog and generated artifacts through existing `verify` | none — prose and generated output, existing gate covers it |
   | S1 **(delivered: PR #253)** | Hub + local Runtime on the tenant box: service account, persisted state paths, loopback listeners, existing restart path, one project and the slim `default` workflow; **the hosting recipe and the stopped-state backup/restore procedure for the whole tenant state set** in `docs/operations.md` (the recipe S1 replaced stopped the hub and copied `.kxm/state/kxm.db`, which is hub-only; `docs/operations.md` now enumerates all six roots); **the reverse-proxy contract** as invariants plus one labelled example and no generated config; and the two `kxm hub bind` tightenings settled in [plan-per-tenant-hosting.md](plan-per-tenant-hosting.md) — refuse a non-loopback bind with no resolvable credential, naming the fix, and label the binding loopback or remote in `kxm hub view` and `kxm session brief` | a provisioned box and a selected authenticated route | restart the services; readiness, persisted credentials, retained run identity | none — deployment witness; existing behavioural gate |
   | S2 | Portal reads authoritative state: tenant label, connectivity, agents, runs, current status, latest receipt — hub metadata distinguished from Runtime run state, stale/unavailable explicit, polling | S1, portal router access | the read plus a browser comparison against the same run's CLI/API state | append `portal reads distinguish hub metadata from Runtime run state and unavailable upstreams` to `test/core/studio-layout.test.ts` |
-  | S3 | Strict outcome on the selected Pi route — prose word-matching and default-pass removed | existing Pi producer fixture | negative outcome test plus selected-route live execution in S5 | `Pi final prose or malformed outcome cannot pass an assignment` in `test/core/pi-producer.test.ts` |
+  | S3 **(delivered: PR #256)** | Strict outcome on the selected Pi route — prose word-matching and default-pass removed, plus the quoted-example and cancel-path variants the first review found | existing Pi producer fixture | negative outcome test plus selected-route live execution in S5 | `Pi final prose or malformed outcome cannot pass an assignment` in `test/core/pi-producer.test.ts` |
   | S4 | Portal drives one workflow: create, drive, cancel only, reusing existing command/run/drive IDs and receipts; 202 is started, never completed | S2, S3, exact project binding | command-parity test plus existing duplicate-drive, shutdown and receipt coverage | `portal create-drive-cancel preserves command identity and reports authoritative settlement` in `test/core/studio-layout.test.ts` |
   | S5 | Edge authentication and first real use: HTTPS + Authentik on the tenant's existing proxy, tenant-admin only, hub and supervisor stay private, and **the deployed restore witness** — one restore performed with S1's procedure before first use (procedure authoring is S1's; S5 proves it on the box) | S4, tenant DNS/TLS/Authentik config | deployed witness: unauthenticated access denied, wrong tenant denied, logout/revocation, refresh mid-run, one real `default` run, one usable restore | none — named deployment witness, no new suite |
+
+- **Recorded gap, not scheduled (2026-09-20, found while fixing S3):**
+  `producerPolicy.acceptedStatuses` compiles to `["passed"]` in
+  `engine-compile.ts` / `engine-plan.ts` and is **never consulted at settlement**. The
+  hub's peer-evidence path (`workflow.ts`) accepts any message that is `replied` with
+  non-empty content from an eligible producer, so a peer whose own work failed can still
+  satisfy a checkpoint that reads as passing. S3 closed the equivalent hole on the Pi
+  producer path; this one is different in kind — enforcing it needs a decision about what
+  "the producer passed" means for a peer that is not running a step of this run (whose
+  assignment, which epoch, and what replaces it when a peer answers from outside any run).
+  That is an evidence-semantics decision, not a producer fix, so it is recorded rather
+  than half-implemented: a settlement change here would silently invalidate existing
+  peer-reply evidence in flight. **Trigger:** the first workflow that gates acceptance on
+  peer review rather than on the coordinator reading the replies.
 
   **Explicitly not MVP, with its trigger:** post-MVP closes observed first-use failures
   (one focused regression per repair; scheduler/supervisor timing moves here unless it
