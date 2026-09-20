@@ -84,10 +84,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   can extend, shorten or clear another caller's throttle, and a clock that returns a
   non-finite number is refused rather than trusted (`runtime_transaction_clock_invalid`)
   wherever a reading is taken — checking a pending deadline, and arming a fresh one. The
-  clock is read at two call sites, not on every `BEGIN`: clean successes, `DEFERRED`
-  transactions, permanent `BEGIN` failures and nested-transaction rejections read it zero
-  times, so this guards the seam rather than every transaction. `DEFERRED`
-  transactions are exempt: they take no write lock. The throttle is per connection
+  clock is read at two call sites, not on every `BEGIN`. Zero reads are limited to
+  successful write-mode transactions with no pending deadline, successful `DEFERRED`
+  transactions with or without one, permanent `BEGIN` failures with no pending deadline, and
+  a nested-transaction rejection; a `DEFERRED` transaction skips the deadline check, but a
+  contended `BEGIN DEFERRED` failure still reads the clock and arms a deadline, and a clean
+  success or permanent failure that follows an expired deadline reads it once. So this guards
+  the seam rather than every transaction. The throttle is per connection
   object in this process — it is not cross-process, and it does not leak to another
   connection to the same database.
 

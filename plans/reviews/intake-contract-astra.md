@@ -10,7 +10,7 @@ created: "2026-09-18"
 updated: "2026-09-19"
 authority: "hypothesis"
 confidence: "uncertain"
-summary: "Six passes of an independent critic on the M1+M6 intake contract: BLOCK, then STILL BLOCKED four times — on the fix, on the closure of the fix, on the injectable seam that closure introduced, and on bun:sqlite's error shape — then CLOSED on the sixth pass. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
+summary: "Twelve passes of an independent critic on the M1+M6 intake contract: BLOCK, then eight rounds of STILL BLOCKED — on the fix, on the closure of the fix, on the injectable seam that closure introduced, on bun:sqlite's error shape, and then five rounds in which the only defects were this record's own claims, snippets that could not run and counts that were not asserted — reaching CLOSED on substance in round 10 and wording-complete in round 12. Every finding reproduced; each pass also corrected the previous pass's overstated claims. Critic opinion, not assignment, witness or acceptance proof."
 tags: ["review", "runtime", "intake", "harnesses"]
 related:
   - ../implementation-plan.md
@@ -359,8 +359,10 @@ Round 9's correction to my Bun reproduction was itself wrong: the block had no i
 connections and no attachment, and because its own `catch` swallowed the resulting
 `ReferenceError`, running it printed `undefined undefined b is not defined` and **exited 0**.
 A reproduction that fails silently is worse than none, because it looks like evidence. It
-now reads `import { Database as SQL } from "bun:sqlite"`, and the quoted output is from the
-form the critic executed.
+now ships a complete Bun block — import, both connections, the shared attachment — whose
+quoted output was produced by running it on Bun 1.3.14 on 2026-09-20. An earlier version
+of this paragraph made the same claim about a snippet that still could not run: the
+correction had the shape of a correction.
 
 The other half of the round was the read budget again. My sentence claimed "the **only**
 transaction that never consults the clock is a successful `BEGIN` with no pending deadline"
@@ -424,22 +426,48 @@ try { b.exec("BEGIN IMMEDIATE"); } catch (e) { console.log(e.errcode, e.code, e.
 // Node 24.15.0: 262 ERR_SQLITE_ERROR  "database schema is locked: shared"
 ```
 
-```js
-// bun:sqlite — same shape; the number lives in `errno`, and `errcode` is undefined
-try { b.run("BEGIN IMMEDIATE"); } catch (e) { console.log(e.errno, e.code, e.message); }
-// Bun 1.3.14, verified as printed:
-//   262 SQLITE_LOCKED_SHAREDCACHE database schema is locked: shared
-//   errcode: undefined
+```ts
+// bun:sqlite — self-contained; run with `bun run file.ts` on Bun 1.3.14. Same shape as
+// the Node block: two connections, one named shared-cache database attached by both.
+import { Database as SQL } from "bun:sqlite";
+const shared = "file:kxm_repro?mode=memory&cache=shared";
+const a = new SQL(":memory:");
+const b = new SQL(":memory:");
+a.run(`ATTACH DATABASE '${shared}' AS shared`);
+b.run(`ATTACH DATABASE '${shared}' AS shared`);
+a.run("BEGIN IMMEDIATE");
+a.run("CREATE TABLE shared.t (x)");
+try { b.run("BEGIN IMMEDIATE"); console.log("no error (unexpected)"); }
+catch (e: any) { console.log(e.errno, e.code, e.message, "| errcode:", e.errcode); }
+// executed 2026-09-20 on Bun 1.3.14:
+//   262 SQLITE_LOCKED_SHAREDCACHE database schema is locked: shared | errcode: undefined
 ```
 
 Round 8 caught this record printing the Bun half with `e.errcode`, which yields
-`undefined` — the defect in miniature, inside the sentence written to fix it.
-
-`bun:sqlite` takes the same shape with `new SQL(":memory:")` and
-`db.run("ATTACH DATABASE 'file:shared_probe?mode=memory&cache=shared' AS shared")`.
-Both numbers and both names are what the classifier now consumes.
+`undefined` — the defect in miniature, inside the sentence written to fix it. Round 11
+caught the *replacement* still not being runnable as printed: the block had the right idea
+and no import, no connections and no attachment, and its own `catch` turned the failure
+into a clean exit. It is now a block that was executed to produce the line under it, on
+both runtimes. Both numbers and both names are what the classifier consumes.
 
 The third pass also ran measurements rather than only reading: it reproduced the
 backoff against a wall-clock step, forced a losing insert against a legacy-hash
 winner, forced a 1,003-page drain, and timed the drain at 150k rows. Ask for that
 explicitly in the brief, or a review of a diff becomes a read of a diff.
+
+## Twelfth pass — the last three were about evidence, and the last one was about a sentence
+
+Rounds 7 through 12 found no reachable authority, pause, duplication, spend or
+success-misreport defect. Everything they blocked on was this record's own claims: a printed
+reproduction that exited 0 because its own `catch` swallowed its `ReferenceError` (rounds 8
+and 11 — twice, in the sentence written to fix it), an ordering field no fixture disagreed
+about (rounds 9–11), a read budget described rather than counted (rounds 10–11), and finally
+a three-item enumeration of zero-read paths that quietly absorbed two measured-but-not-
+asserted cases (round 12). Round 12's ruling: every claimed count now has an assertion, the
+enumerations state their conditions, and both reproduction blocks were executed to produce
+the output printed under them.
+
+The pattern is worth naming for the next contract, because it cost six rounds: **a correction
+written in the shape of a correction is not a correction.** Each of those six had a
+plausible sentence and an executable gap; the only test that caught them every time was
+running the thing.

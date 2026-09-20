@@ -506,12 +506,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   non-finite reading throws `runtime_transaction_clock_invalid` instead of silently
   meaning "no throttle" — at the points where throttle state is read or armed, which
   is the honest scope, stated as counted rather than as a slogan: the clock is read at
-  **two call sites** (checking a pending deadline; arming after a contended failure), and
-  the per-path read counts — 0 for a clean success, a `DEFERRED` transaction, a permanent
-  `BEGIN` failure and a nested rejection, 1 to arm, 1 to refuse, 2 for expiry followed by
-  renewed contention — are asserted rather than described. Round 10 had to say this twice,
-  because my first two attempts both claimed "the *only* transaction that never reads it"
-  and each left out a path that also reads zero. That is the shape the
+  **two call sites** (checking a pending deadline; arming after a contended failure), with
+  per-path counts. Zero reads: a clean write-mode `BEGIN` with no pending deadline, a
+  `DEFERRED` success with or without one, a permanent `BEGIN` failure with nothing pending, a
+  nested rejection. One read: arming, refusing, and — measured by the critic but **not yet by
+  a committed assertion** — a clean success or a permanent failure that follows an expired
+  deadline. Two reads in one call: an expired deadline followed by renewed contention. Rounds
+  10 and 11 each had to correct a claim of mine that "the *only* transaction that never reads
+  it" was some single clean case, and round 12 caught the enumeration absorbing the two
+  measured-not-asserted rows; the sentence now says which rows the suite counts. That is the shape the
   injectable seam needed before it could stay. The classification question was settled properly and then found
   to be **Node-only**, which the fifth pass caught: contention is decided by SQLite's
   result code (`code & 0xff` over 5 / 6 / 15) read from Node's `errcode` **and**
