@@ -23,7 +23,7 @@ import {
 } from "../runtime-supervisor.ts";
 import { kxmRuntimePaths, runtimeError } from "../runtime-store.ts";
 import { assembleTenantStatus, formatTenantStatus } from "../tenant-status.ts";
-import { resolveClientHubAuthToken } from "../hub-env.ts";
+import { resolveClientAdminAuthToken } from "../hub-env.ts";
 import {
   formatHarnessInventory,
   probeHarnessesAsync,
@@ -602,19 +602,13 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
     projectId = String(bundle.project.value.id);
     const root = projectRoot;
 
-    // A malformed hub-env record is a configuration failure with a specific repair, not a
-    // generic IO failure; surface its message instead of swallowing it into hub_unauthorized.
-    let token: string | undefined;
-    try {
-      token = resolveClientHubAuthToken(runtime.env, projectId);
-    } catch (error) {
-      throw runtimeError("hub_credential_unreadable", "hub-env", error instanceof Error ? error.message : String(error));
-    }
-
     const payload = await assembleTenantStatus({
       project: projectId,
       hubUrl: runtime.serverUrl,
-      token,
+      // Admin-scoped route: resolve the admin credential only (a project token would 401),
+      // and resolve it inside the hub source so a malformed persisted record degrades that
+      // one source instead of aborting the Runtime read with it.
+      resolveAdminToken: () => resolveClientAdminAuthToken(runtime.env),
       fetchImpl: runtime.fetchImpl,
       runtime: {
         listRuns: async () => {
@@ -633,6 +627,7 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
             ...(typeof run.workflowId === "string" ? { workflowId: run.workflowId } : {}),
             ...(typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {}),
             ...(typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {}),
+            ...(typeof run.projectionError === "string" ? { projectionError: run.projectionError } : {}),
             source: "runtime-authoritative" as const,
           }));
         },

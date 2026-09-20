@@ -6,9 +6,9 @@ export const TENANT_STATUS_SCHEMA = "kxm.tenant-status.v1" as const;
  * One upstream of the tenant view, with its own reachability. A source that could not be
  * read is reported as `unavailable` with a stable reason — never silently filled from the
  * other source, because the two sources answer different questions: the hub holds
- * *metadata* (agent roster, message queue, its projection of workflow runs), the Runtime
- * holds the *authoritative* run state on the box that owns the run. Blurring them is how a
- * portal ends up rendering a projection as if it were the run itself.
+ * *metadata* (agent roster, message queue, its own workflow runs), the Runtime holds the
+ * *authoritative* run state on the box that owns the run. Blurring them is how a portal
+ * ends up rendering one as the other.
  */
 export type TenantSourceState = "ok" | "unavailable";
 
@@ -16,34 +16,57 @@ export interface TenantSource<T> {
   state: TenantSourceState;
   /** When this source was read (or attempted), so a consumer can age the data itself. */
   observedAt: string;
-  /** Stable machine code (`hub_unreachable`, `runtime_supervisor_not_running`, …). */
+  /** Stable machine code (`hub_unreachable`, `hub_timeout`, `runtime_supervisor_not_running`, …). */
   reason?: string;
   value?: T;
 }
 
-/** Hub-side roster summary. Presence and liveness, per the hub's own observation. */
-export interface TenantHubAgents {
-  online: number;
-  total: number;
+/** Hub-side roster entry: presence and liveness, per the hub's own observation. */
+export interface TenantHubAgent {
+  id: string;
+  name: string;
+  online: boolean;
 }
 
-/** A run as the hub projects it. This is metadata about a run, not the run's state. */
+export interface TenantHubStage {
+  id: string;
+  status: string;
+  attempts?: number | undefined;
+}
+
+/**
+ * A run as the hub records it. The hub mints its own run ids at workflow start; this is a
+ * hub workflow run — metadata about work, not the Runtime's state for it.
+ */
 export interface TenantHubRun {
   id: string;
   status: string;
   definitionId: string;
   currentStage?: string | undefined;
+  targetAgentName?: string | undefined;
   updatedAt?: string | undefined;
+  progress?: { done: number; total: number };
+  stages?: TenantHubStage[];
   source: "hub-projection";
+}
+
+export interface TenantHubPlan {
+  id: string;
+  runId: string;
+  summary: string;
+  createdAt: string;
+  stageId?: string | undefined;
+  severity?: string | undefined;
 }
 
 export interface TenantHubValue {
   project: string;
   fetchedAt: string;
-  agents: TenantHubAgents;
+  agents: TenantHubAgent[];
   openMessageTotal: number;
   runTotal: number;
   runs: TenantHubRun[];
+  plans: TenantHubPlan[];
 }
 
 /** A run as the Runtime that owns it records it. This is the authoritative state. */
@@ -54,6 +77,9 @@ export interface TenantRuntimeRun {
   workflowId?: string | undefined;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
+  /** Set when the stored row exists but the event-log fold refused; `status` is then the
+   * cached row, and a consumer must not present it as folded state. */
+  projectionError?: string | undefined;
   source: "runtime-authoritative";
 }
 
@@ -67,6 +93,21 @@ export interface TenantRunDiscrepancy {
   runtimeStatus: string;
 }
 
+/**
+ * Cross-check between the two run populations. Hub runs and Runtime runs mint their ids
+ * independently (`newId("run")` on each side), so an id appearing in both means a hub run
+ * that this box drove — and only then is a status comparison meaningful. With no overlap
+ * the comparison is **unverified, not agreed**: "no matching ids" says the populations did
+ * not intersect, nothing more, and reporting agreement there would fabricate a green light
+ * out of an empty set.
+ */
+export interface TenantRunComparison {
+  state: "compared" | "unverified" | "unavailable";
+  reason?: string;
+  matched?: number;
+  discrepancies?: TenantRunDiscrepancy[];
+}
+
 export interface TenantStatusPayload {
   schema: typeof TENANT_STATUS_SCHEMA;
   project: string;
@@ -76,9 +117,7 @@ export interface TenantStatusPayload {
   bindingScope: "loopback" | "remote";
   hub: TenantSource<TenantHubValue>;
   runtime: TenantSource<TenantRuntimeValue>;
-  /** Runs both sources know about whose recorded statuses disagree. Informational: the two
-   * vocabularies are set by their owners, and a mismatch is data, not a verdict. */
-  discrepancies: TenantRunDiscrepancy[];
+  runComparison: TenantRunComparison;
   /** True when any source is unavailable. Assembling a payload is not the same as seeing. */
   degraded: boolean;
 }
@@ -87,14 +126,7 @@ export interface TenantStatusRuntimeReader {
   listRuns(): Promise<TenantRuntimeRun[]>;
 }
 
-interface HubSnapshotBody {
-  project?: unknown;
-  fetchedAt?: unknown;
-  agents?: unknown;
-  openMessageTotal?: unknown;
-  runTotal?: unknown;
-  runs?: unknown;
-}
+const DEFAULT_HUB_TIMEOUT_MS = 5_000;
 
 function hubSourceReason(status: number): string {
   if (status === 401 || status === 403) return "hub_unauthorized";
@@ -106,93 +138,163 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * Compose the tenant view from the two authorities that actually hold the data.
  *
- * The hub is read over HTTP (`/v1/ops/snapshot`, admin token); the Runtime is read through
- * an injected reader so this function stays pure and testable — the CLI passes a reader
- * that attaches to the live supervisor, and a test passes whatever it likes. Neither
- * source's failure affects the other: the payload reports both and sets `degraded`.
+ * Both sources are read **concurrently and independently**: a hub that hangs to its
+ * deadline cannot delay or suppress the Runtime half of the view, and a Runtime that is
+ * not running cannot take the hub metadata down with it. The hub is read over HTTP
+ * (`/v1/ops/snapshot`, admin credential); the Runtime is read through an injected reader
+ * so this function stays pure and testable — the CLI passes a reader that attaches to the
+ * live supervisor, and a test passes whatever it likes.
  */
 export async function assembleTenantStatus(input: {
   project: string;
   hubUrl: string;
-  token?: string | undefined;
+  /** Resolves the admin credential. May throw on a malformed persisted record; that
+   * failure belongs to the hub source alone and never aborts the Runtime read. */
+  resolveAdminToken: () => string | undefined;
   fetchImpl: typeof fetch;
   runtime: TenantStatusRuntimeReader;
+  hubTimeoutMs?: number | undefined;
   now?: () => Date;
 }): Promise<TenantStatusPayload> {
   const now = input.now ?? ((): Date => new Date());
   const base = input.hubUrl.replace(/\/$/, "");
   const at = (): string => now().toISOString();
 
-  let hub: TenantSource<TenantHubValue> = { state: "unavailable", observedAt: at(), reason: "hub_unreachable" };
-  try {
-    const response = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
-      headers: {
-        ...(input.token ? { authorization: `Bearer ${input.token}` } : {}),
-      },
-    });
-    if (!response.ok) {
-      hub = { state: "unavailable", observedAt: at(), reason: hubSourceReason(response.status) };
-    } else {
-      const body = (await response.json()) as HubSnapshotBody;
-      const echoedProject = asString(body.project);
-      if (echoedProject !== undefined && echoedProject !== input.project) {
-        hub = { state: "unavailable", observedAt: at(), reason: "hub_project_mismatch" };
-      } else {
-        const agents = Array.isArray(body.agents) ? body.agents : [];
-        const runs = (Array.isArray(body.runs) ? body.runs : []) as Array<Record<string, unknown>>;
-        hub = {
-          state: "ok",
-          observedAt: at(),
-          value: {
-            project: echoedProject ?? input.project,
-            fetchedAt: asString(body.fetchedAt) ?? at(),
-            agents: {
-              online: agents.filter((agent) => (agent as Record<string, unknown>).online === true).length,
-              total: agents.length,
-            },
-            openMessageTotal: typeof body.openMessageTotal === "number" ? body.openMessageTotal : 0,
-            runTotal: typeof body.runTotal === "number" ? body.runTotal : runs.length,
-            runs: runs.map((run) => ({
-              id: asString(run.id) ?? "",
-              status: asString(run.status) ?? "unknown",
-              definitionId: asString(run.definitionId) ?? "",
-              ...(asString(run.currentStage) ? { currentStage: asString(run.currentStage) } : {}),
-              ...(asString(run.updatedAt) ? { updatedAt: asString(run.updatedAt) } : {}),
-              source: "hub-projection" as const,
-            })),
-          },
-        };
-      }
+  const readHub = async (): Promise<TenantSource<TenantHubValue>> => {
+    const attemptedAt = at();
+    let token: string | undefined;
+    try {
+      token = input.resolveAdminToken();
+    } catch (error) {
+      // A malformed hub-env record is a configuration failure with a specific repair.
+      // It belongs to this source; the Runtime read proceeds regardless.
+      void error;
+      return { state: "unavailable", observedAt: attemptedAt, reason: "hub_credential_unreadable" };
     }
-  } catch {
-    hub = { state: "unavailable", observedAt: at(), reason: "hub_unreachable" };
-  }
+    try {
+      const response = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(input.hubTimeoutMs ?? DEFAULT_HUB_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        return { state: "unavailable", observedAt: attemptedAt, reason: hubSourceReason(response.status) };
+      }
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        // Reachable but not a JSON document: a different failure than a dead socket.
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
+      }
+      if (!isObject(body)
+        || typeof body.project !== "string"
+        || typeof body.fetchedAt !== "string"
+        || !Array.isArray(body.agents)
+        || !Array.isArray(body.runs)
+        || !Array.isArray(body.plans ?? [])
+        || typeof body.openMessageTotal !== "number"
+        || typeof body.runTotal !== "number") {
+        // A 200 with an unusable body must not become a healthy empty snapshot.
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
+      }
+      if (body.project !== input.project) {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_project_mismatch" };
+      }
+      const runRows = body.runs.filter(isObject);
+      const value: TenantHubValue = {
+        project: body.project,
+        fetchedAt: body.fetchedAt,
+        agents: body.agents.filter(isObject).map((agent) => ({
+          id: asString(agent.id) ?? "",
+          name: asString(agent.name) ?? "",
+          online: agent.online === true,
+        })),
+        openMessageTotal: body.openMessageTotal,
+        runTotal: body.runTotal,
+        runs: runRows.map((run) => {
+          const stages = Array.isArray(run.stages)
+            ? run.stages.filter(isObject).map((stage) => ({
+              id: asString(stage.id) ?? "",
+              status: asString(stage.status) ?? "unknown",
+              ...(typeof stage.attempts === "number" ? { attempts: stage.attempts } : {}),
+            }))
+            : undefined;
+          const done = stages?.filter((stage) => stage.status === "passed" || stage.status === "failed" || stage.status === "warning").length;
+          return {
+            id: asString(run.id) ?? "",
+            status: asString(run.status) ?? "unknown",
+            definitionId: asString(run.definitionId) ?? "",
+            ...(asString(run.currentStage) ? { currentStage: asString(run.currentStage) } : {}),
+            ...(asString(run.targetAgentName) ? { targetAgentName: asString(run.targetAgentName) } : {}),
+            ...(asString(run.updatedAt) ? { updatedAt: asString(run.updatedAt) } : {}),
+            ...(stages !== undefined ? { progress: { done: done ?? 0, total: stages.length }, stages } : {}),
+            source: "hub-projection" as const,
+          };
+        }),
+        plans: (Array.isArray(body.plans) ? body.plans : []).filter(isObject).map((plan) => ({
+          id: asString(plan.id) ?? "",
+          runId: asString(plan.runId) ?? "",
+          summary: asString(plan.summary) ?? "",
+          createdAt: asString(plan.createdAt) ?? "",
+          ...(asString(plan.stageId) ? { stageId: asString(plan.stageId) } : {}),
+          ...(asString(plan.severity) ? { severity: asString(plan.severity) } : {}),
+        })),
+      };
+      return { state: "ok", observedAt: attemptedAt, value };
+    } catch (error) {
+      const name = error instanceof Error ? error.name : undefined;
+      if (name === "TimeoutError" || name === "AbortError") {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_timeout" };
+      }
+      return { state: "unavailable", observedAt: attemptedAt, reason: "hub_unreachable" };
+    }
+  };
 
-  let runtime: TenantSource<TenantRuntimeValue> = { state: "unavailable", observedAt: at(), reason: "runtime_unavailable" };
-  try {
-    const runs = await input.runtime.listRuns();
-    runtime = { state: "ok", observedAt: at(), value: { runs } };
-  } catch (error) {
-    const code = error instanceof Error && "issues" in error
-      && Array.isArray((error as { issues: Array<{ code?: unknown }> }).issues)
-      && typeof (error as { issues: Array<{ code?: unknown }> }).issues[0]?.code === "string"
-      ? (error as { issues: Array<{ code: string }> }).issues[0]!.code
-      : undefined;
-    runtime = { state: "unavailable", observedAt: at(), reason: code ?? "runtime_unavailable" };
-  }
+  const readRuntime = async (): Promise<TenantSource<TenantRuntimeValue>> => {
+    const attemptedAt = at();
+    try {
+      const runs = await input.runtime.listRuns();
+      return { state: "ok", observedAt: attemptedAt, value: { runs } };
+    } catch (error) {
+      const code = error instanceof Error && "issues" in error
+        && Array.isArray((error as { issues: Array<{ code?: unknown }> }).issues)
+        && typeof (error as { issues: Array<{ code?: unknown }> }).issues[0]?.code === "string"
+        ? (error as { issues: Array<{ code: string }> }).issues[0]!.code
+        : undefined;
+      return { state: "unavailable", observedAt: attemptedAt, reason: code ?? "runtime_unavailable" };
+    }
+  };
 
-  const discrepancies: TenantRunDiscrepancy[] = [];
-  if (hub.value && runtime.value) {
+  const [hub, runtime] = await Promise.all([readHub(), readRuntime()]);
+
+  let runComparison: TenantRunComparison;
+  if (!hub.value || !runtime.value) {
+    runComparison = {
+      state: "unavailable",
+      reason: !hub.value ? `hub_${hub.reason ?? "unavailable"}` : `runtime_${runtime.reason ?? "unavailable"}`,
+    };
+  } else {
     const authoritative = new Map(runtime.value.runs.map((run) => [run.runId, run.status] as const));
+    const discrepancies: TenantRunDiscrepancy[] = [];
+    let matched = 0;
     for (const projected of hub.value.runs) {
       const runtimeStatus = authoritative.get(projected.id);
-      if (runtimeStatus !== undefined && runtimeStatus !== projected.status) {
+      if (runtimeStatus === undefined) continue;
+      matched += 1;
+      if (runtimeStatus !== projected.status) {
         discrepancies.push({ runId: projected.id, hubStatus: projected.status, runtimeStatus });
       }
     }
+    runComparison = matched === 0
+      ? { state: "unverified", reason: "run_identity_link_absent", matched: 0 }
+      : { state: "compared", matched, ...(discrepancies.length > 0 ? { discrepancies } : {}) };
   }
 
   return {
@@ -203,7 +305,7 @@ export async function assembleTenantStatus(input: {
     bindingScope: hubBindingScope(input.hubUrl),
     hub,
     runtime,
-    discrepancies,
+    runComparison,
     degraded: hub.state !== "ok" || runtime.state !== "ok",
   };
 }
@@ -211,18 +313,22 @@ export async function assembleTenantStatus(input: {
 /** One line per source for humans; the portal reads the JSON, operators read this. */
 export function formatTenantStatus(payload: TenantStatusPayload): string {
   const hubLine = payload.hub.state === "ok" && payload.hub.value
-    ? `hub ${payload.hub.value.agents.online}/${payload.hub.value.agents.total} agents online, ${payload.hub.value.runs.length} runs (projection), ${payload.hub.value.openMessageTotal} open messages`
+    ? `hub ${payload.hub.value.agents.filter((agent) => agent.online).length}/${payload.hub.value.agents.length} agents online, ${payload.hub.value.runs.length} hub runs, ${payload.hub.value.openMessageTotal} open messages`
     : `hub unavailable (${payload.hub.reason ?? "unknown"})`;
   const runtimeLine = payload.runtime.state === "ok" && payload.runtime.value
     ? `runtime ${payload.runtime.value.runs.length} runs (authoritative, on this box)`
     : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
-  const discrepancyLine = payload.discrepancies.length > 0
-    ? `${payload.discrepancies.length} run(s) disagree between hub projection and runtime state`
-    : "hub projection and runtime state agree";
+  const comparisonLine = payload.runComparison.state === "compared"
+    ? payload.runComparison.discrepancies && payload.runComparison.discrepancies.length > 0
+      ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree`
+      : `cross-check: ${payload.runComparison.matched} matched run(s) agree`
+    : payload.runComparison.state === "unverified"
+      ? "cross-check: unavailable — no run id appears in both sources (independent id spaces)"
+      : `cross-check: unavailable (${payload.runComparison.reason ?? "unknown"})`;
   return [
     `tenant ${payload.project} @ ${payload.hubUrl} (${payload.bindingScope})`,
     hubLine,
     runtimeLine,
-    discrepancyLine,
+    comparisonLine,
   ].join("\n");
 }

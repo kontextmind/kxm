@@ -43,10 +43,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   `unavailable` with a stable reason instead of being filled from the surviving source;
   projection/authoritative disagreements are listed as `discrepancies` rather than averaged;
   and `degraded` marks a partial read so `ok: true` never means "everything was seen". The
-  hub read reuses the existing admin-token precedence; the Runtime read **attaches** to a
-  live supervisor (`attachKxmSupervisor`, new) and never starts one — a portal poller must
-  not conjure a daemon, and "nothing is running" is an answer to render, not a condition to
-  repair. Exits non-zero only when neither source could be read.
+  hub read resolves the **admin** credential only — a project token would 401 on the snapshot route —
+  and a malformed persisted record degrades that one source as `hub_credential_unreadable` rather than
+  aborting the Runtime read with it. Reads run concurrently with a 5 s hub deadline, a 200 with an
+  unusable body is `hub_response_invalid` rather than a healthy empty snapshot, and Runtime rows are
+  event-log folded (the listing endpoint now folds, so a cached row can no longer be presented as
+  state). The cross-check is honest about id spaces: hub runs and Runtime runs mint ids independently,
+  so zero shared ids reports `unverified` (`run_identity_link_absent`) — never agreement — and only
+  shared ids are compared. The Runtime read **attaches** to a live supervisor
+  (`attachKxmSupervisor`, new) and never starts one — a portal poller must not conjure a daemon, and
+  "nothing is running" is an answer to render, not a condition to repair. Exits non-zero only when
+  neither source could be read.
 
 - **A Pi producer reply can no longer mint its own success.** `determineOutcome` scanned the
   reply for any declared outcome *word* and, failing that, returned `passed`. So

@@ -19678,6 +19678,11 @@ function resolveClientHubAuthToken(env, project) {
   const record = readHubEnvRecord(env);
   return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || void 0;
 }
+function resolveClientAdminAuthToken(env = process.env) {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  return readHubEnvRecord(env)?.authToken?.trim() || void 0;
+}
 
 // plugins/kxm/src/project-name.ts
 import { readFileSync as readFileSync3 } from "node:fs";
@@ -31772,6 +31777,7 @@ function initializeKxmProject(start = process.cwd(), options = {}) {
 
 // plugins/kxm/src/tenant-status.ts
 var TENANT_STATUS_SCHEMA = "kxm.tenant-status.v1";
+var DEFAULT_HUB_TIMEOUT_MS = 5e3;
 function hubSourceReason(status) {
   if (status === 401 || status === 403) return "hub_unauthorized";
   if (status === 404) return "hub_not_found";
@@ -31780,71 +31786,119 @@ function hubSourceReason(status) {
 function asString(value) {
   return typeof value === "string" && value.length > 0 ? value : void 0;
 }
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 async function assembleTenantStatus(input) {
   const now = input.now ?? (() => /* @__PURE__ */ new Date());
   const base = input.hubUrl.replace(/\/$/, "");
   const at = () => now().toISOString();
-  let hub = { state: "unavailable", observedAt: at(), reason: "hub_unreachable" };
-  try {
-    const response = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
-      headers: {
-        ...input.token ? { authorization: `Bearer ${input.token}` } : {}
-      }
-    });
-    if (!response.ok) {
-      hub = { state: "unavailable", observedAt: at(), reason: hubSourceReason(response.status) };
-    } else {
-      const body = await response.json();
-      const echoedProject = asString(body.project);
-      if (echoedProject !== void 0 && echoedProject !== input.project) {
-        hub = { state: "unavailable", observedAt: at(), reason: "hub_project_mismatch" };
-      } else {
-        const agents = Array.isArray(body.agents) ? body.agents : [];
-        const runs = Array.isArray(body.runs) ? body.runs : [];
-        hub = {
-          state: "ok",
-          observedAt: at(),
-          value: {
-            project: echoedProject ?? input.project,
-            fetchedAt: asString(body.fetchedAt) ?? at(),
-            agents: {
-              online: agents.filter((agent) => agent.online === true).length,
-              total: agents.length
-            },
-            openMessageTotal: typeof body.openMessageTotal === "number" ? body.openMessageTotal : 0,
-            runTotal: typeof body.runTotal === "number" ? body.runTotal : runs.length,
-            runs: runs.map((run) => ({
-              id: asString(run.id) ?? "",
-              status: asString(run.status) ?? "unknown",
-              definitionId: asString(run.definitionId) ?? "",
-              ...asString(run.currentStage) ? { currentStage: asString(run.currentStage) } : {},
-              ...asString(run.updatedAt) ? { updatedAt: asString(run.updatedAt) } : {},
-              source: "hub-projection"
-            }))
-          }
-        };
-      }
+  const readHub = async () => {
+    const attemptedAt = at();
+    let token;
+    try {
+      token = input.resolveAdminToken();
+    } catch (error) {
+      void error;
+      return { state: "unavailable", observedAt: attemptedAt, reason: "hub_credential_unreadable" };
     }
-  } catch {
-    hub = { state: "unavailable", observedAt: at(), reason: "hub_unreachable" };
-  }
-  let runtime = { state: "unavailable", observedAt: at(), reason: "runtime_unavailable" };
-  try {
-    const runs = await input.runtime.listRuns();
-    runtime = { state: "ok", observedAt: at(), value: { runs } };
-  } catch (error) {
-    const code = error instanceof Error && "issues" in error && Array.isArray(error.issues) && typeof error.issues[0]?.code === "string" ? error.issues[0].code : void 0;
-    runtime = { state: "unavailable", observedAt: at(), reason: code ?? "runtime_unavailable" };
-  }
-  const discrepancies = [];
-  if (hub.value && runtime.value) {
+    try {
+      const response = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(input.hubTimeoutMs ?? DEFAULT_HUB_TIMEOUT_MS)
+      });
+      if (!response.ok) {
+        return { state: "unavailable", observedAt: attemptedAt, reason: hubSourceReason(response.status) };
+      }
+      let body;
+      try {
+        body = await response.json();
+      } catch {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
+      }
+      if (!isObject(body) || typeof body.project !== "string" || typeof body.fetchedAt !== "string" || !Array.isArray(body.agents) || !Array.isArray(body.runs) || !Array.isArray(body.plans ?? []) || typeof body.openMessageTotal !== "number" || typeof body.runTotal !== "number") {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
+      }
+      if (body.project !== input.project) {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_project_mismatch" };
+      }
+      const runRows = body.runs.filter(isObject);
+      const value = {
+        project: body.project,
+        fetchedAt: body.fetchedAt,
+        agents: body.agents.filter(isObject).map((agent) => ({
+          id: asString(agent.id) ?? "",
+          name: asString(agent.name) ?? "",
+          online: agent.online === true
+        })),
+        openMessageTotal: body.openMessageTotal,
+        runTotal: body.runTotal,
+        runs: runRows.map((run) => {
+          const stages = Array.isArray(run.stages) ? run.stages.filter(isObject).map((stage) => ({
+            id: asString(stage.id) ?? "",
+            status: asString(stage.status) ?? "unknown",
+            ...typeof stage.attempts === "number" ? { attempts: stage.attempts } : {}
+          })) : void 0;
+          const done = stages?.filter((stage) => stage.status === "passed" || stage.status === "failed" || stage.status === "warning").length;
+          return {
+            id: asString(run.id) ?? "",
+            status: asString(run.status) ?? "unknown",
+            definitionId: asString(run.definitionId) ?? "",
+            ...asString(run.currentStage) ? { currentStage: asString(run.currentStage) } : {},
+            ...asString(run.targetAgentName) ? { targetAgentName: asString(run.targetAgentName) } : {},
+            ...asString(run.updatedAt) ? { updatedAt: asString(run.updatedAt) } : {},
+            ...stages !== void 0 ? { progress: { done: done ?? 0, total: stages.length }, stages } : {},
+            source: "hub-projection"
+          };
+        }),
+        plans: (Array.isArray(body.plans) ? body.plans : []).filter(isObject).map((plan) => ({
+          id: asString(plan.id) ?? "",
+          runId: asString(plan.runId) ?? "",
+          summary: asString(plan.summary) ?? "",
+          createdAt: asString(plan.createdAt) ?? "",
+          ...asString(plan.stageId) ? { stageId: asString(plan.stageId) } : {},
+          ...asString(plan.severity) ? { severity: asString(plan.severity) } : {}
+        }))
+      };
+      return { state: "ok", observedAt: attemptedAt, value };
+    } catch (error) {
+      const name = error instanceof Error ? error.name : void 0;
+      if (name === "TimeoutError" || name === "AbortError") {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_timeout" };
+      }
+      return { state: "unavailable", observedAt: attemptedAt, reason: "hub_unreachable" };
+    }
+  };
+  const readRuntime = async () => {
+    const attemptedAt = at();
+    try {
+      const runs = await input.runtime.listRuns();
+      return { state: "ok", observedAt: attemptedAt, value: { runs } };
+    } catch (error) {
+      const code = error instanceof Error && "issues" in error && Array.isArray(error.issues) && typeof error.issues[0]?.code === "string" ? error.issues[0].code : void 0;
+      return { state: "unavailable", observedAt: attemptedAt, reason: code ?? "runtime_unavailable" };
+    }
+  };
+  const [hub, runtime] = await Promise.all([readHub(), readRuntime()]);
+  let runComparison;
+  if (!hub.value || !runtime.value) {
+    runComparison = {
+      state: "unavailable",
+      reason: !hub.value ? `hub_${hub.reason ?? "unavailable"}` : `runtime_${runtime.reason ?? "unavailable"}`
+    };
+  } else {
     const authoritative = new Map(runtime.value.runs.map((run) => [run.runId, run.status]));
+    const discrepancies = [];
+    let matched = 0;
     for (const projected of hub.value.runs) {
       const runtimeStatus = authoritative.get(projected.id);
-      if (runtimeStatus !== void 0 && runtimeStatus !== projected.status) {
+      if (runtimeStatus === void 0) continue;
+      matched += 1;
+      if (runtimeStatus !== projected.status) {
         discrepancies.push({ runId: projected.id, hubStatus: projected.status, runtimeStatus });
       }
     }
+    runComparison = matched === 0 ? { state: "unverified", reason: "run_identity_link_absent", matched: 0 } : { state: "compared", matched, ...discrepancies.length > 0 ? { discrepancies } : {} };
   }
   return {
     schema: TENANT_STATUS_SCHEMA,
@@ -31854,19 +31908,19 @@ async function assembleTenantStatus(input) {
     bindingScope: hubBindingScope(input.hubUrl),
     hub,
     runtime,
-    discrepancies,
+    runComparison,
     degraded: hub.state !== "ok" || runtime.state !== "ok"
   };
 }
 function formatTenantStatus(payload) {
-  const hubLine = payload.hub.state === "ok" && payload.hub.value ? `hub ${payload.hub.value.agents.online}/${payload.hub.value.agents.total} agents online, ${payload.hub.value.runs.length} runs (projection), ${payload.hub.value.openMessageTotal} open messages` : `hub unavailable (${payload.hub.reason ?? "unknown"})`;
+  const hubLine = payload.hub.state === "ok" && payload.hub.value ? `hub ${payload.hub.value.agents.filter((agent) => agent.online).length}/${payload.hub.value.agents.length} agents online, ${payload.hub.value.runs.length} hub runs, ${payload.hub.value.openMessageTotal} open messages` : `hub unavailable (${payload.hub.reason ?? "unknown"})`;
   const runtimeLine = payload.runtime.state === "ok" && payload.runtime.value ? `runtime ${payload.runtime.value.runs.length} runs (authoritative, on this box)` : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
-  const discrepancyLine = payload.discrepancies.length > 0 ? `${payload.discrepancies.length} run(s) disagree between hub projection and runtime state` : "hub projection and runtime state agree";
+  const comparisonLine = payload.runComparison.state === "compared" ? payload.runComparison.discrepancies && payload.runComparison.discrepancies.length > 0 ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree` : `cross-check: ${payload.runComparison.matched} matched run(s) agree` : payload.runComparison.state === "unverified" ? "cross-check: unavailable \u2014 no run id appears in both sources (independent id spaces)" : `cross-check: unavailable (${payload.runComparison.reason ?? "unknown"})`;
   return [
     `tenant ${payload.project} @ ${payload.hubUrl} (${payload.bindingScope})`,
     hubLine,
     runtimeLine,
-    discrepancyLine
+    comparisonLine
   ].join("\n");
 }
 
@@ -32369,16 +32423,13 @@ async function cmdTenantStatus(runtime) {
     const bundle = loadKxmProject(projectRoot, {});
     projectId = String(bundle.project.value.id);
     const root = projectRoot;
-    let token;
-    try {
-      token = resolveClientHubAuthToken(runtime.env, projectId);
-    } catch (error) {
-      throw runtimeError("hub_credential_unreadable", "hub-env", error instanceof Error ? error.message : String(error));
-    }
     const payload = await assembleTenantStatus({
       project: projectId,
       hubUrl: runtime.serverUrl,
-      token,
+      // Admin-scoped route: resolve the admin credential only (a project token would 401),
+      // and resolve it inside the hub source so a malformed persisted record degrades that
+      // one source instead of aborting the Runtime read with it.
+      resolveAdminToken: () => resolveClientAdminAuthToken(runtime.env),
       fetchImpl: runtime.fetchImpl,
       runtime: {
         listRuns: async () => {
@@ -32395,6 +32446,7 @@ async function cmdTenantStatus(runtime) {
             ...typeof run.workflowId === "string" ? { workflowId: run.workflowId } : {},
             ...typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {},
             ...typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {},
+            ...typeof run.projectionError === "string" ? { projectionError: run.projectionError } : {},
             source: "runtime-authoritative"
           }));
         }

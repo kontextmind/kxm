@@ -583,6 +583,67 @@ test("the deleted kxm migrate surface stays deleted: unknown command, not a sile
   assert.doesNotMatch(`${out.stdout}${out.stderr}`, /"action":"applied"|migration-plan/, "no migration payload may still be produced");
 });
 
+test("kxm tenant status reports each source independently and never starts a supervisor", async () => {
+  // CLI-level matrix for the portal read: the module test proves composition; this one
+  // proves the command itself — its exit codes, its reasons through the real credential and
+  // attach paths, and that the labelling is applied by the CLI mapping rather than supplied
+  // by a fixture. The supervisor assertion is the attach-only rule: `runtime_supervisor_not_running`
+  // can only come from attach refusing, because the ensure path would have started one.
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-tenant-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-tenant-cli-state-"));
+  const elsewhere = mkdtempSync(join(tmpdir(), "kxm-tenant-elsewhere-"));
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JTENANTCLITEST000000000", projectName: "Tenant CLI" });
+
+    const noProjectIo = capture();
+    assert.equal(await runCli(["tenant", "status", "--json"], {}, noProjectIo, elsewhere), 1);
+    assert.match(noProjectIo.read().stderr, /project_required/);
+
+    const env = { KXM_STATE_HOME: stateRoot, KXM_SERVER_URL: "http://127.0.0.1:9" };
+    const downIo = capture();
+    assert.equal(await runCli(["tenant", "status", "--json"], env, downIo, cwd), 1, "neither source readable must exit non-zero");
+    const down = JSON.parse(downIo.read().stderr) as {
+      error: string;
+      payload: { hub: { reason: string }; runtime: { reason: string }; degraded: boolean };
+    };
+    assert.equal(down.error, "tenant_status_no_source");
+    assert.equal(down.payload.hub.reason, "hub_unreachable");
+    assert.equal(down.payload.runtime.reason, "runtime_supervisor_not_running", "a read attaches; it never conjures a supervisor");
+    assert.equal(down.payload.degraded, true);
+
+    const snapshot = {
+      project: "prj_01JTENANTCLITEST000000000",
+      fetchedAt: "2026-09-20T12:00:00.000Z",
+      agents: [{ id: "a1", name: "coordinator", online: true }],
+      openMessageTotal: 0,
+      runTotal: 1,
+      runs: [{ id: "run_x", status: "running", definitionId: "default" }],
+      plans: [],
+    };
+    const partialIo = capture();
+    assert.equal(
+      await runCli(["tenant", "status", "--json"], env, { ...partialIo, fetchImpl: async () => new Response(JSON.stringify(snapshot), { status: 200 }) }, cwd),
+      0,
+      "a partial read is a successful read of what was seen",
+    );
+    const partial = JSON.parse(partialIo.read().stdout) as {
+      ok: boolean;
+      hub: { state: string; value: { runs: Array<{ source: string }> } };
+      runtime: { state: string; reason: string };
+      degraded: boolean;
+    };
+    assert.equal(partial.ok, true);
+    assert.equal(partial.hub.state, "ok");
+    assert.equal(partial.hub.value.runs[0]?.source, "hub-projection", "the label comes from the CLI mapping, not a fixture");
+    assert.equal(partial.runtime.state, "unavailable");
+    assert.equal(partial.runtime.reason, "runtime_supervisor_not_running");
+    assert.equal(partial.degraded, true);
+  } finally {
+    for (const dir of [cwd, stateRoot, elsewhere]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("kxm run creates, lists, shows, and cancels a run offline with an auto-started supervisor", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "kxm-run-cli-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-cli-state-"));

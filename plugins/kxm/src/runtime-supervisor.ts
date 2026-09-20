@@ -680,7 +680,25 @@ async function startKxmRuntimeSupervisorInner(
             sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: `project ${requestedProjectId} is not the bound project ${context.projectId}` });
             return;
           }
-          const runs = context.eventStore.runsForProject(requestedProjectId, 50);
+          // The stored `runs` row is a cache, not the state: per-run reads fold the event
+          // log (`projectKxmRunReadOnly`) precisely because the row can be stale. A listing
+          // that returned raw rows would let every consumer — including the portal's
+          // tenant read — present cached status as authoritative. Folding replays each
+          // run's events; workflows are transition-bounded, so this stays cheap at the
+          // 50-run cap. A run that refuses to fold is returned with its cached row plus
+          // `projectionError`, so one corrupt run cannot make the listing lie by omission.
+          const runs = context.eventStore.runsForProject(requestedProjectId, 50).map((stored) => {
+            try {
+              return projectKxmRunReadOnly(context, stored.runId);
+            } catch (error) {
+              return {
+                ...stored,
+                projectionError: error instanceof KxmConfigError
+                  ? (error.issues[0]?.code ?? "runtime_projection_failed")
+                  : "runtime_projection_failed",
+              };
+            }
+          });
           sendJson(response, 200, { ok: true, runs });
           return;
         }

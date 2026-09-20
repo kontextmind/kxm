@@ -27767,7 +27767,16 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
             sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: `project ${requestedProjectId} is not the bound project ${context.projectId}` });
             return;
           }
-          const runs = context.eventStore.runsForProject(requestedProjectId, 50);
+          const runs = context.eventStore.runsForProject(requestedProjectId, 50).map((stored) => {
+            try {
+              return projectKxmRunReadOnly(context, stored.runId);
+            } catch (error) {
+              return {
+                ...stored,
+                projectionError: error instanceof KxmConfigError ? error.issues[0]?.code ?? "runtime_projection_failed" : "runtime_projection_failed"
+              };
+            }
+          });
           sendJson(response, 200, { ok: true, runs });
           return;
         }
