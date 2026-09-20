@@ -776,10 +776,51 @@ test("a throttle armed by one clock cannot contaminate another, nor be cleared b
         let counted = 0;
         const countingClock = () => { counted += 1; return Number(process.hrtime.bigint() / 1_000_000n); };
         const arm = () => captureError(() => withDatabaseTransaction(busy, () => "x", "IMMEDIATE", countingClock));
+        void counted;
         assert.match(String(arm().error), /blocked by another transaction/);
         assert.equal(counted, 1, `arming must read the clock exactly once, saw ${String(counted)}`);
         assert.match(String(arm().error), /retry deferred/);
         assert.equal(counted, 2, `refusing must read the clock exactly once, saw ${String(counted)}`);
+        // Expired deadline followed by renewed contention: the expiry check reads once,
+        // then arming reads again. This is the path the earlier "consulted twice" prose
+        // quietly ignored, and the reason the claim is now a counted table.
+        // An expired deadline followed by renewed contention reads **twice in that
+        // call** — once to discover the deadline is gone, once to arm the new one. The
+        // earlier prose ("consulted twice") implied a global budget and hid this path;
+        // the assertion is a delta on a stepped clock, not a sleep.
+        let stepped = 0;
+        let stepReads = 0;
+        const stepClock = () => { stepReads += 1; return stepped; };
+        assert.match(String(captureError(() => withDatabaseTransaction(busy, () => "x", "IMMEDIATE", stepClock)).error),
+          /blocked by another transaction/);
+        assert.equal(stepReads, 1, `arming on a fresh domain reads once, saw ${String(stepReads)}`);
+        stepped = TRANSACTION_BUSY_BACKOFF_MS;
+        stepReads = 0;
+        assert.match(String(captureError(() => withDatabaseTransaction(busy, () => "x", "IMMEDIATE", stepClock)).error),
+          /blocked by another transaction/);
+        assert.equal(stepReads, 2,
+          `an expired deadline followed by renewed contention reads twice in that call, saw ${String(stepReads)}`);
+        // Zero-read paths: a nested rejection and a permanent BEGIN failure never reach a
+        // reading, which is what makes the old "only an uncontended success skips it"
+        // wording wrong in the other direction.
+        let untouched = 0;
+        const counting2 = () => { untouched += 1; return Number(process.hrtime.bigint() / 1_000_000n); };
+        assert.match(String(captureError(() => withDatabaseTransaction(busy, () => {
+          withDatabaseTransaction(busy, () => 1, "IMMEDIATE", counting2);
+        }, "DEFERRED", counting2)).error), /runtime_transaction_nested/);
+        assert.equal(untouched, 0, `a nested rejection must read the clock zero times, saw ${String(untouched)}`);
+        const permanent = new KxmDatabaseSync(":memory:");
+        try {
+          permanent.exec("BEGIN IMMEDIATE");
+          let permanentReads = 0;
+          const permanentClock = () => { permanentReads += 1; return Number.NaN; };
+          assert.match(String(captureError(() => withDatabaseTransaction(permanent, () => 1, "IMMEDIATE", permanentClock)).error),
+            /cannot start a transaction within a transaction/);
+          assert.equal(permanentReads, 0,
+            `a permanent BEGIN failure must read the clock zero times, saw ${String(permanentReads)}`);
+        } finally {
+          permanent.close();
+        }
       } finally {
         try { locker.exec("ROLLBACK"); } catch { /* closed below */ }
         busy.close();
@@ -947,6 +988,18 @@ test("contention is decided by SQLite's result code, not by whoever quoted a mes
     { errcode: 0 })), false, "SQLITE_OK is a result, not an absent code");
   assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
     { errcode: 0, code: "SQLITE_FULL" })), false, "a zero number still beats the text");
+  assert.equal(isTransactionContention(Object.assign(new Error("database is locked"),
+    { errcode: 0, code: "SQLITE_BUSY" })), false, "and a zero still beats a contention name");
+
+  // `errCode` had no fixture of its own, so moving or deleting it was untested.
+  assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
+    { errcode: 13, errCode: 5 })), false, "`errcode` is consulted before `errCode`");
+  assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
+    { errCode: 13, errno: 5 })), false, "`errCode` before `errno`");
+  assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
+    { errCode: 5, errcode: 13 })), false, "the first field in the list is the only one read");
+  assert.equal(isTransactionContention(Object.assign(new Error("whatever the text says"),
+    { errCode: 5 })), true, "and `errCode` is consulted at all, not merely tolerated");
 
   // No numeric or symbolic code at all (a plain Error): text decides.
   assert.equal(isTransactionContention(new Error("database is locked")), true);

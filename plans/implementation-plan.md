@@ -505,10 +505,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   deadline can only be read, expired or replaced by the clock that armed it — and a
   non-finite reading throws `runtime_transaction_clock_invalid` instead of silently
   meaning "no throttle" — at the points where throttle state is read or armed, which
-  is the honest scope: the clock is read in two places — to check a pending deadline and
-  to arm a fresh one — so the only transaction that never consults it is a **successful
-  `BEGIN` with no pending deadline**, which is the qualification round 8 asked for after
-  two earlier wordings of mine were still not precise enough. That is the shape the
+  is the honest scope, stated as counted rather than as a slogan: the clock is read at
+  **two call sites** (checking a pending deadline; arming after a contended failure), and
+  the per-path read counts — 0 for a clean success, a `DEFERRED` transaction, a permanent
+  `BEGIN` failure and a nested rejection, 1 to arm, 1 to refuse, 2 for expiry followed by
+  renewed contention — are asserted rather than described. Round 10 had to say this twice,
+  because my first two attempts both claimed "the *only* transaction that never reads it"
+  and each left out a path that also reads zero. That is the shape the
   injectable seam needed before it could stay. The classification question was settled properly and then found
   to be **Node-only**, which the fifth pass caught: contention is decided by SQLite's
   result code (`code & 0xff` over 5 / 6 / 15) read from Node's `errcode` **and**

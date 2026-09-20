@@ -83,9 +83,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   the clock that armed it, so neither a system clock change nor an injected test clock
   can extend, shorten or clear another caller's throttle, and a clock that returns a
   non-finite number is refused rather than trusted (`runtime_transaction_clock_invalid`)
-  wherever throttle state is read or armed — reading a pending deadline, and arming a
-  fresh one. The only transaction that never consults the clock is a **successful
-  `BEGIN` with no pending deadline**, so this guards the seam, not every `BEGIN`. `DEFERRED`
+  wherever a reading is taken — checking a pending deadline, and arming a fresh one. The
+  clock is read at two call sites, not on every `BEGIN`: clean successes, `DEFERRED`
+  transactions, permanent `BEGIN` failures and nested-transaction rejections read it zero
+  times, so this guards the seam rather than every transaction. `DEFERRED`
   transactions are exempt: they take no write lock. The throttle is per connection
   object in this process — it is not cross-process, and it does not leak to another
   connection to the same database.

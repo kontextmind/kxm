@@ -274,13 +274,20 @@ const transactionThrottles = new WeakMap<DatabaseSync, WeakMap<MonotonicClock, n
 /**
  * A clock reading this helper can reason about.
  *
- * Scope, stated precisely. The clock is consulted in **two** places: to read a pending
- * deadline, and to arm a fresh one. So the only transaction that never calls it is a
- * **successful `BEGIN` with no pending deadline** — an uncontended one on a quiet
- * connection, which runs its `work()` untouched even if the injected clock is broken.
- * Freshly contended transactions *do* reach the guard, because arming needs a reading.
- * Production cannot reach the failure at all: the default is `hrtime`, which is finite.
- * The guard exists so the injectable seam cannot become a silent bypass.
+ * Scope, stated as measured rather than as a slogan. The clock is read at **two call
+ * sites**: checking an existing deadline on a non-`DEFERRED` attempt, and arming after a
+ * contended `BEGIN` failure. Reads per call, each reproduced by an assertion in
+ * `test/core/intake.test.ts`: clean success with no pending entry 0; successful
+ * `DEFERRED`, pending entry present or not, 0; fresh contention 1; refusal inside a window
+ * 1; an expired deadline followed by renewed contention 2 in that call; a permanent
+ * `BEGIN` failure with no pending entry 0; a nested-transaction rejection 0.
+ *
+ * Which means it is wrong in both directions to say either "every `BEGIN` validates the
+ * clock" or "the *only* transaction that skips it is a clean uncontended success" — the
+ * second was mine, twice, and the second correction to it was still a slogan. The tests
+ * count; the prose only points at them. Production cannot reach the guard at all, because
+ * the default is `hrtime`; it exists so the injectable seam cannot become a silent
+ * bypass.
  */
 function finiteNow(clock: MonotonicClock, label: string): number {
   const now = clock();
