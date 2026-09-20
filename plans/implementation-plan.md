@@ -659,6 +659,147 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   order" became "in arrival order", and "may never widen tools" is now true.
   Test count 7 → 11; the payload-only-tampering limit is asserted as a known gap
   instead of being described away.
+  **Second pass, same critic, same command:** verdict **STILL BLOCKED**, and again
+  correct on every point. Closed in the same follow-up: the drain loop was capped at
+  1,000 pages (now uncapped, throwing `intake_drain_stalled` inside the resume
+  transaction so a stuck drain rolls back rather than half-resuming); emptying or
+  omitting a populated `allow` list widened the ceiling because
+  `commands.ts` applies no allowlist restriction to an empty list (now refused,
+  after verifying that claim in the code rather than trusting the review); the
+  create-race loser reported `created: true`; and records written by 0.7.46 hashed
+  their authority as supplied, so an unsorted `effects` list would have demanded a
+  policy rebind from every one of them after upgrade (fingerprints are now
+  computed over the normalised authority, and the legacy row still matches).
+  It also surfaced a **HIGH pre-existing defect in `database.ts`** that the new
+  transactions exposed: `activeTransactions` was claimed before `BEGIN` and `BEGIN`
+  sat outside the `try/finally`, so a `BEGIN` that failed on a busy database left
+  the connection permanently marked as in-transaction and every later call failed
+  with a misleading `runtime_transaction_nested`. Fixed (claim only after a
+  successful `BEGIN`; surface `runtime_transaction_busy`) with a regression test
+  that holds the write lock from a second connection and then proves the same
+  connection still works.
+  Claim narrowed, not defended: `rowid` gives arrival order **within a store
+  instance** only. It is not a durable sequence — this repository takes backups
+  with `VACUUM INTO`, and a vacuum may renumber implicit rowids — so an explicit
+  immutable arrival sequence joins the schema-v6 follow-ups. Tests 11 → 13.
+  Un-poisoning the transaction helper first cost more than it fixed: with the naive
+  version, main's 818 s core suite became a run where one engine recovery test alone
+  took 1024 s and nothing finished inside 40 minutes — SQLite's 5 s busy timeout is
+  per connection and those recovery paths open several transactions in a row.
+  `TRANSACTION_BUSY_BACKOFF_MS` refuses retries for 1 s after a blocked `BEGIN` and
+  clears on success, so the defect stays fixed while the suite came back to
+  **442 s**; the intake test asserts the blocked call, the fast refusal and the
+  recovery. The old speed had come from the bug, not from design.
+  **Third pass, same critic, same command: STILL BLOCKED again**, five findings,
+  every one reproduced against the tree, and two of them were defects in the
+  round-2 *fix* rather than in the original contract:
+  (a) the backoff deadline was `Date.now() + 1000`, so a clock step backwards kept
+  a long-gone write lock refusing transactions for hours and a step forward ended
+  the throttle early — the deadline is now monotonic (`process.hrtime`), injectable
+  for tests so the window is **stepped rather than slept through** (a test that waits
+  out its own deadline proves nothing about how the deadline is measured, which is
+  how round 2's busy test passed with the clear-on-success removed). The new test
+  steps `Date.now` by −1 h and +1 h against the **default** clock and requires the
+  refusal to stay inside the window both ways; verified to fail when the default
+  clock is changed back to `Date.now()`;
+  (b) *every* `BEGIN` failure was wrapped as `runtime_transaction_busy`, which
+  turned `cannot start a transaction within a transaction`, a closed connection and
+  any other hard error into something a caller would retry forever, and installed
+  the throttle for a failure that had nothing to do with contention —
+  `isTransactionContention()` now gates the wrap and everything else rethrows
+  unchanged; the throttle also stopped ignoring `mode`, because a `DEFERRED` BEGIN
+  takes no write lock, and a `DEFERRED` success no longer clears a throttle that
+  write contention armed;
+  (c) legacy ceiling equivalence was answered two different ways in the same file:
+  the slot lookup recomputed the fingerprint over the stored authority, the two
+  lost-write read-backs compared persisted hashes only, so the same 0.7.46 row was
+  idempotent on one path and `coordinator_write_lost` on the other — one
+  `ceilingsMatch()` now answers it, with a forced losing insert against a
+  legacy-hash winner in the tests;
+  (d) resume drains are complete and atomic but **not bounded**: one write
+  transaction parses, validates, rewrites and retains every held row, measured here
+  at 150k rows / 4.54 s / ~95 MiB, and ~7.6 GiB retained at 500k maximum-size
+  payloads. The write lock makes it finite, so this is a throughput and memory
+  limit rather than a correctness hole, and bounding it is recorded as an M2
+  pre-condition (Still open item 9) instead of being quietly truncated — that is
+  the exact truncation round 2 rejected;
+  (e) this record again claimed more than its tests proved. Four of the round-2
+  tests were load-bearing for the wrong claim: the 601-row drain passed with the
+  1,000-page cap put back, the sequential `created: false` assertions never lost an
+  insert, the reordered-ceiling test passed with normalisation removed from
+  `kxmCeilingHash` because binding normalises its inputs first, and the busy test
+  waited out its own deadline so it passed whether or not success cleared the
+  backoff. Each is replaced by one that fails when its fix is reverted (verified by
+  reverting each of the five and watching the matching test go red), plus named
+  claims that were prose before: "one admitted task" is one admission record, no
+  task exists at this layer, and "reordering or repeating" now tests repeats.
+  Tests 13 → **20**. Each of the five closures was checked by reverting it and
+  watching the matching test go red: page cap restored, default clock switched to
+  `Date.now()`, contention classification removed, clear-on-write-success made
+  unconditional, and `ceilingsMatch` reverted on each read-back separately.
+  **Fourth pass: STILL BLOCKED once more, on one point — and the point was that my
+  round-3 fix reintroduced round-3's defect one layer up.** The throttle kept **one
+  absolute deadline per connection** and subtracted whichever clock the next call
+  supplied, so a valid injected clock sitting an hour ahead throttled a
+  default-clock caller for an hour, and `() => Number.NaN` reached `BEGIN` with no
+  deadline at all. Throttle state is now keyed by connection **and** clock — a
+  deadline can only be read, expired or replaced by the clock that armed it — and a
+  non-finite reading throws `runtime_transaction_clock_invalid` instead of silently
+  meaning "no throttle" — at the points where throttle state is read or armed, which
+  is the honest scope, stated as counted rather than as a slogan: the clock is read at
+  **two call sites** (checking a pending deadline; arming after a contended failure), with
+  per-path counts. Zero reads: a clean write-mode `BEGIN` with no pending deadline, a
+  `DEFERRED` success with or without one, a permanent `BEGIN` failure with nothing pending, a
+  nested rejection. One read: arming, refusing, and — measured by the critic but **not yet by
+  a committed assertion** — a clean success or a permanent failure that follows an expired
+  deadline. Two reads in one call: an expired deadline followed by renewed contention. Rounds
+  10 and 11 each had to correct a claim of mine that "the *only* transaction that never reads
+  it" was some single clean case, and round 12 caught the enumeration absorbing the two
+  measured-not-asserted rows; the sentence now says which rows the suite counts. That is the shape the
+  injectable seam needed before it could stay. The classification question was settled properly and then found
+  to be **Node-only**, which the fifth pass caught: contention is decided by SQLite's
+  result code (`code & 0xff` over 5 / 6 / 15) read from Node's `errcode` **and**
+  `bun:sqlite`'s `errno` (`SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT` and
+  `SQLITE_LOCKED_SHAREDCACHE` land on their primaries), then from a symbolic
+  `SQLITE_BUSY*` / `SQLITE_LOCKED*` / `SQLITE_PROTOCOL*` name, with anchored message
+  text used **only** when neither exists — and the number wins over the text in both
+  directions, so a permanent `SQLITE_FULL` quoting "database is locked" is not
+  contention. `bun:sqlite` is not hypothetical here: `sqlite.ts` exists precisely
+  because extensions run inside Pi's Bun, and a Node-only reading silently lost the
+  extended codes on that runtime.
+  `SQLITE_PROTOCOL` counts as contention **by decision** — SQLite raises it after
+  exhausting WAL transaction-start retries — and `SQLITE_FULL`, `SQLITE_CANTOPEN` and
+  read-only writes do not; the reviewer's own same-connection probe confirmed the
+  boundary holds where a *statement* (not `BEGIN`) fails with code 6. Accepting the raw rethrow changes an error *shape*, not an
+  outcome: a non-contention `BEGIN` failure reaches the supervisor as a plain `Error`
+  (500 / `runtime_internal` rather than 400 with a code) and the CLI's existing
+  `run_io_failed` fallback, which is the point — a permanent failure must not wear a
+  retryable label. Two claims from my own round-3 text were also wrong and are
+  corrected here: the forced-write coverage is one lost **insert** and one lost
+  **rebind** (not "the current-format winner and the legacy-hash winner"), and
+  `replaceCoordinatorInSlot` installs the winner through the real method first so the
+  end state is the raced one rather than a fabricated boolean. Tests 20 → **23**, seven of them
+  transaction- and throttle-focused (busy contention, monotonic bound, clock domains, mode scoping,
+  non-contention errors, result-code classification, failed `COMMIT`), each mutation-checked: ignoring clock identity, dropping
+  the finite-clock guard, dropping code-based classification, dropping `errno` while a
+  symbolic name is still read, putting the symbolic name **ahead** of the number, and
+  letting message text override a code, and a permanent name vetoing a contention
+  number, each turn exactly one test red. Precedence is pinned in **both** directions by
+  disagreeing fixtures — `errno: 5` with `code: "SQLITE_FULL"` must be contention,
+  `errno: 13` with `code: "SQLITE_BUSY"` must not be, and `errcode: 13` with `errno: 5`
+  settles which number wins — because examples that merely agree prove nothing about
+  order. What is **not**
+  gated: throttle-state retention. The inner map is weak in the clock, so it keeps no
+  otherwise-unreachable clock alive and a fresh closure per attempt leaves nothing behind
+  once collected — a *retained* clock still holds its entry, collection is neither
+  immediate nor size-bounded, and nothing measures garbage collection here. What is
+  asserted instead is the behaviour that matters: distinct closures with identical
+  readings reach `BEGIN` independently and refuse independently.
+  What the fourth and fifth passes probed, which the sixth pass then **committed**
+  rather than left as reviewer evidence: a divergent row — index column flipped to
+  `held_paused` while its record says `ready` — raises `intake_record_divergent` during
+  resume with the project still paused afterwards, and both forced-write fixtures now
+  obtain their `false` from the real guarded SQL rather than from an authored return.
 
 - **Run-duration budgets are testable without racing the machine (2026-09-17):
   the still-open note filed in #245 is fixed. `test/core/engine.test.ts`'s
@@ -1587,6 +1728,40 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   separate design, not a keyword change. (7) `transaction(...)` is **not
   reentrant** (`runtime_transaction_nested`): the M2 consumer must call these
   entry points at the top level or fold them into its own transaction on purpose.
+  (8) **Durable arrival sequence:** dispatch order currently uses SQLite
+  `rowid`, which a `VACUUM` (and therefore a restore taken with `VACUUM INTO`) may
+  renumber. Persist an immutable per-project sequence and preserve it through
+  restore, or state arrival ordering as an same-store property only. The third pass
+  also measured the read itself: `EXPLAIN QUERY PLAN` shows the dispatch index
+  serving the state filter and then `USE TEMP B-TREE FOR ORDER BY`, so the sort is
+  per query as well as per store — the same index scan that a durable sequence
+  should remove.
+  (9) **Bounded resume:** a resume releases every held row inside one write
+  transaction and retains all of them, so work and memory grow with the backlog
+  (150k rows of 64-byte payloads: 4.54 s synchronous, ~95 MiB heap; 500k
+  maximum-size payloads would retain ~7.6 GiB). It is finite and atomic — the write
+  lock keeps ingress out of the loop — so this is an M2 sustained-traffic
+  pre-condition, not a correctness hole. Bounding it must not move batches outside
+  the transaction, which would reopen the pause race; design the bound together with
+  the durable sequence in item 8.
+  (10) **Contention mapping, the part still unobserved:** `isTransactionContention`
+  now reads Node's `errcode`, `bun:sqlite`'s `errno`, and a symbolic `SQLITE_*` name
+  before falling back to anchored text, and a SQLite **result name** decides in both
+  directions now: `SQLITE_FULL` carrying a "database is locked" message is not
+  contention, which the sixth pass found was still true when only *contention* names
+  were recognised and permanent ones fell through to the text. The shared-cache case has
+  been reproduced **live on both runtimes** (Node `errcode: 262` / Bun `errno: 262`,
+  `code: "SQLITE_LOCKED_SHAREDCACHE"`) by two connections sharing one attached
+  database, with a schema change in between. What has *not* been observed on this stack is
+  a real `SQLITE_PROTOCOL` or `SQLITE_BUSY_RECOVERY`: this repository opens one writer
+  per database, so those paths do not arise in normal operation. Trigger: the first
+  multi-process hub writer, or a Node/Bun/SQLite version bump that changes those error
+  fields. Two related limits, named rather than assumed away: a failed `ROLLBACK` is
+  swallowed and clearing the in-transaction marker does not prove SQLite left the
+  transaction, so a handle whose rollback failed is not invalidated anywhere; and a
+  `MonotonicClock` argument on a public helper is a seam a future test could use to sit
+  outside the throttle — it cannot win a contested write lock, and per-domain keying
+  keeps it from contaminating another caller, but it is not a capability boundary.
 
 - **Unified capability delivery (M0–M9; proposed, consolidated 2026-09-14):**
   [The unified plan](plan-unified-kxm-milestones.md) owns proposed scope,
