@@ -1449,6 +1449,16 @@ function stripJustComment(line: string): string {
 }
 
 const TRANSPORT_RECIPES = ["impl", "impl-bg", "plan", "review-arch", "review-cli", "dispatch"] as const;
+/** The only seven lines in the file permitted to invoke the runner. */
+const RUNNER_INVOCATIONS: readonly string[] = [
+  'node scripts/assignment-run.mjs run --manifest "$1"',
+  'node scripts/assignment-run.mjs witness --record-dir "$1"',
+  'node scripts/assignment-run.mjs plan-current --task-dir "$1" --plan "$2" --sha256 "$3" --base-commit "$4" --expected-generation "$5"',
+  'node scripts/assignment-run.mjs attribute --task-dir "$1" --record-dir "$2" --class "$3" --explanation-file "$4"',
+  'node scripts/assignment-run.mjs observe-cost --task-dir "$1" --input "$2"',
+  'node scripts/assignment-run.mjs accept --task-dir "$1" --commit "$2" --record-dir "$3" --critic "$4" --critic "$5"',
+  'node scripts/assignment-run.mjs change-report --task-dir "$1"',
+];
 /**
  * Substrings that may not appear in a non-proof body at all. `assignment-` is there
  * rather than the full filename because `node scripts/assignment-""run.mjs` was shown to
@@ -1550,6 +1560,25 @@ function assertDeclaredSurface(text: string, rawText = text): void {
   // Bodies. Token-level, because `just --highlight --no-highlight witness`,
   // `just --command sh -c 'just "witness"'` and `node scripts/assignment-""run.mjs`
   // each defeated a `just <verb>` pattern while reaching the runner under real `just`.
+  // The load-bearing gate, and it does no parsing at all: **every line that mentions
+  // the runner must be one of the seven pinned proof bodies, and there must be exactly
+  // seven.** Round 7 escaped the header parser three ways — `extra X=":=":` (a legitimate
+  // default that the `:=` filter discarded), a triple-quoted default that splits the name
+  // and the colon across lines, and `@verify:` (a quiet redefinition the body reader could
+  // not match) — and each one still had to write the invocation down on some line. A
+  // multiset over raw lines cannot be evaded by anything the parser fails to recognise,
+  // because it never asks what a line means.
+  const runnerInvocations = rawLines
+    // A column-0 comment is documentation, not a body line; indented `#` stays inside a
+    // recipe and still counts. Without this the gate rejects the sentence that explains
+    // it, which is how a gate gets worked around instead of obeyed.
+    .filter((line) => !/^#/.test(line))
+    .map((line) => line.trim().replace(/^@/, ""))
+    .filter((line) => line.includes("assignment-run.mjs"))
+    .sort();
+  assert.deepEqual(runnerInvocations, [...RUNNER_INVOCATIONS].sort(),
+    "the set of lines invoking the assignment runner changed; proof is minted only by these seven, and a new one is an edit to this gate");
+
   const proofNames = new Set(Object.keys(ASSIGNMENT_RECIPES));
   for (const name of headers) {
     if (proofNames.has(name)) continue;

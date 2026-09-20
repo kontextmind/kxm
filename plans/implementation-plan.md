@@ -375,38 +375,41 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   was ever contemplated — no still-applicable decision requires these entry points to
   stay absent, and the Decided entry above names them.
   **What is gated now:**
-  - *Per recipe, not per file; normalized text plus the interpreter's own parse.* The
-    file-wide brake in #179 was the wrong shape: the rule is that transport recipes must not
-    mint assignment, witness or acceptance proof. Six review rounds then showed that rule
-    escaping a text gate in thirteen ways — `just  assign`; `just -- assign`; a
-    `\`-continuation; repointing `run :=`; `set allow-duplicate-variables` with a second
+  - *Per recipe, not per file; and the load-bearing gate parses nothing.* The #179
+    file-wide brake was the wrong shape: the rule is that transport recipes must not mint
+    assignment, witness or acceptance proof. Seven review rounds then produced fourteen
+    demonstrated escapes from one text gate after another — `just  assign`; `just -- assign`;
+    a `\` continuation; repointing `run :=`; `set allow-duplicate-variables` with a second
     binding; a duplicate header with a trailing comment; `EXTRA:`/`extra_recipe:` names a
-    lowercase-hyphen parser never saw; an `alias`; a continued `mod`; a verb hidden between
-    `just` and its options; a path split by concatenation; **a quiet recipe (`@extra:`)**; and
-    **ordinary dependency declarations** (`extra: default`, `extra: (default) (witness "…")`,
-    `extra: && (witness "…")`), each of the last three executed under `just` 1.58.0, reaching
-    `completion_missing` while both inventory passes stayed green. The sixth round also found
-    that **the commit which introduced the normalization gate had deleted both dotenv
-    tests** while its message and these documents cited them as the fix; they are restored.
-    What closes the class is not a bigger regex. The file is normalized (continuations folded,
-    comments stripped) and gated twice — normalized text, and **`just --dump`**, the
-    interpreter's own rendering, skipped with a visible reason where the binary is absent. A
-    recipe header is `[@]name [params]: [anything]` and **everything after the colon is a
-    call**: it is scanned like a body, which is what the single-parenthesis pattern missed. The
-    name set must equal a pinned list; duplicate headers and duplicate `run :=` bindings are
-    refused; `set allow-duplicate*`, `import`/`mod` in any spelling (including `import"x"`
-    with no space) and `alias` are refused; `run :=` and `dispatch` are asserted exactly; and
-    the forbidden-substring and `just … <verb>` checks run against each non-proof body's
-    **raw** text, because stripping comments first is what let an escaped quote hide an
-    executable suffix — and that suffix survives `--dump` verbatim, so the second pass
-    preserves the gap rather than catching it.
-    **Where the redundancy actually is**, since the round asked: on the same text the distance
-    rule rejects nothing the substring list does not already reject, `"assignment-"` is
-    subsumed by `"assign"`, and the arity bounds overlap the exact header/body pins. They are
-    kept as depth, not sold as independent coverage. And this is drift protection, not a
-    sandbox: a body can still assemble a command at runtime, and anyone who can edit the file
-    can already do anything the file can do. Each escape above is a mutation that now turns the
-    gate red — verified by running them, not by reasoning about them.
+    lowercase-hyphen parser never saw; `alias`; a continued `mod`; a verb hidden between
+    `just` and its options; a path split by concatenation; `@extra:` quiet recipes; bare,
+    multiple and `&&` dependency forms; `extra X=":=":` where the filter that excludes
+    bindings also discards a legitimate default; a triple-quoted default that puts the name
+    and the colon on different lines; and `@verify:`, a quiet redefinition whose body the
+    reader could not find. Every one reached `assignment-run.mjs` under real `just` 1.58.0
+    while the static gates stayed green.
+    The answer is not a better parser. **Every line in the file that mentions
+    `assignment-run.mjs` must be one of the seven pinned proof bodies, and there must be
+    exactly seven** — a multiset over raw text that asks nothing about what a line *means*,
+    so the escapes above cannot hide from it by being unreadable to a parser. Proof recipes
+    may not be renamed or given new call sites without editing this assertion; verified that
+    moving `witness`'s body into `check-generated` trips it as well. Column-0 comments are
+    documentation and excluded, because a gate that rejects the sentence explaining it gets
+    worked around rather than obeyed.
+    Around that pin: the file is normalized (continuations folded, comments stripped) and
+    re-checked against **`just --dump`**, the interpreter's own rendering, skipped with a
+    visible reason where the binary is absent; the recipe name set must equal a pinned list;
+    duplicate headers and duplicate `run :=` bindings are refused; `set allow-duplicate*`,
+    `import`/`mod` in any spelling and `alias` are refused; `run :=` and `dispatch` are
+    asserted exactly; non-proof bodies are token-checked against **raw** text, because
+    comment-stripping first is what let an escaped quote hide an executable suffix that
+    `--dump` reproduced verbatim.
+    **The stated limit, which is the point of stopping here:** this is drift protection, not
+    a sandbox. A body can build a command at runtime from variables, a decoder or `sh -c`, and
+    anyone who can edit this file can already do anything it can do. What the gate guarantees
+    is that no route to the runner appears without someone editing a literal list to allow it.
+    Further parser hardening was declined after round 7 rather than accepted as finished.
+
   - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
     fenced line with an optional `#` — must exist as a recipe. The scan is token-level:
     leading interpreter options and their path-like values are skipped
