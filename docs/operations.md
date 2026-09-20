@@ -216,33 +216,42 @@ Authentik's embedded proxy answers a forward-auth subrequest per request; the te
 SQLite runs in WAL mode, so a consistent copy requires a stopped service (or a SQLite-aware
 online tool). Stop the hub and the Runtime supervisor first.
 
-**What a tenant backup contains.** Two roots, and confusing them is how a backup goes
+**What a tenant backup contains.** Four roots, and confusing them is how a backup goes
 missing while looking complete:
 
-- **`$S`** — the host-local machine state root: `$KXM_STATE_HOME`, else
+- **`$S`** — host-local machine state: `$KXM_STATE_HOME`, else
   `~/.local/state/kxm` (Linux, honouring `XDG_STATE_HOME`),
   `~/Library/Application Support/KXM` (macOS), `%LOCALAPPDATA%\KXM` (Windows).
-- **`$W`** — the workspace state directory: `.kxm/state` in the checkout, or `KXM_STATE_DIR`.
+- **`$X`** — the project's KXM directory: `.kxm` in the checkout.
+- **`$W`** — the *workspace state* directory: `$X/state`, or `KXM_STATE_DIR` when set.
+  Only the hub database and worker runtime state live here.
+- **`$C`** — user configuration: `KXM_USER_CONFIG_DIR`, else `~/.config/kxm`.
 
 | Path | Contents | Loss means |
 |---|---|---|
 | `$W/kxm.db` (+ `-wal`, `-shm`, or `KXM_DATA_PATH`) | hub store: agents, messages, workflow runs, checkpoints, gate evidence | hub history and delivery state |
-| `$S/runtime/registry.db` | Runtime registry, including the **supervisor identity and claim row** | which projects this Runtime knows; supervisor claims are a registry row, not a `supervisor.json` file — no such file exists |
-| `$S/runtime/projects/<projectKey>/run-events.db` (+ `-wal`/`-shm`) | event-sourced run state, commands, drives, receipts, intake, coordinators, pause control | run history and every receipt that proves it |
-| `$S/runtime/projects/<projectKey>/run-events.db.run-prompts.json` | prompt text, appended to the **full** database filename | the prompts that explain the runs; restoring databases without sidecars is a partial restore |
-| `$S/projects/<control-root-hash>/repository-bindings.json` | host-local member repository paths | member bindings are host state, outside workspace config |
-| `$W/pi-sessions/<workerKey>/{default,runs/<runId>}/`, `worker-session-binding-<workerKey>.json` (+ `.corrupt-*`), `worker-context-*.json`, `worker-recovery-*.json` | Pi model histories and the routing/recovery records that select them | **optional by existing policy** (see *Workflow-specific Pi sessions*): histories are not a system of record, but the binding and recovery manifests are what make routing resumable — decide explicitly, and record the decision with the backup |
-| `$W/config/`, `$W/../project.yaml`, `agents/`, `workflows/`, `gates.yaml`, `roles/`, `role-hosts.yaml`, `producers.yaml`, `roster.yaml`, `routes.yaml`, `prices.yaml`, `repo/`, `template-provenance.yaml`, plus `config.yaml` | project, role, route and provenance definition | the tenant stops being reproducible |
-| `$W/goals/`, `tasks/`, `memory/`, `candidates/`, `skills/` (candidate/promoted/rejected, history, patches) | durable work and learning records | open goals/tasks and approved memory disappear |
-| `$W/assets/` (retrospectives, improvements, artifacts, evidence), `$W/logs/` or `KXM_LOG_PATH`, `KXM_WORKER_LOG_PATH`, `KXM_AGENT_LOG_PATH` | exported evidence and operator history | provenance and the ability to audit a past decision |
-| `$S/hub-binding.json`, `$S/hub-env.json` | this machine's hub URL and credentials | a re-bind and a token rotation; **secrets — regenerate rather than ship them off-box, and never commit them** |
-| `$C` (`KXM_USER_CONFIG_DIR`, else `~/.config/kxm`): global roles/workflows/host config, `session.token` | user-level configuration and the local session token | operator defaults; the token is re-mintable, so distinguish it from recovery-critical state |
-| `KXM_CONFIG_DIR`, `KXM_ASSETS_DIR`, `KXM_LOGS_DIR` when overridden | relocated config/assets/logs | anything overridden without its override recorded restores into the wrong place |
-| `$C/telemetry/model-metrics.jsonl` | usage accounting | spend history and routing evidence, not execution state |
+| `$S/runtime/registry.db` | Runtime registry, including the **supervisor identity and claim row** | which projects this Runtime knows; the claim is a registry row — there is no `supervisor.json` |
+| `$S/runtime/projects/<projectKey>/run-events.db` (+ `-wal`/`-shm`) | event-sourced run state, commands, drives, receipts, gate evidence, intake, coordinators, pause control | run history and every receipt that proves it |
+| `$S/runtime/projects/<projectKey>/run-events.db.run-prompts.json` | prompt text; the sidecar name appends to the **full** database filename | the prompts that explain the runs — restoring databases without sidecars is a partial restore |
+| `$S/projects/<control-root-hash>/repository-bindings.json` | host-local member repository paths | member bindings are host state, outside the project tree |
+| `$S/update.yaml` | release/update configuration consumed by the updater | the box reverts to defaults on the next update path |
+| `$W/pi-sessions/<workerKey>/{default,runs/<runId>}/` | Pi model histories | **optional by existing policy** (see *Workflow-specific Pi sessions*): never a system of record — decide and record, do not silently widen scope |
+| `$W/worker-session-binding-<workerKey>.json` (+ `.corrupt-*`), `worker-context-*.json`, `worker-recovery-*.json` | routing and recovery manifests | not optional: these are what make worker routing resumable after a restart |
+| `$X/project.yaml`, `$X/config/` (or `KXM_CONFIG_DIR`), `$X/agents/`, `$X/workflows/`, `$X/gates.yaml`, `$X/roles/`, `$X/role-hosts.yaml`, `$X/producers.yaml`, `$X/repo/`, `$X/template-provenance.yaml`, `$X/config.yaml` | project, role, route, repository and provenance definition | the tenant stops being reproducible |
+| `$X/goals/`, `$X/tasks/`, `$X/memory/`, `$X/candidates/`, `$X/skills/` (candidate/promoted/rejected, history, patches) | durable work and learning records | open goals/tasks and approved memory disappear |
+| `$X/assets/` (or `KXM_ASSETS_DIR`) — retrospectives, improvements, artifacts, evidence — and `$X/logs/` (or `KXM_LOGS_DIR`), `$X/logs/telemetry.jsonl` (`KXM_WORKER_LOG_PATH`, `KXM_AGENT_LOG_PATH`) | exported evidence, operator history, and **local** usage accounting | provenance, spend history and the ability to audit a past decision |
+| `$C/telemetry/model-metrics.jsonl` (or `KXM_USER_TELEMETRY_DIR`; falls back to `$X/logs/telemetry.jsonl`) | **federated** metrics only | cross-machine reporting continuity; this is shared, opt-in state, not local accounting |
+| `$S/hub-binding.json`, `$S/hub-env.json`, `$C/session.token` | host hub URL, credentials, local session token | a re-bind and a token rotation. **Secrets:** prefer regeneration to shipping them off-box, and never commit them |
+| `$C` global roles/workflows/host configuration | user-level defaults | operator conventions |
+
+Anything overridden by `KXM_DATA_PATH`, `KXM_STATE_DIR`, `KXM_CONFIG_DIR`,
+`KXM_ASSETS_DIR`, `KXM_LOGS_DIR`, `KXM_LOG_PATH`, `KXM_WORKER_LOG_PATH`,
+`KXM_AGENT_LOG_PATH` or `KXM_STATE_HOME` must be recorded **with** the override, or the
+restore lands in the wrong place.
 
 **Disposable, not backup material:** `session-brief.json`, `update-check.json`,
 `*.error`, PID/claim files such as `hub.pid` and `worker-<key>.pid`, and
-`supervisor.token` (host-local secret, re-generated on start). A WAL-consistent copy or
+`supervisor.token` (host-local secret, re-generated on start). WAL-consistent copying or
 `VACUUM INTO` applies to **every** SQLite file above, not only the hub database.
 
 **Back up (stopped-state recipe):**

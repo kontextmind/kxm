@@ -11,11 +11,14 @@ All notable user-facing changes are documented here. The project follows [Semant
   = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser
   session; a reverse-proxy contract states what must hold without shipping generated proxy
   config) and a rewritten *Backup and restore* that enumerates every path a tenant owns —
-  the two state roots a tenant actually has — host-local `$KXM_STATE_HOME` (Runtime
+  the four roots a tenant actually has — host-local `$KXM_STATE_HOME` (Runtime
   `registry.db`, per-project `run-events.db` **and its `.run-prompts.json` sidecar**,
-  repository bindings) and workspace `.kxm/state` (hub database, worker session routing and
-  recovery manifests, config, goals, memory, candidates, assets, logs) — plus what is
-  disposable (PID/claim files, `session-brief.json`, the re-generable supervisor token). It
+  repository bindings, `update.yaml`), the project's `.kxm` directory (config, agents,
+  workflows, roles, producers, repo bindings, provenance, goals, tasks, memory,
+  candidates, skills, assets, logs and local telemetry), the workspace *state* directory
+  `.kxm/state` (hub database, worker routing/recovery manifests, Pi sessions), and user
+  configuration `~/.config/kxm` — plus what is disposable (PID/claim files,
+  `session-brief.json`, the re-generable supervisor token). It
   also states the choice the Pi-session policy already leaves open: model histories are not
   a system of record, so backing them up is a decision to record, not a default. The previous
   recipe stopped the hub and copied `kxm.db`, which is a hub-only backup: a restore can pass
@@ -44,7 +47,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **`kxm hub view` and the session brief label the binding `loopback` or `remote`.**
   "Attached across a network" and "attached on this box" looked identical before, and only
   one of them puts a bearer on a wire. `localhost`, `127.0.0.1`, `::1` and `*.localhost` are
-  loopback; `0.0.0.0`, LAN addresses and host names are remote.
+  loopback; `0.0.0.0`, LAN addresses and host names are remote. Only remote binds consult a
+  credential at all: a damaged host record must not cost a local operator their start, and
+  the first cut of the guard did exactly that.
 
 - **Naming sweep:** the retired `vnext` naming is gone from file and folder names,
   symbols, constants, schema `$id` segments, and error codes (`vnext_*` is now

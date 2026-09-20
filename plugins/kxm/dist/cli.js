@@ -45989,47 +45989,49 @@ async function cmdHubBind(runtime, rawUrl) {
     throw error;
   }
   const scope = hubBindingScope(url);
-  const bindProject = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
-  let credentialReady = false;
-  try {
-    credentialReady = hasClientHubCredential(runtime.env, bindProject);
-  } catch (error) {
-    print(
-      runtime.io,
-      runtime.json,
-      {
-        ok: false,
-        command: "hub bind",
-        error: "hub_credential_unreadable",
-        url,
-        scope,
-        nextAction: "repair_hub_env_record",
-        hint: `${error instanceof Error ? error.message : String(error)}; no binding was written`
-      },
-      `cannot read the hub credential: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return 2;
-  }
-  if (scope === "remote" && !credentialReady) {
-    print(
-      runtime.io,
-      runtime.json,
-      {
-        ok: false,
-        command: "hub bind",
-        error: "hub_bind_unauthenticated",
-        url,
-        scope,
-        project: bindProject,
-        // The hint is in the payload, not only in the prose line: under --json the prose
-        // is suppressed, and a machine-readable refusal that names no next step is the
-        // one kind of error that gets debugged by reading source.
-        nextAction: "export_kxm_auth_token",
-        hint: `${HUB_BIND_UNAUTHENTICATED_HINT} (needs a token for project ${bindProject})`
-      },
-      `refusing to bind remote hub ${url} with no credential for project ${bindProject}; ${HUB_BIND_UNAUTHENTICATED_HINT}`
-    );
-    return 2;
+  if (scope === "remote") {
+    const bindProject = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
+    let credentialReady = false;
+    try {
+      credentialReady = hasClientHubCredential(runtime.env, bindProject);
+    } catch (error) {
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: false,
+          command: "hub bind",
+          error: "hub_credential_unreadable",
+          url,
+          scope,
+          nextAction: "repair_hub_env_record",
+          hint: `${error instanceof Error ? error.message : String(error)}; no binding was written`
+        },
+        `cannot read the hub credential: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return 2;
+    }
+    if (!credentialReady) {
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: false,
+          command: "hub bind",
+          error: "hub_bind_unauthenticated",
+          url,
+          scope,
+          project: bindProject,
+          // The hint belongs in the payload, not only the prose line: under --json the
+          // prose is suppressed, and a refusal that names no next step gets debugged by
+          // reading source.
+          nextAction: "export_kxm_auth_token",
+          hint: `${HUB_BIND_UNAUTHENTICATED_HINT} (needs a token for project ${bindProject})`
+        },
+        `refusing to bind remote hub ${url} with no credential for project ${bindProject}; ${HUB_BIND_UNAUTHENTICATED_HINT}`
+      );
+      return 2;
+    }
   }
   const file = hubBindingFile(runtime.env);
   if (runtime.dryRun) {

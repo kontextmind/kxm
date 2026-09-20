@@ -302,6 +302,26 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
   };
   const cleanup: string[] = [];
   try {
+    // 0. Scope is asserted on the literals themselves before anything consumes it: a
+    //    version of this test that only exercised 127.0.0.1 passed while `localhost`
+    //    and the IPv6 form were treated as remote.
+    assert.equal(hubBindingScope("http://localhost:7331"), "loopback");
+    assert.equal(hubBindingScope("http://[::1]:7331"), "loopback");
+    assert.equal(hubBindingScope("http://0.0.0.0:7331"), "remote");
+    assert.equal(hubBindingScope("http://192.168.1.20:7331"), "remote");
+
+    // 0b. A damaged host credential record is a remote concern. Loopback never puts a
+    //     bearer on a wire, so it must keep binding — the first cut of the guard read
+    //     the record first and cost local operators their start.
+    const brokenLocal = mkdtempSync(join(tmpdir(), "kxm-hub-bind-broken-local-"));
+    cleanup.push(brokenLocal);
+    writeFileSync(join(brokenLocal, "hub-env.json"), "{malformed");
+    const brokenLocalIo = capture();
+    assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"],
+      { KXM_STATE_HOME: brokenLocal }, { ...brokenLocalIo, fetchImpl: replyingFetch }), 0);
+    assert.match(brokenLocalIo.read().stdout, /loopback · health=on/);
+    assert.equal(existsSync(join(brokenLocal, "hub-binding.json")), true);
+
     // 1. Remote, no credential: refused, payload carries the code, the fix and the
     //    project that needs a token, and nothing is persisted.
     const refused = fresh();

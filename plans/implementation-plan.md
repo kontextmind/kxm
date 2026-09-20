@@ -369,22 +369,26 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   portal) and explicitly no generated proxy config, because a generated config reads as
   authoritative while one missing directive silently re-opens header forgery.
   The backup section previously described stopping the hub and copying `kxm.db`. That is a
-  **hub-only** backup, and the first rewrite of it still named one root while the tenant has
-  two: host-local `$KXM_STATE_HOME` carries `runtime/registry.db` (whose **registry rows**
-  hold the supervisor identity and claim — there is no `supervisor.json`),
-  `runtime/projects/<key>/run-events.db` with a sidecar named by appending
-  `.run-prompts.json` to the whole database filename, and
-  `projects/<hash>/repository-bindings.json`; workspace `.kxm/state` carries the hub
-  database, worker routing/recovery manifests, Pi sessions, config, goals, memory,
-  candidates, assets and logs. Documenting one root and copying the other is exactly how a
-  backup goes missing while looking complete. The table is now split by root, names what is
-  disposable (PID/claim files, `session-brief.json`, the re-generable supervisor token),
-  applies WAL-consistent copying to **every** SQLite store, and states explicitly that
-  backing up Pi model histories is a recorded decision under existing policy rather than a
-  default — histories are not a system of record, but the binding manifests that make
-  routing resumable are. Restore verification stays concrete (read back a run, its drive
-  receipt, and confirm prompt text survives), and routine unattended recovery remains **not**
-  claimed: automated store discovery is a tracked post-MVP item.
+  **hub-only** backup, and the first rewrite of it still under-counted: a tenant has
+  **four** roots, and naming one while copying another is exactly how a backup goes
+  missing while looking complete. Host-local `$KXM_STATE_HOME` carries
+  `runtime/registry.db` (whose **registry rows** hold the supervisor identity and claim —
+  there is no `supervisor.json`), `runtime/projects/<key>/run-events.db` with a sidecar
+  named by appending `.run-prompts.json` to the **whole** database filename,
+  `projects/<hash>/repository-bindings.json`, and `update.yaml`; the project's `.kxm`
+  directory carries config, agents, workflows, roles, producers, repo bindings,
+  provenance, goals, tasks, memory, candidates, skills, assets, logs and **local**
+  telemetry; `.kxm/state` carries only the hub database, worker routing/recovery manifests
+  and Pi sessions; and `~/.config/kxm` carries user configuration plus, when opted in, the
+  **federated** `telemetry/model-metrics.jsonl` — a different thing from local accounting,
+  and conflating them would move a tenant's usage records somewhere they never agreed to
+  go. The table now names each root, separates recovery-critical manifests from Pi model
+  histories whose backup is an existing policy **choice**, marks what is disposable
+  (PID/claim files, `session-brief.json`, the re-generable supervisor token), applies
+  WAL-consistent copying to every SQLite store rather than the hub's alone, and requires
+  each path override to be recorded with the backup. Restore verification stays concrete:
+  read back a run, its drive receipt, and confirm prompt text survives. Routine unattended
+  recovery remains **not** claimed — automated store discovery is a tracked post-MVP item.
   `kxm hub bind` gained the client-side mirror of the rule the hub already enforced on its own
   listener: a **remote** URL with no resolvable credential is refused
   (`hub_bind_unauthenticated`) instead of being stored and failing later like a network fault;
@@ -403,7 +407,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `hub view` labelled the *stored binding* while `KXM_SERVER_URL` sent the request somewhere
   else, so it now labels the effective URL with `source: "env"` — and the session brief's
   text and widget surfaces carry `/remote`, because a distinction that exists only in JSON
-  is a distinction nobody reads.
+  is a distinction nobody reads. The second round then caught a **regression my own fix
+  had introduced**: the guard resolved credentials *before* it checked scope, so a damaged
+  host record began refusing **loopback** binds that had always worked; resolution is now
+  remote-only, with its own case. That round also found my rewritten test had dropped the
+  `localhost` and `[::1]` scope assertions while still claiming to cover them — restoring
+  the literals is the difference between a test that names its cases and one that merely
+  passes.
 
   Gate: existing `npm run verify`, no new npm script or CI job, and **one** named test
   (`hub bind refuses a remote hub with no credential and labels the binding scope`, in the
