@@ -67,6 +67,12 @@ kxm migrate verify
 
 `kxm init` invokes the planning flow when it detects legacy state.
 
+> **Superseded (2026-09-20).** The single-operator decision removed every schema
+> migration lane, so "database/WAL migration … remain later-phase work" below is
+> no longer the plan: there will be none. The `kxm migrate` commands described on
+> this page are deleted in the follow-up cut, and a tree still holding legacy JSON
+> fails closed at load instead of being converted.
+
 **Implementation status (Phase 1 slice):** the commands above are implemented
 for **configuration migration only** — legacy `agents.json`, `gates.json`, and
 workflow-definition JSON under `.kxm/config/`. Database/WAL migration,
@@ -128,6 +134,11 @@ re-hashes legacy sources, and compares the target configuration revision and
 installed resource bytes against the receipt. It performs no writes.
 
 ## Database migration
+
+> **Superseded in part (2026-09-20).** The `user_version` checks, WAL handling, and
+> refuse-a-newer-version rules below **are** the implemented contract. The legacy-record
+> import paragraphs describe a cutover that will not happen: this build migrates no
+> database, and an older stamp is refused outright.
 
 Before any database operation:
 
@@ -219,6 +230,11 @@ Events created only by KXM are not reverse-translated into fabricated legacy
 workflow history.
 
 ## Removal gate
+
+> **Superseded (2026-09-20).** The operator decided removal happens **without** a
+> compatibility release, so the list below no longer gates removal — it is kept only
+> to record why the gate existed. Legacy readers are being deleted now, and old names
+> fail closed by brake rather than alias.
 
 Legacy readers and command aliases are removed only after:
 

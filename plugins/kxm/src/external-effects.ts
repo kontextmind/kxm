@@ -16,6 +16,7 @@ import {
   lstatSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { openDatabase } from "./database.ts";
 import { spawnSync } from "node:child_process";
 
 export const EXTERNAL_EFFECT_SCHEMA = "kxm.external-effect-receipt.v1" as const;
@@ -114,6 +115,33 @@ export function computeEffectKey(
   return `eff_${createHash("sha256").update(raw).digest("hex").slice(0, 16)}`;
 }
 
+const EXTERNAL_EFFECTS_SCHEMA_VERSION = 1;
+
+const EXTERNAL_EFFECTS_DDL = `
+CREATE TABLE IF NOT EXISTS external_effects (
+  effect_key TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  attempt_id TEXT NOT NULL,
+  action_kind TEXT NOT NULL,
+  target_ref TEXT NOT NULL,
+  status TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  receipt_payload TEXT NOT NULL,
+  executed_at TEXT NOT NULL,
+  last_heartbeat_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ext_effects_run ON external_effects(run_id);
+`;
+
+const EXTERNAL_EFFECTS_SHAPE = {
+  external_effects: [
+    "effect_key", "run_id", "step_id", "attempt_id", "action_kind", "target_ref",
+    "status", "payload_hash", "receipt_payload", "executed_at", "last_heartbeat_at", "completed_at",
+  ],
+} as const;
+
 export class ExternalEffectsLedger {
   private db: DatabaseSync;
 
@@ -121,31 +149,15 @@ export class ExternalEffectsLedger {
     if (dbPath !== ":memory:") {
       mkdirSync(dirname(dbPath), { recursive: true });
     }
-    this.db = new DatabaseSync(dbPath);
-    this.initSchema();
-  }
-
-  private initSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS external_effects (
-        effect_key TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        step_id TEXT NOT NULL,
-        attempt_id TEXT NOT NULL,
-        action_kind TEXT NOT NULL,
-        target_ref TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload_hash TEXT NOT NULL,
-        receipt_payload TEXT NOT NULL,
-        executed_at TEXT NOT NULL,
-        last_heartbeat_at TEXT,
-        completed_at TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_ext_effects_run ON external_effects(run_id);
-    `);
-    // No in-place `ALTER TABLE ... ADD COLUMN` here. The column is declared in the
-    // schema above, so a fresh store has it and an older store is refused by the
-    // shared `user_version` gate rather than quietly reshaped under our feet.
+    // Goes through the shared opener, not a bare `new DatabaseSync`: that is what gives this
+    // store the same contract as every other one — path checks, WAL, the `user_version` gate
+    // that refuses an older stamp outright, and the column-shape check that turns a missing
+    // column into `runtime_schema_shape_invalid` here instead of a bare SQL error on first use.
+    this.db = openDatabase(dbPath, "external effects ledger", {
+      schema: EXTERNAL_EFFECTS_DDL,
+      version: EXTERNAL_EFFECTS_SCHEMA_VERSION,
+      tables: EXTERNAL_EFFECTS_SHAPE,
+    });
   }
 
   /**
