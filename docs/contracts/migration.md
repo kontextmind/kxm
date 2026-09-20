@@ -31,9 +31,9 @@ does exist:
   [`docs/operations.md`](../operations.md); a single `kxm.db` copy is not a
   backup.
 - **Newer-than-known versions still refuse.** The stamp is read to make the
-  decision, and the database file is opened to read it, but nothing is written:
-  a store ahead of this build is refused without downgrade, not silently
-  reshaped or stamped backward to match.
+  decision, and the file is opened to read it, but neither the application schema
+  nor its version stamp is changed: a store ahead of this build is refused
+  without downgrade, not silently reshaped or stamped backward to match.
 - **Schema changes are additive-and-replace, not in-place.** Land the new
   definition, delete the local state, and let the process that owns each store
   recreate it — `kxm hub start` for hub state, the Runtime for registry and
