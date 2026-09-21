@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1210,6 +1210,109 @@ test("direct drive release wakes queued scheduler work without a third enqueue",
   } finally {
     heldA.release();
     heldB.release();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a live drive resolves the producer route from the agent's declared model", async () => {
+  // The agent schema requires the object form (`{provider, model}`); the live-route
+  // resolver used to read only a string form that no schema accepts, so every agent
+  // without a route was handed off with producer_route_unsupported unless it was
+  // literally named `implementer` (the hard-coded fallback). A declared model must
+  // drive the route. Namespaced model ids (`qwen/qwen3-coder-plus` under `openrouter`)
+  // are valid and must survive whole, and a malformed declaration is an error — never
+  // a silent reroute to some other model.
+  const { root, stateRoot } = engineProject("kxm-engine-agent-model-route-");
+  try {
+    const agentFile = (name: string, provider: string, model: string) => [
+      "schema: kxm.agent.v1",
+      `purpose: Route witness ${name}.`,
+      "harness: pi",
+      "model:",
+      `  provider: ${provider}`,
+      `  model: ${model}`,
+      "tools:",
+      "  preset: read-only",
+      "defaultRepositoryAccess: read",
+      "network: provider-only",
+      "resultSchema: kxm.assignment-result.v1",
+      "",
+    ].join("\n");
+    const workflowFile = (name: string) => [
+      "schema: kxm.workflow.v1",
+      `description: One agent step for ${name}.`,
+      `coordinator: ${name}`,
+      "limits:",
+      "  maxTransitions: 2",
+      "steps:",
+      "  - id: only",
+      "    kind: agent",
+      `    agent: ${name}`,
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "      failed:",
+      "        target: $terminal",
+      "        terminalStatus: failed",
+      "",
+    ].join("\n");
+    // One bundle, one scheduler policy: the two drivable cases differ only in the model
+    // declaration, so they share a project revision instead of fighting over the
+    // scheduler policy binding (a second policy cannot bind while prior runs hold one).
+    writeFileSync(join(root, ".kxm", "agents", "routewit.yaml"), agentFile("routewit", "xai", "grok-4.6"));
+    writeFileSync(join(root, ".kxm", "agents", "namespaced.yaml"), agentFile("namespaced", "openrouter", "qwen/qwen3-coder-plus"));
+    writeFileSync(join(root, ".kxm", "workflows", "routewit.yaml"), workflowFile("routewit"));
+    writeFileSync(join(root, ".kxm", "workflows", "namespaced.yaml"), workflowFile("namespaced"));
+    spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "route witnesses"], { windowsHide: true });
+
+    // A provider containing the separator is refused by the schema before the engine
+    // ever sees it — the loader is the layer that owns that contract.
+    writeFileSync(join(root, ".kxm", "agents", "malformed.yaml"), agentFile("malformed", "xai/via-slash", "grok-4.6"));
+    assert.throws(
+      () => loadKxmProject(root),
+      /schema_pattern/,
+      "a provider with a separator never loads as a project",
+    );
+    rmSync(join(root, ".kxm", "agents", "malformed.yaml"), { force: true });
+    setRouteState(root, "xai/grok-4.6", "admitted");
+    setRouteState(root, "openrouter/qwen/qwen3-coder-plus", "admitted");
+
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const scheduler = KxmRunScheduler.for(context, bundle);
+      const seen: Array<{ provider?: string | undefined; model?: string | undefined }> = [];
+      const inner = createKxmSimulatedProducer(async () => ({ outcome: "passed" }));
+      const producer = {
+        id: "pi" as const,
+        produce: (request: Parameters<typeof inner.produce>[0]) => {
+          seen.push({ provider: request.provider, model: request.model });
+          return inner.produce(request);
+        },
+        close: async () => undefined,
+      };
+      registerTrustedProducer(producer);
+
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "routewit", prompt: "route witness" });
+      const session = await scheduler.openDriveSession(accepted.run.runId, { mode: "live", createProducer: () => producer });
+      const result = await session.settled;
+      assert.equal(result.state.status, "completed", "the declared route lets the drive run instead of handing off");
+      assert.deepEqual(seen, [{ provider: "xai", model: "grok-4.6" }], "the producer received the agent's declared provider/model");
+
+      // Namespaced model ids stay whole: both fields must survive the selector split.
+      const namespacedAccepted = acceptKxmRun(context, bundle, { workflowId: "namespaced", prompt: "namespaced witness" });
+      seen.length = 0;
+      const namespacedSession = await scheduler.openDriveSession(namespacedAccepted.run.runId, { mode: "live", createProducer: () => producer });
+      const namespacedResult = await namespacedSession.settled;
+      assert.equal(namespacedResult.state.status, "completed", "a namespaced model id is a valid declaration, not an absence");
+      assert.deepEqual(seen, [{ provider: "openrouter", model: "qwen/qwen3-coder-plus" }], "both fields survive the selector round-trip");
+
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
     removeTempDir(root, stateRoot);
   }
 });

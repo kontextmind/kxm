@@ -1284,6 +1284,29 @@ function resolveProducerRoute(
       const parsed = parse(readFileSync(agentFile, "utf8")) as Record<string, unknown>;
       if (typeof parsed?.model === "string") {
         agentModel = parsed.model;
+      } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
+        // The agent schema requires the object form (`{provider, model}`); reading only the
+        // string form left every agent without a route unless it was literally named
+        // `implementer`, which alone hit the hard-coded fallback below. A declared model
+        // must actually drive the producer route. Model ids may themselves be namespaced
+        // (`qwen/qwen3-coder-plus` under `openrouter`) — the provider is the only field
+        // that may not contain the separator, because it is what the selector splits on.
+        // A malformed declaration is an error, not an absence: falling through to the
+        // fallback would silently route an agent that declared `openrouter` to Grok.
+        const declared = parsed.model as { provider?: unknown; model?: unknown };
+        const providerOk = typeof declared.provider === "string" && declared.provider.length > 0 && !declared.provider.includes("/");
+        const modelOk = typeof declared.model === "string" && declared.model.length > 0 && !declared.model.startsWith("/") && !declared.model.endsWith("/");
+        if (providerOk && modelOk) {
+          agentModel = `${declared.provider}/${declared.model}`;
+        } else {
+          return {
+            error: {
+              reason: "step_unsupported",
+              field: "model",
+              detail: "producer_route_unsupported: invalid model declaration",
+            },
+          };
+        }
       }
     } catch {
       // ignore
