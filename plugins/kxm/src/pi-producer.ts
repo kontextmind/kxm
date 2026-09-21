@@ -462,6 +462,13 @@ export function createKxmPiProducer(options: KxmPiProducerOptions = {}): KxmPiPr
 
   function resolveModelForRequest(request: KxmProducerRequest): { provider: string; model: string; thinking?: string | undefined } {
     if (request.model) {
+      // A separate provider field means the model id is bare and may itself be
+      // namespaced (`qwen/qwen3-coder-plus` under `openrouter`); reparsing it as a
+      // provider/model selector strips the namespace and sends the wrong model. Only
+      // parse when the provider must come from the string itself.
+      if (request.provider) {
+        return { provider: request.provider.toLowerCase(), model: request.model, thinking: request.thinking };
+      }
       const parsed = parseModelString(request.model);
       return {
         provider: request.provider?.toLowerCase() ?? parsed.provider,
@@ -472,6 +479,9 @@ export function createKxmPiProducer(options: KxmPiProducerOptions = {}): KxmPiPr
     if (options.resolveModel) {
       const resolved = options.resolveModel(request.agentId, request.runId);
       if (resolved && resolved.model) {
+        if (resolved.provider) {
+          return { provider: resolved.provider.toLowerCase(), model: resolved.model, thinking: resolved.thinking };
+        }
         const parsed = parseModelString(resolved.model);
         return {
           provider: resolved.provider?.toLowerCase() ?? parsed.provider,

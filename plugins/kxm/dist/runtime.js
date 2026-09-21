@@ -28227,6 +28227,9 @@ function createKxmPiProducer(options = {}) {
   }
   function resolveModelForRequest(request) {
     if (request.model) {
+      if (request.provider) {
+        return { provider: request.provider.toLowerCase(), model: request.model, thinking: request.thinking };
+      }
       const parsed2 = parseModelString(request.model);
       return {
         provider: request.provider?.toLowerCase() ?? parsed2.provider,
@@ -28237,6 +28240,9 @@ function createKxmPiProducer(options = {}) {
     if (options.resolveModel) {
       const resolved = options.resolveModel(request.agentId, request.runId);
       if (resolved && resolved.model) {
+        if (resolved.provider) {
+          return { provider: resolved.provider.toLowerCase(), model: resolved.model, thinking: resolved.thinking };
+        }
         const parsed2 = parseModelString(resolved.model);
         return {
           provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
