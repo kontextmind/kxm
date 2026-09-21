@@ -15428,6 +15428,39 @@ function parseCodexOneShotUsage(stdout, stderr) {
     }
   };
 }
+function parsePiOneShotUsage(stdout, _stderr) {
+  let text;
+  let effectiveModel;
+  let usage;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const event = JSON.parse(trimmed);
+      if (event.type !== "message_end" && event.type !== "turn_end") continue;
+      const message = event.message;
+      if (!message || message.role !== "assistant") continue;
+      const content = Array.isArray(message.content) ? message.content : [];
+      const parts = content.map((part) => part && typeof part === "object" && part.type === "text" ? String(part.text ?? "") : "").filter((part) => part.length > 0);
+      if (parts.length > 0) text = parts.join("\n");
+      effectiveModel = reportedModelId(message.model) ?? effectiveModel;
+      const rawUsage = message.usage;
+      if (rawUsage && typeof rawUsage === "object") {
+        usage = {
+          tokensIn: typeof rawUsage.input === "number" ? rawUsage.input : null,
+          tokensOut: typeof rawUsage.output === "number" ? rawUsage.output : null,
+          cacheReadTokens: typeof rawUsage.cacheRead === "number" ? rawUsage.cacheRead : null,
+          cacheWriteTokens: typeof rawUsage.cacheWrite === "number" ? rawUsage.cacheWrite : null,
+          contextTokens: null,
+          costUsd: null
+        };
+      }
+    } catch {
+    }
+  }
+  if (text === void 0) return { text: stdout.trim(), usage: {} };
+  return { text, ...effectiveModel !== void 0 ? { effectiveModel } : {}, usage: usage ?? {} };
+}
 function parseGenericOneShotUsage(stdout, _stderr) {
   const trimmed = stdout.trim();
   try {
@@ -15529,6 +15562,9 @@ function parseAgyOneShotUsage(stdout, _stderr) {
   };
 }
 var READ_ONLY_ONESHOT_ARGS = Object.freeze({
+  // pi: no tools at all (strictly narrower than a Read/Grep allowlist) and an
+  // ephemeral session — a one-shot witness leaves nothing behind.
+  pi: Object.freeze(["--no-tools", "--no-session"]),
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--permission-mode", "plan", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
   grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
@@ -15555,7 +15591,7 @@ var BUILTIN_HARNESSES = Object.freeze([
       argv: ["-p", "--mode", "json"],
       promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
+      usageParser: parsePiOneShotUsage
     }
   },
   {
@@ -27106,6 +27142,14 @@ function createKxmOneShotProducer(options = {}) {
         "stream-json",
         "-p"
       ];
+    } else if (harness === "pi") {
+      const qualified = resolved.model.includes("/") ? resolved.model : `${resolved.provider}/${resolved.model}`;
+      args = [
+        "--model",
+        qualified,
+        ...permissionArgs,
+        ...oneShot.argv
+      ];
     } else {
       throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
     }
@@ -30371,6 +30415,7 @@ export {
   parseGenericOneShotUsage,
   parseGrokOneShotUsage,
   parseKimiOneShotUsage,
+  parsePiOneShotUsage,
   parseSshConfig,
   persistKxmRunState,
   planHarnessUpdate,

@@ -37,8 +37,10 @@ test("Stage 1: oneShotReadOnlyArgs exposes pinned sandboxed flags for agy and ki
   assert.ok(oneShotReadOnlyArgs("codex")?.includes("read-only"));
   assert.ok(oneShotReadOnlyArgs("grok")?.includes("read-only"));
 
-  // Pi is an RPC worker, not a generic one-shot with audited CLI flags
-  assert.equal(oneShotReadOnlyArgs("pi"), undefined);
+  // Pi is audited for one-shot since S5: no tools at all (narrower than any allowlist)
+  // and an ephemeral session. It remains the long-lived RPC worker too; both shapes
+  // exist, and the one-shot profile is what a live drive uses on a tenant box.
+  assert.deepEqual(oneShotReadOnlyArgs("pi"), ["--no-tools", "--no-session"]);
   assert.equal(oneShotReadOnlyArgs("unknown_harness"), undefined);
 });
 

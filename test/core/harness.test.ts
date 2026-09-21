@@ -1047,3 +1047,40 @@ test("async inventory probe test does not inherit ambient PATH", () => {
 });
 
 
+
+test("parsePiOneShotUsage reads the final assistant message from the NDJSON stream", () => {
+  const stream = [
+    JSON.stringify({ type: "message_start", message: { role: "user", content: [{ type: "text", text: "prompt" }] } }),
+    JSON.stringify({ type: "message_update", usage: { input: 0 }, assistantMessageEvent: { type: "text_delta", delta: "{\"" } }),
+    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "…" }, { type: "text", text: '{"outcome":"passed","summary":"witness"}' }], provider: "qwen-token-plan", model: "qwen3.8-flash", usage: { input: 456, output: 28, cacheRead: 0, cacheWrite: 0 } } }),
+    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: '{"outcome":"passed","summary":"witness"}' }], model: "qwen3.8-flash", usage: { input: 456, output: 28 } } }),
+    "not json at all",
+  ].join("\n");
+  const parsed = kxmHarness.parsePiOneShotUsage(stream, "");
+  assert.equal(parsed.text, '{"outcome":"passed","summary":"witness"}');
+  assert.equal(parsed.effectiveModel, "qwen3.8-flash");
+  assert.equal(parsed.usage?.tokensIn, 456);
+  assert.equal(parsed.usage?.tokensOut, 28);
+
+  // A stream with no assistant message falls back to the raw text rather than empty —
+  // a shape change must be visible, not silently swallowed.
+  const fallback = kxmHarness.parsePiOneShotUsage("a shape we do not know yet", "");
+  assert.equal(fallback.text, "a shape we do not know yet");
+
+  // Multi-part replies join with newlines; thinking parts never leak into the text
+  const multi = [
+    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [
+      { type: "thinking", thinking: "secret reasoning" },
+      { type: "text", text: "line one" },
+      { type: "text", text: "line two" },
+    ], usage: { input: 1, output: 2 } } }),
+  ].join("\n");
+  const multiParsed = kxmHarness.parsePiOneShotUsage(multi, "");
+  assert.equal(multiParsed.text, "line one\nline two");
+  assert.ok(!multiParsed.text.includes("secret reasoning"));
+});
+
+test("pi one-shot profile is audited read-only: no tools, ephemeral session", () => {
+  assert.deepEqual([...kxmHarness.oneShotReadOnlyArgs("pi")!], ["--no-tools", "--no-session"],
+    "strictly narrower than a Read/Grep allowlist, and nothing persists");
+});

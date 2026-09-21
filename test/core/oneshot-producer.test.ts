@@ -558,21 +558,21 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
     await producer.close();
   }
 
-  // Pi's RPC producer is separate; a generic one-shot cannot inherit its permissions.
+  // Pi's one-shot is audited since S5 (no tools, ephemeral session), so a pi
+  // one-shot now dispatches instead of refusing; unaudited harnesses still do.
   let capturedArgs: readonly string[] = [];
+  const piStream = [
+    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: '{"outcome":"completed"}' }], model: "qwen3.8-flash", usage: { input: 9, output: 4 } } }),
+  ].join("\n");
   const argProducer = createKxmOneShotProducer({
     defaultHarness: "pi",
     probeHarness: fakeAuth as any,
     spawnProcess: async (cmd, args) => {
       capturedArgs = args;
-      return {
-        stdout: JSON.stringify({ result: "done" }),
-        stderr: "",
-        code: 0,
-      };
+      return { stdout: piStream, stderr: "", code: 0 };
     },
   });
-  await assert.rejects(argProducer.produce({
+  const piResult = await argProducer.produce({
     runId: "run_arg_1",
     stepId: "s1",
     stepAttempt: 1,
@@ -583,9 +583,29 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
     allowedOutcomes: ["completed"],
     prompt: "Prompt in args",
     signal: new AbortController().signal,
-  }), /permission_profile_unaudited/);
-  assert.deepEqual(capturedArgs, []);
+  });
+  assert.equal(piResult.outcome, "completed");
+  assert.ok(capturedArgs.includes("--no-tools") && capturedArgs.includes("--no-session"));
   await argProducer.close();
+
+  const refusedProducer = createKxmOneShotProducer({
+    defaultHarness: "deepseek",
+    probeHarness: fakeAuth as any,
+    spawnProcess: async () => { throw new Error("must not spawn"); },
+  });
+  await assert.rejects(refusedProducer.produce({
+    runId: "run_arg_2",
+    stepId: "s1",
+    stepAttempt: 1,
+    assignmentId: "asg_ref",
+    attemptId: "att_ref",
+    agentId: "planner",
+    capability: "secret",
+    allowedOutcomes: ["completed"],
+    prompt: "Prompt in args",
+    signal: new AbortController().signal,
+  }), /permission_profile_unaudited/);
+  await refusedProducer.close();
 });
 
 test("defaultSpawn handles standard process execution, stdin piping, and exit codes", async () => {

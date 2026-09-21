@@ -213,6 +213,18 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
           "stream-json",
           "-p",
         ];
+      } else if (harness === "pi") {
+        // pi's model flag takes the provider-qualified id (the same rule as the auth
+        // probe): a bare model answers "invalid" at spawn time.
+        const qualified = resolved.model.includes("/")
+          ? resolved.model
+          : `${resolved.provider}/${resolved.model}`;
+        args = [
+          "--model",
+          qualified,
+          ...permissionArgs,
+          ...oneShot.argv,
+        ];
       } else {
         throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
       }
