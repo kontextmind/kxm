@@ -28,6 +28,7 @@ import {
   stepKxmRun,
   verifyKxmAttemptCapability,
   kxmPanelDispatchSeams,
+  type KxmProducer,
 } from "../../plugins/kxm/src/engine.ts";
 import {
   admitKxmRun,
@@ -1267,6 +1268,30 @@ test("a producer that throws is recorded as itself, with its reason", async () =
       const proseRecorded = JSON.parse(proseRows[0]!.payload) as { producerError?: string };
       assert.equal(proseRecorded.producerError, "producer_error",
         "a refusal whose message carries no machine code records the generic code, never the prose");
+
+      // Synchronous throws and malformed thrown values must classify too — a classifier
+      // that throws reroutes the settle into the execution-error path and the reason
+      // disappears again. Object.create(null) defeats String(); a non-string message
+      // defeats split().
+      const hostile: Array<{ label: string; make: () => KxmProducer }> = [
+        { label: "sync-throw", make: () => ({ id: "oneshot" as const, produce: (() => { throw new Error("oneshot_route_refused"); }) as unknown as KxmProducer["produce"], close: async () => undefined }) },
+        { label: "null-proto", make: () => ({ id: "oneshot" as const, produce: (() => { throw Object.create(null); }) as unknown as KxmProducer["produce"], close: async () => undefined }) },
+        { label: "non-string-message", make: () => ({ id: "oneshot" as const, produce: (() => { const e = new Error("x"); (e as { message?: unknown }).message = 12345; throw e; }) as unknown as KxmProducer["produce"], close: async () => undefined }) },
+      ];
+      for (const { label, make } of hostile) {
+        const witness = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: `hostile ${label}` });
+        const hostileProducer = make();
+        registerTrustedProducer(hostileProducer);
+        const hostileSession = await scheduler.openDriveSession(witness.run.runId, { mode: "live", createProducer: () => hostileProducer });
+        await hostileSession.settled;
+        const hostileRows = new DatabaseSync(context.eventStore.path)
+          .prepare("SELECT payload FROM events WHERE run_id = ? AND event_type = 'assignment.result_recorded'")
+          .all(witness.run.runId) as Array<{ payload: string }>;
+        const hostileRecorded = JSON.parse(hostileRows[0]!.payload) as { resultClass?: string; producerError?: string };
+        assert.equal(hostileRecorded.resultClass, "producer_rejected", `${label}: settles as a refusal, not an execution error`);
+        assert.equal(hostileRecorded.producerError, label === "sync-throw" ? "oneshot_route_refused" : "producer_error",
+          `${label}: classifies without throwing`);
+      }
     } finally {
       closeKxmRuntimeContext(context);
     }

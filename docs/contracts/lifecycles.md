@@ -100,7 +100,7 @@ created → accepted → dispatched → executing → result_recorded → termin
 | `dispatched` | Attempt identity and dispatch intent persisted before process start |
 | `executing` | Invocation admitted and the attempt capability is usable. This slice is in-process (no OS process identity yet); later recovery still requires exact process/session proof |
 | `reattaching` | Runtime is verifying the same process/session and event cursor |
-| `result_recorded` | Structured attempt result and referenced receipts are durably stored. When a producer **refused** (`resultClass: producer_rejected`), the payload carries `producerError`: the producer's own bounded reason (≤200 chars, message text only), and the routing record names the producer that actually ran — a live drive that fails authentication must never read in the log as a simulation |
+| `result_recorded` | Structured attempt result and referenced receipts are durably stored. When a producer **refused** (`resultClass: producer_rejected`), the payload may carry `producerError`: a **machine code only** (lowercase-underscore identifier, ≤64 chars, schema-enforced; capability material is redacted before extraction, and anything unclassifiable — including prose — records as `producer_error`). The routing record names the producer that actually ran: a live drive that fails authentication must never read in the log as a simulation |
 | `retry_pending` | Policy permits another physical attempt after the prior attempt became terminal |
 | `blocked_uncertain` | A dependent effect cannot be reconciled safely |
 | `terminal` | The logical assignment outcome is final and immutable: passed, failed, or cancelled |

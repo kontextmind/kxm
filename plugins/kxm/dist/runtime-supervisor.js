@@ -24602,13 +24602,18 @@ var KxmRunScheduler = class _KxmRunScheduler {
 };
 function invokeProducer(producer, request) {
   const reason = (error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    let text = message;
-    if (request.capability) text = text.split(request.capability).join("[redacted]");
-    text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
-    const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
-    const code = match?.[0] ?? "";
-    return code.length > 0 && code.length <= 64 ? code : "producer_error";
+    try {
+      const raw = error instanceof Error ? error.message : error;
+      const message = typeof raw === "string" ? raw : "";
+      let text = message;
+      if (request.capability) text = text.split(request.capability).join("[redacted]");
+      text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
+      const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
+      const code = match?.[0] ?? "";
+      return code.length > 0 && code.length <= 64 ? code : "producer_error";
+    } catch {
+      return "producer_error";
+    }
   };
   let pending;
   try {

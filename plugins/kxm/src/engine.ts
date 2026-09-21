@@ -863,13 +863,22 @@ function invokeProducer(
   // leading machine-code identifier (lowercase segments joined by underscores). Anything
   // else — prose, free text, a redacted-to-empty message — records as producer_error.
   const reason = (error: unknown): string => {
-    const message = error instanceof Error ? error.message : String(error);
-    let text = message;
-    if (request.capability) text = text.split(request.capability).join("[redacted]");
-    text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
-    const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
-    const code = match?.[0] ?? "";
-    return code.length > 0 && code.length <= 64 ? code : "producer_error";
+    // Never throw while classifying a throw: a producer can reject with anything
+    // (Object.create(null) defeats String(), an Error whose message is not a string
+    // defeats split()), and a throwing classifier would reroute a producer_rejected
+    // settle into the execution-error path — the exact invisibility this exists to fix.
+    try {
+      const raw = error instanceof Error ? error.message : error;
+      const message = typeof raw === "string" ? raw : "";
+      let text = message;
+      if (request.capability) text = text.split(request.capability).join("[redacted]");
+      text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
+      const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
+      const code = match?.[0] ?? "";
+      return code.length > 0 && code.length <= 64 ? code : "producer_error";
+    } catch {
+      return "producer_error";
+    }
   };
   let pending: Promise<KxmProducerResult>;
   try {
