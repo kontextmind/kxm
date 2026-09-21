@@ -25397,8 +25397,18 @@ function resolveProducerRoute(projectRoot, step, agentId) {
         agentModel = parsed.model;
       } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
         const declared = parsed.model;
-        if (typeof declared.provider === "string" && typeof declared.model === "string" && declared.provider.length > 0 && declared.model.length > 0 && !declared.provider.includes("/") && !declared.model.includes("/")) {
+        const providerOk = typeof declared.provider === "string" && declared.provider.length > 0 && !declared.provider.includes("/");
+        const modelOk = typeof declared.model === "string" && declared.model.length > 0 && !declared.model.startsWith("/") && !declared.model.endsWith("/");
+        if (providerOk && modelOk) {
           agentModel = `${declared.provider}/${declared.model}`;
+        } else {
+          return {
+            error: {
+              reason: "step_unsupported",
+              field: "model",
+              detail: "producer_route_unsupported: invalid model declaration"
+            }
+          };
         }
       }
     } catch {

@@ -1289,6 +1289,7 @@ test("a live drive resolves the producer route from the agent's declared model",
   }
 });
 
+
 test("openDriveSession admits before pin, returns driveId, and closes the producer", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-drive-session-");
   try {
