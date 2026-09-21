@@ -798,6 +798,18 @@ test("probeHarnessAssignment supplies exact provider/model context to Pi and val
       stdout: JSON.stringify({ status: "not_ready", provider: "unavailable", reason: "provider_not_found" }),
       stderr: "",
     },
+    "pi auth check --model qwen-token-plan/qwen3.8-flash --json": {
+      ok: true,
+      code: 0,
+      stdout: JSON.stringify({ status: "ready", provider: "qwen-token-plan", authType: "api_key" }),
+      stderr: "",
+    },
+    "pi auth check --model openrouter/qwen/qwen3-coder-plus --json": {
+      ok: true,
+      code: 0,
+      stdout: JSON.stringify({ status: "ready", provider: "openrouter", authType: "api_key" }),
+      stderr: "",
+    },
     "claude --version": { ok: true, code: 0, stdout: "2.1.260\n", stderr: "" },
     "claude auth status": {
       ok: true,
@@ -825,6 +837,16 @@ test("probeHarnessAssignment supplies exact provider/model context to Pi and val
   assert.equal(piUnavailable.authenticated, false);
   assert.deepEqual([...piUnavailable.issues], ["not_authenticated"]);
 
+  // A bare model plus a separate provider is the engine's request shape; `pi auth check
+  // --model` requires the provider-qualified id (a bare model answers "invalid", which
+  // used to read as not_authenticated and hide the real auth state).
+  const piBareModel = probeHarnessAssignment({ harness: "pi", provider: "qwen-token-plan", model: "qwen3.8-flash", runCommand });
+  assert.equal(piBareModel.authenticated, true, "bare model + provider probes the qualified id");
+
+  // An already-namespaced model goes through unchanged, whichever provider field rides along
+  const piNamespaced = probeHarnessAssignment({ harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus", runCommand });
+  assert.equal(piNamespaced.authenticated, true, "namespaced model probes as-is");
+
   // Pi with direct anthropic model triggers native brake and does not spawn
   const piAnthropic = probeHarnessAssignment({ harness: "pi", provider: "anthropic", model: "claude-sonnet-4-6", runCommand });
   assert.equal(piAnthropic.authenticated, false);
@@ -848,7 +870,7 @@ test("probeHarnessesForModel supplies model context across inventory and satisfi
     {
       runCommand: runner({
         "pi --version": { ok: true, code: 0, stdout: "0.85.1\n", stderr: "" },
-        "pi auth check --model qwen/qwen3-coder-plus --json": {
+        "pi auth check --model openrouter/qwen/qwen3-coder-plus --json": {
           ok: true,
           code: 0,
           stdout: JSON.stringify({ status: "ready", provider: "openrouter", authType: "api_key" }),

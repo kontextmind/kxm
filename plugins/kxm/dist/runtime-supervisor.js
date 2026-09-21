@@ -16102,8 +16102,9 @@ function probeHarnessAssignment(options) {
       };
     }
     const authArgs = ["auth", "check"];
-    if (options.model) {
-      authArgs.push("--model", options.model);
+    const qualifiedModel = options.model ? options.provider && options.model.startsWith(`${options.provider}/`) ? options.model : options.provider ? `${options.provider}/${options.model}` : options.model : void 0;
+    if (qualifiedModel) {
+      authArgs.push("--model", qualifiedModel);
     } else if (options.provider) {
       authArgs.push("--provider", options.provider);
     }
