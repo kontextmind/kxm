@@ -21252,11 +21252,6 @@ function parsePiOneShotUsage(stdout, _stderr) {
   }
   const content = Array.isArray(finalMessage.content) ? finalMessage.content : [];
   const text = content.map((part) => part && typeof part === "object" && part.type === "text" ? String(part.text ?? "") : "").filter((part) => part.length > 0).join("\n");
-  const stopReason = typeof finalMessage.stopReason === "string" ? finalMessage.stopReason : void 0;
-  const terminalError = stopReason === "error" || stopReason === "aborted";
-  if (terminalError || text.length === 0) {
-    return { text, isError: true, usage: {} };
-  }
   const effectiveModel = reportedModelId(finalMessage.model);
   const rawUsage = finalMessage.usage;
   const usage = rawUsage && typeof rawUsage === "object" ? {
@@ -21267,6 +21262,11 @@ function parsePiOneShotUsage(stdout, _stderr) {
     contextTokens: null,
     costUsd: null
   } : {};
+  const stopReason = typeof finalMessage.stopReason === "string" ? finalMessage.stopReason : void 0;
+  const terminalError = stopReason === "error" || stopReason === "aborted";
+  if (terminalError || text.length === 0) {
+    return { text, isError: true, ...effectiveModel !== void 0 ? { effectiveModel } : {}, usage };
+  }
   return { text, ...effectiveModel !== void 0 ? { effectiveModel } : {}, usage };
 }
 function parseGenericOneShotUsage(stdout, _stderr) {

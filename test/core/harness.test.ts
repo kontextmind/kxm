@@ -1078,9 +1078,11 @@ test("parsePiOneShotUsage reads the final assistant message from the NDJSON stre
   // with exit code zero and PASS text riding along.
   for (const stopReason of ["error", "aborted"]) {
     const errored = kxmHarness.parsePiOneShotUsage([
-      assistant('{"outcome":"passed"}', { stopReason, usage: { input: 9, output: 9 } }),
+      assistant('{"outcome":"passed"}', { stopReason, model: "qwen3.8-flash", usage: { input: 9, output: 9 } }),
     ].join("\n"), "");
     assert.equal(errored.isError, true, `stopReason ${stopReason} fails the turn`);
+    assert.equal(errored.usage?.tokensIn, 9, "the failed turn's usage is still reported");
+    assert.equal(errored.effectiveModel, "qwen3.8-flash", "the failed turn's model is still reported");
   }
 
   // An EMPTY final assistant message inherits nothing from the earlier turn
@@ -1090,6 +1092,8 @@ test("parsePiOneShotUsage reads the final assistant message from the NDJSON stre
   ].join("\n"), "");
   assert.equal(emptyFinal.text, "");
   assert.equal(emptyFinal.isError, true, "an empty final turn fails closed");
+  assert.equal(emptyFinal.usage?.tokensIn, 7, "usage from the failed final is still reported");
+  assert.equal(emptyFinal.usage?.tokensOut, 3);
 
   // Multi-part replies join with newlines; thinking parts never leak into the text
   const multi = kxmHarness.parsePiOneShotUsage([

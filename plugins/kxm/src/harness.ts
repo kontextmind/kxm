@@ -335,11 +335,9 @@ export function parsePiOneShotUsage(stdout: string, _stderr: string): OneShotPar
     .filter((part) => part.length > 0)
     .join("\n");
   // pi can exit zero on a failed turn; the stop reason is the fact that matters.
-  const stopReason = typeof finalMessage.stopReason === "string" ? finalMessage.stopReason : undefined;
-  const terminalError = stopReason === "error" || stopReason === "aborted";
-  if (terminalError || text.length === 0) {
-    return { text, isError: true, usage: {} };
-  }
+  // Metadata comes from the selected final message even on a failed turn: usage and
+  // model are facts about what ran, not claims about the outcome, and dropping them
+  // turned a real 7/3-token failure into null/null with model "unknown".
   const effectiveModel = reportedModelId(finalMessage.model);
   const rawUsage = finalMessage.usage as Record<string, unknown> | undefined;
   const usage: OneShotUsage = rawUsage && typeof rawUsage === "object"
@@ -352,6 +350,11 @@ export function parsePiOneShotUsage(stdout: string, _stderr: string): OneShotPar
       costUsd: null,
     }
     : {};
+  const stopReason = typeof finalMessage.stopReason === "string" ? finalMessage.stopReason : undefined;
+  const terminalError = stopReason === "error" || stopReason === "aborted";
+  if (terminalError || text.length === 0) {
+    return { text, isError: true, ...(effectiveModel !== undefined ? { effectiveModel } : {}), usage };
+  }
   return { text, ...(effectiveModel !== undefined ? { effectiveModel } : {}), usage };
 }
 

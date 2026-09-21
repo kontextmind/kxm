@@ -771,7 +771,10 @@ test("One-shot rejects unprofiled executables and preserves native option resolu
     signal: new AbortController().signal,
   });
   assert.equal(slashRes.provider, "custom-lab");
-  assert.equal(slashRes.requestedModel, "custom-model");
+  // A separate provider field means the model id is bare and namespace-intact
+  // (the #262 rule); the old reparse stripped "custom-lab/" from a model that
+  // was never namespaced under it.
+  assert.equal(slashRes.requestedModel, "custom-lab/custom-model");
   await slashProducer.close();
 });
 

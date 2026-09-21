@@ -342,6 +342,31 @@ test("audited pi one-shot dispatches toolless, ephemeral, with the qualified mod
     assert.ok(capturedArgs.includes("--no-session"), "ephemeral session");
     const modelIndex = capturedArgs.indexOf("--model");
     assert.equal(capturedArgs[modelIndex + 1], "qwen-token-plan/qwen3.8-flash", "the spawn carries the provider-qualified id");
+
+  // Provider-local namespaces survive the resolver: openrouter's qwen/qwen3-coder-plus
+  // spawns as the full three-part id, not openrouter/qwen3-coder-plus.
+  {
+    const nsProducer = createKxmOneShotProducer({
+      defaultHarness: "pi",
+      probeHarness: () => ({
+        id: "pi", label: "Pi", default: true, mode: "headless" as const,
+        detected: true, authenticated: true, canUpdate: { self: false, extensions: false, models: false }, issues: [],
+      }),
+      spawnProcess: async (_command, args) => {
+        capturedArgs = args;
+        const nsStream = [
+          JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: '{"outcome":"passed"}' }], model: "qwen3-coder-plus", usage: { input: 1, output: 1 } } }),
+        ].join("\n");
+        return { stdout: nsStream, stderr: "", code: 0 };
+      },
+    });
+    try {
+      const ns = await nsProducer.produce(request({ harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus", prompt: "witness" }));
+      assert.equal(ns.outcome, "passed", JSON.stringify(ns));
+      const idx = capturedArgs.indexOf("--model");
+      assert.equal(capturedArgs[idx + 1], "openrouter/qwen/qwen3-coder-plus", "provider-local namespaces survive the resolver and the spawn");
+    } finally { await nsProducer.close(); }
+  }
     assert.ok(capturedArgs.includes("-p") && capturedArgs.includes("--mode") && capturedArgs.includes("json"), "one-shot json mode");
     assert.ok(!JSON.stringify(res).includes("internal reasoning"), "thinking never leaks into the result");
   } finally { await producer.close(); }
