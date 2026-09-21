@@ -3,6 +3,8 @@ import test from "node:test";
 import { parse } from "yaml";
 import { compileKxmWorkflow } from "../../plugins/kxm/src/engine-compile.ts";
 import { generateStudioLayout, STUDIO_LAYOUT_SCHEMA, createStudioServer } from "../../plugins/kxm/src/studio-layout.ts";
+import { assembleTenantStatus, formatTenantStatus } from "../../plugins/kxm/src/tenant-status.ts";
+import { runtimeError } from "../../plugins/kxm/src/runtime-store.ts";
 
 test("generateStudioLayout compiles plan into Decision D14 DAG, stepper, and Temporal swimlanes", () => {
   const yamlContent = `
@@ -362,3 +364,188 @@ test("CLI studio serve launches server and handles error gracefully", async () =
 
 
 
+
+test("portal reads distinguish hub metadata from Runtime run state and unavailable upstreams", async () => {
+  // The property S2 exists for: a portal must never render the hub's record of a run as if
+  // it were the run. Every value carries the authority that produced it, an unreadable
+  // upstream is reported as unavailable with a stable reason instead of being filled from
+  // the other source, and the cross-check refuses to claim agreement it cannot establish.
+  const project = "prj_01JTENANTSTATUS000000000";
+  const hubSnapshot = {
+    project,
+    fetchedAt: "2026-09-20T12:00:00.000Z",
+    agents: [
+      { id: "a1", name: "coordinator", online: true },
+      { id: "a2", name: "implementer", online: false },
+    ],
+    openMessageTotal: 3,
+    runTotal: 2,
+    runs: [
+      {
+        id: "run_1", status: "completed", definitionId: "default", updatedAt: "2026-09-20T11:00:00.000Z",
+        targetAgentName: "implementer",
+        stages: [{ id: "plan", status: "passed", attempts: 2 }, { id: "review", status: "passed" }],
+      },
+      { id: "run_2", status: "running", definitionId: "default", currentStage: "review" },
+    ],
+    plans: [{ id: "p1", runId: "run_1", summary: "fix the gate", createdAt: "2026-09-20T10:00:00.000Z", severity: "info" }],
+  };
+  const runtimeRuns = [
+    { runId: "run_1", status: "completed", homeRuntimeId: "rt_box", workflowId: "default", source: "runtime-authoritative" as const },
+    { runId: "run_2", status: "failed", homeRuntimeId: "rt_box", workflowId: "default", source: "runtime-authoritative" as const },
+  ];
+  const okFetch: typeof fetch = (async (url: RequestInfo | URL) => {
+    assert.match(String(url), /\/v1\/ops\/snapshot\?project=/, "the hub read must go to the existing ops snapshot route");
+    return new Response(JSON.stringify(hubSnapshot), { status: 200 });
+  }) as typeof fetch;
+  const assemble = (overrides: Record<string, unknown>) => assembleTenantStatus({
+    project,
+    hubUrl: "http://127.0.0.1:7331",
+    resolveAdminToken: () => "admin-token",
+    fetchImpl: okFetch,
+    runtime: { listRuns: async () => runtimeRuns },
+    now: () => new Date("2026-09-20T12:00:01.000Z"),
+    ...overrides,
+  } as Parameters<typeof assembleTenantStatus>[0]);
+
+  const both = await assemble({});
+  assert.equal(both.schema, "kxm.tenant-status.v1");
+  assert.equal(both.bindingScope, "loopback", "loopback binding is labelled so the portal can show it");
+  assert.equal(both.degraded, false);
+  assert.equal(both.hub.state, "ok");
+  assert.deepEqual(both.hub.value?.agents.map((agent) => [agent.name, agent.online]), [["coordinator", true], ["implementer", false]]);
+  const hubRuns = both.hub.value?.runs ?? [];
+  assert.equal(hubRuns.length, 2);
+  for (const run of hubRuns) assert.equal(run.source, "hub-projection", "hub runs are labelled as the hub's own record");
+  assert.equal(hubRuns[0]?.targetAgentName, "implementer", "target agent survives into the view");
+  assert.deepEqual(hubRuns[0]?.progress, { done: 2, total: 2 }, "stage progress is preserved for the portal card");
+  assert.equal(hubRuns[0]?.stages?.[0]?.attempts, 2);
+  assert.equal(both.hub.value?.plans[0]?.summary, "fix the gate", "plans survive into the view");
+  assert.equal(both.runtime.state, "ok");
+  for (const run of both.runtime.value?.runs ?? []) assert.equal(run.source, "runtime-authoritative", "runtime runs are labelled authoritative");
+  assert.deepEqual(both.runComparison, {
+    state: "compared",
+    matched: 2,
+    discrepancies: [{ runId: "run_2", hubStatus: "running", runtimeStatus: "failed" }],
+  }, "only ids present in both populations are compared, and a disagreement is surfaced");
+
+  const hubDown = await assemble({
+    fetchImpl: (async () => { throw new Error("connection refused"); }) as unknown as typeof fetch,
+  });
+  assert.equal(hubDown.hub.state, "unavailable");
+  assert.equal(hubDown.hub.reason, "hub_unreachable");
+  assert.equal(hubDown.hub.value, undefined, "an unreachable hub contributes no values at all");
+  assert.equal(hubDown.runtime.state, "ok", "runtime state survives the hub being down");
+  assert.equal(hubDown.degraded, true);
+  assert.equal(hubDown.runComparison.state, "unavailable", "no cross-check is claimed from one source");
+
+  const hubHanging = await assemble({
+    hubTimeoutMs: 30,
+    fetchImpl: ((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      // A fetch stub that ignores the signal would hang forever; honouring it is the point.
+      // The fallback timer is deliberately **ref'd**: AbortSignal.timeout keeps its timer
+      // unref'd, so a stub that waited only on the signal could leave the event loop empty
+      // with the promise pending — which node:test reports as a hang (seen on the Node 22
+      // CI leg). A real in-flight socket keeps the loop alive; a stub must do it itself.
+      let settled = false;
+      const abort = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(fallback);
+        reject(Object.assign(new Error("hub read aborted"), { name: "TimeoutError" }));
+      };
+      const fallback = setTimeout(abort, 30);
+      init?.signal?.addEventListener("abort", abort);
+    })) as unknown as typeof fetch,
+  });
+  assert.equal(hubHanging.hub.reason, "hub_timeout", "a hanging hub read ends at its deadline, not never");
+  assert.equal(hubHanging.runtime.state, "ok", "the runtime read is not held hostage by the hub deadline");
+
+  const hubGarbage = await assemble({
+    fetchImpl: (async () => new Response("not json at all", { status: 200 })) as unknown as typeof fetch,
+  });
+  assert.equal(hubGarbage.hub.reason, "hub_response_invalid", "a 200 that is not JSON is not reachability");
+
+  const hubEmpty = await assemble({
+    fetchImpl: (async () => new Response(JSON.stringify({}), { status: 200 })) as unknown as typeof fetch,
+  });
+  assert.equal(hubEmpty.hub.reason, "hub_response_invalid", "a 200 with an unusable body must not become a healthy empty snapshot");
+  assert.equal(hubEmpty.hub.value, undefined);
+
+  const unauthorized = await assemble({
+    fetchImpl: (async () => new Response("denied", { status: 401 })) as unknown as typeof fetch,
+  });
+  assert.equal(unauthorized.hub.reason, "hub_unauthorized", "401 is a credential problem, not a reachability one");
+
+  const badRecord = await assemble({
+    resolveAdminToken: () => { throw new Error("malformed hub-env record"); },
+  });
+  assert.equal(badRecord.hub.reason, "hub_credential_unreadable", "a malformed record degrades the hub source only");
+  assert.equal(badRecord.runtime.state, "ok", "the runtime read proceeds when the credential cannot even be resolved");
+
+  const disjoint = await assemble({
+    runtime: { listRuns: async () => [{ runId: "run_999", status: "running", homeRuntimeId: "rt_box", source: "runtime-authoritative" as const }] },
+  });
+  assert.deepEqual(disjoint.runComparison, { state: "unverified", reason: "run_identity_link_absent", matched: 0 },
+    "no shared ids means the populations did not intersect — that is not agreement");
+
+  // A row whose fold failed is the cache, not state: it must be labelled runtime-cached,
+  // excluded from the authoritative comparison, and never allow "agree" to print over a
+  // corrupt event log.
+  const foldFailedOnly = await assemble({
+    runtime: { listRuns: async () => [{ runId: "run_1", status: "completed", homeRuntimeId: "rt_box", projectionError: "run_events_corrupt", source: "runtime-cached" as const }] },
+  });
+  const cachedRun = foldFailedOnly.runtime.value?.runs[0];
+  assert.equal(cachedRun?.source, "runtime-cached", "a failed fold labels the row as the cache");
+  assert.deepEqual(foldFailedOnly.runComparison, { state: "unverified", reason: "runtime_fold_failed", matched: 0, unverifiedFoldRuns: 1 },
+    "a shared id whose fold failed is unverified, not agreement");
+  assert.equal(foldFailedOnly.degraded, false, "a cached row is still a read; degraded tracks source reachability");
+
+  const mixedFold = await assemble({
+    runtime: { listRuns: async () => [
+      { runId: "run_1", status: "completed", homeRuntimeId: "rt_box", source: "runtime-authoritative" as const },
+      { runId: "run_2", status: "failed", homeRuntimeId: "rt_box", projectionError: "run_events_corrupt", source: "runtime-cached" as const },
+    ] },
+  });
+  assert.deepEqual(mixedFold.runComparison, { state: "compared", matched: 1, unverifiedFoldRuns: 1 },
+    "clean folds compare; the failed one is counted as unverified, not as agreement");
+
+  const bodyDeadline = await assemble({
+    hubTimeoutMs: 30,
+    fetchImpl: (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw Object.assign(new Error("body abandoned"), { name: "TimeoutError" });
+      },
+    })) as unknown as typeof fetch,
+  });
+  assert.equal(bodyDeadline.hub.reason, "hub_timeout", "a deadline that expires mid-body is a timeout, not malformed content");
+
+  const runtimeDown = await assemble({
+    hubUrl: "http://10.0.0.5:7331",
+    runtime: {
+      listRuns: async () => {
+        throw runtimeError("runtime_supervisor_not_running", "runtime", "no live runtime supervisor on this box");
+      },
+    },
+  });
+  assert.equal(runtimeDown.bindingScope, "remote", "a remote hub binding is labelled, because only loopback ships without a token");
+  assert.equal(runtimeDown.runtime.state, "unavailable");
+  assert.equal(runtimeDown.runtime.reason, "runtime_supervisor_not_running", "the reader's own reason code survives into the view");
+  assert.equal(runtimeDown.hub.state, "ok", "hub metadata survives the runtime being down");
+  assert.equal(runtimeDown.degraded, true);
+  assert.match(formatTenantStatus(runtimeDown), /runtime unavailable \(runtime_supervisor_not_running\)/);
+  assert.match(formatTenantStatus(runtimeDown), /agents online/);
+  assert.match(formatTenantStatus(disjoint), /independent id spaces/, "the prose says what unverified means");
+  assert.match(formatTenantStatus(foldFailedOnly), /1 cached \(fold failed, not state\)/, "the prose never calls a cached row authoritative");
+  assert.match(formatTenantStatus(foldFailedOnly), /could not be verified \(runtime fold failed\)/, "the prose names the fold failure, not the id-space reason");
+  const mixedDisagree = await assemble({
+    runtime: { listRuns: async () => [
+      { runId: "run_1", status: "failed", homeRuntimeId: "rt_box", source: "runtime-authoritative" as const },
+      { runId: "run_2", status: "completed", homeRuntimeId: "rt_box", projectionError: "run_events_illegal", source: "runtime-cached" as const },
+    ] },
+  });
+  assert.match(formatTenantStatus(mixedDisagree), /disagree \(1 unverified: fold failed\)/,
+    "a disagreement line also carries the unverified folds it is standing next to");
+});

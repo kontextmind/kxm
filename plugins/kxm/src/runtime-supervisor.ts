@@ -179,6 +179,28 @@ export interface KxmSupervisorHandle {
   started: boolean;
 }
 
+/**
+ * Attach to a live supervisor, or return `undefined`. Never starts one.
+ *
+ * `ensureKxmSupervisor` is for operators: an absent supervisor is a problem to fix, so it
+ * spawns. A poller — the portal tenant read, a status screen — has the opposite contract:
+ * polling must not conjure a daemon, and "nothing is running" is an answer to report, not
+ * a condition to repair. Returns `undefined` for every not-running shape: no claim, a
+ * supervisor registered but dead, a missing token file, or a probe that fails the
+ * token-proof challenge.
+ */
+export async function attachKxmSupervisor(
+  options: { stateRoot?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<KxmSupervisorHandle | undefined> {
+  const paths = kxmRuntimePaths(options.stateRoot !== undefined ? { stateRoot: options.stateRoot } : { ...(options.env ? { env: options.env } : {}) });
+  const status = kxmSupervisorStatus(paths);
+  if (!status.running || !status.port || !status.runtimeId) return undefined;
+  const token = readKxmSupervisorToken(paths);
+  if (!token) return undefined;
+  if (!(await probeSupervisor(status.port, status.runtimeId, token))) return undefined;
+  return { runtimeId: status.runtimeId, port: status.port, token, started: false };
+}
+
 /** Ensure a supervisor is running: reuse a live one, otherwise auto-start. */
 export async function ensureKxmSupervisor(
   options: { stateRoot?: string; env?: NodeJS.ProcessEnv; spawnImpl?: (scriptPath: string, env: NodeJS.ProcessEnv) => number } = {},
@@ -658,7 +680,25 @@ async function startKxmRuntimeSupervisorInner(
             sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: `project ${requestedProjectId} is not the bound project ${context.projectId}` });
             return;
           }
-          const runs = context.eventStore.runsForProject(requestedProjectId, 50);
+          // The stored `runs` row is a cache, not the state: per-run reads fold the event
+          // log (`projectKxmRunReadOnly`) precisely because the row can be stale. A listing
+          // that returned raw rows would let every consumer — including the portal's
+          // tenant read — present cached status as authoritative. Folding replays each
+          // run's events; workflows are transition-bounded, so this stays cheap at the
+          // 50-run cap. A run that refuses to fold is returned with its cached row plus
+          // `projectionError`, so one corrupt run cannot make the listing lie by omission.
+          const runs = context.eventStore.runsForProject(requestedProjectId, 50).map((stored) => {
+            try {
+              return projectKxmRunReadOnly(context, stored.runId);
+            } catch (error) {
+              return {
+                ...stored,
+                projectionError: error instanceof KxmConfigError
+                  ? (error.issues[0]?.code ?? "runtime_projection_failed")
+                  : "runtime_projection_failed",
+              };
+            }
+          });
           sendJson(response, 200, { ok: true, runs });
           return;
         }

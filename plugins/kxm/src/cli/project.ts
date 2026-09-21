@@ -16,11 +16,14 @@ import { diffKxmProjectAgainstRevision, formatKxmPermissionDiff } from "../permi
 import { readKxmLocalBindings, kxmUserStateRoot } from "../bindings.ts";
 import { loadKxmProject } from "../project-config.ts";
 import {
+  attachKxmSupervisor,
   ensureKxmSupervisor,
   kxmRuntimeRequest,
   kxmSupervisorStatus,
 } from "../runtime-supervisor.ts";
-import { kxmRuntimePaths } from "../runtime-store.ts";
+import { kxmRuntimePaths, runtimeError } from "../runtime-store.ts";
+import { assembleTenantStatus, formatTenantStatus } from "../tenant-status.ts";
+import { resolveClientAdminAuthToken } from "../hub-env.ts";
 import {
   formatHarnessInventory,
   probeHarnessesAsync,
@@ -568,12 +571,14 @@ export async function cmdKxmRunList(runtime: Runtime): Promise<number> {
     const projectId = String(bundle.project.value.id);
     const supervisor = await ensureKxmSupervisor({ env: runtime.env });
     const result = await kxmRuntimeRequest(supervisor, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(projectRoot)}`);
-    const runs = (result.runs ?? []) as Array<{ runId: string; status: string; workflowId: string; createdAt: string }>;
+    const runs = (result.runs ?? []) as Array<{ runId: string; status: string; workflowId: string; createdAt: string; projectionError?: string }>;
     print(
       runtime.io,
       runtime.json,
       { ok: true, command: "runs list", runs },
-      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}`).join("\n"),
+      runs.length === 0
+        ? "no runs"
+        : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}${run.projectionError ? `  [state unverified: ${run.projectionError}]` : ""}`).join("\n"),
     );
     return 0;
   } catch (error) {
@@ -582,6 +587,72 @@ export async function cmdKxmRunList(runtime: Runtime): Promise<number> {
       return 1;
     }
     print(runtime.io, runtime.json, { ok: false, command: "runs list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
+    return 1;
+  }
+}
+
+export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
+  let projectRoot: string | undefined;
+  let projectId: string;
+  try {
+    projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? undefined;
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "project_required" }, "kxm tenant status requires a KXM project (run kxm init first)");
+      return 1;
+    }
+    const bundle = loadKxmProject(projectRoot, {});
+    projectId = String(bundle.project.value.id);
+    const root = projectRoot;
+
+    const payload = await assembleTenantStatus({
+      project: projectId,
+      hubUrl: runtime.serverUrl,
+      // Admin-scoped route: resolve the admin credential only (a project token would 401),
+      // and resolve it inside the hub source so a malformed persisted record degrades that
+      // one source instead of aborting the Runtime read with it.
+      resolveAdminToken: () => resolveClientAdminAuthToken(runtime.env),
+      fetchImpl: runtime.fetchImpl,
+      runtime: {
+        listRuns: async () => {
+          // Attach only: a status read must never conjure a supervisor. "Nothing is
+          // running" is an answer the portal can render, not a condition to repair.
+          const handle = await attachKxmSupervisor({ env: runtime.env });
+          if (!handle) {
+            throw runtimeError("runtime_supervisor_not_running", "runtime", "no live runtime supervisor on this box");
+          }
+          const result = await kxmRuntimeRequest(handle, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(root)}`);
+          const runs = (result.runs ?? []) as Array<Record<string, unknown>>;
+          return runs.map((run) => ({
+            runId: String(run.runId ?? ""),
+            status: String(run.status ?? "unknown"),
+            homeRuntimeId: String(run.homeRuntimeId ?? ""),
+            ...(typeof run.workflowId === "string" ? { workflowId: run.workflowId } : {}),
+            ...(typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {}),
+            ...(typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {}),
+            ...(typeof run.projectionError === "string" ? { projectionError: run.projectionError } : {}),
+            source: (typeof run.projectionError === "string" ? "runtime-cached" : "runtime-authoritative") as "runtime-cached" | "runtime-authoritative",
+          }));
+        },
+      },
+    });
+
+    if (payload.hub.state !== "ok" && payload.runtime.state !== "ok") {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "tenant status", error: "tenant_status_no_source", payload },
+        `neither source could be read: hub ${payload.hub.reason ?? "unknown"}, runtime ${payload.runtime.reason ?? "unknown"}`,
+      );
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: true, command: "tenant status", ...payload }, formatTenantStatus(payload));
+    return 0;
+  } catch (error) {
+    if (error instanceof KxmConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_failed", issues: error.issues }, `tenant status failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_io_failed" }, "tenant status failed because a local operation did not complete");
     return 1;
   }
 }

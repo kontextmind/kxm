@@ -234,3 +234,16 @@ export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: strin
   const record = readHubEnvRecord(env);
   return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || undefined;
 }
+
+/**
+ * Admin-scoped hub reads (`/v1/ops/snapshot`, …) are rejected with 401 by a project token,
+ * so this variant resolves the admin credential only: explicit `KXM_AUTH_TOKEN`, else the
+ * persisted record's admin token. It never falls back to a project token the route would
+ * refuse — handing the portal a 401 dressed as "configured" is worse than handing it none.
+ * Throws on a malformed persisted record, same as `resolveClientHubAuthToken`.
+ */
+export function resolveClientAdminAuthToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  return readHubEnvRecord(env)?.authToken?.trim() || undefined;
+}

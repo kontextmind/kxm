@@ -27349,6 +27349,15 @@ async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) 
 function hashKxmTokenProof(token, nonce) {
   return createHmac("sha256", token).update(`kxm-runtime-token-proof\0${nonce}`, "utf8").digest("hex");
 }
+async function attachKxmSupervisor(options = {}) {
+  const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
+  const status = kxmSupervisorStatus(paths);
+  if (!status.running || !status.port || !status.runtimeId) return void 0;
+  const token = readKxmSupervisorToken(paths);
+  if (!token) return void 0;
+  if (!await probeSupervisor(status.port, status.runtimeId, token)) return void 0;
+  return { runtimeId: status.runtimeId, port: status.port, token, started: false };
+}
 async function ensureKxmSupervisor(options = {}) {
   const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
   const status = kxmSupervisorStatus(paths);
@@ -27758,7 +27767,16 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
             sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: `project ${requestedProjectId} is not the bound project ${context.projectId}` });
             return;
           }
-          const runs = context.eventStore.runsForProject(requestedProjectId, 50);
+          const runs = context.eventStore.runsForProject(requestedProjectId, 50).map((stored) => {
+            try {
+              return projectKxmRunReadOnly(context, stored.runId);
+            } catch (error) {
+              return {
+                ...stored,
+                projectionError: error instanceof KxmConfigError ? error.issues[0]?.code ?? "runtime_projection_failed" : "runtime_projection_failed"
+              };
+            }
+          });
           sendJson(response, 200, { ok: true, runs });
           return;
         }
@@ -30227,6 +30245,7 @@ export {
   acceptKxmRun,
   assertClosedGateObservation,
   assertKxmConfigError,
+  attachKxmSupervisor,
   backupDatabaseFile,
   buildImprovementReport,
   buildSshArgs,

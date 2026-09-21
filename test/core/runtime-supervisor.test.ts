@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { removeTempDir } from "../helpers.ts";
@@ -1114,4 +1114,66 @@ test("KXM_RUNTIME_STOP_GRACE_MS is bounded and fail-closed", () => {
   assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "0" }), 0);
   assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: "120" }), 120);
   assert.equal(runtimeStopGraceMs({ KXM_RUNTIME_STOP_GRACE_MS: String(MAX_RUNTIME_STOP_GRACE_MS) }), MAX_RUNTIME_STOP_GRACE_MS);
+});
+
+test("project run listing folds each run; a stale cache row and a failed fold cannot pose as state", async () => {
+  // Pins the two properties the portal read depends on: the listing is folded event-log
+  // state (a tampered `runs` row must not surface), and a run whose fold refuses is
+  // returned with `projectionError` instead of failing the listing or hiding the run.
+  const { root, stateRoot } = engineProject("kxm-supervisor-listing-fold-", ["one-step.yaml"]);
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot });
+    const token = readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const projectId = "prj_01JENGINE00000000000000000";
+
+    const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "one-step",
+      prompt: "listing fold witness",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+
+    const listOnce = async () => (await kxmRuntimeRequest(handle, "GET", `/v1/projects/${projectId}/runs?projectRoot=${encodeURIComponent(root)}`))
+      .runs as Array<{ runId: string; status: string; projectionError?: string }>;
+
+    const clean = await listOnce();
+    const listed = clean.find((run) => run.runId === runId);
+    assert.ok(listed, "the created run appears in the listing");
+    assert.equal(listed.projectionError, undefined, "a healthy run folds without error");
+    const foldedStatus = listed.status;
+
+    // Stale cache: rewrite the stored row to a lie. A folded listing ignores it; a listing
+    // of raw rows would print the lie.
+    const paths = kxmRuntimePaths({ stateRoot });
+    // The event store lives under a root-derived project key, not the project id; the
+    // isolated state root holds exactly one project, so locate its store by directory.
+    const projectDir = readdirSync(paths.projectsDir).find((entry) => existsSync(join(paths.projectsDir, entry, "run-events.db")));
+    assert.ok(projectDir, "the isolated state root must hold the project's event store");
+    const db = new DatabaseSync(join(paths.projectsDir, projectDir, "run-events.db"));
+    try {
+      db.prepare("UPDATE runs SET status = 'completed' WHERE run_id = ?").run(runId);
+      const afterStale = await listOnce();
+      const staleRow = afterStale.find((run) => run.runId === runId);
+      assert.ok(staleRow);
+      assert.notEqual(staleRow.status, "completed", "a tampered cached row must not surface as the run's state");
+      assert.equal(staleRow.projectionError, undefined);
+
+      // Failed fold: destroy the events so the fold refuses. The listing must return the
+      // run — with the failure named — rather than 500 or silently drop it.
+      db.prepare("DELETE FROM events WHERE run_id = ?").run(runId);
+      const afterCorrupt = await listOnce();
+      const corruptRow = afterCorrupt.find((run) => run.runId === runId);
+      assert.ok(corruptRow, "a run that fails to fold stays visible");
+      assert.equal(typeof corruptRow.projectionError, "string", "the failure is named on the row");
+      assert.match(corruptRow.projectionError!, /^(run_|runtime_)/, "the failure carries a stable machine code");
+      void foldedStatus;
+    } finally {
+      db.close();
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
 });

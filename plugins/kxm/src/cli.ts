@@ -107,6 +107,7 @@ cmdBackup,
   cmdKxmRunReceipt,
   cmdKxmRunCancel,
   cmdKxmRunList,
+  cmdTenantStatus,
   cmdHarnessList,
   cmdRouteChange,
   cmdModelsScreen,
@@ -393,6 +394,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project"))
     .action(async function runListAction(this: Command) {
       result.code = await cmdKxmRunList(runtimeFrom(ctx, this));
+    });
+
+  const tenantCmd = addGlobalOptions(program.command("tenant").description("Composed tenant reads for machine clients (portal)"));
+  tenantCmd.helpCommand("help", "Show tenant help");
+  addGlobalOptions(tenantCmd.command("status").description("Read hub metadata and authoritative Runtime run state as one labeled view"))
+    .action(async function tenantStatusAction(this: Command) {
+      result.code = await cmdTenantStatus(runtimeFrom(ctx, this));
     });
 
   const modelsCmd = addGlobalOptions(program.command("models").description("Manage model catalogs, roles, and route state"));

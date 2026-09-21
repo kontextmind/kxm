@@ -6,6 +6,7 @@ const TOP_LEVEL_COMMANDS = [
   "restore",
   "run",
   "runs",
+  "tenant",
   "harness",
   "update",
   "runtime",
@@ -35,6 +36,7 @@ const TOP_LEVEL_COMMANDS = [
 
 const SUBCOMMANDS: Record<string, string[]> = {
   runs: ["status", "cancel", "list"],
+  tenant: ["status"],
   harness: ["list"],
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],

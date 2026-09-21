@@ -19678,6 +19678,11 @@ function resolveClientHubAuthToken(env, project) {
   const record = readHubEnvRecord(env);
   return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || void 0;
 }
+function resolveClientAdminAuthToken(env = process.env) {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  return readHubEnvRecord(env)?.authToken?.trim() || void 0;
+}
 
 // plugins/kxm/src/project-name.ts
 import { readFileSync as readFileSync3 } from "node:fs";
@@ -25725,6 +25730,15 @@ async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) 
 function hashKxmTokenProof(token, nonce) {
   return createHmac("sha256", token).update(`kxm-runtime-token-proof\0${nonce}`, "utf8").digest("hex");
 }
+async function attachKxmSupervisor(options = {}) {
+  const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
+  const status = kxmSupervisorStatus(paths);
+  if (!status.running || !status.port || !status.runtimeId) return void 0;
+  const token = readKxmSupervisorToken(paths);
+  if (!token) return void 0;
+  if (!await probeSupervisor(status.port, status.runtimeId, token)) return void 0;
+  return { runtimeId: status.runtimeId, port: status.port, token, started: false };
+}
 async function ensureKxmSupervisor(options = {}) {
   const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
   const status = kxmSupervisorStatus(paths);
@@ -31761,6 +31775,176 @@ function initializeKxmProject(start = process.cwd(), options = {}) {
   return withKxmLocalBindingLock(gitRoot, storeOptions, (lock) => initializeKxmProjectAtGitRoot(start, gitRoot, options, lock));
 }
 
+// plugins/kxm/src/tenant-status.ts
+var TENANT_STATUS_SCHEMA = "kxm.tenant-status.v1";
+var DEFAULT_HUB_TIMEOUT_MS = 5e3;
+function hubSourceReason(status) {
+  if (status === 401 || status === 403) return "hub_unauthorized";
+  if (status === 404) return "hub_not_found";
+  return `hub_http_${status}`;
+}
+function asString(value) {
+  return typeof value === "string" && value.length > 0 ? value : void 0;
+}
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+async function assembleTenantStatus(input) {
+  const now = input.now ?? (() => /* @__PURE__ */ new Date());
+  const base = input.hubUrl.replace(/\/$/, "");
+  const at = () => now().toISOString();
+  const readHub = async () => {
+    const attemptedAt = at();
+    let token;
+    try {
+      token = input.resolveAdminToken();
+    } catch (error) {
+      void error;
+      return { state: "unavailable", observedAt: attemptedAt, reason: "hub_credential_unreadable" };
+    }
+    try {
+      const response = await input.fetchImpl(`${base}/v1/ops/snapshot?project=${encodeURIComponent(input.project)}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+        signal: AbortSignal.timeout(input.hubTimeoutMs ?? DEFAULT_HUB_TIMEOUT_MS)
+      });
+      if (!response.ok) {
+        return { state: "unavailable", observedAt: attemptedAt, reason: hubSourceReason(response.status) };
+      }
+      let body;
+      try {
+        body = await response.json();
+      } catch (error) {
+        const name = error instanceof Error ? error.name : void 0;
+        if (name === "TimeoutError" || name === "AbortError") {
+          return { state: "unavailable", observedAt: attemptedAt, reason: "hub_timeout" };
+        }
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
+      }
+      if (!isObject(body) || typeof body.project !== "string" || typeof body.fetchedAt !== "string" || !Array.isArray(body.agents) || !Array.isArray(body.runs) || !Array.isArray(body.plans ?? []) || typeof body.openMessageTotal !== "number" || typeof body.runTotal !== "number") {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_response_invalid" };
+      }
+      if (body.project !== input.project) {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_project_mismatch" };
+      }
+      const runRows = body.runs.filter(isObject);
+      const value = {
+        project: body.project,
+        fetchedAt: body.fetchedAt,
+        agents: body.agents.filter(isObject).map((agent) => ({
+          id: asString(agent.id) ?? "",
+          name: asString(agent.name) ?? "",
+          online: agent.online === true
+        })),
+        openMessageTotal: body.openMessageTotal,
+        runTotal: body.runTotal,
+        runs: runRows.map((run) => {
+          const stages = Array.isArray(run.stages) ? run.stages.filter(isObject).map((stage) => ({
+            id: asString(stage.id) ?? "",
+            status: asString(stage.status) ?? "unknown",
+            ...typeof stage.attempts === "number" ? { attempts: stage.attempts } : {}
+          })) : void 0;
+          const done = stages?.filter((stage) => stage.status === "passed" || stage.status === "failed" || stage.status === "warning").length;
+          return {
+            id: asString(run.id) ?? "",
+            status: asString(run.status) ?? "unknown",
+            definitionId: asString(run.definitionId) ?? "",
+            ...asString(run.currentStage) ? { currentStage: asString(run.currentStage) } : {},
+            ...asString(run.targetAgentName) ? { targetAgentName: asString(run.targetAgentName) } : {},
+            ...asString(run.updatedAt) ? { updatedAt: asString(run.updatedAt) } : {},
+            ...stages !== void 0 ? { progress: { done: done ?? 0, total: stages.length }, stages } : {},
+            source: "hub-projection"
+          };
+        }),
+        plans: (Array.isArray(body.plans) ? body.plans : []).filter(isObject).map((plan) => ({
+          id: asString(plan.id) ?? "",
+          runId: asString(plan.runId) ?? "",
+          summary: asString(plan.summary) ?? "",
+          createdAt: asString(plan.createdAt) ?? "",
+          ...asString(plan.stageId) ? { stageId: asString(plan.stageId) } : {},
+          ...asString(plan.severity) ? { severity: asString(plan.severity) } : {}
+        }))
+      };
+      return { state: "ok", observedAt: attemptedAt, value };
+    } catch (error) {
+      const name = error instanceof Error ? error.name : void 0;
+      if (name === "TimeoutError" || name === "AbortError") {
+        return { state: "unavailable", observedAt: attemptedAt, reason: "hub_timeout" };
+      }
+      return { state: "unavailable", observedAt: attemptedAt, reason: "hub_unreachable" };
+    }
+  };
+  const readRuntime = async () => {
+    const attemptedAt = at();
+    try {
+      const runs = await input.runtime.listRuns();
+      return { state: "ok", observedAt: attemptedAt, value: { runs } };
+    } catch (error) {
+      const code = error instanceof Error && "issues" in error && Array.isArray(error.issues) && typeof error.issues[0]?.code === "string" ? error.issues[0].code : void 0;
+      return { state: "unavailable", observedAt: attemptedAt, reason: code ?? "runtime_unavailable" };
+    }
+  };
+  const [hub, runtime] = await Promise.all([readHub(), readRuntime()]);
+  let runComparison;
+  if (!hub.value || !runtime.value) {
+    runComparison = {
+      state: "unavailable",
+      reason: !hub.value ? `hub_${hub.reason ?? "unavailable"}` : `runtime_${runtime.reason ?? "unavailable"}`
+    };
+  } else {
+    const authoritative = new Map(
+      runtime.value.runs.filter((run) => run.projectionError === void 0).map((run) => [run.runId, run.status])
+    );
+    const hubIds = new Set(hub.value.runs.map((run) => run.id));
+    const foldFailed = runtime.value.runs.filter((run) => run.projectionError !== void 0 && hubIds.has(run.runId));
+    const discrepancies = [];
+    let matched = 0;
+    for (const projected of hub.value.runs) {
+      const runtimeStatus = authoritative.get(projected.id);
+      if (runtimeStatus === void 0) continue;
+      matched += 1;
+      if (runtimeStatus !== projected.status) {
+        discrepancies.push({ runId: projected.id, hubStatus: projected.status, runtimeStatus });
+      }
+    }
+    if (matched > 0) {
+      runComparison = {
+        state: "compared",
+        matched,
+        ...foldFailed.length > 0 ? { unverifiedFoldRuns: foldFailed.length } : {},
+        ...discrepancies.length > 0 ? { discrepancies } : {}
+      };
+    } else {
+      runComparison = foldFailed.length > 0 ? { state: "unverified", reason: "runtime_fold_failed", matched: 0, unverifiedFoldRuns: foldFailed.length } : { state: "unverified", reason: "run_identity_link_absent", matched: 0 };
+    }
+  }
+  return {
+    schema: TENANT_STATUS_SCHEMA,
+    project: input.project,
+    generatedAt: at(),
+    hubUrl: input.hubUrl,
+    bindingScope: hubBindingScope(input.hubUrl),
+    hub,
+    runtime,
+    runComparison,
+    degraded: hub.state !== "ok" || runtime.state !== "ok"
+  };
+}
+function formatTenantStatus(payload) {
+  const hubLine = payload.hub.state === "ok" && payload.hub.value ? `hub ${payload.hub.value.agents.filter((agent) => agent.online).length}/${payload.hub.value.agents.length} agents online, ${payload.hub.value.runs.length} hub runs, ${payload.hub.value.openMessageTotal} open messages` : `hub unavailable (${payload.hub.reason ?? "unknown"})`;
+  const runtimeLine = payload.runtime.state === "ok" && payload.runtime.value ? (() => {
+    const cached = payload.runtime.value.runs.filter((run) => run.projectionError !== void 0).length;
+    const authoritative = payload.runtime.value.runs.length - cached;
+    return `runtime ${authoritative} runs (authoritative, on this box)${cached > 0 ? `, ${cached} cached (fold failed, not state)` : ""}`;
+  })() : `runtime unavailable (${payload.runtime.reason ?? "unknown"})`;
+  const comparisonLine = payload.runComparison.state === "compared" ? payload.runComparison.discrepancies && payload.runComparison.discrepancies.length > 0 ? `cross-check: ${payload.runComparison.discrepancies.length} of ${payload.runComparison.matched} matched run(s) disagree${payload.runComparison.unverifiedFoldRuns ? ` (${payload.runComparison.unverifiedFoldRuns} unverified: fold failed)` : ""}` : `cross-check: ${payload.runComparison.matched} matched run(s) agree${payload.runComparison.unverifiedFoldRuns ? ` (${payload.runComparison.unverifiedFoldRuns} unverified: fold failed)` : ""}` : payload.runComparison.state === "unverified" ? payload.runComparison.reason === "runtime_fold_failed" ? `cross-check: unavailable \u2014 ${payload.runComparison.unverifiedFoldRuns ?? 0} shared run(s) could not be verified (runtime fold failed)` : "cross-check: unavailable \u2014 no run id appears in both sources (independent id spaces)" : `cross-check: unavailable (${payload.runComparison.reason ?? "unknown"})`;
+  return [
+    `tenant ${payload.project} @ ${payload.hubUrl} (${payload.bindingScope})`,
+    hubLine,
+    runtimeLine,
+    comparisonLine
+  ].join("\n");
+}
+
 // plugins/kxm/src/cli/project.ts
 var kxmDriveCliSeams = {};
 function initPlanPayload(plan) {
@@ -32236,7 +32420,7 @@ async function cmdKxmRunList(runtime) {
       runtime.io,
       runtime.json,
       { ok: true, command: "runs list", runs },
-      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}`).join("\n")
+      runs.length === 0 ? "no runs" : runs.map((run) => `${run.runId}  ${run.status}  ${run.workflowId}  ${run.createdAt}${run.projectionError ? `  [state unverified: ${run.projectionError}]` : ""}`).join("\n")
     );
     return 0;
   } catch (error) {
@@ -32245,6 +32429,67 @@ async function cmdKxmRunList(runtime) {
       return 1;
     }
     print(runtime.io, runtime.json, { ok: false, command: "runs list", error: "run_list_io_failed" }, "run list failed because a local operation did not complete");
+    return 1;
+  }
+}
+async function cmdTenantStatus(runtime) {
+  let projectRoot;
+  let projectId;
+  try {
+    projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? void 0;
+    if (!projectRoot) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "project_required" }, "kxm tenant status requires a KXM project (run kxm init first)");
+      return 1;
+    }
+    const bundle = loadKxmProject(projectRoot, {});
+    projectId = String(bundle.project.value.id);
+    const root = projectRoot;
+    const payload = await assembleTenantStatus({
+      project: projectId,
+      hubUrl: runtime.serverUrl,
+      // Admin-scoped route: resolve the admin credential only (a project token would 401),
+      // and resolve it inside the hub source so a malformed persisted record degrades that
+      // one source instead of aborting the Runtime read with it.
+      resolveAdminToken: () => resolveClientAdminAuthToken(runtime.env),
+      fetchImpl: runtime.fetchImpl,
+      runtime: {
+        listRuns: async () => {
+          const handle = await attachKxmSupervisor({ env: runtime.env });
+          if (!handle) {
+            throw runtimeError("runtime_supervisor_not_running", "runtime", "no live runtime supervisor on this box");
+          }
+          const result = await kxmRuntimeRequest(handle, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(root)}`);
+          const runs = result.runs ?? [];
+          return runs.map((run) => ({
+            runId: String(run.runId ?? ""),
+            status: String(run.status ?? "unknown"),
+            homeRuntimeId: String(run.homeRuntimeId ?? ""),
+            ...typeof run.workflowId === "string" ? { workflowId: run.workflowId } : {},
+            ...typeof run.createdAt === "string" ? { createdAt: run.createdAt } : {},
+            ...typeof run.updatedAt === "string" ? { updatedAt: run.updatedAt } : {},
+            ...typeof run.projectionError === "string" ? { projectionError: run.projectionError } : {},
+            source: typeof run.projectionError === "string" ? "runtime-cached" : "runtime-authoritative"
+          }));
+        }
+      }
+    });
+    if (payload.hub.state !== "ok" && payload.runtime.state !== "ok") {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "tenant status", error: "tenant_status_no_source", payload },
+        `neither source could be read: hub ${payload.hub.reason ?? "unknown"}, runtime ${payload.runtime.reason ?? "unknown"}`
+      );
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: true, command: "tenant status", ...payload }, formatTenantStatus(payload));
+    return 0;
+  } catch (error) {
+    if (error instanceof KxmConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_failed", issues: error.issues }, `tenant status failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "tenant status", error: "tenant_status_io_failed" }, "tenant status failed because a local operation did not complete");
     return 1;
   }
 }
@@ -45628,6 +45873,7 @@ var TOP_LEVEL_COMMANDS = [
   "restore",
   "run",
   "runs",
+  "tenant",
   "harness",
   "update",
   "runtime",
@@ -45656,6 +45902,7 @@ var TOP_LEVEL_COMMANDS = [
 ];
 var SUBCOMMANDS = {
   runs: ["status", "cancel", "list"],
+  tenant: ["status"],
   harness: ["list"],
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],
@@ -47371,6 +47618,11 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project")).action(async function runListAction() {
     result.code = await cmdKxmRunList(runtimeFrom(ctx, this));
+  });
+  const tenantCmd = addGlobalOptions(program2.command("tenant").description("Composed tenant reads for machine clients (portal)"));
+  tenantCmd.helpCommand("help", "Show tenant help");
+  addGlobalOptions(tenantCmd.command("status").description("Read hub metadata and authoritative Runtime run state as one labeled view")).action(async function tenantStatusAction() {
+    result.code = await cmdTenantStatus(runtimeFrom(ctx, this));
   });
   const modelsCmd = addGlobalOptions(program2.command("models").description("Manage model catalogs, roles, and route state"));
   modelsCmd.action(async function modelsScreenAction() {

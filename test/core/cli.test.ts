@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
+import { writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
 import { cmdKxmRunStatus, kxmDriveCliSeams } from "../../plugins/kxm/src/cli/project.ts";
 import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
@@ -581,6 +582,86 @@ test("the deleted kxm migrate surface stays deleted: unknown command, not a sile
   assert.notEqual(code, 0, "kxm migrate must not succeed now that the conversion path is gone");
   assert.match(`${out.stdout}${out.stderr}`, /unknown command/i);
   assert.doesNotMatch(`${out.stdout}${out.stderr}`, /"action":"applied"|migration-plan/, "no migration payload may still be produced");
+});
+
+test("kxm tenant status reports each source independently and never starts a supervisor", async () => {
+  // CLI-level matrix for the portal read: the module test proves composition; this one
+  // proves the command itself — its exit codes, its reasons through the real credential and
+  // attach paths, and that the labelling is applied by the CLI mapping rather than supplied
+  // by a fixture. The supervisor assertion is the attach-only rule: `runtime_supervisor_not_running`
+  // can only come from attach refusing, because the ensure path would have started one.
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-tenant-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-tenant-cli-state-"));
+  const elsewhere = mkdtempSync(join(tmpdir(), "kxm-tenant-elsewhere-"));
+  let credRoot: string | undefined;
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JTENANTCLITEST000000000", projectName: "Tenant CLI" });
+
+    const noProjectIo = capture();
+    assert.equal(await runCli(["tenant", "status", "--json"], {}, noProjectIo, elsewhere), 1);
+    assert.match(noProjectIo.read().stderr, /project_required/);
+
+    const env = { KXM_STATE_HOME: stateRoot, KXM_SERVER_URL: "http://127.0.0.1:9" };
+    const downIo = capture();
+    assert.equal(await runCli(["tenant", "status", "--json"], env, downIo, cwd), 1, "neither source readable must exit non-zero");
+    const down = JSON.parse(downIo.read().stderr) as {
+      error: string;
+      payload: { hub: { reason: string }; runtime: { reason: string }; degraded: boolean };
+    };
+    assert.equal(down.error, "tenant_status_no_source");
+    assert.equal(down.payload.hub.reason, "hub_unreachable");
+    assert.equal(down.payload.runtime.reason, "runtime_supervisor_not_running", "a read attaches; it never conjures a supervisor");
+    assert.equal(down.payload.degraded, true);
+
+    // Admin-only resolution, pinned: a persisted record holds both an admin and a project
+    // token, and the snapshot route is admin-scoped — the request must carry the admin
+    // token. Restoring project-first resolution fails the assertion below.
+    credRoot = mkdtempSync(join(tmpdir(), "kxm-tenant-cred-"));
+    writeHubEnvRecord(
+      { schema: "kxm.hub-env.v1", createdAt: "2026-09-20T00:00:00.000Z", authToken: "kxm_admin_test", projectTokens: { prj_01JTENANTCLITEST000000000: "kxm_proj_test" } },
+      { KXM_STATE_HOME: credRoot },
+    );
+    let sentAuthorization: string | undefined;
+    const adminEnv = { KXM_STATE_HOME: credRoot, KXM_SERVER_URL: "http://127.0.0.1:7331" };
+
+    const snapshot = {
+      project: "prj_01JTENANTCLITEST000000000",
+      fetchedAt: "2026-09-20T12:00:00.000Z",
+      agents: [{ id: "a1", name: "coordinator", online: true }],
+      openMessageTotal: 0,
+      runTotal: 1,
+      runs: [{ id: "run_x", status: "running", definitionId: "default" }],
+      plans: [],
+    };
+    const partialIo = capture();
+    assert.equal(
+      await runCli(["tenant", "status", "--json"], adminEnv, {
+        ...partialIo,
+        fetchImpl: (async (_input: unknown, init?: RequestInit) => {
+          sentAuthorization = (init?.headers as Record<string, string> | undefined)?.authorization;
+          return new Response(JSON.stringify(snapshot), { status: 200 });
+        }) as unknown as NonNullable<CliIo["fetchImpl"]>,
+      }, cwd),
+      0,
+      "a partial read is a successful read of what was seen",
+    );
+    assert.equal(sentAuthorization, "Bearer kxm_admin_test", "the snapshot read carries the admin token, never the project token");
+    const partial = JSON.parse(partialIo.read().stdout) as {
+      ok: boolean;
+      hub: { state: string; value: { runs: Array<{ source: string }> } };
+      runtime: { state: string; reason: string };
+      degraded: boolean;
+    };
+    assert.equal(partial.ok, true);
+    assert.equal(partial.hub.state, "ok");
+    assert.equal(partial.hub.value.runs[0]?.source, "hub-projection", "the label comes from the CLI mapping, not a fixture");
+    assert.equal(partial.runtime.state, "unavailable");
+    assert.equal(partial.runtime.reason, "runtime_supervisor_not_running");
+    assert.equal(partial.degraded, true);
+  } finally {
+    for (const dir of [cwd, stateRoot, elsewhere, ...(credRoot !== undefined ? [credRoot] : [])]) rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("kxm run creates, lists, shows, and cancels a run offline with an auto-started supervisor", async () => {
