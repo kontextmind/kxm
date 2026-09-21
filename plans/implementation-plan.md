@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-20"
+updated: "2026-09-21"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -23,6 +23,7 @@ related:
   - plan-additional-providers-agy-kimi.md
   - plan-agent-communication-steering.md
   - plan-ssh-remote-execution.md
+  - plan-per-tenant-hosting.md
   - research-a2a-cross-host.md
   - plan-token-reduction-rtk-ai.md
   - plan-usage-cost-quota-tracking.md

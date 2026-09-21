@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-21"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Versioned installed-CLI observations and experiments for streamed handoff and live control, without claiming adapter admission."
@@ -17,6 +17,9 @@ related:
   - plan-unified-kxm-milestones.md
   - plan-agent-communication-steering.md
   - plan-ssh-remote-execution.md
+  - research-additional-forks.md
+  - research-kxm-harness-strategy.md
+  - research-runtime-language-choices.md
 depends_on: []
 blocked_by: []
 details:
