@@ -1284,6 +1284,17 @@ function resolveProducerRoute(
       const parsed = parse(readFileSync(agentFile, "utf8")) as Record<string, unknown>;
       if (typeof parsed?.model === "string") {
         agentModel = parsed.model;
+      } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
+        // The agent schema requires the object form (`{provider, model}`); reading only the
+        // string form left every agent without a route unless it was literally named
+        // `implementer`, which alone hit the hard-coded fallback below. A declared model
+        // must actually drive the producer route.
+        const declared = parsed.model as { provider?: unknown; model?: unknown };
+        if (typeof declared.provider === "string" && typeof declared.model === "string"
+          && declared.provider.length > 0 && declared.model.length > 0
+          && !declared.provider.includes("/") && !declared.model.includes("/")) {
+          agentModel = `${declared.provider}/${declared.model}`;
+        }
       }
     } catch {
       // ignore

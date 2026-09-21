@@ -24883,6 +24883,11 @@ function resolveProducerRoute(projectRoot, step, agentId) {
       const parsed = (0, import_yaml5.parse)(readFileSync7(agentFile, "utf8"));
       if (typeof parsed?.model === "string") {
         agentModel = parsed.model;
+      } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
+        const declared = parsed.model;
+        if (typeof declared.provider === "string" && typeof declared.model === "string" && declared.provider.length > 0 && declared.model.length > 0 && !declared.provider.includes("/") && !declared.model.includes("/")) {
+          agentModel = `${declared.provider}/${declared.model}`;
+        }
       }
     } catch {
     }

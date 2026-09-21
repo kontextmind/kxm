@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -1210,6 +1210,81 @@ test("direct drive release wakes queued scheduler work without a third enqueue",
   } finally {
     heldA.release();
     heldB.release();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a live drive resolves the producer route from the agent's declared model", async () => {
+  // The agent schema requires the object form (`{provider, model}`); the live-route
+  // resolver used to read only a string form that no schema accepts, so every agent
+  // without a route was handed off with producer_route_unsupported unless it was
+  // literally named `implementer` (the hard-coded fallback). A declared model must
+  // drive the route.
+  const { root, stateRoot } = engineProject("kxm-engine-agent-model-route-");
+  try {
+    const nested = [
+      "schema: kxm.agent.v1",
+      "purpose: Route witness with a declared model.",
+      "harness: pi",
+      "model:",
+      "  provider: xai",
+      "  model: grok-4.6",
+      "tools:",
+      "  preset: read-only",
+      "defaultRepositoryAccess: read",
+      "network: provider-only",
+      "resultSchema: kxm.assignment-result.v1",
+      "",
+    ].join("\n");
+    writeFileSync(join(root, ".kxm", "agents", "routewit.yaml"), nested);
+    writeFileSync(join(root, ".kxm", "workflows", "routewit.yaml"), [
+      "schema: kxm.workflow.v1",
+      "description: One agent step whose route comes from the agent declaration.",
+      "coordinator: routewit",
+      "limits:",
+      "  maxTransitions: 2",
+      "steps:",
+      "  - id: only",
+      "    kind: agent",
+      "    agent: routewit",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "      failed:",
+      "        target: $terminal",
+      "        terminalStatus: failed",
+      "",
+    ].join("\n"));
+    spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "routewit"], { windowsHide: true });
+
+    // A live route must also be admitted, exactly as the operator admits real models.
+    setRouteState(root, "xai/grok-4.6", "admitted");
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "routewit", prompt: "route witness" });
+      const scheduler = KxmRunScheduler.for(context, bundle);
+      const seen: Array<{ provider?: string | undefined; model?: string | undefined }> = [];
+      const inner = createKxmSimulatedProducer(async () => ({ outcome: "passed" }));
+      const producer = {
+        id: "pi" as const,
+        produce: (request: Parameters<typeof inner.produce>[0]) => {
+          seen.push({ provider: request.provider, model: request.model });
+          return inner.produce(request);
+        },
+        close: async () => undefined,
+      };
+      registerTrustedProducer(producer);
+      const session = await scheduler.openDriveSession(accepted.run.runId, { mode: "live", createProducer: () => producer });
+      const result = await session.settled;
+      assert.equal(result.state.status, "completed", "the declared route lets the drive run instead of handing off");
+      assert.deepEqual(seen, [{ provider: "xai", model: "grok-4.6" }], "the producer received the agent's declared provider/model");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
     removeTempDir(root, stateRoot);
   }
 });
