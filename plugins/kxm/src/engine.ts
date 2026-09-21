@@ -854,15 +854,41 @@ function invokeProducer(
   producer: KxmProducer,
   request: KxmProducerRequest,
 ): Promise<{ result?: KxmProducerResult; error: boolean; errorCode?: string }> {
+  // The reason a producer refused is the single most useful fact about a failed attempt,
+  // and it used to be discarded here: a live drive that could not authenticate read in the
+  // event log exactly like a simulation that ran fine. But the message is producer-
+  // controlled text and must never reach durable records as-is — a producer that throws
+  // its capability (the hygiene contract tests exactly that) would persist the secret.
+  // So: redact the attempt capability and anything capability-shaped, then keep only a
+  // leading machine-code identifier (lowercase segments joined by underscores). Anything
+  // else — prose, free text, a redacted-to-empty message — records as producer_error.
+  const reason = (error: unknown): string => {
+    // Never throw while classifying a throw: a producer can reject with anything
+    // (Object.create(null) defeats String(), an Error whose message is not a string
+    // defeats split()), and a throwing classifier would reroute a producer_rejected
+    // settle into the execution-error path — the exact invisibility this exists to fix.
+    try {
+      const raw = error instanceof Error ? error.message : error;
+      const message = typeof raw === "string" ? raw : "";
+      let text = message;
+      if (request.capability) text = text.split(request.capability).join("[redacted]");
+      text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
+      const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
+      const code = match?.[0] ?? "";
+      return code.length > 0 && code.length <= 64 ? code : "producer_error";
+    } catch {
+      return "producer_error";
+    }
+  };
   let pending: Promise<KxmProducerResult>;
   try {
     pending = Promise.resolve(producer.produce(request));
-  } catch {
-    return Promise.resolve({ error: true });
+  } catch (error) {
+    return Promise.resolve({ error: true, errorCode: reason(error) });
   }
   return pending.then(
     (result) => ({ result, error: false }),
-    () => ({ error: true }),
+    (error) => ({ error: true, errorCode: reason(error) }),
   );
 }
 
@@ -1778,7 +1804,7 @@ function appendExecuting(context: KxmRuntimeContext, dispatch: PreparedDispatch)
 }
 
 type MemberWork =
-  | { attemptId: string; invoked: true; produced: { result?: KxmProducerResult; error: boolean } }
+  | { attemptId: string; invoked: true; produced: { result?: KxmProducerResult; error: boolean; errorCode?: string } }
   | { attemptId: string; invoked: false; skipped: true }
   | { attemptId: string; invoked: false; appendFailed: true; error: unknown };
 
@@ -1919,7 +1945,7 @@ async function drivePanel(
     });
   };
 
-  const settleInvoked = (member: PreparedDispatch, produced: { result?: KxmProducerResult; error: boolean }): boolean => {
+  const settleInvoked = (member: PreparedDispatch, produced: { result?: KxmProducerResult; error: boolean; errorCode?: string }): boolean => {
     if (produced.result?.effectUncertain) {
       settlementFailed = true;
       stopBirths = true;
@@ -1930,7 +1956,7 @@ async function drivePanel(
         if (kxmPanelDispatchSeams.failSettleMember?.(member)) {
           throw runtimeError("run_events_illegal", runId, "member settlement write failed");
         }
-        settleMember(context, member, produced.result, produced.error);
+        settleMember(context, member, produced.result, produced.error, produced.errorCode);
       });
       return true;
     } catch (err) {
@@ -2092,6 +2118,7 @@ function settleMember(
   dispatch: PreparedDispatch,
   result: KxmProducerResult | undefined,
   produceError: boolean,
+  produceErrorCode?: string,
 ): void {
   const run = requireRun(context, dispatch.run.runId);
   const state = foldStoredKxmRun(context, run);
@@ -2146,7 +2173,10 @@ function settleMember(
       stepId: dispatch.stepId,
       assignmentId: dispatch.assignmentId,
       attemptId: dispatch.attemptId,
-      harness: result?.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
+      // Label the producer that actually ran: the old fallback printed "driver-simulated"
+      // for every producer that was not literally "pi", so a live oneshot drive that
+      // failed authentication read in the log as a simulation.
+      harness: result?.harness ?? dispatch.producerId,
       provider: result?.provider ?? "simulated",
       requestedModel: result?.requestedModel ?? "simulated",
       effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
@@ -2162,6 +2192,7 @@ function settleMember(
       assignmentId: dispatch.assignmentId,
       resultClass: "producer_rejected",
       status: "result_recorded",
+      ...(produceErrorCode !== undefined ? { producerError: produceErrorCode } : {}),
     });
     push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
     push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });

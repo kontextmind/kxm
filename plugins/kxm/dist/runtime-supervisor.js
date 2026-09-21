@@ -24601,15 +24601,29 @@ var KxmRunScheduler = class _KxmRunScheduler {
   }
 };
 function invokeProducer(producer, request) {
+  const reason = (error) => {
+    try {
+      const raw = error instanceof Error ? error.message : error;
+      const message = typeof raw === "string" ? raw : "";
+      let text = message;
+      if (request.capability) text = text.split(request.capability).join("[redacted]");
+      text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
+      const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
+      const code = match?.[0] ?? "";
+      return code.length > 0 && code.length <= 64 ? code : "producer_error";
+    } catch {
+      return "producer_error";
+    }
+  };
   let pending;
   try {
     pending = Promise.resolve(producer.produce(request));
-  } catch {
-    return Promise.resolve({ error: true });
+  } catch (error) {
+    return Promise.resolve({ error: true, errorCode: reason(error) });
   }
   return pending.then(
     (result) => ({ result, error: false }),
-    () => ({ error: true })
+    (error) => ({ error: true, errorCode: reason(error) })
   );
 }
 var kxmGateDispatchSeams = {};
@@ -25428,7 +25442,7 @@ async function drivePanel(context, panel, producer) {
         if (kxmPanelDispatchSeams.failSettleMember?.(member)) {
           throw runtimeError("run_events_illegal", runId, "member settlement write failed");
         }
-        settleMember(context, member, produced.result, produced.error);
+        settleMember(context, member, produced.result, produced.error, produced.errorCode);
       });
       return true;
     } catch (err) {
@@ -25583,7 +25597,7 @@ function producerRoutingRecord(context, dispatch, result, now) {
   }
   return parseRoutingRecordV2(record2);
 }
-function settleMember(context, dispatch, result, produceError) {
+function settleMember(context, dispatch, result, produceError, produceErrorCode) {
   const run = requireRun(context, dispatch.run.runId);
   const state = foldStoredKxmRun(context, run);
   const capability = context.eventStore.capabilityByAttempt(dispatch.attemptId);
@@ -25634,7 +25648,10 @@ function settleMember(context, dispatch, result, produceError) {
       stepId: dispatch.stepId,
       assignmentId: dispatch.assignmentId,
       attemptId: dispatch.attemptId,
-      harness: result?.harness ?? (dispatch.producerId === "pi" ? "pi" : "driver-simulated"),
+      // Label the producer that actually ran: the old fallback printed "driver-simulated"
+      // for every producer that was not literally "pi", so a live oneshot drive that
+      // failed authentication read in the log as a simulation.
+      harness: result?.harness ?? dispatch.producerId,
       provider: result?.provider ?? "simulated",
       requestedModel: result?.requestedModel ?? "simulated",
       effectiveModel: result?.effectiveModel ?? result?.requestedModel ?? "simulated",
@@ -25648,7 +25665,8 @@ function settleMember(context, dispatch, result, produceError) {
     push("assignment.result_recorded", {
       assignmentId: dispatch.assignmentId,
       resultClass: "producer_rejected",
-      status: "result_recorded"
+      status: "result_recorded",
+      ...produceErrorCode !== void 0 ? { producerError: produceErrorCode } : {}
     });
     push("attempt.status_changed", { attemptId: dispatch.attemptId, status: "terminal" });
     push("assignment.terminal", { assignmentId: dispatch.assignmentId, outcome: "failed", status: "terminal" });
