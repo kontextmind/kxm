@@ -1118,8 +1118,17 @@ export function probeHarnessAssignment(options: HarnessAssignmentProbeOptions): 
     }
 
     const authArgs = ["auth", "check"];
-    if (options.model) {
-      authArgs.push("--model", options.model);
+    // `pi auth check --model` requires a provider-qualified id: a bare model answers
+    // status "invalid", which reads as not_authenticated and hides the real state. When
+    // the caller holds provider and bare model separately (the engine's request shape),
+    // qualify the id; a model that already carries its namespace goes through as-is.
+    const qualifiedModel = options.model
+      ? (options.provider && options.model.startsWith(`${options.provider}/`)
+        ? options.model
+        : options.provider ? `${options.provider}/${options.model}` : options.model)
+      : undefined;
+    if (qualifiedModel) {
+      authArgs.push("--model", qualifiedModel);
     } else if (options.provider) {
       authArgs.push("--provider", options.provider);
     }
