@@ -843,9 +843,14 @@ test("probeHarnessAssignment supplies exact provider/model context to Pi and val
   const piBareModel = probeHarnessAssignment({ harness: "pi", provider: "qwen-token-plan", model: "qwen3.8-flash", runCommand });
   assert.equal(piBareModel.authenticated, true, "bare model + provider probes the qualified id");
 
-  // An already-namespaced model goes through unchanged, whichever provider field rides along
+  // An internal namespace gets its provider prefix (openrouter/qwen/... is the full id)
   const piNamespaced = probeHarnessAssignment({ harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus", runCommand });
-  assert.equal(piNamespaced.authenticated, true, "namespaced model probes as-is");
+  assert.equal(piNamespaced.authenticated, true, "an internal namespace is probed under its provider prefix");
+
+  // An already-prefixed model goes through unchanged — always-prefixing would ask for
+  // openrouter/openrouter/... and fail the same way as-is probing failed
+  const piPrefixed = probeHarnessAssignment({ harness: "pi", provider: "openrouter", model: "openrouter/qwen/qwen3-coder-plus", runCommand });
+  assert.equal(piPrefixed.authenticated, true, "an already-prefixed model probes as-is");
 
   // Pi with direct anthropic model triggers native brake and does not spawn
   const piAnthropic = probeHarnessAssignment({ harness: "pi", provider: "anthropic", model: "claude-sonnet-4-6", runCommand });
