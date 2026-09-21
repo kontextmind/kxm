@@ -364,6 +364,7 @@
         "runPlanHash": { "$ref": "common.schema.json#/$defs/sha256" },
         "capabilityHash": { "$ref": "common.schema.json#/$defs/sha256" },
         "resultClass": { "enum": ["outcome", "outcome_unknown", "producer_rejected", "cancelled"] },
+        "producerError": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}$", "maxLength": 64, "description": "Machine-code reason a producer refused (produce threw), present only for resultClass producer_rejected. Capability material is redacted before extraction; anything unclassifiable records as producer_error." },
         "status": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
         "previousStatus": { "$ref": "common.schema.json#/$defs/lifecycleStatus" },
         "outcome": { "$ref": "common.schema.json#/$defs/identifier" },

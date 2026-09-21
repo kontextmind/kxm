@@ -1214,6 +1214,67 @@ test("direct drive release wakes queued scheduler work without a third enqueue",
   }
 });
 
+test("a producer that throws is recorded as itself, with its reason", async () => {
+  // Found on the deployed box: a live oneshot drive failed authentication, and the event
+  // log said "driver-simulated" with no reason — the harness fallback only special-cased
+  // "pi", and the producer's error message was discarded at invokeProducer. An operator
+  // reading the log saw a simulation that ran fine, on a run that failed.
+  const { root, stateRoot } = engineProject("kxm-engine-producer-error-visible-");
+  try {
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      setRouteState(root, "xai/grok-4.6", "admitted");
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "producer error witness" });
+      const scheduler = KxmRunScheduler.for(context, bundle);
+      let throwWith = "pi_not_authenticated: pi harness not detected (pi_native_impersonation_blocked)";
+      const producer = {
+        id: "oneshot" as const,
+        produce: (_request: Parameters<ReturnType<typeof createKxmSimulatedProducer>["produce"]>[0]) =>
+          Promise.reject(new Error(throwWith)),
+        close: async () => undefined,
+      };
+      registerTrustedProducer(producer);
+      const session = await scheduler.openDriveSession(accepted.run.runId, { mode: "live", createProducer: () => producer });
+      const result = await session.settled;
+      assert.equal(result.state.status, "failed", "a producer refusal fails the run");
+      const db = new DatabaseSync(context.eventStore.path);
+      const rows = db.prepare(
+        "SELECT payload FROM events WHERE run_id = ? AND event_type = 'routing.attempt.recorded'",
+      ).all(accepted.run.runId) as Array<{ payload: string }>;
+      assert.equal(rows.length, 1);
+      const routing = JSON.parse(rows[0]!.payload) as { routing: { harness: string } };
+      assert.equal(routing.routing.harness, "oneshot", "the routing record names the producer that ran, never a simulation");
+      const resultRows = db.prepare(
+        "SELECT payload FROM events WHERE run_id = ? AND event_type = 'assignment.result_recorded'",
+      ).all(accepted.run.runId) as Array<{ payload: string }>;
+      db.close();
+      const recorded = JSON.parse(resultRows[0]!.payload) as { resultClass: string; producerError?: string };
+      assert.equal(recorded.resultClass, "producer_rejected");
+      assert.equal(recorded.producerError, "pi_not_authenticated",
+        "the producer's own reason survives into the event an operator reads — as a machine code, not free text");
+
+      // Prose never reaches durable records even when nothing secret is involved: the
+      // recorded value is a classified code or nothing, so a chatty producer cannot put
+      // arbitrary text (or a secret riding in it) into the event log.
+      throwWith = "connection refused while dialing the provider";
+      const proseAccepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "prose witness" });
+      const proseSession = await scheduler.openDriveSession(proseAccepted.run.runId, { mode: "live", createProducer: () => producer });
+      await proseSession.settled;
+      const proseRows = new DatabaseSync(context.eventStore.path)
+        .prepare("SELECT payload FROM events WHERE run_id = ? AND event_type = 'assignment.result_recorded'")
+        .all(proseAccepted.run.runId) as Array<{ payload: string }>;
+      const proseRecorded = JSON.parse(proseRows[0]!.payload) as { producerError?: string };
+      assert.equal(proseRecorded.producerError, "producer_error",
+        "a refusal whose message carries no machine code records the generic code, never the prose");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("a live drive resolves the producer route from the agent's declared model", async () => {
   // The agent schema requires the object form (`{provider, model}`); the live-route
   // resolver used to read only a string form that no schema accepts, so every agent
