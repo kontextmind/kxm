@@ -576,9 +576,28 @@ test("portal create-drive-cancel preserves command identity and reports authorit
       read: () => ({ stdout, stderr }),
     };
   };
+  // Every awaited call is bounded: a deadline checked between calls cannot save a test
+  // from a single request that never returns, and the supervisor is a real process.
+  const bounded = async <T>(promise: Promise<T>, ms: number, what: string): Promise<T> => {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`${what} did not complete within ${ms} ms`)), ms);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const cli = async (argv: string[]) => {
     const captured = io();
-    const code = await runCli(argv, { KXM_STATE_HOME: stateRoot, KXM_LOGS_DIR: stateRoot }, captured, cwd);
+    const code = await bounded(
+      runCli(argv, { KXM_STATE_HOME: stateRoot, KXM_LOGS_DIR: stateRoot }, captured, cwd),
+      30_000,
+      `kxm ${argv.join(" ")}`,
+    );
     return { code, ...captured.read() };
   };
   try {
@@ -635,6 +654,7 @@ test("portal create-drive-cancel preserves command identity and reports authorit
     assert.equal(runPayload.ok, true);
     const runId = runPayload.run.runId;
     assert.match(runId, /^run_/);
+    assert.notEqual(runId, limitedRunId, "no earlier run's id is ever handed back by a later create");
 
     // drive — accepted (202 semantics: started, never synchronously completed)
     const driven = await cli(["runs", "drive", runId, "--json", "--simulated"]);
@@ -714,16 +734,31 @@ test("portal create-drive-cancel preserves command identity and reports authorit
     assert.equal(reCancel.code, 0);
     assert.equal((JSON.parse(reCancel.stdout) as { idempotent: boolean }).idempotent, true, "repeat cancel is idempotent, not an error");
   } finally {
-    // Leave no supervisor behind, even on an assertion failure: stop acknowledges before
-    // the process exits, so wait until `runtime status` reports nothing running (bounded)
-    // before deleting the state root out from under it.
-    try { await cli(["runtime", "stop", "--json"]); } catch { /* best effort: nothing to stop */ }
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const probe = await cli(["runtime", "status", "--json"]);
-      if (probe.code !== 0) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    // Leave no supervisor behind, even on an assertion failure — and never delete the
+    // state root out from under a live one. `runtime stop` acknowledges before the process
+    // exits and `runtime status` can read not-running while it drains, so confirmation is
+    // "status says not running" held for two consecutive probes. If that never happens the
+    // test fails loudly instead of leaking a supervisor onto deleted files.
+    let confirmedStopped = false;
+    let consecutive = 0;
+    try {
+      await cli(["runtime", "stop", "--json"]);
+      for (let attempt = 0; attempt < 100 && consecutive < 2; attempt += 1) {
+        const probe = await cli(["runtime", "status", "--json"]);
+        consecutive = probe.code !== 0 ? consecutive + 1 : 0;
+        if (consecutive < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      confirmedStopped = consecutive >= 2;
+    } catch {
+      confirmedStopped = false;
     }
     rmSync(cwd, { recursive: true, force: true });
-    rmSync(stateRoot, { recursive: true, force: true });
+    if (confirmedStopped) {
+      rmSync(stateRoot, { recursive: true, force: true });
+    } else {
+      // Leave the state root for inspection rather than corrupting a live supervisor;
+      // failing here is the point — silence would hide exactly this leak.
+      assert.fail("runtime supervisor did not confirm shutdown; state root left in place at " + stateRoot);
+    }
   }
 });
