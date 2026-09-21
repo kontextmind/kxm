@@ -585,7 +585,7 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
     signal: new AbortController().signal,
   });
   assert.equal(piResult.outcome, "completed");
-  assert.ok(capturedArgs.includes("--no-tools") && capturedArgs.includes("--no-session"));
+  assert.ok(capturedArgs.includes("--no-tools") && capturedArgs.includes("--no-extensions") && capturedArgs.includes("--no-session"));
   await argProducer.close();
 
   const refusedProducer = createKxmOneShotProducer({

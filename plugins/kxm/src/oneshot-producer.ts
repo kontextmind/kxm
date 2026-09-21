@@ -214,11 +214,13 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
           "-p",
         ];
       } else if (harness === "pi") {
-        // pi's model flag takes the provider-qualified id (the same rule as the auth
-        // probe): a bare model answers "invalid" at spawn time.
-        const qualified = resolved.model.includes("/")
+        // pi's model flag takes the provider-qualified id — exactly the auth probe's
+        // rule (#265): prefix with the provider unless the model already starts with it.
+        // A bare "contains a slash" test is wrong for provider-local namespaces
+        // (openrouter + qwen/qwen3-coder-plus must spawn as the full three-part id).
+        const qualified = resolved.provider && resolved.model.startsWith(`${resolved.provider}/`)
           ? resolved.model
-          : `${resolved.provider}/${resolved.model}`;
+          : resolved.provider ? `${resolved.provider}/${resolved.model}` : resolved.model;
         args = [
           "--model",
           qualified,

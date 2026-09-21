@@ -15432,9 +15432,7 @@ function parseCodexOneShotUsage(stdout, stderr) {
   };
 }
 function parsePiOneShotUsage(stdout, _stderr) {
-  let text;
-  let effectiveModel;
-  let usage;
+  let finalMessage;
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) continue;
@@ -15443,26 +15441,31 @@ function parsePiOneShotUsage(stdout, _stderr) {
       if (event.type !== "message_end" && event.type !== "turn_end") continue;
       const message = event.message;
       if (!message || message.role !== "assistant") continue;
-      const content = Array.isArray(message.content) ? message.content : [];
-      const parts = content.map((part) => part && typeof part === "object" && part.type === "text" ? String(part.text ?? "") : "").filter((part) => part.length > 0);
-      if (parts.length > 0) text = parts.join("\n");
-      effectiveModel = reportedModelId(message.model) ?? effectiveModel;
-      const rawUsage = message.usage;
-      if (rawUsage && typeof rawUsage === "object") {
-        usage = {
-          tokensIn: typeof rawUsage.input === "number" ? rawUsage.input : null,
-          tokensOut: typeof rawUsage.output === "number" ? rawUsage.output : null,
-          cacheReadTokens: typeof rawUsage.cacheRead === "number" ? rawUsage.cacheRead : null,
-          cacheWriteTokens: typeof rawUsage.cacheWrite === "number" ? rawUsage.cacheWrite : null,
-          contextTokens: null,
-          costUsd: null
-        };
-      }
+      finalMessage = message;
     } catch {
     }
   }
-  if (text === void 0) return { text: stdout.trim(), usage: {} };
-  return { text, ...effectiveModel !== void 0 ? { effectiveModel } : {}, usage: usage ?? {} };
+  if (!finalMessage) {
+    return { text: "", isError: true, usage: {} };
+  }
+  const content = Array.isArray(finalMessage.content) ? finalMessage.content : [];
+  const text = content.map((part) => part && typeof part === "object" && part.type === "text" ? String(part.text ?? "") : "").filter((part) => part.length > 0).join("\n");
+  const stopReason = typeof finalMessage.stopReason === "string" ? finalMessage.stopReason : void 0;
+  const terminalError = stopReason === "error" || stopReason === "aborted";
+  if (terminalError || text.length === 0) {
+    return { text, isError: true, usage: {} };
+  }
+  const effectiveModel = reportedModelId(finalMessage.model);
+  const rawUsage = finalMessage.usage;
+  const usage = rawUsage && typeof rawUsage === "object" ? {
+    tokensIn: typeof rawUsage.input === "number" ? rawUsage.input : null,
+    tokensOut: typeof rawUsage.output === "number" ? rawUsage.output : null,
+    cacheReadTokens: typeof rawUsage.cacheRead === "number" ? rawUsage.cacheRead : null,
+    cacheWriteTokens: typeof rawUsage.cacheWrite === "number" ? rawUsage.cacheWrite : null,
+    contextTokens: null,
+    costUsd: null
+  } : {};
+  return { text, ...effectiveModel !== void 0 ? { effectiveModel } : {}, usage };
 }
 function parseGenericOneShotUsage(stdout, _stderr) {
   const trimmed = stdout.trim();
@@ -15565,9 +15568,11 @@ function parseAgyOneShotUsage(stdout, _stderr) {
   };
 }
 var READ_ONLY_ONESHOT_ARGS = Object.freeze({
-  // pi: no tools at all (strictly narrower than a Read/Grep allowlist) and an
-  // ephemeral session — a one-shot witness leaves nothing behind.
-  pi: Object.freeze(["--no-tools", "--no-session"]),
+  // pi: total containment for a one-shot witness — no tools (built-in, extension and
+  // custom), no ambient extension/hook discovery, no skills, no prompt templates, no
+  // AGENTS.md/CLAUDE.md context discovery, and an ephemeral session. `--no-tools` alone
+  // is not enough: extensions and hooks can still run with their own permissions.
+  pi: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--permission-mode", "plan", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
   grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
@@ -26631,7 +26636,7 @@ function createKxmOneShotProducer(options = {}) {
         "-p"
       ];
     } else if (harness === "pi") {
-      const qualified = resolved.model.includes("/") ? resolved.model : `${resolved.provider}/${resolved.model}`;
+      const qualified = resolved.provider && resolved.model.startsWith(`${resolved.provider}/`) ? resolved.model : resolved.provider ? `${resolved.provider}/${resolved.model}` : resolved.model;
       args = [
         "--model",
         qualified,

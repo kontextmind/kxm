@@ -336,6 +336,9 @@ test("audited pi one-shot dispatches toolless, ephemeral, with the qualified mod
     assert.equal(res.tokensOut, 28);
     assert.equal(res.effectiveModel, "qwen3.8-flash");
     assert.ok(capturedArgs.includes("--no-tools"), "no tools at all — narrower than a read allowlist");
+    assert.ok(capturedArgs.includes("--no-extensions"), "no ambient extension/hook discovery");
+    assert.ok(capturedArgs.includes("--no-skills"), "no skill discovery");
+    assert.ok(capturedArgs.includes("--no-context-files"), "no AGENTS.md/CLAUDE.md discovery");
     assert.ok(capturedArgs.includes("--no-session"), "ephemeral session");
     const modelIndex = capturedArgs.indexOf("--model");
     assert.equal(capturedArgs[modelIndex + 1], "qwen-token-plan/qwen3.8-flash", "the spawn carries the provider-qualified id");

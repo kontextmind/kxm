@@ -1049,38 +1049,72 @@ test("async inventory probe test does not inherit ambient PATH", () => {
 
 
 test("parsePiOneShotUsage reads the final assistant message from the NDJSON stream", () => {
+  const assistant = (text: string, over: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text }], ...over } });
   const stream = [
     JSON.stringify({ type: "message_start", message: { role: "user", content: [{ type: "text", text: "prompt" }] } }),
-    JSON.stringify({ type: "message_update", usage: { input: 0 }, assistantMessageEvent: { type: "text_delta", delta: "{\"" } }),
-    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "…" }, { type: "text", text: '{"outcome":"passed","summary":"witness"}' }], provider: "qwen-token-plan", model: "qwen3.8-flash", usage: { input: 456, output: 28, cacheRead: 0, cacheWrite: 0 } } }),
-    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: '{"outcome":"passed","summary":"witness"}' }], model: "qwen3.8-flash", usage: { input: 456, output: 28 } } }),
+    JSON.stringify({ type: "message_update", usage: { input: 0 }, assistantMessageEvent: { type: "text_delta", delta: "ignored" } }),
+    // an EARLIER assistant turn with different values — the final one must win wholesale
+    assistant('{"outcome":"stale"}', { model: "old-model", usage: { input: 1, output: 1 } }),
+    // an interleaved user event must not reset or confuse the selection
+    JSON.stringify({ type: "turn_end", message: { role: "user", content: [{ type: "text", text: "again" }] } }),
+    assistant('{"outcome":"passed","summary":"witness"}', { model: "qwen3.8-flash", usage: { input: 456, output: 28, cacheRead: 0, cacheWrite: 0 } }),
     "not json at all",
   ].join("\n");
   const parsed = kxmHarness.parsePiOneShotUsage(stream, "");
-  assert.equal(parsed.text, '{"outcome":"passed","summary":"witness"}');
-  assert.equal(parsed.effectiveModel, "qwen3.8-flash");
+  assert.equal(parsed.text, '{"outcome":"passed","summary":"witness"}', "the final assistant message wins");
+  assert.equal(parsed.effectiveModel, "qwen3.8-flash", "model comes from the same final message");
   assert.equal(parsed.usage?.tokensIn, 456);
   assert.equal(parsed.usage?.tokensOut, 28);
+  assert.ok(!parsed.text.includes("stale"));
 
-  // A stream with no assistant message falls back to the raw text rather than empty —
-  // a shape change must be visible, not silently swallowed.
+  // No assistant message at all: fail closed with empty text — never the raw stream,
+  // which would hand back thinking deltas or diagnostics as if they were the answer.
   const fallback = kxmHarness.parsePiOneShotUsage("a shape we do not know yet", "");
-  assert.equal(fallback.text, "a shape we do not know yet");
+  assert.equal(fallback.text, "");
+  assert.equal(fallback.isError, true);
+
+  // A final assistant message with an error/aborted stop reason is a failed turn even
+  // with exit code zero and PASS text riding along.
+  for (const stopReason of ["error", "aborted"]) {
+    const errored = kxmHarness.parsePiOneShotUsage([
+      assistant('{"outcome":"passed"}', { stopReason, usage: { input: 9, output: 9 } }),
+    ].join("\n"), "");
+    assert.equal(errored.isError, true, `stopReason ${stopReason} fails the turn`);
+  }
+
+  // An EMPTY final assistant message inherits nothing from the earlier turn
+  const emptyFinal = kxmHarness.parsePiOneShotUsage([
+    assistant('{"outcome":"stale"}', { model: "old-model", usage: { input: 5, output: 5 } }),
+    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [], usage: { input: 7, output: 3 } } }),
+  ].join("\n"), "");
+  assert.equal(emptyFinal.text, "");
+  assert.equal(emptyFinal.isError, true, "an empty final turn fails closed");
 
   // Multi-part replies join with newlines; thinking parts never leak into the text
-  const multi = [
+  const multi = kxmHarness.parsePiOneShotUsage([
     JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [
       { type: "thinking", thinking: "secret reasoning" },
       { type: "text", text: "line one" },
       { type: "text", text: "line two" },
-    ], usage: { input: 1, output: 2 } } }),
-  ].join("\n");
-  const multiParsed = kxmHarness.parsePiOneShotUsage(multi, "");
-  assert.equal(multiParsed.text, "line one\nline two");
-  assert.ok(!multiParsed.text.includes("secret reasoning"));
+    ], model: "m", usage: { input: 1, output: 2 } } }),
+  ].join("\n"), "");
+  assert.equal(multi.text, "line one\nline two");
+  assert.ok(!multi.text.includes("secret reasoning"));
+
+  // A thinking-only stream never surfaces the reasoning as the answer
+  const thinkingOnly = kxmHarness.parsePiOneShotUsage([
+    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [
+      { type: "thinking", thinking: "private chain of thought" },
+    ], model: "m", usage: { input: 1, output: 2 } } }),
+  ].join("\n"), "");
+  assert.equal(thinkingOnly.text, "");
+  assert.equal(thinkingOnly.isError, true);
+  assert.ok(!JSON.stringify(thinkingOnly).includes("private chain of thought"));
 });
 
-test("pi one-shot profile is audited read-only: no tools, ephemeral session", () => {
-  assert.deepEqual([...kxmHarness.oneShotReadOnlyArgs("pi")!], ["--no-tools", "--no-session"],
-    "strictly narrower than a Read/Grep allowlist, and nothing persists");
+test("pi one-shot profile is total containment: no tools, no ambient code, ephemeral", () => {
+  assert.deepEqual([...kxmHarness.oneShotReadOnlyArgs("pi")!], [
+    "--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session",
+  ], "no tools at all, no extension/hook/skill/template/context discovery, nothing persists");
 });
