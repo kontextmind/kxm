@@ -745,7 +745,16 @@ test("portal create-drive-cancel preserves command identity and reports authorit
       await cli(["runtime", "stop", "--json"]);
       for (let attempt = 0; attempt < 100 && consecutive < 2; attempt += 1) {
         const probe = await cli(["runtime", "status", "--json"]);
-        consecutive = probe.code !== 0 ? consecutive + 1 : 0;
+        // Confirmation is the payload saying so — `ok: true` with `running: false` (the
+        // command exits 1 in exactly that case). The exit code alone cannot be trusted:
+        // a caught error also exits 1 with `ok: false`, and two of those must not read
+        // as a confirmed shutdown.
+        let notRunning = false;
+        try {
+          const payload = JSON.parse(probe.stdout) as { ok?: boolean; running?: boolean };
+          notRunning = payload.ok === true && payload.running === false;
+        } catch { notRunning = false; }
+        consecutive = notRunning ? consecutive + 1 : 0;
         if (consecutive < 2) await new Promise((resolve) => setTimeout(resolve, 100));
       }
       confirmedStopped = consecutive >= 2;
