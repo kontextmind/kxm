@@ -443,9 +443,19 @@ test("portal reads distinguish hub metadata from Runtime run state and unavailab
     hubTimeoutMs: 30,
     fetchImpl: ((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       // A fetch stub that ignores the signal would hang forever; honouring it is the point.
-      init?.signal?.addEventListener("abort", () => {
+      // The fallback timer is deliberately **ref'd**: AbortSignal.timeout keeps its timer
+      // unref'd, so a stub that waited only on the signal could leave the event loop empty
+      // with the promise pending — which node:test reports as a hang (seen on the Node 22
+      // CI leg). A real in-flight socket keeps the loop alive; a stub must do it itself.
+      let settled = false;
+      const abort = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(fallback);
         reject(Object.assign(new Error("hub read aborted"), { name: "TimeoutError" }));
-      });
+      };
+      const fallback = setTimeout(abort, 30);
+      init?.signal?.addEventListener("abort", abort);
     })) as unknown as typeof fetch,
   });
   assert.equal(hubHanging.hub.reason, "hub_timeout", "a hanging hub read ends at its deadline, not never");
