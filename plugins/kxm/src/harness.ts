@@ -297,6 +297,67 @@ export function parseCodexOneShotUsage(stdout: string, stderr: string): OneShotP
   };
 }
 
+/**
+ * Parse pi's `--mode json` output: one NDJSON event object per line. The reply text is
+ * the text parts of the final assistant message (`message_end`/`turn_end` carry it
+ * complete, after the deltas); usage and the effective model ride the same message.
+ * Anything unparseable falls back to the raw stream so a shape change is visible in the
+ * recorded text rather than silently empty.
+ */
+export function parsePiOneShotUsage(stdout: string, _stderr: string): OneShotParsedOutput {
+  // Select the FINAL assistant message first, then extract every field from that one
+  // message atomically. Carrying text, usage or model forward from an earlier message
+  // let a truncated or empty final turn inherit a previous turn's PASS text and usage.
+  let finalMessage: Record<string, unknown> | undefined;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const event = JSON.parse(trimmed) as Record<string, unknown>;
+      if (event.type !== "message_end" && event.type !== "turn_end") continue;
+      const message = event.message as Record<string, unknown> | undefined;
+      if (!message || message.role !== "assistant") continue;
+      finalMessage = message;
+    } catch {
+      // skip malformed lines; the stream is append-only and a partial line means truncation
+    }
+  }
+  if (!finalMessage) {
+    // No assistant message at all: fail closed with empty text. Returning the raw stream
+    // would hand back thinking deltas or diagnostics as if they were the answer.
+    return { text: "", isError: true, usage: {} };
+  }
+  const content = Array.isArray(finalMessage.content) ? finalMessage.content : [];
+  const text = content
+    .map((part) => (part && typeof part === "object" && (part as Record<string, unknown>).type === "text"
+      ? String((part as Record<string, unknown>).text ?? "")
+      : ""))
+    .filter((part) => part.length > 0)
+    .join("\n");
+  // pi can exit zero on a failed turn; the stop reason is the fact that matters.
+  // Metadata comes from the selected final message even on a failed turn: usage and
+  // model are facts about what ran, not claims about the outcome, and dropping them
+  // turned a real 7/3-token failure into null/null with model "unknown".
+  const effectiveModel = reportedModelId(finalMessage.model);
+  const rawUsage = finalMessage.usage as Record<string, unknown> | undefined;
+  const usage: OneShotUsage = rawUsage && typeof rawUsage === "object"
+    ? {
+      tokensIn: typeof rawUsage.input === "number" ? rawUsage.input : null,
+      tokensOut: typeof rawUsage.output === "number" ? rawUsage.output : null,
+      cacheReadTokens: typeof rawUsage.cacheRead === "number" ? rawUsage.cacheRead : null,
+      cacheWriteTokens: typeof rawUsage.cacheWrite === "number" ? rawUsage.cacheWrite : null,
+      contextTokens: null,
+      costUsd: null,
+    }
+    : {};
+  const stopReason = typeof finalMessage.stopReason === "string" ? finalMessage.stopReason : undefined;
+  const terminalError = stopReason === "error" || stopReason === "aborted";
+  if (terminalError || text.length === 0) {
+    return { text, isError: true, ...(effectiveModel !== undefined ? { effectiveModel } : {}), usage };
+  }
+  return { text, ...(effectiveModel !== undefined ? { effectiveModel } : {}), usage };
+}
+
 export function parseGenericOneShotUsage(stdout: string, _stderr: string): OneShotParsedOutput {
   const trimmed = stdout.trim();
   try {
@@ -419,6 +480,11 @@ export function parseAgyOneShotUsage(stdout: string, _stderr: string): OneShotPa
 
 /** Built-in harnesses. Unknown ids fail closed. Model lists live in `.kxm/models/*.yaml`, not here. */
 const READ_ONLY_ONESHOT_ARGS = Object.freeze({
+  // pi: total containment for a one-shot witness — no tools (built-in, extension and
+  // custom), no ambient extension/hook discovery, no skills, no prompt templates, no
+  // AGENTS.md/CLAUDE.md context discovery, and an ephemeral session. `--no-tools` alone
+  // is not enough: extensions and hooks can still run with their own permissions.
+  pi: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--permission-mode", "plan", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
   grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
@@ -447,7 +513,7 @@ export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
       argv: ["-p", "--mode", "json"],
       promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseGenericOneShotUsage,
+      usageParser: parsePiOneShotUsage,
     },
   },
   {

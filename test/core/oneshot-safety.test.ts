@@ -56,7 +56,8 @@ test("one-shot cancellation preserves reported usage and does not invent effecti
   assert.equal(res.effectiveModel, "unknown");
 });
 
-for (const harness of ["pi", "deepseek"]) {
+// pi is now audited (no tools at all + ephemeral session); deepseek remains unaudited.
+for (const harness of ["deepseek"]) {
   test(`unaudited ${harness} one-shot permissions refuse before authentication and execution`, async () => {
     let probes = 0;
     let spawns = 0;
@@ -305,4 +306,68 @@ test("closing a producer cancels and drains its active subprocesses", { timeout:
   await producer.close();
   assert.equal((await work).outcome, "cancelled");
   await assert.rejects(producer.produce(request()), /oneshot_producer_closed/);
+});
+
+test("audited pi one-shot dispatches toolless, ephemeral, with the qualified model id, and parses the NDJSON stream", async () => {
+  let capturedArgs: readonly string[] = [];
+  const piStream = [
+    JSON.stringify({ type: "message_start", message: { role: "user", content: [{ type: "text", text: "prompt" }] } }),
+    JSON.stringify({ type: "message_update", usage: { input: 0 }, assistantMessageEvent: { type: "text_delta", delta: "ignored delta" } }),
+    JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [
+      { type: "thinking", thinking: "internal reasoning" },
+      { type: "text", text: '{"outcome":"passed","summary":"live witness"}' },
+    ], provider: "qwen-token-plan", model: "qwen3.8-flash", usage: { input: 456, output: 28, cacheRead: 0, cacheWrite: 0 } } }),
+  ].join("\n");
+  const producer = createKxmOneShotProducer({
+    defaultHarness: "pi",
+    probeHarness: () => ({
+      id: "pi", label: "Pi", default: true, mode: "headless" as const,
+      detected: true, authenticated: true, canUpdate: { self: false, extensions: false, models: false }, issues: [],
+    }),
+    spawnProcess: async (_command, args) => {
+      capturedArgs = args;
+      return { stdout: piStream, stderr: "", code: 0 };
+    },
+  });
+  try {
+    const res = await producer.produce(request({ harness: "pi", provider: "qwen-token-plan", model: "qwen3.8-flash", prompt: "witness" }));
+    assert.equal(res.outcome, "passed", JSON.stringify(res));
+    assert.equal(res.tokensIn, 456, "usage comes from the final assistant message, not the deltas");
+    assert.equal(res.tokensOut, 28);
+    assert.equal(res.effectiveModel, "qwen3.8-flash");
+    assert.ok(capturedArgs.includes("--no-tools"), "no tools at all — narrower than a read allowlist");
+    assert.ok(capturedArgs.includes("--no-extensions"), "no ambient extension/hook discovery");
+    assert.ok(capturedArgs.includes("--no-skills"), "no skill discovery");
+    assert.ok(capturedArgs.includes("--no-context-files"), "no AGENTS.md/CLAUDE.md discovery");
+    assert.ok(capturedArgs.includes("--no-session"), "ephemeral session");
+    const modelIndex = capturedArgs.indexOf("--model");
+    assert.equal(capturedArgs[modelIndex + 1], "qwen-token-plan/qwen3.8-flash", "the spawn carries the provider-qualified id");
+
+  // Provider-local namespaces survive the resolver: openrouter's qwen/qwen3-coder-plus
+  // spawns as the full three-part id, not openrouter/qwen3-coder-plus.
+  {
+    const nsProducer = createKxmOneShotProducer({
+      defaultHarness: "pi",
+      probeHarness: () => ({
+        id: "pi", label: "Pi", default: true, mode: "headless" as const,
+        detected: true, authenticated: true, canUpdate: { self: false, extensions: false, models: false }, issues: [],
+      }),
+      spawnProcess: async (_command, args) => {
+        capturedArgs = args;
+        const nsStream = [
+          JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: '{"outcome":"passed"}' }], model: "qwen3-coder-plus", usage: { input: 1, output: 1 } } }),
+        ].join("\n");
+        return { stdout: nsStream, stderr: "", code: 0 };
+      },
+    });
+    try {
+      const ns = await nsProducer.produce(request({ harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus", prompt: "witness" }));
+      assert.equal(ns.outcome, "passed", JSON.stringify(ns));
+      const idx = capturedArgs.indexOf("--model");
+      assert.equal(capturedArgs[idx + 1], "openrouter/qwen/qwen3-coder-plus", "provider-local namespaces survive the resolver and the spawn");
+    } finally { await nsProducer.close(); }
+  }
+    assert.ok(capturedArgs.includes("-p") && capturedArgs.includes("--mode") && capturedArgs.includes("json"), "one-shot json mode");
+    assert.ok(!JSON.stringify(res).includes("internal reasoning"), "thinking never leaks into the result");
+  } finally { await producer.close(); }
 });

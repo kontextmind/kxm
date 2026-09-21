@@ -15431,6 +15431,42 @@ function parseCodexOneShotUsage(stdout, stderr) {
     }
   };
 }
+function parsePiOneShotUsage(stdout, _stderr) {
+  let finalMessage;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const event = JSON.parse(trimmed);
+      if (event.type !== "message_end" && event.type !== "turn_end") continue;
+      const message = event.message;
+      if (!message || message.role !== "assistant") continue;
+      finalMessage = message;
+    } catch {
+    }
+  }
+  if (!finalMessage) {
+    return { text: "", isError: true, usage: {} };
+  }
+  const content = Array.isArray(finalMessage.content) ? finalMessage.content : [];
+  const text = content.map((part) => part && typeof part === "object" && part.type === "text" ? String(part.text ?? "") : "").filter((part) => part.length > 0).join("\n");
+  const effectiveModel = reportedModelId(finalMessage.model);
+  const rawUsage = finalMessage.usage;
+  const usage = rawUsage && typeof rawUsage === "object" ? {
+    tokensIn: typeof rawUsage.input === "number" ? rawUsage.input : null,
+    tokensOut: typeof rawUsage.output === "number" ? rawUsage.output : null,
+    cacheReadTokens: typeof rawUsage.cacheRead === "number" ? rawUsage.cacheRead : null,
+    cacheWriteTokens: typeof rawUsage.cacheWrite === "number" ? rawUsage.cacheWrite : null,
+    contextTokens: null,
+    costUsd: null
+  } : {};
+  const stopReason = typeof finalMessage.stopReason === "string" ? finalMessage.stopReason : void 0;
+  const terminalError = stopReason === "error" || stopReason === "aborted";
+  if (terminalError || text.length === 0) {
+    return { text, isError: true, ...effectiveModel !== void 0 ? { effectiveModel } : {}, usage };
+  }
+  return { text, ...effectiveModel !== void 0 ? { effectiveModel } : {}, usage };
+}
 function parseGenericOneShotUsage(stdout, _stderr) {
   const trimmed = stdout.trim();
   try {
@@ -15532,6 +15568,11 @@ function parseAgyOneShotUsage(stdout, _stderr) {
   };
 }
 var READ_ONLY_ONESHOT_ARGS = Object.freeze({
+  // pi: total containment for a one-shot witness — no tools (built-in, extension and
+  // custom), no ambient extension/hook discovery, no skills, no prompt templates, no
+  // AGENTS.md/CLAUDE.md context discovery, and an ephemeral session. `--no-tools` alone
+  // is not enough: extensions and hooks can still run with their own permissions.
+  pi: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--permission-mode", "plan", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
   grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
@@ -15558,7 +15599,7 @@ var BUILTIN_HARNESSES = Object.freeze([
       argv: ["-p", "--mode", "json"],
       promptVia: "arg",
       outputFormat: "json",
-      usageParser: parseGenericOneShotUsage
+      usageParser: parsePiOneShotUsage
     }
   },
   {
@@ -26475,6 +26516,9 @@ function createKxmOneShotProducer(options = {}) {
   }
   function resolveModelForRequest(request, harness) {
     if (request.model) {
+      if (request.provider) {
+        return { provider: request.provider.toLowerCase(), model: request.model, thinking: request.thinking };
+      }
       const parsed2 = parseModelString(request.model, harness);
       return {
         provider: request.provider?.toLowerCase() ?? parsed2.provider,
@@ -26485,6 +26529,9 @@ function createKxmOneShotProducer(options = {}) {
     if (options.resolveModel) {
       const resolved = options.resolveModel(request.agentId, request.runId);
       if (resolved && resolved.model) {
+        if (resolved.provider) {
+          return { provider: resolved.provider.toLowerCase(), model: resolved.model, thinking: resolved.thinking };
+        }
         const parsed2 = parseModelString(resolved.model, harness);
         return {
           provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
@@ -26593,6 +26640,14 @@ function createKxmOneShotProducer(options = {}) {
         "--output-format",
         "stream-json",
         "-p"
+      ];
+    } else if (harness === "pi") {
+      const qualified = resolved.provider && resolved.model.startsWith(`${resolved.provider}/`) ? resolved.model : resolved.provider ? `${resolved.provider}/${resolved.model}` : resolved.model;
+      args = [
+        "--model",
+        qualified,
+        ...permissionArgs,
+        ...oneShot.argv
       ];
     } else {
       throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
