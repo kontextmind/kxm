@@ -5,6 +5,13 @@ import { compileKxmWorkflow } from "../../plugins/kxm/src/engine-compile.ts";
 import { generateStudioLayout, STUDIO_LAYOUT_SCHEMA, createStudioServer } from "../../plugins/kxm/src/studio-layout.ts";
 import { assembleTenantStatus, formatTenantStatus } from "../../plugins/kxm/src/tenant-status.ts";
 import { runtimeError } from "../../plugins/kxm/src/runtime-store.ts";
+import { runCli } from "../../plugins/kxm/src/cli.ts";
+import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
+import { makeGitRoot } from "../helpers/git-root.ts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 test("generateStudioLayout compiles plan into Decision D14 DAG, stepper, and Temporal swimlanes", () => {
   const yamlContent = `
@@ -548,4 +555,147 @@ test("portal reads distinguish hub metadata from Runtime run state and unavailab
   });
   assert.match(formatTenantStatus(mixedDisagree), /disagree \(1 unverified: fold failed\)/,
     "a disagreement line also carries the unverified folds it is standing next to");
+});
+
+test("portal create-drive-cancel preserves command identity and reports authoritative settlement", async () => {
+  // S4's parity witness: the portal drives a workflow through the same three verbs an
+  // operator does — `kxm run`, `kxm runs drive`, `kxm runs cancel` — with no parallel
+  // surface minting its own ids. The runId accepted at create is the id every later
+  // command addresses; the driveId accepted at drive is the id the receipt settles; and
+  // the settlement reported is the Runtime's own (verified receipt), not a projection.
+  // A settled run refuses a second drive (run_busy) — "started, never completed" means
+  // the portal can re-read state freely but cannot re-drive history.
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-s4-portal-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-s4-portal-state-"));
+  const io = () => {
+    let stdout = "";
+    let stderr = "";
+    return {
+      stdout: (text: string) => { stdout += text; },
+      stderr: (text: string) => { stderr += text; },
+      read: () => ({ stdout, stderr }),
+    };
+  };
+  const cli = async (argv: string[]) => {
+    const captured = io();
+    const code = await runCli(argv, { KXM_STATE_HOME: stateRoot, KXM_LOGS_DIR: stateRoot }, captured, cwd);
+    return { code, ...captured.read() };
+  };
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JS4PORTALDRIVE00000000", projectName: "S4 Portal" });
+    // A slim agent-only workflow, as the S1 tenant recipe intends the portal to drive.
+    // The template's `default` carries assignment pools, which the direct-drive path
+    // refuses on purpose (they belong to the assignment engine) — asserted below.
+    mkdirSync(join(cwd, ".kxm", "workflows"), { recursive: true });
+    writeFileSync(join(cwd, ".kxm", "workflows", "portal.yaml"), [
+      "schema: kxm.workflow.v1",
+      "description: Slim portal-driven workflow.",
+      "coordinator: coordinator",
+      "limits:",
+      "  maxTransitions: 2",
+      "steps:",
+      "  - id: only",
+      "    kind: agent",
+      "    agent: implementer",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "      failed:",
+      "        target: $terminal",
+      "        terminalStatus: failed",
+      "",
+    ].join("\n"));
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "portal workflow"], { windowsHide: true });
+
+    // the assignment workflow refuses direct drive — the boundary is honest, not hidden
+    const assignmentRun = await cli(["run", "default", "--json", "assignment workflow witness"]);
+    assert.equal(assignmentRun.code, 0, assignmentRun.stderr);
+    const assignmentRunId = (JSON.parse(assignmentRun.stdout) as { run: { runId: string } }).run.runId;
+    const refused = await cli(["runs", "drive", assignmentRunId, "--json", "--simulated"]);
+    assert.equal(refused.code, 1, "an assignment workflow is not directly drivable");
+    assert.match(refused.stderr, /run_handoff_required/);
+    await cli(["runs", "cancel", assignmentRunId, "--json"]);
+
+    // create — the id every later command must reuse
+    const created = await cli(["run", "portal", "--json", "portal s4 witness"]);
+    assert.equal(created.code, 0, created.stderr);
+    const runPayload = JSON.parse(created.stdout) as {
+      ok: boolean;
+      run: { runId: string; homeRuntimeId: string; status: string };
+    };
+    assert.equal(runPayload.ok, true);
+    const runId = runPayload.run.runId;
+    assert.match(runId, /^run_/);
+
+    // drive — accepted (202 semantics: started, never synchronously completed)
+    const driven = await cli(["runs", "drive", runId, "--json", "--simulated"]);
+    assert.equal(driven.code, 0, driven.stderr);
+    const drivePayload = JSON.parse(driven.stdout) as { ok: boolean; driveId: string; status: string; poll: string };
+    assert.equal(drivePayload.status, "accepted", "a drive is started (202 semantics), never synchronously completed");
+    const driveId = drivePayload.driveId;
+    assert.match(driveId, /^drv_/);
+
+    // settlement arrives by reading, not by the drive command blocking into a verdict
+    let settledPayload: {
+      run: { runId: string; status: string };
+      drive?: { driveId: string; verified: boolean; receipt: { settlement: { kind: string; status: string } } };
+    } | undefined;
+    for (let attempt = 0; attempt < 200 && settledPayload === undefined; attempt += 1) {
+      const polled = await cli(["runs", "status", runId, "--json"]);
+      assert.equal(polled.code, 0, polled.stderr);
+      const payload = JSON.parse(polled.stdout) as {
+        run: { runId: string; status: string };
+        drive?: { driveId: string; verified: boolean; receipt: { settlement: { kind: string; status: string } } };
+      };
+      if (payload.run.status === "completed" && payload.drive?.receipt?.settlement?.kind === "terminal") {
+        settledPayload = payload;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(settledPayload, "the simulated drive must settle within the polling window");
+
+    // the receipt is the authority, and its ids are the ones already seen
+    assert.equal(settledPayload!.run.runId, runId, "the status read addresses the created run, not a copy");
+    assert.equal(settledPayload.run.status, "completed");
+    assert.equal(settledPayload.drive?.driveId, driveId, "the settled receipt carries the accepted drive id");
+    assert.equal(settledPayload.drive?.verified, true, "settlement is the Runtime's verified receipt, not a projection");
+    assert.equal(settledPayload.drive?.receipt.settlement.kind, "terminal");
+    assert.equal(settledPayload.drive?.receipt.settlement.status, "completed");
+
+    // duplicate drive on a settled run is refused — history cannot be re-driven
+    const reDrive = await cli(["runs", "drive", runId, "--json", "--simulated"]);
+    assert.equal(reDrive.code, 1, "re-driving a settled run must fail, not be accepted");
+    assert.match(reDrive.stderr, /run_busy/);
+
+    // cancel — a second run, cancelled, reported by the same authoritative path
+    const second = await cli(["run", "default", "--json", "portal s4 cancel witness"]);
+    assert.equal(second.code, 0, second.stderr);
+    const secondRunId = (JSON.parse(second.stdout) as { run: { runId: string } }).run.runId;
+    assert.notEqual(secondRunId, runId, "a new create mints a new run; ids are never recycled");
+
+    const cancelled = await cli(["runs", "cancel", secondRunId, "--json"]);
+    assert.equal(cancelled.code, 0, cancelled.stderr);
+    assert.equal((JSON.parse(cancelled.stdout) as { run: { status: string } }).run.status, "cancelled");
+
+    const cancelledStatus = await cli(["runs", "status", secondRunId, "--json"]);
+    assert.equal(cancelledStatus.code, 0, cancelledStatus.stderr);
+    const cancelledPayload = JSON.parse(cancelledStatus.stdout) as { run: { runId: string; status: string } };
+    assert.equal(cancelledPayload.run.runId, secondRunId);
+    assert.equal(cancelledPayload.run.status, "cancelled", "the authoritative store reports the cancellation");
+
+    const reCancel = await cli(["runs", "cancel", secondRunId, "--json"]);
+    assert.equal(reCancel.code, 0);
+    assert.equal((JSON.parse(reCancel.stdout) as { idempotent: boolean }).idempotent, true, "repeat cancel is idempotent, not an error");
+
+    // leave no supervisor behind on the box
+    const stopped = await cli(["runtime", "stop", "--json"]);
+    assert.equal(stopped.code, 0, stopped.stderr);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
 });
