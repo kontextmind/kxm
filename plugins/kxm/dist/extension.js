@@ -14537,23 +14537,12 @@ import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 
 // plugins/kxm/src/protocol.ts
-var DEFAULT_STALE_AFTER_MS = 3e4;
 var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
 var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 var MAX_CONTENT_CHARS = 32e3;
 var MAX_AGENT_HOST_CHARS = 64;
-function agentPresenceView(agent, staleAfterMs = DEFAULT_STALE_AFTER_MS, now = Date.now()) {
-  const lastSeenMs = Date.parse(agent.lastSeenAt);
-  const leaseExpiresAtMs = (Number.isFinite(lastSeenMs) ? lastSeenMs : 0) + staleAfterMs;
-  const leaseExpiresAt = new Date(leaseExpiresAtMs).toISOString();
-  if (!agent.online) return { leaseExpiresAt, presence: "offline" };
-  return { leaseExpiresAt, presence: now < leaseExpiresAtMs ? "online" : "stale" };
-}
-function toAgentRecord(agent, staleAfterMs, now) {
-  return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
-}
 
 // plugins/kxm/src/workflow.ts
 function canonicalWorkflowEvidenceKey(value) {
@@ -36651,7 +36640,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
       database.exec("PRAGMA busy_timeout = 5000");
-      agents = readJsonRows(database, "SELECT record FROM agents").map((agent) => toAgentRecord(agent));
+      agents = readJsonRows(database, "SELECT record FROM agents");
       openMessages = readOpenMessageMetadata(database);
       openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
       legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");

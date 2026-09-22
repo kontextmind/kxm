@@ -234,13 +234,19 @@ test("agent listing reports host label, lease expiry, and offline members only w
   const online = await list();
   assert.deepEqual(online.map((agent) => agent.name).sort(), ["peer", "reader"]);
   for (const agent of online) {
-    assert.equal(agent.presence, "online");
-    assert.equal(Date.parse(agent.leaseExpiresAt) - Date.parse(agent.lastSeenAt), staleAfterMs);
+    // The hub's own projection (not a wall-clock race): the agent is online because
+    // its lease has not expired on the hub clock, and the lease is exactly
+    // lastSeenAt + the configured staleAfterMs.
+    assert.equal(agent.presence, "online", `${agent.name} should hold its lease`);
+    assert.equal(Date.parse(agent.leaseExpiresAt!) - Date.parse(agent.lastSeenAt), staleAfterMs,
+      `${agent.name} lease is exactly lastSeenAt + staleAfterMs`);
   }
   assert.equal(find(online, peer.agent.id)?.host, "box-b");
 
   // Presence and the lease are derived on read; the stored record grows by the
-  // host label alone.
+  // host label alone. This fixture runs the hub in memory (no SQLite file), so
+  // the in-memory agent map IS the store; a file-backed variant would assert the
+  // same fields on the `record` JSON column.
   const stored = mesh.hub.state.agents.get(peer.agent.id)!;
   assert.equal(stored.host, "box-b");
   assert.equal("presence" in stored, false);
@@ -251,7 +257,7 @@ test("agent listing reports host label, lease expiry, and offline members only w
   await waitFor(async () => find(await list(), peer.agent.id)?.presence === "stale");
   const expired = find(await list(), peer.agent.id)!;
   assert.equal(expired.online, true, "a lease expires before the sweep retires the agent");
-  assert.ok(Date.parse(expired.leaseExpiresAt) <= Date.now());
+  assert.ok(Date.parse(expired.leaseExpiresAt ?? "") <= Date.now());
 
   const unregistered = await fetch(`${address.url}/v1/agents/${peer.agent.id}`, {
     method: "DELETE",
@@ -267,7 +273,7 @@ test("agent listing reports host label, lease expiry, and offline members only w
   const offlinePeer = find(withOffline, peer.agent.id)!;
   assert.equal(offlinePeer.presence, "offline");
   assert.equal(offlinePeer.host, "box-b");
-  assert.equal(Date.parse(offlinePeer.leaseExpiresAt) - Date.parse(offlinePeer.lastSeenAt), staleAfterMs);
+  assert.equal(Date.parse(offlinePeer.leaseExpiresAt ?? "") - Date.parse(offlinePeer.lastSeenAt), staleAfterMs);
   assert.equal(withOffline.some((agent) => agent.name === "outsider"), false, "offline members stay project-scoped");
 });
 

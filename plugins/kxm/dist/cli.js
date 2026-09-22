@@ -18354,23 +18354,12 @@ import { hostname } from "node:os";
 
 // plugins/kxm/src/protocol.ts
 import { randomUUID } from "node:crypto";
-var DEFAULT_STALE_AFTER_MS = 3e4;
 var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
 var MIN_MESSAGE_TTL_MS = 1e3;
 var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 var MAX_AGENT_HOST_CHARS = 64;
-function agentPresenceView(agent, staleAfterMs = DEFAULT_STALE_AFTER_MS, now = Date.now()) {
-  const lastSeenMs = Date.parse(agent.lastSeenAt);
-  const leaseExpiresAtMs = (Number.isFinite(lastSeenMs) ? lastSeenMs : 0) + staleAfterMs;
-  const leaseExpiresAt = new Date(leaseExpiresAtMs).toISOString();
-  if (!agent.online) return { leaseExpiresAt, presence: "offline" };
-  return { leaseExpiresAt, presence: now < leaseExpiresAtMs ? "online" : "stale" };
-}
-function toAgentRecord(agent, staleAfterMs, now) {
-  return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
-}
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -42783,7 +42772,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
       database.exec("PRAGMA busy_timeout = 5000");
-      agents = readJsonRows(database, "SELECT record FROM agents").map((agent) => toAgentRecord(agent));
+      agents = readJsonRows(database, "SELECT record FROM agents");
       openMessages = readOpenMessageMetadata(database);
       openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
       legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
@@ -43115,9 +43104,10 @@ function visibleAgents(snapshot) {
   return snapshot.agents.filter((agent) => agent.model !== "tui");
 }
 function presenceCell(agent, theme, width = 7) {
-  const cell = pad(agent.presence, width);
-  if (agent.presence === "online") return theme.success(cell);
-  if (agent.presence === "stale") return theme.warning(cell);
+  const presence = agent.presence ?? "n/a";
+  const cell = pad(presence, width);
+  if (presence === "online") return theme.success(cell);
+  if (presence === "stale") return theme.warning(cell);
   return theme.dim(cell);
 }
 function panelMetric(snapshot, panel) {
@@ -43208,10 +43198,10 @@ function detailLines(snapshot, view, theme) {
     const related = snapshot.openMessages.filter((message) => message.fromName === agent.name || message.toName === agent.name);
     return [
       theme.accent(agent.name),
-      `${presenceCell(agent, theme, agent.presence.length)}  ${agent.model ?? "-"}`,
+      `${presenceCell(agent, theme, (agent.presence ?? "n/a").length)}  ${agent.model ?? "-"}`,
       `host ${agent.host ?? "-"}`,
       agent.purpose,
-      `seen ${age(agent.lastSeenAt, now)} ago \xB7 lease ${agent.leaseExpiresAt.slice(11, 19)} UTC`,
+      `seen ${age(agent.lastSeenAt, now)} ago \xB7 lease ${agent.leaseExpiresAt?.slice(11, 19) ?? "n/a"} UTC`,
       "",
       theme.dim("Open work"),
       ...related.length === 0 ? [theme.dim("none")] : related.map((message) => `${message.status}  ${message.fromName} \u2192 ${message.toName}  ${age(message.createdAt, now)}`)

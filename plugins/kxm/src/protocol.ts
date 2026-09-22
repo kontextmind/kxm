@@ -39,9 +39,11 @@ export interface AgentIdentity {
 /** The public projection of an agent: durable identity plus presence derived
  * from the hub clock at read time. */
 export interface AgentRecord extends AgentIdentity {
-  /** `lastSeenAt + staleAfterMs`: the heartbeat lease the stale sweep enforces. */
-  leaseExpiresAt: string;
-  presence: AgentPresence;
+  /** `lastSeenAt + staleAfterMs`: the heartbeat lease the stale sweep enforces.
+   * Absent when projected from the local store without the hub's clock or lease. */
+  leaseExpiresAt?: string;
+  /** Hub-clocked presence. Absent when the reader has no hub projection. */
+  presence?: AgentPresence;
 }
 
 /** Presence is hub-clocked and never client-reported. An agent holds its lease

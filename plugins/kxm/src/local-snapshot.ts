@@ -2,7 +2,6 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
-import { toAgentRecord } from "./protocol.ts";
 import type { AgentIdentity, AgentRecord, MessageRecord } from "./protocol.ts";
 import type { WorkflowRun } from "./workflow.ts";
 import { readRoutingRecords } from "./telemetry.ts";
@@ -257,8 +256,12 @@ export function loadLocalMeshSnapshot(
       // Stored rows carry identity only. Presence is derived here against the
       // default lease window, because the hub's configured `staleAfterMs` is
       // not in the file; a reachable hub's own records replace these.
-      agents = readJsonRows<AgentIdentity>(database, "SELECT record FROM agents")
-        .map((agent) => toAgentRecord(agent));
+      // Stored rows carry identity only. Presence is NOT computed here: the hub's
+      // configured staleAfterMs and its clock are not in the file, so a reader-side
+      // lease would mislabel agents against the hub's own projection. The stored
+      // `online` boolean is the only durable truth; the hub's /v1/agents or the
+      // ops snapshot is the authoritative presence source.
+      agents = readJsonRows<AgentIdentity>(database, "SELECT record FROM agents");
       openMessages = readOpenMessageMetadata(database);
       openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
       legacyRuns = readJsonRows<WorkflowRun>(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");

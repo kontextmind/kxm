@@ -314,9 +314,12 @@ function visibleAgents(snapshot: MeshTuiSnapshot): AgentRecord[] {
  * recomputing it: green holds a lease, amber has lost it but has not been
  * swept, dim is a registered peer that is gone. */
 function presenceCell(agent: AgentRecord, theme: MeshTuiTheme, width = 7): string {
-  const cell = pad(agent.presence, width);
-  if (agent.presence === "online") return theme.success(cell);
-  if (agent.presence === "stale") return theme.warning(cell);
+  // Local-store projections carry no hub-clocked presence; the dash shows "n/a"
+  // rather than inventing a lease from the reader's clock.
+  const presence = agent.presence ?? "n/a";
+  const cell = pad(presence, width);
+  if (presence === "online") return theme.success(cell);
+  if (presence === "stale") return theme.warning(cell);
   return theme.dim(cell);
 }
 
@@ -499,10 +502,10 @@ function detailLines(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTu
     const related = snapshot.openMessages.filter((message) => message.fromName === agent.name || message.toName === agent.name);
     return [
       theme.accent(agent.name),
-      `${presenceCell(agent, theme, agent.presence.length)}  ${agent.model ?? "-"}`,
+      `${presenceCell(agent, theme, (agent.presence ?? "n/a").length)}  ${agent.model ?? "-"}`,
       `host ${agent.host ?? "-"}`,
       agent.purpose,
-      `seen ${age(agent.lastSeenAt, now)} ago · lease ${agent.leaseExpiresAt.slice(11, 19)} UTC`,
+      `seen ${age(agent.lastSeenAt, now)} ago · lease ${agent.leaseExpiresAt?.slice(11, 19) ?? "n/a"} UTC`,
       "",
       theme.dim("Open work"),
       ...(related.length === 0 ? [theme.dim("none")] : related.map((message) => `${message.status}  ${message.fromName} → ${message.toName}  ${age(message.createdAt, now)}`)),
