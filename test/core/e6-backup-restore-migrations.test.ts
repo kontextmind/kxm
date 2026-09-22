@@ -273,7 +273,7 @@ test("kxm backup and restore round-trip preserves all stores and data with manif
     assert.equal(outDir, backupDir);
     assert.equal(manifest.schema, "kxm.backup-manifest.v1");
     assert.equal(manifest.stores.length, 3);
-    assert.ok(manifest.stores.some((s) => s.storeId === "hub-store" && s.schemaVersion === 3));
+    assert.ok(manifest.stores.some((s) => s.storeId === "hub-store" && s.schemaVersion === HUB_STORE_SCHEMA_VERSION));
     assert.ok(manifest.stores.some((s) => s.storeId === "registry" && s.schemaVersion === 1));
     assert.ok(manifest.stores.some((s) => s.storeId === "events:key_001" && s.schemaVersion === KXM_EVENT_STORE_SCHEMA_VERSION));
 

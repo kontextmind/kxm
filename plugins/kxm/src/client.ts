@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { MAX_AGENT_HOST_CHARS } from "./protocol.ts";
-import type { AgentRecord, DeliveryMode, HubEvent, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
+import type { AgentRecord, DeliveryMode, HubEvent, LeaseRecord, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
 import type { ContextAuthority, ContextConfidence, ContextItem, ContextItemAuditMetadata, ContextItemKind, ContextPacket } from "./context.ts";
 import {
   canonicalWorkflowEvidenceKey,
@@ -341,6 +341,41 @@ export class HubClient {
     return result.message;
   }
 
+  // ----- Fenced leases over shared resources (P3) -----
+
+  /**
+   * Take or extend the lease over `resource` inside this client's project.
+   *
+   * The returned `fencingToken` is the whole point: hold it, present it on every
+   * renewal, and present it again before committing anything shared. A hub that
+   * has moved past it refuses, and the caller must stop rather than retry —
+   * another holder owns the resource now. Rejects `HubHttpError` with code
+   * `lease_held` when a live holder has it.
+   */
+  async acquireLease(resource: string, ttlMs?: number): Promise<{ lease: LeaseRecord; renewed: boolean }> {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/acquire`, {
+      method: "POST",
+      body: JSON.stringify(ttlMs === undefined ? {} : { ttlMs }),
+    });
+  }
+
+  /** Extend a lease this client holds. The token never changes on renewal; a
+   * `lease_superseded` or `lease_expired` refusal means it is gone. */
+  async renewLease(resource: string, fencingToken: number, ttlMs?: number): Promise<{ lease: LeaseRecord }> {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/renew`, {
+      method: "POST",
+      body: JSON.stringify(ttlMs === undefined ? { fencingToken } : { fencingToken, ttlMs }),
+    });
+  }
+
+  /** Give the resource back. */
+  async releaseLease(resource: string, fencingToken: number): Promise<{ released: boolean; lease: LeaseRecord }> {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/release`, {
+      method: "POST",
+      body: JSON.stringify({ fencingToken }),
+    });
+  }
+
   async listWorkflows(): Promise<WorkflowRun[]> {
     const result = await this.request<{ runs: WorkflowRun[] }>("/v1/workflows");
     return result.runs;
@@ -625,6 +660,9 @@ export class HubClient {
       for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
         if (typeof body[key] === "string") extras[key] = body[key];
       }
+      // A lease refusal carries the lease that won, so the loser can record who
+      // holds the resource and at which token instead of guessing.
+      if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
       throw new HubHttpError(
         response.status,
         String(body.error ?? `HTTP ${response.status}`),

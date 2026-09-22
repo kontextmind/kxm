@@ -18360,6 +18360,8 @@ var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 var MAX_AGENT_HOST_CHARS = 64;
+var MAX_LEASE_TTL_MS = 10 * 6e4;
+var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -19396,6 +19398,37 @@ var HubClient = class {
     );
     return result.message;
   }
+  // ----- Fenced leases over shared resources (P3) -----
+  /**
+   * Take or extend the lease over `resource` inside this client's project.
+   *
+   * The returned `fencingToken` is the whole point: hold it, present it on every
+   * renewal, and present it again before committing anything shared. A hub that
+   * has moved past it refuses, and the caller must stop rather than retry —
+   * another holder owns the resource now. Rejects `HubHttpError` with code
+   * `lease_held` when a live holder has it.
+   */
+  async acquireLease(resource, ttlMs) {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/acquire`, {
+      method: "POST",
+      body: JSON.stringify(ttlMs === void 0 ? {} : { ttlMs })
+    });
+  }
+  /** Extend a lease this client holds. The token never changes on renewal; a
+   * `lease_superseded` or `lease_expired` refusal means it is gone. */
+  async renewLease(resource, fencingToken, ttlMs) {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/renew`, {
+      method: "POST",
+      body: JSON.stringify(ttlMs === void 0 ? { fencingToken } : { fencingToken, ttlMs })
+    });
+  }
+  /** Give the resource back. */
+  async releaseLease(resource, fencingToken) {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/release`, {
+      method: "POST",
+      body: JSON.stringify({ fencingToken })
+    });
+  }
   async listWorkflows() {
     const result = await this.request("/v1/workflows");
     return result.runs;
@@ -19589,6 +19622,7 @@ var HubClient = class {
       for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
         if (typeof body[key] === "string") extras[key] = body[key];
       }
+      if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
       throw new HubHttpError(
         response.status,
         String(body.error ?? `HTTP ${response.status}`),
@@ -23862,7 +23896,7 @@ function discoverProjectStores(projectRoot, options = {}) {
   const stores = [];
   const hubPath = options.hubDataPath ? resolve5(options.hubDataPath) : join8(root, ".kxm", "state", "kxm.db");
   if (existsSync8(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 3 });
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 4 });
   }
   const registryPath = join8(root, ".kxm", "runtime", "registry.db");
   if (existsSync8(registryPath)) {
@@ -23968,7 +24002,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
         `backup file ${store.backupFile} sha256 ${actualSha256} does not match manifest hash ${store.sha256}`
       );
     }
-    let maxSupported = 3;
+    let maxSupported = 4;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {
@@ -42603,6 +42637,12 @@ function slugifyBranchPart(text, maxLength = 40) {
   if (cleaned.length <= maxLength) return cleaned;
   return cleaned.slice(0, maxLength).replace(/-+$/, "");
 }
+var SHARED_EFFECT_KINDS = Object.freeze([
+  "git-push",
+  "pr-create",
+  "tracker-issue",
+  "webhook"
+]);
 
 // plugins/kxm/src/local-snapshot.ts
 import { existsSync as existsSync26, readdirSync as readdirSync11, readFileSync as readFileSync26 } from "node:fs";

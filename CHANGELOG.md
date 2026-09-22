@@ -6,6 +6,21 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Fenced hub leases, and shared external effects that will not run without one.**
+  `POST /v1/leases/:resource/acquire|renew|release` are agent-authenticated and
+  project-scoped (the hub prefixes the caller's project onto the resource name). Each call
+  is a compare-and-set inside one store transaction on the **hub clock**, with TTLs bounded
+  to 5 s–10 min. The fencing token starts at 1, survives renewal unchanged, and increments
+  only when a new holder takes over an expired lease, so a holder that returns after its
+  deadline is told its token was superseded instead of writing behind its replacement.
+  Shared external effects (`git-push` to a ref the run does not own, `pr-create`,
+  `tracker-issue`, `webhook`) acquire a lease keyed by `targetRef` before executing, record
+  `{leaseResource, fencingToken}` in the receipt, renew on the existing Q6 heartbeat, and
+  re-present the token at commit; a superseded token leaves the effect `in-flight` and the
+  attempt `blocked_uncertain` with nothing retrying. An unreachable hub refuses the effect
+  (`effect_lease_unavailable`) rather than executing it unfenced. Unique-namespace kinds
+  (`git-branch`, `git-commit`, and a push to the run's own branch) stay lease-free.
+
 - **`kxm peer send --allow-offline` queues to a registered offline peer.**
   `POST /v1/messages` accepts `allowOffline: true` (also `kxm_send.allowOffline`): a
   registered agent in the same project is stored `queued` instead of `target_not_found`,
@@ -41,6 +56,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   and the bindings that make the box reproducible.
 
 ### Changed
+
+- **Hub store schema v3 → v4, external-effects ledger v1 → v2.** The hub store gains a
+  `leases` table and the ledger gains `lease_resource`/`fencing_token` columns. Neither has
+  a migration lane: an older file is refused at open with `runtime_schema_outdated`, and the
+  hub backup/restore ceiling in `database.ts` moves to 4 with the bump, so a v3 backup must
+  be restored with the release that produced it. Delete the state file to start fresh and
+  let `kxm hub start` recreate it.
 
 - **`kxm tenant status`: one composed read for the portal, with the authorities labelled.**
   The portal needs hub metadata (roster, message queue, the hub's run projection) *and* the

@@ -7388,6 +7388,10 @@ var DEFAULT_RATE_LIMIT_WINDOW_MS = 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 var MAX_CONTENT_CHARS = 32e3;
 var MAX_AGENT_HOST_CHARS = 64;
+var MIN_LEASE_TTL_MS = 5e3;
+var MAX_LEASE_TTL_MS = 10 * 6e4;
+var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
+var MAX_LEASE_RESOURCE_CHARS = 200;
 function agentPresenceView(agent, staleAfterMs = DEFAULT_STALE_AFTER_MS, now = Date.now()) {
   const lastSeenMs = Date.parse(agent.lastSeenAt);
   const leaseExpiresAtMs = (Number.isFinite(lastSeenMs) ? lastSeenMs : 0) + staleAfterMs;
@@ -11677,7 +11681,7 @@ function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = mon
 }
 
 // plugins/kxm/src/store.ts
-var HUB_STORE_SCHEMA_VERSION = 3;
+var HUB_STORE_SCHEMA_VERSION = 4;
 var HUB_STORE_TABLES = Object.freeze({
   agents: Object.freeze(["id", "record"]),
   messages: Object.freeze(["id", "record"]),
@@ -11685,9 +11689,10 @@ var HUB_STORE_TABLES = Object.freeze({
   agent_sequences: Object.freeze(["agent_id", "next_seq"]),
   workflow_runs: Object.freeze(["id", "definition_id", "delivery_id", "record"]),
   workflow_journal: Object.freeze(["id", "run_id", "category", "area", "record"]),
-  context_items: Object.freeze(["id", "project", "kind", "record"])
+  context_items: Object.freeze(["id", "project", "kind", "record"]),
+  leases: Object.freeze(["resource", "holder_agent_id", "fencing_token", "expires_at", "record"])
 });
-var HUB_STORE_SCHEMA_V3 = `
+var HUB_STORE_SCHEMA_V4 = `
   CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     record TEXT NOT NULL
@@ -11736,12 +11741,30 @@ var HUB_STORE_SCHEMA_V3 = `
     record TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
+  CREATE TABLE IF NOT EXISTS leases (
+    resource TEXT PRIMARY KEY,
+    holder_agent_id TEXT NOT NULL,
+    fencing_token INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    record TEXT NOT NULL
+  ) STRICT;
 `;
 var HUB_STORE_SCHEMA_SPEC = Object.freeze({
-  schema: HUB_STORE_SCHEMA_V3,
+  schema: HUB_STORE_SCHEMA_V4,
   version: HUB_STORE_SCHEMA_VERSION,
   tables: HUB_STORE_TABLES
 });
+function parseLeaseRecord(record) {
+  try {
+    return JSON.parse(record);
+  } catch {
+    return void 0;
+  }
+}
+function leaseHasLapsed(lease, nowMs) {
+  const expiresAtMs = Date.parse(lease.expiresAt);
+  return !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs;
+}
 var MessageMap = class extends Map {
   store;
   constructor(store) {
@@ -11774,6 +11797,7 @@ var MeshStore = class {
   workflowRuns = /* @__PURE__ */ new Map();
   journal = /* @__PURE__ */ new Map();
   contextItems = /* @__PURE__ */ new Map();
+  leases = /* @__PURE__ */ new Map();
   path;
   database;
   agentSequences = /* @__PURE__ */ new Map();
@@ -11966,6 +11990,117 @@ var MeshStore = class {
     }
     return result;
   }
+  /** Read the lease over one already project-scoped resource. */
+  getLease(resource) {
+    if (!this.database) return this.leases.get(resource);
+    const row = this.database.prepare("SELECT record FROM leases WHERE resource = ?").get(resource);
+    if (!row) {
+      this.leases.delete(resource);
+      return void 0;
+    }
+    const lease = parseLeaseRecord(row.record);
+    if (lease) this.leases.set(resource, lease);
+    return lease;
+  }
+  /**
+   * Take or extend the lease over `resource`, deciding the whole outcome inside
+   * one transaction so two writers cannot both read "free" and both insert.
+   *
+   * The token is the fence: a first acquisition starts at 1, the holder's own
+   * re-acquisition keeps its token, and only a takeover of an expired lease
+   * increments it. That is what lets a holder that wakes up after its deadline
+   * be refused at commit rather than silently writing behind the new holder.
+   */
+  acquireLease(input) {
+    return this.inLeaseTransaction(() => {
+      const current = this.readLeaseForUpdate(input.resource);
+      const expired = current !== void 0 && leaseHasLapsed(current, input.nowMs);
+      if (current && !expired && current.holderAgentId !== input.holderAgentId) {
+        return { ok: false, reason: "held", lease: current };
+      }
+      const fencingToken = current === void 0 ? 1 : expired ? current.fencingToken + 1 : current.fencingToken;
+      const renewed = current !== void 0 && !expired;
+      const lease = {
+        resource: input.resource,
+        project: input.project,
+        name: input.name,
+        holderAgentId: input.holderAgentId,
+        holderAgentName: input.holderAgentName,
+        fencingToken,
+        acquiredAt: renewed && current ? current.acquiredAt : new Date(input.nowMs).toISOString(),
+        expiresAt: new Date(input.nowMs + input.ttlMs).toISOString()
+      };
+      this.writeLease(lease);
+      return { ok: true, lease, renewed };
+    });
+  }
+  /** Extend a lease the caller still holds under the token it was given. The
+   * token never changes on renewal — a renewal that would need a new token is
+   * a takeover, and takeovers go through `acquireLease`. */
+  renewLease(input) {
+    return this.inLeaseTransaction(() => {
+      const current = this.readLeaseForUpdate(input.resource);
+      if (!current) return { ok: false, reason: "missing" };
+      if (current.holderAgentId !== input.holderAgentId || current.fencingToken !== input.fencingToken) {
+        return { ok: false, reason: "superseded", lease: current };
+      }
+      if (leaseHasLapsed(current, input.nowMs)) {
+        return { ok: false, reason: "expired", lease: current };
+      }
+      const lease = { ...current, expiresAt: new Date(input.nowMs + input.ttlMs).toISOString() };
+      this.writeLease(lease);
+      return { ok: true, lease, renewed: true };
+    });
+  }
+  /** Drop a lease the caller holds. A clean release ends the fence: there is no
+   * stale writer left to keep a token for, so the next acquisition starts over. */
+  releaseLease(input) {
+    return this.inLeaseTransaction(() => {
+      const current = this.readLeaseForUpdate(input.resource);
+      if (!current) return { ok: false, reason: "missing" };
+      if (current.holderAgentId !== input.holderAgentId || current.fencingToken !== input.fencingToken) {
+        return { ok: false, reason: "superseded", lease: current };
+      }
+      this.deleteLease(input.resource);
+      return { ok: true, lease: current, renewed: false };
+    });
+  }
+  /** Every lease of one project, newest deadline last. Reader surface only. */
+  listLeases(project) {
+    if (this.database) {
+      const rows = this.database.prepare("SELECT record FROM leases").all();
+      this.leases.clear();
+      for (const row of rows) {
+        const lease = parseLeaseRecord(row.record);
+        if (lease) this.leases.set(lease.resource, lease);
+      }
+    }
+    return [...this.leases.values()].filter((lease) => lease.project === project).sort((left, right) => left.resource.localeCompare(right.resource));
+  }
+  inLeaseTransaction(work) {
+    if (!this.database) return work();
+    return withDatabaseTransaction(this.database, work);
+  }
+  readLeaseForUpdate(resource) {
+    if (!this.database) return this.leases.get(resource);
+    const row = this.database.prepare("SELECT record FROM leases WHERE resource = ?").get(resource);
+    return row ? parseLeaseRecord(row.record) : void 0;
+  }
+  writeLease(lease) {
+    this.leases.set(lease.resource, lease);
+    this.database?.prepare(`
+      INSERT INTO leases (resource, holder_agent_id, fencing_token, expires_at, record) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(resource) DO UPDATE SET
+        holder_agent_id = excluded.holder_agent_id,
+        fencing_token = excluded.fencing_token,
+        expires_at = excluded.expires_at,
+        record = excluded.record
+    `).run(lease.resource, lease.holderAgentId, lease.fencingToken, lease.expiresAt, JSON.stringify(lease));
+  }
+  deleteLease(resource) {
+    this.leases.delete(resource);
+    this.database?.prepare("DELETE FROM leases WHERE resource = ?").run(resource);
+  }
   deleteWorkflowRun(runId) {
     this.workflowRuns.delete(runId);
     this.database?.prepare("DELETE FROM workflow_runs WHERE id = ?").run(runId);
@@ -11986,6 +12121,7 @@ var MeshStore = class {
     const purgedRuns = [];
     const purgedJournal = [];
     const purgedContextItems = [];
+    const purgedLeases = [];
     if (!this.database) {
       for (const m of [...Map.prototype.values.call(this.messages)]) {
         const terminal = m.status === "replied" || m.status === "cancelled" || m.status === "expired" || m.status === "error";
@@ -12056,7 +12192,24 @@ var MeshStore = class {
       this.deleteContextItem(id);
       purgedContextItems.push(id);
     }
-    return { purgedMessages, purgedRuns, purgedJournal, purgedContextItems };
+    const leaseCutoffMs = nowMs - runRetentionMs;
+    for (const lease of this.listAllLeases()) {
+      if (leaseHasLapsed(lease, leaseCutoffMs)) {
+        this.deleteLease(lease.resource);
+        purgedLeases.push(lease);
+      }
+    }
+    return { purgedMessages, purgedRuns, purgedJournal, purgedContextItems, purgedLeases };
+  }
+  listAllLeases() {
+    if (!this.database) return [...this.leases.values()];
+    const rows = this.database.prepare("SELECT record FROM leases").all();
+    const result = [];
+    for (const row of rows) {
+      const lease = parseLeaseRecord(row.record);
+      if (lease) result.push(lease);
+    }
+    return result;
   }
   saveWorkflowRun(run) {
     this.workflowRuns.set(run.id, run);
@@ -12127,6 +12280,7 @@ var MeshStore = class {
     const workflowRows = this.database.prepare("SELECT record FROM workflow_runs").all();
     const journalRows = this.database.prepare("SELECT record FROM workflow_journal").all();
     const contextRows = this.database.prepare("SELECT record FROM context_items").all();
+    const leaseRows = this.database.prepare("SELECT record FROM leases").all();
     for (const row of agentRows) {
       const agent = JSON.parse(row.record);
       this.agents.set(agent.id, agent);
@@ -12142,6 +12296,10 @@ var MeshStore = class {
     for (const row of contextRows) {
       const item = JSON.parse(row.record);
       this.contextItems.set(item.id, item);
+    }
+    for (const row of leaseRows) {
+      const lease = parseLeaseRecord(row.record);
+      if (lease) this.leases.set(lease.resource, lease);
     }
   }
 };
@@ -12160,6 +12318,33 @@ function publicAgent(agent, staleAfterMs, now = Date.now()) {
 }
 function safeTokenEqual(actual, expected) {
   return timingSafeStringCompare(actual, expected);
+}
+function leaseRefusal(reason, name, lease) {
+  if (reason === "missing") {
+    return new ProtocolError(404, `no lease is held on ${name}`, "lease_not_found");
+  }
+  if (reason === "expired") {
+    return new ProtocolError(
+      409,
+      `lease on ${name} expired at ${lease?.expiresAt ?? "its deadline"}; re-acquire to take it over`,
+      "lease_expired",
+      { lease }
+    );
+  }
+  if (reason === "held") {
+    return new ProtocolError(
+      409,
+      `lease on ${name} is held by ${lease?.holderAgentName ?? "another agent"} until ${lease?.expiresAt ?? "its deadline"}`,
+      "lease_held",
+      { lease }
+    );
+  }
+  return new ProtocolError(
+    409,
+    `fencing token for ${name} was superseded; the hub is now at token ${lease?.fencingToken ?? "a newer value"}`,
+    "lease_superseded",
+    { lease }
+  );
 }
 function bearerToken(request) {
   const header = request.headers.authorization;
@@ -12383,6 +12568,7 @@ function createMeshHub(options = {}) {
   };
   const webhookWorkflows2 = new Map((options.webhookWorkflows ?? []).map((workflow) => [workflow.id, workflow]));
   const logger = options.logger ?? (() => void 0);
+  const hubNow = options.now ?? (() => Date.now());
   const assetsDir2 = options.assetsDir;
   const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve6(dirname5(dirname5(options.dataPath))) : process.cwd());
   const store = new MeshStore(options.dataPath);
@@ -12431,7 +12617,10 @@ function createMeshHub(options = {}) {
     journalEntries: 0,
     contextRequests: 0,
     attemptLatencySecondsTotal: 0,
-    meteredCostUsdTotal: 0
+    meteredCostUsdTotal: 0,
+    leasesGranted: 0,
+    leasesRefused: 0,
+    leasesReleased: 0
   };
   let cleanupTimer;
   let closed = false;
@@ -12965,6 +13154,16 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     for (const runId of swept.purgedRuns) {
       logger({ event: "workflow_run_purged", runId });
     }
+    for (const lease of swept.purgedLeases) {
+      logger({
+        event: "lease_purged",
+        resource: lease.resource,
+        project: lease.project,
+        agentId: lease.holderAgentId,
+        fencingToken: lease.fencingToken,
+        expiresAt: lease.expiresAt
+      });
+    }
   }
   function metricsBody() {
     const onlineAgents = [...agents.values()].filter((agent) => agent.online).length;
@@ -13011,6 +13210,12 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       `kxm_attempt_latency_seconds_total ${counters.attemptLatencySecondsTotal}`,
       "# TYPE kxm_metered_cost_usd_total counter",
       `kxm_metered_cost_usd_total ${counters.meteredCostUsdTotal}`,
+      "# TYPE kxm_leases_granted_total counter",
+      `kxm_leases_granted_total ${counters.leasesGranted}`,
+      "# TYPE kxm_leases_refused_total counter",
+      `kxm_leases_refused_total ${counters.leasesRefused}`,
+      "# TYPE kxm_leases_released_total counter",
+      `kxm_leases_released_total ${counters.leasesReleased}`,
       ""
     ].join("\n");
   }
@@ -13998,6 +14203,70 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         broadcastPresence(current);
         logger({ event: "agent_unregistered", agentId: current.id, project: current.project });
         response.writeHead(204, { "cache-control": "no-store" }).end();
+        return;
+      }
+      const leaseMatch = url.pathname.match(/^\/v1\/leases\/([^/]+)\/(acquire|renew|release)$/);
+      if (method === "POST" && leaseMatch) {
+        const holder = requireAgent(request);
+        requireProjectAuth(request, holder.project);
+        const name = requireString(decodeURIComponent(leaseMatch[1]), "resource", { max: MAX_LEASE_RESOURCE_CHARS });
+        const action = leaseMatch[2];
+        const body = await readJson(request);
+        const resource = `${holder.project}/${name}`;
+        const nowMs = hubNow();
+        const leaseLog = { resource, project: holder.project, agentId: holder.id, agentName: holder.name };
+        if (action === "acquire") {
+          const ttlMs = parseBoundedInteger(body.ttlMs, "ttlMs", DEFAULT_LEASE_TTL_MS, MIN_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
+          const outcome2 = store.acquireLease({
+            resource,
+            project: holder.project,
+            name,
+            holderAgentId: holder.id,
+            holderAgentName: holder.name,
+            ttlMs,
+            nowMs
+          });
+          if (!outcome2.ok) {
+            counters.leasesRefused += 1;
+            logger({ event: "lease_denied", ...leaseLog, reason: outcome2.reason, heldBy: outcome2.lease?.holderAgentId });
+            throw leaseRefusal(outcome2.reason, name, outcome2.lease);
+          }
+          counters.leasesGranted += 1;
+          logger({
+            event: outcome2.renewed ? "lease_renewed" : "lease_acquired",
+            ...leaseLog,
+            fencingToken: outcome2.lease.fencingToken,
+            expiresAt: outcome2.lease.expiresAt
+          });
+          json(response, 200, { lease: outcome2.lease, renewed: outcome2.renewed });
+          return;
+        }
+        if (body.fencingToken === void 0) {
+          throw new ProtocolError(400, "fencingToken is required", "lease_token_required");
+        }
+        const fencingToken = parseBoundedInteger(body.fencingToken, "fencingToken", 1, 1, Number.MAX_SAFE_INTEGER);
+        if (action === "renew") {
+          const ttlMs = parseBoundedInteger(body.ttlMs, "ttlMs", DEFAULT_LEASE_TTL_MS, MIN_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
+          const outcome2 = store.renewLease({ resource, holderAgentId: holder.id, fencingToken, ttlMs, nowMs });
+          if (!outcome2.ok) {
+            counters.leasesRefused += 1;
+            logger({ event: "lease_denied", ...leaseLog, reason: outcome2.reason, fencingToken });
+            throw leaseRefusal(outcome2.reason, name, outcome2.lease);
+          }
+          counters.leasesGranted += 1;
+          logger({ event: "lease_renewed", ...leaseLog, fencingToken, expiresAt: outcome2.lease.expiresAt });
+          json(response, 200, { lease: outcome2.lease, renewed: true });
+          return;
+        }
+        const outcome = store.releaseLease({ resource, holderAgentId: holder.id, fencingToken });
+        if (!outcome.ok) {
+          counters.leasesRefused += 1;
+          logger({ event: "lease_denied", ...leaseLog, reason: outcome.reason, fencingToken });
+          throw leaseRefusal(outcome.reason, name, outcome.lease);
+        }
+        counters.leasesReleased += 1;
+        logger({ event: "lease_released", ...leaseLog, fencingToken });
+        json(response, 200, { released: true, lease: outcome.lease });
         return;
       }
       if (method === "GET" && url.pathname === "/v1/events") {
