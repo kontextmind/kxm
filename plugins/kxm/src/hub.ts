@@ -571,7 +571,13 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     agent.lastSeenAt = nowIso();
     agent.online = true;
     store.saveAgent(agent);
-    if (wasOffline) broadcastPresence(agent);
+    if (wasOffline) {
+      broadcastPresence(agent);
+      // An agent the stale sweep retired may still hold an open SSE stream (the sweep
+      // marks offline without closing it). Without this flush, messages queued while it
+      // read offline expire unread even though the stream could deliver them.
+      if ((streams.get(agent.id)?.size ?? 0) > 0) flushPending(agent.id);
+    }
     return agent;
   }
 

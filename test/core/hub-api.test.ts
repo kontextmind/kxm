@@ -1127,8 +1127,26 @@ test("a peer request to a known offline agent queues, delivers once on resumptio
   assert.equal(deliveries, 1);
   assert.equal(mesh.hub.state.messages.get(queued.id)?.status, "queued");
 
+  // Acknowledge the delivered message so the cursor advances past it
+  await resumed.acknowledge(queued.id);
   await resumed.stop();
 
+  // A second reconnect must NOT replay the acknowledged message — a barrier
+  // message proves once-only delivery: the barrier arrives, the old one does not
+  const barrier = await sender.send({ target: "receiver", content: "BARRIER", allowOffline: true });
+  let barrierDelivered = 0;
+  let queuedReplayed = 0;
+  const reconnect = mesh.makeClient("receiver");
+  await reconnect.start(async (event) => {
+    if (event.type === "message" && event.message.id === barrier.id) barrierDelivered += 1;
+    if (event.type === "message" && event.message.id === queued.id) queuedReplayed += 1;
+  });
+  await waitFor(() => barrierDelivered === 1);
+  assert.equal(barrierDelivered, 1, "the barrier message is delivered on reconnection");
+  assert.equal(queuedReplayed, 0, "the acknowledged message is not replayed on reconnection");
+  await reconnect.stop();
+
+  // The expired message is never replayed either
   const shortLived = await sender.send({
     target: "receiver",
     content: "OFFLINE-PEER-EXPIRE",
@@ -1140,5 +1158,14 @@ test("a peer request to a known offline agent queues, delivers once on resumptio
   const expired = await sender.getMessage(shortLived.id);
   assert.equal(expired.status, "expired");
   assert.match(expired.error ?? "", /expired/);
-  assert.equal(mesh.hub.state.messages.get(queued.id)?.status, "queued");
+
+  // Reconnect after expiry: the expired message must not arrive
+  let expiredReplayed = 0;
+  const postExpiry = mesh.makeClient("receiver");
+  await postExpiry.start(async (event) => {
+    if (event.type === "message" && event.message.id === shortLived.id) expiredReplayed += 1;
+  });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(expiredReplayed, 0, "the expired message is not replayed on reconnection");
+  await postExpiry.stop();
 });

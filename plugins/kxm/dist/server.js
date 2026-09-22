@@ -12511,7 +12511,10 @@ function createMeshHub(options = {}) {
     agent.lastSeenAt = nowIso();
     agent.online = true;
     store.saveAgent(agent);
-    if (wasOffline) broadcastPresence(agent);
+    if (wasOffline) {
+      broadcastPresence(agent);
+      if ((streams.get(agent.id)?.size ?? 0) > 0) flushPending(agent.id);
+    }
     return agent;
   }
   function checkRateLimit(request, response) {
