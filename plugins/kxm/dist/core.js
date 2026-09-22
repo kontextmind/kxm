@@ -12,6 +12,17 @@ var DEFAULT_RATE_LIMIT_MAX = 600;
 var DEFAULT_RATE_LIMIT_WINDOW_MS = 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 var MAX_CONTENT_CHARS = 32e3;
+var MAX_AGENT_HOST_CHARS = 64;
+function agentPresenceView(agent, staleAfterMs = DEFAULT_STALE_AFTER_MS, now = Date.now()) {
+  const lastSeenMs = Date.parse(agent.lastSeenAt);
+  const leaseExpiresAtMs = (Number.isFinite(lastSeenMs) ? lastSeenMs : 0) + staleAfterMs;
+  const leaseExpiresAt = new Date(leaseExpiresAtMs).toISOString();
+  if (!agent.online) return { leaseExpiresAt, presence: "offline" };
+  return { leaseExpiresAt, presence: now < leaseExpiresAtMs ? "online" : "stale" };
+}
+function toAgentRecord(agent, staleAfterMs, now) {
+  return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
+}
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -945,14 +956,19 @@ var AGENT_COMMANDS = [
     group: "peer",
     verb: "list",
     label: "List hub peers",
-    description: "List online peer agents in this project's hub pool, including their names and purposes.",
+    description: "List peer agents in this project's hub pool with their names, purposes, host label, and hub-clocked presence (online, stale, offline). Registered offline peers are listed only when includeOffline is set.",
     parameters: {
       type: "object",
-      properties: {},
+      properties: {
+        includeOffline: {
+          type: "boolean",
+          description: "Also list registered peers whose hub lease has expired"
+        }
+      },
       additionalProperties: false
     },
-    async execute(client) {
-      return { agents: await client.listAgents() };
+    async execute(client, args) {
+      return { agents: await client.listAgents({ includeOffline: args.includeOffline === true }) };
     }
   },
   {
@@ -2011,6 +2027,7 @@ export {
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_STALE_AFTER_MS,
   LOG_LEVEL_PRIORITY,
+  MAX_AGENT_HOST_CHARS,
   MAX_BODY_BYTES,
   MAX_CONTENT_CHARS,
   MAX_CONTEXT_ITEM_IDS,
@@ -2026,6 +2043,7 @@ export {
   TERMINAL_RECEIPT_SCHEMA,
   WORKER_RESULT_SCHEMA,
   WORKER_SCHEMA,
+  agentPresenceView,
   agentWorker,
   behavioralConfigHash,
   clearSessionTokenFromDisk,
@@ -2066,6 +2084,7 @@ export {
   rotateLogFiles,
   sessionTokenPath,
   timingSafeStringCompare,
+  toAgentRecord,
   validateTerminalReceipt,
   workerResult
 };

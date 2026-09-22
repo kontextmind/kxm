@@ -310,6 +310,16 @@ function visibleAgents(snapshot: MeshTuiSnapshot): AgentRecord[] {
   return snapshot.agents.filter((agent) => agent.model !== "tui");
 }
 
+/** Presence comes from the hub clock, so the dash colours it rather than
+ * recomputing it: green holds a lease, amber has lost it but has not been
+ * swept, dim is a registered peer that is gone. */
+function presenceCell(agent: AgentRecord, theme: MeshTuiTheme, width = 7): string {
+  const cell = pad(agent.presence, width);
+  if (agent.presence === "online") return theme.success(cell);
+  if (agent.presence === "stale") return theme.warning(cell);
+  return theme.dim(cell);
+}
+
 function panelMetric(snapshot: MeshTuiSnapshot, panel: MeshTuiPanel): string {
   if (panel === "agents") {
     const agents = visibleAgents(snapshot);
@@ -441,7 +451,7 @@ function listLines(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTuiT
   const mark = (index: number) => cursor(theme, index === view.selected, "list", view.pane);
   if (view.tab === "agents") {
     return visibleAgents(snapshot).map((agent, index) => (
-      `${mark(index)}${pad(agent.name, 14)} ${agent.online ? theme.success(pad("yes", 3)) : theme.dim(pad("no", 3))} ${pad(agent.model ?? "-", 18)} ${pad(age(agent.lastSeenAt, now), 4)}`
+      `${mark(index)}${pad(agent.name, 14)} ${presenceCell(agent, theme)} ${pad(agent.host ?? "-", 12)} ${pad(agent.model ?? "-", 14)} ${pad(age(agent.lastSeenAt, now), 4)}`
     ));
   }
   if (view.tab === "tasks" || view.tab === "workflows") {
@@ -489,9 +499,10 @@ function detailLines(snapshot: MeshTuiSnapshot, view: MeshTuiView, theme: MeshTu
     const related = snapshot.openMessages.filter((message) => message.fromName === agent.name || message.toName === agent.name);
     return [
       theme.accent(agent.name),
-      `${agent.online ? theme.success("online") : theme.dim("offline")}  ${agent.model ?? "-"}`,
+      `${presenceCell(agent, theme, agent.presence.length)}  ${agent.model ?? "-"}`,
+      `host ${agent.host ?? "-"}`,
       agent.purpose,
-      `seen ${age(agent.lastSeenAt, now)} ago`,
+      `seen ${age(agent.lastSeenAt, now)} ago · lease ${agent.leaseExpiresAt.slice(11, 19)} UTC`,
       "",
       theme.dim("Open work"),
       ...(related.length === 0 ? [theme.dim("none")] : related.map((message) => `${message.status}  ${message.fromName} → ${message.toName}  ${age(message.createdAt, now)}`)),
@@ -875,7 +886,9 @@ export async function runMeshTui(input: {
     }
     if (!useOpsStream && identity) {
       try {
-        const listed = await input.fetchImpl(`${base}/v1/agents`, { headers: headers(identity) });
+        // Offline members too: the ops snapshot lists the whole project, and
+        // the legacy path is a fallback for the same screen, not a narrower one.
+        const listed = await input.fetchImpl(`${base}/v1/agents?includeOffline=true`, { headers: headers(identity) });
         if (listed.ok) {
           const body = await readJson<{ agents: AgentRecord[] }>(listed);
           const byId = new Map(local.agents.map((agent) => [agent.id, agent]));

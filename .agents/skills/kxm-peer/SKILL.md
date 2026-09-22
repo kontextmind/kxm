@@ -15,7 +15,9 @@ All commands support `--json` for machine-readable output.
 
 | Command | Purpose | Key Options |
 |---|---|---|
-| `kxm peer list` | List online peer agents and their purposes | `--json` |
+| `kxm peer list` | List peer agents with purpose, host label, and presence | `--json`, `--include-offline` |
+
+Every listed peer carries `host` (the box it declared at registration), `lastSeenAt`, `leaseExpiresAt`, and `presence`. Presence is the hub's own reading of its heartbeat lease: `online` holds the lease, `stale` has passed `leaseExpiresAt` but has not been swept yet, and `offline` is a registered peer the hub has retired. Offline peers are listed only with `--include-offline`. The host label is a reading aid, never a permission.
 
 ### Sending Requests (`kxm peer send`)
 

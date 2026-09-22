@@ -59,9 +59,12 @@ test("non-TTY dashboard prefers the authenticated metadata-only ops snapshot", a
     purpose: "Read-only mesh observer TUI",
     project: "test-project",
     model: "tui",
+    host: "box-a",
     connectedAt: "2026-08-27T13:59:00.000Z",
     lastSeenAt: "2026-08-27T13:59:00.000Z",
     online: true,
+    leaseExpiresAt: "2026-08-27T13:59:30.000Z",
+    presence: "online",
   };
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -126,9 +129,12 @@ test("dashboard falls back to the legacy presence stream when ops auth is unavai
     purpose: "reviewer",
     project: "test-project",
     model: "model",
+    host: "box-b",
     connectedAt: "2026-08-27T13:59:00.000Z",
     lastSeenAt: "2026-08-27T13:59:00.000Z",
     online: true,
+    leaseExpiresAt: "2026-08-27T13:59:30.000Z",
+    presence: "online",
   };
   const observer = { ...agent, id: "agt_observer", name: "tui-test", model: "tui" };
   let registered = false;
@@ -143,7 +149,7 @@ test("dashboard falls back to the legacy presence stream when ops auth is unavai
       registered = true;
       return new Response(JSON.stringify({ agent: observer, agentKey: "agent-key" }));
     }
-    if (url.endsWith("/v1/agents")) return new Response(JSON.stringify({ agents: [agent, observer] }));
+    if (url.includes("/v1/agents?includeOffline=true")) return new Response(JSON.stringify({ agents: [agent, observer] }));
     if (url.includes("/v1/agents/agt_observer") && init?.method === "DELETE") {
       unregistered = true;
       return new Response(null, { status: 204 });
@@ -183,9 +189,12 @@ test("interactive dashboard registers a legacy observer when ops access is lost 
     purpose: "reviewer",
     project: "test-project",
     model: "model",
+    host: "box-b",
     connectedAt: "2026-08-27T13:59:00.000Z",
     lastSeenAt: "2026-08-27T13:59:00.000Z",
     online: true,
+    leaseExpiresAt: "2026-08-27T13:59:30.000Z",
+    presence: "online",
   };
   const observer = { ...agent, id: "agt_transition_observer", name: "tui-transition", model: "tui" };
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -214,7 +223,7 @@ test("interactive dashboard registers a legacy observer when ops access is lost 
       registered = true;
       return new Response(JSON.stringify({ agent: observer, agentKey: "agent-key" }));
     }
-    if (url.endsWith("/v1/agents")) return new Response(JSON.stringify({ agents: [agent, observer] }));
+    if (url.includes("/v1/agents?includeOffline=true")) return new Response(JSON.stringify({ agents: [agent, observer] }));
     if (url.includes("/v1/events?")) {
       assert.match(url, /presenceOnly=true/);
       legacyOpened = true;
@@ -283,9 +292,12 @@ const snapshot: MeshTuiSnapshot = {
     purpose: "critic",
     project: "payk12",
     model: "claude-fable-5-1",
+    host: "kxm-dev-svr",
     connectedAt: "2026-08-27T13:00:00.000Z",
     lastSeenAt: "2026-08-27T13:59:50.000Z",
     online: true,
+    leaseExpiresAt: "2026-08-27T14:00:20.000Z",
+    presence: "online",
   }],
   openMessages: [{
     id: "msg_secret",
@@ -315,10 +327,14 @@ test("renderMeshTui omits message bodies, hides observer identities, and shows a
       connectedAt: "2026-08-27T13:59:59.000Z",
       lastSeenAt: "2026-08-27T13:59:59.000Z",
       online: true,
+      leaseExpiresAt: "2026-08-27T14:00:29.000Z",
+      presence: "online",
     }],
   });
   assert.match(frame, /kxm dash/);
   assert.match(frame, /fable/);
+  assert.match(frame, /fable\s+online/, "the agents tab reports hub-clocked presence");
+  assert.match(frame, /host kxm-dev-svr/, "the agents tab reports the declared host label");
   assert.match(frame, /live/);
   assert.doesNotMatch(frame, /secret body|password/i);
   assert.doesNotMatch(frame, /msg content/);

@@ -1,11 +1,13 @@
 // plugins/kxm/src/client.ts
 import { createHash } from "node:crypto";
+import { hostname } from "node:os";
 
 // plugins/kxm/src/protocol.ts
 var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
 var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
+var MAX_AGENT_HOST_CHARS = 64;
 
 // plugins/kxm/src/workflow.ts
 function canonicalWorkflowEvidenceKey(value) {
@@ -21,6 +23,13 @@ var MeshWaitError = class extends Error {
     this.waitStatus = waitStatus;
   }
 };
+function defaultHostLabel() {
+  try {
+    return hostname().trim().slice(0, MAX_AGENT_HOST_CHARS) || void 0;
+  } catch {
+    return void 0;
+  }
+}
 function completedFanoutResult(target, message) {
   if (message.status === "queued" || message.status === "delivered") {
     throw new Error(`message ${message.id} is not complete`);
@@ -110,8 +119,11 @@ var HubClient = class {
     this.onEvent = void 0;
     this.eventLoop = void 0;
   }
-  async listAgents() {
-    const result = await this.request("/v1/agents");
+  /** Online peers of this client's project. `includeOffline` also returns
+   * registered members whose lease the hub has already retired. */
+  async listAgents(options = {}) {
+    const path = options.includeOffline ? "/v1/agents?includeOffline=true" : "/v1/agents";
+    const result = await this.request(path);
     return result.agents;
   }
   async send(options) {
@@ -351,7 +363,8 @@ var HubClient = class {
           name: this.options.name,
           purpose: this.options.purpose,
           project: this.options.project,
-          model: this.options.model
+          model: this.options.model,
+          host: this.options.host ?? defaultHostLabel()
         })
       }, false);
       this.agent = registration.agent;

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { DatabaseSync } from "./sqlite.ts";
-import type { AgentRecord, MessageRecord } from "./protocol.ts";
+import type { AgentIdentity, MessageRecord } from "./protocol.ts";
 import type { ContextItem } from "./context.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 import {
@@ -78,7 +78,10 @@ export const HUB_STORE_SCHEMA_SPEC: DatabaseSchemaSpec = Object.freeze({
   tables: HUB_STORE_TABLES,
 });
 
-export interface StoredAgent extends AgentRecord {
+/** The stored shape stays the durable identity plus the agent key: presence
+ * and the lease are derived on read, so the agents record JSON grows only by
+ * the additive `host` label. */
+export interface StoredAgent extends AgentIdentity {
   key: string;
 }
 

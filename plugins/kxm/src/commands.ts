@@ -194,14 +194,20 @@ export const AGENT_COMMANDS: readonly AgentCommand[] = [
     group: "peer",
     verb: "list",
     label: "List hub peers",
-    description: "List online peer agents in this project's hub pool, including their names and purposes.",
+    description:
+      "List peer agents in this project's hub pool with their names, purposes, host label, and hub-clocked presence (online, stale, offline). Registered offline peers are listed only when includeOffline is set.",
     parameters: {
       type: "object",
-      properties: {},
+      properties: {
+        includeOffline: {
+          type: "boolean",
+          description: "Also list registered peers whose hub lease has expired",
+        },
+      },
       additionalProperties: false,
     },
-    async execute(client) {
-      return { agents: await client.listAgents() };
+    async execute(client, args) {
+      return { agents: await client.listAgents({ includeOffline: args.includeOffline === true }) };
     },
   },
   {

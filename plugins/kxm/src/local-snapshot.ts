@@ -2,7 +2,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
-import type { AgentRecord, MessageRecord } from "./protocol.ts";
+import { toAgentRecord } from "./protocol.ts";
+import type { AgentIdentity, AgentRecord, MessageRecord } from "./protocol.ts";
 import type { WorkflowRun } from "./workflow.ts";
 import { readRoutingRecords } from "./telemetry.ts";
 import type { RoutingRecord, RoutingRecordV2 } from "./routing.ts";
@@ -253,7 +254,11 @@ export function loadLocalMeshSnapshot(
     const database = new DatabaseSync(dataPath, { readOnly: true });
     try {
       database.exec("PRAGMA busy_timeout = 5000");
-      agents = readJsonRows<AgentRecord>(database, "SELECT record FROM agents");
+      // Stored rows carry identity only. Presence is derived here against the
+      // default lease window, because the hub's configured `staleAfterMs` is
+      // not in the file; a reachable hub's own records replace these.
+      agents = readJsonRows<AgentIdentity>(database, "SELECT record FROM agents")
+        .map((agent) => toAgentRecord(agent));
       openMessages = readOpenMessageMetadata(database);
       openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
       legacyRuns = readJsonRows<WorkflowRun>(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");

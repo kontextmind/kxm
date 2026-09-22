@@ -12,19 +12,58 @@ export const DEFAULT_RATE_LIMIT_MAX = 600;
 export const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 export const MAX_BODY_BYTES = 256 * 1024;
 export const MAX_CONTENT_CHARS = 32_000;
+export const MAX_AGENT_HOST_CHARS = 64;
 
 export type DeliveryMode = "steer" | "followUp" | "nextTurn";
 export type MessageStatus = "queued" | "delivered" | "replied" | "cancelled" | "expired" | "error";
+export type AgentPresence = "online" | "stale" | "offline";
 
-export interface AgentRecord {
+/** The durable half of an agent: exactly the fields the hub persists in the
+ * agents record JSON. Presence is never stored, so a restored database can
+ * never claim an agent was alive. */
+export interface AgentIdentity {
   id: string;
   name: string;
   purpose: string;
   project: string;
   model?: string;
+  /** Client-declared label for the box this agent runs on. It exists so a
+   * reader can tell two boxes apart; the hub never reads it for
+   * authorization, project scope, or target resolution. */
+  host?: string;
   connectedAt: string;
   lastSeenAt: string;
   online: boolean;
+}
+
+/** The public projection of an agent: durable identity plus presence derived
+ * from the hub clock at read time. */
+export interface AgentRecord extends AgentIdentity {
+  /** `lastSeenAt + staleAfterMs`: the heartbeat lease the stale sweep enforces. */
+  leaseExpiresAt: string;
+  presence: AgentPresence;
+}
+
+/** Presence is hub-clocked and never client-reported. An agent holds its lease
+ * until `lastSeenAt + staleAfterMs`; between lease expiry and the sweep that
+ * retires it, it reads `stale`; once retired it reads `offline`. An
+ * unparseable `lastSeenAt` leaves the lease at the epoch, which reads as an
+ * expired lease rather than as a live agent. */
+export function agentPresenceView(
+  agent: AgentIdentity,
+  staleAfterMs: number = DEFAULT_STALE_AFTER_MS,
+  now: number = Date.now(),
+): { leaseExpiresAt: string; presence: AgentPresence } {
+  const lastSeenMs = Date.parse(agent.lastSeenAt);
+  const leaseExpiresAtMs = (Number.isFinite(lastSeenMs) ? lastSeenMs : 0) + staleAfterMs;
+  const leaseExpiresAt = new Date(leaseExpiresAtMs).toISOString();
+  if (!agent.online) return { leaseExpiresAt, presence: "offline" };
+  return { leaseExpiresAt, presence: now < leaseExpiresAtMs ? "online" : "stale" };
+}
+
+/** Project a durable identity onto the wire shape readers consume. */
+export function toAgentRecord(agent: AgentIdentity, staleAfterMs?: number, now?: number): AgentRecord {
+  return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
 }
 
 export interface MessageReply {
