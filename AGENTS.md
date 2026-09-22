@@ -202,7 +202,7 @@ The `kxm` CLI is the unified agent surface for peer collaboration and workflow s
 | Command | Purpose | Key options |
 |---|---|---|
 | `kxm peer list` | List online peer agents and purposes | `--json` |
-| `kxm peer send [target] [content]` | Send a focused request to a peer | `--target`, `--content`, `--delivery <steer\|followUp\|nextTurn>`, `--correlation-id`, `--idempotency-key`, `--workflow-context <json>`, `--ttl-ms` |
+| `kxm peer send [target] [content]` | Send a focused request to a peer | `--target`, `--content`, `--delivery <steer\|followUp\|nextTurn>`, `--correlation-id`, `--idempotency-key`, `--workflow-context <json>`, `--ttl-ms`, `--allow-offline` |
 | `kxm peer get [messageId]` | Check request status without blocking | `--message-id` |
 | `kxm peer await [messageId]` | Wait for reply (capped at 60 seconds) | `--message-id`, `--timeout-ms` (max 60000) |
 | `kxm peer cancel [messageId]` | Cancel a queued or delivered request | `--message-id` |

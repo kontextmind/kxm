@@ -8622,7 +8622,12 @@ var AGENT_COMMANDS = [
           required: ["runId", "stageId", "requirementKey", "attempt"],
           additionalProperties: false
         },
-        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" }
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" },
+        allowOffline: {
+          type: "boolean",
+          default: false,
+          description: "Queue the request if the target is a registered offline agent in this project"
+        }
       },
       required: ["target", "content"],
       additionalProperties: false
@@ -8639,7 +8644,8 @@ var AGENT_COMMANDS = [
         ...correlationId ? { correlationId } : {},
         ...idempotencyKey ? { idempotencyKey } : {},
         ...workflowContext ? { workflowContext } : {},
-        ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}
+        ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
+        ...args.allowOffline === true ? { allowOffline: true } : {}
       });
       return { messageId: message.id, status: message.status, target: message.toName };
     }
@@ -12198,6 +12204,11 @@ function sameWorkflowMessageContext(left, right) {
   if (!left || !right) return left === right;
   return left.schema === right.schema && left.runId === right.runId && left.stageId === right.stageId && left.requirementKey === right.requirementKey && left.attempt === right.attempt;
 }
+function parseOptionalBoolean(value, field) {
+  if (value === void 0 || value === null) return false;
+  if (typeof value === "boolean") return value;
+  throw new ProtocolError(400, `${field} must be a boolean`);
+}
 function sameIdempotentRequest(message, target, content, delivery, correlationId, replyTo, hops, maxHops, ttlMs, workflowContext) {
   return (message.to === target || message.toName.toLowerCase() === target.toLowerCase()) && message.content === content && message.delivery === delivery && message.correlationId === correlationId && message.replyTo === replyTo && message.hops === hops && message.maxHops === maxHops && sameWorkflowMessageContext(message.workflowContext, workflowContext) && Date.parse(message.expiresAt) - Date.parse(message.createdAt) === ttlMs;
 }
@@ -12601,11 +12612,11 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     }
     publishOps(agent.project, "agents");
   }
-  function findTarget(project, target) {
+  function findTarget(project, target, allowOffline = false) {
     const byId = agents.get(target);
-    if (byId?.project === project && byId.online) return byId;
+    if (byId?.project === project && (allowOffline || byId.online)) return byId;
     const byName = [...agents.values()].find(
-      (agent) => agent.project === project && agent.online && agent.name.toLowerCase() === target.toLowerCase()
+      (agent) => agent.project === project && (allowOffline || agent.online) && agent.name.toLowerCase() === target.toLowerCase()
     );
     if (!byName) throw new ProtocolError(404, `online target not found: ${target}`, "target_not_found");
     return byName;
@@ -14026,6 +14037,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
           MIN_MESSAGE_TTL_MS,
           MAX_MESSAGE_TTL_MS
         );
+        const allowOffline = parseOptionalBoolean(body.allowOffline, "allowOffline");
         const idempotencyKey = optionalString(body.idempotencyKey, "idempotencyKey", 128);
         if (idempotencyKey) {
           const existing = store.findMessageByIdempotency(sender.id, idempotencyKey);
@@ -14048,7 +14060,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
             return;
           }
         }
-        const target = findTarget(sender.project, targetInput);
+        const target = findTarget(sender.project, targetInput, allowOffline);
         if (target.id === sender.id) {
           throw new ProtocolError(400, "cannot send a request to yourself", "self_target");
         }
@@ -14076,7 +14088,7 @@ data: ${JSON.stringify({ agent: publicAgent(current) })}
         };
         store.saveMessage(message);
         publishOps(message.project, "messages");
-        publish(target.id, { type: "message", message });
+        if (target.online) publish(target.id, { type: "message", message });
         counters.messagesSent += 1;
         logger({ event: "message_sent", messageId: message.id, hops, ...messageLog(message, sender.id, sender.name, target.id, target.name) });
         json(response, 202, { message, idempotent: false });

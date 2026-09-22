@@ -1079,3 +1079,66 @@ test("webhook prompts queue for a known offline coordinator and deliver after id
   assert.equal(resumed.agent!.id, durableId);
   await waitFor(() => delivered);
 });
+
+test("a peer request to a known offline agent queues, delivers once on resumption, and expires by its TTL", async (context) => {
+  const mesh = await createTestMesh(context, { cleanupIntervalMs: 25 });
+  const sender = mesh.makeClient("sender");
+  const first = mesh.makeClient("receiver");
+  await sender.start(() => undefined);
+  await first.start(() => undefined);
+  const durableId = first.agent!.id;
+  await first.stop();
+
+  await assert.rejects(
+    () => sender.send({ target: "receiver", content: "must be online" }),
+    (error: unknown) => {
+      assert.ok(error instanceof HubHttpError);
+      assert.equal(error.statusCode, 404);
+      assert.equal(error.code, "target_not_found");
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => sender.send({ target: "missing", content: "unknown", allowOffline: true }),
+    (error: unknown) => {
+      assert.ok(error instanceof HubHttpError);
+      assert.equal(error.code, "target_not_found");
+      return true;
+    },
+  );
+
+  const queued = await sender.send({
+    target: "receiver",
+    content: "OFFLINE-PEER-1",
+    allowOffline: true,
+  });
+  assert.equal(queued.status, "queued");
+  assert.equal(queued.to, durableId);
+  assert.equal(queued.deliveredAt, undefined);
+  assert.equal(mesh.hub.state.messages.get(queued.id)?.status, "queued");
+
+  let deliveries = 0;
+  const resumed = mesh.makeClient("receiver");
+  await resumed.start(async (event) => {
+    if (event.type === "message" && event.message.id === queued.id) deliveries += 1;
+  });
+  assert.equal(resumed.agent!.id, durableId);
+  await waitFor(() => deliveries === 1);
+  assert.equal(deliveries, 1);
+  assert.equal(mesh.hub.state.messages.get(queued.id)?.status, "queued");
+
+  await resumed.stop();
+
+  const shortLived = await sender.send({
+    target: "receiver",
+    content: "OFFLINE-PEER-EXPIRE",
+    allowOffline: true,
+    ttlMs: 1_000,
+  });
+  assert.equal(shortLived.status, "queued");
+  await waitFor(async () => (await sender.getMessage(shortLived.id)).status === "expired", 2_000);
+  const expired = await sender.getMessage(shortLived.id);
+  assert.equal(expired.status, "expired");
+  assert.match(expired.error ?? "", /expired/);
+  assert.equal(mesh.hub.state.messages.get(queued.id)?.status, "queued");
+});

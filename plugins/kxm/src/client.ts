@@ -70,6 +70,7 @@ export interface SendOptions {
   idempotencyKey?: string;
   workflowContext?: Omit<WorkflowMessageContext, "schema">;
   ttlMs?: number;
+  allowOffline?: boolean;
 }
 
 export interface FanoutResult {
