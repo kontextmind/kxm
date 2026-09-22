@@ -15,6 +15,10 @@ import {
   acquireWorktreeLock,
   withWorktreeLock,
   cleanupMergedRunBranch,
+  claimSharedEffect,
+  commitSharedEffect,
+  heartbeatSharedEffect,
+  type EffectLeaseGateway,
 } from "../../plugins/kxm/src/external-effects.ts";
 
 test("deterministicRunBranch generates deterministic kxm/run-<id> branches", () => {
@@ -423,4 +427,71 @@ test("an external-effects file written by the pre-refusal build is refused, not 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("unique-namespace effects stay lease-free and never ask a hub for one", async () => {
+  const ledger = new ExternalEffectsLedger(":memory:");
+  const runId = "run_unique01";
+  // A gateway that fails loudly: nothing below is allowed to reach for a lease.
+  const refuse: EffectLeaseGateway = {
+    acquireLease: () => Promise.reject(new Error("a unique-namespace effect must not take a lease")),
+    renewLease: () => Promise.reject(new Error("a unique-namespace effect must not renew a lease")),
+    releaseLease: () => Promise.reject(new Error("a unique-namespace effect must not release a lease")),
+  };
+
+  for (const [actionKind, targetRef] of [
+    ["git-branch", deterministicRunBranch(runId)],
+    ["git-commit", "HEAD"],
+    ["git-push", deterministicRunBranch(runId, "descriptive suffix")],
+  ] as const) {
+    const claim = await claimSharedEffect({
+      ledger,
+      lease: refuse,
+      runId,
+      stepId: `step-${actionKind}`,
+      attemptId: "att_01",
+      actionKind,
+      targetRef,
+    });
+    if (!claim.ok) throw new Error(`${actionKind} on ${targetRef} should not need a lease: ${claim.error}`);
+    assert.equal(claim.leaseResource, undefined);
+    assert.equal(claim.fencingToken, undefined);
+
+    const beat = await heartbeatSharedEffect({ ledger, lease: refuse, effectKey: claim.effectKey });
+    assert.equal(beat.ok, true);
+
+    const committed = await commitSharedEffect({
+      ledger,
+      lease: refuse,
+      effectKey: claim.effectKey,
+      receiptPayload: { ok: true },
+    });
+    if (!committed.ok) throw new Error(`${actionKind} should commit without a lease: ${committed.error}`);
+    assert.equal(committed.receipt.status, "committed");
+    assert.equal(committed.receipt.leaseResource, undefined);
+    assert.equal(committed.receipt.fencingToken, undefined);
+  }
+
+  ledger.close();
+});
+
+test("a shared effect with no bound hub refuses instead of executing unfenced", async () => {
+  const ledger = new ExternalEffectsLedger(":memory:");
+  const claim = await claimSharedEffect({
+    ledger,
+    runId: "run_nohub01",
+    stepId: "step_push",
+    attemptId: "att_01",
+    actionKind: "git-push",
+    targetRef: "refs/heads/main",
+  });
+  assert.equal(claim.ok, false);
+  assert.equal(!claim.ok && claim.code, "effect_lease_unavailable");
+  assert.match(!claim.ok ? claim.error : "", /effect_lease_unavailable/);
+  assert.equal(
+    ledger.getReceipt(computeEffectKey("run_nohub01", "step_push", "git-push", "refs/heads/main")),
+    undefined,
+    "a refused shared effect leaves no claim behind",
+  );
+  ledger.close();
 });

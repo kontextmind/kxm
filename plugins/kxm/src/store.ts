@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { DatabaseSync } from "./sqlite.ts";
-import type { AgentIdentity, MessageRecord } from "./protocol.ts";
+import type { AgentIdentity, LeaseRecord, MessageRecord } from "./protocol.ts";
 import type { ContextItem } from "./context.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 import {
@@ -9,7 +9,7 @@ import {
   type DatabaseSchemaSpec,
 } from "./database.ts";
 
-export const HUB_STORE_SCHEMA_VERSION = 3;
+export const HUB_STORE_SCHEMA_VERSION = 4;
 
 export const HUB_STORE_TABLES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   agents: Object.freeze(["id", "record"]),
@@ -19,9 +19,10 @@ export const HUB_STORE_TABLES: Readonly<Record<string, readonly string[]>> = Obj
   workflow_runs: Object.freeze(["id", "definition_id", "delivery_id", "record"]),
   workflow_journal: Object.freeze(["id", "run_id", "category", "area", "record"]),
   context_items: Object.freeze(["id", "project", "kind", "record"]),
+  leases: Object.freeze(["resource", "holder_agent_id", "fencing_token", "expires_at", "record"]),
 });
 
-export const HUB_STORE_SCHEMA_V3 = `
+export const HUB_STORE_SCHEMA_V4 = `
   CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     record TEXT NOT NULL
@@ -70,10 +71,17 @@ export const HUB_STORE_SCHEMA_V3 = `
     record TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
+  CREATE TABLE IF NOT EXISTS leases (
+    resource TEXT PRIMARY KEY,
+    holder_agent_id TEXT NOT NULL,
+    fencing_token INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    record TEXT NOT NULL
+  ) STRICT;
 `;
 
 export const HUB_STORE_SCHEMA_SPEC: DatabaseSchemaSpec = Object.freeze({
-  schema: HUB_STORE_SCHEMA_V3,
+  schema: HUB_STORE_SCHEMA_V4,
   version: HUB_STORE_SCHEMA_VERSION,
   tables: HUB_STORE_TABLES,
 });
@@ -83,6 +91,40 @@ export const HUB_STORE_SCHEMA_SPEC: DatabaseSchemaSpec = Object.freeze({
  * the additive `host` label. */
 export interface StoredAgent extends AgentIdentity {
   key: string;
+}
+
+/** Why a lease call did not get the resource. `held` is live contention,
+ * `superseded` is a token the hub has already moved past, `expired` is a lease
+ * whose hub-clocked deadline has passed, and `missing` is no lease at all. */
+export type LeaseRefusal = "held" | "superseded" | "expired" | "missing";
+
+export type LeaseOutcome =
+  | { ok: true; lease: LeaseRecord; renewed: boolean }
+  | { ok: false; reason: LeaseRefusal; lease?: LeaseRecord };
+
+export interface LeaseAcquireInput {
+  resource: string;
+  project: string;
+  name: string;
+  holderAgentId: string;
+  holderAgentName: string;
+  ttlMs: number;
+  nowMs: number;
+}
+
+function parseLeaseRecord(record: string): LeaseRecord | undefined {
+  try {
+    return JSON.parse(record) as LeaseRecord;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A deadline the hub cannot read is an expired deadline. The alternative — a
+ * lease nobody can ever take over — is the worse failure. */
+function leaseHasLapsed(lease: LeaseRecord, nowMs: number): boolean {
+  const expiresAtMs = Date.parse(lease.expiresAt);
+  return !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs;
 }
 
 class MessageMap extends Map<string, MessageRecord> {
@@ -124,6 +166,7 @@ export class MeshStore {
   readonly workflowRuns = new Map<string, WorkflowRun>();
   readonly journal = new Map<string, WorkflowJournalEntry>();
   readonly contextItems = new Map<string, ContextItem>();
+  readonly leases = new Map<string, LeaseRecord>();
   readonly path?: string;
   private readonly database?: DatabaseSync;
   private readonly agentSequences = new Map<string, number>();
@@ -331,6 +374,140 @@ export class MeshStore {
     return result;
   }
 
+  /** Read the lease over one already project-scoped resource. */
+  getLease(resource: string): LeaseRecord | undefined {
+    if (!this.database) return this.leases.get(resource);
+    const row = this.database.prepare("SELECT record FROM leases WHERE resource = ?").get(resource) as { record: string } | undefined;
+    if (!row) {
+      this.leases.delete(resource);
+      return undefined;
+    }
+    const lease = parseLeaseRecord(row.record);
+    if (lease) this.leases.set(resource, lease);
+    return lease;
+  }
+
+  /**
+   * Take or extend the lease over `resource`, deciding the whole outcome inside
+   * one transaction so two writers cannot both read "free" and both insert.
+   *
+   * The token is the fence: a first acquisition starts at 1, the holder's own
+   * re-acquisition keeps its token, and only a takeover of an expired lease
+   * increments it. That is what lets a holder that wakes up after its deadline
+   * be refused at commit rather than silently writing behind the new holder.
+   */
+  acquireLease(input: LeaseAcquireInput): LeaseOutcome {
+    return this.inLeaseTransaction(() => {
+      const current = this.readLeaseForUpdate(input.resource);
+      const expired = current !== undefined && leaseHasLapsed(current, input.nowMs);
+      if (current && !expired && current.holderAgentId !== input.holderAgentId) {
+        return { ok: false, reason: "held", lease: current };
+      }
+      const fencingToken = current === undefined
+        ? 1
+        : expired
+          ? current.fencingToken + 1
+          : current.fencingToken;
+      const renewed = current !== undefined && !expired;
+      const lease: LeaseRecord = {
+        resource: input.resource,
+        project: input.project,
+        name: input.name,
+        holderAgentId: input.holderAgentId,
+        holderAgentName: input.holderAgentName,
+        fencingToken,
+        acquiredAt: renewed && current ? current.acquiredAt : new Date(input.nowMs).toISOString(),
+        expiresAt: new Date(input.nowMs + input.ttlMs).toISOString(),
+      };
+      this.writeLease(lease);
+      return { ok: true, lease, renewed };
+    });
+  }
+
+  /** Extend a lease the caller still holds under the token it was given. The
+   * token never changes on renewal — a renewal that would need a new token is
+   * a takeover, and takeovers go through `acquireLease`. */
+  renewLease(input: {
+    resource: string;
+    holderAgentId: string;
+    fencingToken: number;
+    ttlMs: number;
+    nowMs: number;
+  }): LeaseOutcome {
+    return this.inLeaseTransaction(() => {
+      const current = this.readLeaseForUpdate(input.resource);
+      if (!current) return { ok: false, reason: "missing" };
+      if (current.holderAgentId !== input.holderAgentId || current.fencingToken !== input.fencingToken) {
+        return { ok: false, reason: "superseded", lease: current };
+      }
+      if (leaseHasLapsed(current, input.nowMs)) {
+        // The deadline passed, so the resource is takeable by anyone. Resurrecting it
+        // under the old token would let a second holder appear behind the first.
+        return { ok: false, reason: "expired", lease: current };
+      }
+      const lease: LeaseRecord = { ...current, expiresAt: new Date(input.nowMs + input.ttlMs).toISOString() };
+      this.writeLease(lease);
+      return { ok: true, lease, renewed: true };
+    });
+  }
+
+  /** Drop a lease the caller holds. A clean release ends the fence: there is no
+   * stale writer left to keep a token for, so the next acquisition starts over. */
+  releaseLease(input: { resource: string; holderAgentId: string; fencingToken: number }): LeaseOutcome {
+    return this.inLeaseTransaction(() => {
+      const current = this.readLeaseForUpdate(input.resource);
+      if (!current) return { ok: false, reason: "missing" };
+      if (current.holderAgentId !== input.holderAgentId || current.fencingToken !== input.fencingToken) {
+        return { ok: false, reason: "superseded", lease: current };
+      }
+      this.deleteLease(input.resource);
+      return { ok: true, lease: current, renewed: false };
+    });
+  }
+
+  /** Every lease of one project, newest deadline last. Reader surface only. */
+  listLeases(project: string): LeaseRecord[] {
+    if (this.database) {
+      const rows = this.database.prepare("SELECT record FROM leases").all() as Array<{ record: string }>;
+      this.leases.clear();
+      for (const row of rows) {
+        const lease = parseLeaseRecord(row.record);
+        if (lease) this.leases.set(lease.resource, lease);
+      }
+    }
+    return [...this.leases.values()]
+      .filter((lease) => lease.project === project)
+      .sort((left, right) => left.resource.localeCompare(right.resource));
+  }
+
+  private inLeaseTransaction(work: () => LeaseOutcome): LeaseOutcome {
+    if (!this.database) return work();
+    return withDatabaseTransaction(this.database, work);
+  }
+
+  private readLeaseForUpdate(resource: string): LeaseRecord | undefined {
+    if (!this.database) return this.leases.get(resource);
+    const row = this.database.prepare("SELECT record FROM leases WHERE resource = ?").get(resource) as { record: string } | undefined;
+    return row ? parseLeaseRecord(row.record) : undefined;
+  }
+
+  private writeLease(lease: LeaseRecord): void {
+    this.leases.set(lease.resource, lease);
+    this.database?.prepare(`
+      INSERT INTO leases (resource, holder_agent_id, fencing_token, expires_at, record) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(resource) DO UPDATE SET
+        holder_agent_id = excluded.holder_agent_id,
+        fencing_token = excluded.fencing_token,
+        expires_at = excluded.expires_at,
+        record = excluded.record
+    `).run(lease.resource, lease.holderAgentId, lease.fencingToken, lease.expiresAt, JSON.stringify(lease));
+  }
+
+  private deleteLease(resource: string): void {
+    this.leases.delete(resource);
+    this.database?.prepare("DELETE FROM leases WHERE resource = ?").run(resource);
+  }
+
   deleteWorkflowRun(runId: string): void {
     this.workflowRuns.delete(runId);
     this.database?.prepare("DELETE FROM workflow_runs WHERE id = ?").run(runId);
@@ -355,6 +532,7 @@ export class MeshStore {
     purgedRuns: string[];
     purgedJournal: string[];
     purgedContextItems: string[];
+    purgedLeases: LeaseRecord[];
   } {
     const messageCutoffMs = nowMs - messageRetentionMs;
     const messageCutoffIso = new Date(messageCutoffMs).toISOString();
@@ -363,6 +541,7 @@ export class MeshStore {
     const purgedRuns: string[] = [];
     const purgedJournal: string[] = [];
     const purgedContextItems: string[] = [];
+    const purgedLeases: LeaseRecord[] = [];
 
     // 1. Messages
     if (!this.database) {
@@ -441,7 +620,31 @@ export class MeshStore {
       purgedContextItems.push(id);
     }
 
-    return { purgedMessages, purgedRuns, purgedJournal, purgedContextItems };
+    // 5. Leases. An expired lease row is kept on purpose — its token is what a
+    // takeover increments, so reaping it the moment it lapses would let the
+    // fence restart at 1 while a stale holder was still alive. Only rows whose
+    // deadline is older than the retention window, far beyond any live holder's
+    // TTL, are dropped.
+    const leaseCutoffMs = nowMs - runRetentionMs;
+    for (const lease of this.listAllLeases()) {
+      if (leaseHasLapsed(lease, leaseCutoffMs)) {
+        this.deleteLease(lease.resource);
+        purgedLeases.push(lease);
+      }
+    }
+
+    return { purgedMessages, purgedRuns, purgedJournal, purgedContextItems, purgedLeases };
+  }
+
+  private listAllLeases(): LeaseRecord[] {
+    if (!this.database) return [...this.leases.values()];
+    const rows = this.database.prepare("SELECT record FROM leases").all() as Array<{ record: string }>;
+    const result: LeaseRecord[] = [];
+    for (const row of rows) {
+      const lease = parseLeaseRecord(row.record);
+      if (lease) result.push(lease);
+    }
+    return result;
   }
 
   saveWorkflowRun(run: WorkflowRun): void {
@@ -528,6 +731,7 @@ export class MeshStore {
     const workflowRows = this.database.prepare("SELECT record FROM workflow_runs").all() as Array<{ record: string }>;
     const journalRows = this.database.prepare("SELECT record FROM workflow_journal").all() as Array<{ record: string }>;
     const contextRows = this.database.prepare("SELECT record FROM context_items").all() as Array<{ record: string }>;
+    const leaseRows = this.database.prepare("SELECT record FROM leases").all() as Array<{ record: string }>;
     for (const row of agentRows) {
       const agent = JSON.parse(row.record) as StoredAgent;
       this.agents.set(agent.id, agent);
@@ -543,6 +747,10 @@ export class MeshStore {
     for (const row of contextRows) {
       const item = JSON.parse(row.record) as ContextItem;
       this.contextItems.set(item.id, item);
+    }
+    for (const row of leaseRows) {
+      const lease = parseLeaseRecord(row.record);
+      if (lease) this.leases.set(lease.resource, lease);
     }
   }
 }

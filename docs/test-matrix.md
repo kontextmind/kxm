@@ -23,6 +23,7 @@ npm run verify
 | Queue, acknowledgement, visibility, reply, and authorization | `test/core/hub-api.test.ts`, `test/core/hub.test.ts` |
 | Queued/delivered replay after recipient restart reuses one message record | `test/core/hub.test.ts`, `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
 | Known-offline peer send with `allowOffline` queues, delivers once on resumption, and expires unread by TTL | `test/core/hub-api.test.ts` |
+| Fenced hub leases: CAS acquire/renew/release, monotonic token on takeover only, hub-clocked expiry, and a shared external effect refused at commit under a superseded token | `test/core/hub-api.test.ts`, `test/core/store.test.ts`, `test/core/external-effects.test.ts` |
 | One-to-three-peer fanout, recoverable local timeouts/aborts, exact retries, and partial-error collection | `test/core/client.test.ts`, `test/core/hub-api.test.ts`, `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
 | TTL expiry, sender cancellation, and terminal retention | `test/core/hub-api.test.ts` |
 | Terminal inbound cleanup and next-request activation | `test/core/extension.test.ts`, `test/core/mcp.test.ts` |

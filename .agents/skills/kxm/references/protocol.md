@@ -87,6 +87,24 @@ stored `queued` and delivered once through the reconnect cursor; unknown names
 still return `target_not_found`. Queued messages are not evidence unless
 `workflowContext` was hub-authorized at send.
 
+## Fenced leases
+
+- `POST /v1/leases/:resource/acquire` takes or extends the lease over a
+  resource. Body `{ttlMs}` is bounded to 5 s–10 min. A live lease held by
+  another agent returns `409 lease_held` with the current holder and token.
+- `POST /v1/leases/:resource/renew` extends a lease under the token it was
+  issued. Body `{fencingToken, ttlMs?}`.
+- `POST /v1/leases/:resource/release` gives the resource back. Body
+  `{fencingToken}`.
+
+All three are agent-authenticated and project-scoped: the hub prefixes the
+caller's project onto `:resource`, so the same name in two projects is two
+leases. Every decision is a compare-and-set on the hub clock inside one store
+transaction. The fencing token starts at 1, is unchanged by renewal, and
+increments only when a new holder takes over an expired lease; a stale token
+returns `409 lease_superseded` with the token the hub now holds. Present the
+token before committing anything shared — a refusal means stop, not retry.
+
 ## Request states
 
 - `queued`: stored by the hub but not acknowledged by the recipient.

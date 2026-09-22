@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { MeshStore } from "../../plugins/kxm/src/store.ts";
+import { HUB_STORE_SCHEMA_VERSION, HUB_STORE_TABLES, MeshStore } from "../../plugins/kxm/src/store.ts";
 import type { ContextItem } from "../../plugins/kxm/src/context.ts";
 import type { MessageRecord } from "../../plugins/kxm/src/protocol.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "../../plugins/kxm/src/workflow.ts";
@@ -49,7 +49,7 @@ test("store rejects databases created by a newer schema", () => {
   const path = join(directory, "kxm.db");
   try {
     const database = new DatabaseSync(path);
-    database.exec("PRAGMA user_version = 4");
+    database.exec(`PRAGMA user_version = ${HUB_STORE_SCHEMA_VERSION + 1}`);
     database.close();
     assert.throws(() => new MeshStore(path), /newer than this runtime supports/);
   } finally {
@@ -191,7 +191,9 @@ test("verified peer evidence survives restart and source-message retention witho
     first = new MeshStore(path);
     const firstDatabase = (first as unknown as { database: DatabaseSync }).database;
     const firstVersion = firstDatabase.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(firstVersion.user_version, 3);
+    // Pinned to the build's own version, not a literal: what this test guards is
+    // that peer provenance rides in existing record JSON and bumps nothing.
+    assert.equal(firstVersion.user_version, HUB_STORE_SCHEMA_VERSION);
     first.saveMessage(sourceMessage);
     first.saveWorkflowRun(run);
     first.close();
@@ -210,7 +212,7 @@ test("verified peer evidence survives restart and source-message retention witho
     third = new MeshStore(path);
     const thirdDatabase = (third as unknown as { database: DatabaseSync }).database;
     const thirdVersion = thirdDatabase.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(thirdVersion.user_version, 3);
+    assert.equal(thirdVersion.user_version, HUB_STORE_SCHEMA_VERSION);
     assert.equal(third.messages.has(sourceMessage.id), false);
     assert.equal(
       third.workflowRuns.get(run.id)?.stages[0]?.verifiedEvidence?.["peer review"]?.[0]?.replySha256,
@@ -453,4 +455,164 @@ test("store sweeps retention and deletes runs, journal entries, and context item
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the hub store pins the leases table and refuses the v3 file that predates it", () => {
+  assert.equal(HUB_STORE_SCHEMA_VERSION, 4);
+  assert.deepEqual(
+    [...HUB_STORE_TABLES["leases"]!],
+    ["resource", "holder_agent_id", "fencing_token", "expires_at", "record"],
+  );
+
+  // A v3 file is the shape this build no longer carries: it has every other hub
+  // table and no `leases`. There is no migration lane, so it is refused outright
+  // rather than reshaped underneath a running hub.
+  const directory = mkdtempSync(join(tmpdir(), "kxm-hub-v3-"));
+  const path = join(directory, "kxm.db");
+  try {
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      CREATE TABLE agents (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;
+      CREATE TABLE messages (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;
+      CREATE TABLE consumer_cursors (agent_id TEXT PRIMARY KEY, cursor INTEGER NOT NULL) STRICT;
+      CREATE TABLE agent_sequences (agent_id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL) STRICT;
+      CREATE TABLE workflow_runs (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, delivery_id TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      CREATE TABLE workflow_journal (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, category TEXT NOT NULL, area TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      CREATE TABLE context_items (id TEXT PRIMARY KEY, project TEXT NOT NULL, kind TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      PRAGMA user_version = 3;
+    `);
+    legacy.close();
+
+    assert.throws(() => new MeshStore(path), /runtime_schema_outdated/);
+
+    const inspection = new DatabaseSync(path);
+    try {
+      const version = inspection.prepare("PRAGMA user_version").get() as { user_version: number };
+      assert.equal(version.user_version, 3, "a refusal must leave the rejected file at its own version");
+      const tables = (inspection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>)
+        .map((row) => row.name);
+      assert.equal(tables.includes("leases"), false, "a refusal must not create the table it refused over");
+    } finally {
+      inspection.close();
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("lease CAS is one writer, and the token increments only on takeover", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kxm-hub-leases-"));
+  const path = join(directory, "kxm.db");
+  const started = Date.parse("2026-01-01T00:00:00.000Z");
+  try {
+    const store = new MeshStore(path);
+    const base = {
+      resource: "product/refs/heads/main",
+      project: "product",
+      name: "refs/heads/main",
+      ttlMs: 60_000,
+    };
+
+    const first = store.acquireLease({ ...base, holderAgentId: "agt-a", holderAgentName: "a", nowMs: started });
+    assert.equal(first.ok, true);
+    assert.equal(first.ok && first.lease.fencingToken, 1);
+    assert.equal(first.ok && first.renewed, false);
+
+    // A live lease refuses the rival outright and names who holds it.
+    const rival = store.acquireLease({ ...base, holderAgentId: "agt-b", holderAgentName: "b", nowMs: started + 1_000 });
+    assert.equal(rival.ok, false);
+    assert.equal(!rival.ok && rival.reason, "held");
+    assert.equal(!rival.ok && rival.lease?.holderAgentId, "agt-a");
+
+    // The holder renewing keeps its token; only the deadline moves.
+    const renewed = store.renewLease({
+      resource: base.resource,
+      holderAgentId: "agt-a",
+      fencingToken: 1,
+      ttlMs: 60_000,
+      nowMs: started + 2_000,
+    });
+    assert.equal(renewed.ok, true);
+    assert.equal(renewed.ok && renewed.lease.fencingToken, 1);
+    assert.equal(renewed.ok && renewed.lease.expiresAt, new Date(started + 62_000).toISOString());
+
+    // Past the deadline the rival takes over, and that is the only thing that
+    // moves the token.
+    const takeover = store.acquireLease({ ...base, holderAgentId: "agt-b", holderAgentName: "b", nowMs: started + 62_001 });
+    assert.equal(takeover.ok, true);
+    assert.equal(takeover.ok && takeover.lease.fencingToken, 2);
+    assert.equal(takeover.ok && takeover.lease.holderAgentId, "agt-b");
+
+    // The old holder's token is now superseded, for renewal and for release.
+    const stale = store.renewLease({
+      resource: base.resource,
+      holderAgentId: "agt-a",
+      fencingToken: 1,
+      ttlMs: 60_000,
+      nowMs: started + 62_002,
+    });
+    assert.equal(stale.ok, false);
+    assert.equal(!stale.ok && stale.reason, "superseded");
+    assert.equal(!stale.ok && stale.lease?.fencingToken, 2);
+
+    const staleRelease = store.releaseLease({ resource: base.resource, holderAgentId: "agt-a", fencingToken: 1 });
+    assert.equal(staleRelease.ok, false);
+    assert.equal(!staleRelease.ok && staleRelease.reason, "superseded");
+
+    // An expired lease is not renewable even by its own holder: re-acquiring is
+    // a takeover, and takeovers are the only thing that may resurrect it.
+    const lapsed = store.renewLease({
+      resource: base.resource,
+      holderAgentId: "agt-b",
+      fencingToken: 2,
+      ttlMs: 60_000,
+      nowMs: started + 200_000,
+    });
+    assert.equal(lapsed.ok, false);
+    assert.equal(!lapsed.ok && lapsed.reason, "expired");
+
+    assert.deepEqual(store.listLeases("product").map((lease) => lease.fencingToken), [2]);
+    assert.deepEqual(store.listLeases("other-project"), []);
+
+    // Leases survive restart: the token a takeover must beat is durable.
+    store.close();
+    const reopened = new MeshStore(path);
+    assert.equal(reopened.getLease(base.resource)?.fencingToken, 2);
+
+    const released = reopened.releaseLease({ resource: base.resource, holderAgentId: "agt-b", fencingToken: 2 });
+    assert.equal(released.ok, true);
+    assert.equal(reopened.getLease(base.resource), undefined);
+    assert.equal(
+      reopened.releaseLease({ resource: base.resource, holderAgentId: "agt-b", fencingToken: 2 }).ok,
+      false,
+    );
+    reopened.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the retention sweep reaps only leases whose deadline is older than the window", () => {
+  const store = new MeshStore(":memory:");
+  const started = Date.parse("2026-01-01T00:00:00.000Z");
+  store.acquireLease({
+    resource: "product/deploy",
+    project: "product",
+    name: "deploy",
+    holderAgentId: "agt-a",
+    holderAgentName: "a",
+    ttlMs: 60_000,
+    nowMs: started,
+  });
+
+  // Expired, but still inside the window: the row stays, because its token is
+  // what the next takeover has to increment past.
+  const justExpired = store.sweepRetention(60_000, 7 * 86_400_000, started + 120_000);
+  assert.deepEqual(justExpired.purgedLeases, []);
+  assert.equal(store.getLease("product/deploy")?.fencingToken, 1);
+
+  const longExpired = store.sweepRetention(60_000, 7 * 86_400_000, started + 8 * 86_400_000);
+  assert.deepEqual(longExpired.purgedLeases.map((lease) => lease.resource), ["product/deploy"]);
+  assert.equal(store.getLease("product/deploy"), undefined);
+  store.close();
 });

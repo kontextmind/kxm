@@ -8,6 +8,8 @@ var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 var MAX_AGENT_HOST_CHARS = 64;
+var MAX_LEASE_TTL_MS = 10 * 6e4;
+var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
 
 // plugins/kxm/src/workflow.ts
 function canonicalWorkflowEvidenceKey(value) {
@@ -219,6 +221,37 @@ var HubClient = class {
     );
     return result.message;
   }
+  // ----- Fenced leases over shared resources (P3) -----
+  /**
+   * Take or extend the lease over `resource` inside this client's project.
+   *
+   * The returned `fencingToken` is the whole point: hold it, present it on every
+   * renewal, and present it again before committing anything shared. A hub that
+   * has moved past it refuses, and the caller must stop rather than retry —
+   * another holder owns the resource now. Rejects `HubHttpError` with code
+   * `lease_held` when a live holder has it.
+   */
+  async acquireLease(resource, ttlMs) {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/acquire`, {
+      method: "POST",
+      body: JSON.stringify(ttlMs === void 0 ? {} : { ttlMs })
+    });
+  }
+  /** Extend a lease this client holds. The token never changes on renewal; a
+   * `lease_superseded` or `lease_expired` refusal means it is gone. */
+  async renewLease(resource, fencingToken, ttlMs) {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/renew`, {
+      method: "POST",
+      body: JSON.stringify(ttlMs === void 0 ? { fencingToken } : { fencingToken, ttlMs })
+    });
+  }
+  /** Give the resource back. */
+  async releaseLease(resource, fencingToken) {
+    return await this.request(`/v1/leases/${encodeURIComponent(resource)}/release`, {
+      method: "POST",
+      body: JSON.stringify({ fencingToken })
+    });
+  }
   async listWorkflows() {
     const result = await this.request("/v1/workflows");
     return result.runs;
@@ -412,6 +445,7 @@ var HubClient = class {
       for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
         if (typeof body[key] === "string") extras[key] = body[key];
       }
+      if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
       throw new HubHttpError(
         response.status,
         String(body.error ?? `HTTP ${response.status}`),

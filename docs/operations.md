@@ -315,7 +315,10 @@ restore lands somewhere the running service will not look.
    copies, not the file copy**: configuration, repository bindings, prompt sidecars,
    routing manifests and update configuration are not databases, so a snapshot-only backup
    reproduces exactly the failure this section exists to remove. The hub's own backup path already writes a hashed manifest and records
-   a schema version ceiling; keep that manifest with the files.
+   a schema version ceiling; keep that manifest with the files. That ceiling is
+   **hub store v4** as of the fenced-lease release: a backup taken by an earlier
+   build records v3 and is refused by this one, because there is no migration lane.
+   Restore such a backup with the release that produced it, or start fresh.
 3. Record the package version, configuration revision and schema versions beside the copy.
    A restore that cannot state which release produced it is not a restore path.
 4. Keep at least one rotation, and bound retention explicitly — run events and prompt
@@ -392,10 +395,10 @@ Broader deployments need shared state and coordination, external identity and fi
 
 ## v0.5 context/state storage
 
-The hub database (schema version 3) carries `context_items` alongside
-agents, messages, workflow runs, and the journal. Temporal state, knowledge
-records, and their audit trails live in the same SQLite file and upgrade in
-place from v0.4 databases.
+The hub database (schema version 4) carries `context_items` and `leases`
+alongside agents, messages, workflow runs, and the journal. Temporal state,
+knowledge records, and their audit trails live in the same SQLite file and
+upgrade in place from v0.4 databases.
 
 - **Backup and restore**: include the hub database file and, if used, the
   `.kxm/skills/` and `.kxm/knowledge/` trees. The wiki is a compiled view and
@@ -411,6 +414,35 @@ place from v0.4 databases.
 - **Rollback**: schema downgrades are not supported (a newer database refuses
   to open on an older runtime). Restore a database backup taken before the
   upgrade instead.
+
+### Fenced leases over shared resources
+
+`leases` holds one row per project-scoped resource: the holder, a monotonic
+fencing token, and a deadline. `POST /v1/leases/:resource/acquire|renew|release`
+are agent-authenticated and scoped to the caller's project, which the hub
+prefixes onto the resource name — two projects naming the same branch never
+contend. TTLs are bounded to 5 s–10 min and every decision is made on the **hub
+clock** inside one store transaction, so a skewed client cannot extend its own
+grip.
+
+The token is the safety property. It starts at 1, stays put across renewals, and
+increments only when a new holder takes over an expired lease. A holder that
+comes back after its deadline is therefore told its token was superseded rather
+than allowed to write behind whoever replaced it. Shared external effects
+(`git-push` to a ref the run does not own, `pr-create`, `tracker-issue`,
+`webhook`) take a lease before executing and re-present the token at commit; a
+superseded token leaves the effect `in-flight` and the attempt
+`blocked_uncertain` for an operator to resolve, and nothing retries it. An
+unreachable hub refuses the effect (`effect_lease_unavailable`) rather than
+running it unfenced.
+
+Expired rows are **not** reaped immediately — their token is what the next
+takeover has to increment past. The retention sweep drops rows whose deadline is
+older than the run-retention window (7 days by default), far beyond any live
+holder. `kxm_leases_granted_total`, `kxm_leases_refused_total` and
+`kxm_leases_released_total` in `/metrics` report contention;
+`lease_acquired`, `lease_renewed`, `lease_released`, `lease_denied` and
+`lease_purged` are the structured log events.
 
 ## Hub Q&A / knowledge base
 

@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { isIP } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import {
+  DEFAULT_LEASE_TTL_MS,
   DEFAULT_MAX_HOPS,
   DEFAULT_MESSAGE_RETENTION_MS,
   DEFAULT_MESSAGE_TTL_MS,
@@ -13,7 +14,10 @@ import {
   MAX_AGENT_HOST_CHARS,
   MAX_BODY_BYTES,
   MAX_CONTENT_CHARS,
+  MAX_LEASE_RESOURCE_CHARS,
+  MAX_LEASE_TTL_MS,
   MAX_MESSAGE_TTL_MS,
+  MIN_LEASE_TTL_MS,
   MIN_MESSAGE_TTL_MS,
   MIN_MESSAGE_RETENTION_MS,
   ProtocolError,
@@ -27,6 +31,7 @@ import {
   type AgentRecord,
   type DeliveryMode,
   type HubEvent,
+  type LeaseRecord,
   type MessageRecord,
   type WorkflowMessageContext,
 } from "./protocol.ts";
@@ -39,7 +44,7 @@ import { NativeStateProvider } from "./state.ts";
 import { SkillLifecycle } from "./skills.ts";
 import { compileKnowledgeWiki, lintKnowledgeWiki, type WikiSourcePool } from "./wiki.ts";
 import { buildRetrospective, writeRetrospective } from "./retrospective.ts";
-import { MeshStore, type StoredAgent } from "./store.ts";
+import { MeshStore, type LeaseRefusal, type StoredAgent } from "./store.ts";
 import {
   canonicalWorkflowEvidenceKey,
   approveWorkflowDegradation,
@@ -91,6 +96,10 @@ export interface MeshHubOptions {
   skillsDir?: string;
   skillLifecycle?: SkillLifecycle;
   repoRoot?: string;
+  /** The hub clock every lease decision reads. Injectable so a test can move a
+   * lease past its deadline instead of sleeping through a real TTL; production
+   * leaves it at `Date.now`. It is never a client-supplied time. */
+  now?: () => number;
 }
 
 export interface MeshHub {
@@ -130,6 +139,38 @@ function publicAgent(agent: StoredAgent, staleAfterMs: number, now = Date.now())
 
 function safeTokenEqual(actual: string | undefined, expected: string): boolean {
   return timingSafeStringCompare(actual, expected);
+}
+
+/** The wire answer for a lease the hub will not extend or release. Every one of
+ * these means the caller's token no longer authorizes a shared write: the
+ * holder must stop, not retry. The current lease rides along so the caller can
+ * record who holds the resource now. */
+function leaseRefusal(reason: LeaseRefusal, name: string, lease?: LeaseRecord): ProtocolError {
+  if (reason === "missing") {
+    return new ProtocolError(404, `no lease is held on ${name}`, "lease_not_found");
+  }
+  if (reason === "expired") {
+    return new ProtocolError(
+      409,
+      `lease on ${name} expired at ${lease?.expiresAt ?? "its deadline"}; re-acquire to take it over`,
+      "lease_expired",
+      { lease },
+    );
+  }
+  if (reason === "held") {
+    return new ProtocolError(
+      409,
+      `lease on ${name} is held by ${lease?.holderAgentName ?? "another agent"} until ${lease?.expiresAt ?? "its deadline"}`,
+      "lease_held",
+      { lease },
+    );
+  }
+  return new ProtocolError(
+    409,
+    `fencing token for ${name} was superseded; the hub is now at token ${lease?.fencingToken ?? "a newer value"}`,
+    "lease_superseded",
+    { lease },
+  );
 }
 
 function bearerToken(request: IncomingMessage): string | undefined {
@@ -409,6 +450,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       };
   const webhookWorkflows = new Map((options.webhookWorkflows ?? []).map((workflow) => [workflow.id, workflow]));
   const logger = options.logger ?? (() => undefined);
+  const hubNow = options.now ?? (() => Date.now());
   const assetsDir = options.assetsDir;
   const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve(dirname(dirname(options.dataPath))) : process.cwd());
   const store = new MeshStore(options.dataPath);
@@ -461,6 +503,9 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     contextRequests: 0,
     attemptLatencySecondsTotal: 0,
     meteredCostUsdTotal: 0,
+    leasesGranted: 0,
+    leasesRefused: 0,
+    leasesReleased: 0,
   };
   let cleanupTimer: NodeJS.Timeout | undefined;
   let closed = false;
@@ -1065,6 +1110,16 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     for (const runId of swept.purgedRuns) {
       logger({ event: "workflow_run_purged", runId });
     }
+    for (const lease of swept.purgedLeases) {
+      logger({
+        event: "lease_purged",
+        resource: lease.resource,
+        project: lease.project,
+        agentId: lease.holderAgentId,
+        fencingToken: lease.fencingToken,
+        expiresAt: lease.expiresAt,
+      });
+    }
   }
 
   function metricsBody(): string {
@@ -1112,6 +1167,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       `kxm_attempt_latency_seconds_total ${counters.attemptLatencySecondsTotal}`,
       "# TYPE kxm_metered_cost_usd_total counter",
       `kxm_metered_cost_usd_total ${counters.meteredCostUsdTotal}`,
+      "# TYPE kxm_leases_granted_total counter",
+      `kxm_leases_granted_total ${counters.leasesGranted}`,
+      "# TYPE kxm_leases_refused_total counter",
+      `kxm_leases_refused_total ${counters.leasesRefused}`,
+      "# TYPE kxm_leases_released_total counter",
+      `kxm_leases_released_total ${counters.leasesReleased}`,
       "",
     ].join("\n");
   }
@@ -2195,6 +2256,81 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         broadcastPresence(current);
         logger({ event: "agent_unregistered", agentId: current.id, project: current.project });
         response.writeHead(204, { "cache-control": "no-store" }).end();
+        return;
+      }
+
+      // One writer, one clock. Every branch below decides inside a single store
+      // transaction, so two agents racing for the same resource cannot both read it
+      // free. The fencing token increments only on takeover, which is what lets a
+      // holder that slept past its deadline be refused at commit instead of writing
+      // behind whoever replaced it.
+      const leaseMatch = url.pathname.match(/^\/v1\/leases\/([^/]+)\/(acquire|renew|release)$/);
+      if (method === "POST" && leaseMatch) {
+        const holder = requireAgent(request);
+        requireProjectAuth(request, holder.project);
+        const name = requireString(decodeURIComponent(leaseMatch[1]!), "resource", { max: MAX_LEASE_RESOURCE_CHARS });
+        const action = leaseMatch[2]!;
+        const body = await readJson(request);
+        // The caller never names the prefix, so the same branch in two projects is
+        // two leases and neither project can reach the other's.
+        const resource = `${holder.project}/${name}`;
+        const nowMs = hubNow();
+        const leaseLog = { resource, project: holder.project, agentId: holder.id, agentName: holder.name };
+
+        if (action === "acquire") {
+          const ttlMs = parseBoundedInteger(body.ttlMs, "ttlMs", DEFAULT_LEASE_TTL_MS, MIN_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
+          const outcome = store.acquireLease({
+            resource,
+            project: holder.project,
+            name,
+            holderAgentId: holder.id,
+            holderAgentName: holder.name,
+            ttlMs,
+            nowMs,
+          });
+          if (!outcome.ok) {
+            counters.leasesRefused += 1;
+            logger({ event: "lease_denied", ...leaseLog, reason: outcome.reason, heldBy: outcome.lease?.holderAgentId });
+            throw leaseRefusal(outcome.reason, name, outcome.lease);
+          }
+          counters.leasesGranted += 1;
+          logger({
+            event: outcome.renewed ? "lease_renewed" : "lease_acquired",
+            ...leaseLog,
+            fencingToken: outcome.lease.fencingToken,
+            expiresAt: outcome.lease.expiresAt,
+          });
+          json(response, 200, { lease: outcome.lease, renewed: outcome.renewed });
+          return;
+        }
+
+        if (body.fencingToken === undefined) {
+          throw new ProtocolError(400, "fencingToken is required", "lease_token_required");
+        }
+        const fencingToken = parseBoundedInteger(body.fencingToken, "fencingToken", 1, 1, Number.MAX_SAFE_INTEGER);
+        if (action === "renew") {
+          const ttlMs = parseBoundedInteger(body.ttlMs, "ttlMs", DEFAULT_LEASE_TTL_MS, MIN_LEASE_TTL_MS, MAX_LEASE_TTL_MS);
+          const outcome = store.renewLease({ resource, holderAgentId: holder.id, fencingToken, ttlMs, nowMs });
+          if (!outcome.ok) {
+            counters.leasesRefused += 1;
+            logger({ event: "lease_denied", ...leaseLog, reason: outcome.reason, fencingToken });
+            throw leaseRefusal(outcome.reason, name, outcome.lease);
+          }
+          counters.leasesGranted += 1;
+          logger({ event: "lease_renewed", ...leaseLog, fencingToken, expiresAt: outcome.lease.expiresAt });
+          json(response, 200, { lease: outcome.lease, renewed: true });
+          return;
+        }
+
+        const outcome = store.releaseLease({ resource, holderAgentId: holder.id, fencingToken });
+        if (!outcome.ok) {
+          counters.leasesRefused += 1;
+          logger({ event: "lease_denied", ...leaseLog, reason: outcome.reason, fencingToken });
+          throw leaseRefusal(outcome.reason, name, outcome.lease);
+        }
+        counters.leasesReleased += 1;
+        logger({ event: "lease_released", ...leaseLog, fencingToken });
+        json(response, 200, { released: true, lease: outcome.lease });
         return;
       }
 

@@ -48,6 +48,11 @@ export interface ExternalEffectReceipt {
   executedAt: string;
   lastHeartbeatAt?: string | undefined;
   completedAt?: string | undefined;
+  /** The hub lease this effect executes under, for shared kinds only. The
+   * ledger's own CAS is per run/step; this pair is what fences the effect
+   * against a writer on another box. */
+  leaseResource?: string | undefined;
+  fencingToken?: number | undefined;
 }
 
 export interface RunBranchOptions {
@@ -115,7 +120,9 @@ export function computeEffectKey(
   return `eff_${createHash("sha256").update(raw).digest("hex").slice(0, 16)}`;
 }
 
-const EXTERNAL_EFFECTS_SCHEMA_VERSION = 1;
+// v1 → v2 adds the hub lease identity a shared effect executes under. There is no
+// migration lane here either: an older ledger file is refused at open, not reshaped.
+const EXTERNAL_EFFECTS_SCHEMA_VERSION = 2;
 
 const EXTERNAL_EFFECTS_DDL = `
 CREATE TABLE IF NOT EXISTS external_effects (
@@ -130,7 +137,9 @@ CREATE TABLE IF NOT EXISTS external_effects (
   receipt_payload TEXT NOT NULL,
   executed_at TEXT NOT NULL,
   last_heartbeat_at TEXT,
-  completed_at TEXT
+  completed_at TEXT,
+  lease_resource TEXT,
+  fencing_token INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_ext_effects_run ON external_effects(run_id);
 `;
@@ -139,8 +148,46 @@ const EXTERNAL_EFFECTS_SHAPE = {
   external_effects: [
     "effect_key", "run_id", "step_id", "attempt_id", "action_kind", "target_ref",
     "status", "payload_hash", "receipt_payload", "executed_at", "last_heartbeat_at", "completed_at",
+    "lease_resource", "fencing_token",
   ],
 } as const;
+
+interface EffectRow {
+  effect_key: string;
+  run_id: string;
+  step_id: string;
+  attempt_id: string;
+  action_kind: ExternalActionKind;
+  target_ref: string;
+  status: ExternalEffectStatus;
+  payload_hash: string;
+  receipt_payload: string;
+  executed_at: string;
+  last_heartbeat_at: string | null;
+  completed_at: string | null;
+  lease_resource: string | null;
+  fencing_token: number | null;
+}
+
+function receiptFromRow(row: EffectRow): ExternalEffectReceipt {
+  return {
+    schema: EXTERNAL_EFFECT_SCHEMA,
+    effectKey: row.effect_key,
+    runId: row.run_id,
+    stepId: row.step_id,
+    attemptId: row.attempt_id,
+    actionKind: row.action_kind,
+    targetRef: row.target_ref,
+    status: row.status,
+    payloadHash: row.payload_hash,
+    receiptPayload: JSON.parse(row.receipt_payload) as Record<string, unknown>,
+    executedAt: row.executed_at,
+    lastHeartbeatAt: row.last_heartbeat_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+    leaseResource: row.lease_resource ?? undefined,
+    fencingToken: row.fencing_token ?? undefined,
+  };
+}
 
 export class ExternalEffectsLedger {
   private db: DatabaseSync;
@@ -173,6 +220,10 @@ export class ExternalEffectsLedger {
     targetRef: string;
     payload?: Record<string, unknown> | undefined;
     timeoutMs?: number | undefined;
+    /** The hub lease this effect runs under. Shared kinds carry it; unique
+     * namespaces (`git-branch`, `git-commit`) leave it unset. */
+    leaseResource?: string | undefined;
+    fencingToken?: number | undefined;
   }): { ok: true; effectKey: string } | { ok: false; error: string; existing?: ExternalEffectReceipt } {
     const effectKey = computeEffectKey(input.runId, input.stepId, input.actionKind, input.targetRef);
     const now = new Date().toISOString();
@@ -206,15 +257,18 @@ export class ExternalEffectsLedger {
     const stmt = this.db.prepare(`
       INSERT INTO external_effects (
         effect_key, run_id, step_id, attempt_id, action_kind, target_ref,
-        status, payload_hash, receipt_payload, executed_at, last_heartbeat_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, payload_hash, receipt_payload, executed_at, last_heartbeat_at,
+        lease_resource, fencing_token
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(effect_key) DO UPDATE SET
         attempt_id = excluded.attempt_id,
         status = 'in-flight',
         executed_at = excluded.executed_at,
         last_heartbeat_at = excluded.last_heartbeat_at,
         payload_hash = excluded.payload_hash,
-        receipt_payload = excluded.receipt_payload
+        receipt_payload = excluded.receipt_payload,
+        lease_resource = excluded.lease_resource,
+        fencing_token = excluded.fencing_token
     `);
 
     stmt.run(
@@ -229,6 +283,8 @@ export class ExternalEffectsLedger {
       payloadStr,
       now,
       now,
+      input.leaseResource ?? null,
+      input.fencingToken ?? null,
     );
 
     return { ok: true, effectKey };
@@ -286,78 +342,346 @@ export class ExternalEffectsLedger {
     const stmt = this.db.prepare(`
       SELECT * FROM external_effects WHERE effect_key = ?
     `);
-    const row = stmt.get(effectKey) as {
-      effect_key: string;
-      run_id: string;
-      step_id: string;
-      attempt_id: string;
-      action_kind: ExternalActionKind;
-      target_ref: string;
-      status: ExternalEffectStatus;
-      payload_hash: string;
-      receipt_payload: string;
-      executed_at: string;
-      last_heartbeat_at: string | null;
-      completed_at: string | null;
-    } | undefined;
-
+    const row = stmt.get(effectKey) as EffectRow | undefined;
     if (!row) return undefined;
-
-    return {
-      schema: EXTERNAL_EFFECT_SCHEMA,
-      effectKey: row.effect_key,
-      runId: row.run_id,
-      stepId: row.step_id,
-      attemptId: row.attempt_id,
-      actionKind: row.action_kind,
-      targetRef: row.target_ref,
-      status: row.status,
-      payloadHash: row.payload_hash,
-      receiptPayload: JSON.parse(row.receipt_payload) as Record<string, unknown>,
-      executedAt: row.executed_at,
-      lastHeartbeatAt: row.last_heartbeat_at ?? undefined,
-      completedAt: row.completed_at ?? undefined,
-    };
+    return receiptFromRow(row);
   }
 
   listRunEffects(runId: string): ExternalEffectReceipt[] {
     const stmt = this.db.prepare(`
       SELECT * FROM external_effects WHERE run_id = ? ORDER BY executed_at ASC
     `);
-    const rows = stmt.all(runId) as Array<{
-      effect_key: string;
-      run_id: string;
-      step_id: string;
-      attempt_id: string;
-      action_kind: ExternalActionKind;
-      target_ref: string;
-      status: ExternalEffectStatus;
-      payload_hash: string;
-      receipt_payload: string;
-      executed_at: string;
-      last_heartbeat_at: string | null;
-      completed_at: string | null;
-    }>;
-
-    return rows.map((row) => ({
-      schema: EXTERNAL_EFFECT_SCHEMA,
-      effectKey: row.effect_key,
-      runId: row.run_id,
-      stepId: row.step_id,
-      attemptId: row.attempt_id,
-      actionKind: row.action_kind,
-      targetRef: row.target_ref,
-      status: row.status,
-      payloadHash: row.payload_hash,
-      receiptPayload: JSON.parse(row.receipt_payload) as Record<string, unknown>,
-      executedAt: row.executed_at,
-      lastHeartbeatAt: row.last_heartbeat_at ?? undefined,
-      completedAt: row.completed_at ?? undefined,
-    }));
+    const rows = stmt.all(runId) as unknown as EffectRow[];
+    return rows.map(receiptFromRow);
   }
 
   close(): void {
     this.db.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared effects under a fenced hub lease (P3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The lease surface a shared effect needs. Declared structurally so this module
+ * stays a leaf: `HubClient` satisfies it as written, and a test can stand in a
+ * stub without a hub.
+ */
+export interface EffectLeaseGateway {
+  acquireLease(resource: string, ttlMs?: number): Promise<{ lease: EffectLease; renewed: boolean }>;
+  renewLease(resource: string, fencingToken: number, ttlMs?: number): Promise<{ lease: EffectLease }>;
+  releaseLease(resource: string, fencingToken: number): Promise<{ released: boolean }>;
+}
+
+export interface EffectLease {
+  resource: string;
+  fencingToken: number;
+  expiresAt: string;
+  holderAgentId?: string | undefined;
+  holderAgentName?: string | undefined;
+}
+
+export type SharedEffectRefusalCode =
+  /** No lease could be obtained: no gateway was bound, or the hub was unreachable. */
+  | "effect_lease_unavailable"
+  /** Another agent holds the resource right now. */
+  | "effect_lease_held"
+  /** The hub has moved past the token this effect holds. */
+  | "effect_lease_superseded"
+  | "effect_already_committed"
+  | "effect_in_flight"
+  | "effect_not_in_flight"
+  | "effect_not_found";
+
+/** The engine's attempt state for an effect whose outcome cannot be proven. */
+export type EffectAttemptState = "blocked_uncertain";
+
+export interface SharedEffectRefusal {
+  ok: false;
+  code: SharedEffectRefusalCode;
+  error: string;
+  /** Present when the effect may already have touched the outside world. The
+   * attempt parks here and nothing retries it. */
+  attemptState?: EffectAttemptState | undefined;
+  existing?: ExternalEffectReceipt | undefined;
+}
+
+export interface SharedEffectClaim {
+  ok: true;
+  effectKey: string;
+  leaseResource?: string | undefined;
+  fencingToken?: number | undefined;
+}
+
+/** Kinds whose target is shared with every other box: two runs naming the same
+ * `targetRef` mean the same real thing, so exactly one may execute. */
+export const SHARED_EFFECT_KINDS: readonly ExternalActionKind[] = Object.freeze([
+  "git-push",
+  "pr-create",
+  "tracker-issue",
+  "webhook",
+]);
+
+/** Does `targetRef` name a branch this run owns? A run branch is a unique
+ * namespace — `deterministicRunBranch` derives it from the run id in all three
+ * of its formats — so pushing it contends with nobody. */
+export function isRunBranchRef(runId: string, targetRef: string): boolean {
+  const cleanId = runId.replace(/^run_/, "");
+  if (!cleanId) return false;
+  const branch = targetRef.replace(/^refs\/heads\//, "");
+  if (!branch.startsWith("kxm/")) return false;
+  return branch === `kxm/run-${cleanId}`
+    || branch.startsWith(`kxm/run-${cleanId}-`)
+    || branch.endsWith(`-run-${cleanId}`);
+}
+
+/**
+ * Whether an effect must hold a hub lease before it executes.
+ *
+ * `git-branch` and `git-commit` write a namespace this run already owns, so
+ * they stay lease-free. A `git-push` to this run's own branch is the same case;
+ * a push to any other ref is shared and is fenced.
+ */
+export function effectRequiresHubLease(
+  actionKind: ExternalActionKind,
+  targetRef: string,
+  runId: string,
+): boolean {
+  if (!SHARED_EFFECT_KINDS.includes(actionKind)) return false;
+  if (actionKind === "git-push") return !isRunBranchRef(runId, targetRef);
+  return true;
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** A refusal the hub stated about the lease itself, as opposed to not reaching
+ * the hub at all. Any of these means the token is gone for good. */
+function isLeaseLost(code: string | undefined): boolean {
+  return code === "lease_superseded" || code === "lease_expired" || code === "lease_not_found";
+}
+
+/**
+ * Claim an external effect, taking its hub lease first when the kind is shared.
+ *
+ * The lease comes before the ledger row on purpose: the receipt records the
+ * token it will have to present at commit, and a claim that cannot be fenced
+ * never becomes a claim at all. A shared effect with an unreachable hub is
+ * refused with `effect_lease_unavailable` and executes nothing — running it
+ * unfenced is exactly the two-writer failure the lease exists to prevent.
+ */
+export async function claimSharedEffect(input: {
+  ledger: ExternalEffectsLedger;
+  lease?: EffectLeaseGateway | undefined;
+  runId: string;
+  stepId: string;
+  attemptId: string;
+  actionKind: ExternalActionKind;
+  targetRef: string;
+  payload?: Record<string, unknown> | undefined;
+  timeoutMs?: number | undefined;
+  /** Lease TTL. Defaults to the Q6 lease timeout so the existing heartbeat
+   * interval renews it well inside its deadline. */
+  leaseTtlMs?: number | undefined;
+}): Promise<SharedEffectClaim | SharedEffectRefusal> {
+  const needsLease = effectRequiresHubLease(input.actionKind, input.targetRef, input.runId);
+  let lease: EffectLease | undefined;
+
+  if (needsLease) {
+    if (!input.lease) {
+      return {
+        ok: false,
+        code: "effect_lease_unavailable",
+        error: `effect_lease_unavailable: ${input.actionKind} on ${input.targetRef} is shared and no hub lease is bound`,
+      };
+    }
+    try {
+      const acquired = await input.lease.acquireLease(input.targetRef, input.leaseTtlMs ?? DEFAULT_LEASE_TIMEOUT_MS);
+      lease = acquired.lease;
+    } catch (error) {
+      const code = errorCodeOf(error);
+      if (code === "lease_held") {
+        return {
+          ok: false,
+          code: "effect_lease_held",
+          error: `effect_lease_held: ${input.targetRef} is leased by another agent: ${errorText(error)}`,
+        };
+      }
+      return {
+        ok: false,
+        code: "effect_lease_unavailable",
+        error: `effect_lease_unavailable: could not reach the bound hub for ${input.targetRef}: ${errorText(error)}`,
+      };
+    }
+  }
+
+  const claimed = input.ledger.claimEffect({
+    runId: input.runId,
+    stepId: input.stepId,
+    attemptId: input.attemptId,
+    actionKind: input.actionKind,
+    targetRef: input.targetRef,
+    payload: input.payload,
+    timeoutMs: input.timeoutMs,
+    ...(lease ? { leaseResource: lease.resource, fencingToken: lease.fencingToken } : {}),
+  });
+
+  if (!claimed.ok) {
+    // The ledger refused after the lease was taken, so give the resource back
+    // rather than parking it until the TTL runs out.
+    if (lease && input.lease) await releaseQuietly(input.lease, input.targetRef, lease.fencingToken);
+    return {
+      ok: false,
+      code: claimed.error.startsWith("effect_already_committed") ? "effect_already_committed" : "effect_in_flight",
+      error: claimed.error,
+      existing: claimed.existing,
+    };
+  }
+
+  return {
+    ok: true,
+    effectKey: claimed.effectKey,
+    ...(lease ? { leaseResource: lease.resource, fencingToken: lease.fencingToken } : {}),
+  };
+}
+
+/**
+ * The Q6 heartbeat for a shared effect: renew the hub lease under the same
+ * token, then refresh the ledger's own lease timestamp.
+ *
+ * A hub that has moved past the token parks the attempt — the effect may
+ * already have touched the outside world, and the resource now belongs to
+ * someone else.
+ */
+export async function heartbeatSharedEffect(input: {
+  ledger: ExternalEffectsLedger;
+  lease?: EffectLeaseGateway | undefined;
+  effectKey: string;
+  leaseTtlMs?: number | undefined;
+}): Promise<{ ok: true; lastHeartbeatAt: string; leaseExpiresAt?: string } | SharedEffectRefusal> {
+  const receipt = input.ledger.getReceipt(input.effectKey);
+  if (!receipt) {
+    return { ok: false, code: "effect_not_found", error: `effect_not_found: effect ${input.effectKey} does not exist` };
+  }
+
+  let leaseExpiresAt: string | undefined;
+  if (receipt.leaseResource !== undefined && receipt.fencingToken !== undefined) {
+    if (!input.lease) {
+      return {
+        ok: false,
+        code: "effect_lease_unavailable",
+        error: `effect_lease_unavailable: ${receipt.targetRef} holds a hub lease but no gateway is bound`,
+      };
+    }
+    try {
+      const renewed = await input.lease.renewLease(
+        receipt.targetRef,
+        receipt.fencingToken,
+        input.leaseTtlMs ?? DEFAULT_LEASE_TIMEOUT_MS,
+      );
+      leaseExpiresAt = renewed.lease.expiresAt;
+    } catch (error) {
+      const code = errorCodeOf(error);
+      if (isLeaseLost(code)) {
+        return {
+          ok: false,
+          code: "effect_lease_superseded",
+          error: `effect_lease_superseded: the hub no longer recognises token ${receipt.fencingToken} on ${receipt.targetRef}: ${errorText(error)}`,
+          attemptState: "blocked_uncertain",
+          existing: receipt,
+        };
+      }
+      return {
+        ok: false,
+        code: "effect_lease_unavailable",
+        error: `effect_lease_unavailable: could not renew the lease on ${receipt.targetRef}: ${errorText(error)}`,
+        existing: receipt,
+      };
+    }
+  }
+
+  const beat = input.ledger.heartbeatEffect(input.effectKey);
+  if (!beat.ok) {
+    // The row exists — `getReceipt` just read it — so the only remaining refusal
+    // is a status that no longer accepts a heartbeat.
+    return { ok: false, code: "effect_not_in_flight", error: beat.error, existing: receipt };
+  }
+  return { ok: true, lastHeartbeatAt: beat.lastHeartbeatAt, ...(leaseExpiresAt ? { leaseExpiresAt } : {}) };
+}
+
+/**
+ * Commit a shared effect, but only while the hub still recognises its token.
+ *
+ * The token is re-presented before the receipt is written. If the hub has
+ * superseded it — or cannot be reached to say either way — the effect is left
+ * `in-flight` and the attempt parks `blocked_uncertain`. Nothing retries: the
+ * write may or may not have landed, and re-running it is how a second writer
+ * lands the same change twice.
+ */
+export async function commitSharedEffect(input: {
+  ledger: ExternalEffectsLedger;
+  lease?: EffectLeaseGateway | undefined;
+  effectKey: string;
+  receiptPayload: Record<string, unknown>;
+  leaseTtlMs?: number | undefined;
+}): Promise<{ ok: true; receipt: ExternalEffectReceipt } | SharedEffectRefusal> {
+  const receipt = input.ledger.getReceipt(input.effectKey);
+  if (!receipt) {
+    return { ok: false, code: "effect_not_found", error: `effect_not_found: effect ${input.effectKey} does not exist` };
+  }
+
+  const fenced = receipt.leaseResource !== undefined && receipt.fencingToken !== undefined;
+  if (fenced) {
+    if (!input.lease) {
+      return {
+        ok: false,
+        code: "effect_lease_unavailable",
+        error: `effect_lease_unavailable: ${receipt.targetRef} holds a hub lease but no gateway is bound`,
+        attemptState: "blocked_uncertain",
+        existing: receipt,
+      };
+    }
+    try {
+      await input.lease.renewLease(receipt.targetRef, receipt.fencingToken!, input.leaseTtlMs ?? DEFAULT_LEASE_TIMEOUT_MS);
+    } catch (error) {
+      const code = errorCodeOf(error);
+      return {
+        ok: false,
+        code: isLeaseLost(code) ? "effect_lease_superseded" : "effect_lease_unavailable",
+        error: isLeaseLost(code)
+          ? `effect_lease_superseded: token ${receipt.fencingToken} on ${receipt.targetRef} was superseded before commit: ${errorText(error)}`
+          : `effect_lease_unavailable: the lease on ${receipt.targetRef} could not be confirmed before commit: ${errorText(error)}`,
+        attemptState: "blocked_uncertain",
+        existing: input.ledger.getReceipt(input.effectKey),
+      };
+    }
+  }
+
+  input.ledger.commitEffect(input.effectKey, input.receiptPayload);
+  if (fenced && input.lease) {
+    await releaseQuietly(input.lease, receipt.targetRef, receipt.fencingToken!);
+  }
+  return { ok: true, receipt: input.ledger.getReceipt(input.effectKey)! };
+}
+
+/** Hand the resource back. `resource` is always the name the caller asked for,
+ * never the hub's project-scoped form — the hub applies that prefix itself, and
+ * passing it back would name a second resource. A failed release is not an
+ * error the caller can act on: the lease falls to its deadline on the hub
+ * clock. */
+async function releaseQuietly(gateway: EffectLeaseGateway, resource: string, fencingToken: number): Promise<void> {
+  try {
+    await gateway.releaseLease(resource, fencingToken);
+  } catch {
+    // Deliberately swallowed: the TTL frees it.
   }
 }
 

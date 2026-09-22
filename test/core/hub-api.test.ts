@@ -5,6 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { HubClient, HubHttpError } from "../../plugins/kxm/src/client.ts";
+import {
+  ExternalEffectsLedger,
+  claimSharedEffect,
+  commitSharedEffect,
+  computeEffectKey,
+  deterministicRunBranch,
+  effectRequiresHubLease,
+  heartbeatSharedEffect,
+} from "../../plugins/kxm/src/external-effects.ts";
 import { createMeshHub } from "../../plugins/kxm/src/hub.ts";
 import { MAX_BODY_BYTES, type AgentRecord } from "../../plugins/kxm/src/protocol.ts";
 import type { WebhookWorkflowDefinition } from "../../plugins/kxm/src/workflow.ts";
@@ -1248,4 +1257,135 @@ test("a peer request to a known offline agent queues, delivers once on resumptio
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(expiredReplayed, 0, "the expired message is not replayed on reconnection");
   await postExpiry.stop();
+});
+
+test("a shared external effect cannot commit with a fencing token the hub has superseded", async (context) => {
+  // Expiry is the hub's clock, so the test moves that clock rather than sleeping
+  // through a real TTL or guessing at elapsed time.
+  let hubClockMs = Date.parse("2026-04-01T00:00:00.000Z");
+  const mesh = await createTestMesh(context, { now: () => hubClockMs });
+  const boxA = mesh.makeClient("pusher-a");
+  const boxB = mesh.makeClient("pusher-b");
+  await boxA.start(() => undefined);
+  await boxB.start(() => undefined);
+
+  // Two boxes, two ledgers: neither can see the other's receipts, so the hub
+  // lease is the only thing standing between them and the same push.
+  const ledgerA = new ExternalEffectsLedger(":memory:");
+  const ledgerB = new ExternalEffectsLedger(":memory:");
+  context.after(() => {
+    ledgerA.close();
+    ledgerB.close();
+  });
+
+  const targetRef = "refs/heads/main";
+  const runA = "run_aaaaaaaa";
+  const runB = "run_bbbbbbbb";
+  const leaseResource = "test-project/refs/heads/main";
+  const shared = { stepId: "push", actionKind: "git-push", targetRef, leaseTtlMs: 5_000 } as const;
+
+  // Only genuinely shared targets take a lease. This run's own branch, and the
+  // kinds that write a namespace the run already owns, stay lease-free.
+  assert.equal(effectRequiresHubLease("git-push", deterministicRunBranch(runA), runA), false);
+  assert.equal(effectRequiresHubLease("git-branch", targetRef, runA), false);
+  assert.equal(effectRequiresHubLease("git-commit", targetRef, runA), false);
+  assert.equal(effectRequiresHubLease("git-push", targetRef, runA), true);
+  assert.equal(effectRequiresHubLease("pr-create", "kontextmind/kxm#274", runA), true);
+
+  const claimA = await claimSharedEffect({ ledger: ledgerA, lease: boxA, runId: runA, attemptId: "att_a1", ...shared });
+  if (!claimA.ok) throw new Error(`box A should have taken the lease: ${claimA.error}`);
+  assert.equal(claimA.fencingToken, 1);
+  assert.equal(claimA.leaseResource, leaseResource);
+  const openReceipt = ledgerA.getReceipt(claimA.effectKey)!;
+  assert.equal(openReceipt.status, "in-flight");
+  assert.equal(openReceipt.leaseResource, leaseResource);
+  assert.equal(openReceipt.fencingToken, 1);
+
+  // The rival is refused before it claims anything: no ledger row, nothing executed.
+  const contended = await claimSharedEffect({ ledger: ledgerB, lease: boxB, runId: runB, attemptId: "att_b1", ...shared });
+  assert.equal(contended.ok, false);
+  assert.equal(!contended.ok && contended.code, "effect_lease_held");
+  assert.equal(ledgerB.getReceipt(computeEffectKey(runB, "push", "git-push", targetRef)), undefined);
+
+  // The Q6 heartbeat renews the hub lease under the same token.
+  hubClockMs += 3_000;
+  const beat = await heartbeatSharedEffect({ ledger: ledgerA, lease: boxA, effectKey: claimA.effectKey, leaseTtlMs: 5_000 });
+  if (!beat.ok) throw new Error(`the holder's heartbeat should renew: ${beat.error}`);
+  assert.equal(beat.leaseExpiresAt, new Date(hubClockMs + 5_000).toISOString());
+  assert.equal(ledgerA.getReceipt(claimA.effectKey)?.fencingToken, 1, "a renewal never moves the token");
+
+  // Past the deadline the resource is free again, and the takeover — the only
+  // thing that moves the token — hands box B token 2.
+  hubClockMs += 6_000;
+  const takeover = await claimSharedEffect({ ledger: ledgerB, lease: boxB, runId: runB, attemptId: "att_b2", ...shared });
+  if (!takeover.ok) throw new Error(`the TTL should have freed the resource: ${takeover.error}`);
+  assert.equal(takeover.fencingToken, 2);
+  assert.equal(takeover.leaseResource, leaseResource);
+
+  // Box A comes back and tries to land its push. The hub has superseded its
+  // token, so the commit is refused: the effect stays in-flight and the attempt
+  // parks uncertain, because nobody can prove whether the push landed.
+  const lateCommit = await commitSharedEffect({
+    ledger: ledgerA,
+    lease: boxA,
+    effectKey: claimA.effectKey,
+    receiptPayload: { pushedSha: "deadbeef" },
+  });
+  assert.equal(lateCommit.ok, false);
+  assert.equal(!lateCommit.ok && lateCommit.code, "effect_lease_superseded");
+  assert.equal(!lateCommit.ok && lateCommit.attemptState, "blocked_uncertain");
+  const parked = ledgerA.getReceipt(claimA.effectKey)!;
+  assert.equal(parked.status, "in-flight");
+  assert.equal(parked.completedAt, undefined);
+  assert.equal(parked.fencingToken, 1, "nothing re-acquired on the loser's behalf");
+  assert.deepEqual(parked.receiptPayload, {}, "a refused commit writes no receipt payload");
+
+  // Nothing retries: the resource belongs to box B until B is done with it.
+  const stillHeld = await boxA.acquireLease(targetRef, 5_000).then(
+    () => undefined,
+    (error: unknown) => error as HubHttpError,
+  );
+  assert.equal(stillHeld?.statusCode, 409);
+  assert.equal(stillHeld?.code, "lease_held");
+  assert.equal((stillHeld?.extras?.lease as { fencingToken?: number } | undefined)?.fencingToken, 2);
+
+  // The winner commits under the token the hub actually holds.
+  const winner = await commitSharedEffect({
+    ledger: ledgerB,
+    lease: boxB,
+    effectKey: takeover.effectKey,
+    receiptPayload: { pushedSha: "cafebabe" },
+  });
+  if (!winner.ok) throw new Error(`the lease holder should commit: ${winner.error}`);
+  assert.equal(winner.receipt.status, "committed");
+  assert.equal(winner.receipt.leaseResource, leaseResource);
+  assert.equal(winner.receipt.fencingToken, 2);
+  assert.deepEqual(winner.receipt.receiptPayload, { pushedSha: "cafebabe" });
+
+  // A clean release ends the fence — there is no stale writer left to keep a
+  // token for — so the next holder starts over at 1.
+  const afterRelease = await boxA.acquireLease(targetRef, 5_000);
+  assert.equal(afterRelease.lease.fencingToken, 1);
+  assert.equal(afterRelease.lease.holderAgentId, boxA.agent!.id);
+  await boxA.releaseLease(targetRef, afterRelease.lease.fencingToken);
+
+  // A shared effect never executes unfenced: an unreachable hub refuses the
+  // claim outright rather than falling back to running it.
+  const unreachable = new HubClient({
+    serverUrl: "http://127.0.0.1:9",
+    name: "orphan",
+    purpose: "a client whose hub is gone",
+    project: "test-project",
+    requestTimeoutMs: 250,
+  });
+  const offlineHub = await claimSharedEffect({
+    ledger: ledgerB,
+    lease: unreachable,
+    runId: "run_cccccccc",
+    attemptId: "att_c1",
+    ...shared,
+  });
+  assert.equal(offlineHub.ok, false);
+  assert.equal(!offlineHub.ok && offlineHub.code, "effect_lease_unavailable");
+  assert.equal(ledgerB.getReceipt(computeEffectKey("run_cccccccc", "push", "git-push", targetRef)), undefined);
 });

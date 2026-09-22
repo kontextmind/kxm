@@ -17989,7 +17989,7 @@ function discoverProjectStores(projectRoot, options = {}) {
   const stores = [];
   const hubPath = options.hubDataPath ? resolve3(options.hubDataPath) : join4(root, ".kxm", "state", "kxm.db");
   if (existsSync4(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 3 });
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 4 });
   }
   const registryPath = join4(root, ".kxm", "runtime", "registry.db");
   if (existsSync4(registryPath)) {
@@ -18095,7 +18095,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
         `backup file ${store.backupFile} sha256 ${actualSha256} does not match manifest hash ${store.sha256}`
       );
     }
-    let maxSupported = 3;
+    let maxSupported = 4;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {
@@ -28684,6 +28684,8 @@ var DEFAULT_MESSAGE_TTL_MS = 24 * 60 * 6e4;
 var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
+var MAX_LEASE_TTL_MS = 10 * 6e4;
+var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }

@@ -591,7 +591,9 @@ export function discoverProjectStores(projectRoot: string, options: { hubDataPat
 
   const hubPath = options.hubDataPath ? resolve(options.hubDataPath) : join(root, ".kxm", "state", "kxm.db");
   if (existsSync(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 3 });
+    // Must track HUB_STORE_SCHEMA_VERSION in store.ts: the hub's own fresh backup is
+    // restored through this ceiling, so a bump left behind here refuses it.
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 4 });
   }
 
   const registryPath = join(root, ".kxm", "runtime", "registry.db");
@@ -727,7 +729,9 @@ export function restoreBackup(
       );
     }
 
-    let maxSupported = 3;
+    // The hub-store ceiling. Must track HUB_STORE_SCHEMA_VERSION in store.ts for the
+    // same reason as the events ceiling below.
+    let maxSupported = 4;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {

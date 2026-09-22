@@ -13,6 +13,10 @@ export const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 export const MAX_BODY_BYTES = 256 * 1024;
 export const MAX_CONTENT_CHARS = 32_000;
 export const MAX_AGENT_HOST_CHARS = 64;
+export const MIN_LEASE_TTL_MS = 5_000;
+export const MAX_LEASE_TTL_MS = 10 * 60_000;
+export const DEFAULT_LEASE_TTL_MS = 5 * 60_000;
+export const MAX_LEASE_RESOURCE_CHARS = 200;
 
 export type DeliveryMode = "steer" | "followUp" | "nextTurn";
 export type MessageStatus = "queued" | "delivered" | "replied" | "cancelled" | "expired" | "error";
@@ -66,6 +70,27 @@ export function agentPresenceView(
 /** Project a durable identity onto the wire shape readers consume. */
 export function toAgentRecord(agent: AgentIdentity, staleAfterMs?: number, now?: number): AgentRecord {
   return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
+}
+
+/** One hub-held fenced lease over a project-scoped resource.
+ *
+ * `resource` is what the store keys on: the caller's project prefixed onto the
+ * name it asked for, so two projects naming the same branch never contend.
+ * Expiry is the hub's clock, never the holder's, and `fencingToken` increments
+ * only when a new holder takes over an expired lease — a renewal keeps its
+ * token, so a writer that comes back after a takeover can be told its token
+ * was superseded instead of being allowed to commit. */
+export interface LeaseRecord {
+  /** `${project}/${name}`. */
+  resource: string;
+  project: string;
+  /** The resource as the caller named it, without the project prefix. */
+  name: string;
+  holderAgentId: string;
+  holderAgentName: string;
+  fencingToken: number;
+  acquiredAt: string;
+  expiresAt: string;
 }
 
 export interface MessageReply {
