@@ -6,12 +6,12 @@ import { join } from "node:path";
 import test from "node:test";
 import { HubClient, HubHttpError } from "../../plugins/kxm/src/client.ts";
 import { createMeshHub } from "../../plugins/kxm/src/hub.ts";
-import { MAX_BODY_BYTES } from "../../plugins/kxm/src/protocol.ts";
+import { MAX_BODY_BYTES, type AgentRecord } from "../../plugins/kxm/src/protocol.ts";
 import type { WebhookWorkflowDefinition } from "../../plugins/kxm/src/workflow.ts";
 import { createTestMesh, responseJson, waitFor } from "../helpers.ts";
 
 interface RawIdentity {
-  agent: { id: string; name: string; project: string };
+  agent: AgentRecord;
   agentKey: string;
   resumed?: boolean;
 }
@@ -195,6 +195,86 @@ test("stale agents are marked offline and logged", async (context) => {
   });
   await waitFor(() => mesh.hub.state.agents.get(raw.identity!.agent.id)?.online === false, 1_000);
   assert.ok(entries.some((entry) => entry.event === "agent_stale"));
+});
+
+test("agent listing reports host label, lease expiry, and offline members only when asked", async (context) => {
+  const staleAfterMs = 150;
+  // The sweep is parked far out on purpose: `stale` is exactly the window
+  // between a lease expiring on the hub clock and the sweep retiring the
+  // agent, so it can only be observed while the sweep has not run.
+  const mesh = await createTestMesh(context, { staleAfterMs, cleanupIntervalMs: 60_000 });
+  const { address, token } = mesh;
+
+  const oversizedHost = await registerRaw(address.url, token, {
+    name: "wide-host",
+    purpose: "test",
+    project: "test-project",
+    host: "h".repeat(65),
+  });
+  assert.equal(oversizedHost.response.status, 400);
+
+  const reader = (await registerRaw(address.url, token, {
+    name: "reader", purpose: "read", project: "test-project", host: "box-a",
+  })).identity!;
+  const peer = (await registerRaw(address.url, token, {
+    name: "peer", purpose: "work", project: "test-project", host: "box-b",
+  })).identity!;
+  await registerRaw(address.url, token, {
+    name: "outsider", purpose: "work", project: "other-project", host: "box-c",
+  });
+  assert.equal(peer.agent.host, "box-b");
+
+  const list = async (query = ""): Promise<AgentRecord[]> => {
+    const response = await fetch(`${address.url}/v1/agents${query}`, { headers: identityHeaders(reader, token) });
+    assert.equal(response.status, 200);
+    return (await responseJson(response)).agents as AgentRecord[];
+  };
+  const find = (agents: AgentRecord[], id: string) => agents.find((agent) => agent.id === id);
+
+  const online = await list();
+  assert.deepEqual(online.map((agent) => agent.name).sort(), ["peer", "reader"]);
+  for (const agent of online) {
+    // The hub's own projection (not a wall-clock race): the agent is online because
+    // its lease has not expired on the hub clock, and the lease is exactly
+    // lastSeenAt + the configured staleAfterMs.
+    assert.equal(agent.presence, "online", `${agent.name} should hold its lease`);
+    assert.equal(Date.parse(agent.leaseExpiresAt!) - Date.parse(agent.lastSeenAt), staleAfterMs,
+      `${agent.name} lease is exactly lastSeenAt + staleAfterMs`);
+  }
+  assert.equal(find(online, peer.agent.id)?.host, "box-b");
+
+  // Presence and the lease are derived on read; the stored record grows by the
+  // host label alone. This fixture runs the hub in memory (no SQLite file), so
+  // the in-memory agent map IS the store; a file-backed variant would assert the
+  // same fields on the `record` JSON column.
+  const stored = mesh.hub.state.agents.get(peer.agent.id)!;
+  assert.equal(stored.host, "box-b");
+  assert.equal("presence" in stored, false);
+  assert.equal("leaseExpiresAt" in stored, false);
+
+  // The reader's own requests renew only the reader's lease, so the silent
+  // peer's lease expires on the hub clock while it is still registered.
+  await waitFor(async () => find(await list(), peer.agent.id)?.presence === "stale");
+  const expired = find(await list(), peer.agent.id)!;
+  assert.equal(expired.online, true, "a lease expires before the sweep retires the agent");
+  assert.ok(Date.parse(expired.leaseExpiresAt ?? "") <= Date.now());
+
+  const unregistered = await fetch(`${address.url}/v1/agents/${peer.agent.id}`, {
+    method: "DELETE",
+    headers: identityHeaders(peer, token),
+  });
+  assert.equal(unregistered.status, 204);
+
+  assert.deepEqual((await list()).map((agent) => agent.name), ["reader"]);
+  assert.deepEqual((await list("?includeOffline=false")).map((agent) => agent.name), ["reader"]);
+
+  const withOffline = await list("?includeOffline=true");
+  assert.deepEqual(withOffline.map((agent) => agent.name).sort(), ["peer", "reader"]);
+  const offlinePeer = find(withOffline, peer.agent.id)!;
+  assert.equal(offlinePeer.presence, "offline");
+  assert.equal(offlinePeer.host, "box-b");
+  assert.equal(Date.parse(offlinePeer.leaseExpiresAt ?? "") - Date.parse(offlinePeer.lastSeenAt), staleAfterMs);
+  assert.equal(withOffline.some((agent) => agent.name === "outsider"), false, "offline members stay project-scoped");
 });
 
 test("message fields, delivery modes, hop limits, TTLs, and target rules are validated", async (context) => {

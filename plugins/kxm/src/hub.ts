@@ -10,6 +10,7 @@ import {
   DEFAULT_RATE_LIMIT_MAX,
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_STALE_AFTER_MS,
+  MAX_AGENT_HOST_CHARS,
   MAX_BODY_BYTES,
   MAX_CONTENT_CHARS,
   MAX_MESSAGE_TTL_MS,
@@ -22,6 +23,7 @@ import {
   parseBoundedInteger,
   parseDeliveryMode,
   requireString,
+  toAgentRecord,
   type AgentRecord,
   type DeliveryMode,
   type HubEvent,
@@ -118,9 +120,12 @@ function isLoopback(host: string): boolean {
   return isIP(host) === 4 && host.startsWith("127.");
 }
 
-function publicAgent(agent: StoredAgent): AgentRecord {
-  const { key: _key, ...record } = agent;
-  return record;
+/** Drop the agent key and attach hub-clocked presence. Every caller passes the
+ * hub's own `staleAfterMs` and clock, so no reader ever sees a lease derived
+ * from a client timestamp. */
+function publicAgent(agent: StoredAgent, staleAfterMs: number, now = Date.now()): AgentRecord {
+  const { key: _key, ...identity } = agent;
+  return toAgentRecord(identity, staleAfterMs, now);
 }
 
 function safeTokenEqual(actual: string | undefined, expected: string): boolean {
@@ -623,9 +628,10 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   }
 
   function opsSnapshot(project: string) {
+    const snapshotAt = Date.now();
     const projectAgents = [...agents.values()]
       .filter((agent) => agent.project === project)
-      .map(publicAgent)
+      .map((agent) => publicAgent(agent, staleAfterMs, snapshotAt))
       .sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
     const open = store.getOpenMessages(project);
     const projectRuns = [...workflowRuns.values()]
@@ -683,7 +689,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
   function broadcastPresence(agent: StoredAgent): void {
     for (const candidate of agents.values()) {
       if (candidate.project === agent.project && candidate.id !== agent.id && candidate.online) {
-        publish(candidate.id, { type: "presence", agent: publicAgent(agent) });
+        publish(candidate.id, { type: "presence", agent: publicAgent(agent, staleAfterMs) });
       }
     }
     publishOps(agent.project, "agents");
@@ -2109,6 +2115,9 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const project = requireString(body.project, "project", { max: 128 });
         requireProjectAuth(request, project);
         const model = optionalString(body.model, "model", 128);
+        // A client declares which box it runs on. The label is a reading aid
+        // only: the project token is still the whole of admission.
+        const hostLabel = optionalString(body.host, "host", MAX_AGENT_HOST_CHARS);
         const existing = [...agents.values()].find(
           (agent) => agent.project === project && agent.name.toLowerCase() === name.toLowerCase(),
         );
@@ -2135,20 +2144,34 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         agent.online = true;
         if (model) agent.model = model;
         else delete agent.model;
+        if (hostLabel) agent.host = hostLabel;
+        else delete agent.host;
         store.saveAgent(agent);
         counters.registrations += 1;
-        logger({ event: existing ? "agent_resumed" : "agent_registered", agentId: agent.id, name, project });
+        logger({
+          event: existing ? "agent_resumed" : "agent_registered",
+          agentId: agent.id,
+          name,
+          project,
+          ...(hostLabel ? { host: hostLabel } : {}),
+        });
         broadcastPresence(agent);
-        json(response, existing ? 200 : 201, { agent: publicAgent(agent), agentKey: agent.key, resumed: Boolean(existing) });
+        json(response, existing ? 200 : 201, { agent: publicAgent(agent, staleAfterMs), agentKey: agent.key, resumed: Boolean(existing) });
         return;
       }
 
       if (method === "GET" && url.pathname === "/v1/agents") {
         const current = requireAgent(request);
         requireProjectAuth(request, current.project);
+        // Offline members are registered peers of the caller's own project
+        // whose lease the sweep has already retired. They stay out of the
+        // list unless a caller asks for them, so discovery keeps meaning
+        // "who can answer right now".
+        const includeOffline = url.searchParams.get("includeOffline") === "true";
+        const listedAt = Date.now();
         const result = [...agents.values()]
-          .filter((agent) => agent.project === current.project && agent.online)
-          .map(publicAgent);
+          .filter((agent) => agent.project === current.project && (agent.online || includeOffline))
+          .map((agent) => publicAgent(agent, staleAfterMs, listedAt));
         json(response, 200, { agents: result });
         return;
       }
@@ -2158,7 +2181,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         const current = requireAgent(request, decodeURIComponent(heartbeatMatch[1]!));
         requireProjectAuth(request, current.project);
         await readJson(request);
-        json(response, 200, { agent: publicAgent(current) });
+        json(response, 200, { agent: publicAgent(current, staleAfterMs) });
         return;
       }
 
@@ -2191,7 +2214,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           "x-content-type-options": "nosniff",
           ...(presenceOnly ? { "x-kxm-events-mode": "presence" } : {}),
         });
-        response.write(`event: ready\ndata: ${JSON.stringify({ agent: publicAgent(current) })}\n\n`);
+        response.write(`event: ready\ndata: ${JSON.stringify({ agent: publicAgent(current, staleAfterMs) })}\n\n`);
         const client: SseClient = {
           response,
           heartbeat: setInterval(() => response.write(": heartbeat\n\n"), 15_000),

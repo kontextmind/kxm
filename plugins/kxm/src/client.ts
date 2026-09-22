@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { hostname } from "node:os";
+import { MAX_AGENT_HOST_CHARS } from "./protocol.ts";
 import type { AgentRecord, DeliveryMode, HubEvent, MessageRecord, WorkflowMessageContext } from "./protocol.ts";
 import type { ContextAuthority, ContextConfidence, ContextItem, ContextItemAuditMetadata, ContextItemKind, ContextPacket } from "./context.ts";
 import {
@@ -52,6 +54,10 @@ export interface HubClientOptions {
   purpose: string;
   project: string;
   model?: string;
+  /** Label for the box this client runs on, declared at registration.
+   * Defaults to the machine hostname; the hub records it for readers and
+   * never uses it to authorize anything. */
+  host?: string;
   heartbeatMs?: number;
   reconnectMs?: number;
   requestTimeoutMs?: number;
@@ -91,6 +97,17 @@ class MeshWaitError extends Error {
     super(waitStatus === "aborted" ? "await cancelled" : `timed out waiting for ${messageId}`);
     this.name = "MeshWaitError";
     this.waitStatus = waitStatus;
+  }
+}
+
+/** The box label a client declares when it registers. Bounded to the hub's
+ * limit so a long hostname cannot turn registration into a 400, and dropped
+ * entirely when the platform cannot report one. */
+function defaultHostLabel(): string | undefined {
+  try {
+    return hostname().trim().slice(0, MAX_AGENT_HOST_CHARS) || undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -208,8 +225,11 @@ export class HubClient {
     this.eventLoop = undefined;
   }
 
-  async listAgents(): Promise<AgentRecord[]> {
-    const result = await this.request<{ agents: AgentRecord[] }>("/v1/agents");
+  /** Online peers of this client's project. `includeOffline` also returns
+   * registered members whose lease the hub has already retired. */
+  async listAgents(options: { includeOffline?: boolean } = {}): Promise<AgentRecord[]> {
+    const path = options.includeOffline ? "/v1/agents?includeOffline=true" : "/v1/agents";
+    const result = await this.request<{ agents: AgentRecord[] }>(path);
     return result.agents;
   }
 
@@ -555,6 +575,7 @@ export class HubClient {
           purpose: this.options.purpose,
           project: this.options.project,
           model: this.options.model,
+          host: this.options.host ?? defaultHostLabel(),
         }),
       }, false);
       this.agent = registration.agent;

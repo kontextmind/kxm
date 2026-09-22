@@ -533,7 +533,8 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const peer = addGlobalOptions(program.command("peer").description("Peer agent messaging and coordination"));
   peer.helpCommand("help", "Show peer help");
 
-  addGlobalOptions(peer.command("list").description("List online peer agents in this project's hub pool"))
+  addGlobalOptions(peer.command("list").description("List peer agents in this project's hub pool with host and presence"))
+    .option("--include-offline", "Also list registered peers whose hub lease has expired")
     .option("--payload <json>", "JSON payload")
     .action(async function peerListAction(this: Command, opts?: Record<string, unknown>) {
       result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_list", opts ?? {});

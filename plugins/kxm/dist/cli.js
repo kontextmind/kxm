@@ -18350,9 +18350,7 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
 
 // plugins/kxm/src/client.ts
 import { createHash as createHash3 } from "node:crypto";
-
-// plugins/kxm/src/workflow.ts
-import { createHash as createHash2 } from "node:crypto";
+import { hostname } from "node:os";
 
 // plugins/kxm/src/protocol.ts
 import { randomUUID } from "node:crypto";
@@ -18361,6 +18359,7 @@ var MIN_MESSAGE_TTL_MS = 1e3;
 var MAX_MESSAGE_TTL_MS = 7 * 24 * 60 * 6e4;
 var DEFAULT_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
+var MAX_AGENT_HOST_CHARS = 64;
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -18453,6 +18452,7 @@ function validateTerminalReceipt(value) {
 }
 
 // plugins/kxm/src/workflow.ts
+import { createHash as createHash2 } from "node:crypto";
 var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
 var WORKFLOW_TERMINAL_TARGET = "$terminal";
 function normalizeOutcomeValue(value, field) {
@@ -19200,6 +19200,13 @@ var MeshWaitError = class extends Error {
     this.waitStatus = waitStatus;
   }
 };
+function defaultHostLabel() {
+  try {
+    return hostname().trim().slice(0, MAX_AGENT_HOST_CHARS) || void 0;
+  } catch {
+    return void 0;
+  }
+}
 function completedFanoutResult(target, message) {
   if (message.status === "queued" || message.status === "delivered") {
     throw new Error(`message ${message.id} is not complete`);
@@ -19289,8 +19296,11 @@ var HubClient = class {
     this.onEvent = void 0;
     this.eventLoop = void 0;
   }
-  async listAgents() {
-    const result = await this.request("/v1/agents");
+  /** Online peers of this client's project. `includeOffline` also returns
+   * registered members whose lease the hub has already retired. */
+  async listAgents(options = {}) {
+    const path4 = options.includeOffline ? "/v1/agents?includeOffline=true" : "/v1/agents";
+    const result = await this.request(path4);
     return result.agents;
   }
   async send(options) {
@@ -19530,7 +19540,8 @@ var HubClient = class {
           name: this.options.name,
           purpose: this.options.purpose,
           project: this.options.project,
-          model: this.options.model
+          model: this.options.model,
+          host: this.options.host ?? defaultHostLabel()
         })
       }, false);
       this.agent = registration.agent;
@@ -19770,14 +19781,19 @@ var AGENT_COMMANDS = [
     group: "peer",
     verb: "list",
     label: "List hub peers",
-    description: "List online peer agents in this project's hub pool, including their names and purposes.",
+    description: "List peer agents in this project's hub pool with their names, purposes, host label, and hub-clocked presence (online, stale, offline). Registered offline peers are listed only when includeOffline is set.",
     parameters: {
       type: "object",
-      properties: {},
+      properties: {
+        includeOffline: {
+          type: "boolean",
+          description: "Also list registered peers whose hub lease has expired"
+        }
+      },
       additionalProperties: false
     },
-    async execute(client) {
-      return { agents: await client.listAgents() };
+    async execute(client, args) {
+      return { agents: await client.listAgents({ includeOffline: args.includeOffline === true }) };
     }
   },
   {
@@ -26188,8 +26204,8 @@ function printWorker(runtime, worker, payload, text, outcome) {
 }
 function hostMode(runtime) {
   try {
-    const hostname = new URL(runtime.serverUrl).hostname;
-    if (hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1") return "local";
+    const hostname2 = new URL(runtime.serverUrl).hostname;
+    if (hostname2 === "127.0.0.1" || hostname2 === "localhost" || hostname2 === "::1") return "local";
   } catch {
   }
   return "hub";
@@ -43087,6 +43103,13 @@ function meshTuiTheme(color) {
 function visibleAgents(snapshot) {
   return snapshot.agents.filter((agent) => agent.model !== "tui");
 }
+function presenceCell(agent, theme, width = 7) {
+  const presence = agent.presence ?? "n/a";
+  const cell = pad(presence, width);
+  if (presence === "online") return theme.success(cell);
+  if (presence === "stale") return theme.warning(cell);
+  return theme.dim(cell);
+}
 function panelMetric(snapshot, panel) {
   if (panel === "agents") {
     const agents = visibleAgents(snapshot);
@@ -43137,7 +43160,7 @@ function listLines(snapshot, view, theme) {
   const now = Date.parse(snapshot.fetchedAt);
   const mark = (index) => cursor(theme, index === view.selected, "list", view.pane);
   if (view.tab === "agents") {
-    return visibleAgents(snapshot).map((agent, index) => `${mark(index)}${pad(agent.name, 14)} ${agent.online ? theme.success(pad("yes", 3)) : theme.dim(pad("no", 3))} ${pad(agent.model ?? "-", 18)} ${pad(age(agent.lastSeenAt, now), 4)}`);
+    return visibleAgents(snapshot).map((agent, index) => `${mark(index)}${pad(agent.name, 14)} ${presenceCell(agent, theme)} ${pad(agent.host ?? "-", 12)} ${pad(agent.model ?? "-", 14)} ${pad(age(agent.lastSeenAt, now), 4)}`);
   }
   if (view.tab === "tasks" || view.tab === "workflows") {
     const runs = view.tab === "tasks" ? snapshot.runs.filter((run) => run.status === "running" || run.status === "waiting") : snapshot.runs;
@@ -43175,9 +43198,10 @@ function detailLines(snapshot, view, theme) {
     const related = snapshot.openMessages.filter((message) => message.fromName === agent.name || message.toName === agent.name);
     return [
       theme.accent(agent.name),
-      `${agent.online ? theme.success("online") : theme.dim("offline")}  ${agent.model ?? "-"}`,
+      `${presenceCell(agent, theme, (agent.presence ?? "n/a").length)}  ${agent.model ?? "-"}`,
+      `host ${agent.host ?? "-"}`,
       agent.purpose,
-      `seen ${age(agent.lastSeenAt, now)} ago`,
+      `seen ${age(agent.lastSeenAt, now)} ago \xB7 lease ${agent.leaseExpiresAt?.slice(11, 19) ?? "n/a"} UTC`,
       "",
       theme.dim("Open work"),
       ...related.length === 0 ? [theme.dim("none")] : related.map((message) => `${message.status}  ${message.fromName} \u2192 ${message.toName}  ${age(message.createdAt, now)}`)
@@ -43486,7 +43510,7 @@ async function runMeshTui(input) {
     }
     if (!useOpsStream && identity) {
       try {
-        const listed = await input.fetchImpl(`${base}/v1/agents`, { headers: headers(identity) });
+        const listed = await input.fetchImpl(`${base}/v1/agents?includeOffline=true`, { headers: headers(identity) });
         if (listed.ok) {
           const body = await readJson(listed);
           const byId = new Map(local.agents.map((agent) => [agent.id, agent]));
@@ -47744,7 +47768,7 @@ function createProgram(ctx, result) {
   });
   const peer = addGlobalOptions(program2.command("peer").description("Peer agent messaging and coordination"));
   peer.helpCommand("help", "Show peer help");
-  addGlobalOptions(peer.command("list").description("List online peer agents in this project's hub pool")).option("--payload <json>", "JSON payload").action(async function peerListAction(opts) {
+  addGlobalOptions(peer.command("list").description("List peer agents in this project's hub pool with host and presence")).option("--include-offline", "Also list registered peers whose hub lease has expired").option("--payload <json>", "JSON payload").action(async function peerListAction(opts) {
     result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_list", opts ?? {});
   });
   addGlobalOptions(peer.command("send [target] [content]").description("Send a focused request to a peer agent")).option("--target <name>", "Peer name or agent ID").option("--content <text>", "Focused request content").option("--delivery <mode>", "steer, followUp, or nextTurn").option("--correlation-id <id>", "Task grouping ID").option("--idempotency-key <key>", "Deduplication key").option("--workflow-context <json>", "Workflow context JSON").option("--ttl-ms <ms>", "Message TTL in milliseconds").option("--allow-offline", "Queue the request if the target is registered but offline").option("--payload <json>", "JSON payload").action(async function peerSendAction(target, content, opts) {

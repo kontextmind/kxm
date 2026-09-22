@@ -7387,6 +7387,17 @@ var DEFAULT_RATE_LIMIT_MAX = 600;
 var DEFAULT_RATE_LIMIT_WINDOW_MS = 6e4;
 var MAX_BODY_BYTES = 256 * 1024;
 var MAX_CONTENT_CHARS = 32e3;
+var MAX_AGENT_HOST_CHARS = 64;
+function agentPresenceView(agent, staleAfterMs = DEFAULT_STALE_AFTER_MS, now = Date.now()) {
+  const lastSeenMs = Date.parse(agent.lastSeenAt);
+  const leaseExpiresAtMs = (Number.isFinite(lastSeenMs) ? lastSeenMs : 0) + staleAfterMs;
+  const leaseExpiresAt = new Date(leaseExpiresAtMs).toISOString();
+  if (!agent.online) return { leaseExpiresAt, presence: "offline" };
+  return { leaseExpiresAt, presence: now < leaseExpiresAtMs ? "online" : "stale" };
+}
+function toAgentRecord(agent, staleAfterMs, now) {
+  return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
+}
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -8575,14 +8586,19 @@ var AGENT_COMMANDS = [
     group: "peer",
     verb: "list",
     label: "List hub peers",
-    description: "List online peer agents in this project's hub pool, including their names and purposes.",
+    description: "List peer agents in this project's hub pool with their names, purposes, host label, and hub-clocked presence (online, stale, offline). Registered offline peers are listed only when includeOffline is set.",
     parameters: {
       type: "object",
-      properties: {},
+      properties: {
+        includeOffline: {
+          type: "boolean",
+          description: "Also list registered peers whose hub lease has expired"
+        }
+      },
       additionalProperties: false
     },
-    async execute(client) {
-      return { agents: await client.listAgents() };
+    async execute(client, args) {
+      return { agents: await client.listAgents({ includeOffline: args.includeOffline === true }) };
     }
   },
   {
@@ -12138,9 +12154,9 @@ function isLoopback(host2) {
   if (host2 === "localhost" || host2 === "::1") return true;
   return isIP(host2) === 4 && host2.startsWith("127.");
 }
-function publicAgent(agent) {
-  const { key: _key, ...record } = agent;
-  return record;
+function publicAgent(agent, staleAfterMs, now = Date.now()) {
+  const { key: _key, ...identity } = agent;
+  return toAgentRecord(identity, staleAfterMs, now);
 }
 function safeTokenEqual(actual, expected) {
   return timingSafeStringCompare(actual, expected);
@@ -12560,7 +12576,8 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     }
   }
   function opsSnapshot(project) {
-    const projectAgents = [...agents.values()].filter((agent) => agent.project === project).map(publicAgent).sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
+    const snapshotAt = Date.now();
+    const projectAgents = [...agents.values()].filter((agent) => agent.project === project).map((agent) => publicAgent(agent, staleAfterMs, snapshotAt)).sort((left, right) => Number(right.online) - Number(left.online) || left.name.localeCompare(right.name));
     const open = store.getOpenMessages(project);
     const projectRuns = [...workflowRuns.values()].filter((run) => run.project === project).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
     return {
@@ -12610,7 +12627,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
   function broadcastPresence(agent) {
     for (const candidate of agents.values()) {
       if (candidate.project === agent.project && candidate.id !== agent.id && candidate.online) {
-        publish(candidate.id, { type: "presence", agent: publicAgent(agent) });
+        publish(candidate.id, { type: "presence", agent: publicAgent(agent, staleAfterMs) });
       }
     }
     publishOps(agent.project, "agents");
@@ -13912,6 +13929,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         const project = requireString(body.project, "project", { max: 128 });
         requireProjectAuth(request, project);
         const model = optionalString(body.model, "model", 128);
+        const hostLabel = optionalString(body.host, "host", MAX_AGENT_HOST_CHARS);
         const existing = [...agents.values()].find(
           (agent2) => agent2.project === project && agent2.name.toLowerCase() === name.toLowerCase()
         );
@@ -13938,17 +13956,27 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         agent.online = true;
         if (model) agent.model = model;
         else delete agent.model;
+        if (hostLabel) agent.host = hostLabel;
+        else delete agent.host;
         store.saveAgent(agent);
         counters.registrations += 1;
-        logger({ event: existing ? "agent_resumed" : "agent_registered", agentId: agent.id, name, project });
+        logger({
+          event: existing ? "agent_resumed" : "agent_registered",
+          agentId: agent.id,
+          name,
+          project,
+          ...hostLabel ? { host: hostLabel } : {}
+        });
         broadcastPresence(agent);
-        json(response, existing ? 200 : 201, { agent: publicAgent(agent), agentKey: agent.key, resumed: Boolean(existing) });
+        json(response, existing ? 200 : 201, { agent: publicAgent(agent, staleAfterMs), agentKey: agent.key, resumed: Boolean(existing) });
         return;
       }
       if (method === "GET" && url.pathname === "/v1/agents") {
         const current = requireAgent(request);
         requireProjectAuth(request, current.project);
-        const result = [...agents.values()].filter((agent) => agent.project === current.project && agent.online).map(publicAgent);
+        const includeOffline = url.searchParams.get("includeOffline") === "true";
+        const listedAt = Date.now();
+        const result = [...agents.values()].filter((agent) => agent.project === current.project && (agent.online || includeOffline)).map((agent) => publicAgent(agent, staleAfterMs, listedAt));
         json(response, 200, { agents: result });
         return;
       }
@@ -13957,7 +13985,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         const current = requireAgent(request, decodeURIComponent(heartbeatMatch[1]));
         requireProjectAuth(request, current.project);
         await readJson(request);
-        json(response, 200, { agent: publicAgent(current) });
+        json(response, 200, { agent: publicAgent(current, staleAfterMs) });
         return;
       }
       const agentMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)$/);
@@ -13989,7 +14017,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           ...presenceOnly ? { "x-kxm-events-mode": "presence" } : {}
         });
         response.write(`event: ready
-data: ${JSON.stringify({ agent: publicAgent(current) })}
+data: ${JSON.stringify({ agent: publicAgent(current, staleAfterMs) })}
 
 `);
         const client = {
