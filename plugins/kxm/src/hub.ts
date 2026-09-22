@@ -200,6 +200,12 @@ function sameWorkflowMessageContext(
     && left.attempt === right.attempt;
 }
 
+function parseOptionalBoolean(value: unknown, field: string): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "boolean") return value;
+  throw new ProtocolError(400, `${field} must be a boolean`);
+}
+
 function sameIdempotentRequest(
   message: MessageRecord,
   target: string,
@@ -565,7 +571,13 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     agent.lastSeenAt = nowIso();
     agent.online = true;
     store.saveAgent(agent);
-    if (wasOffline) broadcastPresence(agent);
+    if (wasOffline) {
+      broadcastPresence(agent);
+      // An agent the stale sweep retired may still hold an open SSE stream (the sweep
+      // marks offline without closing it). Without this flush, messages queued while it
+      // read offline expire unread even though the stream could deliver them.
+      if ((streams.get(agent.id)?.size ?? 0) > 0) flushPending(agent.id);
+    }
     return agent;
   }
 
@@ -677,11 +689,13 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     publishOps(agent.project, "agents");
   }
 
-  function findTarget(project: string, target: string): StoredAgent {
+  function findTarget(project: string, target: string, allowOffline = false): StoredAgent {
     const byId = agents.get(target);
-    if (byId?.project === project && byId.online) return byId;
+    if (byId?.project === project && (allowOffline || byId.online)) return byId;
     const byName = [...agents.values()].find(
-      (agent) => agent.project === project && agent.online && agent.name.toLowerCase() === target.toLowerCase(),
+      (agent) => agent.project === project
+        && (allowOffline || agent.online)
+        && agent.name.toLowerCase() === target.toLowerCase(),
     );
     if (!byName) throw new ProtocolError(404, `online target not found: ${target}`, "target_not_found");
     return byName;
@@ -2229,6 +2243,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           MIN_MESSAGE_TTL_MS,
           MAX_MESSAGE_TTL_MS,
         );
+        const allowOffline = parseOptionalBoolean(body.allowOffline, "allowOffline");
         const idempotencyKey = optionalString(body.idempotencyKey, "idempotencyKey", 128);
         if (idempotencyKey) {
           const existing = store.findMessageByIdempotency(sender.id, idempotencyKey);
@@ -2251,7 +2266,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             return;
           }
         }
-        const target = findTarget(sender.project, targetInput);
+        const target = findTarget(sender.project, targetInput, allowOffline);
         if (target.id === sender.id) {
           throw new ProtocolError(400, "cannot send a request to yourself", "self_target");
         }
@@ -2279,7 +2294,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         };
         store.saveMessage(message);
         publishOps(message.project, "messages");
-        publish(target.id, { type: "message", message });
+        if (target.online) publish(target.id, { type: "message", message });
         counters.messagesSent += 1;
         logger({ event: "message_sent", messageId: message.id, hops, ...messageLog(message, sender.id, sender.name, target.id, target.name) });
         json(response, 202, { message, idempotent: false });

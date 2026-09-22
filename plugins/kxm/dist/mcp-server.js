@@ -16372,7 +16372,12 @@ var AGENT_COMMANDS = [
           required: ["runId", "stageId", "requirementKey", "attempt"],
           additionalProperties: false
         },
-        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" }
+        ttlMs: { type: "number", minimum: 1e3, maximum: 6048e5, description: "Message TTL in milliseconds" },
+        allowOffline: {
+          type: "boolean",
+          default: false,
+          description: "Queue the request if the target is a registered offline agent in this project"
+        }
       },
       required: ["target", "content"],
       additionalProperties: false
@@ -16389,7 +16394,8 @@ var AGENT_COMMANDS = [
         ...correlationId ? { correlationId } : {},
         ...idempotencyKey ? { idempotencyKey } : {},
         ...workflowContext ? { workflowContext } : {},
-        ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}
+        ...typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {},
+        ...args.allowOffline === true ? { allowOffline: true } : {}
       });
       return { messageId: message.id, status: message.status, target: message.toName };
     }

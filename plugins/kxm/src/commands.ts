@@ -243,6 +243,11 @@ export const AGENT_COMMANDS: readonly AgentCommand[] = [
           additionalProperties: false,
         },
         ttlMs: { type: "number", minimum: 1_000, maximum: 604_800_000, description: "Message TTL in milliseconds" },
+        allowOffline: {
+          type: "boolean",
+          default: false,
+          description: "Queue the request if the target is a registered offline agent in this project",
+        },
       },
       required: ["target", "content"],
       additionalProperties: false,
@@ -260,6 +265,7 @@ export const AGENT_COMMANDS: readonly AgentCommand[] = [
         ...(idempotencyKey ? { idempotencyKey } : {}),
         ...(workflowContext ? { workflowContext } : {}),
         ...(typeof args.ttlMs === "number" ? { ttlMs: args.ttlMs } : {}),
+        ...(args.allowOffline === true ? { allowOffline: true } : {}),
       });
       return { messageId: message.id, status: message.status, target: message.toName };
     },

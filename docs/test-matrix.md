@@ -22,6 +22,7 @@ npm run verify
 | All delivery modes, message fields, hop limits, and validation | `test/core/hub-api.test.ts`, `test/core/protocol.test.ts` |
 | Queue, acknowledgement, visibility, reply, and authorization | `test/core/hub-api.test.ts`, `test/core/hub.test.ts` |
 | Queued/delivered replay after recipient restart reuses one message record | `test/core/hub.test.ts`, `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
+| Known-offline peer send with `allowOffline` queues, delivers once on resumption, and expires unread by TTL | `test/core/hub-api.test.ts` |
 | One-to-three-peer fanout, recoverable local timeouts/aborts, exact retries, and partial-error collection | `test/core/client.test.ts`, `test/core/hub-api.test.ts`, `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
 | TTL expiry, sender cancellation, and terminal retention | `test/core/hub-api.test.ts` |
 | Terminal inbound cleanup and next-request activation | `test/core/extension.test.ts`, `test/core/mcp.test.ts` |

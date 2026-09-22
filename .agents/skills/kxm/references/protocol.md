@@ -81,6 +81,12 @@ declared in policy, is bound to the active attempt, and is idempotent only when
 the reason is unchanged. Approval does not checkpoint the stage. Webhook and
 signal authentication cannot call this route.
 
+`POST /v1/messages` requires an online target unless `allowOffline` is true.
+With `allowOffline: true`, a registered offline agent in the same project is
+stored `queued` and delivered once through the reconnect cursor; unknown names
+still return `target_not_found`. Queued messages are not evidence unless
+`workflowContext` was hub-authorized at send.
+
 ## Request states
 
 - `queued`: stored by the hub but not acknowledged by the recipient.

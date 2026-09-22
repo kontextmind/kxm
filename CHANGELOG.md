@@ -6,6 +6,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **`kxm peer send --allow-offline` queues to a registered offline peer.**
+  `POST /v1/messages` accepts `allowOffline: true` (also `kxm_send.allowOffline`): a
+  registered agent in the same project is stored `queued` instead of `target_not_found`,
+  real-time `publish` is skipped, and the existing reconnect cursor delivers the message
+  once on resumption. Unknown names still fail closed. TTL expiry is unchanged; queued
+  messages are not evidence unless `workflowContext` was hub-authorized at send.
+
 - **Per-tenant hosting operations, and a backup that covers the whole state set.**
   `docs/operations.md` gained a *Per-tenant hosted deployment* section (one tenant = one box
   = one hub; loopback-only hub and supervisor; the tenant's proxy owns TLS and the browser

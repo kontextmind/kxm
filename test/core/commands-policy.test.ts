@@ -502,7 +502,7 @@ test("CLI subcommands and options parse thoroughly in dry-run mode", async () =>
   // All peer subcommands with options
   for (const args of [
     ["peer", "list", "--dry-run", "--json"],
-    ["peer", "send", "target-agent", "hello", "--delivery", "steer", "--correlation-id", "corr-1", "--idempotency-key", "idem-1", "--ttl-ms", "5000", "--workflow-context", '{"runId":"r1","stageId":"s1","requirementKey":"k1","attempt":1}', "--dry-run", "--json"],
+    ["peer", "send", "target-agent", "hello", "--delivery", "steer", "--correlation-id", "corr-1", "--idempotency-key", "idem-1", "--ttl-ms", "5000", "--allow-offline", "--workflow-context", '{"runId":"r1","stageId":"s1","requirementKey":"k1","attempt":1}', "--dry-run", "--json"],
     ["peer", "get", "msg_1", "--dry-run", "--json"],
     ["peer", "await", "msg_1", "--timeout-ms", "3000", "--dry-run", "--json"],
     ["peer", "cancel", "msg_1", "--dry-run", "--json"],

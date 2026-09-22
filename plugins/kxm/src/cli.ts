@@ -547,6 +547,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--idempotency-key <key>", "Deduplication key")
     .option("--workflow-context <json>", "Workflow context JSON")
     .option("--ttl-ms <ms>", "Message TTL in milliseconds")
+    .option("--allow-offline", "Queue the request if the target is registered but offline")
     .option("--payload <json>", "JSON payload")
     .action(async function peerSendAction(this: Command, target?: string, content?: string, opts?: Record<string, unknown>) {
       const options = { ...opts, ...(target ? { target } : {}), ...(content ? { content } : {}) };
