@@ -11690,7 +11690,8 @@ var HUB_STORE_TABLES = Object.freeze({
   workflow_runs: Object.freeze(["id", "definition_id", "delivery_id", "record"]),
   workflow_journal: Object.freeze(["id", "run_id", "category", "area", "record"]),
   context_items: Object.freeze(["id", "project", "kind", "record"]),
-  leases: Object.freeze(["resource", "holder_agent_id", "fencing_token", "expires_at", "record"])
+  leases: Object.freeze(["resource", "holder_agent_id", "fencing_token", "expires_at", "record"]),
+  lease_counters: Object.freeze(["resource", "last_token"])
 });
 var HUB_STORE_SCHEMA_V4 = `
   CREATE TABLE IF NOT EXISTS agents (
@@ -11741,7 +11742,11 @@ var HUB_STORE_SCHEMA_V4 = `
     record TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
-  CREATE TABLE IF NOT EXISTS leases (
+  CREATE TABLE IF NOT EXISTS lease_counters (
+        resource TEXT PRIMARY KEY,
+        last_token INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS leases (
     resource TEXT PRIMARY KEY,
     holder_agent_id TEXT NOT NULL,
     fencing_token INTEGER NOT NULL,
@@ -11792,6 +11797,7 @@ var MessageMap = class extends Map {
   }
 };
 var MeshStore = class {
+  leaseCounters = /* @__PURE__ */ new Map();
   agents = /* @__PURE__ */ new Map();
   messages;
   workflowRuns = /* @__PURE__ */ new Map();
@@ -12018,7 +12024,8 @@ var MeshStore = class {
       if (current && !expired && current.holderAgentId !== input.holderAgentId) {
         return { ok: false, reason: "held", lease: current };
       }
-      const fencingToken = current === void 0 ? 1 : expired ? current.fencingToken + 1 : current.fencingToken;
+      const highWater = this.readLeaseCounter(input.resource);
+      const fencingToken = current !== void 0 && !expired ? current.fencingToken : Math.max(highWater, current?.fencingToken ?? 0) + 1;
       const renewed = current !== void 0 && !expired;
       const lease = {
         resource: input.resource,
@@ -12031,6 +12038,7 @@ var MeshStore = class {
         expiresAt: new Date(input.nowMs + input.ttlMs).toISOString()
       };
       this.writeLease(lease);
+      this.writeLeaseCounter(input.resource, lease.fencingToken);
       return { ok: true, lease, renewed };
     });
   }
@@ -12061,9 +12069,24 @@ var MeshStore = class {
       if (current.holderAgentId !== input.holderAgentId || current.fencingToken !== input.fencingToken) {
         return { ok: false, reason: "superseded", lease: current };
       }
+      this.writeLeaseCounter(input.resource, current.fencingToken);
       this.deleteLease(input.resource);
       return { ok: true, lease: current, renewed: false };
     });
+  }
+  readLeaseCounter(resource) {
+    if (this.database) {
+      const row = this.database.prepare("SELECT last_token FROM lease_counters WHERE resource = ?").get(resource);
+      return row?.last_token ?? 0;
+    }
+    return this.leaseCounters.get(resource) ?? 0;
+  }
+  writeLeaseCounter(resource, token) {
+    if (this.database) {
+      this.database.prepare("INSERT INTO lease_counters (resource, last_token) VALUES (?, ?) ON CONFLICT(resource) DO UPDATE SET last_token = excluded.last_token").run(resource, token);
+    } else {
+      this.leaseCounters.set(resource, token);
+    }
   }
   /** Every lease of one project, newest deadline last. Reader surface only. */
   listLeases(project) {

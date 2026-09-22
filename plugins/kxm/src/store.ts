@@ -20,6 +20,7 @@ export const HUB_STORE_TABLES: Readonly<Record<string, readonly string[]>> = Obj
   workflow_journal: Object.freeze(["id", "run_id", "category", "area", "record"]),
   context_items: Object.freeze(["id", "project", "kind", "record"]),
   leases: Object.freeze(["resource", "holder_agent_id", "fencing_token", "expires_at", "record"]),
+  lease_counters: Object.freeze(["resource", "last_token"]),
 });
 
 export const HUB_STORE_SCHEMA_V4 = `
@@ -71,7 +72,11 @@ export const HUB_STORE_SCHEMA_V4 = `
     record TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS context_items_project ON context_items(project);
-  CREATE TABLE IF NOT EXISTS leases (
+  CREATE TABLE IF NOT EXISTS lease_counters (
+        resource TEXT PRIMARY KEY,
+        last_token INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS leases (
     resource TEXT PRIMARY KEY,
     holder_agent_id TEXT NOT NULL,
     fencing_token INTEGER NOT NULL,
@@ -161,6 +166,7 @@ class MessageMap extends Map<string, MessageRecord> {
 }
 
 export class MeshStore {
+  private leaseCounters = new Map<string, number>();
   readonly agents = new Map<string, StoredAgent>();
   readonly messages: MessageMap;
   readonly workflowRuns = new Map<string, WorkflowRun>();
@@ -403,11 +409,14 @@ export class MeshStore {
       if (current && !expired && current.holderAgentId !== input.holderAgentId) {
         return { ok: false, reason: "held", lease: current };
       }
-      const fencingToken = current === undefined
-        ? 1
-        : expired
-          ? current.fencingToken + 1
-          : current.fencingToken;
+      // Monotonic across the resource's lifetime: a high-water mark in
+      // lease_counters survives release and retention cleanup, so a reacquire
+      // after release cannot restart the fence at 1 while a stale receipt
+      // from a prior holder is still live.
+      const highWater = this.readLeaseCounter(input.resource);
+      const fencingToken = current !== undefined && !expired
+        ? current.fencingToken
+        : Math.max(highWater, current?.fencingToken ?? 0) + 1;
       const renewed = current !== undefined && !expired;
       const lease: LeaseRecord = {
         resource: input.resource,
@@ -420,6 +429,7 @@ export class MeshStore {
         expiresAt: new Date(input.nowMs + input.ttlMs).toISOString(),
       };
       this.writeLease(lease);
+      this.writeLeaseCounter(input.resource, lease.fencingToken);
       return { ok: true, lease, renewed };
     });
   }
@@ -460,9 +470,26 @@ export class MeshStore {
       if (current.holderAgentId !== input.holderAgentId || current.fencingToken !== input.fencingToken) {
         return { ok: false, reason: "superseded", lease: current };
       }
+      this.writeLeaseCounter(input.resource, current.fencingToken);
       this.deleteLease(input.resource);
       return { ok: true, lease: current, renewed: false };
     });
+  }
+
+  private readLeaseCounter(resource: string): number {
+    if (this.database) {
+      const row = this.database.prepare("SELECT last_token FROM lease_counters WHERE resource = ?").get(resource) as { last_token: number } | undefined;
+      return row?.last_token ?? 0;
+    }
+    return this.leaseCounters.get(resource) ?? 0;
+  }
+
+  private writeLeaseCounter(resource: string, token: number): void {
+    if (this.database) {
+      this.database.prepare("INSERT INTO lease_counters (resource, last_token) VALUES (?, ?) ON CONFLICT(resource) DO UPDATE SET last_token = excluded.last_token").run(resource, token);
+    } else {
+      this.leaseCounters.set(resource, token);
+    }
   }
 
   /** Every lease of one project, newest deadline last. Reader surface only. */

@@ -1323,8 +1323,9 @@ test("a shared external effect cannot commit with a fencing token the hub has su
   assert.equal(takeover.leaseResource, leaseResource);
 
   // Box A comes back and tries to land its push. The hub has superseded its
-  // token, so the commit is refused: the effect stays in-flight and the attempt
-  // parks uncertain, because nobody can prove whether the push landed.
+  // token, so the commit is refused: the effect parks uncertain, because nobody
+  // can prove whether the push landed. The uncertainty is persisted in the
+  // ledger — a timeout-based reclaim cannot unblock it.
   const lateCommit = await commitSharedEffect({
     ledger: ledgerA,
     lease: boxA,
@@ -1335,7 +1336,7 @@ test("a shared external effect cannot commit with a fencing token the hub has su
   assert.equal(!lateCommit.ok && lateCommit.code, "effect_lease_superseded");
   assert.equal(!lateCommit.ok && lateCommit.attemptState, "blocked_uncertain");
   const parked = ledgerA.getReceipt(claimA.effectKey)!;
-  assert.equal(parked.status, "in-flight");
+  assert.equal(parked.status, "uncertain", "the uncertainty is persisted, not just returned");
   assert.equal(parked.completedAt, undefined);
   assert.equal(parked.fencingToken, 1, "nothing re-acquired on the loser's behalf");
   assert.deepEqual(parked.receiptPayload, {}, "a refused commit writes no receipt payload");
@@ -1362,10 +1363,19 @@ test("a shared external effect cannot commit with a fencing token the hub has su
   assert.equal(winner.receipt.fencingToken, 2);
   assert.deepEqual(winner.receipt.receiptPayload, { pushedSha: "cafebabe" });
 
-  // A clean release ends the fence — there is no stale writer left to keep a
-  // token for — so the next holder starts over at 1.
+  // A timeout-based reclaim cannot unblock the parked effect even when the
+  // lease is free: the outside world may have been touched, and only explicit
+  // recovery can.
+  hubClockMs += 30_000;
+  const reclaim = await claimSharedEffect({ ledger: ledgerA, lease: boxA, runId: runA, attemptId: "att_a2", ...shared });
+  assert.equal(reclaim.ok, false);
+  assert.equal(!reclaim.ok && reclaim.code, "effect_uncertain", "an uncertain effect rejects new claims even when the lease is free");
+
+  // The high-water mark keeps the token monotonic across the resource's entire
+  // lifetime: token 1 (A) → 2 (B takeover) → 3 (A reacquire after B released)
+  // → 4 here. A stale receipt from any earlier token can never commit again.
   const afterRelease = await boxA.acquireLease(targetRef, 5_000);
-  assert.equal(afterRelease.lease.fencingToken, 1);
+  assert.equal(afterRelease.lease.fencingToken, 4, "the fence never restarts at 1 after a release");
   assert.equal(afterRelease.lease.holderAgentId, boxA.agent!.id);
   await boxA.releaseLease(targetRef, afterRelease.lease.fencingToken);
 

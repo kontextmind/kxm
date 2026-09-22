@@ -32,7 +32,7 @@ export type ExternalActionKind =
   | "tracker-issue"
   | "webhook";
 
-export type ExternalEffectStatus = "in-flight" | "committed" | "failed" | "aborted";
+export type ExternalEffectStatus = "in-flight" | "committed" | "failed" | "aborted" | "uncertain";
 
 export interface ExternalEffectReceipt {
   schema: typeof EXTERNAL_EFFECT_SCHEMA;
@@ -240,6 +240,13 @@ export class ExternalEffectsLedger {
           existing,
         };
       }
+      if (existing.status === "uncertain") {
+        return {
+          ok: false,
+          error: `effect_uncertain: ${input.actionKind} on ${input.targetRef} is parked as uncertain after a fencing conflict and requires explicit recovery`,
+          existing,
+        };
+      }
       if (existing.status === "in-flight") {
         const lastActivity = existing.lastHeartbeatAt ?? existing.executedAt;
         const elapsed = Date.now() - Date.parse(lastActivity);
@@ -313,6 +320,13 @@ export class ExternalEffectsLedger {
     `);
     stmt.run(now, effectKey);
     return { ok: true, lastHeartbeatAt: now };
+  }
+
+  /** Park an effect as uncertain: a fencing conflict means the outside world
+   * may have been touched, and only explicit recovery (not a timeout) can
+   * unblock it. Further claims are rejected until then. */
+  markUncertain(effectKey: string): void {
+    this.db.prepare("UPDATE external_effects SET status = 'uncertain' WHERE effect_key = ? AND status = 'in-flight'").run(effectKey);
   }
 
   commitEffect(
@@ -392,6 +406,8 @@ export type SharedEffectRefusalCode =
   | "effect_lease_superseded"
   | "effect_already_committed"
   | "effect_in_flight"
+  /** The effect is parked as uncertain after a fencing conflict. */
+  | "effect_uncertain"
   | "effect_not_in_flight"
   | "effect_not_found";
 
@@ -478,6 +494,13 @@ function isLeaseLost(code: string | undefined): boolean {
  * refused with `effect_lease_unavailable` and executes nothing — running it
  * unfenced is exactly the two-writer failure the lease exists to prevent.
  */
+/**
+ * The consumer surface for shared external effects. The engine does not execute
+ * these kinds directly yet (Phase 8 remote execution wires them into the step
+ * executor); these wrappers are the production path they will call, and the
+ * tests exercise the full claim → heartbeat → commit → supersede lifecycle
+ * through them, not through internal methods.
+ */
 export async function claimSharedEffect(input: {
   ledger: ExternalEffectsLedger;
   lease?: EffectLeaseGateway | undefined;
@@ -495,6 +518,7 @@ export async function claimSharedEffect(input: {
   const needsLease = effectRequiresHubLease(input.actionKind, input.targetRef, input.runId);
   let lease: EffectLease | undefined;
 
+  let leaseRenewed = false;
   if (needsLease) {
     if (!input.lease) {
       return {
@@ -506,6 +530,7 @@ export async function claimSharedEffect(input: {
     try {
       const acquired = await input.lease.acquireLease(input.targetRef, input.leaseTtlMs ?? DEFAULT_LEASE_TIMEOUT_MS);
       lease = acquired.lease;
+      leaseRenewed = acquired.renewed === true;
     } catch (error) {
       const code = errorCodeOf(error);
       if (code === "lease_held") {
@@ -535,12 +560,18 @@ export async function claimSharedEffect(input: {
   });
 
   if (!claimed.ok) {
-    // The ledger refused after the lease was taken, so give the resource back
-    // rather than parking it until the TTL runs out.
-    if (lease && input.lease) await releaseQuietly(input.lease, input.targetRef, lease.fencingToken);
+    // Only hand back a lease this caller *newly acquired*. A renewal of an
+    // existing holder's lease must survive a claim refusal: the original
+    // effect is still in-flight and still needs the fence. Releasing a renewed
+    // lease here would let a rival acquire while the original runs.
+    if (lease && input.lease && !leaseRenewed) {
+      await releaseQuietly(input.lease, input.targetRef, lease.fencingToken);
+    }
     return {
       ok: false,
-      code: claimed.error.startsWith("effect_already_committed") ? "effect_already_committed" : "effect_in_flight",
+      code: claimed.error.startsWith("effect_already_committed")
+        ? "effect_already_committed"
+        : claimed.error.startsWith("effect_uncertain") ? "effect_uncertain" : "effect_in_flight",
       error: claimed.error,
       existing: claimed.existing,
     };
@@ -653,6 +684,12 @@ export async function commitSharedEffect(input: {
       await input.lease.renewLease(receipt.targetRef, receipt.fencingToken!, input.leaseTtlMs ?? DEFAULT_LEASE_TIMEOUT_MS);
     } catch (error) {
       const code = errorCodeOf(error);
+      // Persist the uncertainty: the effect may have touched the outside world,
+      // and a timeout-based reclaim would let another attempt run against it.
+      // Only explicit recovery can unblock a parked effect.
+      if (isLeaseLost(code)) {
+        input.ledger.markUncertain(input.effectKey);
+      }
       return {
         ok: false,
         code: isLeaseLost(code) ? "effect_lease_superseded" : "effect_lease_unavailable",
