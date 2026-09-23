@@ -1,7 +1,7 @@
 /**
  * Interactive post-init setup for workflow-guide agents and workflows.
  *
- * Source of truth: `docs/workflow-guide.md`. The catalog below transcribes the
+ * Source of truth: `docs/reference/workflow-catalog.md`. The catalog below transcribes the
  * software-engineering area (workflows, stages, role slugs, and the guide's
  * ordered candidate lists). Guide candidates are dated research; each role's
  * first candidate whose harness is installed AND authenticated wins. No

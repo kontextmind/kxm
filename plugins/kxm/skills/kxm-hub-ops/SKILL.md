@@ -15,7 +15,7 @@ invent restart or status subcommands.
 |---|---|---|
 | `kxm hub view` | Check `/health` and `/ready`; exits 1 when the hub is down | `--json` |
 | `kxm tenant status` | Hub metadata and Runtime run state as one labeled view; reads only and never starts the supervisor | `--json` |
-| `kxm backup` | Verified SQLite backup of the hub stores with a hashed manifest | `--out <dir>`, `--json` |
+| `kxm backup` | Verified SQLite backup of the hub store and the Runtime stores with a hashed manifest; exits 1 when the backup is incomplete | `--out <dir>`, `--json` |
 
 ```bash
 kxm hub view --json
@@ -30,8 +30,9 @@ runs have separate ID spaces, so a comparison with no shared ID is
 `unverified`, never agreement.
 
 The durable hub store defaults to `.kxm/state/kxm.db` (`KXM_DATA_PATH`). Do not
-hand-edit it. `kxm backup` does not include the Runtime supervisor's stores
-under the user state root.
+hand-edit it. `kxm backup` also copies the Runtime registry and every
+project's run event store and prompt sidecar under the user state root, so a
+`kxm restore` rolls back every project on the machine, not only this one.
 
 ## Operator steps
 
@@ -59,7 +60,9 @@ kxm restore .kxm/backups/pre-upgrade/manifest.json
 - `KXM_PROJECT_TOKENS` must list every project's token. It replaces the saved
   token map rather than merging with it, and the replacement is saved. When a
   hub already serves other projects, build the full map with the merge
-  command in the KXM README before restarting the hub.
+  command in the KXM documentation's Claude Code quick start
+  (docs/start/quickstart-claude-code.md, section "Start the hub") before
+  restarting the hub.
 - `kxm hub bind` to a remote (non-loopback) URL fails closed with
   `hub_bind_unauthenticated` unless a credential for the current project
   resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`.

@@ -403,7 +403,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       });
     });
 
-  addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of all stores with a hashed manifest"))
+  addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of the project hub store and the Runtime stores under the user state root, with a hashed manifest"))
     .option("--out <dir>", "Directory to write backup and manifest")
     .action(async function backupAction(this: Command, options: { out?: string }) {
       result.code = await cmdBackup(runtimeFrom(ctx, this), options);
@@ -416,7 +416,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
 
   addGlobalOptions(program.command("run").description("Create a KXM run (offline-first; kxm runs drive <runId> --simulated executes it model-free)")
     .argument("[workflow]", "Workflow id to run")
-    .argument("[prompt...]", "Run prompt (hashed, never stored raw)")
+    .argument("[prompt...]", "Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
       result.code = await cmdKxmRun(runtimeFrom(ctx, this), workflow, promptParts);
     }));
@@ -427,7 +427,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function runStatusAction(this: Command, runId: string) {
       result.code = await cmdKxmRunStatus(runtimeFrom(ctx, this), runId);
     });
-  addGlobalOptions(runCmd.command("drive").description("Drive a run. Live is the default and spends an admitted model"))
+  addGlobalOptions(runCmd.command("drive").description("Drive a run with live harness calls, or with the model-free simulation when --simulated is passed"))
     .argument("<runId>", "Run id")
     .option("--simulated", "Use the model-free simulation producer instead of a live model")
     .option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement")

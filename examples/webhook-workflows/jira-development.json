@@ -1,0 +1,59 @@
+[
+  {
+    "id": "jira-development",
+    "source": "jira",
+    "project": "product",
+    "target": "coordinator",
+    "secretEnv": "JIRA_WEBHOOK_SECRET",
+    "signalSecretEnv": "WORKFLOW_SIGNAL_SECRET",
+    "event": "jira:issue_updated",
+    "filter": {
+      "path": "issue.fields.status.name",
+      "equals": "In Progress"
+    },
+    "delivery": "followUp",
+    "promptTemplate": "Jira issue {{issue.key}} moved to In Progress: {{issue.fields.summary}}. Deliver a reviewed fix on a branch and a pull request. Do not merge.",
+    "stages": [
+      {
+        "id": "reproduce",
+        "label": "Reproduce",
+        "instructions": "Reproduce the reported behavior with a deterministic failing test or script before changing product code. Cite the test path and the failing command.",
+        "requiredEvidence": ["reproduction"],
+        "maxAttempts": 3,
+        "area": "implementation"
+      },
+      {
+        "id": "plan",
+        "label": "Plan and review",
+        "instructions": "Write a bounded plan with file ownership. Ask one peer to review it with kxm_send, record contradictions and decisions with kxm_workflow_record, and revise the plan before implementing.",
+        "requiredEvidence": ["plan", "plan review"],
+        "maxAttempts": 3,
+        "area": "workflow"
+      },
+      {
+        "id": "implement",
+        "label": "Implement and verify locally",
+        "instructions": "Implement the plan. Run lint, typecheck, and the test suite, and make the reproduction pass. Cite each command and its result.",
+        "requiredEvidence": ["changed files", "local checks"],
+        "maxAttempts": 3,
+        "area": "implementation"
+      },
+      {
+        "id": "checks",
+        "label": "Pull request checks",
+        "instructions": "Push the branch and open or update the pull request. Then call kxm_workflow_wait on this stage with signal key github-pr-<number>-checks and settle your turn. An operator or CI job runs kxm gate github watch, which posts the signed result.",
+        "requiredEvidence": ["github.check:ci"],
+        "maxAttempts": 3,
+        "area": "gates"
+      },
+      {
+        "id": "report",
+        "label": "Update Jira and record lessons",
+        "instructions": "Comment on the Jira issue with the pull request link and the evidence summary, using your own authorized Jira tool. Record at least one lesson with kxm_workflow_record. Do not merge the pull request.",
+        "requiredEvidence": ["jira comment", "lessons"],
+        "maxAttempts": 2,
+        "area": "documentation"
+      }
+    ]
+  }
+]

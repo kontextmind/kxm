@@ -7,26 +7,35 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-14"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
-summary: "Preventing accidental local browser launches and ensuring Playwright and agent-browser connect to remote Steel."
+summary: "Prevent accidental local browser launches and make Playwright and agent-browser attach to remote Steel."
 tags: ["browser", "cdp", "playwright", "agent-browser", "troubleshooting"]
-related: ["docs/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
 ---
 
 # Why did automation open a different browser?
 
-If you expected automation to run on DOKS Steel but saw a local Chrome window pop up or failed to see the agent's actions in the Steel session viewer:
+You expected automation to run on your Steel deployment, but a local Chrome
+window opened, or the agent's actions never appeared in the Steel session
+viewer.
 
-## Root Causes
+## Causes
 
-1. **Called `chromium.launch()` Instead of `chromium.connectOverCDP()`**:
-   - `chromium.launch()` spawns a local browser process on the workstation.
-   - **Fix**: In Playwright, always use `chromium.connectOverCDP(cdpUrl)`.
-2. **Missing `--cdp` Flag in `agent-browser`**:
-   - Running `agent-browser open <url>` without `--cdp` spawns a local headless browser.
-   - **Fix**: Always pass `--cdp "wss://steel.kontextmind.com/v1/devtools?sessionId=<id>&apiKey=<key>"`.
-3. **Missing Environment Variables**:
-   - If `STEEL_CDP_URL` is undefined, scripts that fall back to local execution will launch a local browser.
-   - **Fix**: Ensure `STEEL_CDP_URL` or `STEEL_API_KEY` is loaded from `pass-cli`.
+1. **The script called `chromium.launch()` instead of
+   `chromium.connectOverCDP()`.**
+   - `chromium.launch()` starts a browser on the local machine.
+   - **Fix:** in Playwright, connect with `chromium.connectOverCDP(cdpUrl)`.
+2. **`agent-browser` ran without `--cdp`.**
+   - `agent-browser open <url>` without `--cdp` starts a local headless
+     browser.
+   - **Fix:** always pass the session's CDP URL:
+     `--cdp "wss://<steel-host>/v1/devtools?sessionId=<session-id>&apiKey=<steel-api-key>"`.
+     Build it with `formatCDPEndpoint()`; see
+     [How do I connect Playwright to the existing Steel session?](how-to-connect-playwright-to-steel.md).
+3. **Environment variables were missing.**
+   - A script that falls back to local execution when `STEEL_CDP_URL` is
+     unset launches a local browser.
+   - **Fix:** load `STEEL_CDP_URL`, or `STEEL_API_URL` and `STEEL_API_KEY`,
+     from your secret manager before the run.

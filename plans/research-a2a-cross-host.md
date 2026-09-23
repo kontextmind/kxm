@@ -23,7 +23,7 @@ related:
   - research-agent-producer-architecture.md
   - ../docs/contracts/architecture.md
   - ../docs/contracts/synchronization.md
-  - ../docs/agent-communication-envelopes-and-gates.md
+  - history/agent-communication-envelopes-draft.md
 depends_on: []
 blocked_by: []
 details:

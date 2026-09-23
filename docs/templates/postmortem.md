@@ -2,9 +2,9 @@
 schema: "kxm.doc.v1"
 id: "PM-0001"
 type: "postmortem"
-title: "Incident Postmortem: <Incident Title>"
+title: "Incident postmortem: <incident title>"
 project: "kxm"
-status: "approved"
+status: "draft" # draft | in_review | approved | superseded | archived
 owner: "@incident-lead"
 created: "2026-09-08"
 updated: "2026-09-08"
@@ -20,58 +20,45 @@ details:
   time_to_mitigate_minutes: 20
 ---
 
-# Incident Postmortem: <Incident Title>
+# Incident postmortem: <incident title>
 
-## Executive Summary
+## Summary
 
-- **Incident Period:** `2026-09-08 14:10 UTC` to `2026-09-08 14:35 UTC` (25 minutes)
+- **Incident period:** `<start UTC>` to `<end UTC>` (<duration>)
+- **User impact:** <number of workflow runs blocked or delayed, and for whom>
+- **Root cause:** <one sentence on the failure mechanism>
 
-- **User Impact:** <Number of workflow runs blocked or delayed>
+## Timeline (UTC)
 
-- **Root Cause:** <One-sentence summary of failure mechanism>
-
-## Incident Timeline (UTC)
-
-| Time | Event Description | Detected By |
-
+| Time | Event | Detected by |
 |---|---|---|
-| 14:10 | AI worker crashed during git push; CAS effect left in `dispatched` state | Log watcher |
+| <hh:mm> | <first symptom, for example a worker exits during `git push`> | <log watcher, `kxm dash`, a user> |
+| <hh:mm> | <what the operator saw next, for example retries refused on a held lease> | <source> |
+| <hh:mm> | <mitigation, for example the operator degrades the run from `kxm dash` with `d`> | <source> |
+| <hh:mm> | <fix committed or configuration changed> | <source> |
+| <hh:mm> | <service restored and verified, for example queued runs complete> | <source> |
 
-| 14:15 | Subsequent retry attempts blocked due to unexpired CAS lease | `kxm dash` operator |
-| 14:22 | Operator pressed `d` (degrade) to inspect worktree manually | Interactive TUI |
+## Root cause analysis (five whys)
 
-| 14:30 | Fix committed; lease expiration policy patched | Operator |
-| 14:35 | Hub restarted; all queued workflow runs completed | Verifier |
+1. **Why did <symptom> happen?** <Because …>
+2. **Why did <cause 1> happen?** <Because …>
+3. **Why did <cause 2> happen?** <Because …>
+4. **Why did <cause 3> happen?** <Because …>
+5. **Systemic root cause:** <the missing control, test, or gate>
 
-## Root Cause Analysis (5 Whys)
+## What went well and what went wrong
 
-1. **Why did the retry fail?** Because the CAS effect lease was locked in `dispatched` state.
+### What went well
 
-2. **Why was it still locked?** Because the previous worker process exited abnormally without calling abort.
+- <For example: state stayed consistent and no duplicate pull request was created>
 
-3. **Why did the lease not expire?** Because the lease had no automated heartbeat timeout.
+### What went wrong
 
-4. **Why was there no timeout?** Because CAS leasing was assumed to be synchronous.
+- <For example: the error message did not say how to recover>
 
-5. **Systemic Root Cause:** Missing failure recovery watchdog for unconfirmed external side-effect leases.
+## Corrective and preventive actions
 
-## What Went Well / What Went Wrong
-
-### What Went Well
-
-- The database remained consistent; zero duplicate PRs were created on GitHub.
-
-- Degrade-to-human hotkey (`d`) allowed the operator to take over immediately.
-
-### What Went Wrong
-
-- The error message in `kxm dash` did not explicitly indicate how to force-release an abandoned lease.
-
-## Corrective & Preventive Action Items
-
-| Action Item | Type | Owner | Target Date | Issue Reference |
-
-|---|---|---|---|---|
-| Add 300s automated lease timeout to `ExternalEffectsLedger` | Prevent | Platform Lead | 2026-09-10 | #165 |
-
-| Add `kxm routing unquarantine` CLI command | Mitigate | CLI Lead | 2026-09-12 | #166 |
+| Action | Type | Owner | Tracking |
+|---|---|---|---|
+| <Add a failing test that reproduces the incident> | Prevent | <role> | <issue link> |
+| <Improve the error message to name the recovery command> | Mitigate | <role> | <issue link> |

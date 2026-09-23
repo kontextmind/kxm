@@ -15,12 +15,17 @@ create, or logs verbs under `runs`.
 
 | Command | Purpose | Options / arguments |
 |---|---|---|
-| `kxm run [workflow] [prompt...]` | Create a run; the prompt is hashed, never stored raw | `--dry-run` (plan only), `--json` |
+| `kxm run [workflow] [prompt...]` | Create a run; the full prompt is kept on disk (see below) | `--dry-run` (plan only), `--json` |
 | `kxm runs drive <runId>` | Drive a run; with `--wait`, exits 0 only for a verified completed settlement | `--simulated`, `--wait`, `--timeout-ms <n>` (default 60000, max 600000), `--json` |
 | `kxm runs status <runId>` | Projected run status plus drive receipt state (open, receipt verified, unsettled, orphaned) | `--json` |
 | `kxm runs receipt <runId>` | Newest drive receipt for a run | `--all`, `--json` |
 | `kxm runs cancel <runId>` | Durably request cancellation | `--json` |
 | `kxm runs list` | Recent runs for the current project | `--json` |
+
+The run record and its events keep only the prompt's hash, but the full
+prompt text is kept in a local `run-events.db.run-prompts.json` file (mode
+`0600`) next to the project's run store under the user state root. Keep
+secrets out of run prompts.
 
 `kxm runs drive <runId> --simulated --wait [--timeout-ms <n>]` executes the run
 with the model-free simulation producer. Always pass `--simulated`; without it,
@@ -30,12 +35,13 @@ drive calls live harnesses. When you are finished, stop the supervisor with
 ## Smoke-test the first workflow
 
 Run this only after the user has reviewed and committed
-`.kxm/workflows/first.yaml` (`kxm-project-setup`, phase 2), so
-`kxm trust check` exits 0.
+`.kxm/workflows/first.yaml`, which `kxm-project-setup` adds with
+`kxm workflow add first --template spec-and-plan`, so `kxm trust check`
+exits 0.
 
 ```bash
-kxm run first "add a hello script" --dry-run
-kxm run first "add a hello script" --json
+kxm run first "Plan a hello script" --dry-run
+kxm run first "Plan a hello script" --json
 kxm runs status run_12345
 kxm runs drive run_12345 --simulated --wait --timeout-ms 60000 --json
 kxm runs status run_12345

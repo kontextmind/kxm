@@ -27170,7 +27170,13 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
     }
     resolvedRoute = routeResult;
-    const writeRefusal = unsupportedLiveWrite(context.projectRoot, step, agentId, resolvedRoute.selector);
+    const writeRefusal = unsupportedLiveWrite(
+      context.projectRoot,
+      step,
+      agentId,
+      resolvedRoute.selector,
+      loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.maxConcurrentRuns
+    );
     if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
   }
   const used = state.stepAttempts[stepId] ?? 0;
@@ -28176,8 +28182,22 @@ function projectDefaultHarness(projectRoot) {
   const harness = readYamlRecord(join14(projectRoot, ".kxm", "project.yaml"))?.defaultHarness;
   return typeof harness === "string" && harness.length > 0 ? harness : "pi";
 }
-function unsupportedLiveWrite(projectRoot, step, agentId, selector) {
+function unsupportedLiveWrite(projectRoot, step, agentId, selector, maxConcurrentRuns) {
   if (!Object.values(step.repositories).some((access) => access === "write")) return void 0;
+  if (step.assignments.maximum !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "assignments.maximum",
+      detail: "live write steps run a single assignment; the checkout witness cannot attribute edits between writers"
+    };
+  }
+  if (maxConcurrentRuns !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "limits.maxConcurrentRuns",
+      detail: "live write steps require limits.maxConcurrentRuns of 1; concurrent runs share one checkout"
+    };
+  }
   const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
   if (!oneShotWriterArgs(harness)) {
     return {

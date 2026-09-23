@@ -15,7 +15,7 @@ metadata:
 
 Canonical docs live in `kontextmind/mind` — `docs/protocol.md`, `docs/session-spine.md`, `docs/consistency-contract.md`, `docs/webhooks.md`, `docs/hosted-auth.md`, `docs/trust-modes.md`, `docs/secret-gates.md`, `docs/authz-matrix.md`, `docs/threat-model.md`.
 
-Protocol status — v0.1 pre-freeze. Additive changes only within a major.
+Protocol status — pre-freeze. Additive changes only within a major.
 
 ## Transports
 

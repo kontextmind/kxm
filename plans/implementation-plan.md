@@ -466,7 +466,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   #86 stays open for later D8/D9/D14 plan text when those phases are
   scheduled, the v1 report underquote fix, and remaining report
   implementation — not for those superseded instructions.
-- **Workflow taxonomy (operator, 2026-09-07; path 2026-09-08):** [`docs/workflow-guide.md`](../docs/workflow-guide.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 22 workflows with declared kebab-case documentation slugs. The taxonomy is route-agnostic for native harness subscriptions and API-key Pi providers. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
+- **Workflow taxonomy (operator, 2026-09-07; path 2026-09-08):** [`docs/workflow-guide.md`](../docs/reference/workflow-catalog.md) is organized Area -> Workflow -> Stage -> Assigned role across seven areas (`software-engineering`, `design-experience`, `media-production`, `data-analytics`, `research-strategy`, `business-operations`, `security-reliability`) and 22 workflows with declared kebab-case documentation slugs. The taxonomy is route-agnostic for native harness subscriptions and API-key Pi providers. Slugs are documentation identity only: no runtime config, role admission, schema field, CLI behavior, or alias lane. Inherited candidate lists are dated research requiring live verification before dispatch, not certified prices or an eligibility grant. Model/harness, platform, modality, tools, and personal/work context are routing attributes, not area trees; area grouping never pools unrelated role quality into one global model ranking. Fable and Sol critics remain required for the developer runner. No phase gate changes.
 - **Developer roster U1a foundation & U1b live binding (2026-09-07, 2026-09-08):** An unwired synchronous helper loader reads a committed, clean policy only from a control checkout at or behind the fixed trusted main ref. It pins commit/blob/raw SHA256, validates source-bound model origins and code-owned role/permission/vendor ceilings, and replays historical policy from Git objects. Pi provider validation follows the accepted helper’s shared provider ceiling, without adding a production Nous route. U1b completes live dispatch validation, dynamic critic resolution, and acceptance binding in `scripts/assignment-run.mjs`, enforcing lineup admission and permissions for all roles, as well as strict vendor independence between writer and critics and pairwise among critics. Stored manifest binding validation fails closed on unadmitted routes. Config validity is not live harness/model capability or auth evidence: dispatch brakes remain in force. This is developer orchestration policy for the issue 127 runner and does not pass a product Phase 4 gate.
 - **Planning home and workflow guide (operator, 2026-09-08):** `.kxm/` is the KXM tool's own workspace (state, logs, workflow outputs). Project planning documents live in `plans/` at the repo root. `docs/workflow-guide.md` is the route-agnostic Area → Workflow → Stage → Role taxonomy for native harness subscriptions and API-key Pi providers.
 - **Package layout convention (operator, 2026-09-17):** KXM packages follow the reviewed `doompi`
@@ -1488,13 +1488,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   choice (for example a model whose provider is not logged in) is never sent.
   `kxm dash` now takes its palette from the kit instead of owning a private one,
   so a colour cannot mean two things across surfaces. Documented in
-  [`docs/tui-components.md`](../docs/tui-components.md); verified in
+  [`docs/tui-components.md`](../docs/contributing/tui-components.md); verified in
   `packages/core/tui/tests/unit/{surface,panel,services,components}.test.ts`
   with `tests/helpers/tui-surface.ts`, the layout gate in
   `test/core/package-layers.test.ts` (mutation-checked), version parity for the
   new package and its lock entry in `scripts/check-versions.mjs`, and the new
   export seam in `test/core/import-boundary.test.ts`. Documented in
-  [`docs/packages.md`](../docs/packages.md). This is a component library, not a
+  [`docs/packages.md`](../docs/contributing/packages.md). This is a component library, not a
   configuration editor: no `kxm` verb writes roster, routes, gates, roles, or
   workflow YAML through it yet, writer admission is unchanged, and the
   `kxm.config.v1` surface plus its editor command are the next slice.
@@ -1728,8 +1728,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   starting writer rotation is unchanged. AGY is the sole Google harness;
   read-only agy roles and agy-hosted non-Google models remain deferred.
 - **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
-- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Dispatch and accept load trusted roster policy from control Git; the witness verifies the bound candidate and does not itself call the policy loader today. Raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. **Unified YAML roster cutover landed (2026-09-16):** trusted developer roster policy moved `.kxm/roster.json` → `.kxm/roster.yaml` (schema `kxm.developer-roster.v1`, routes/lineup/origins content-identical); the loader parses YAML and **brakes fail-closed** on the retired `.kxm/roster.json` name; docs, skills, and policy-draft tests updated to the live format. Remaining role-configuration consolidation (role-hosts seat mapping, runner guide sweep) stays open under task_d3e634858295.
-- **Lean PR gate (2026-09-16):** CI `Validate` legs run `validate:pr` (core suite, type-check, docs/versions lint, generated-dist currency — no coverage instrumentation, no simulations, no pack) on pull requests; pushes to main run full `validate:ci` (coverage + pack dry-run) and `nightly.yml` keeps the complete-suite 93/80/93 coverage floors. Job names and two-Node matrix unchanged (protect-main ruleset pins them). AGENTS.md gate table updated in the same change.
+- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/contributing/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Dispatch and accept load trusted roster policy from control Git; the witness verifies the bound candidate and does not itself call the policy loader today. Raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. **Unified YAML roster cutover landed (2026-09-16):** trusted developer roster policy moved `.kxm/roster.json` → `.kxm/roster.yaml` (schema `kxm.developer-roster.v1`, routes/lineup/origins content-identical); the loader parses YAML and **brakes fail-closed** on the retired `.kxm/roster.json` name; docs, skills, and policy-draft tests updated to the live format. Remaining role-configuration consolidation (role-hosts seat mapping, runner guide sweep) stays open under task_d3e634858295.
+- **Three-minute merge gate (2026-09-23):** CI `Validate` legs run the same bounded `validate:pr` gate for pull requests and pushes to main: build, typecheck, a compact contract/smoke set, version parity, and generated-dist currency. Each Node 22.19.0/24 leg has a hard three-minute started-job budget. The exhaustive core/simulation/package suite, 93/80/93 coverage floors, full docs check, generated rebuild, and package dry-run stay in `nightly.yml`; they no longer delay merging. Documentation-only changes run Classify and Docs lint while the required Validate and Plugin jobs preserve their pinned names with explicit no-op steps. Job names and the two-Node matrix remain unchanged for ruleset `22251971`. AGENTS.md and the CI contract test enforce the split.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
@@ -1738,8 +1738,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `KXM_SMOKE_RUNNER == 'kontextmind-doks'` and stays disabled until Pi
   credentials are provisioned into ephemeral pods and pass `pi auth check`.
   Release/npm remain `if: false` and the Windows pause is unchanged.
-  Ruleset `22251971` required contexts are unchanged. This is not a
-  capacity or speed promise.
+  Ruleset `22251971` required contexts are unchanged.
+
+  **Live ARC routing and capacity (2026-09-23):** the scale set is isolated in
+  the selected-repository runner group `KontextMind DOKS ARC`, with public
+  repository access enabled only for `kontextmind/kxm`. The legacy
+  `km-gh-rn01` repository runner intentionally does not carry the
+  `kontextmind-doks` label. DOKS keeps one warm ephemeral runner and bursts to
+  four; each runner requests three CPUs so the autoscaling node pool (two to
+  three 8-vCPU nodes) adds capacity under load. Live workflow jobs were
+  verified on `kontextmind-doks-*` ephemeral runners in that runner group.
 
   The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
 
@@ -3142,7 +3150,7 @@ Implement memory revisions, local bounded replicas, role-aware context,
 evidence-linked candidates, protected evaluation, Git patch promotion, and
 revision-aware effectiveness statistics.
 
-Design note (2026-09-07): future evidence-linked candidates and effectiveness statistics will be keyed by the workflow and role slugs declared in [`docs/workflow-guide.md`](../docs/workflow-guide.md), not by model alone. Area grouping is navigation; measured quality stays per role, so no global cross-area model ranking is derived. Those slugs are documentation identity, not runtime identifiers, and this note does not assert a working product router.
+Design note (2026-09-07): future evidence-linked candidates and effectiveness statistics will be keyed by the workflow and role slugs declared in [`docs/workflow-guide.md`](../docs/reference/workflow-catalog.md), not by model alone. Area grouping is navigation; measured quality stays per role, so no global cross-area model ranking is derived. Those slugs are documentation identity, not runtime identifiers, and this note does not assert a working product router.
 
 **Gate:** a candidate is evaluated, reviewed through Git, activated only for a
 future run, and measured against its declared outcome. Routing/cost/latency

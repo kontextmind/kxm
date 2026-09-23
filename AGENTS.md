@@ -118,7 +118,7 @@ Two helper prefixes are allowlisted after fail-closed `pi auth check
   `NOUS_INFERENCE_BASE_URL` (default
   `https://inference-api.nousresearch.com/v1`). Bills Portal, not
   OpenRouter. `nous-portal/tencent/hy4-preview` is the reviewed experiment
-  example (`pi -p nous-portal -m tencent/hy4-preview`). Verify live ids
+  example (`pi --model nous-portal/tencent/hy4-preview`). Verify live ids
   and list prices on Portal `/models`. Hy4 is **not** a second Pi writer.
 
 Same auth-or-fail-closed rule. Other `nous-portal` or OpenRouter writer
@@ -181,7 +181,7 @@ Two combined gates (already in npm/CI). Do not add a third unless a test fails.
 | When | Gate | What it combines |
 |---|---|---|
 | **Commit** | `npm run verify` | `npm test` (build + tests), `npm run check` (tsc + lint:docs + versions), then generated `dist` matches the staged `dist` |
-| **PR/MR** | CI `validate:pr` (lean: core suite, no coverage, no pack) + `check:generated` on two Linux legs (Node 22.19.0 and 24) plus Classify changes, Docs lint, and Plugin validation, five jobs. Local Mac `npm run verify` before push. Windows tests, builds, and release automation are paused, not deprecated. | core suite + check + generated `dist` current. Coverage + pack run on pushes to main (`validate:ci`); nightly keeps the complete-suite coverage floors. Plugin validation is a CI job, not a third npm script. |
+| **PR/MR and main** | CI `validate:pr` is a three-minute merge-safety gate on two Linux legs (Node 22.19.0 and 24): build, typecheck, a compact contract/smoke set, version parity, and generated `dist` currency. Classify changes, Docs lint, and Plugin validation keep the five required job names. Documentation-only changes run Classify and Docs lint; Validate and Plugin execute explicit no-op skip steps. Local Mac `npm run verify` before push. Windows tests, builds, and release automation are paused, not deprecated. | Fast structural confidence on every change. The exhaustive core/simulation/package suite, coverage floors, full docs check, generated rebuild, and pack dry-run run nightly. Plugin validation remains a CI job, not a third npm script. |
 
 Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and Mesh operator copy are held by tests under `npm test` (extension readiness test, docs brake); no extra npm script. Come-back list: Tracking **Still open**. Ship hint belongs on the Pi status/widget (`ship dirty` / `N local` / `PR after CI`), not in every chat turn.
 

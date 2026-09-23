@@ -2,50 +2,51 @@
 schema: "kxm.doc.v1"
 id: "PROMPT-BROWSER-001"
 type: "prompt"
-title: "Starting Browser Work in a KXM Project"
+title: "Start browser work in a KXM project"
 project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
 summary: "Initialize a remote Steel browser session for a project task, verifying credentials, connectivity, and attachment endpoints before automation."
 tags: ["browser", "steel", "session", "prompt"]
-related: ["docs/browser-automation.md", "docs/kb/how-credentials-retrieved-safely.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/how-credentials-retrieved-safely.md"]
 ---
 
-# Task Template: Starting Browser Work in a KXM Project
+# Task template: start browser work in a KXM project
 
 ## Purpose
 
 Use this prompt to initialize a remote browser session on self-hosted Steel for a specific project task, verifying infrastructure connectivity, credentials, and attachment endpoints before executing automation.
 
-## Canonical Skill References
+## Canonical skill references
 
 - `kxm-browser-session`
 - `kxm-browser-auth`
 
-## Parameters & Placeholders
+## Parameters and placeholders
 
-- **PROJECT_ID**: `{{PROJECT_ID}}` (e.g. `kxm`, `agentic-hub`, `southlake-technical`)
+- **PROJECT_ID**: `{{PROJECT_ID}}` (e.g. `my-app`)
+- **STEEL_API_URL**: `{{STEEL_API_URL}}` (your Steel API base URL, from `STEEL_API_URL`)
 - **TASK_ID**: `{{TASK_ID}}` (e.g. `TASK-104-AUTH-VERIFY`)
 - **TARGET_BASE_URL**: `{{TARGET_BASE_URL}}` (e.g. `https://staging.app.example.com`)
 - **PERMISSION_LEVEL**: `{{PERMISSION_LEVEL}}` (Choose one: `INSPECT_ONLY` | `MUTATE_APPROVED_FORMS` | `FULL_ADMIN`)
-- **CREDENTIAL_REF**: `{{CREDENTIAL_REF}}` (Proton Pass vault and item title, e.g. `Personal -> staging.example.com`)
+- **CREDENTIAL_REF**: `{{CREDENTIAL_REF}}` (a secret manager reference, never a value, e.g. `<vault> -> <item>`)
 - **ARTIFACT_DIR**: `{{ARTIFACT_DIR}}` (e.g. `.kxm/artifacts/browser/{{TASK_ID}}`)
 - **TIMEOUT_MS**: `{{TIMEOUT_MS}}` (Default: `300000`)
 
 ---
 
-## Instructions for Agent
+## Instructions for the agent
 
 1. **Verify Credential Reference**:
-   - Query `pass-cli` for target credentials and `STEEL_API_KEY` without logging raw values.
+   - Resolve the target credentials and `STEEL_API_KEY` from the secret manager, for example with `pass-cli`, without logging raw values.
    - Do not print credentials to the chat or save them to tracked files.
 
 2. **Launch Remote Steel Session**:
-   - Create a session on `https://steel.kontextmind.com/v1/sessions` with timeout `{{TIMEOUT_MS}}`.
+   - Create a session with `POST {{STEEL_API_URL}}/v1/sessions` and timeout `{{TIMEOUT_MS}}`.
    - Capture `sessionId`, `websocketUrl`, and `sessionViewerUrl`.
 
 3. **Verify Target Endpoint Connectivity**:

@@ -283,7 +283,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   a message naming the process that recreates the store (`kxm hub start` for hub state, the Runtime for registry/event stores; `kxm init` is project-only) — and the refusal never
   advances `user_version`, so the store stays identifiably old (WAL sidecars may still be
   checkpointed by opening the file, so the whole state set remains the backup unit — see
-  [`docs/operations.md`](docs/operations.md)). Relabelling a store it refused to open would
+  [`docs/operations.md`](docs/operations/deploy.md)). Relabelling a store it refused to open would
   only hide the problem until a query hit a missing column. The coordinator fingerprint no
   longer recomputes over stored authority to forgive rows written before set canonicalisation:
   a stale coordinator is re-bound. Intake tests go from 23 to 22; the two forced-race tests
@@ -324,7 +324,11 @@ All notable user-facing changes are documented here. The project follows [Semant
   (`--always-approve`, with subagents and web search off) runs against the checkout.
   A live write that leaves the tree unchanged settles `failed` with `authored: false`.
   A read-only step that changes the tree cannot settle `passed`. Harnesses without a
-  writer profile still hand off. Simulated drive does not require a diff.
+  writer profile still hand off. Simulated drive does not require a diff. The witness
+  fingerprints the one checkout, so a live write step must be a single assignment
+  (`assignments.maximum: 1`) in a project whose `limits.maxConcurrentRuns` is 1; a
+  panel of writers or a project that admits concurrent runs hands off with
+  `step_unsupported` instead of crediting one writer's change to another.
 
 - **Fresh `kxm init` can be driven.** The current template drops `limits.maxAgentTimeMs`,
   names coordinator `claude` / `anthropic/fable` and implementer `grok` / `xai/grok-4.6`,
@@ -336,6 +340,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   plus each `run-events.db.run-prompts.json` sidecar. A copy that misses a discovered
   store is `complete: false`: `kxm backup` exits 1 with `ok: false`, and restore
   refuses that manifest. Cross-box remap of absolute `$S` paths is still the file recipe.
+  The Runtime stores are machine-wide, so a backup holds every project's run store and a
+  restore rolls all of them back. `kxm backup --help` no longer says Runtime stores are
+  left out.
 
 - **The Claude plugin's SessionStart hook is one bundled, read-only, project-scoped
   script.** The two shell hooks it replaces (`kxm session brief --status` and

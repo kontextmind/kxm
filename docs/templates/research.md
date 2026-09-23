@@ -2,7 +2,7 @@
 schema: "kxm.doc.v1"
 id: "RES-0001"
 type: "research"
-title: "Research Topic / Spike Question"
+title: "Research: <topic or spike question>"
 project: "kxm"
 status: "draft" # draft | in_review | approved | superseded | archived
 owner: "@owner"
@@ -18,9 +18,9 @@ details:
   target_decision_date: "2026-09-15"
 ---
 
-# Research: <Research Topic / Spike Question>
+# Research: <Research topic / spike question>
 
-## Decision to Enable
+## Decision to enable
 
 - **Pending Decision:** <What exact architectural, model routing, or product decision depends on this investigation?>
 
@@ -28,7 +28,7 @@ details:
 
 - **Constraints & Guardrails:** <Budget limits, latency thresholds, security boundaries>
 
-## Questions & Falsifiable Hypotheses
+## Questions and falsifiable hypotheses
 
 - **Primary Question:** <What are we trying to discover or prove?>
 
@@ -36,7 +36,7 @@ details:
 
 - **Falsification Condition:** <What exact result or metric will prove this hypothesis wrong?>
 
-## Methodology & Verification Setup
+## Methodology and verification setup
 
 ```mermaid
 flowchart LR
@@ -50,48 +50,43 @@ flowchart LR
 
 *Methodology flow: Establish bounds, execute reproducible trials, analyze telemetry metrics, and recommend concrete next actions.*
 
-- **Harness & Model Arms:** <List evaluated routes, e.g. Grok native vs Pi wrapper vs Claude Fable>
+- **Harness & Model Arms:** <List evaluated routes, for example native `grok` versus `pi` with an OpenRouter model>
 
 - **Test Fixture / Workload:** <Exact repository task or test suite executed>
 
 - **Budget Ceiling:** <Maximum dollar or token limit for this spike>
 
-## Evidence Register
+## Evidence register
 
 | Evidence ID | Claim / Finding | Source Artifact / Telemetry Run | Version / Date | Confidence |
-
 |---|---|---|---|---|
 | EV-01 | <Empirical claim> | `artifact:.kxm/logs/telemetry.jsonl@sha256:...` | 2026-09-08 | verified |
+| EV-02 | <Model behavior observation> | `<run-id>` transcript | 2026-09-08 | probable |
 
-| EV-02 | <Model behavior observation> | `run-01928abc` transcript | 2026-09-08 | probable |
+## Option comparison matrix
 
-## Option Comparison Matrix
-
-| Evaluation Criterion | Weight | Option A (e.g., Native) | Option B (e.g., Wrapper) | Measured Evidence |
-
+| Evaluation Criterion (example values) | Weight | Option A (e.g., Native) | Option B (e.g., Wrapper) | Measured Evidence |
 |---|---|---|---|---|
 | Verification Pass Rate | High | 84.0% | 40.0% | EV-01 |
-
 | Latency P50 | Medium | 187s | 284s | EV-01 |
 | Cost per Successful Run | High | $0.20 | $1.03 | EV-01 |
-
 | Rework Rate | High | 68% | 100% | EV-01 |
 
-## Findings & Distinctions
+## Findings and distinctions
 
-### Verified Observations (Backed by Evidence IDs)
+### Verified observations (backed by evidence IDs)
 
 - <Direct observation referencing EV-xx>
 
-### Inferences & Working Hypotheses
+### Inferences and working hypotheses
 
 - <Reasoning or extrapolation; clearly separated from hard evidence>
 
-### Unresolved Unknowns
+### Unresolved unknowns
 
 - <Gaps that remain uncertain or could not be measured>
 
-## Recommendation & Revisit Conditions
+## Recommendation and revisit conditions
 
 - **Recommended Course of Action:** <Specific choice or architectural pattern>
 

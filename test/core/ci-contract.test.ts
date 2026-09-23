@@ -21,7 +21,7 @@ type WorkflowJobs = Record<
     if?: unknown;
     "runs-on"?: unknown;
     "timeout-minutes"?: unknown;
-    steps?: Array<{ run?: string }>;
+    steps?: Array<{ name?: string; if?: unknown; run?: string }>;
   }
 >;
 
@@ -100,7 +100,8 @@ type CiJobs = Record<
     name?: string;
     if?: unknown;
     "runs-on"?: unknown;
-    steps?: Array<{ run?: string }>;
+    "timeout-minutes"?: unknown;
+    steps?: Array<{ name?: string; if?: unknown; run?: string }>;
     strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
   }
 >;
@@ -115,7 +116,7 @@ function assertApprovedCiJobDefinitions(jobs: CiJobs | undefined) {
   assert.equal(jobs.docs?.name, "Docs lint");
 }
 
-test("CI required jobs are unconditional, two linux Validate names match the ruleset, plugin pin and PR-only cancel stay", () => {
+test("CI required jobs stay named while expensive steps are skipped for docs-only changes", () => {
   const doc = parse(ciText) as {
     concurrency?: { "cancel-in-progress"?: string };
     jobs?: CiJobs;
@@ -156,10 +157,31 @@ test("CI required jobs are unconditional, two linux Validate names match the rul
   assert.equal(expanded.length, 2);
   assert.equal(1 + 1 + expanded.length + 1, 5);
   assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
+
+  const validateSteps = doc.jobs?.validate?.steps ?? [];
+  assert.equal(validateSteps[0]?.name, "Skip code validation for documentation-only changes");
+  assert.equal(validateSteps[0]?.if, "needs.changes.outputs.code != 'true'");
+  for (const step of validateSteps.slice(1)) {
+    assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
+  }
+  assert.equal(
+    validateSteps.some((step) => step.name === "Verify generated runtime bundles are current"),
+    false,
+  );
+  assert.equal(validateSteps.some((step) => step.name === "Inspect package (main only)"), false);
+
+  const pluginSteps = doc.jobs?.plugin?.steps ?? [];
+  assert.equal(pluginSteps[0]?.name, "Skip plugin validation for documentation-only changes");
+  assert.equal(pluginSteps[0]?.if, "needs.changes.outputs.code != 'true'");
+  for (const step of pluginSteps.slice(1)) {
+    assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
+  }
+
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
   const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");
-  assert.match(validateRuns, /npm run validate:ci/);
-  assert.match(validateRuns, /npm run check:generated/);
+  assert.match(validateRuns, /npm run validate:pr/);
+  assert.doesNotMatch(validateRuns, /npm run validate:ci/);
+  assert.equal(doc.jobs?.validate?.["timeout-minutes"], 3);
   assert.match(ciText, /@anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /npm install --no-save --ignore-scripts @anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /node node_modules\/@anthropic-ai\/claude-code\/install\.cjs/);
@@ -168,7 +190,19 @@ test("CI required jobs are unconditional, two linux Validate names match the rul
   assert.doesNotMatch(ciText, /\.github\/PULL_REQUEST_TEMPLATE\.md/);
 });
 
-test("coverage floors stay 91/80/92 for core and 93/80/93 for complete with no third npm gate script", () => {
+test("the bounded merge gate stays focused while nightly owns exhaustive coverage", () => {
+  const validatePr = pkg.scripts?.["validate:pr"] ?? "";
+  assert.match(validatePr, /^npm run build && npm run typecheck && node /);
+  assert.match(validatePr, /--test-concurrency=4 test\/core\/artifacts-exist\.test\.ts/);
+  assert.match(validatePr, /test\/core\/ci-contract\.test\.ts/);
+  assert.match(validatePr, /test\/core\/smoke\.test\.ts/);
+  assert.match(validatePr, /test\/core\/version-surfaces\.test\.ts/);
+  assert.doesNotMatch(validatePr, /test\/core\/\*\.test\.ts/);
+  assert.match(validatePr, /npm run check:versions/);
+  assert.match(validatePr, /node scripts\/check-generated\.mjs$/);
+  assert.doesNotMatch(validatePr, /npm run (?:test:core|check:generated|lint:docs)(?:\s|$)/);
+  assert.doesNotMatch(validatePr, /npm run check(?:\s|$)/);
+
   const coverageCore = pkg.scripts?.["test:coverage:core"] ?? "";
   const coverageComplete = pkg.scripts?.["test:coverage:complete"] ?? "";
   assert.match(coverageCore, /--test-coverage-lines=91/);

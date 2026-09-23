@@ -2,7 +2,7 @@
 schema: "kxm.doc.v1"
 id: "ADR-0002"
 type: "adr"
-title: "Self-Hosted Steel on DOKS for Reusable Browser Automation and Human Takeover"
+title: "Self-hosted Steel on DOKS for reusable browser automation and human takeover"
 project: "kxm"
 status: "accepted"
 owner: "@operator"
@@ -12,7 +12,7 @@ authority: "decision"
 confidence: "verified"
 summary: "Adopt self-hosted Steel on DigitalOcean Kubernetes (DOKS) with agent-browser and Playwright as KXM's primary browser automation infrastructure."
 tags: ["architecture", "decision", "browser", "steel", "doks", "playwright"]
-related: ["docs/browser-automation.md", "docs/agent-skills.md"]
+related: ["docs/guides/browser-automation.md", "docs/guides/agent-skills.md"]
 details:
   decision_drivers:
     - "Eliminate per-minute SaaS browser provider costs"
@@ -23,9 +23,9 @@ details:
   superseded_by: null
 ---
 
-# ADR-0002: Self-Hosted Steel on DOKS for Reusable Browser Automation
+# ADR-0002: Self-hosted Steel on DOKS for reusable browser automation
 
-## Context & Problem Statement
+## Context and problem statement
 
 AI coding agents and orchestration workflows in KXM require browser interaction for UI exploration, DOM mapping, bug reproduction, and end-to-end regression testing. Existing approaches suffered from three core issues:
 
@@ -33,40 +33,40 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 2. **Disconnected Human Takeover**: When login challenges, MFA prompts, or CAPTCHAs occur, local or headless cloud browsers cannot easily hand the live session over to a human operator and seamlessly resume without destroying session state.
 3. **Tool Fragmentation**: Exploratory navigation needs a fast, token-efficient terminal CLI (`agent-browser`), while testing needs durable, assertion-rich frameworks (`Playwright`).
 
-## Decision Drivers
+## Decision drivers
 
-1. **Operating Cost Control**: Keep infrastructure expenses predictable by utilizing our existing DigitalOcean Kubernetes Service (DOKS) cluster (`k8s-agentic-hub`).
+1. **Operating Cost Control**: Keep infrastructure expenses predictable by utilizing the maintainers' existing DigitalOcean Kubernetes Service (DOKS) cluster.
 2. **Unified Same-Session Takeover**: Enable a human to interact with the exact same browser tab and session state during authentication gates before handing control back to the agent.
 3. **Dual Automation Interfaces**: Support `agent-browser` for discovery and `Playwright` for permanent regression tests over standard Chrome DevTools Protocol (CDP).
 4. **Authoritative Credential Management**: Ensure `pass-cli` remains the exclusive source of truth for secrets and API keys.
 
-## Considered Options
+## Considered options
 
 - **Option A**: Self-hosted Steel (`steel-dev/steel-browser`) deployed on DOKS with Ingress-NGINX and TLS.
 - **Option B**: Paid SaaS browser providers (e.g., Browserbase, Steel Cloud).
 - **Option C**: Local headless Chrome instances spawned on developer workstations.
 
-## Evaluation & Tradeoff Matrix
+## Evaluation and trade-offs
 
-### Option A: Self-hosted Steel on DOKS (Chosen)
+### Option A: self-hosted Steel on DOKS (chosen)
 
 - **Good, because**: Zero marginal per-session fees; fully self-hosted on our Kubernetes cluster.
 - **Good, because**: Built-in REST API, CDP WebSocket proxy, and live session viewer UI (`/ui`).
-- **Good, because**: Both `Playwright` and `agent-browser` connect seamlessly over standard CDP (`wss://steel.kontextmind.com/v1/devtools`).
+- **Good, because**: Both `Playwright` and `agent-browser` connect seamlessly over standard CDP (`wss://<steel-host>/v1/devtools`).
 - **Good, because**: Dedicated shared memory (`/dev/shm`) and resource limits prevent workstation degradation.
 - **Bad, because**: Requires managing Kubernetes deployment and periodic orphaned session sweeping.
 
-### Option B: Paid SaaS Browser Provider
+### Option B: a paid SaaS browser provider
 
 - **Good, because**: Managed scaling and proxy pools.
 - **Bad, because**: Violates the core cost-efficiency constraint; introduces recurring credit card charges and third-party data transmission risks.
 
-### Option C: Local Chrome Instances
+### Option C: local Chrome instances
 
 - **Good, because**: No cluster deployment needed.
 - **Bad, because**: High workstation memory and CPU pressure; fragile cross-platform headless setups; cannot easily share live debug sessions across multi-agent environments.
 
-## Decision Outcome
+## Decision outcome
 
 **Chosen Option**: **Option A (Self-hosted Steel on DOKS)**.
 
@@ -74,14 +74,14 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                      KXM Agent / Herdr                      │
+│                      KXM agent                              │
 │   (kxm-browser-session, kxm-browser-takeover, pass-cli)     │
 └───────────────┬─────────────────────────────┬───────────────┘
                 │ REST API (create/release)   │ CDP WebSocket
                 ▼                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                 DigitalOcean Kubernetes (DOKS)              │
-│                 https://steel.kontextmind.com               │
+│                 https://<steel-host>                        │
 │                                                             │
 │   ┌─────────────────────┐       ┌────────────────────────┐  │
 │   │   Steel API & CDP   │◄─────►│    Chromium Sandbox    │  │
@@ -96,8 +96,14 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Confirmation & Verification Strategy
+## Confirmation and verification
 
-- **Verification**: Health endpoint `https://steel.kontextmind.com/v1/health` verified with HTTP 200 and Let's Encrypt TLS.
+- **Verification**: Health endpoint `$STEEL_API_URL/v1/health` verified with HTTP 200 and Let's Encrypt TLS.
 - **Integration Test**: `test/core/browser.test.ts` validates session lifecycle, CDP endpoint formatting, takeover transitions, and secret redaction.
-- **Security Check**: `pass-cli` verified as the authoritative store for `STEEL_API_KEY` under vault `AI Provider Keys`.
+- **Security Check**: `pass-cli` verified as the authoritative store for `STEEL_API_KEY` in the operators' password manager.
+
+## Related
+
+- [Browser automation](../guides/browser-automation.md)
+- [Agent skills](../guides/agent-skills.md)
+- [Architecture decision records](README.md)

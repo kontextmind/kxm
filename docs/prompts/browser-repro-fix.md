@@ -2,32 +2,32 @@
 schema: "kxm.doc.v1"
 id: "PROMPT-BROWSER-005"
 type: "prompt"
-title: "Reproducing a UI Bug and Producing a Playwright Regression Test"
+title: "Reproduce a UI bug and produce a Playwright regression test"
 project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
 summary: "Reproduce a UI defect on Steel, collect evidence, write a Playwright regression, and prove RED then GREEN."
 tags: ["browser", "playwright", "repro", "prompt"]
-related: ["docs/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
 ---
 
-# Task Template: Reproducing a UI Bug and Producing a Playwright Regression Test
+# Task template: reproduce a UI bug and produce a Playwright regression test
 
 ## Purpose
 
 Use this prompt to execute the full UI defect lifecycle: reproducing reported symptoms on self-hosted Steel, collecting diagnostic evidence, writing a durable Playwright test, demonstrating failure before fix (RED), applying the code fix, and demonstrating success afterward (GREEN).
 
-## Canonical Skill References
+## Canonical skill references
 
 - `kxm-browser-verify`
 - `kxm-browser-session`
 - `kxm-browser-diagnostics`
 
-## Parameters & Placeholders
+## Parameters and placeholders
 
 - **PROJECT_ID**: `{{PROJECT_ID}}`
 - **BUG_ID**: `{{BUG_ID}}` (e.g. `BUG-402-DROPDOWN-CLIPPING`)
@@ -39,7 +39,7 @@ Use this prompt to execute the full UI defect lifecycle: reproducing reported sy
 
 ---
 
-## Instructions for Agent
+## Instructions for the agent
 
 1. **Step 1: Reproduce**:
    - Connect to a Steel browser session and manually or scriptedly walk the repro steps.

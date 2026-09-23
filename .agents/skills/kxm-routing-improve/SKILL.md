@@ -41,10 +41,12 @@ exits 1 with `improve_source_unreadable`. Simulated drives are excluded, and a
 Runtime attempt is `accepted` only when its run completed without the step
 being re-entered.
 
-- Grouping is by workflow, step, agent role and ask.
-- A coded-repeat candidate needs the same ask decided in at least 2 runs, an
-  accepted share of at least 0.75, and a step that writes no repository. A
-  passing group that misses says `writes-repository` or `ask-not-repeated`.
+- Grouping is by workflow, step, agent role and ask. The ask is a digest of
+  the step's definition, so one step keeps one ask across runs.
+- A coded-repeat candidate needs the same objective decided in at least 2
+  runs (`askRecurrence`), an accepted share of at least 0.75, and a step that
+  writes no repository. A passing group that misses says `writes-repository`
+  or `ask-not-repeated`.
 - Each candidate has kind `gate`, `skill`, or `workflow-step` and status
   `proposed`.
 - Without `--dry-run` it writes `<candidateId>.diff` and `<candidateId>.json`
@@ -80,6 +82,12 @@ quality. Use `kxm routing report` for recorded spend.
 Estimates stay unknown until the catalog carries today's stamp, and a routing
 total is null when any attempt has no cost.
 
+`--equivalent-list-cost` loads the price catalog (`.kxm/prices.yaml`, or
+`--prices <path>`) without a freshness check, so an old catalog quotes old
+prices. A missing or invalid catalog leaves the equivalent list cost empty
+(`-` in text). Check the catalog's `date` before citing an equivalent list
+cost.
+
 ```bash
 kxm routing report --json
 kxm routing report --equivalent-list-cost --json
@@ -87,6 +95,6 @@ kxm improve report --dry-run --json
 ```
 
 Do not invent list, get, compare, or top-models verbs, prices, or a ranking
-from missing cost. A stale price catalog must not silently underquote.
-Improvement candidates still need Git-reviewed activation; telemetry cannot
-grant tools or skip a gate.
+from missing cost. Never present an equivalent list cost from an old catalog
+as current. Improvement candidates still need Git-reviewed activation;
+telemetry cannot grant tools or skip a gate.

@@ -6,8 +6,9 @@
 > enforced with fail-closed `costBasis` requirement. Price catalog `.kxm/prices.yaml`
 > (`kxm.prices.v1`) is implemented, dated, and hashed. `kxm routing report`
 > is implemented (`plugins/kxm/src/routing.ts`) and ranks routes quality-first,
-> then cost per accepted attempt, never ranking unknown cost cheapest and
-> reporting metered, unmetered, and unknown populations separately. By default
+> then cost per accepted attempt, ranking any route with an unknown-cost attempt
+> after every route of equal quality that has none, and reporting metered,
+> unmetered, and unknown populations separately. By default
 > `kxm routing report` and `kxm improve` read two sources: the current project's
 > Runtime event store (read-only) and then `.kxm/logs/telemetry.jsonl`; `--file`
 > reads only the named file (see [Readers](#readers-kxm-routing-report-and-kxm-improve)).
@@ -174,7 +175,7 @@ Fields carried on `RoutingRecordV2`:
 - Outcomes: `verifierOutcome` (`passed` | `warning` | `failed`), `finalOutcome` (`accepted` | `blocked` | `failed` | `pending`), `retries`, optional `transitions`, optional `humanInterventions`, optional `providerMetadata`.
 - Cost accounting: `costBasis` (`"metered" | "unmetered" | "unknown"`), `costUsd` (required when metered), optional `priceRef`.
 
-The KXM engine settle transaction appends a `routing.attempt.recorded` event carrying the v2 record and refuses to settle without a valid `costBasis`. Attempt dispatch enforces `limits.maxModelCost` against metered cost before invocation (`budget_model_cost`).
+The KXM engine settle transaction appends a `routing.attempt.recorded` event carrying the v2 record and refuses to settle without a valid `costBasis`. Attempt dispatch enforces `limits.maxModelCost` against metered cost before invocation (`budget_model_cost`). No producer records `metered` cost today, so the cap cannot trip on a live run; the separate limit of 100 unmetered or unknown attempts per run (`budget_unmetered_attempts`) is the only cost-side limit that can stop one.
 
 What the engine writes on every settled attempt (`producerRoutingRecord` and the
 failure path in `settleMember`, `plugins/kxm/src/engine.ts`):
@@ -226,7 +227,7 @@ backfilled: they still resolve an outcome, but they group per run.
 - **Price catalog:** `.kxm/prices.yaml` (`kxm.prices.v1`, dated and hashed) defines input, output, cache-read, cache-write rates, and context tiers for active models. Missing rows or uncataloged models evaluate to `costBasis: "unknown"`.
 - **Ranked report:** `kxm routing report` (`plugins/kxm/src/routing.ts`, CLI command `kxm routing report`) groups records by `(harness, model, thinking, role)`.
 - **Ranking order:** Quality first (`verifyPassRate` descending, then `reworkRate` ascending where rework measures back-edge re-entries `transitions > 0`), followed by `costPerAcceptedUsd` ascending.
-- **Underquote prevention:** Routes with unknown cost are flagged (`*`) and **never ranked cheapest**, eliminating silent underquoting.
+- **Underquote prevention:** Routes with unknown cost are flagged (`*`). Any unknown-cost attempt makes a route's cost unknown: `costPerAcceptedUsd` is `null` (displayed `-`), never a partial sum, and the route ranks after every route of equal quality that has no unknown-cost attempt. Per-configuration comparisons likewise report `totalCostUsd: null` with a `missingCostRuns` count when any record lacks a cost.
 - **Population separation:** Reports metered cost, unmetered attempt counts, unknown-cost attempt counts, and quota-exhausted attempt counts as separate metrics rather than a single misleading total.
 - **List prices flag:** Supports `--equivalent-list-cost` / `--list-prices` to display estimated list rates for comparison alongside actual recorded spend.
 - **Rework column:** reads `transitions`, which Runtime records never set, so Runtime rework shows up only as a resolved `reworked` outcome, which the report does not count as a pass.
@@ -263,6 +264,6 @@ store: there is no cross-worktree aggregation.
 ## Precedence
 
 [AGENTS.md](../../AGENTS.md) and
-[Tracking](../../plans/implementation-plan.md#tracking-working-tree-not-a-release)
+Tracking (the implementation plan in the repository's `plans/` directory, which is not shipped)
 win where they differ from historical 2026-09-04 reviews.
 Issue 86 stays open for later-phase remainder (see Tracking).

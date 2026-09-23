@@ -6,7 +6,7 @@
  * paragraph the next convenient import quietly ignores, and the kit stops being
  * testable for the very reason it was split.
  *
- * Rules, from `docs/tui-components.md`:
+ * Rules, from `docs/contributing/tui-components.md`:
  * - `src/types/**` imports nothing outside itself. A contract that needs the
  *   filesystem is a service, not a type module.
  * - `src/tui/**` may import its own layer plus the Pi renderer. Never Node

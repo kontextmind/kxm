@@ -1,13 +1,13 @@
 ---
 name: kxm-project-setup
-description: Set up KXM in a new or existing Git repository and run a first workflow, especially with Claude Code. The agent runs kxm init, kxm trust diff and check, writes a first workflow, and drives a model-free first run, while the user starts the hub, installs the kxm Claude Code plugin, and reviews and commits .kxm permission changes. Use when asked to install, set up, onboard, initialize, upgrade, or get started with KXM.
+description: Set up KXM in a new or existing Git repository and run a first workflow, especially with Claude Code. The agent runs kxm init, adds a first workflow from the spec-and-plan template, runs kxm trust diff and check, and drives a model-free first run, while the user starts the hub, installs the kxm Claude Code plugin, and reviews and commits .kxm permission changes. Use when asked to install, set up, onboard, initialize, upgrade, or get started with KXM.
 ---
 
 # KXM project setup and first workflow
 
 One guide from a Git repository to a completed first run. Run the agent steps
-in order and stop where a phase says STOP. Everything under Operator steps is
-the user's to run in their own terminal or in Claude Code.
+in order and stop at every STOP. Everything under Operator steps is the user's
+to run in their own terminal or in Claude Code.
 
 - Read `kxm <group> <verb> --help` before a mutation; flags differ per command.
 - Never commit `.kxm` changes yourself. The user's reviewed commit is the trust
@@ -16,7 +16,7 @@ the user's to run in their own terminal or in Claude Code.
 
 ## Agent steps
 
-### Phase 1: initialize
+### Initialize the project
 
 1. `kxm init --dry-run --json` plans without writing. `mode` is `create`,
    `ready`, `repair`, or `legacy`, and `issues` lists anything to fix first.
@@ -31,51 +31,22 @@ the user's to run in their own terminal or in Claude Code.
 3. Add `.kxm/state/` and `.kxm/logs/` to `.gitignore`. `kxm init` writes no
    ignore rules.
 4. `kxm hub view` reads hub health. It exits 1 with `hub health=false` until
-   the user has started a hub; that does not block phases 2 and 3.
+   the user has started a hub; that does not block the first workflow or the
+   first run.
 5. STOP. Ask the user to review `.kxm/` and `.gitignore` and commit them.
    Until they do, `kxm trust diff` fails with `resource_missing` for
    `.kxm/project.yaml` at base `HEAD`.
 
-### Phase 2: write a first workflow
+### Add a first workflow from a template
 
 After the user's commit:
 
-1. Write `.kxm/workflows/first.yaml`, a slim agent-only workflow the Runtime
-   can drive end to end:
-
-   ```yaml
-   schema: kxm.workflow.v1
-   description: Plan, then implement. A first workflow you can drive end to end.
-   coordinator: coordinator
-   limits:
-     maxTransitions: 6
-   steps:
-     - id: plan
-       kind: agent
-       agent: coordinator
-       maxAttempts: 2
-       repositories:
-         control: read
-       on:
-         passed: implement
-         failed:
-           target: $terminal
-           terminalStatus: failed
-     - id: implement
-       kind: agent
-       agent: implementer
-       maxAttempts: 2
-       repositories:
-         control: write
-       on:
-         passed:
-           target: $terminal
-           terminalStatus: completed
-         failed:
-           target: $terminal
-           terminalStatus: failed
-   ```
-
+1. `kxm workflow add first --template spec-and-plan` prints
+   `Added workflow 'first' to local (<root>/.kxm/workflows/first.yaml)`. Add
+   `--dry-run` first to see the path without writing. The template has two
+   steps, `plan` then `review-arch`, both run by the `coordinator` agent with
+   `repositories: control: read`. It writes nothing and runs no test command,
+   and a failed review goes back to `plan` at most twice.
 2. `kxm init` validates it and prints `validated KXM project at <root>`.
 3. `kxm workflow definitions` lists `default` and `first`.
 4. `kxm trust diff`, then `kxm trust check`. Both print
@@ -83,32 +54,37 @@ After the user's commit:
    `1 expansion(s) require explicit reviewed trust action`. `kxm trust check`
    adds `trust check failed: review every expansion above before merging` and
    exits 1.
-5. STOP. Show the user each EXPANSION line, ask them to review it and commit
-   the file themselves, and wait. The `implement` step gets
-   `repositories: control: write`. Never commit `.kxm` changes yourself; the
+5. STOP. Show the user each EXPANSION line, ask them to review the file and
+   commit it themselves, and wait. Never commit `.kxm` changes yourself; the
    reviewed commit is the trust approval.
 
-### Phase 3: drive a model-free first run
+### Drive a model-free first run
 
 After the user's commit:
 
 1. `kxm trust check` prints `no authority-bearing or prose changes` and exits 0.
 2. `kxm run first "<prompt>" --dry-run` prints
-   `run plan: workflow first at sha256:… (no run created)`.
+   `run plan: workflow first at sha256:… (no run created)`. Keep secrets out of
+   the prompt: its full text is kept on disk (`kxm-runs`).
 3. `kxm run first "<prompt>"` prints `run created: run_<id> …` and starts the
    Runtime supervisor.
 4. `kxm runs status <runId>` prints `created`.
 5. `kxm runs drive <runId> --simulated --wait --timeout-ms 60000` prints a
    `kxm.drive-receipt.v1` whose settlement is terminal `completed`, and exits 0.
-   Always pass `--simulated`; without it, drive calls live harnesses.
+   The run moves from `plan` to `review-arch` to `completed`. Always pass
+   `--simulated`; without it, drive calls live harnesses.
 6. `kxm runs status <runId>` prints `completed … (receipt verified)`.
 7. `kxm runs receipt <runId>` and `kxm runs list`. Cancel a stuck run with
    `kxm runs cancel <runId>`.
 8. `kxm runtime stop` when you are done.
 
-To add more workflows, write the YAML by hand as in phase 2, or see
-`kxm workflow add --help`. Validate any new definition with
-`kxm init --dry-run --json`, then repeat the phase 2 trust review.
+To add more workflows, run `kxm workflow add <id> --template <name>` with
+`implement-and-verify` (an `implement` step with write access, then the `test`
+gate) or `dual-critic-review` (`implement`, two reviews, then the `test` gate),
+or write the YAML by hand; see `kxm workflow add --help`. A gate step runs its
+command from `.kxm/gates.yaml` even in a simulated drive. Validate any new
+definition with `kxm init --dry-run --json`, then repeat the trust review and
+the user's commit.
 
 ## Operator steps
 
@@ -119,7 +95,8 @@ or store the admin or project token in the conversation. The user enters
 1. Create a project token and export `KXM_PROJECT_TOKENS` before starting the
    hub. The map must list every project's token, because it replaces the saved
    map rather than merging with it. When a hub already serves other projects,
-   use the merge command in the KXM README.
+   use the merge command in the KXM documentation's Claude Code quick start
+   (docs/start/quickstart-claude-code.md, section "Start the hub").
 2. `kxm hub start` in a second terminal. It generates and persists an admin
    credential in `hub-env.json` under the user state root; that token never
    goes to an agent.
@@ -127,8 +104,8 @@ or store the admin or project token in the conversation. The user enters
 4. In Claude Code, `/plugin marketplace add kontextmind/kxm`,
    `/plugin install kxm@kxm`, then `/plugin configure kxm@kxm` for
    `server_url`, `auth_token`, `agent_name`, `agent_purpose`, and `project`.
-5. Review and commit `.kxm/` and `.gitignore` after phase 1, and every
-   `kxm trust diff` EXPANSION after phase 2, for example
+5. Review and commit `.kxm/` and `.gitignore` after `kxm init`, and every
+   `kxm trust diff` EXPANSION after adding a workflow, for example
    `git add .kxm .gitignore && git commit`.
 6. `kxm session token --clear` when kxm_* tools report `tool_policy_denied`
    for an expired or malformed session token file.
@@ -145,8 +122,9 @@ or store the admin or project token in the conversation. The user enters
   in a workflow step, then run `kxm init` again. Only when
   `.kxm/project.yaml` does not exist yet, ask the user to follow the README's
   move-aside workaround; never do that in a committed project.
-- The template `default` workflow declares `limits.maxAgentTimeMs`, so
-  `kxm runs drive` on it fails with `run_handoff_required`. Use `first`.
+- The template `default` workflow can be driven, but even a simulated drive
+  runs its `npm test` gate, and a live drive spends Claude and Grok and lets
+  Grok edit the checkout. Use `first` for the first run.
 - `kxm run` starts the Runtime supervisor. Stop it with `kxm runtime stop`.
 - Only run workflow IDs that `kxm workflow definitions` lists; any other ID
   fails with `run_workflow_unknown`.

@@ -1597,7 +1597,13 @@ function prepareDispatch(
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
     }
     resolvedRoute = routeResult;
-    const writeRefusal = unsupportedLiveWrite(context.projectRoot, step, agentId, resolvedRoute.selector);
+    const writeRefusal = unsupportedLiveWrite(
+      context.projectRoot,
+      step,
+      agentId,
+      resolvedRoute.selector,
+      loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.maxConcurrentRuns,
+    );
     if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
   }
 
@@ -2768,14 +2774,36 @@ function projectDefaultHarness(projectRoot: string): string {
  * Live write steps run only on an audited writer profile, and only when the
  * developer roster (when present) lists that harness and model as an edit writer.
  * A missing roster is a fresh project: route admission is the other gate.
+ *
+ * The authoring witness fingerprints the one project checkout around each
+ * spawn, so it can only attribute a change to a lone writer. A write step with
+ * more than one assignment would run several writers there (and member n runs
+ * as allowedAgents[n], which the writer check below never sees), and a
+ * project that admits concurrent runs lets another run's writer edit the tree
+ * mid-attempt. Both hand off.
  */
 function unsupportedLiveWrite(
   projectRoot: string,
   step: KxmCompiledStep,
   agentId: string,
   selector: string,
+  maxConcurrentRuns: number,
 ): Omit<KxmRunHandoff, "stepId"> | undefined {
   if (!Object.values(step.repositories).some((access) => access === "write")) return undefined;
+  if (step.assignments.maximum !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "assignments.maximum",
+      detail: "live write steps run a single assignment; the checkout witness cannot attribute edits between writers",
+    };
+  }
+  if (maxConcurrentRuns !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "limits.maxConcurrentRuns",
+      detail: "live write steps require limits.maxConcurrentRuns of 1; concurrent runs share one checkout",
+    };
+  }
   const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
   if (!oneShotWriterArgs(harness)) {
     return {
