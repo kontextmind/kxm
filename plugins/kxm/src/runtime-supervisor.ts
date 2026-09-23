@@ -568,6 +568,12 @@ export interface KxmProjectSyncStatus {
   state: "ok" | "no_hub" | "blocked" | "refusing";
   outbox: KxmOutboxStatus;
   consecutiveFailures: number;
+  /**
+   * False when the counts above are zeros because the store could not be opened
+   * at all — a refused schema is not an empty outbox, and reporting the two the
+   * same way is how a blocked project reads as "nothing to do".
+   */
+  storeReadable?: boolean;
   hubUrl?: string;
   lastCompletedAt?: string;
   lastPushed?: number;
@@ -1096,21 +1102,48 @@ async function startKxmRuntimeSupervisorInner(
   // Restart recovery: contexts are only populated on demand (a project request
   // opens one), so a restarted supervisor would see an empty map and silently
   // stop syncing every registered project's pending outbox rows. Reopen the
-  // projects this Runtime owns before the first tick.
-  for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
-    try {
-      contextFor(reg.projectRoot);
-    } catch {
-      // A project whose checkout has moved or been deleted stays skipped; its
-      // outbox rows remain pending and its presence expires, which is visible
-      // in the ops snapshot as orphaned.
-      logger.warn({
-        event: "runtime_sync_context_unavailable",
-        projectId: reg.projectId,
-        message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`,
-      });
+  // projects this Runtime owns before the first tick, and remember the ones that
+  // will not open — a refused schema and an empty outbox are different answers,
+  // and the status surface has to tell them apart.
+  const reopenRegisteredProjects = (): void => {
+    for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
+      const key = projectRuntimeKey(reg.projectRoot);
+      if (contexts.has(key)) continue;
+      try {
+        contextFor(reg.projectRoot);
+        syncStatuses.delete(key);
+      } catch (error) {
+        // A project whose checkout has moved, was deleted, or carries a store
+        // this build refuses to open. Its outbox rows stay pending and its
+        // presence expires, which the ops snapshot shows as orphaned — but the
+        // reason is reported here, on the Runtime, where the operator looks.
+        const reason = syncFailureText(error);
+        const prior = syncStatuses.get(key);
+        // Retried on every tick so a repaired checkout or a retired store heals
+        // without a restart — which means this line is logged on a change of
+        // state only, never once per tick.
+        if (prior === undefined || prior.lastError !== reason) {
+          logger.warn({
+            event: "runtime_sync_context_unavailable",
+            projectId: reg.projectId,
+            message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`,
+            reason,
+          });
+        }
+        syncStatuses.set(key, {
+          projectId: reg.projectId,
+          projectRoot: reg.projectRoot,
+          homeRuntimeId: activeRuntimeId,
+          state: "blocked",
+          outbox: { pending: 0, acked: 0, refused: 0, refusals: [] },
+          storeReadable: false,
+          consecutiveFailures: 1,
+          lastError: reason,
+        });
+      }
     }
-  }
+  };
+  reopenRegisteredProjects();
 
   const recordSyncStatus = (context: KxmRuntimeContext, next: KxmProjectSyncStatus): void => {
     const key = projectRuntimeKey(context.projectRoot);
@@ -1147,6 +1180,11 @@ async function startKxmRuntimeSupervisorInner(
     if (syncing || stopping) return;
     syncing = true;
     void (async () => {
+      // A project that could not open last time gets another attempt: the fix on
+      // disk (retired store, restored backup, moved checkout) is not followed by
+      // a restart, and a blocked state that only clears on restart is its own
+      // kind of silence.
+      reopenRegisteredProjects();
       for (const context of [...contexts.values()]) {
         const key = projectRuntimeKey(context.projectRoot);
         const prior = syncStatuses.get(key);
