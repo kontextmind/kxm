@@ -1,277 +1,213 @@
-# Getting started
+# Quick start: Pi
 
-This guide takes you from a clean machine to a successful peer request. Allow about ten minutes once Node.js, Git, and your agent harnesses are installed.
+This tutorial connects two Pi agents through a KXM [hub](../glossary.md#hub) and has one ask the other for a review. It takes about ten minutes once Node.js, Git and Pi are installed. At the end, a planner and a reviewer exchange a durable request, and you can add Claude Code to the same project.
 
 ## Before you begin
 
-You need:
+- Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, and Git.
+- Pi, signed in to a model provider. Install it with `npm install --global @earendil-works/pi-coding-agent`; the [Pi documentation](https://pi.dev/docs/latest) covers sign-in.
+- A Git repository for the project, and three terminals.
 
-- Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer;
-- Git;
-- GitHub CLI for the command-first release install;
-- Pi for Pi agents;
-- Claude Code only if you want a mixed Pi/Claude pool;
-- access to `kontextmind/kxm` while the repository is private.
-
-All agents in one pool must use the same hub URL, project token, and project name. Keep the hub/operator administrative token separate. Every active agent in that project must have a unique name.
+Every agent in one project uses the same hub URL, project key and project token, and each needs a unique name. The hub's admin token stays with you, the operator; no agent gets it.
 
 ## 1. Install
 
-Pi's Git package installation supplies the extension and Agent Skill but does
-not add `kxm` to `PATH`. Download the packed release through an authenticated
-GitHub CLI session and install that local tarball. Run `gh auth login` first if
-necessary.
-
-PowerShell:
-
-```powershell
-$version = "<release-version>"
-$asset = "kxm-$version.tgz"
-$releaseDir = Join-Path $PWD ".kxm-release"
-New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
-npm install --global --omit=peer (Join-Path $releaseDir $asset)
-pi install git:github.com/kontextmind/kxm@main
-kxm --help
-```
-
-Bash:
+Install the `kxm` CLI with npm, and the KXM package into Pi:
 
 ```bash
-version='<release-version>'
-asset="kxm-${version}.tgz"
-mkdir -p .kxm-release
-gh release download "v${version}" --repo kontextmind/kxm \
-  --pattern "$asset" --dir .kxm-release --clobber
-npm install --global --omit=peer ".kxm-release/$asset"
+npm install --global --omit=peer @kontextmind/kxm
 pi install git:github.com/kontextmind/kxm@main
-kxm --help
+kxm --version
 ```
 
-Do not substitute a global `git+https` npm install; the supported global
-operator package is the versioned release tarball. To run from source instead,
-clone the repository, run `npm ci`, and use `node scripts/kxm.mjs` in place
-of `kxm`.
+`kxm --version` prints the installed version. The Pi package adds the KXM extension and skills to Pi but does not put `kxm` on your `PATH`; only the npm install does. [Install KXM](install.md) covers other options.
 
 ## 2. Initialize the project
 
-```text
-kxm init
-```
-
-`kxm init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
-
-When `kxm init` succeeds in an interactive terminal, it offers to install shell
-completion for the detected shell. Accepting writes the completion script
-under the user config directory, appends one idempotent stanza to the shell
-rc file, and, when the kxm bin directory is not already on `PATH`, adds a
-`PATH` export. Declining is safe: run `kxm completion install` later, or set
-`KXM_SKIP_COMPLETION_PROMPT=1` to suppress the offer. Non-interactive,
-`--json`, and `--dry-run` runs never prompt or write shell files.
-
-After the completion offer, an interactive `kxm init` also offers to set up
-workflow-guide agents and workflows for the harnesses you have installed and
-authenticated. Accepting lists the software-engineering workflows from
-[`workflow-guide.md`](../reference/workflow-catalog.md); pick by number or slug (`all` works
-too). kxm resolves each role's first guide candidate whose harness is
-authenticated and writes only current KXM project resources —
-`.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and `.kxm/workflows/<slug>.yaml`
-(`kxm.workflow.v1`). It never writes retired legacy authority (`.kxm/config`,
-retired `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy. Roles whose candidates have no authenticated harness are
-reported as skipped, not silently downgraded. Guide candidates are dated
-research — verify them before dispatch. Declining is safe: set
-`KXM_SKIP_GUIDE_SETUP_PROMPT=1` to suppress the offer.
-
-## 3. Start the hub in another terminal
-
-`kxm hub start` is foreground. Keep that terminal running. The Pi extension
-can also start the hub for you (`hub.autoStart: background`, the default in
-`kxm.config.v1`): on load it reuses a healthy bound hub or a live local claim
-and starts a detached wrapper only when none exists.
-
-PowerShell:
-
-```powershell
-$env:KXM_AUTH_TOKEN = "replace-with-an-admin-token"
-$env:KXM_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
-kxm hub start
-```
-
-Bash:
+In the first terminal, before you start Pi or a hub in this repository:
 
 ```bash
-export KXM_AUTH_TOKEN="replace-with-an-admin-token"
-export KXM_PROJECT_TOKENS='{"demo":"replace-with-a-demo-project-token"}'
+cd <your-repo>
+kxm init --name "<display-name>"
+printf '%s\n' '.kxm/state/' '.kxm/logs/' '.kxm/backups/' >> .gitignore
+git add .gitignore .kxm
+git commit -m "Add KXM project configuration"
+```
+
+`kxm init` prints `initialized KXM project at <repo-root>`. It writes the project's agents, gates and a default workflow under `.kxm/`, and no ignore rules, so the second command adds them.
+
+> [!NOTE]
+> In an interactive terminal, `kxm init` offers to install shell completion and to add workflow-guide agents for the harnesses you have signed in to. Both are safe to decline. Set `KXM_SKIP_COMPLETION_PROMPT=1` and `KXM_SKIP_GUIDE_SETUP_PROMPT=1` to skip them.
+
+## 3. Start the hub
+
+In the second terminal, from the repository root, create a token for the project `demo` and start the hub. The commands keep any projects the hub already saved:
+
+```bash
+# The user state root is KXM_STATE_HOME when set; the default below is for macOS.
+# On Linux, use "${XDG_STATE_HOME:-$HOME/.local/state}/kxm/hub-env.json" instead.
+HUB_ENV="${KXM_STATE_HOME:-$HOME/Library/Application Support/KXM}/hub-env.json"
+export KXM_NEW_PROJECT_TOKEN="$(openssl rand -hex 32)"
+export KXM_PROJECT_TOKENS="$(node -e '
+const fs = require("node:fs");
+const [file, project] = process.argv.slice(1);
+const saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")).projectTokens ?? {} : {};
+saved[project] = process.env.KXM_NEW_PROJECT_TOKEN;
+process.stdout.write(JSON.stringify(saved));
+' "$HUB_ENV" demo)"
 kxm hub start
 ```
 
-A successful start prints:
+<details><summary>PowerShell</summary>
 
-```text
-kxm hub listening at http://127.0.0.1:7331; storage=<workspace>/.kxm/state/kxm.db
+```powershell
+$bytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$env:KXM_NEW_PROJECT_TOKEN = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
+$stateRoot = if ($env:KXM_STATE_HOME) { $env:KXM_STATE_HOME } else { Join-Path $env:LOCALAPPDATA 'KXM' }
+$hubEnv = Join-Path $stateRoot 'hub-env.json'
+$env:KXM_PROJECT_TOKENS = node -e "const fs=require('node:fs');const [f,p]=process.argv.slice(1);const s=fs.existsSync(f)?JSON.parse(fs.readFileSync(f,'utf8')).projectTokens??{}:{};s[p]=process.env.KXM_NEW_PROJECT_TOKEN;process.stdout.write(JSON.stringify(s))" $hubEnv 'demo'
+kxm hub start
 ```
 
-The default database survives hub restarts and is ignored by Git.
+</details>
+
+Expected output:
+
+```text
+kxm hub: using newly generated KXM_AUTH_TOKEN from <state-root>/hub-env.json
+kxm hub listening at http://127.0.0.1:7331; storage=<repo-root>/.kxm/state/kxm.db; auth=token
+```
+
+Keep this terminal open. The hub generates its admin token on the first start and saves it, with the project tokens, in `hub-env.json`. `KXM_PROJECT_TOKENS` replaces the saved project map rather than adding to it, which is why the command starts from the saved map.
+
+> [!TIP]
+> The Pi extension can start a hub for you: with the default `hub.autoStart: background`, it reuses a healthy bound hub or starts a detached one. This tutorial starts the hub by hand so that you create the project token yourself.
 
 ## 4. Bind this machine to the hub
 
-```text
+In the first terminal:
+
+```bash
 kxm hub bind http://127.0.0.1:7331
+```
+
+Expected output:
+
+```text
+bound hub http://127.0.0.1:7331 · loopback · health=on
 ```
 
 ## 5. Confirm the session
 
+```bash
+kxm hub view
+kxm session status
+```
+
+Expected output:
+
 ```text
-kxm session brief
+hub health=true ready=true · loopback hub
+1 session claim(s), 0 recovery envelope(s)
 ```
 
-## 6. Open Pi and check the hub
+The hub is healthy and ready, and its process is the one session claim.
 
-Set an identity and start the first agent. Do not give agents the administrative token.
+## 6. Start the planner
 
-PowerShell:
-
-```powershell
-$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
-$env:KXM_AUTH_TOKEN = "replace-with-a-demo-project-token"
-$env:KXM_PROJECT = "demo"
-$env:KXM_AGENT_NAME = "planner"
-$env:KXM_AGENT_PURPOSE = "Plans work and coordinates handoffs"
-pi
-```
-
-Bash:
+Still in the first terminal, give the agent the project token, which the command reads from `hub-env.json` without printing it, and an identity:
 
 ```bash
+HUB_ENV="${KXM_STATE_HOME:-$HOME/Library/Application Support/KXM}/hub-env.json"
+export KXM_AUTH_TOKEN="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).projectTokens[process.argv[2]] ?? "")' "$HUB_ENV" demo)"
 export KXM_SERVER_URL=http://127.0.0.1:7331
-export KXM_AUTH_TOKEN="replace-with-a-demo-project-token"
 export KXM_PROJECT=demo
 export KXM_AGENT_NAME=planner
 export KXM_AGENT_PURPOSE="Plans work and coordinates handoffs"
 pi
 ```
 
-In Pi, run `/kxm hub`. It should show the connected identity and server.
-
-Open a second terminal, repeat the settings, and change only the identity:
+<details><summary>PowerShell</summary>
 
 ```powershell
-$env:KXM_AGENT_NAME = "reviewer"
-$env:KXM_AGENT_PURPOSE = "Reviews plans and code for correctness risks"
+$stateRoot = if ($env:KXM_STATE_HOME) { $env:KXM_STATE_HOME } else { Join-Path $env:LOCALAPPDATA 'KXM' }
+$env:KXM_AUTH_TOKEN = (Get-Content -Raw (Join-Path $stateRoot 'hub-env.json') | ConvertFrom-Json).projectTokens.'demo'
+$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
+$env:KXM_PROJECT = "demo"
+$env:KXM_AGENT_NAME = "planner"
+$env:KXM_AGENT_PURPOSE = "Plans work and coordinates handoffs"
 pi
 ```
 
-Ask the planner:
+</details>
+
+Pi reports `Connected to the KXM hub as planner`. In Pi, run:
 
 ```text
-Use the kxm skill. List peers, ask reviewer to examine the current
-plan for its three highest correctness risks, and wait for the response.
+/kxm hub
 ```
 
-The planner should call `kxm_list`, `kxm_send`, and `kxm_await`. The reviewer receives an agent turn and its settled response returns to the planner.
-
-For an executable transport-only demonstration, run `npm run example`. It starts a temporary in-memory hub, completes a planner-to-reviewer round trip, and exits without changing the normal database.
-
-## Connect Claude Code
-
-Keep the same hub running. Inside Claude Code, add the marketplace and install the plugin:
+Expected output:
 
 ```text
-/plugin marketplace add kontextmind/kxm
-/plugin install kxm
-/reload-plugins
+kxm hub view: health=ok; planner; 1 online agent(s)
 ```
 
-Configure these values when prompted:
+> [!NOTE]
+> Without `KXM_AUTH_TOKEN`, the extension signs in with this machine's saved admin token, which the hub accepts only for projects that have no token of their own. Set the project token so that each agent holds only its own project's credential.
 
-| Setting | Example |
-|---|---|
-| KXM server URL | `http://127.0.0.1:7331` |
-| Authentication token | The `demo` project token, not the administrative token |
-| Agent name | `claude-reviewer` |
-| Agent purpose | `Reviews implementation and tests` |
-| Project | `demo` |
+## 7. Start the reviewer and send a request
 
-Restart Claude Code after configuration. Ask it to use `kxm_list`; the connected Pi agents should appear.
+In the third terminal, run the `HUB_ENV`, `KXM_AUTH_TOKEN`, `KXM_SERVER_URL` and `KXM_PROJECT` lines from step 6, then set a different identity and start Pi:
 
-### Optional pushed delivery
+```bash
+export KXM_AGENT_NAME=reviewer
+export KXM_AGENT_PURPOSE="Reviews plans and code for correctness risks"
+pi
+```
 
-Claude channels can inject an inbound request into a running session. They are currently a research-preview feature, and a community channel must be explicitly trusted at launch:
+In the planner's Pi session, ask:
 
 ```text
-claude --dangerously-load-development-channels plugin:kxm
+Use the kxm skill. List peers, ask reviewer to examine the current plan for
+its three highest correctness risks, and wait for the response.
 ```
 
-Review the trust prompt before accepting it. If an organization administrator has approved the plugin through `allowedChannelPlugins`, use:
+The planner calls `kxm_list`, `kxm_send` and `kxm_await`. The reviewer's Pi receives the request as a new turn, and the extension returns that turn's final response as the reply. The planner then shows the reviewer's answer.
 
-```text
-claude --channels plugin:kxm
-```
+The hub stores the request as a durable record that moves from `queued` to `delivered` to `replied`, so it survives a hub restart. `kxm_await` waits at most 60 seconds; a slower reply stays pending, and the planner can check it later with `kxm_get`. [Message peer agents](../guides/peer-messaging.md) covers fanout, cancellation and delivery modes.
 
-Without channel mode, Claude can still send requests and receive them by calling `kxm_inbox`, then answer with `kxm_reply`.
+## 8. Add Claude Code (optional)
+
+Claude Code can join the same project. Install the plugin as in [Quick start: Claude Code](quickstart-claude-code.md#5-install-the-plugin), with `project` set to `demo`, a unique `agent_name` such as `claude-reviewer`, and `auth_token` left blank on this machine. Then ask Claude to call `kxm_list`: the planner and the reviewer appear.
 
 ## Your first useful topology
 
-Start with two or three purposeful roles:
+Start with two or three agents that have clear, separate jobs:
 
 | Role | Good responsibilities |
 |---|---|
 | Planner | Break down work, define ownership, collect results |
 | Builder | Implement one bounded change |
-| Reviewer | Check correctness, tests, security, or documentation |
+| Reviewer | Check correctness, tests, security or documentation |
 
-Avoid assigning two agents to edit the same files in one checkout. Use separate Git worktrees or give one agent write ownership.
+KXM does not coordinate file ownership. Do not let two agents edit the same files in one checkout: use separate Git worktrees, or give one agent write ownership.
+
+## Troubleshooting
+
+| Message or symptom | Cause | Fix |
+|---|---|---|
+| `agent name already active in project: <name>` | Another live Pi agent in the project uses the name | Set a different `KXM_AGENT_NAME` and restart Pi |
+| `/kxm hub` prints `no agent connected` | The extension could not register | Check `KXM_SERVER_URL`, `KXM_PROJECT` and `KXM_AUTH_TOKEN`, then restart Pi |
+| `invalid project authentication token` | `KXM_AUTH_TOKEN` is not the hub's token for `KXM_PROJECT` | Read the token again as in step 6 |
+| `kxm init` prints `legacy state is not migrated by this build` | Pi or a hub ran here before `kxm init` | See [Check the project](quickstart-claude-code.md#check-the-project) |
+
+[Troubleshooting](../operations/troubleshooting.md) covers workers, sessions and the hub.
 
 ## Next steps
 
-- Use the wiki-ready [KXM Handbook](../kxm-handbook.md) for the complete CLI, Pi, Claude, workflow, gate, and recovery reference.
-- Adjust names, project isolation, and network settings in [Configuration](../reference/configuration.md).
-- Learn the request lifecycle in [Architecture](../concepts/architecture.md).
-- Read [Operations](../operations/deploy.md) before binding beyond localhost.
-- Review the [Test matrix](../contributing/test-matrix.md) for verified features and example coverage.
-- Start a long-lived coordinator from Jira with [Webhook workflows](../guides/webhook-workflows.md).
-- Use [Troubleshooting](../operations/troubleshooting.md) if an agent does not appear or a request does not arrive.
-
-## Try the v0.5 context features
-
-With a hub running (`kxm hub start`):
-
-```bash
-# Role-aware context packet for the current project
-kxm context get my-project --role planner --task "plan the CI migration" --budget 8192
-
-# Search durable context records (metadata only)
-kxm context recall my-project --query "flaky"
-
-# Explain evidence and lineage for one context item
-kxm context explain my-project ctx_item_abc123
-
-# Authoritative temporal state (and historical queries)
-kxm context state my-project ci.pipeline
-kxm context state my-project ci.pipeline --as-of 2026-01-15T00:00:00.000Z
-
-# Episodic learning from workflow journals
-kxm context episode my-project
-
-# Compile and lint the knowledge wiki
-kxm context wiki-compile my-project
-kxm context wiki-lint my-project
-
-# Routing telemetry per behavioral configuration
-kxm routing report
-```
-
-State changes follow a propose-then-promote flow: agents propose through the
-`kxm_promote` Pi/MCP tool (or the context API), and an operator promotes with
-durable evidence:
-
-```bash
-kxm context promote my-project ctx_prop_abc123 --evidence "receipt:run_9/verify"
-```
-
-Role-aware packets differ by role: repro agents see prior reproductions and
-incidents; planners see current state and decisions; critics see
-contradictions; implementers see the approved plan and skills; verifiers see
-acceptance evidence. The same requests through Pi (`kxm_context`) or Claude
-Code (MCP) return the same packets — agents never talk to a memory backend
-directly.
+- Keep Pi agents running unattended: [Run supervised Pi workers](../guides/pi-workers.md)
+- Run a workflow end to end: [Run your first workflow](first-workflow.md)
+- Send, fan out and cancel requests: [Message peer agents](../guides/peer-messaging.md)
+- Hub and agent settings: [Environment variables and limits](../reference/configuration.md)

@@ -1,15 +1,23 @@
 # KXM contract package
 
-> **Status: planned normative contract.** This directory describes the target
-> architecture accepted for KXM. Not all commands are implemented.
-> Phase 1 (init/migrate/trust) and Phase 2 (Runtime create/recover) have landed
-> slices. Phase 3 has D3 S1–S4 and D4 U2a-2 implemented (unreleased); it is not
-> only an agent-only simulated loop, and the default/fix driver gate remains
-> open. Operator tracking for the KXM rename, `kxm dash`, hub CLI, and
-> harness YAML lives in the
-> [implementation plan](../../plans/implementation-plan.md#tracking-working-tree-not-a-release).
-> For current hub execution behavior, use [Architecture](../concepts/architecture.md) and
-> [Configuration](../reference/configuration.md).
+> [!IMPORTANT]
+> Planned: these contracts specify KXM's target architecture. Parts ship today
+> and parts do not; the table below gives each page's status, and a page's own
+> status line wins over this summary. For the behavior that ships, read
+> [Architecture](../concepts/architecture.md), the
+> [configuration reference](../reference/config-reference.md) and the
+> [CLI reference](../reference/cli-reference.md).
+
+| Contract | Status |
+|---|---|
+| [Architecture decision](architecture.md) | Accepted target. The local Runtime, per-project event stores and Runtime-to-hub sync exist today |
+| [Terminology](terminology.md) | Normative now |
+| [Lifecycles](lifecycles.md) | Partly implemented: the Runtime engine appends run, step, assignment, attempt and effect events |
+| [Effects and recovery](effects-and-recovery.md) | Partly implemented: effect intents and `blocked_uncertain` are recorded; delivery is at-least-once, never exactly-once |
+| [Synchronization](synchronization.md) | Implemented for the default policy; custom policies and on-demand content transfer are not |
+| [Routing](routing.md) | Implemented: routing records, the dated price catalog, `kxm routing report` and `kxm improve` |
+| [Validation](validation.md) | Largely implemented: the restricted YAML loader, schema, reference and semantic checks, and permission diffs |
+| [Migration](migration.md) | Decided: there is no migration path and no `kxm migrate` command; legacy state is refused |
 
 KXM is a convention-over-configuration, local-first orchestration and
 context platform. One local Runtime owns execution; an optional multi-project
@@ -29,7 +37,7 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 | [Routing](routing.md) | Shipped v1 parser/report vs helper telemetry vs planned v2/catalog |
 | [Validation](validation.md) | Parse, schema, reference, semantic, permission, and snapshot validation |
 | [Migration](migration.md) | Compatibility from the current environment/JSON/SQLite surfaces |
-| [Implementation plan](../../plans/implementation-plan.md) | Ordered implementation and release gates |
+| [Implementation plan](../../plans/implementation-plan.md) (repository only) | Ordered implementation and release gates; not in the npm package |
 | [Examples](../../examples/project/README.md) | Complete project and workflow fixture |
 
 Machine-readable schemas live under [`schemas`](../../schemas).
@@ -53,9 +61,9 @@ custom tags disabled and bounded aliases, depth, scalar size, and document size.
 
 ## Compatibility rule
 
-The current v0.5 contracts remain authoritative until a release explicitly
-activates a KXM schema. Implementations MUST NOT infer KXM behavior merely
-because these documents or examples are present.
+Only schemas the shipped code loads are active, for example
+`kxm.project.v1` and `kxm.workflow.v1`. Implementations MUST NOT infer KXM
+behavior merely because these documents or examples are present.
 
 Every persisted KXM resource carries an exact schema identity. Additive
 changes require a new compatible schema revision; a semantic breaking change

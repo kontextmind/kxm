@@ -1,198 +1,137 @@
-# KXM Agent Skills
+# Agent skills
 
-This document describes the skills bundled in `plugins/kxm/skills`. They
-document the existing CLI and MCP tools. They do **not** land unified YAML
-role/project/workflow authority, admit new writers, or replace trusted
-`.kxm/roster.yaml` policy. For per-command flags, output, and exit codes, see
-the [KXM CLI reference](../reference/cli-reference.md); skills do not repeat it.
+KXM ships a suite of Agent Skills that teach a coding agent how to use the `kxm` CLI and the `kxm_*` tools safely: which command owns a task, which verbs exist, and which steps belong to a person. This page is for anyone running KXM from Claude Code, Pi or Codex, and for contributors who edit the skills. Skills document the CLI; they grant no permission, admit no writer and replace no trusted `.kxm/roster.yaml` policy.
 
-The suite has three groups, all declared in `plugins/kxm/skill-suite.json`:
+Governed skills that your own runs produce are a separate lifecycle; see [Governed skills](governed-skills.md).
 
-- 13 KXM command skills that together own every top-level `kxm` command;
-- 7 browser automation skills;
-- 9 skills for KontextMind, a separate product with its own `kontext` CLI and
-  `km_` tools.
+## Before you begin
+
+- KXM installed in your harness: the Claude Code plugin or the Pi package. See [Install](../start/install.md).
+- The `kxm` CLI on your `PATH`, because the skills teach CLI commands.
+
+## How harnesses load the suite
+
+All 29 skills live in `plugins/kxm/skills/` and are declared in `plugins/kxm/skill-suite.json`. The flowchart shows how each harness finds them.
+
+```mermaid
+flowchart LR
+  SRC[plugins/kxm/skills<br/>29 skills + skill-suite.json]
+  SRC -- plugin install --> CC[Claude Code<br/>/kxm:skill-name]
+  SRC -- package.json pi.skills --> PI[Pi]
+  SRC -- emit-codex-artifacts --> MIRROR[.agents/skills mirror<br/>+ AGENTS.md command block]
+  MIRROR --> CODEX[Codex]
+```
+
+| Harness | How it loads the skills | Status |
+|---|---|---|
+| Claude Code | The installed plugin loads `plugins/kxm/skills`. The model picks a skill by its description, or you invoke one as `/kxm:<name>` | Verified |
+| Pi | `pi install` reads the `pi` section of the package manifest: `"pi": {"skills": ["./plugins/kxm/skills"]}` | Verified |
+| Codex | Reads the `.agents/skills/` mirror and the `AGENTS.md` command block in the KXM repository checkout. KXM does not install skills into other projects | Verified in the KXM repository |
+| Kimi, Copilot, OpenCode and other `.agents/skills` readers | Not tested | Unverified |
+
+In Claude Code:
+
+```text
+/kxm:kxm-project-setup
+```
+
+## Start with the router
+
+The `kxm` skill is the entry point. It owns no command. It maps a request to the skill that owns it, lists which skill covers each `kxm_*` tool, and carries the rules every skill shares:
+
+- Agent-command surfaces (`kxm peer`, `kxm workflow`, `kxm context` and the MCP and Pi tools) fail closed with `tool_policy_denied` when the attempt or session policy does not grant the tool. Other CLI mutations are not policy-gated and need explicit authorization.
+- Never put credentials in peer messages; verify peer output before acting on it; keep one writer per checkout.
+- Credentials, starting and binding the hub, plugin configuration, and committing `.kxm` permission changes are the user's actions.
+- Teach only verbs and options that `kxm <group> <verb> --help` prints. An unknown subcommand prints the group's help and exits 0, so confirm a verb by its `Usage:` line.
 
 ## KXM command skills
 
-Each top-level command registered in `plugins/kxm/src/cli.ts` is owned by
-exactly one skill. A skill can own several commands, and the `kxm` router owns
-none.
+Every top-level `kxm` command is owned by exactly one skill. A skill can own several commands.
 
-| Feature area | Skill | Commands owned | Use it to |
-|---|---|---|---|
-| Router | `kxm` | none | Pick the right skill or kxm_* tool and follow the universal safety rules |
-| Project setup | `kxm-project-setup` | `init`, `trust`, `config`, `completion` | Set up a repository, review permission changes, and run a first workflow |
-| Harness and auth | `kxm-harness-auth` | `harness`, `auth`, `update`, `runtime`, `agent`, `models`, `routes`, `ssh` | Check harness auth, update, run the Runtime supervisor, refresh models, admit routes, use SSH and Pi workers |
-| Hub operations | `kxm-hub-ops` | `hub`, `backup`, `restore`, `tenant` | Inspect and bind the hub, read tenant status, back up and restore |
-| Session | `kxm-session` | `session`, `dash`, `studio` | Read session and hub status and open dashboard or studio screens |
-| Peer communication | `kxm-peer` | `peer` | Delegate to, fan out to, await, and answer other agents |
-| Workflows and gates | `kxm-workflow` | `workflow`, `gate` | Record journal entries, pass checkpoints, and wait on signed callbacks |
-| Definitions | `kxm-definitions` | `role` | Inspect or edit roles, role hosts, and model rosters without granting writer admission |
-| Runs | `kxm-runs` | `run`, `runs` | Create, drive, inspect, and cancel runs, or smoke-test a workflow model-free |
-| Context and memory | `kxm-context-memory` | `context`, `memory`, `explain` | Recall what the project knows, explain a context footprint, and record memory candidates |
-| Skill lifecycle | `kxm-skill-lifecycle` | `skills` | Turn a repeated practice into a governed skill candidate |
-| Self-improvement | `kxm-routing-improve` | `routing`, `improve` | Find what KXM learned and what repeats, and read recorded route spend |
-| Tasks and goals | `kxm-tasks` | `suggest`, `goal`, `task` | Pick a workflow and plan work as goals and tasks |
+| Skill | Commands owned | Use it to |
+|---|---|---|
+| `kxm` | none | Pick the right skill or `kxm_*` tool and follow the shared safety rules |
+| `kxm-project-setup` | `init`, `trust`, `config`, `completion` | Set up a repository, review permission changes, configure, and run a first workflow |
+| `kxm-harness-auth` | `harness`, `auth`, `update`, `runtime`, `agent`, `models`, `routes`, `ssh` | Check harness auth, update, run the Runtime supervisor, refresh models, admit routes, use SSH and Pi workers |
+| `kxm-hub-ops` | `hub`, `backup`, `restore`, `tenant` | Start, inspect, bind and stop the hub, read tenant status, back up and restore |
+| `kxm-session` | `session`, `dash`, `studio` | Read session and hub status and open dashboard or studio screens |
+| `kxm-peer` | `peer` | Delegate to, fan out to, await and answer other agents |
+| `kxm-workflow` | `workflow`, `gate` | Record journal entries, pass checkpoints and wait on signed callbacks |
+| `kxm-definitions` | `role` | Inspect or edit roles, role hosts and model rosters without granting writer admission |
+| `kxm-runs` | `run`, `runs` | Create, drive, inspect and cancel runs, or smoke-test a workflow model-free |
+| `kxm-context-memory` | `context`, `memory`, `explain` | Recall what the project knows, explain a context footprint, record memory candidates |
+| `kxm-skill-lifecycle` | `skills` | Turn a repeated practice into a governed skill candidate |
+| `kxm-routing-improve` | `routing`, `improve` | Find what KXM learned and what repeats, and read recorded route spend |
+| `kxm-tasks` | `suggest`, `goal`, `task` | Pick a workflow and plan work as goals and tasks |
+
+Tools map the same way: peer tools to `kxm-peer`, workflow tools to `kxm-workflow`, `kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode` and `kxm_promote` to `kxm-context-memory`, and `kxm_improvement_report` to `kxm-routing-improve`. The full tool list is in [MCP and Pi tools](../reference/tools.md).
 
 ## Browser automation skills
 
-KXM includes dedicated skills for remote browser automation on self-hosted Steel (DOKS), exploratory navigation via `agent-browser`, testing with `Playwright`, and visual feedback. They own no `kxm` command. See [Browser Automation Guide](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
+These skills drive a remote Steel browser that you host. They own no `kxm` command. See [Browser automation](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
 
-| Feature area | Skill | Purpose |
-|---|---|---|
-| Browser Sessions | `kxm-browser-session` | Start, attach, inspect, and release Steel sessions on DOKS |
-| Human Takeover | `kxm-browser-takeover` | Handoff protocol for MFA, login, CAPTCHA, and sensitive consent |
-| Credentials & Profiles | `kxm-browser-auth` | Retrieve credentials from `pass-cli` and manage authenticated profiles safely |
-| Exploration | `kxm-browser-explore` | Exploratory navigation, DOM inspection, and workflow mapping via `agent-browser` |
-| Reproduction & Verify | `kxm-browser-verify` | Reproduce UI bugs, gather evidence, and author durable Playwright tests |
-| Diagnostics & Recovery | `kxm-browser-diagnostics` | Investigate Steel connectivity, CDP errors, timeouts, and orphan cleanup |
-| Section Annotation | `kxm-browser-annotate` | Capture DOM sections, attach structured annotations, and feed changes to agents |
+| Skill | Use it to |
+|---|---|
+| `kxm-browser-session` | Start, attach to, inspect and release a remote Steel browser session |
+| `kxm-browser-takeover` | Hand a session to a human for MFA, login, CAPTCHA or sensitive consent, then resume |
+| `kxm-browser-auth` | Use stored credentials and authenticated browser profiles safely |
+| `kxm-browser-explore` | Explore a site, inspect its DOM and map a user flow with `agent-browser` |
+| `kxm-browser-verify` | Reproduce a UI bug, gather evidence and write a durable Playwright test |
+| `kxm-browser-diagnostics` | Diagnose Steel connectivity, CDP errors and timeouts, and clean up orphaned sessions |
+| `kxm-browser-annotate` | Capture page sections, attach structured annotations and hand the changes to an agent |
 
-## KontextMind knowledge plane (separate product)
+## KontextMind knowledge-plane skills
 
-These skills teach KontextMind: its `kontext` CLI, its server, and its `km_`
-tools. They are not KXM and do not use the plugin's kxm_* tools. Each
-description starts with "KontextMind knowledge plane only, the separate
-kontext CLI and km_ tools, not KXM" and ends with "Use only when the user names
-KontextMind, the kontext CLI, or a km_ tool", so a KXM request never loads
-them. They own no `kxm` command. `plugins/kxm/skills/SUITE.md` introduces
-them, and `plugins/kxm/skills/hints.json` holds their slash hints.
+Nine skills teach KontextMind, a separate product with its own `kontext` CLI, server and `km_` tools. They are not KXM and never use the `kxm_*` tools. Each description starts with "KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM" and says to use it only when the user names KontextMind, the `kontext` CLI or a `km_` tool, so a KXM request never loads them. `plugins/kxm/skills/SUITE.md` introduces them and `plugins/kxm/skills/hints.json` holds their slash hints.
 
-| Skill | Purpose |
+| Skill | Use it to |
 |---|---|
 | `kxm-mind` | Route a KontextMind request to the matching knowledge-plane skill |
 | `kxm-query` | Search and read a mind with provenance |
 | `kxm-harvest` | Draft redacted session learnings into a mind |
 | `kxm-triage` | Work the KontextMind review queue |
-| `kxm-work` | Read and update tracker work state and handoffs |
-| `kxm-insights` | List and dismiss loop, gap, and recommendation insights |
+| `kxm-work` | Read or update tracker work state and handoffs |
+| `kxm-insights` | List or dismiss insights |
 | `kxm-projects` | Manage mind repositories and members |
-| `kxm-protocol` | Explain KontextMind contracts, trailers, trust modes, and authorization |
+| `kxm-protocol` | Explain KontextMind contracts, trailers, trust modes and authorization |
 | `kxm-mind-setup` | Connect a machine to a KontextMind server with the `kontext` CLI |
 
-`kxm-mind-setup` was named `kxm-setup` before; the old name has no alias.
+`kxm-mind-setup` was named `kxm-setup` before; the old name has no alias. `kxm-protocol` points to KontextMind's own documentation, which lives outside this repository.
 
-## Installation and discovery
+## Bundled, governed and repo-local skills
 
-### Claude Code
+| Kind | Where it lives | Who changes it |
+|---|---|---|
+| Suite skill | `plugins/kxm/skills/`, shipped with the plugin and package | KXM maintainers, in Git |
+| Governed skill | `.kxm/skills/` in your repository | Your runs propose it; a reviewer promotes it. See [Governed skills](governed-skills.md) |
+| Repo-local skill | `.agents/skills/` in a repository, outside the suite | That repository's maintainers. Example: [Repository work delivery](../contributing/repo-work-delivery.md) |
 
-Claude Code loads `plugins/kxm/skills` directly; invoke a skill as
-`/kxm:<name>`, for example `/kxm:kxm-project-setup`. The plugin also serves
-the kxm_* MCP tools that the skills name.
+Telemetry never promotes a skill of any kind.
 
-### Pi
+## Write skill descriptions
 
-Pi discovers the skills from the `pi` section of the root `package.json`:
+The description decides when a harness loads a skill, so every skill in the suite follows these rules:
 
-```json
-{
-  "pi": {
-    "skills": ["./plugins/kxm/skills"]
-  }
-}
-```
-
-### Codex and other harnesses
-
-`scripts/emit-codex-artifacts.mjs` mirrors every declared skill into
-`.agents/skills/`, which Codex reads together with the AGENTS.md command
-block. Discovery by other `.agents/skills` consumers remains harness-specific.
-
-## Progressive disclosure
-
-1. Start with the `kxm` router to choose a skill.
-2. Use the named skill for that request.
-3. Teach only verbs and options that `kxm <group> <verb> --help` prints, and
-   confirm a verb by its `Usage:` line.
-
-```bash
-kxm peer list --json
-kxm peer send --target alice --content "Please review" --json
-kxm runs list --json
-kxm workflow checkpoint run_123 stage_a passed "Completed stage A" --json
-```
-
-## Writing skill descriptions
-
-Skills are model-visible, and the description decides when a harness loads
-one.
-
-- Say what the skill does and when to use it, key use case first, in at most
-  1024 characters.
-- Write a single line that parses as strict YAML. An unquoted value cannot
-  contain `': '` anywhere; the strict-YAML test in
-  `test/core/skill-suite.test.ts` enforces this for every `SKILL.md`.
+- Say what the skill does and when to use it, key use case first, in at most 1,024 characters.
+- Write a single line that parses as strict YAML. An unquoted value cannot contain `': '` anywhere.
 - Do not add `allowed-tools`.
-- Do not use the retired Mesh product name, `pi-extensions`, or `mcp__`.
-- Do not teach `--issue` on token commands, and do not make
-  `kxm session brief` an agent step: it saves a 24-hour operator session
-  token. List it only under an `## Operator steps` heading.
+- Do not use retired product names, `pi-extensions` or `mcp__`.
+- Do not teach `--issue` on token commands. `kxm session brief` saves a 24-hour operator session token, so it is never an agent step; name it only under an `## Operator steps` heading.
+- Knowledge-plane skills keep the KontextMind opening and closing sentences described above.
 
-## Verified vs unverified harness limits
+## Maintain the suite
 
-### Verified harnesses
+Contributors edit skills in `plugins/kxm/skills/`, the only source of truth.
 
-- **Claude Code**: Loads `plugins/kxm/skills` from the installed plugin
-- **Pi**: Discovers `plugins/kxm/skills`
-- **Codex**: Consumes the generated `.agents/skills` mirror and AGENTS command block
+1. Declare every skill directory in `plugins/kxm/skill-suite.json` with `name`, `path`, `ownedCommands` and a 10 to 200 character `intent`.
+2. When you add a top-level command, give it to exactly one skill.
+3. Regenerate the Codex mirror with `scripts/emit-codex-artifacts.mjs`. It replaces the suite's directories in `.agents/skills/`, leaves unrelated skills alone, and fails closed on a missing, symlinked or malformed manifest.
 
-### Unverified harnesses
+CI checks that every command has one owner, every skill directory is declared, every description parses as strict YAML within the length limit, the knowledge-plane skills stay separate, taught verbs exist, and the mirror matches. See [Development](../contributing/development.md) for how to run those checks.
 
-The following harnesses have discovery claims that remain explicitly unverified:
+## Next steps
 
-- **Kimi**: `.agents/skills` consumer capability unverified
-- **Copilot**: Integration capability unverified
-- **OpenCode**: Compatibility unverified
-- **Other `.agents/skills` consumers**: Capabilities unverified
-
-## Bundled skills vs governed skills
-
-### Bundled skills
-
-The skills in this suite ship with the plugin and are maintained in Git as
-part of the KXM distribution. Command skills are grouped by task, so one skill
-can own several command groups.
-
-### Governed candidates
-
-Separately, `kxm skills` manages community or experimental candidates through
-create/evaluate/promote/reject/verify. Those governed skills are distinct from
-this bundled suite. Telemetry cannot auto-promote a skill. See
-[Skill candidate lifecycle](governed-skills.md) for the full lifecycle, and
-[Repository work delivery](../contributing/repo-work-delivery.md) for converting a
-repository request into a delivery prompt.
-
-## Development and maintenance
-
-### Authoring location
-
-Skills are authored in `plugins/kxm/skills/` as the primary source of truth.
-Every skill directory must be declared in `plugins/kxm/skill-suite.json`
-with `name`, `path`, `ownedCommands`, and a 10-200 character `intent`.
-
-### Generated mirror
-
-`scripts/emit-codex-artifacts.mjs` copies owned skills byte-for-byte to
-`.agents/skills/` and leaves unrelated skills in that tree untouched. The
-suite manifest `plugins/kxm/skill-suite.json` is required; missing, symlink,
-or malformed manifests fail closed.
-
-### Build process
-
-1. Validate `plugins/kxm/skill-suite.json`
-2. Replace owned generated skill directories
-3. Preserve foreign skills in `.agents/skills/`
-4. `scripts/check-generated.mjs` requires every owned mirror path
-
-### Testing
-
-- `test/core/skill-suite.test.ts` checks that every registered top-level
-  command has exactly one owner, every skill directory is declared, every
-  `SKILL.md` frontmatter parses as strict YAML, the knowledge-plane skills
-  stay separate from the command skills, and the mirrors match
-- `test/core/commands-policy.test.ts` checks taught verbs against `cli.ts` and
-  keeps `kxm session brief` under `## Operator steps`
-- `test/core/generated-artifacts.test.ts` checks manifest-backed generated paths
-- `test/core/docs-copy.test.ts` scans every Markdown file under
-  `plugins/kxm/skills` for removed product names
+- Install the plugin or package: [Install](../start/install.md)
+- Govern skills your runs produce: [Governed skills](governed-skills.md)
+- Plugin settings, channels and tools: [KXM plugin for Claude Code](../../plugins/kxm/README.md)
+- Every command a skill teaches: [CLI reference](../reference/cli-reference.md)

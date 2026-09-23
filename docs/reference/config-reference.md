@@ -3,18 +3,20 @@
 This page describes every file a KXM project or operator configures: where it
 lives, which parser reads it, every field that parser accepts, the error codes
 it reports, and which commands read or write it. It was written against the
-parsers in `plugins/kxm/src` and `scripts/` for KXM 0.7.1, and every example on
+parsers in `plugins/kxm/src` and `scripts/`, and every example on
 this page was validated with the commands named next to it. Where a field is
 accepted but nothing acts on it yet, the tables say so.
 
 Related pages:
 
-- [Configuration](configuration.md) lists the environment variables for the hub,
-  workers, and agents.
+- [Environment variables and limits](configuration.md) lists the environment
+  variables for the hub, workers, and agents, and the protocol limits.
+- [Workflow definitions](workflow-definitions.md) documents the hub's JSON
+  webhook workflow definitions field by field.
 - [Harness routing](harness-routing.md) explains when to run a model through its
   native harness and when to reach the same model through OpenRouter on Pi. This
   page documents the fields; that guide covers the decision.
-- [Operations](../operations/deploy.md) covers backup and restore of every path below.
+- [Backup and restore](../operations/backup-and-restore.md) covers every path below.
 
 ## At a glance
 
@@ -548,7 +550,7 @@ ID used by `kxm run <workflow>`. Three layers check it:
 
 Fields such as `role`, `area`, or `outcomes` are not part of this schema and
 fail with `schema_additionalProperties`. `area` belongs to
-[webhook workflow stages](#webhook-workflow-definitions); the compiled plan
+[webhook workflow stages](workflow-definitions.md#stage-fields); the compiled plan
 derives its outcome list from the keys of `on`.
 
 ### Assignments and join
@@ -1337,6 +1339,24 @@ Commands:
 There is no `kxm config unset`. Delete the key from the file to fall back to
 the next layer; setting `null` stores `null`.
 
+### Configuration layers
+
+Preferences resolve through three file layers, and environment variables configure the processes beside them without overriding any `kxm.config.v1` key.
+
+```mermaid
+flowchart LR
+  D["Built-in defaults<br/>config.ts"] -->|"overridden by"| U["User layer<br/>~/.config/kxm/config.yaml"]
+  U -->|"overridden by"| P["Project layer<br/>.kxm/config.yaml"]
+  P --> V["Merged view<br/>kxm config list"]
+  CU["kxm config set --scope user"] -->|writes| U
+  CP["kxm config set<br/>(project scope, the default)"] -->|writes| P
+  E["Environment variables<br/>KXM_*"] -.->|"KXM_USER_CONFIG_DIR moves it"| U
+  E -->|"configure; never override these keys"| S["Hub, agent, worker<br/>and Runtime processes"]
+  HB["kxm hub start<br/>kxm hub bind"] -->|"persist credentials and URL"| S
+```
+
+Values that `kxm hub start` and `kxm hub bind` persist on the machine (`hub-env.json` and `hub-binding.json` under the [state root](#state-outside-the-project)) apply only when the matching variable, such as `KXM_AUTH_TOKEN` or `KXM_SERVER_URL`, is unset. [Environment variables and limits](configuration.md#where-settings-come-from) lists every variable.
+
 ## `.kxm/modes.yaml` (`kxm.modes.v1`)
 
 Modes for `kxm explain`, which estimates the prompt footprint and token cost of
@@ -1521,7 +1541,8 @@ Validated with `kxm memory brief --json`.
 Both directories are written by commands, not configured by hand.
 
 - `.kxm/skills/` holds the governed skill lifecycle:
-  `candidates/<id>/`, `promoted/<id>/`, `quarantined/<id>/`, and
+  `candidates/<id>/`, `promoted/<id>/`, `quarantineds/<id>/` (the directory name
+  the code uses for the `quarantined` state), and
   `rejected/<id>/`, each with `SKILL.md` and `metadata.json`
   (`kxm.skill-candidate.v1`), plus `history/<id>.jsonl`. Written by
   `kxm skills create|evaluate|promote|reject`; `kxm skills verify` detects
@@ -1548,114 +1569,14 @@ treated as legacy configuration and makes the whole project unloadable
 either; those are `kxm.workflow.v1` files and fail to parse as JSON. A path
 such as `.kxm/assets/webhooks/workflows.json` works.
 
-| Field | Type and allowed values | Required, default |
-|---|---|---|
-| `id` | String, at most 64 characters, unique | Required; appears in `/v1/webhooks/<id>` |
-| `source` | `jira`, `github`, or `generic` | `generic` |
-| `project` | Hub project name, at most 128 characters | Required |
-| `target` | Coordinator name or durable agent ID, at most 80 characters | Required |
-| `secretEnv` or `secret` | Variable name, or the literal secret (at least 16 characters); exactly one | Required; prefer `secretEnv` |
-| `signalSecretEnv` or `signalSecret` | Same rules, for result callbacks | Optional; callbacks fall back to the start secret |
-| `event` | String, at most 128 characters | Optional provider event filter |
-| `filter.path`, `filter.equals` | Dotted JSON path and exact string | Optional |
-| `delivery` | `followUp` or `steer` | `followUp` |
-| `ttlMs` | Integer, 1,000 to 604,800,000 | Optional |
-| `promptTemplate` | String, at most 20,000 characters, with `{{payload.path}}` substitutions | Required |
-| `maxTransitions` | Integer, 1 to 200 | Required when any stage has a back-edge |
-| `planHash`, `reproOracle` | `{stageId, evidenceKey}` | Optional |
-| `requirePlanHash` | Stage IDs | Optional |
-| `stages` | 1 to 32 stages | Required |
-| `stages[].id` | String, at most 64 characters, unique | Required |
-| `stages[].label` | String, at most 128 characters | The stage ID |
-| `stages[].instructions` | String, at most 4,000 characters | Required |
-| `stages[].requiredEvidence` | Up to 32 strings, unique after trimming, collapsing whitespace, and lowercasing | `[]` |
-| `stages[].maxAttempts` | Integer, 1 to 20 | `3` |
-| `stages[].autoResumeLimit` | Integer, 1 to 20 | Optional |
-| `stages[].area` | `harness`, `gates`, `implementation`, `workflow`, `documentation`, `security`, or `other` | Optional |
-| `stages[].on` | Map of outcome to a stage ID, `$terminal`, or `{target, maxTransitions}` | Optional |
-| `stages[].maxTransitions` | Integer, 1 to 100 | Optional |
-| `stages[].evidencePolicies.<requirement>` | `{kind: peer-reply, minProducers (1 to 8), eligibleAgents (1 to 16), acceptedStatuses: [replied], degradation: {minProducers}}` | Optional; see [Peer provenance and quorum gates](../guides/provenance-gates.md) |
-
-Rules that differ from `kxm.workflow.v1`: a forward transition may only target
-the next stage; `$terminal` takes no `terminalStatus`; an evidence policy key
-must match a `requiredEvidence` entry, may not list the workflow `target` among
-its eligible agents, and its degradation minimum must be lower than
-`minProducers` (a degraded minimum below 2 is a warning). Unknown fields are
-ignored rather than rejected, and errors are plain messages, not codes. The
-secret variables must be set when the file is parsed.
-
-```json
-[
-  {
-    "id": "jira-development",
-    "source": "jira",
-    "project": "payments",
-    "target": "coordinator",
-    "secretEnv": "JIRA_WEBHOOK_SECRET",
-    "signalSecretEnv": "WORKFLOW_SIGNAL_SECRET",
-    "event": "jira:issue_updated",
-    "filter": { "path": "issue.fields.status.name", "equals": "In Progress" },
-    "delivery": "followUp",
-    "ttlMs": 86400000,
-    "maxTransitions": 6,
-    "planHash": { "stageId": "plan", "evidenceKey": "approved plan" },
-    "requirePlanHash": ["implement"],
-    "promptTemplate": "Deliver {{issue.key}}: {{issue.fields.summary}}",
-    "stages": [
-      {
-        "id": "plan",
-        "label": "Plan and review",
-        "instructions": "Produce a plan and collect two independent peer reviews.",
-        "requiredEvidence": ["approved plan", "peer reviews"],
-        "evidencePolicies": {
-          "peer reviews": {
-            "kind": "peer-reply",
-            "minProducers": 2,
-            "eligibleAgents": ["reviewer-claude", "reviewer-grok"],
-            "acceptedStatuses": ["replied"],
-            "degradation": { "minProducers": 1 }
-          }
-        },
-        "maxAttempts": 3,
-        "area": "workflow",
-        "on": { "passed": "implement" }
-      },
-      {
-        "id": "implement",
-        "label": "Implement",
-        "instructions": "Implement the approved plan.",
-        "requiredEvidence": ["diff"],
-        "maxAttempts": 3,
-        "autoResumeLimit": 2,
-        "area": "implementation",
-        "on": { "passed": "ci" }
-      },
-      {
-        "id": "ci",
-        "label": "Wait for CI",
-        "instructions": "Start kxm_workflow_wait and let kxm gate github watch report the checks.",
-        "requiredEvidence": ["github.check:ci"],
-        "maxAttempts": 3,
-        "area": "gates",
-        "on": {
-          "passed": "$terminal",
-          "failed": { "target": "implement", "maxTransitions": 2 }
-        },
-        "maxTransitions": 2
-      }
-    ]
-  }
-]
-```
-
-Validated with `kxm gate validate --file .kxm/assets/webhooks/workflows.json`
-with both secret variables set (one warning, for the degraded minimum of 1).
-
-Commands: `kxm gate validate [--file <path>]` parses the active source without
-printing secrets (exit 2 when no source or both variables are set); the hub
-loads it on `kxm hub start`; `kxm workflow start`, `kxm gate signal`, and
-`kxm gate github watch` resolve each definition's secret variables. See
-[Webhook workflows](../guides/webhook-workflows.md).
+[Workflow definitions](workflow-definitions.md#webhook-workflow-definitions)
+documents every definition, stage and evidence-policy field, the transition
+rules, the limits, and a validated example. Check a file with
+`kxm gate validate --file <path>` (exit 2 when no source or both variables are
+set); the hub loads it on `kxm hub start`, and `kxm workflow start`,
+`kxm gate signal` and `kxm gate github watch` resolve each definition's secret
+variables. See [Webhook workflows](../guides/webhook-workflows.md) for a
+walk-through.
 
 ## Claude Code plugin settings
 
@@ -1715,16 +1636,18 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | `logs/` | Ignored runtime logs | The hub and workers |
 | `state/` | Ignored restart state: the hub database `kxm.db`, Pi sessions, worker manifests | The hub and workers |
 | `run/` | Ignored sockets (`run/ssh-sockets/`) | `kxm ssh` |
+| `backups/` | Ignored; each `backup-<time>/` holds copies of the hub database and other stores | `kxm backup` (without `--out`) |
 | `config/` | Legacy: its JSON files make the project unloadable | Nothing current |
 | `.kxm-init-transaction/` (sibling of `.kxm/` at the Git root) | Ignored; interrupted `kxm init` state | `kxm init` |
 
-The ignore rules the KXM repository itself uses, adapted for a project:
+Recommended ignore rules for a project, based on the ones the KXM repository uses plus `.kxm/backups/`:
 
 ```text
 .kxm/logs/*
 .kxm/state/*
 .kxm/tasks/
 .kxm/run/
+.kxm/backups/
 .kxm/assets/generated/
 .kxm-init-transaction/
 *.db
@@ -1735,7 +1658,8 @@ The ignore rules the KXM repository itself uses, adapted for a project:
 `KXM_WORKSPACE_DIR`, `KXM_LOGS_DIR`, `KXM_ASSETS_DIR`, `KXM_STATE_DIR`, and
 related variables move `logs/`, `assets/`, and `state/`. They do not move the
 configuration files, which always live under `<project root>/.kxm/`. See
-[Configuration](configuration.md) and [Operations](../operations/deploy.md).
+[Workspace directories](configuration.md#workspace-directories) and
+[Backup and restore](../operations/backup-and-restore.md).
 
 ### State outside the project
 
@@ -1941,3 +1865,10 @@ In a project that `kxm init` created,
 same shape (without the `requiredEvidence` entries), and `kxm run` prints the
 matching `kxm runs drive <runId> --simulated --wait` command for each run it
 creates.
+
+## Related
+
+- [Environment variables and limits](configuration.md): hub, agent and worker settings
+- [Workflow definitions](workflow-definitions.md): webhook JSON and Runtime YAML side by side
+- [CLI reference](cli-reference.md): the commands that read and write these files
+- [Harness routing](harness-routing.md): choose and confirm a model route

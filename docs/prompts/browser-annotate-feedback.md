@@ -2,32 +2,32 @@
 schema: "kxm.doc.v1"
 id: "PROMPT-BROWSER-006"
 type: "prompt"
-title: "Capturing UI Section Annotations and Sending Changes to Agent"
+title: "Capture UI section annotations and send changes to an agent"
 project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
 summary: "Turn annotated Steel UI-section feedback into source changes and recapture verified proof."
 tags: ["browser", "annotation", "feedback", "prompt"]
-related: ["docs/browser-automation.md", "docs/kb/how-to-capture-and-annotate-section.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/how-to-capture-and-annotate-section.md"]
 ---
 
-# Task Template: Capturing UI Section Annotations and Sending Changes to Agent
+# Task template: capture UI section annotations and send changes to an agent
 
 ## Purpose
 
 Use this prompt when a human operator or design critic has reviewed a UI section in a Steel browser session and wants to send annotated visual change requests back to the agent for remediation.
 
-## Canonical Skill References
+## Canonical skill references
 
 - `kxm-browser-annotate`
 - `kxm-browser-verify`
 - `kxm-browser-session`
 
-## Parameters & Placeholders
+## Parameters and placeholders
 
 - **PROJECT_ID**: `{{PROJECT_ID}}`
 - **TASK_ID**: `{{TASK_ID}}`
@@ -40,7 +40,7 @@ Use this prompt when a human operator or design critic has reviewed a UI section
 
 ---
 
-## Instructions for Agent
+## Instructions for the agent
 
 1. **Review Visual Feedback**:
    - Inspect the section screenshot at `{{SCREENSHOT_ARTIFACT}}`.

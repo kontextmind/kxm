@@ -1,106 +1,89 @@
-# Contributing
+# Contributing to KXM
 
-Thank you for improving KontextMind Pi Extensions. This project favors small, testable changes with clear user impact.
+Thank you for improving KXM. The project favors small, tested changes with a
+clear effect for users. This page is the short version; the
+[contributor guides](#contributor-guides) have the detail.
 
-## Development setup
+## Quick start
 
-Requirements:
+You need Node.js 22.19 or newer on the 22 line, or Node.js 24 or newer, plus npm
+and Git.
 
-- Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer;
-- npm;
-- Git;
-- Pi for extension smoke testing;
-- Claude Code for strict plugin-manifest validation.
-
-Install the locked dependencies:
-
-```powershell
+```bash
+git clone https://github.com/kontextmind/kxm.git
+cd kxm
 npm ci
-```
-
-Run the commit gate:
-
-```powershell
 npm run verify
 ```
 
-`npm run verify` is `npm test`, `npm run check`, and `check:generated` (staged
-`dist` vs the current build). CI PR legs run `validate:ci` (coverage + check +
-pack dry-run) and `check:generated` on every matrix cell. Plugin validation is
-a hosted CI job (`claude plugin validate`), not a third npm script and not a
-pre-push requirement. `npm run validate` still exists for a local machine that
-already has the Claude CLI.
+`npm run verify` is the commit gate. It builds, runs the core and package unit
+tests, type-checks, lints the docs, checks version surfaces, and confirms the
+generated files are current. Run it before every push.
 
-### Coverage ratchet
+## Make a change
 
-The three `--test-coverage-*` thresholds in `package.json` are the measured whole-tree values at the time they were set. A PR may raise any of them. No PR may lower one. A PR that drops coverage below the gate adds tests; it does not touch the flag. If a later run fails by a fraction with no code change, the answer is a test fix or a raise elsewhere, never a lowered flag. 95/80/90 is a milestone, not the gate.
+1. Open an issue first for changes to the protocol, the security model, or
+   packaging.
+2. Branch from `main`. Keep one concern per branch and one clear concern per
+   commit.
+3. Add or update a focused test for every behavior change, and add its row to
+   the [test matrix](docs/contributing/test-matrix.md).
+4. Run `npm run build` after changing bundled source, and commit the regenerated
+   files with the source change. Never edit generated files by hand.
+5. Update the user docs, and `CHANGELOG.md` under `## Unreleased`, for
+   user-visible changes.
+6. Run `npm run verify`, then push and open a pull request.
 
-### Coverage excludes
+Changes to routes, request fields, status transitions, delivery modes, limits or
+authentication are protocol changes. They also need integration tests, an update
+to `plugins/kxm/skills/kxm/references/protocol.md`, and a compatibility note.
+See [Develop KXM](docs/contributing/development.md#change-the-protocol).
 
-`--test-coverage-include=plugins/kxm/src/**/*.ts` covers the source tree. An exclude needs a reason that is not "hard to test":
+## What CI checks
 
-- `plugins/kxm/src/server.ts`: hub process entry. Executed only as the esbuild bundle `dist/server.js` spawned via `scripts/kxm-hub.mjs`. Child execution attributes to `dist`, never to this source file. No test imports it.
-- `plugins/kxm/src/mcp-server.ts`: MCP stdio entry, bundled by `build:mcp` and exercised as a spawned process. Same attribution reason. No test imports it.
+Every pull request, including a documentation-only one, runs these checks:
 
-## Making a change
+- **Validate** on Node 22.19.0 and Node 24: `npm run validate:pr` (the core
+  suite, `check` and `check:generated`).
+- **Docs lint**: `npm run lint:docs` and `npm run check:versions`.
+- **Plugin validation**: `claude plugin validate --strict` on the marketplace
+  and the plugin.
 
-1. Open an issue for behavior changes that affect the protocol, security model, or packaging.
-2. Create a focused branch from the current default branch.
-3. Keep one clear concern per commit.
-4. Add or update tests and `docs/test-matrix.md` for behavior changes.
-5. Update the relevant user guide and `CHANGELOG.md` for user-visible changes.
-6. Run `npm run verify` before requesting review. Plugin validation runs in CI.
+Pushes to `main` run the full `npm run validate:ci`, with coverage floors and a
+package dry run. Every merged pull request is released as a new patch version
+automatically, so do not bump versions yourself. See
+[CI and release](docs/contributing/ci-and-release.md).
 
-## Source and generated files
+## Contributor guides
 
-When changing the CLI, hub, MCP server, or one of their shared modules, run:
+| Guide | Covers |
+|---|---|
+| [Develop KXM](docs/contributing/development.md) | Checkout, repository layout, packaging, generated files, the commit gate, test conventions |
+| [CI and release](docs/contributing/ci-and-release.md) | CI jobs, the release flow, versions, smoke tests |
+| [Write KXM documentation](docs/contributing/writing-docs.md) | Page types, the page template, style rules, doc gates |
+| [Test matrix](docs/contributing/test-matrix.md) | Which test proves which behavior |
+| [Packages and workspaces](docs/contributing/packages.md) | Workspace packages and their layer rules |
+| [Terminal components](docs/contributing/tui-components.md) | The `@kontextmind/tui` kit |
+| [Assignment runner](docs/contributing/assignment-runner.md) | Delegating and accepting work from coding agents |
+| [Repository work delivery skill](docs/contributing/repo-work-delivery.md) | The repository-local delivery prompt skill |
 
-```powershell
-npm run build
-```
-
-Commit the corresponding files under `plugins/kxm/dist/` with the source change. npm and Claude marketplace installations use these self-contained artifacts and must not require development dependencies or runtime TypeScript stripping.
-
-After building, `git add plugins/kxm/dist`, then run `npm run verify`. The
-generated-artifact check rebuilds the runtimes and compares the built files
-to the staged copy; it fails if any required artifact is missing, untracked,
-or differs from the index.
-
-Do not edit generated runtime files by hand.
-
-Repository-local runtime conventions belong under `.kxm`: reviewable configuration in `config`, intentional workflow artifacts in `assets`, ignored logs in `logs`, and ignored recovery state in `state`. Never commit live logs, SQLite files, generated assets, or secret values.
-
-## Protocol changes
-
-Changes to routes, request fields, status transitions, delivery modes, limits, or authentication require:
-
-- integration tests;
-- an update to `plugins/kxm/skills/kxm/references/protocol.md`;
-- an update to the relevant guide under `docs/`;
-- a changelog entry;
-- a compatibility note when existing clients could break.
-
-Prefer additive changes. Breaking changes require a major version or an explicitly versioned protocol path.
-
-## Documentation style
-
-- Lead with the user outcome.
-- Put commands in the order users should run them.
-- State prerequisites, defaults, and failure conditions.
-- Use **hub**, **agent**, **peer**, **project**, **request**, and **reply** consistently.
-- State the single-node production boundary precisely; do not imply clustering or exactly-once execution.
-- Never put live tokens, credentials, or private prompts in examples.
-- For agent skills, refer to the [Agent Skills documentation](docs/guides/agent-skills.md) for the comprehensive skill suite and development guidelines.
+Coding agents working in this repository also read [`AGENTS.md`](AGENTS.md).
 
 ## Pull requests
 
 A reviewable pull request includes:
 
-- a concise problem and solution statement;
+- the problem and the solution, and the issue it addresses;
 - scope and explicit non-goals;
-- tests and validation results;
-- user-facing documentation changes;
-- security or compatibility considerations;
-- screenshots or logs only when they add diagnostic value and contain no secrets.
+- tests and the `npm run verify` result;
+- user-facing documentation changes, or a note that none are needed;
+- security and compatibility effects;
+- screenshots or logs only when they help, and never with secrets in them.
 
-By contributing, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md) and license your contribution under the repository's [MIT License](LICENSE).
+Never put live tokens, credentials, or private prompts in code, tests, docs or
+examples. Report security problems privately, as [SECURITY.md](SECURITY.md)
+describes, not in a public issue.
+
+By contributing, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md)
+and to license your contribution under the repository's
+[MIT License](LICENSE).

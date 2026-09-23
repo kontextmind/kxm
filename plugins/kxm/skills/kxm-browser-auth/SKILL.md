@@ -24,7 +24,7 @@ Always retrieve credentials and API keys directly from `pass-cli`:
 pass-cli item view --vault-name "<vault>" --item-title "<title>" --field password
 
 # Retrieve Steel infrastructure API key
-pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --field STEEL_API_KEY
+pass-cli item view --vault-name "<vault>" --item-title "<steel-item>" --field STEEL_API_KEY
 ```
 
 ### 2. Secret Redaction Invariants

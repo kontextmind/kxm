@@ -2,32 +2,32 @@
 schema: "kxm.doc.v1"
 id: "PROMPT-BROWSER-003"
 type: "prompt"
-title: "Requesting Human Authentication and Resuming Afterward"
+title: "Request human authentication and resume afterward"
 project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
 summary: "Pause automation for MFA, OAuth, or CAPTCHA takeover, then resume after verified human success."
 tags: ["browser", "takeover", "mfa", "prompt"]
-related: ["docs/browser-automation.md", "docs/kb/how-to-take-over-session.md", "docs/kb/how-to-resume-after-mfa.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/how-to-take-over-session.md", "docs/kb/how-to-resume-after-mfa.md"]
 ---
 
-# Task Template: Requesting Human Authentication and Resuming Afterward
+# Task template: request human authentication and resume afterward
 
 ## Purpose
 
 Use this prompt to pause automation and request operator intervention for multi-factor authentication (MFA), OAuth consent, credential challenges, or CAPTCHAs, then safely resume automation after verified success.
 
-## Canonical Skill References
+## Canonical skill references
 
 - `kxm-browser-takeover`
 - `kxm-browser-session`
 - `kxm-browser-auth`
 
-## Parameters & Placeholders
+## Parameters and placeholders
 
 - **PROJECT_ID**: `{{PROJECT_ID}}`
 - **TASK_ID**: `{{TASK_ID}}`
@@ -35,11 +35,11 @@ Use this prompt to pause automation and request operator intervention for multi-
 - **REASON_FOR_TAKEOVER**: `{{REASON_FOR_TAKEOVER}}` (e.g. "SMS / TOTP MFA challenge detected on login form")
 - **EXPECTED_POST_AUTH_URL**: `{{EXPECTED_POST_AUTH_URL}}` (e.g. `https://app.example.com/dashboard`)
 - **EXPECTED_INDICATOR**: `{{EXPECTED_INDICATOR}}` (e.g. "Header user avatar or dashboard navigation visible")
-- **TAKEOVER_URL**: `https://steel.kontextmind.com/ui?sessionId={{SESSION_ID}}`
+- **TAKEOVER_URL**: `{{STEEL_UI_URL}}?sessionId={{SESSION_ID}}` (`STEEL_UI_URL`, or `{{STEEL_API_URL}}/ui` when that is unset)
 
 ---
 
-## Instructions for Agent
+## Instructions for the agent
 
 1. **Halt Automated Actions Immediately**:
    - Stop issuing automated clicks, keystrokes, or page reloads.

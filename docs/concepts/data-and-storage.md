@@ -1,64 +1,192 @@
----
-schema: "kxm.doc.v1"
-id: "KB-HUB-005"
-type: "kb"
-title: "Q&A: What is all stored on the hub?"
-project: "kxm"
-status: "draft"
-owner: "@operator"
-created: "2026-09-17"
-updated: "2026-09-18"
-authority: "instruction"
-confidence: "reviewed"
-summary: "The hub persists agent records, message bodies, workflow runs, journal/evidence, context items, runtime events, and raw tokens in user-state hub-env.json."
-tags: ["hub", "storage", "privacy"]
-related: ["docs/operations.md", "docs/kb/qa-sqlite-vs-duckdb.md"]
----
+# Data and storage
 
-# Q&A: What is all stored on the hub?
+KXM keeps its state in a few SQLite databases and a handful of files, split between your project checkout and a per-user state root. This page explains what each store holds, where it lives, what is kept as a hash instead of as content, how long data stays, and why KXM refuses old stores instead of migrating them. Read it before you back up, wipe, or audit a KXM installation.
 
-> Researched by `codex gpt-5.6-sol` (reviewer-cli, read-only) · 2026-09-17 · task_85bd0119c40a · root review: pending
+## Where data lives
 
-| store/table or file | what it holds | who writes it | sensitivity (contains secrets? credentials? prompt content?) | retention/cleanup path if any |
-|---|---|---|---|---|
-| `.kxm/state/kxm.db` — `agents` | Full JSON agent records: ID/key, name, purpose, project, optional model, connection/last-seen timestamps, and online state. `plugins/kxm/src/store.ts:15` · `plugins/kxm/src/protocol.ts:19` | Hub registration/presence code through `MeshStore.saveAgent`. `plugins/kxm/src/store.ts:233` | No credential field by design. Operator-entered names/purposes may still be sensitive. No storage-time redaction is performed by `saveAgent`. | No automatic agent-row retention or deletion was found. Full reset: stop the hub, then remove `kxm.db` and its `-wal`/`-shm` sidecars. Not safe to delete while running. |
-| `.kxm/state/kxm.db` — `messages` | The complete peer/workflow message JSON, including sender/recipient, routing metadata, timestamps/status, **request body in `content`**, and **reply body in `reply.content`**. Workflow-generated messages can contain a rendered webhook payload because templates are rendered into the stored prompt. `plugins/kxm/src/protocol.ts:72` · `plugins/kxm/src/hub.ts:1320` | Hub peer-message, reply, cancellation, expiry, and workflow transition paths through `saveMessage`/`saveWorkflowTransition`. `plugins/kxm/src/store.ts:241` | **Yes: prompt/message/reply content is stored.** There is no general redaction call in `saveMessage`; therefore a token or secret included in content can reach SQLite. | Terminal messages (`replied`, `cancelled`, `expired`, `error`) are swept after `KXM_MESSAGE_RETENTION_MS`, default 7 days; nonterminal queued/delivered messages are not age-purged by that sweep. Individual cancellation does not immediately erase the body. `plugins/kxm/src/protocol.ts:6` · `plugins/kxm/src/store.ts:438` |
-| `.kxm/state/kxm.db` — `consumer_cursors` | Per-agent last-consumed message sequence. `plugins/kxm/src/store.ts:44` | Hub delivery/consumer acknowledgement path through `advanceCursor`. `plugins/kxm/src/store.ts:321` | No bodies or credentials; agent IDs and delivery position only. | No row-level cleanup found. Reset with the whole hub DB while stopped; manually deleting only this table would disturb delivery semantics and is unsupported. |
-| `.kxm/state/kxm.db` — `agent_sequences` | Per-agent next message sequence used for ordered delivery. `plugins/kxm/src/store.ts:48` | Hub message allocation through `nextAgentSequence`. `plugins/kxm/src/store.ts:280` | No bodies or credentials; agent IDs and counters only. | No row-level cleanup found. Reset with the whole hub DB while stopped. |
-| `.kxm/state/kxm.db` — `workflow_runs` | Complete workflow-run JSON: workflow/source/delivery IDs, payload and definition hashes, project and target identities, linked message ID, status, stage definitions/state, waits, signal receipts, evidence maps, transitions, captured oracle/plan hashes, and timestamps. The raw webhook body is not stored here, but its SHA-256 and any values incorporated into stages or stored evidence are. `plugins/kxm/src/workflow.ts:301` | Hub webhook/workflow coordinator through `saveWorkflowRun` and transactional workflow transitions. `plugins/kxm/src/store.ts:536` | Contains workflow instructions, summaries, evidence, hashes and operational metadata. Evidence values are accepted without `redactSecrets`, so they may contain submitted secret material. Workflow definition secrets are excluded from `definitionHash`. `plugins/kxm/src/hub.ts:248` · `plugins/kxm/src/workflow.ts:1184` | Completed/failed runs older than the run-retention default of 7 days are swept, together with their journal rows. Active/nonterminal runs are retained. `plugins/kxm/src/store.ts:483` |
-| `.kxm/state/kxm.db` — `workflow_journal` | Full journal entries: run/agent/stage/attempt IDs, category, area, severity, summary, optional details, evidence strings, related entries, promotion history, and timestamps. `plugins/kxm/src/workflow.ts:340` | Hub checkpoint, signal, error, workflow-record, transition and promotion paths through `saveJournalEntry`. `plugins/kxm/src/store.ts:544` | **Yes: evidence/journal content is stored.** Summary, details and evidence are not generally secret-redacted before persistence; they can contain sensitive operational or prompt-derived content. | Removed with an expired terminal run. Orphan journal rows older than the same 7-day run-retention window are also swept. `plugins/kxm/src/store.ts:496` |
-| `.kxm/state/kxm.db` — `context_items` | Full context item JSON: project/scope/kind, summary, provenance/source reference/lineage, authority/confidence, state key and temporal validity, lifecycle status, supersession and evidence references. `plugins/kxm/src/context.ts:110` | Hub context/memory endpoints through `saveContextItem`. `plugins/kxm/src/store.ts:552` | Summary and provenance `sourceRef` are passed through `redactSecrets`; reserved credential/control-plane fields are rejected. Redaction is pattern-based, so unrecognized secrets or sensitive prose may remain. `plugins/kxm/src/context.ts:204` | Superseded/rejected items, or expired items, are removed once their terminal timestamp is beyond the 7-day run-retention cutoff. Current items have no general TTL. `plugins/kxm/src/store.ts:518` |
-| Hub DB schema metadata/migrations | SQLite `user_version`; current hub-store version is 3. Migration 1→2 adds agents/messages/workflow runs/journal; 2→3 adds context items, message indexes, consumer cursors and agent sequences. `plugins/kxm/src/store.ts:76` | `openDatabase` during hub startup. | No content beyond schema/version metadata. | Automatic forward migration only along declared lanes. Wiping the DB discards all hub-store data and recreates the current schema on next start. |
-| User-state `runtime/registry.db` — `supervisor` | Singleton runtime identity, PID, port, **token hash**, start/heartbeat times and lifecycle state. `plugins/kxm/src/runtime-store.ts:92` | KXM runtime supervisor claim, heartbeat, takeover and shutdown paths. | Contains only the hash of the runtime token, not the raw token; also exposes process/port/liveness metadata. | No automatic retention found; the singleton is updated in place. Stop the runtime before wiping `registry.db`. Removing it also loses authoritative project-home registration state. |
-| User-state `runtime/registry.db` — `projects` | Project ID, canonical absolute project root, derived project key, immutable home-runtime ID, optional config revision and registration time. `plugins/kxm/src/runtime-store.ts:110` | KXM `openKxmRuntimeContext`/runtime registration. `plugins/kxm/src/runtime-service.ts:268` | No credentials or prompt body. Absolute filesystem paths and project identities may be sensitive. | No unregister/retention path was found. Stop the runtime before deleting the registry. Deleting it alone leaves per-project event stores orphaned on disk. |
-| User-state `runtime/projects/<projectKey>/run-events.db` — `runs` | Run/project/runtime/workflow IDs, **prompt SHA-256 rather than prompt text**, status, pinned config/memory/executor/tool-policy revisions, and timestamps. `plugins/kxm/src/runtime-store.ts:583` | KXM runtime run creation/status updates. | No raw prompt in this table. IDs, revisions and prompt hash are operationally sensitive. | No automatic run retention or delete path found. Wipe the project’s complete runtime directory while the supervisor/runtime is stopped. |
-| Same `run-events.db` — `events` | Immutable ordered run-event stream: event identity/type, optional command ID, times/sequence, revision pins, home runtime, schema and arbitrary JSON `payload`. `plugins/kxm/src/runtime-store.ts:598` | KXM runtime/engine through `appendEvent`. `plugins/kxm/src/runtime-store.ts:891` | Event payloads can contain instructions, evidence, summaries, tool outcomes or other run content. No general `redactSecrets` call occurs in `appendEvent`; secret exposure depends on each producer. | No automatic retention/delete path found. Treat as an append-only audit log; reset the whole project event store while stopped. |
-| Same `run-events.db` — `commands` | Idempotent command ID, run ID, command kind, arbitrary JSON result and recorded time. `plugins/kxm/src/runtime-store.ts:618` | KXM command handlers through `insertCommand`. `plugins/kxm/src/runtime-store.ts:826` | Command results may include sensitive run/output content; no general storage redaction is applied here. | No automatic retention/delete path found. Reset with the project event store while stopped. |
-| Same `run-events.db` — `run_plans` | Run ID, run-plan hash, full pinned serialized plan envelope, and sequence where it was pinned. `plugins/kxm/src/runtime-store.ts:625` | KXM plan compilation/pinning code. | Contains workflow/step instructions and policy/config references; it may contain prompt-like operator content. Credentials are not a declared field, but the envelope is stored verbatim. | No automatic cleanup found. Reset with the project event store while stopped. |
-| Same `run-events.db` — `run_state` | Materialized folded state JSON plus last event sequence for each run. `plugins/kxm/src/runtime-store.ts:631` | KXM runtime projection persistence. | Can repeat sensitive data derived from event payloads, assignments, evidence and outcomes; no generic redaction at storage. | No automatic cleanup found. Reset with the project event store while stopped. |
-| Same `run-events.db` — `attempt_capabilities` | Attempt/run/assignment/step/producer bindings, capability hash and issued/settled/revoked state. `plugins/kxm/src/runtime-store.ts:636` | KXM engine capability issuance and settlement. | Stores capability **hashes**, not an evident raw bearer credential. Operational authorization metadata is sensitive. | State is settled/revoked in place; no row-retention cleanup found. Reset with the project event store while stopped. |
-| Same `run-events.db` — `gate_attempts` | Gate identity/type/expected result, assignment/effect/step identities, definition/registry/plan hashes, control-project key, producer and intent-event linkage. `plugins/kxm/src/runtime-store.ts:646` | KXM gate engine. | No stdout/stderr bodies or credentials in the declared columns; hashes and control metadata may be sensitive. | No automatic cleanup found. Reset with the project event store while stopped. |
-| Same `run-events.db` — `gate_observations` | Process outcome metadata: spawned/PID/exit/signal/stop/error state, stdout/stderr SHA-256, byte/completeness counts, checked/failed counts, elapsed time and event linkage. `plugins/kxm/src/runtime-store.ts:668` | KXM gate executor/recorder. | Stores hashes and sizes, **not stdout/stderr bodies** in this table. Process/error metadata can still be sensitive. | No automatic cleanup found. Reset with the project event store while stopped. |
-| Same `run-events.db` — `gate_evidence` | Settled gate evidence identity, attempt/observation/run/step/assignment/effect bindings, optional evidence key, expected and actual outcome, event linkage and content hash. `plugins/kxm/src/runtime-store.ts:703` | KXM gate settlement code. | Evidence identity/outcome and hashes, not an evident raw evidence body in this table. Related event payloads may contain more detail. | No automatic cleanup found. Reset with the project event store while stopped. |
-| Same `run-events.db` — `drive_receipts` | Serialized final drive receipt plus run/project IDs, opened/last sequence, close time and schema. Receipt includes runtime/mode, log hash, settlement/handoff/error, budget and producer state. Added by schema migration 3→4. `plugins/kxm/src/runtime-store.ts:723` | KXM run-drive close/receipt persistence. | May contain handoff/error detail and operational metadata; not credentials by schema. No generic redaction at insert was established. | No automatic cleanup found. Reset with the project event store while stopped. |
-| `run-events.db.run-prompts.json` | Map of run ID to the **full accepted KXM prompt**; the event DB stores only its SHA-256. `plugins/kxm/src/runtime-store.ts:778` | `KxmRunEventStore.putRunPrompt`. | **Yes: raw prompt content.** Created with mode `0600`. No redaction is applied before writing. | No per-run deletion or retention path found. Stop the runtime and delete it together with its matching `run-events.db`; deleting only the sidecar makes historical prompt retrieval incomplete. |
-| SQLite `-wal` and `-shm` sidecars for all databases | SQLite write-ahead-log pages and shared-memory coordination; WAL can temporarily contain prior/current copies of any table data. WAL mode is explicitly enabled. `plugins/kxm/src/database.ts:137` | SQLite. | Same sensitivity as the corresponding DB, including message bodies, prompts and evidence. DB file creation mode is not explicitly chmod’d by `openDatabase`, so the exact live DB/WAL mode is **unknown** and depends on SQLite/OS/umask; backups/restores are chmod `0600`. | Stop all writers and remove DB, `-wal`, and `-shm` together. Never wipe only the main DB while a WAL remains. |
-| `external_effects` in the DB path supplied to `ExternalEffectsLedger` | Idempotency receipt for an external mutation: effect/run/step/attempt IDs, action kind, target reference, status, request payload hash, arbitrary receipt JSON, execution/heartbeat/completion times. Its compatibility migration attempts to add `last_heartbeat_at`. `plugins/kxm/src/external-effects.ts:117` | External-effect claim/heartbeat/commit/abort code. | `receipt_payload` is arbitrary JSON and is stored without redaction; it could contain remote IDs, URLs, errors or accidentally credentials. The original request payload is initially stored as JSON despite the field name becoming a receipt on completion. | Stale in-flight leases can be reclaimed after 300 seconds, but that updates the row rather than deleting it. No row-retention cleanup found. The constructor defaults to `:memory:` and no production file instantiation was found in the searched code, so its persistent file location/integration is **unknown**. If file-backed, close all ledger users before deleting that DB and sidecars. |
-| `.kxm/state/hub.pid` | Managed-process claim: schema version, wrapper PID, best-effort server child PID, role, start time and control filename. `scripts/kxm-hub.mjs:155` | Hub wrapper. | No secrets. Reveals process IDs and start time. Created exclusively at `0600`; subsequent rewrite does not reset mode, so a normally created file remains `0600`. | Removed by the wrapper on normal exit; stale valid claims are reclaimed after process liveness checks. Use `kxm hub stop`; manual removal is safe only after verifying both wrapper and recorded server child are not running. |
-| `.kxm/state/hub.stop` | Short-lived shutdown request containing the matching hub start time and request time. `plugins/kxm/src/cli/hub.ts:312` | `kxm hub stop`; consumed by the wrapper. | No secrets; process-control metadata only. Written `0600`. | Removed by the wrapper when consumed; startup also removes stale `hub.stop`. Do not use deletion as a substitute for stopping the hub. |
-| User-state `hub-env.json` — normally outside project `.kxm/state` | Schema/version and creation time plus raw `KXM_AUTH_TOKEN` and project-to-token map from `KXM_PROJECT_TOKENS`. Platform root is `KXM_STATE_HOME`, macOS Application Support, Windows LocalAppData, or XDG/`~/.local/state`. `plugins/kxm/src/hub-env.ts:23` | Hub startup credential resolver; explicit environment values win and can be persisted, otherwise an admin token is generated and persisted. | **Yes: this is the primary raw hub credential file.** Written through a `0600` temporary file and renamed. On POSIX, intended mode is `0600`; Windows does not provide equivalent POSIX-mode semantics. | No automatic expiry/rotation cleanup. Stop hub/workers first. Deleting it resets persisted hub credentials; the next start generates a new admin token unless explicit env credentials are supplied. Existing clients/workers using the old token will fail until reconfigured. |
-| `.kxm/logs/kxm-hub.jsonl` and rotated `.1`–`.3` files | Structured hub lifecycle, request/outcome and operational events. Default rotation is 10 MiB with three rotated files. `plugins/kxm/src/server.ts:16` · `plugins/kxm/src/logger.ts:44` | Hub structured logger. | Values are recursively redacted by sensitive key name and `redactSecrets` patterns before append. It should not intentionally contain credentials or message bodies, but pattern redaction is not a proof against every secret format. Newly created logs use `0600`; an existing file’s mode is not corrected. | Size-based rotation only; oldest rotated file is deleted. Safe to delete old rotated files while running, but deleting/renaming the active file while the process writes is platform-dependent and can lose logs. Prefer stopping the hub before a complete log wipe. |
-| `.kxm/logs/hub-autostart.log` | Hub wrapper stdout/stderr during extension autostart, including startup diagnostics and paths. `plugins/kxm/src/hub-autostart.ts:158` | Extension autostart spawner and hub wrapper/server standard streams. | Log tails are redacted when displayed, but the file descriptor receives raw stdout/stderr. Current startup output avoids printing token values, but future/raw errors could be sensitive. `openSync(..., "a")` supplies no explicit mode, so file mode is **unknown**/OS-umask-dependent. No rotation was found. | No automatic cleanup found. Prefer stopping the hub before deleting the active file; otherwise delete only when no autostarted process still has it open. |
-| `.kxm/assets/retrospectives/<runId>.json` and `.md` | Terminal workflow retrospective: run/stage outcomes, journal-derived proposed improvements, metrics, and immutable evidence provenance/hashes; prompt and reply bodies are explicitly excluded. `plugins/kxm/src/retrospective.ts:385` | Hub when a workflow reaches `completed` or `failed`. `plugins/kxm/src/hub.ts:458` | Redaction is applied to retrospective summaries/evidence during construction; bodies are excluded. Still contains project/run metadata and operational findings. Files are created `0600`. | No automatic retention/deletion found. These are independent of SQLite retention, so purging a workflow run does not remove its retrospective. Safe to remove completed retrospective files while the hub is running if no reader requires them; stopping first is safer for a total reset. |
+The diagram shows which process owns each store and which root it lives under.
 
-**Are message bodies stored?** Yes. Both request content and reply content are persisted in the `messages.record` JSON. Workflow coordinator messages also persist the rendered workflow prompt, which can include selected webhook payload values.
+```mermaid
+flowchart LR
+  subgraph Project["Project checkout"]
+    CFG[".kxm/*.yaml<br/>reviewed config in Git"]
+    HDB[(".kxm/state/kxm.db<br/>hub store")]
+    LOGS[".kxm/logs<br/>hub and worker logs"]
+    RETRO[".kxm/assets/retrospectives"]
+  end
+  subgraph StateRoot["User state root"]
+    ENV["hub-env.json<br/>hub credentials"]
+    REG[("runtime/registry.db")]
+    EVT[("run-events.db per project<br/>+ run-prompts.json")]
+  end
+  HUB["KXM hub"] -->|"writes"| HDB
+  HUB -->|"writes"| LOGS
+  HUB -->|"exports"| RETRO
+  ENV -.->|"credentials"| HUB
+  RT["Runtime supervisor"] -->|"writes"| REG
+  RT -->|"writes"| EVT
+  CFG -.->|"read at run start"| RT
+  RT -->|"sync events"| HUB
+```
 
-**Are API keys or tokens stored in the DB, or only in environment/`0600` files?** Hub authentication and project tokens are intentionally stored raw in user-state `hub-env.json`, not in the reviewed hub tables. The KXM supervisor DB stores a token hash. However, SQLite is **not guaranteed secret-free**: arbitrary message bodies, prompts, event payloads, command results, workflow evidence/journal fields and external-effect receipts are stored without universal redaction and can contain credentials if a caller includes them.
+KXM uses three locations:
 
-**Are webhook signatures stored?** No storage path was found for the received `X-Hub-Signature[-256]` value. It is read, compared with a computed HMAC, and discarded. Workflow webhook secrets come from workflow configuration/environment; the definition hash explicitly removes `secret` and `signalSecret`. The DB stores delivery IDs, payload hashes, signal results/evidence, and possibly payload-derived rendered prompt content—not the signature itself. `plugins/kxm/src/hub.ts:796`
+- **The project workspace**, `.kxm/` at the project root. Reviewed configuration is tracked in Git. `state/`, `logs/`, and `assets/` hold what the hub and workers write. `KXM_WORKSPACE_DIR`, `KXM_STATE_DIR`, `KXM_LOGS_DIR`, `KXM_ASSETS_DIR`, and `KXM_DATA_PATH` move those parts; configuration always stays under `<project root>/.kxm/`.
+- **The user state root**, for machine-level state that must never be committed.
+- **The user configuration directory**, `KXM_USER_CONFIG_DIR` (default `~/.config/kxm`), for personal `config.yaml`, global roles and workflows, and the local session token.
 
-**Is evidence/journal content stored?** Yes. Legacy workflow evidence maps, signal summaries, journal summaries/details/evidence lists, KXM event payloads, command results, run state, gate metadata/hashes and drive receipts are durable. Some derived outputs are redacted, but workflow evidence and journal storage do not have a universal redaction boundary.
+The user state root is `KXM_STATE_HOME` when set; it must be an absolute path. Otherwise it depends on the operating system:
 
-**How does redaction apply before storage?** `redact.ts` recognizes selected OpenAI/Anthropic/GitHub/Slack/Google bearer-token formats, named token environment assignments, and any bare 64-hex string. `plugins/kxm/src/redact.ts:1` It is applied to structured logs and context summaries/source references, plus selected retrospective and diagnostic output. It is **not** automatically applied by the generic SQLite writers for messages, workflow runs/journals, KXM events/commands/plans/state/prompts, or external-effect receipts. A redacted field can still contain an unrecognized secret format, while the blanket 64-hex rule can also redact nonsecret hashes.
+| Operating system | User state root |
+|---|---|
+| macOS | `~/Library/Application Support/KXM` |
+| Linux | `$XDG_STATE_HOME/kxm`, default `~/.local/state/kxm` |
+| Windows | `%LOCALAPPDATA%\KXM` |
 
-**How do I wipe/reset data?** First run `kxm hub stop` and stop the KXM runtime/workers. For peer/workflow/context data, remove `.kxm/state/kxm.db`, `kxm.db-wal`, and `kxm.db-shm`. For KXM registration and runs, remove the user-state `runtime/registry.db` plus its sidecars and the relevant `runtime/projects/<projectKey>/` directories, including `run-events.db`, its sidecars and `.run-prompts.json`. Remove `.kxm/logs/` for logs and `.kxm/assets/retrospectives/` for exported retrospectives. Remove user-state `hub-env.json` only when intentionally rotating/resetting hub credentials. `hub.pid` and `hub.stop` are process-control files, not data-reset targets; let `kxm hub stop` and normal shutdown clean them. Direct DB/table edits are unsupported, and deleting live SQLite files is unsafe.
+The hub writes its database under the workspace of the directory it starts in. Start it from the project root so that `kxm.db` lands in that project's `.kxm/state/`.
+
+## The hub store
+
+The hub store is `.kxm/state/kxm.db` (or `KXM_DATA_PATH`), schema version 5 (`HUB_STORE_SCHEMA_VERSION`). It has ten `STRICT` tables:
+
+| Table | What it holds | Sensitive content |
+|---|---|---|
+| `agents` | Agent ID, name, purpose, project, model, host label, timestamps, and the current agent key | Agent keys in plain text |
+| `messages` | Each request and reply with routing metadata and any workflow context | Request and reply bodies, as sent |
+| `consumer_cursors`, `agent_sequences` | Each agent's delivery position and next message sequence | None |
+| `workflow_runs` | Hub workflow runs: stages, evidence, waits, signal receipts, transitions, verified peer snapshots, hashes | Evidence strings |
+| `workflow_journal` | Journal entries with category, area, stage, and attempt | Summaries, details, and evidence |
+| `context_items` | Context items and state proposals with provenance and validity | Summaries, pattern-redacted |
+| `leases` | Fenced leases with holder and fencing token | None |
+| `sync_events` | Runtime events the hub accepted, once per project, run, and sequence | Sync-safe summaries |
+| `runtime_presence` | Runtime heartbeats per project | Host label |
+
+A coordinator message holds the rendered workflow prompt, which can include fields from the webhook payload. The raw webhook body is not stored; the run keeps only its SHA-256.
+
+Some readers open `kxm.db` directly and read-only: `kxm workflow list` and `get`, `kxm session brief`, the Claude Code SessionStart hook, and parts of `kxm dash`. They see hub runs only on the hub's machine.
+
+## The Runtime stores
+
+The Runtime keeps a registry for the machine and one event store for each project, all under `runtime/` in the user state root.
+
+The **registry**, `runtime/registry.db`, is schema version 1 (`KXM_REGISTRY_SCHEMA_VERSION`). Its `supervisor` table holds one row: the Runtime ID, process ID, port, a hash of the supervisor token, heartbeat, and state. Its `projects` table records each project's ID, canonical root path, project key, and home Runtime.
+
+Each **event store**, `runtime/projects/<key>/run-events.db`, is schema version 7 (`KXM_EVENT_STORE_SCHEMA_VERSION`). The key is the first 24 hex characters of the SHA-256 of the canonical project root. The store has 14 `STRICT` tables:
+
+| Tables | What they hold |
+|---|---|
+| `runs`, `events`, `commands` | Each run with pinned revisions and a prompt hash; the append-only event log; idempotent command results |
+| `run_plans`, `run_state` | The pinned compiled plan; the materialized projection |
+| `attempt_capabilities` | Attempt bindings and the hash of each capability secret |
+| `gate_attempts`, `gate_observations`, `gate_evidence` | Gate identity, process outcome with output hashes and sizes, and settled evidence |
+| `drive_receipts` | The final receipt of each drive |
+| `coordinators`, `intake_messages`, `project_controls` | Intake bindings, idempotent intake, and the project pause switch |
+| `outbox` | One sync row per event, with its acknowledgement or refusal |
+
+Next to each event store, `run-events.db.run-prompts.json` (`0600`) holds the **full prompt text** of every run. The `runs` table keeps only its hash, so the sidecar is the one place a prompt survives. Event payloads, command results, and run plans can also contain instructions, summaries, and evidence.
+
+Every event commits in the same transaction as its outbox row. The supervisor pushes those rows to the bound hub, and a row the hub durably refuses stays parked until you run `kxm runtime sync-retry`. See [Runtime sync](../operations/runtime-sync.md).
+
+## Other files
+
+| File | What it holds | Notes |
+|---|---|---|
+| `hub-env.json` (state root) | The raw admin token and project-token map | Written `0600` through a temporary file; the hub's primary credential file |
+| `hub-binding.json` (state root) | This machine's hub URL and when it was bound | No credential |
+| `runtime/supervisor.token` (state root) | The raw supervisor token | `0600`; the registry stores only its hash |
+| `runtime/logs/kxm-runtime.jsonl` (state root) | The supervisor's structured log, including sync state changes | Rotates at 2 MiB |
+| `session.token` (user configuration directory) | An unsigned local session token with a tool policy | `0600`; 24-hour default lifetime |
+| `.kxm/state/hub.pid`, `hub.stop` | Hub process claim and stop request | Process control only; let `kxm hub stop` manage them |
+| `.kxm/state/pi-sessions/<worker>/` | Pi conversation history for a supervised worker | At most `KXM_WORKER_MAX_RUN_SESSIONS` (default 128) run histories per worker |
+| `.kxm/logs/kxm-hub.jsonl` | The hub's structured log, without message bodies | Rotates at 10 MiB and keeps three rotated files |
+| `.kxm/logs/pi-agent-<worker>.log` | Raw Pi standard output and error | Can contain model and tool output verbatim |
+| `.kxm/logs/telemetry.jsonl` | Result envelopes from gate commands | Read by `kxm improve` |
+| `.kxm/assets/retrospectives/<runId>.json`, `.md` | Exported retrospectives of finished hub runs | `0600`; no message bodies |
+
+Every SQLite database also has `-wal` and `-shm` sidecars while in use. The write-ahead log can hold copies of any recent row, so treat it as sensitively as the database.
+
+## What is stored, hashed, or never kept
+
+**Stored as sent**, without encryption and without general redaction:
+
+- message request and reply bodies, and rendered workflow prompts;
+- workflow evidence and journal entries;
+- agent keys, and the admin and project tokens in `hub-env.json`;
+- Runtime prompts, event payloads, command results, and run plans;
+- Pi session histories and raw Pi logs.
+
+**Kept only as a hash:**
+
+- the raw webhook body (`payloadHash`);
+- the request and reply behind each verified peer snapshot, which therefore survives message purging;
+- the Runtime prompt, in the event store's `runs` table (the sidecar keeps the text);
+- attempt capability secrets and, in the registry, the supervisor token;
+- gate command standard output and error, with their sizes;
+- the workflow definition (`definitionHash`, computed without its secrets), and the reproduction oracle and plan hash of a hub run.
+
+**Never persisted:** webhook signatures, which are checked and discarded, and workflow secrets, which stay in the environment variables that `secretEnv` and `signalSecretEnv` name.
+
+## Redaction
+
+KXM redacts with known credential patterns, such as API keys, bearer tokens, and named token variables. It applies them to:
+
+- the hub's structured log, which also redacts by key name;
+- context item summaries and source references;
+- retrospectives, ranked improvement signals, and some diagnostics;
+- every Runtime event before it enters the outbox, together with the allowlist transform described in the [trust model](trust-model.md#redaction-and-what-stays-local).
+
+Nothing redacts messages, hub workflow runs, the journal, or the Runtime's own stores at write time. Pattern redaction also misses unfamiliar secret formats, and its rule for 64-character hex strings masks ordinary SHA-256 digests too. Keep credentials out of prompts and evidence.
+
+## Retention
+
+| Data | How long it stays |
+|---|---|
+| Terminal messages (`replied`, `cancelled`, `expired`) | `KXM_MESSAGE_RETENTION_MS` after they end; default 7 days |
+| Finished hub workflow runs and their journal | 7 days after their last update; not configurable |
+| Journal entries whose run is gone | 7 days |
+| Superseded, rejected, or expired context items | 7 days after they end |
+| Expired leases | 7 days past their deadline, so a fencing token never restarts |
+| Agents, cursors, sequences, sync events, Runtime presence | Kept |
+| Runtime registry and event stores | Kept; the event log is append-only |
+| Retrospectives | Kept; purging a run does not remove them |
+
+Purging a hub run also ends webhook delivery deduplication for it and removes the episodes derived from its journal. Purging superseded state limits `--as-of` queries to roughly the last 7 days.
+
+## Schema versions: refuse, do not migrate
+
+Each database records its schema version in SQLite's `user_version`. When a process opens a store:
+
+- a newer store fails with `runtime_schema_newer`;
+- an older store fails with `runtime_schema_outdated`;
+- a store with tables but no version fails with `runtime_schema_shape_invalid`.
+
+KXM never upgrades a store in place, because the code would otherwise have to keep working against schema shapes it no longer tests. To cross a store version, stop the owner, back up if you need the history, delete the store with its `-wal` and `-shm` files, and let the owner recreate it: `kxm hub start` for `kxm.db`, and the Runtime for the registry and event stores. `kxm init` rebuilds no database. Legacy `.kxm/config/*.json` files are refused the same way.
+
+Every store opens in WAL mode with a 5-second busy timeout, `synchronous=NORMAL`, and foreign keys on. A database or sidecar that is a symbolic link is refused. [ADR-0003](../adr/ADR-0003-sqlite-only-store.md) records why SQLite is the only store.
+
+## Reset a store
+
+> [!CAUTION]
+> Deleting a store erases its history for good. Back it up first if you might need it. `kxm backup` copies the hub store, but it does not find the Runtime stores in the user state root, so copy those with the Runtime stopped.
+
+Stop every writer first, then delete each database together with its sidecars:
+
+```bash
+kxm hub stop
+kxm runtime stop
+```
+
+- Hub messages, workflow runs, and context: `.kxm/state/kxm.db`, `kxm.db-wal`, and `kxm.db-shm`.
+- Runtime runs for one project: `runtime/projects/<key>/` in the user state root, including `run-events.db`, its sidecars, and `run-events.db.run-prompts.json`.
+- Runtime registration: `runtime/registry.db` and its sidecars. Deleting it alone leaves event stores that nothing points to.
+- Hub credentials: `hub-env.json`, only when you intend to rotate them. The next `kxm hub start` generates a new admin token, and every client that used the old one fails until you reconfigure it.
+
+Never delete a live database, and never delete only the main file while its `-wal` remains. [Back up and restore](../operations/backup-and-restore.md) covers `kxm backup` and `kxm restore`, and [Upgrade KXM](../operations/upgrade.md) covers version changes.
+
+## Related
+
+- [Trust model](trust-model.md)
+- [Architecture](architecture.md)
+- [Back up and restore](../operations/backup-and-restore.md)
+- [Configuration file reference](../reference/config-reference.md#workspace-layout-tracked-ignored-and-state)
+- [ADR-0003: SQLite as the only store](../adr/ADR-0003-sqlite-only-store.md)

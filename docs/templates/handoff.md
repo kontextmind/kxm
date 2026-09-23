@@ -2,71 +2,66 @@
 schema: "kxm.doc.v1"
 id: "HND-0001"
 type: "handoff"
-title: "Structured Agent / Stage Handoff Manifest"
+title: "Structured handoff manifest"
 project: "kxm"
-status: "approved"
-owner: "@source_role"
+status: "draft" # draft | in_review | approved | superseded | archived
+owner: "@source-role"
 created: "2026-09-08"
 updated: "2026-09-08"
 authority: "evidence"
 confidence: "verified"
-summary: "Formal handoff from <source_role> to <target_role> for workflow <workflow_id>."
+summary: "Handoff from <source-role> to <target-role> for workflow run <run-id>."
 tags: ["handoff", "workflow", "stage-transition"]
 related: []
 details:
-  workflow_run_id: "run-01928abc"
-  handoff_manifest_id: "hnd_01928abcde12"
-  intent: "request_review" # continue | request_review | reject_rework_required | complete
+  manifest_schema: "kxm.handoff-manifest.v1"
+  workflow_run_id: "<run-id>"
+  handoff_id: "<handoff-id>"
+  intent: "request_review" # request_review | dispatch_fix | request_approval | complete_workflow
+  handoff_status: "pending" # pending | accepted | rejected | superseded
+  rework_of: null
 ---
 
-# Structured Handoff Manifest
+# Handoff: <source-role> to <target-role>
 
-## Stage Transition Provenance
+This page is the readable view of one `kxm.handoff-manifest.v1` record, defined
+in `schemas/handoff-manifest.schema.json`. Keep its field names so the two stay
+aligned.
 
-- **Workflow Run ID:** `run-01928abc`
+## Stage transition
 
-- **Task ID:** `task-127`
+- **Workflow run ID:** `<run-id>`
+- **Task ID:** `<task-id>`
+- **Source:** role `writer`, agent `<agent-id>`, harness `grok`, model
+  `grok-4.6`, step `<step-id>`, attempt `<attempt-id>`
+- **Target:** role `reviewer-arch`, permission `read-only`
+- **Intent:** `request_review` (one of `request_review`, `dispatch_fix`,
+  `request_approval`, `complete_workflow`)
+- **Rework of:** `<handoff-id>`, or none
 
-- **Source Role:** `writer` (Harness: `grok`, Model: `grok-4.6`)
+## Repository anchors
 
-- **Target Role:** `reviewer-arch` (Harness: `claude`, Model: `claude-fable-5-1`)
+- **Base commit:** `<base-commit-sha>`
+- **Candidate tree hash:** `<candidate-tree-sha>`
+- **Branch:** `kxm/run-<run-id>-<description>`
 
-- **Intent:** `request_review`
+## Deliverables
 
-## Repository & Branch Anchors
+- **Patches:** `artifact:.kxm/assets/<run-id>/changes.patch@sha256:<digest>`
+- **Reports:** `artifact:.kxm/assets/<run-id>/test-report.md@sha256:<digest>`
+- **Artifacts:** `<name>`: `artifact:<path>@sha256:<digest>`
 
-- **Base Commit:** `44a7b50f9a2b6e14d3c2a1e09876543210abcdef`
+## Verification evidence
 
-- **Candidate Commit:** `88b6c40a12e34f56789abcdef0123456789abcde`
+- **Witness command:** `npm run verify`
+- **Witness exit code:** `0`
+- **Witness passed:** `true`
+- **Critic verdicts:** `<critic>`: `PASS`, with a one-line summary. The
+  manifest accepts `PASS`, `FAIL`, `WARN` or `UNKNOWN`.
 
-- **Candidate Tree Hash:** `789abcdef0123456789abcdef0123456789abcde`
+## Transferred context
 
-- **Deterministic Branch:** `kxm/run-01928abc-fix-issue-127-memory-arbiter`
-
-## Deliverables & Evidence
-
-### 1. Artifacts Created
-
-- `artifact:.kxm/assets/changes.patch@sha256:abc...`
-
-- `artifact:.kxm/assets/witness.log@sha256:def...`
-
-### 2. Witness Receipt
-
-- **Command:** `npm run verify`
-
-- **Exit Code:** `0`
-
-- **Receipt Hash:** `sha256:fedcba0987654321...`
-
-## Transferred Context & Decisions
-
-- **Settled Decisions:**
-  - Used SQLite `external_effects` table for CAS leasing.
-  - Implemented descriptive branch slugification with de-duplication.
-
-- **Assumptions:**
-  - Remote repository branch protection requires PR merge.
-
-- **Open Questions / Notes for Target Role:**
-  - Please verify memory revision hash changes deterministically when files in `.kxm/memory/` are touched.
+- **Settled decisions:** <decisions the target role must not reopen>
+- **Assumptions:** <assumptions the target role should verify>
+- **Open questions:** <questions for the target role>
+- **Suggested next step:** step `<step-id>`, action `<action>`

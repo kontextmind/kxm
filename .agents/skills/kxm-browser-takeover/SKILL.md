@@ -50,7 +50,7 @@ Generate a clear notification containing the session URL and actionable instruct
 [HUMAN TAKEOVER REQUIRED]
 Session ID: <sessionId>
 Reason: Multifactor Authentication (MFA) required on https://app.example.com/login
-Takeover URL: https://steel.kontextmind.com/ui?sessionId=<sessionId>
+Takeover URL: $STEEL_UI_URL?sessionId=<sessionId>
 
 Instructions for Operator:
 1. Open the Takeover URL in your browser.

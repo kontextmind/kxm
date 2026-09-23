@@ -119,7 +119,8 @@ or store the admin or project token in the conversation. The user enters
 1. Create a project token and export `KXM_PROJECT_TOKENS` before starting the
    hub. The map must list every project's token, because it replaces the saved
    map rather than merging with it. When a hub already serves other projects,
-   use the merge command in the KXM README.
+   use the merge command in the KXM documentation's Claude Code quick start
+   (docs/start/quickstart-claude-code.md, section "Start the hub").
 2. `kxm hub start` in a second terminal. It generates and persists an admin
    credential in `hub-env.json` under the user state root; that token never
    goes to an agent.

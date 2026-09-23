@@ -1,310 +1,200 @@
 # KXM
 
 [![CI](https://github.com/kontextmind/kxm/actions/workflows/ci.yml/badge.svg)](https://github.com/kontextmind/kxm/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@kontextmind/kxm.svg)](https://www.npmjs.com/package/@kontextmind/kxm)
 [![Node.js 22.19+ or 24+](https://img.shields.io/badge/node-22.19%2B%20%7C%2024%2B-339933.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Give running coding agents a small, dependable communication plane.
+**KXM gives coding agents (Claude Code, Pi and other harnesses) a durable, authenticated message and workflow plane, so they can delegate bounded work to each other and prove who answered, without sharing one giant context.**
 
-**KXM** lets Pi and Claude Code agents discover one another, send focused requests, continue working independently, and collect replies without sharing an oversized conversation. It provides communication primitives—not an autonomous swarm manager—so each agent keeps its own context and safety controls.
+KXM runs on your machine: one `kxm` CLI, a local [hub](docs/glossary.md#hub) for messages and webhook workflows, and a local [Runtime](docs/glossary.md#runtime) for workflow runs. Your project is reviewable YAML in Git, every agent keeps its own context and its own safety controls, and the docs say plainly what KXM does not guarantee ([Status and limits](#status-and-limits)).
 
-> **Project status:** Production candidate (`0.4.x`) for a single hub serving local or trusted-team agents. Durable delivery, signed webhook workflows, operator CLI, security controls, observability, and recovery are tested. It is not a horizontally scaled or multi-tenant orchestration service. See [Production boundaries](#production-boundaries).
+## What makes KXM different
 
-## Why use it?
+- **Durable messages, not chat.** Every request is a SQLite record that moves from `queued` to `delivered` to `replied`, survives hub and agent restarts, and deduplicates retries by idempotency key. Agents authenticate with a project token and see only their own project's peers. [Message peer agents](docs/guides/peer-messaging.md)
+- **Provenance you can check.** A quorum gate counts only replies the hub itself routed, from distinct eligible peers, for the exact run, stage and attempt. Text a coordinator writes never counts. It proves who answered, not that the answer is right. [Peer provenance and quorum gates](docs/guides/provenance-gates.md)
+- **Workflows that release the turn.** Signed Jira, GitHub or generic webhooks start durable runs. A coordinator can park a stage, give up its turn, and resume only when a signed CI, review or merge callback arrives. [Run webhook workflows](docs/guides/webhook-workflows.md)
+- **Local-first and reviewable.** The project lives in `.kxm/*.yaml`. `kxm trust diff` lists every permission expansion, and `kxm trust check` fails on any expansion beyond the base revision. `kxm run` executes workflows in an event-sourced Runtime that works with the hub down and ends each drive with a receipt it verifies. [Architecture](docs/concepts/architecture.md)
+- **Native harnesses, fail-closed auth, honest cost.** Before a live run dispatches, KXM checks that the harness hosts the model, refuses a vendor's model routed through Pi when that vendor ships its own harness, and runs only admitted routes. A logged-out harness stops the run instead of billing another provider, and cost is recorded as metered, unmetered or unknown. [Harness routing](docs/reference/harness-routing.md)
+- **Context that ranks, learning that only proposes.** Context packets are ranked deterministically for the role and task and filled to a token budget, and they carry the selected evidence itself. Journals and run records feed `kxm improve`, whose candidates stay proposals: readiness never authorizes, and nothing changes until a person merges a reviewed Git change. [Context and memory](docs/guides/context-and-memory.md) · [Continuous improvement](docs/guides/continuous-improvement.md)
+- **One plane for every harness.** A Claude Code plugin (MCP tools, pushed channel, a read-only SessionStart brief), a Pi extension with the same tools, portable Agent Skills, and the `kxm` CLI all work against the same hub. [Claude Code plugin](plugins/kxm/README.md) · [Agent skills](docs/guides/agent-skills.md)
 
-- **Delegate deliberately.** Route a bounded task to a peer selected by name and purpose.
-- **Stay productive.** Poll for a result or wait only when the reply blocks progress.
-- **Mix harnesses.** Connect native Pi sessions and Claude Code through the same hub.
-- **Keep control.** Authentication, project isolation, message limits, and normal agent approval rules remain in place.
-- **Install using native formats.** One repository packages a Pi extension, an Agent Skill, and a Claude Code marketplace plugin.
-- **Start from real events.** Signed Jira, GitHub, or generic webhooks can prompt durable, long-lived coordinators.
-- **Release idle turns.** Coordinators can wait durably for signed CI, review, merge, or Jira callbacks and resume only when work remains.
-- **Verify peer provenance.** Per-requirement quorum gates count unique eligible producers from immutable, attempt-bound replied messages rather than coordinator-authored claims.
-- **Learn from every run.** Capture plans, decisions, contradictions, errors, and lessons without turning unreviewed opinions into policy.
+## How it fits together
 
-## First run
+Claude Code, Pi and the operator CLI talk to one hub on your machine, while the Runtime executes workflow runs locally and syncs their summaries to the hub.
 
-You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus Git, GitHub CLI, Pi, and two terminal windows. Six steps take you from install to `kxm session brief` and `/kxm hub`.
+```mermaid
+flowchart LR
+  subgraph Clients["Agents and operator"]
+    CC["Claude Code<br/>plugin: MCP stdio, channel, SessionStart hook"]
+    PI["Pi<br/>extension and skills"]
+    CLI["kxm CLI<br/>operator"]
+  end
+  subgraph Machine["Your machine: loopback by default"]
+    HUB[("KXM hub<br/>HTTP and SSE, SQLite kxm.db")]
+    RT["Runtime supervisor<br/>runs, event store, outbox"]
+  end
+  GIT[["Git repository<br/>.kxm/*.yaml"]]
+  EXT["Webhooks and CI<br/>signed starts and callbacks"]
+  CC -->|"MCP tools, SSE"| HUB
+  PI -->|"HTTP, SSE"| HUB
+  CLI -->|"admin and project APIs"| HUB
+  EXT -->|"HMAC-signed"| HUB
+  CLI -->|"kxm run, kxm runs"| RT
+  RT -->|"sync events, outbound only"| HUB
+  GIT -.->|"reviewed config"| CLI
+  GIT -.->|"pinned per run"| RT
+```
 
-### 1. Install
+- The **hub** authenticates agents, stores messages and webhook workflow runs, and pushes events. It routes work but never runs a model or merges agent contexts, and it refuses to listen beyond loopback without a token.
+- The **Runtime supervisor** owns the runs `kxm run` creates, as an append-only event log per project. It listens only on `127.0.0.1` and pushes sync-safe events to the hub whenever it can reach one. [Architecture](docs/concepts/architecture.md) explains each component and lifecycle.
 
-Download the packed release through an authenticated GitHub CLI session. Run `gh auth login` first if necessary. Pi's Git package install supplies the extension and Agent Skill; it does not place `kxm` on `PATH`.
+## Feature tour
 
-PowerShell:
+| Capability | Learn more |
+|---|---|
+| **Peer messaging**: discover peers, send, await, fan out to one to three peers, cancel and reply | [Message peer agents](docs/guides/peer-messaging.md) |
+| **Claude Code plugin**: 19 MCP tools, pushed channel or pull mode, and a SessionStart brief | [Claude Code plugin](plugins/kxm/README.md) |
+| **Supervised Pi workers**: restarts, model fallbacks, tool allowlists and one Pi session per workflow run | [Run supervised Pi workers](docs/guides/pi-workers.md) |
+| **Webhook workflows**: signed starts, ordered stages, checkpoints, durable waits and signed callbacks | [Run webhook workflows](docs/guides/webhook-workflows.md) |
+| **Provenance and quorum gates**: hub-verified peer evidence, with an admin-only degradation path | [Peer provenance and quorum gates](docs/guides/provenance-gates.md) |
+| **Local Runtime runs**: `kxm.workflow.v1` steps and gates, `kxm run`, simulated or live drives, verified receipts, cancel and recovery | [Run your first workflow](docs/start/first-workflow.md) · [Workflow definition reference](docs/reference/workflow-definitions.md) |
+| **Trust review**: permission diffs for changes to the project definition in `.kxm/` | [Reviewed Git configuration](docs/concepts/architecture.md#configuration-is-reviewed-git-yaml) · [`kxm trust`](docs/reference/cli-reference.md#kxm-trust) |
+| **Harness routing and admission**: `kxm harness`, `kxm models` and `kxm routes` | [Harness routing](docs/reference/harness-routing.md) |
+| **Context and memory**: role-aware packets, recall, temporal state, episodes, a compiled wiki, and Git memory projected into `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` | [Context and memory](docs/guides/context-and-memory.md) |
+| **Continuous improvement**: journals, retrospectives, improvement reports and coded-repeat candidates | [Continuous improvement](docs/guides/continuous-improvement.md) |
+| **Governed skills**: candidates, recorded evaluations, promotion or rejection, hash pinning | [Governed skills](docs/guides/governed-skills.md) |
+| **Agent Skills**: a portable `SKILL.md` suite that covers every `kxm` command | [Agent skills](docs/guides/agent-skills.md) |
+| **Live dashboard**: `kxm dash` screens for agents, tasks, workflows, plans, inbox, processes and spend | [Monitor KXM](docs/operations/monitoring.md) |
+| **Backup and restore**: the six state roots, `kxm backup` and `kxm restore`, and what each one covers | [Back up and restore KXM](docs/operations/backup-and-restore.md) |
+| **Runtime sync and leases**: the outbox, refused-event recovery and fenced leases | [Runtime sync](docs/operations/runtime-sync.md) |
+| **Hosted deployment**: supervision, and a pattern for one hub and Runtime per tenant behind an authenticating proxy | [Deploy KXM](docs/operations/deploy.md) |
+| **Browser automation**: Steel sessions, Playwright and human takeover skills | [Browser automation](docs/guides/browser-automation.md) |
+| **Everything else**: tasks, goals, suggestions, SSH workers, Studio layouts and shell completion | [KXM CLI reference](docs/reference/cli-reference.md) |
 
-```powershell
-$version = "<release-version>"
-$asset = "kxm-$version.tgz"
-$releaseDir = Join-Path $PWD ".kxm-release"
-New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-gh release download "v$version" --repo kontextmind/kxm --pattern $asset --dir $releaseDir --clobber
-npm install --global --omit=peer (Join-Path $releaseDir $asset)
+## Quick start: Claude Code
+
+<a id="set-up-a-new-project-with-claude-code"></a>
+
+You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus Git and Claude Code. These steps connect a Claude Code session in one of your repositories to a hub on the same machine.
+
+1. Install the CLI and initialize KXM in your repository. `kxm init` writes no ignore rules, so add them, then review and commit `.kxm/`:
+
+   ```bash
+   npm install --global --omit=peer @kontextmind/kxm
+   cd <your-repo>
+   kxm init
+   printf '%s\n' '.kxm/state/' '.kxm/logs/' '.kxm/backups/' >> .gitignore
+   ```
+
+2. In a second terminal, in the same repository, start the hub with a token for this project. Pick any `<hub-project>` key, for example the repository name:
+
+   ```bash
+   PROJECT_TOKEN="$(openssl rand -hex 32)"  # keep a copy in your password manager
+   export KXM_PROJECT_TOKENS="{\"<hub-project>\":\"$PROJECT_TOKEN\"}"
+   kxm hub start  # runs in the foreground; keep this terminal open
+   ```
+
+   > [!IMPORTANT]
+   > `KXM_PROJECT_TOKENS` replaces the hub's saved token map. If this hub already serves other projects, list every one of them. The [Claude Code quick start](docs/start/quickstart-claude-code.md) has a command that merges the map for you.
+
+3. Back in the first terminal, bind this machine to the hub and check it:
+
+   ```bash
+   kxm hub bind http://127.0.0.1:7331
+   kxm hub view
+   ```
+
+   Expected output:
+
+   ```text
+   bound hub http://127.0.0.1:7331 · loopback · health=on
+   hub health=true ready=true · loopback hub
+   ```
+
+4. Install the plugin. In Claude Code:
+
+   ```text
+   /plugin marketplace add kontextmind/kxm
+   /plugin install kxm@kxm
+   /reload-plugins
+   ```
+
+   When Claude Code asks for the plugin options, set `project` to `<hub-project>` and leave `auth_token` blank. On the machine that runs the hub, a blank token uses the project token the hub saved for `<hub-project>`, and only that one. On another machine, enter the project token at `/plugin configure kxm@kxm`. Never enter the hub admin token.
+
+5. Ask Claude to call `kxm_list`. It lists this session as an agent in `<hub-project>`.
+
+Next, [run your first workflow](docs/start/first-workflow.md). The full [Claude Code quick start](docs/start/quickstart-claude-code.md) also shows how to <a id="add-claude-code-to-an-existing-kxm-project"></a>[add Claude Code to an existing KXM project](docs/start/quickstart-claude-code.md#add-claude-code-to-an-existing-project) and how to <a id="update-an-existing-install"></a>[update the CLI and the plugin](docs/start/quickstart-claude-code.md#update-kxm-and-the-plugin).
+
+## Quick start: Pi
+
+These steps add a Pi agent to the same hub and project. Install the CLI and the Pi package, which provides the KXM extension and skills:
+
+```bash
+npm install --global --omit=peer @kontextmind/kxm
 pi install git:github.com/kontextmind/kxm@main
+cd <your-repo>
+kxm init  # skip if .kxm/project.yaml already exists
 ```
 
-Bash:
+Start and bind the hub as in steps 2 and 3 above, then start Pi as an agent of `<hub-project>`. Give it the project token (`PROJECT_TOKEN` from step 2), never the admin token:
 
 ```bash
-version='<release-version>'
-asset="kxm-${version}.tgz"
-mkdir -p .kxm-release
-gh release download "v${version}" --repo kontextmind/kxm \
-  --pattern "$asset" --dir .kxm-release --clobber
-npm install --global --omit=peer ".kxm-release/$asset"
-pi install git:github.com/kontextmind/kxm@main
-```
-
-From a clone, run `npm ci` and use `node scripts/kxm.mjs` in place of `kxm`. Do not use `npm install --global git+https://github.com/kontextmind/kxm.git`.
-
-### 2. Initialize the project
-
-```text
-kxm init
-```
-
-### 3. Start the hub in another terminal
-
-`kxm hub start` is foreground. Keep that terminal running.
-
-PowerShell:
-
-```powershell
-$env:KXM_AUTH_TOKEN = "replace-with-an-admin-token"
-$env:KXM_PROJECT_TOKENS = '{"demo":"replace-with-a-demo-project-token"}'
-kxm hub start
-```
-
-Bash:
-
-```bash
-export KXM_AUTH_TOKEN="replace-with-an-admin-token"
-export KXM_PROJECT_TOKENS='{"demo":"replace-with-a-demo-project-token"}'
-kxm hub start
-```
-
-The hub listens on `http://127.0.0.1:7331`.
-
-### 4. Bind this machine to the hub
-
-```text
-kxm hub bind http://127.0.0.1:7331
-```
-
-### 5. Confirm the session
-
-```text
-kxm session brief
-```
-
-### 6. Open Pi and check the hub
-
-Give agents the project token, not the administrative token.
-
-PowerShell:
-
-```powershell
-$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
-$env:KXM_AUTH_TOKEN = "replace-with-a-demo-project-token"
-$env:KXM_PROJECT = "demo"
-$env:KXM_AGENT_NAME = "planner"
-$env:KXM_AGENT_PURPOSE = "Plans work and coordinates handoffs"
-pi
-```
-
-Bash:
-
-```bash
-export KXM_SERVER_URL=http://127.0.0.1:7331
-export KXM_AUTH_TOKEN="replace-with-a-demo-project-token"
-export KXM_PROJECT=demo
+export KXM_PROJECT=<hub-project>
+export KXM_AUTH_TOKEN="replace-with-the-project-token"
 export KXM_AGENT_NAME=planner
 export KXM_AGENT_PURPOSE="Plans work and coordinates handoffs"
 pi
 ```
 
-In Pi, run `/kxm hub`. For a second agent or Claude Code, follow [Getting started](docs/start/quickstart-pi.md).
-
-## Command-first operation
-
-The `kxm` entry point manages one project. Tools are `init`, `hub`, `dash`, `session`, `agent`, `workflow`, and `gate`. Runtime configuration, logs, durable state, and generated retrospectives stay under `.kxm`.
-
-After the first-run path above, load a reviewed Jira definition with distinct administrative, project, workflow-start, and callback credentials:
-
-```powershell
-# Create or copy a reviewed definition to .kxm/config/workflows/jira-development.json.
-$env:KXM_AUTH_TOKEN = "replace-with-the-admin-token"
-$env:KXM_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
-$env:JIRA_WEBHOOK_SECRET = "replace-with-the-workflow-start-secret"
-$env:WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
-$env:KXM_WEBHOOK_WORKFLOWS_FILE = ".kxm/config/workflows/jira-development.json"
-kxm gate validate --file .kxm/config/workflows/jira-development.json
-kxm hub start
-```
-
-In a separately supervised coordinator terminal, give the single writer only
-the project credential and the tools required by the full Jira lifecycle. This
-PowerShell example uses the Windows shell tool; replace `powershell` with `bash`
-on macOS or Linux.
-
-```powershell
-$env:KXM_AUTH_TOKEN = "replace-with-the-project-token"
-$coordinatorTools = @(
-  "read", "powershell", "edit", "write", "grep", "find", "ls",
-  "kxm_list", "kxm_send", "kxm_fanout", "kxm_get", "kxm_await",
-  "kxm_workflow_get", "kxm_workflow_checkpoint", "kxm_workflow_wait",
-  "kxm_workflow_record", "kxm_improvement_report"
-) -join ","
-kxm agent worker --name coordinator --project product --model openrouter/qwen/qwen3-coder-plus `
-  --fallback-models antigravity/gemini-3.1-pro --tools $coordinatorTools `
-  --session-isolation workflow --fresh-start
-```
-
-Give review-only peers `read,grep,find,ls`; do not copy the coordinator's shell
-or write capabilities to them. In an operator terminal, start and inspect work,
-then run external watchers with the separate callback secret:
-
-```powershell
-$env:KXM_WORKFLOW_SECRET = "replace-with-the-workflow-start-secret"
-$env:KXM_WORKFLOW_ID = "jira-development"
-$env:KXM_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
-$env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
-kxm workflow start jira-development --payload '@ticket.json'
-kxm workflow list
-kxm workflow get run_123
-kxm gate github watch --run-id run_123 --stage-id push-watch `
-  --signal-key pr-42-checks --repo org/repo --pr 42 --required ci
-kxm workflow export run_123
-kxm hub stop
-```
-
-Use `--dry-run --json` to inspect mutation plans without exposing configured
-token or secret values. Terminal workflows export proposed Markdown and JSON
-retrospectives automatically; review them before adopting any improvement as
-policy. Provenance quorum degradation is a separate admin-only operation; use
-the [provenance runbook](docs/guides/provenance-gates.md#degrade-only-through-an-explicit-admin-decision)
-only for a workflow whose evidence policy declares a lower minimum.
-
-## What is included?
-
-| Component | What it does | Packaging |
-|---|---|---|
-| KXM hub | Persists presence and routes authenticated HTTP/SSE messages | Node.js executable + SQLite |
-| Pi extension | Adds communication, workflow, journal, and improvement tools | `pi.extensions` |
-| Agent Skill | Teaches agents a safe, efficient coordination workflow | `pi.skills` and `SKILL.md` |
-| Claude bridge | Exposes the same workflow plane through MCP and optional channel events | Claude Code plugin |
-| Marketplace | Makes the Claude plugin installable from this repository | Claude marketplace catalog |
-
-## How it works
+In Pi:
 
 ```text
-Pi planner ──HTTP──┐
-                   ├── KXM hub ──SSE──> addressed inbound requests
-Pi reviewer ─HTTP──┤      │
-                   │      └── presence, heartbeats, message state
-Claude Code ─MCP───┘
+/kxm hub
 ```
 
-The hub routes messages; it does not merge contexts, choose tasks, or bypass tool permissions. A typical request moves through `queued` → `delivered` → `replied`. It may instead end as `cancelled`, `expired`, or `error`. The sender can check it with `kxm_get`, wait with `kxm_await`, or stop pending work with `kxm_cancel`. A local `kxm_fanout` wait ending is nonterminal: it returns a durable pending handle that can be checked with `kxm_get` or retried with the same correlation and idempotency prefix.
+Pi reports the hub's health, its own agent name and how many agents are online, for example `kxm hub view: health=ok; planner; 2 online agent(s)`. Start a second agent the same way under another `KXM_AGENT_NAME`, and ask one to send the other a request. [Quick start: Pi](docs/start/quickstart-pi.md) walks through it, including mixed Pi and Claude Code pools.
+
+<details><summary>PowerShell</summary>
+
+```powershell
+# Step 1: ignore runtime state
+Add-Content .gitignore ".kxm/state/", ".kxm/logs/", ".kxm/backups/"
+# Step 2: start the hub with a token for this project
+$ProjectToken = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()
+$env:KXM_PROJECT_TOKENS = @{ "<hub-project>" = $ProjectToken } | ConvertTo-Json -Compress
+kxm hub start
+# Pi: start an agent with the project token
+$env:KXM_PROJECT = "<hub-project>"
+$env:KXM_AUTH_TOKEN = "replace-with-the-project-token"
+$env:KXM_AGENT_NAME = "planner"
+pi
+```
+
+</details>
 
 ## Documentation
 
-| If you want to… | Read |
-|---|---|
-| Install, configure, and use every KXM surface | [KXM Handbook](docs/kxm-handbook.md) |
-| Complete a Pi-to-Pi or Pi-to-Claude setup | [Getting started](docs/start/quickstart-pi.md) |
-| Configure the hub or an agent | [Configuration reference](docs/reference/configuration.md) |
-| Look up any `kxm` command, option, or output | [CLI reference](docs/reference/cli-reference.md) |
-| Write project, workflow, agent, role, route, or price files | [Configuration file reference](docs/reference/config-reference.md) |
-| Choose a native harness or OpenRouter for the same model | [Native harness or OpenRouter](docs/reference/harness-routing.md) |
-| Understand components and message flow | [Architecture](docs/concepts/architecture.md) |
-| Learn about agent skills | [Agent Skills](docs/guides/agent-skills.md) |
-| Run the hub responsibly | [Operations guide](docs/operations/deploy.md) |
-| Fix connection or delivery problems | [Troubleshooting](docs/operations/troubleshooting.md) |
-| See which behaviors and examples are verified | [Test matrix](docs/contributing/test-matrix.md) |
-| Start work from Jira or another webhook | [Webhook workflows](docs/guides/webhook-workflows.md) |
-| Require verified replies from eligible peers | [Peer provenance and quorum gates](docs/guides/provenance-gates.md) |
-| Improve the harness and delivery process from evidence | [Continuous improvement](docs/guides/continuous-improvement.md) |
-| Navigate Area → Workflow → Stage → Role taxonomy | [Workflow guide](docs/reference/workflow-catalog.md) |
-| Develop or submit a change | [Contributing](CONTRIBUTING.md) |
-| Report a vulnerability | [Security policy](SECURITY.md) |
-| Review user-facing changes | [Changelog](CHANGELOG.md) |
+The [documentation index](docs/README.md) groups every page by what you want to do:
 
-The [documentation index](docs/README.md) describes the intended audience and scope of each guide.
+- [Start here](docs/README.md#start-here): install, the quick starts, your first workflow and the glossary.
+- [Guides](docs/README.md#guides): peer messaging, Pi workers, webhook workflows, provenance gates, context and memory, skills and improvement.
+- [Reference](docs/README.md#reference): the CLI, configuration files, harness routing, tools, HTTP API and workflow definitions.
+- [Concepts](docs/README.md#concepts): architecture, the trust model, data and storage, decisions and contracts.
+- [Operations](docs/README.md#operations): deploy, monitor, back up and restore, upgrade, Runtime sync and troubleshooting.
+- [Contributing](docs/README.md#contributing): development, CI and release, writing docs and the test matrix.
 
-## Claude Code installation
+## Status and limits
 
-Inside Claude Code:
+KXM is under active development and is published to npm as [`@kontextmind/kxm`](https://www.npmjs.com/package/@kontextmind/kxm); the [changelog](CHANGELOG.md) records what changed. It is built for one workstation or one trusted team host, with these deliberate limits, which [Architecture](docs/concepts/architecture.md#limits-and-trade-offs) and the [trust model](docs/concepts/trust-model.md) cover in detail:
 
-```text
-/plugin marketplace add kontextmind/kxm
-/plugin install kxm
-/reload-plugins
-```
+- **Single node.** One hub process owns one SQLite database. There is no clustering, replication or failover.
+- **At-least-once.** Messages survive restarts and retries deduplicate by idempotency key, but work can run more than once. Make external side effects idempotent.
+- **Not a sandbox.** KXM does not contain what an agent's tools can do. Use separate worktrees or a single writer, and separate OS accounts for agents you do not trust.
+- **Provenance, not truth.** A quorum shows which agents answered through the hub under one project credential. It does not prove correctness, model independence or human approval.
 
-The plugin provides peer messaging plus workflow listing, checkpoints, structured journal capture, and project improvement reports. See the [plugin tool table](plugins/kxm/README.md#tools).
+## Contributing, security and license
 
-Pushed Claude channel delivery is a research-preview feature. Community channels currently require an explicit development-channel launch:
-
-```text
-claude --dangerously-load-development-channels plugin:kxm
-```
-
-Without channel mode, ordinary MCP tools still work; use `kxm_inbox` and `kxm_reply` for inbound requests. See [Getting started](docs/start/quickstart-pi.md#connect-claude-code) for the complete flow.
-
-## Production boundaries
-
-The codebase is structured, typed, persisted, tested, packaged, and CI-gated. The current hub is suitable for production use on one workstation or a controlled trusted-team host, with these deliberate limits:
-
-- One process owns one SQLite database; there is no clustering, leader election, or shared-state failover.
-- Project tokens isolate hub access by project, but there are no per-user roles or external identity provider.
-- Peer quorum proves durable message provenance only within the shared project-credential boundary; it does not prove truth, model independence, non-collusion, or human approval.
-- Delivery is durable and retry-safe when callers supply an idempotency key, but it is not exactly-once execution.
-- Rate-limit counters reset after restart, and capacity depends on the host and SQLite workload.
-- The hub does not coordinate filesystem ownership; use separate worktrees or a single-writer rule.
-- A non-loopback deployment requires authentication, TLS termination, process supervision, and network access controls.
-
-The [operations guide](docs/operations/deploy.md) explains backup, recovery, monitoring, upgrade, and the safe deployment envelope.
-
-## Package standards
-
-This repository follows the native package structures for:
-
-- [Pi package discovery](https://pi.dev/docs/latest/packages) through the `pi-package` keyword and `pi.extensions` / `pi.skills` manifests;
-- portable [Pi Agent Skills](https://pi.dev/docs/latest/skills) using `<skill-name>/SKILL.md`;
-- [Claude Code plugins](https://code.claude.com/docs/en/plugins-reference) through `.claude-plugin/plugin.json`;
-- [Claude marketplaces](https://code.claude.com/docs/en/plugin-marketplaces) through `.claude-plugin/marketplace.json`;
-- standard MCP stdio tools and the optional [Claude channel](https://code.claude.com/docs/en/channels-reference) capability.
-
-## Development
-
-```powershell
-npm ci
-npm run verify
-```
-
-`npm run verify` includes `check:generated`. CI also runs `validate:ci` and
-plugin validation (`claude plugin validate`) as a hosted job. See
-[Contributing](CONTRIBUTING.md) before changing the protocol or generated
-runtimes.
-
-## Repository layout
-
-```text
-.kxm/                          Workspace configuration, logs, assets, and state
-.claude-plugin/                 Claude marketplace catalog
-.github/                        CI and contribution templates
-docs/                           User, operator, and architecture guides
-plugins/kxm/
-├── .claude-plugin/             Claude plugin manifest
-├── dist/                       Generated self-contained CLI, hub, and MCP runtimes
-├── skills/                     Portable Agent Skill
-└── src/                        Pi extension, hub, client, and MCP source
-scripts/                        Build and consistency helpers
-test/                           Integration tests
-examples/                       Executable transport scenarios and callback sender
-scripts/kxm-worker.mjs      Restarting headless Pi RPC worker
-```
-
-## License
-
-[MIT](LICENSE) © KontextMind contributors.
+- **Contributing:** read [CONTRIBUTING.md](CONTRIBUTING.md), [Develop KXM](docs/contributing/development.md) and the [code of conduct](CODE_OF_CONDUCT.md), and run `npm ci` and `npm run verify` before you open a pull request.
+- **Security:** report a suspected vulnerability privately, as [SECURITY.md](SECURITY.md) describes.
+- **License:** [MIT](LICENSE) © KontextMind contributors.

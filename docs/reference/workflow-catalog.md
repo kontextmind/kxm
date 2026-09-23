@@ -1,97 +1,49 @@
-# Workflow guide
+# Workflow catalog
 
-This Area → Workflow → Stage → Role taxonomy applies to native harness
-subscriptions (Claude CLI, Codex, Grok CLI, agy/Antigravity) and to API-key Pi
-providers (OpenRouter, Nous Portal). Vendor-prefixed model ids in the candidate
-lists are dated research candidates, not admission.
+This catalog names common multi-agent workflows by area and lists, for each role in them, dated model candidates to evaluate. Use it when you design a workflow: it gives you workflow and role names, a stage breakdown, and a first shortlist of models. It grants nothing; a candidate runs only on a route your project admits, through a harness that is installed and signed in.
 
-## Table of Contents
+## Contents
 
-1. [Software Engineering](#software-engineering)
-2. [Design & Experience](#design--experience)
-3. [Media Production](#media-production)
-4. [Data & Analytics](#data--analytics)
-5. [Research & Strategy](#research--strategy)
-6. [Business Operations](#business-operations)
-7. [Security & Reliability](#security--reliability)
-8. [Selection Policy](#selection-policy)
-9. [Slug Registry](#slug-registry)
-10. [Historical Navigation](#historical-navigation)
+1. [How to read this catalog](#how-to-read-this-catalog)
+2. [Slug registry](#slug-registry)
+3. [Documentation for each workflow](#documentation-for-each-workflow)
+4. [Software Engineering](#software-engineering)
+5. [Design & Experience](#design--experience)
+6. [Media Production](#media-production)
+7. [Data & Analytics](#data--analytics)
+8. [Research & Strategy](#research--strategy)
+9. [Business Operations](#business-operations)
+10. [Security & Reliability](#security--reliability)
 
 ---
 
-## Provenance
+## How to read this catalog
 
-The workflow and role candidate lists in this guide are inherited research from the snapshot committed at `67e3f99313dadbbd8ef06884be0588fc92970caf` on 2026-09-06. That is a document snapshot date, not a catalog-verification date; current price and capability freshness is unverified. The lists are dated candidates that require live verification before dispatch. They are not certified prices or capabilities, and they are not an eligibility grant.
+The catalog is a four-level taxonomy: **Area → Workflow → Stage → Role**. Each area groups related workflows, each workflow lists its stages in order, and each role belongs to one stage, with a short domain description and up to five ranked candidate models.
 
-Existing claims inside preserved candidate lines are research claims, not dispatch policy or proven quality guarantees. Area grouping is navigation and never pools unrelated role quality into one global model ranking. Model, harness, platform, modality, required tools, and personal or work context are routing attributes, not area trees.
+- **Candidates are dated research.** The lists come from a documentation snapshot taken on 2026-09-06. Prices (USD per million input and output tokens), context windows and capability notes were not re-verified after that date. Verify them before you dispatch work, and read every quality note as a research claim, not a guarantee.
+- **Candidates are not admission.** A model ID here is a research identifier, not a route selector. Your project admits routes in `.kxm/routes.yaml`, and `kxm harness list` shows which harnesses are installed and signed in. [Harness routing](harness-routing.md) explains when to use a native harness and when an aggregator.
+- **Selection is per role.** Areas are navigation only; they never pool unrelated roles into one ranking. Model, harness, platform, modality and required tools are routing attributes, not areas.
+- **Gates stay deterministic.** Where a role is a critic next to a gate, the gate (tests, type checks, linters) decides pass or fail, and the model reviews what a gate cannot check.
 
----
+An interactive `kxm init` offers to install the Software Engineering workflows when at least one harness is signed in. For each role it picks the first candidate whose harness is installed and signed in, and writes one agent file per role and one `kxm.workflow.v1` file per workflow you choose. Existing files are kept. Set `KXM_SKIP_GUIDE_SETUP_PROMPT=1` to skip the offer.
 
-## Selection Policy
+### Cost bands (dated candidates)
 
-Candidate selection is measured per role. Filter stages are optional and are not mandatory Tier-0 gating. Prefer a provider-native authenticated subscription when Tracking says that harness is eligible. For Gemini candidates (`google/*`), the admitted route is the bundled `antigravity` **Pi
-provider** (Tracking → Decided, 2026-09-15) — not the OpenRouter provider id, and not a
-shell-out to `agy`, which stays a catalog/helper entry. Do not change the candidate ids themselves (they are dated research). Evidence and review remain workflow-specific. Both the Fable architecture critic and the Sol CLI critic remain required for this developer assignment runner.
-
-### Cost band reference (dated candidates)
-
-| Tier | Economic Band | Context Window | Primary Models | Core Workload Profile |
+| Tier | Price band | Context window | Example models | Typical work |
 |---|---|---|---|---|
-| **Tier 0: Filter & Ingestion** | $0.03 - $0.20 / M | 1.0M - 1.31M | DeepSeek-V4-Flash, Qwen-3.7-Flash, GLM-5.3-Flash, GPT-5.6-Luna | High-throughput telemetry, raw log ingestion, triage, video pre-filtering, and initial inbox classification. |
-| **Tier 1: Workhorse & Engine** | $0.30 - $1.00 / M | 262k - 1.05M | Gemini-3.8-Flash, Qwen-3-Coder-Plus, DeepSeek-V4-Pro, Devstral-2512 | Routine code generation, multimodal visual QA, Text-to-SQL, AST diff patching, and fast tool dispatching. |
-| **Tier 2: Precision & Critic** | $1.25 - $4.00 / M | 200k - 1.05M | GPT-5.6-Sol, Grok-4.6, Claude Sonnet 5, OpenAI o3, DeepSeek-R1, Codex 5.3 | Primary code writing, formal contract generation, concurrency race diagnosis, and causal inference. |
-| **Tier 3: Sovereign Architecture** | $5.00 - $15.00 / M | 1.0M - 1.05M | Claude Fable 5.1, Claude Opus 5, GPT-6-Astra-Pro (Escalation only) | Designated architecture critic, executive brief, high-stakes legal redlining, and sovereign RFC review. |
-
-### Developer runner loop
-
-The developer assignment runner executes a gated loop with rework across every software engineering workflow. This is not a seventh stage or an informal convention; it is the enforced loop for every software engineering workflow on this runner:
-
-```text
-plan (claude/fable)
-  │
-  ▼
-implement (grok-native)
-  │
-  ▼
-witness (fixed gate: npm run verify)
-  │
-  ▼
-dual critics (review-arch: fable + review-cli: sol)
-  │
-  ├─ If either critic BLOCK ──────────────┐
-  │                                        ▼
-  │                                repair (rework_of binding;
-  │                                        failover to next eligible
-  │                                        authenticated writer)
-  │                                        │
-  │                                        └─ re-witness + fresh dual review
-  │
-  ▼ (both critics PASS on exact tree)
-accept (just accept binds commit + both PASS records)
-  │
-  ▼
-pull request (five CI jobs: 2 Linux validate, classify, docs, plugin)
-```
-
-**Runner loop invariants:**
-
-- **Roles and rotation:** The runner strictly maps assignments to authenticated roster roles (`AGENTS.md` and `.kxm/roster.yaml`):
-  - **Implement / write code (`writer`):** **Grok** (`grok --model grok-4.6`, headless). Currently admitted native writer on this runner. Failover follows attempts-and-relief: after an empty or failed attempt, immediately fail over to the next eligible authenticated writer in the roster (**Qwen** `openrouter/qwen/qwen3-coder-plus` via Pi).
-  - **Plan (`planner`):** **Claude Fable** (`claude --model fable`), read-only architecture and permissions planning.
-  - **Review architecture (`reviewer-arch`):** **Claude Fable** (`claude --model fable`), designated architecture and permissions critic.
-  - **Review CLI / contracts (`reviewer-cli`):** **Codex Sol** (`codex` `gpt-5.6-sol`), designated CLI, protocol, and documentation critic.
-- **Fixed witness gate:** `npm run verify` (incorporating tests, typecheck, docs lint, version checks, and generated `dist` match) runs deterministically as the witness gate before critics review. Deterministic gates beat a third model; models propose, gates hold the line. Model critics review contracts, architecture, and documentation; they never replace the deterministic compiler or test runner.
-- **Dual-critic quorum:** PR acceptance strictly requires **both** designated critics (**Fable** for architecture/permissions and **Sol** for CLI/contracts) to record a `PASS`. A single critic is at most preliminary triage; neither critic may share a provider with each other or with the writer.
-- **Repair back-edge and rework:** If either critic records a `BLOCK`, the runner emits a `repair` assignment bound to the prior attempt via `rework_of`. Every repair round re-runs the fixed witness gate and requires **fresh** dual critic reviews on the resulting tree.
-- **Attempts and relief:** Never stop solely because attempts are exhausted or failed. Immediately try the next suggested eligible authenticated model and transfer findings while preserving every attempt, candidate, failed check, and cost record (`AGENTS.md`).
-- **Acceptance and auto-merge:** `just accept` binds the exact candidate commit hash and independent Fable + Sol PASS records. Changes are pushed to a feature branch and merged via pull request with auto-merge after all five CI jobs pass.
+| **Tier 0: Filter and ingestion** | $0.03 - $0.20 / M | 1.0M - 1.31M | DeepSeek-V4-Flash, Qwen-3.7-Flash, GLM-5.3-Flash, GPT-5.6-Luna | High-throughput telemetry, raw log ingestion, triage, video pre-filtering, and initial inbox classification. |
+| **Tier 1: Workhorse** | $0.30 - $1.00 / M | 262k - 1.05M | Gemini-3.8-Flash, Qwen-3-Coder-Plus, DeepSeek-V4-Pro, Devstral-2512 | Routine code generation, multimodal visual QA, Text-to-SQL, AST diff patching, and fast tool dispatching. |
+| **Tier 2: Precision and critic** | $1.25 - $4.00 / M | 200k - 1.05M | GPT-5.6-Sol, Grok-4.6, Claude Sonnet 5, OpenAI o3, DeepSeek-R1, Codex 5.3 | Primary code writing, formal contract generation, concurrency race diagnosis, and causal inference. |
+| **Tier 3: Architecture** | $5.00 - $15.00 / M | 1.0M - 1.05M | Claude Fable 5.1, Claude Opus 5, GPT-6-Astra-Pro (escalation only) | Architecture review, executive briefs, high-stakes legal redlining, and RFC review. |
 
 ---
 
-## Slug Registry
+## Slug registry
 
-Area and workflow slugs are lower-case kebab-case ASCII and do not use numerals as canonical identity. They are documentation identity, declared here separately from display names and from GitHub auto-anchors. Role slugs are reusable specialty slugs: kebab-case, no area or workflow prefix, and no numbers. The same specialty may recur across workflows; a role slug must be unique within a workflow. When a role must be disambiguated, the composite reference is the explicit namespace `area-slug/workflow-slug/role-slug` (for example `security-reliability/investigate-incident/forensic-causal-analyst`). Never use a bare number such as 3.1.2 as identity.
+Area and workflow slugs are lower-case kebab-case ASCII and do not use numerals as canonical identity. They are documentation identity, declared here separately from display names and from GitHub auto-anchors. Role slugs are reusable specialty slugs: kebab-case, no area or workflow prefix, and no numbers.
+
+The same specialty may recur across workflows; a role slug must be unique within a workflow. When a role must be disambiguated, the composite reference is the explicit namespace `area-slug/workflow-slug/role-slug` (for example `security-reliability/investigate-incident/forensic-causal-analyst`). Never use a bare number such as 3.1.2 as identity.
 
 These slugs imply no runtime config, role admission, schema field, CLI behavior, or alias. Role slugs are declared under each role heading.
 
@@ -134,6 +86,20 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 | Security & Reliability | Investigate Incident | `investigate-incident` |
 | Security & Reliability | Patch Vulnerability | `patch-vulnerability` |
 
+## Documentation for each workflow
+
+This cross-reference points each software and security workflow at the KXM pages its work most often needs. Like the slugs, it implies no runtime configuration, admission, schema or CLI behavior.
+
+| Workflow slug | Primary docs |
+|---|---|
+| `build-feature` | [Set up a first workflow](../start/first-workflow.md), [Architecture](../concepts/architecture.md), [Workflow definitions](workflow-definitions.md), [Test matrix](../contributing/test-matrix.md) |
+| `refactor-repair-regressions` | [Architecture](../concepts/architecture.md), [Test matrix](../contributing/test-matrix.md), [Troubleshooting](../operations/troubleshooting.md), [Provenance gates](../guides/provenance-gates.md) |
+| `stabilize-flaky-tests` | [Test matrix](../contributing/test-matrix.md), [Monitoring](../operations/monitoring.md), [Troubleshooting](../operations/troubleshooting.md) |
+| `design-software-system` | [Architecture](../concepts/architecture.md), [Configuration file reference](config-reference.md), [KXM contracts](../contracts/README.md) |
+| `maintain-documentation` | [Writing docs](../contributing/writing-docs.md), [CLI reference](cli-reference.md) |
+| `investigate-incident` | [Monitoring](../operations/monitoring.md), [Troubleshooting](../operations/troubleshooting.md), [Webhook workflows](../guides/webhook-workflows.md) |
+| `patch-vulnerability` | [Provenance gates](../guides/provenance-gates.md), [Trust model](../concepts/trust-model.md), [Environment variables and limits](configuration.md) |
+
 ---
 
 ## Software Engineering
@@ -142,11 +108,11 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 **Overview:**
 
-1. **Build Feature:** PRD Ingestion $\to$ System Planning $\to$ API Spec/Contract Authoring $\to$ Workspace Scaffolding $\to$ Core Backend & Data Logic $\to$ Full-Stack UI Implementation $\to$ Tool/SDK Integrations $\to$ Automated Verification.
-2. **Refactor and Repair Regressions:** Codebase Smell Analysis $\to$ Modular Decomposition $\to$ Surgical Multi-File AST Transforms $\to$ Static Typing & Contract Verification.
-3. **Stabilize Flaky Tests:** Flakiness Root-Cause Extraction $\to$ Deterministic Mock/Async Hardening.
-4. **Design Software System:** NFR/SLA Ingestion $\to$ System Topology & Trade-Offs $\to$ Technical RFC Authoring $\to$ STRIDE Threat Modeling $\to$ Storage/Sharding Design $\to$ IaC Cloud Topology $\to$ Chaos/DR Review $\to$ Independent Critic Quorum.
-5. **Maintain Documentation:** Accuracy Audit $\to$ Documentation Write $\to$ Witness Gate $\to$ Dual Review Quorum.
+1. **Build Feature:** PRD Ingestion → System Planning → API Spec/Contract Authoring → Workspace Scaffolding → Core Backend & Data Logic → Full-Stack UI Implementation → Tool/SDK Integrations → Automated Verification.
+2. **Refactor and Repair Regressions:** Codebase Smell Analysis → Modular Decomposition → Surgical Multi-File AST Transforms → Static Typing & Contract Verification.
+3. **Stabilize Flaky Tests:** Flakiness Root-Cause Extraction → Deterministic Mock/Async Hardening.
+4. **Design Software System:** NFR/SLA Ingestion → System Topology & Trade-Offs → Technical RFC Authoring → STRIDE Threat Modeling → Storage/Sharding Design → IaC Cloud Topology → Chaos/DR Review → Independent Critic Quorum.
+5. **Maintain Documentation:** Accuracy Audit → Documentation Write → Review.
 
 ---
 
@@ -186,7 +152,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Domain:* Provisions monorepo workspace topologies (Turborepo, Cargo, pnpm), linters, Docker multi-stage builds, and CI pipelines.
 
-1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Designated native repo builder; resolves path aliases, linkings, and workspace configs cleanly.
+1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Fast repository builder; resolves path aliases, links, and workspace configs cleanly.
 2. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Developer-focused open model; produces clean Makefiles, Taskfiles, and tool configs.
 3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — Coordinates cross-package build configs and dependency lockfiles in 1M context.
 4. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Complex CI/CD workflows and multi-stage container build optimizations.
@@ -198,7 +164,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Domain:* Implements domain entities, SQL queries/migrations, ORM persistence, concurrency primitives, and transactional boundaries.
 
-1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Admitted native writer; passes deterministic verify gates (`npm run verify`) on the first pass with minimal rework.
+1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Strong first-pass implementation that passes deterministic verification gates with minimal rework.
 2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — 1M-context open-weight anchor; generates performant database layers and CRUD services.
 3. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Exceptional database logic, indexing, and edge-case domain implementation.
 4. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Algorithmic precision in Rust, Go, Python, and TypeScript concurrent systems.
@@ -254,7 +220,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Domain:* Executes surgical multi-file edits, applying design patterns while preserving comments and formatting.
 
-1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Designated native writer; fast execution of multi-file semantic code changes.
+1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Fast execution of multi-file semantic code changes.
 2. **`relace/relace-apply-3`** (256k ctx | $0.85 / $1.25) — Specialized model for deterministic AST code patch merging without syntax corruption.
 3. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — High-precision refactoring of complex pointer/generic logic.
 4. **`morph/morph-v3-large`** (262k ctx | $0.90 / $1.90) — 4,500 tok/sec high-accuracy mechanical patch application.
@@ -264,9 +230,9 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Slug:* `semantic-equivalence-verifier` | *Stage:* Equivalence verification
 
-*Domain:* Critic-with-gate. Deterministic checks (`tsc --noEmit`, `npm test`, `npm run check`, generated `dist` match) serve as the fixed witness gate and are never delegated to an LLM; the model role reviews public contract compliance, CLI behavior, and behavioral equivalence without replacing the gate ("Deterministic gates beat a third model… models propose; gates hold the line").
+*Domain:* Critic-with-gate: reviews public contract compliance and behavioral equivalence; deterministic checks (type checks, tests, build output) remain the fixed gate and are never delegated to a model.
 
-1. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Designated CLI/spec critic; reviews compiler cascades and type-checker cascades against API contracts.
+1. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Reviews compiler and type-checker cascades against API contracts.
 2. **`openai/o3-mini-high`** (200k ctx | $1.10 / $4.40) — Deep symbolic verification that AST refactors maintain behavioral equivalence.
 3. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Type-cascade and semantic regression review across package boundaries.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Verifies backwards compatibility and deprecation notices across public APIs.
@@ -306,7 +272,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Domain:* Evaluates CAP/PACELC trade-offs, consensus protocols (Raft, Sagas), partition boundaries, and authors primary RFCs.
 
-1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Designated architecture planner; strict fault domain and consensus design.
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Strict fault-domain and consensus design.
 2. **`openai/o3`** (200k ctx | $2.00 / $8.00) — Formal proof of consensus safety, liveness, and split-brain recovery logic.
 3. **`openai/gpt-6-astra-pro`** (1.05M ctx | $10.00 / $50.00) — Multi-tier cloud topology and global multi-region architecture design.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Publication-grade RFC authoring detailing operational trade-offs and team boundaries.
@@ -330,8 +296,8 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Domain:* Conducts STRIDE threat assessments, reviews IAM least-privilege policies, mTLS boundaries, and zero-trust architectures.
 
-1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Designated architecture/permissions critic; zero-trust network modeling.
-2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Designated CLI/spec critic; auth token and protocol threat analysis.
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Architecture and permissions review; zero-trust network modeling.
+2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Auth token and protocol threat analysis.
 3. **`openai/gpt-6-astra-pro`** (1.05M ctx | $10.00 / $50.00) — Enterprise IAM and cloud privilege escalation modeling.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — STRIDE threat matrix synthesis and compliance verification.
 5. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Full-infrastructure vulnerability surface analysis.
@@ -366,8 +332,8 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Domain:* Independent peer-review; challenges unvalidated assumptions, prevents architectural drift, and verifies contracts.
 
-1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — **Designated Architecture & Permissions Critic** (Mandatory for PR acceptance).
-2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — **Designated CLI, Protocol & Contracts Critic** (Mandatory for PR acceptance).
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Architecture and permissions criticism.
+2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — CLI, protocol and contract criticism.
 3. **`z-ai/glm-5.3`** (1.31M ctx | $1.40 / $4.40) — 1.31M context full-stack protocol audit.
 4. **`openai/gpt-6-astra-pro`** (1.05M ctx | $10.00 / $50.00) — Enterprise RFC compliance verification.
 5. **`qwen/qwen3.8-max-0902`** (1M ctx | $2.00 / $6.00) — Independent open-weights architectural validation.
@@ -384,9 +350,9 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Slug:* `documentation-accuracy-auditor` | *Stage:* Accuracy audit
 
-*Domain:* Read-only planner; audits developer and operator documentation against CLI `--help` outputs, source environment variables, tool schemas, and repository configuration before documentation authoring begins.
+*Domain:* Read-only audit of developer and operator documentation against CLI `--help` output, source environment variables, tool schemas, and repository configuration before writing begins.
 
-1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Designated architecture and permissions planner; audits authority, permissions, and lifecycle models against reality.
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Audits authority, permissions, and lifecycle models against actual behavior.
 2. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — High-throughput cross-referencing between source code symbols and markdown documentation.
 3. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Precision auditing of CLI commands, flags, schema definitions, and environment variables.
 4. **`qwen/qwen3.8-max-0902`** (1M ctx | $2.00 / $6.00) — Broad codebase auditing against guides, tutorials, and operational manuals.
@@ -398,7 +364,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Domain:* Authors concise, accurate developer and operator documentation, ensuring clear terminology, correct command flags, and consistent formatting without marketing drift.
 
-1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Admitted native writer; rapid, structured markdown authoring adhering to strict repository conventions.
+1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Rapid, structured Markdown authoring that follows repository conventions.
 2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-context technical writer; coordinates cross-file references across large documentation sets.
 3. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Fluid technical documentation authoring with clear instructional hierarchy.
 4. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Accurate technical guides, CLI flag references, and runnable examples.
@@ -408,10 +374,10 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 *Slug:* `documentation-reviewer` | *Stage:* Review
 
-*Domain:* Critic-with-gate. Deterministic gates (`npm run lint:docs`, `test/docs-copy.test.ts` docs brake, and `npm run check`) serve as the fixed witness gate and are never replaced by LLMs; critics conduct independent peer review where the architecture critic verifies authority and permission wording, and the CLI critic verifies command/flag accuracy and documentation linting.
+*Domain:* Critic-with-gate: the architecture critic verifies authority and permission wording; the CLI critic verifies command and flag accuracy; a deterministic docs lint remains the fixed gate.
 
-1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — **Designated Architecture & Permissions Critic** (Mandatory for PR acceptance); verifies security, governance, and authority wording.
-2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — **Designated CLI, Protocol & Contracts Critic** (Mandatory for PR acceptance); verifies CLI command accuracy, flag syntax, and documentation formatting.
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Verifies security, governance, and authority wording.
+2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Verifies CLI command accuracy, flag syntax, and documentation formatting.
 3. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Rigorous editorial review for clarity, technical completeness, and tone consistency.
 4. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Systematic verification of cross-document links and anchor consistency.
 5. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Rapid lint rule compliance and syntax verification.
@@ -424,10 +390,10 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 **Overview:**
 
-1. **Build Design System:** W3C DTCG Token Modeling $\to$ Style Dictionary v4 AST Engine $\to$ Headless Component Primitives $\to$ Compound Variants (CVA).
-2. **Engineer Mobile Interactions:** Harmonic Spring Physics $\to$ Reanimated v3 UI-Thread Worklets $\to$ SwiftUI/Compose Gestures $\to$ CoreHaptics Waveforms $\to$ 120Hz LTPO Profiling.
-3. **Engineer Terminal Interfaces:** Raw Mode Protocol $\to$ TrueColor Double-Buffering $\to$ The Elm Architecture (Bubbletea) / Ratatui Layouts $\to$ Terminal Signal Trapping.
-4. **Audit Visual Quality and Accessibility:** Snapshot Ingestion $\to$ Perceptual Diffing (SSIM) $\to$ WCAG 2.2 / APCA Contrast Math $\to$ Concentric Radius / Optical Polish.
+1. **Build Design System:** W3C DTCG Token Modeling → Style Dictionary v4 AST Engine → Headless Component Primitives → Compound Variants (CVA).
+2. **Engineer Mobile Interactions:** Harmonic Spring Physics → Reanimated v3 UI-Thread Worklets → SwiftUI/Compose Gestures → CoreHaptics Waveforms → 120Hz LTPO Profiling.
+3. **Engineer Terminal Interfaces:** Raw Mode Protocol → TrueColor Double-Buffering → The Elm Architecture (Bubbletea) / Ratatui Layouts → Terminal Signal Trapping.
+4. **Audit Visual Quality and Accessibility:** Snapshot Ingestion → Perceptual Diffing (SSIM) → WCAG 2.2 / APCA Contrast Math → Concentric Radius / Optical Polish.
 
 ---
 
@@ -565,9 +531,9 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 **Overview:**
 
-1. **Produce Generative Video:** Ideation $\to$ Scriptwriting $\to$ Shot Storyboarding $\to$ Prompt Synthesis $\to$ Video Generation $\to$ Visual Continuity QA $\to$ Audio/Foley Scoring $\to$ Final Render.
-2. **Repurpose Long-Form Video:** Raw Media Ingestion (1–4h) $\to$ Semantic Hook Extraction $\to$ Active Speaker Tracking & Dynamic 9:16 Reframing $\to$ B-Roll Matching $\to$ Kinetic Typography & Packaging.
-3. **Edit and Render Media:** Codec/Asset Ingestion $\to$ Rough-Cut Compilation $\to$ Deterministic NLE/FFmpeg Filtergraph Assembly $\to$ Color LUT/Loudness Normalization $\to$ Broadcast Compliance Gate.
+1. **Produce Generative Video:** Ideation → Scriptwriting → Shot Storyboarding → Prompt Synthesis → Video Generation → Visual Continuity QA → Audio/Foley Scoring → Final Render.
+2. **Repurpose Long-Form Video:** Raw Media Ingestion (1–4h) → Semantic Hook Extraction → Active Speaker Tracking & Dynamic 9:16 Reframing → B-Roll Matching → Kinetic Typography & Packaging.
+3. **Edit and Render Media:** Codec/Asset Ingestion → Rough-Cut Compilation → Deterministic NLE/FFmpeg Filtergraph Assembly → Color LUT/Loudness Normalization → Broadcast Compliance Gate.
 
 ---
 
@@ -721,9 +687,9 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 **Overview:**
 
-1. **Query Business Intelligence:** Metric Resolution $\to$ SQL Generation $\to$ AST Optimization $\to$ Warehouse Execution $\to$ Declarative Dashboard Formatting.
-2. **Analyze Dataset:** Data Hygiene $\to$ Hypothesis Formulation $\to$ Vectorized Python (Polars/Pandas) $\to$ Sandbox Execution $\to$ Causal Inference.
-3. **Extract and Audit Documents:** Massive 10-K Ingestion $\to$ Table/Chart Extraction $\to$ High-Precision Mathematical Auditing $\to$ Executive Variance Memo.
+1. **Query Business Intelligence:** Metric Resolution → SQL Generation → AST Optimization → Warehouse Execution → Declarative Dashboard Formatting.
+2. **Analyze Dataset:** Data Hygiene → Hypothesis Formulation → Vectorized Python (Polars/Pandas) → Sandbox Execution → Causal Inference.
+3. **Extract and Audit Documents:** Massive 10-K Ingestion → Table/Chart Extraction → High-Precision Mathematical Auditing → Executive Variance Memo.
 
 ---
 
@@ -841,8 +807,8 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 **Overview:**
 
-1. **Prepare Decision Brief:** Status Ingestion $\to$ Signal Extraction $\to$ Scenario Trade-Off Modeling $\to$ C-Suite Ghostwriting $\to$ Tone Calibration.
-2. **Structure Negotiations:** Contract/Ticket Ingestion $\to$ Leverage (BATNA) Modeling $\to$ Counter-Proposal Structuring.
+1. **Prepare Decision Brief:** Status Ingestion → Signal Extraction → Scenario Trade-Off Modeling → C-Suite Ghostwriting → Tone Calibration.
+2. **Structure Negotiations:** Contract/Ticket Ingestion → Leverage (BATNA) Modeling → Counter-Proposal Structuring.
 
 ---
 
@@ -916,9 +882,9 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 **Overview:**
 
-1. **Automate Tasks:** Multi-Channel Ingestion $\to$ Urgency Triage $\to$ Action Item Extraction $\to$ Multi-Tool API Dispatch $\to$ Daily Briefing.
-2. **Handle Customer Escalations:** Ticket Ingestion $\to$ De-escalation Comms.
-3. **Review Contracts:** Contract Ingestion $\to$ SLA/Legal Risk Audit $\to$ Redline.
+1. **Automate Tasks:** Multi-Channel Ingestion → Urgency Triage → Action Item Extraction → Multi-Tool API Dispatch → Daily Briefing.
+2. **Handle Customer Escalations:** Ticket Ingestion → De-escalation Comms.
+3. **Review Contracts:** Contract Ingestion → SLA/Legal Risk Audit → Redline.
 
 ---
 
@@ -1012,8 +978,8 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 **Overview:**
 
-1. **Investigate Incident:** Telemetry filtering $\to$ Incident triage $\to$ Forensic analysis $\to$ Reproduction $\to$ Debrief. Stages are optional per incident; there is no mandatory five-model fanout.
-2. **Patch Vulnerability:** Taint Flow Analysis $\to$ Defensive Patching $\to$ Adversarial Mutation Verification.
+1. **Investigate Incident:** Telemetry filtering → Incident triage → Forensic analysis → Reproduction → Debrief. Stages are optional per incident; there is no mandatory five-model fanout.
+2. **Patch Vulnerability:** Taint Flow Analysis → Defensive Patching → Adversarial Mutation Verification.
 
 ---
 
@@ -1098,7 +1064,7 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 *Domain:* Synthesizes fail-closed security fixes (parameterized queries, sanitization, constant-time comparisons).
 
 1. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Surgical security patch generator using secure coding primitives.
-2. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Rapid patch application that passes `npm run verify` cleanly.
+2. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Rapid patch application that passes deterministic verification cleanly.
 3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-throughput defensive refactoring across large repos.
 4. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Applies defensive validation without breaking valid user flows.
 5. **`bytedance-seed/seed-2.0-code`** (262k ctx | $0.50 / $3.00) — Web and client-side sanitization hardening.
@@ -1117,36 +1083,9 @@ These slugs imply no runtime config, role admission, schema field, CLI behavior,
 
 ---
 
-## Historical Navigation
+## Related
 
-This table is historical navigation from the 2026-09-06 heading numbers to the current documentation slugs. It is not a runtime alias lane.
-
-| Old heading | New workflow slug | Old roles |
-|---|---|---|
-| Workflow 1.1: Generative AI Video Production Pipeline | `produce-generative-video` | 1.1.1–1.1.5 |
-| Workflow 1.2: Automated Long-to-Shorts Content Repurposing Pipeline | `repurpose-long-form-video` | 1.2.1–1.2.3 |
-| Workflow 1.3: Programmatic Post-Production & Tool-Calling Assembly Pipeline | `edit-render-media` | 1.3.1–1.3.2 |
-| Workflow 2.1: Greenfield Software Engineering & Monorepo Scaffolding | `build-feature` | 2.1.1–2.1.6 |
-| Workflow 3.1: Production Incident RCA & Crash Diagnostics | `investigate-incident` | 3.1.1–3.1.3 |
-| Workflow 3.2: Precision Code Refactoring & Regression Repair | `refactor-repair-regressions` | 3.2.1–3.2.3 |
-| Workflow 3.3: Flaky Test Remediation & Vulnerability Patching | (split; see role rows) | 3.3.1–3.3.3 |
-| Role 3.3.1: Concurrency & Flakiness Detective | `stabilize-flaky-tests` | 3.3.1 |
-| Role 3.3.2: Defensive Patch & Hardening Engineer | `patch-vulnerability` | 3.3.2 |
-| Role 3.3.3: Adversarial Security & Mutation Auditor | `patch-vulnerability` | 3.3.3 |
-| Workflow 4.1: Executive Decision Support & Strategic Planning | `prepare-decision-brief` | 4.1.1–4.1.3 |
-| Workflow 4.2: Autonomous Personal Productivity & Task Automation | `automate-tasks` | 4.2.1–4.2.3 |
-| Workflow 4.3: High-Stakes Customer Escalation, Negotiation & Contracts | (split; see role rows) | 4.3.1–4.3.3 |
-| Role 4.3.1: Contract Redline & Commercial Terms Auditor | `review-contracts` | 4.3.1 |
-| Role 4.3.2: Crisis & Customer De-escalation Communicator | `handle-customer-escalations` | 4.3.2 |
-| Role 4.3.3: Negotiation Leverage & Deal Structuring Strategist | `structure-negotiations` | 4.3.3 |
-| Workflow 5.1: Distributed Systems Design & Technical RFC Formulation | `design-software-system` | 5.1.1–5.1.6 |
-| Workflow 6.1: Enterprise Business Intelligence & Text-to-SQL Pipeline | `query-business-intelligence` | 6.1.1–6.1.3 |
-| Workflow 6.2: Automated Data Science & Statistical Modeling | `analyze-dataset` | 6.2.1–6.2.2 |
-| Workflow 6.3: Multimodal Financial & Operational Document Intelligence | `extract-audit-documents` | 6.3.1–6.3.2 |
-| Workflow 6.4: Real-Time Operational Telemetry & Distributed Systems RCA | `investigate-incident` | 6.4.1–6.4.2 |
-| Workflow 7.1: Design System Architecture & Multi-Platform Component Engineering | `build-design-system` | 7.1.1–7.1.2 |
-| Workflow 7.2: Mobile-First Interactive UX & Gesture/Haptic Engineering | `engineer-mobile-interactions` | 7.2.1–7.2.2 |
-| Workflow 7.3: Terminal User Interface (TUI) & Rich CLI Experience Engineering | `engineer-terminal-interfaces` | 7.3.1–7.3.2 |
-| Workflow 7.4: Multimodal Visual Design QA, Accessibility (a11y) & Polish Audit | `audit-visual-accessibility` | 7.4.1–7.4.2 |
-
-Role rotation, admission, and dispatch policy live in AGENTS.md and Tracking, not in this guide.
+- [Workflow definitions](workflow-definitions.md): write a webhook or Runtime workflow for these stages
+- [Harness routing](harness-routing.md): choose the route that runs a candidate model
+- [Configuration file reference](config-reference.md): agents, roles, routes and prices
+- [Set up a first workflow](../start/first-workflow.md): run a workflow end to end

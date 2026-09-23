@@ -1,22 +1,23 @@
-# Repository Work Delivery Skill
+# Repository work delivery skill
 
-## Purpose
+`repo-work-delivery` turns an engineering request into an evidence-based,
+executable delivery prompt. It suits repository work that may need discovery,
+official documentation research, phased delivery, validation, pull requests,
+CI and review follow-through, policy-gated merge, and safe cleanup. This page is
+for contributors who use coding agents on this repository.
 
-`repo-work-delivery` is a reusable skill for converting an engineering request into an evidence-based, executable delivery prompt. It is designed for repository work that may need discovery, official documentation research, phased delivery, validation, pull requests, CI/review follow-through, policy-gated merge, and safe cleanup.
+The skill lives at `.agents/skills/repo-work-delivery/SKILL.md`. It is a
+repository-local skill: it is not part of the bundled suite in
+`plugins/kxm/skills/`, and it ships in neither the npm package nor the Claude
+plugin.
 
-The canonical skill is located at:
-
-```text
-.agents/skills/repo-work-delivery/SKILL.md
-```
-
-## What it does
+## What the skill requires
 
 The skill requires the executor to:
 
 - Inspect repository instructions, architecture, workflow guidance, CI, package manifests, and existing patterns.
 - Identify material ambiguity and ask focused questions only when repository evidence cannot safely resolve it.
-- Select the workflow recommended by the repository’s workflow guide.
+- Select the workflow recommended by the repository's workflow guide.
 - Assign explicit delivery roles, even when one agent performs several roles.
 - Use a one-shot workflow only for genuinely small, low-risk, self-contained changes.
 - Research fresh official documentation for every materially affected package, framework, SDK, platform, or API.
@@ -29,13 +30,10 @@ The skill requires the executor to:
 
 ## Workflow selection
 
-The skill first reads the repository workflow guide. For KXM, that includes:
-
-```text
-.agents/skills/kxm-workflow/SKILL.md
-```
-
-It chooses the least complex safe workflow prescribed by that guidance.
+The skill first reads the repository's workflow guidance. For KXM, that
+includes the `kxm-workflow` skill (`.agents/skills/kxm-workflow/SKILL.md`, the
+generated mirror of `plugins/kxm/skills/kxm-workflow/`). It chooses the least
+complex safe workflow that guidance prescribes.
 
 ### One-shot work
 
@@ -74,7 +72,7 @@ The skill asks the user only when unanswered details would materially affect beh
 
 ## Documentation standard
 
-For material dependencies, research uses official maintainer or other authoritative primary documentation for the repository’s actual version. The plan or PR records the source, version/date where available, retrieval date, and decision supported.
+For material dependencies, research uses official maintainer or other authoritative primary documentation for the repository's actual version. The plan or PR records the source, version/date where available, retrieval date, and decision supported.
 
 ## Merge and cleanup safety
 
@@ -103,5 +101,6 @@ A prompt produced with this skill includes:
 
 ## Related
 
-- [Agent Skills](../guides/agent-skills.md) — bundled command-suite skills
-- [Skill candidate lifecycle](../guides/governed-skills.md) — governed `kxm skills` candidates
+- [Agent skills](../guides/agent-skills.md): the bundled command-suite skills
+- [Governed skills](../guides/governed-skills.md): `kxm skills` candidates
+- [Assignment runner](assignment-runner.md): how maintainers accept delegated work

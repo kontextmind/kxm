@@ -1,8 +1,8 @@
 # KXM CLI reference
 
-This page documents every command and subcommand the `kxm` operator CLI registers in KXM 0.7.1 (`@kontextmind/kxm`). For each command it states what the command does, which files and services it reads and writes, whether it needs a running hub or the KXM Runtime supervisor, what `--json` returns, and the exit codes and refusal codes you are likely to see. It supersedes the "Complete CLI guide" section of the [KXM Handbook](../kxm-handbook.md). Environment variables are described in [Configuration](configuration.md); this page names them only where a command reads them directly.
+This page documents every command and subcommand the `kxm` operator CLI registers (`@kontextmind/kxm`). For each command it states what the command does, which files and services it reads and writes, whether it needs a running hub or the KXM Runtime supervisor, what `--json` returns, and the exit codes and refusal codes you are likely to see. Environment variables are described in [Environment variables and limits](configuration.md); this page names them only where a command reads them directly.
 
-Output shown under examples was captured from KXM 0.7.1 run from a source checkout, inside a throwaway Git repository, with `HOME`, `KXM_STATE_HOME`, `KXM_USER_CONFIG_DIR`, and the XDG directories pointed at a temporary directory, no harness CLIs on `PATH`, and (where a hub was needed) a disposable hub on a random loopback port. Paths are shortened to `/work/proj` (the project), `/work/kxm` (the KXM checkout), `/state` (the user state root), and `~/.config/kxm` (the user config directory); session tokens are replaced with `<token>`, the machine's host name with `host.local`, and long JSON is trimmed with `...`. Every command either plans under `--dry-run` without changing anything or refuses the flag (see [Dry runs](#dry-runs)); the dry-run examples were captured from the current source tree, with a digest of the throwaway tree taken before and after to confirm that nothing was written. An example captioned "Not run" was not executed for this reference because it starts a long-lived process, writes durable state, stores credentials, or calls an external service; its output is not shown.
+Output shown under examples was captured from a source checkout, inside a throwaway Git repository, with `HOME`, `KXM_STATE_HOME`, `KXM_USER_CONFIG_DIR`, and the XDG directories pointed at a temporary directory, no harness CLIs on `PATH`, and (where a hub was needed) a disposable hub on a random loopback port. Paths are shortened to `/work/proj` (the project), `/work/kxm` (the KXM checkout), `/state` (the user state root), and `~/.config/kxm` (the user config directory); session tokens are replaced with `<token>`, the machine's host name with `host.local`, and long JSON is trimmed with `...`. Every command either plans under `--dry-run` without changing anything or refuses the flag (see [Dry runs](#dry-runs)); the dry-run examples were captured from the current source tree, with a digest of the throwaway tree taken before and after to confirm that nothing was written. An example captioned "Not run" was not executed for this reference because it starts a long-lived process, writes durable state, stores credentials, or calls an external service; its output is not shown.
 
 ## Contents
 
@@ -12,16 +12,16 @@ Output shown under examples was captured from KXM 0.7.1 run from a source checko
 - [Where commands read and write](#where-commands-read-and-write)
 - [Task to command](#task-to-command)
 - Setup: [`init`](#kxm-init), [`config`](#kxm-config), [`completion`](#kxm-completion), [`trust`](#kxm-trust)
-- Hub and sessions: [`hub`](#hub-commands), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
+- Hub and sessions: [`hub`](#kxm-hub-view), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
 - Harnesses, models, and roles: [`harness`](#kxm-harness), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
 - Running work: [`run`](#kxm-run), [`runs`](#kxm-runs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
 - Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing)
 - Operations: [`backup`](#kxm-backup), [`restore`](#kxm-restore), [`tenant`](#kxm-tenant), [`ssh`](#kxm-ssh), [`help`](#kxm-help)
-- [Known behavior gaps in 0.7.1](#known-behavior-gaps-in-071)
+- [Known behavior gaps](#known-behavior-gaps)
 
 ## Invoking the CLI
 
-An installed CLI is on `PATH` as `kxm`. Install it from the versioned release tarball as described in the [KXM Handbook](../kxm-handbook.md#install-the-kxm-operator-cli).
+An installed CLI is on `PATH` as `kxm`. Install it as described in [Install KXM](../start/install.md).
 
 ```bash
 kxm --help
@@ -334,7 +334,7 @@ kxm config set hub.autoStart off --scope user
 kxm completion <bash|zsh|fish>
 ```
 
-Prints a shell completion script to stdout. With no shell, prints `usage: kxm completion <bash|zsh|fish> | kxm completion install [--shell <shell>] [--no-path]` on stderr and exits 2; an unsupported shell exits 1. The script is printed as text even with `--json`. The generated command list lags the CLI in 0.7.1 (see [Known behavior gaps](#known-behavior-gaps-in-071)).
+Prints a shell completion script to stdout. With no shell, prints `usage: kxm completion <bash|zsh|fish> | kxm completion install [--shell <shell>] [--no-path]` on stderr and exits 2; an unsupported shell exits 1. The script is printed as text even with `--json`. The generated command list lags the CLI (see [Known behavior gaps](#known-behavior-gaps)).
 
 - Arguments: `[shell]`, one of `bash`, `zsh`, `fish` (or the `install` subcommand).
 - Reads only.
@@ -778,13 +778,13 @@ would signal pid files
 kxm dash [--screen <name>]
 ```
 
-Opens the live, read-only dashboard over the hub's server-sent events and the local hub store. On a terminal it is interactive (`1`–`7` switch tabs, `h` help, `q` quit). Without a terminal it prints one plain snapshot and exits.
+Opens the live dashboard over the hub's server-sent events and a read-only snapshot of the local hub store. On a terminal it is interactive (`1`–`7` switch tabs, `h` help, `q` quit). Without a terminal it prints one plain snapshot and exits.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--screen` | `<name>` | `agents` | agents, tasks, workflows, plans, inbox, procs, or spend |
 
-- Needs a hub for live data. Reads only.
+- Needs a hub for live data. Treat it as an observer: its action keys `a`, `r`, `s` and `c` post to hub routes that do not exist, so they change nothing even though the status line reports success, and `d` creates a git branch and worktree (see [Monitor KXM](../operations/monitoring.md#watch-live-work-with-kxm-dash)).
 - `--json` is refused (exit 2); use `kxm hub view`. An unknown screen exits 2 with `unknown_screen`. `--dry-run` prints `serverUrl`, `transport`, and `screen`.
 
 ```bash
@@ -837,7 +837,7 @@ kxm studio layout --json
 kxm studio serve [-p <port>] [--host <host>] [--token <token>]
 ```
 
-Serves the Web Studio on `http://127.0.0.1:4242` until interrupted. It serves `/`, `/health`, `GET /api/layout`, and `POST /api/mutate`; mutations require the session token. The plan comes from `.kxm/workflows/default.yaml` in the current directory, or the first YAML file in `.kxm/workflows/`.
+Serves the Web Studio on `http://127.0.0.1:4242` until interrupted. It serves `/`, `/health`, `GET /api/layout`, and `POST /api/mutate`. The mutate route checks the session token when one resolves and accepts an allowlisted command name, but this server does not execute it. The plan comes from `.kxm/workflows/default.yaml` in the current directory, or the first YAML file in `.kxm/workflows/`.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1663,10 +1663,11 @@ Starts a long-lived, supervised Pi RPC worker in the foreground through `scripts
 - Needs Pi and a reachable hub. Runs until stopped (`kxm hub stop` stops managed workers too). The exit code is the worker's.
 - A name and project are required (exit 2 otherwise); an invalid isolation mode exits 2.
 - `--dry-run` prints a `kxm.worker-result.v1` envelope with `workspace`, `name`, `project`, `model`, `fallbackModels`, `tools`, `sessionIsolation`, `continue`, `freshStart`.
-- The remaining worker variables are described in [Configuration](configuration.md#long-lived-worker-settings).
+- `--model` and `--fallback-models` pass straight to Pi, so a native vendor's selector (for example `xai/…` or `antigravity/claude-…`) would bill through Pi instead of the vendor's own harness; see [Harness routing](harness-routing.md).
+- The remaining worker variables are described in [Long-lived worker settings](configuration.md#long-lived-worker-settings).
 
 ```bash
-kxm agent worker --name reviewer --project demo --model xai/grok-4.6 --tools read,grep,find,ls --session-isolation workflow --fresh-start --dry-run
+kxm agent worker --name reviewer --project demo --model openrouter/qwen/qwen3-coder-plus --tools read,grep,find,ls --session-isolation workflow --fresh-start --dry-run
 ```
 
 ```text
@@ -1674,7 +1675,7 @@ would start worker
 ```
 
 ```bash
-kxm agent worker --name coordinator --project demo --model antigravity/claude-sonnet-4-6 --fallback-models xai/grok-4.6 --session-isolation workflow
+kxm agent worker --name coordinator --project demo --model openrouter/qwen/qwen3-coder-plus --session-isolation workflow
 ```
 
 Not run: starts a long-lived Pi worker.
@@ -2521,7 +2522,7 @@ dry run: run workflow default for task task_4f79c0833e41, then mark it in_progre
 kxm task sync <taskId>
 ```
 
-Sync task status and evidence with its linked issue board. In 0.7.1 this is local only: it marks the task's tracker link `synced` and updates timestamps without contacting GitHub or Jira.
+Sync task status and evidence with its linked issue board. Today this is local only: it marks the task's tracker link `synced` and updates timestamps without contacting GitHub or Jira.
 
 - Writes the task file. `--dry-run` returns the synced task and plans the write without making it. JSON keys: `task`.
 - Exit 1 when the task does not exist or has no tracker link.
@@ -2669,7 +2670,7 @@ kxm explain --mode planner --domains git,k8s --model grok/grok-4.6 --json
 
 ## `kxm context`
 
-KXM context operating-system queries. Every subcommand POSTs to the hub's `/v1/context/*` API as the control plane, authenticating only with `KXM_AUTH_TOKEN` (the persisted `hub-env.json` credential is not used; without the variable the hub answers 401 `invalid_auth`). The first argument is the project scope. Results carry the hub's HTTP `status` and response fields. Exit 0 on a 2xx response, 1 otherwise. An unreachable hub crashes the command with a stack trace (exit 1, no JSON). Agents reach the same data through the `kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode`, and `kxm_promote` tools; there is no `kxm_explain` tool.
+KXM context operating-system queries. Every subcommand POSTs to the hub's `/v1/context/*` API as the control plane, authenticating only with `KXM_AUTH_TOKEN` (the persisted `hub-env.json` credential is not used; without the variable a hub that has an admin token answers 401 `invalid_auth`, while a loopback hub with no admin token accepts the call). The first argument is the project scope. Results carry the hub's HTTP `status` and response fields. Exit 0 on a 2xx response, 1 otherwise. An unreachable hub crashes the command with a stack trace (exit 1, no JSON). Agents reach the same data through the `kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode`, and `kxm_promote` tools; there is no `kxm_explain` tool.
 
 ### `kxm context get`
 
@@ -2968,7 +2969,7 @@ kxm memory sync --dry-run --json
 
 ## `kxm skills`
 
-Governed skill candidate lifecycle under `.kxm/skills/` in `KXM_WORKDIR` or the current directory: `candidates/`, `promoted/`, `quarantined/`, `rejected/`, `history/<id>.jsonl`, and `patches/<id>.patch`. No hub needed. Errors are plain text on stderr.
+Governed skill candidate lifecycle under `.kxm/skills/` in `KXM_WORKDIR` or the current directory: `candidates/`, `promoted/`, `quarantineds/`, `rejected/`, `history/<id>.jsonl`, and `patches/<id>.patch`. No hub needed. Errors are plain text on stderr.
 
 ### `kxm skills create`
 
@@ -3017,7 +3018,7 @@ Record a protected evaluation for a candidate. A failed evaluation can quarantin
 | `--score` | `<n>` | none | Numeric score |
 | `--details` | `<text>` | none | Bounded evaluation details |
 
-- Arguments: `<skillId>`, Skill candidate ID. Mutates. `--dry-run` returns the evaluation and whether it would quarantine the candidate, and plans the history write (and the move to `quarantined/`) without making them.
+- Arguments: `<skillId>`, Skill candidate ID. Mutates. `--dry-run` returns the evaluation and whether it would quarantine the candidate, and plans the history write (and the move to `quarantineds/`) without making them.
 - JSON keys: `skillId`, `quarantined`, `evaluation`.
 
 ```bash
@@ -3251,7 +3252,7 @@ no routing records in telemetry
 kxm routing benchmark [--task <fixture>] [--arms <models>] [--runs <count>]
 ```
 
-Dedicated offline benchmark for side-by-side model comparison (Decision Q12). In 0.7.1 this prints fixed placeholder figures: it does not run any model, read the task, or measure anything. Latency, tokens, cost, and outcome are constants chosen from the model name. Do not use its output for routing decisions.
+Dedicated offline benchmark for side-by-side model comparison (Decision Q12). Today this prints fixed placeholder figures: it does not run any model, read the task, or measure anything. Latency, tokens, cost, and outcome are constants chosen from the model name. Do not use its output for routing decisions.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -3511,7 +3512,7 @@ Inspect KXM runs
 ...
 ```
 
-## Known behavior gaps in 0.7.1
+## Known behavior gaps
 
 These are behaviors of the current build that differ from what the help text or the flag names suggest. Each is also noted in the command's section.
 
@@ -3525,3 +3526,10 @@ These are behaviors of the current build that differ from what the help text or 
 - `kxm completion <shell>` generates a command list that includes a nonexistent `plan` command, omits `models`, `routes`, `explain`, and `ssh`, lists a nonexistent `goal get`, and omits `runs drive`, `runs receipt`, `runtime sync-retry`, and `improve report`.
 - `kxm backup` does not include the Runtime supervisor's stores under the user state root, and its JSON shows `manifestSha256` redacted.
 - `--help` after an unknown subcommand (for example `kxm hub nope --help`) prints the parent group's help and exits 0, so `--help` cannot be used to test whether a subcommand exists; compare the `Usage:` line instead.
+
+## Related
+
+- [Environment variables and limits](configuration.md): every variable the commands read
+- [Configuration file reference](config-reference.md): the files the commands read and write
+- [Agent tools](tools.md): the `kxm_*` tools behind `kxm peer` and `kxm workflow`
+- [Hub HTTP API](http-api.md): the routes the commands call

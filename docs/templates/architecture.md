@@ -2,7 +2,7 @@
 schema: "kxm.doc.v1"
 id: "ARCH-0001"
 type: "architecture"
-title: "System / Subsystem Architecture Design"
+title: "Architecture: <system or subsystem>"
 project: "kxm"
 status: "draft" # draft | in_review | approved | superseded | archived
 owner: "@owner"
@@ -18,103 +18,86 @@ details:
   baseline_commit: "<git-sha>"
 ---
 
-# Architecture: <System / Subsystem Name>
+# Architecture: <system or subsystem name>
 
-## Purpose & Scope
+## Purpose and scope
 
-- **Core Mission:** <What capability does this subsystem deliver?>
+- **Mission:** <What capability does this subsystem deliver?>
+- **Callers:** <Who interacts with it: operators, agents, workers, external webhooks?>
+- **State of this document:** <Current, proposed, or target architecture. Say which.>
 
-- **Audience & Callers:** <Who interacts with this system (interactive operators, workers, external webhooks)?>
+## Goals, quality attributes and constraints
 
-- **Architecture State:** <Explicitly state whether this document reflects current, proposed, or target architecture>
-
-## Goals, Quality Attributes & Constraints
-
-| Goal / Constraint | Business or Technical Driver | Measurement Metric / Hard Boundary |
-
+| Goal or constraint | Driver | Measure or hard boundary |
 |---|---|---|
-| Fail-Closed Security | Prevent privilege escalation | Reject missing tokens; zero loopback bypasses |
+| Fail-closed security | Prevent privilege escalation | Missing or wrong credentials are refused; no loopback bypass |
+| Deterministic replay | Forensic debugging and audit | Folding the event log reproduces the same state |
+| <Latency or throughput goal> | <Operator responsiveness> | <For example, p50 dispatch under 200 ms> |
 
-| Deterministic Replay | Forensic debugging & auditability | Folded event stream produces identical state |
-| Low Latency Dispatch | Operator responsiveness | Sub-200ms dispatch P50 |
+## Context and trust boundaries
 
-## Context & Trust Boundaries
+External requests pass a credential check before they reach the subsystem, which
+owns its durable state.
 
 ```mermaid
 flowchart TB
-    subgraph External ["Untrusted External Perimeter"]
-        Caller["Operator / External Webhook / CI"]
+    subgraph External ["Untrusted perimeter"]
+        Caller["Operator, webhook sender or CI"]
     end
 
-    subgraph AuthPlane ["Access Control Plane (Trust Boundary)"]
-        TokenVal["Token Validator (Admin / Session / Attempt)"]
+    subgraph Auth ["Trust boundary"]
+        Check["Credential check (admin, project or session)"]
     end
 
-    subgraph Internal ["KXM Core Domain"]
-        Engine["Temporal Workflow Engine"]
-        Memory["5-Layer Memory & Context Arbiter"]
-        Store[("SQLite Store: .kxm/state/kxm.db")]
+    subgraph Internal ["Subsystem"]
+        Engine["<Core component>"]
+        Context["<Supporting component>"]
+        Store[("<Durable store, for example .kxm/state/kxm.db>")]
     end
 
-    Caller -->|Request + Token| TokenVal
-    TokenVal -->|Authorized Call| Engine
-    Engine --> Memory
-    Engine --> Store
-
+    Caller -->|request and credential| Check
+    Check -->|authorized call| Engine
+    Engine -->|reads| Context
+    Engine -->|writes| Store
 ```
 
-*Context flow: External requests enter through the Access Control Plane. Authorized calls interact with the Temporal Engine and Context Arbiter, backed by durable SQLite storage.*
+## Component responsibilities
 
-## Component Responsibilities & Ownership
+| Component | Responsibility | Public interface | Owned state |
+|---|---|---|---|
+| <Runtime engine> | <Schedules steps, attempts and transitions> | <`KxmRunScheduler`> | <`events`, `runs`, `run_state` in the Runtime event store> |
+| <Context arbiter> | <Assembles role-aware packets within a budget> | <`arbitrate()`> | <None; reads context items and Git memory> |
+| <Hub store> | <Messages, workflow runs and leases> | <HTTP API> | <`messages`, `workflow_runs`, `leases` in `kxm.db`> |
 
-| Component | Responsibility | Public Interface / Contract | Owned State / Tables | Team / Role Owner |
+## Runtime scenarios
 
-|---|---|---|---|---|
-| Workflow Engine | DAG scheduling & loop transitions | `KxmEngine.drive()` | `run_events`, `workflow_runs` | Engine Lead |
+### Happy path
 
-| Context Arbiter | Token budgeting & context compilation | `arbitrate()` | In-memory pool + Git memory | Memory Lead |
-| External Effects Ledger | CAS leasing & idempotency | `ExternalEffectsLedger` | `external_effects` | Platform Lead |
+1. <Step dispatch builds a context packet for the target role.>
+2. <The worker runs on its own branch, for example `kxm/run-<run-id>-<description>`.>
+3. <The worker returns a structured result with its witness evidence.>
+4. <The engine records the transition and hands off to the critics.>
 
-## Runtime Execution Scenarios
+### Failure and rework
 
-### 1. Happy Path Dispatch & Settlement
+1. <How a failed attempt or a critic block is recorded.>
+2. <Which transition, retry budget, or human action decides what runs next.>
+3. <What stops the loop: a budget, a terminal status, or an operator.>
 
-1. Step dispatch compiles `FormalContextPacket` (`kxm.context-packet.v2`).
+## Data contracts, storage and invariants
 
-2. Worker executes in isolated branch `kxm/run-<id>-<description>`.
+- **Source of truth:** <store and schema, for example SQLite through `node:sqlite`>
+- **Durability settings:** <for example WAL, a 5-second busy timeout, `synchronous = NORMAL`>
+- **Naming invariants:** <branch, ID, or path conventions the subsystem relies on>
+- **Pinning:** <which revisions are pinned per run, and what is never read from a mutable `HEAD`>
 
-3. Worker submits `kxm.handoff-manifest.v1` with witness receipt.
+## Security and isolation
 
-4. Engine commits transition and notifies critics.
+- **Credentials:** <which credentials the subsystem accepts and what each may do>
+- **Process isolation:** <how child processes are bounded: stdio frames, output caps, process groups>
+- **Concurrency control:** <locks or leases that serialize shared mutations>
+- **Not guaranteed:** <for example exactly-once external effects, or sandboxing>
 
-### 2. Failure & Rework Path
+## Architectural decisions
 
-1. Critic issues structured rejection findings with blocker severity.
-
-2. Engine transitions step to `rejected_rework_required`.
-
-3. Attempts counter increments; router dispatches to next eligible writer.
-
-## Data Contracts, Storage & Invariants
-
-- **Source of Truth:** Local-first SQLite (`.kxm/state/kxm.db`) using native `DatabaseSync` (`node:sqlite`).
-
-- **Journal Mode:** WAL mode with `busy_timeout = 5000ms` and `synchronous = NORMAL`.
-
-- **Branch Naming Invariant:** `kxm/run-<cleanId>-<slug>` generated deterministically.
-
-- **Commit Pinning:** Never fall back to mutable `HEAD`; strictly pin `reviewedCommit`.
-
-## Security & Isolation
-
-- **Token Model:** 3-tier model (AdminToken, SessionToken, AttemptToken).
-
-- **Process Isolation:** Worker processes run as detached children with bounded stdio frames.
-
-- **Git Worktree Lock:** Concurrent worktree mutations acquire `.git/kxm-worktree.lock`.
-
-## Architectural Decisions (ADR Index)
-
-- [`ADR-0001: SQLite Native node:sqlite Engine`](../decisions/ADR-0001.md)
-
-- [`ADR-0002: Deterministic Run Branching`](../decisions/ADR-0002.md)
+- `ADR-<nnnn>: <title>`: link each record in [`docs/adr/`](../adr/README.md).

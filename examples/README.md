@@ -2,7 +2,11 @@
 
 These examples demonstrate the transport without requiring an AI model. Run them from the repository root after `npm ci`.
 
-The [`.kxm/workflows/default.yaml`](../.kxm/workflows/default.yaml) workspace configuration is a production-oriented definition for a long-lived coordinator. It covers reproduction, single-agent or three-agent planning, plan review, implementation, local and repository gates, documentation, push/watch retries, merge, Jira update, and continuous improvement. Follow [Webhook workflows](../docs/guides/webhook-workflows.md) to configure it.
+The [`webhook-workflows/jira-development.json`](webhook-workflows/jira-development.json)
+definition turns a signed Jira `issue_updated` webhook into a five-stage hub
+workflow run for a long-lived coordinator: reproduce, plan, implement, checks,
+and report. Follow [Webhook workflows](../docs/guides/webhook-workflows.md) to
+configure it.
 
 The [`workflow-signal.ts`](workflow-signal.ts) sender demonstrates the signed callback that resumes a coordinator after CI, review, merge, or Jira work completes. The webhook guide documents its required environment and arguments.
 
@@ -15,9 +19,9 @@ and `reviewer-grok`. Follow
 [Peer provenance and quorum gates](../docs/guides/provenance-gates.md) for the complete
 runbook and trust boundary.
 
-The [`runtime`](kxm/README.md) directory is a machine-validated planned-contract
-fixture for the local-first KXM architecture. Production configuration
-loader tests consume it, but no current Runtime executes its workflows.
+The [`project`](project/README.md) directory is a machine-validated project
+fixture for the local-first KXM contracts. The configuration loader and
+workflow compiler tests consume it.
 
 ## Self-contained round trip
 

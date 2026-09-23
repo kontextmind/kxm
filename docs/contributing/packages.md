@@ -1,10 +1,9 @@
 # Packages and workspaces
 
-Audience: maintainers adding or moving code in this repository.
-
-KXM ships one installable product (`@kontextmind/kxm`, loaded by Pi, the Claude
-Code plugin, and the MCP server) but is developed as a workspace, so a reusable
-component can be built, tested, and cached on its own.
+KXM ships one installable product, `@kontextmind/kxm`, which Pi, the Claude Code
+plugin and the MCP server all load. It is developed as an npm workspace so that a
+reusable component can be built, tested and cached on its own. This page is for
+maintainers who add or move code between packages.
 
 ## Layout
 
@@ -35,7 +34,7 @@ Current packages:
 
 | Package | Role | Consumers |
 |---|---|---|
-| `@kontextmind/tui` (`packages/core/tui`) | Reusable terminal components | `kxm dash`, configuration surfaces, `@kontextmind/kxm/tui` |
+| `@kontextmind/tui` (`packages/core/tui`) | Reusable terminal components | `kxm dash` (its ANSI theme); integrators through `@kontextmind/kxm/tui` |
 
 ## Commands
 
@@ -48,12 +47,10 @@ Current packages:
 | `npx nx run-many -t build,test` | Every package |
 | `npm run verify` | The commit gate: tests, checks, and generated-artifact parity |
 
-Bun runs tasks (`bun run build`, `bun x nx ...`) and is the recommended local
-runner. Installation and CI still resolve through `npm ci` and Node 22.19.0/24,
-because the hub, the CLI, and Pi's extension host are Node runtimes and
-`npm ci` is what the current CI legs execute. Moving the installer itself to Bun
-is a separate change with its own CI evidence; see
-[`plans/implementation-plan.md`](../../plans/implementation-plan.md) **Still open**.
+Bun can run tasks locally (`bun run build`, `bun x nx ...`). Installation and CI
+still resolve through `npm ci` on Node 22.19.0 and 24, because the hub, the CLI
+and Pi's extension host are Node runtimes. Moving the installer itself to Bun is
+a separate change that needs its own CI evidence.
 
 ## Rules that keep the shape
 
@@ -86,6 +83,7 @@ These are gates, not preferences:
 
 ## Related
 
-- [Terminal components](tui-components.md) — the kit and its surface contract
-- [Architecture](../concepts/architecture.md) — component boundaries
-- [Configuration](../reference/configuration.md) — what is settings versus shipped code
+- [Terminal components](tui-components.md): the kit and its surface contract
+- [Develop KXM](development.md): the commit gate and generated artifacts
+- [Architecture](../concepts/architecture.md): component boundaries
+- [Configuration](../reference/configuration.md): what is settings versus shipped code

@@ -1,14 +1,17 @@
 # KXM terminal components
 
-Audience: maintainers and integrators who draw a KXM surface — the live screens,
-a configuration panel, or a host adapter for another harness.
+The terminal kit gives every KXM surface the same keys, colors and failure
+behavior. This page is for maintainers and integrators who draw a KXM surface: a
+live screen, a configuration panel, or a host adapter for another harness.
 
 The kit is the workspace package
-[`packages/core/tui`](../../packages/core/tui) (`@kontextmind/tui`),
-also published on the product as `@kontextmind/kxm/tui`. It is one declarative
+[`packages/core/tui`](../../packages/core/tui) (`@kontextmind/tui`), also
+published on the product as `@kontextmind/kxm/tui`. It is one declarative
 surface model, one renderer, one input decoder, one contribution registry, and
-thin host adapters, so every surface keys, colours, and fails the same way. See
-[Packages and workspaces](packages.md) for the layout convention it follows.
+thin host adapters. Today `kxm dash` uses only its ANSI theme; the panel,
+registry and adapters are exported for integrators, and no shipped `kxm` command
+draws a panel yet. See [Packages and workspaces](packages.md) for the layout
+convention it follows.
 
 ## Package layout
 
@@ -20,7 +23,7 @@ every control in `tui/` is rendered in a test.
 
 ## The surface contract
 
-A surface is **published, not centralised**. An owner (configuration, roster,
+A surface is **published, not centralized**. An owner (configuration, roster,
 routes, gates, roles, workflow) contributes sections and fields; one renderer
 draws them all; the owner still performs every write. The panel never becomes a
 second source of truth for configuration.
@@ -55,7 +58,7 @@ Bounds are protocol limits, not suggestions
 or malformed published surface is refused with structured issues and drawn with
 an error notice, so a broken file is still repairable from the panel.
 
-## Fail-closed behaviour
+## Fail-closed behavior
 
 | Situation | What happens |
 |---|---|
@@ -65,7 +68,7 @@ an error notice, so a broken file is still repairable from the panel.
 | A choice is `blocked` | Enter reports `statusText` and sends nothing (an unauthenticated route stays unauthenticated) |
 | Handler for an unknown action or unknown owner | Refused with a message; never guessed |
 | A write resolves after the registry was disposed or re-opened | Discarded as stale |
-| No TTY, or `NO_COLOR` | One plain frame, exit `0`, no escape codes at all |
+| No TTY, or `NO_COLOR` or `KXM_TUI_NO_COLOR` set | One plain frame, exit `0`, no escape codes at all |
 | Contract violation in a published surface | Refused with issues; the panel draws the reason instead of hiding it |
 
 There is deliberately **no local echo**. A field is pending until its owner
@@ -76,15 +79,20 @@ republishes, so anything on screen is a value that exists on disk.
 | Key | Action |
 |---|---|
 | `↑` `↓` / `k` `j` | move within the focused pane |
-| `←` `→` / `Tab` / `h` `l` | switch sections and fields |
+| `←` `→` / `Tab` | switch between the sections pane and the fields pane |
+| `l` | move to the fields pane |
 | `PgUp` `PgDn` | jump sections |
 | `enter` | edit a text field, cycle an enum, open a choice list |
 | type | filter a choice list, or edit a text value |
-| `x` | clear the focused value (writes "unset", not a default) |
+| `x` / `d` | clear the focused value (writes "unset", not a default) |
 | owner keys | any `actions[].key` on the focused field |
 | `esc` | back out of a pane, list, or draft, then quit |
+| `q` | quit |
 | `Ctrl+C` | abort a busy field, else quit |
-| `h` / `?` | help |
+| `h` / `?` | help; `esc` or `enter` closes it |
+
+`h` opens help rather than moving to the sections pane, so use `←` or `Tab` to
+go back.
 
 The reducer is pure
 ([`reduceKxmTuiInput`](../../packages/core/tui/src/tui/panel.ts)) and returns
@@ -119,13 +127,13 @@ harness catalog in
   definitions stay Git-reviewed changes with a diff and a PR.
 - It is not a third verification gate. `npm run verify` and CI still decide
   whether work is green.
-- It does not replace `kxm dash`. The dashboard keeps its hub and SSE loop and
-  shares this kit's palette and layout maths.
+- It does not replace `kxm dash`. The dashboard keeps its own hub and SSE loop
+  and takes only this kit's ANSI theme.
 
 ## Related
 
-- [Packages and workspaces](packages.md) — the layout convention and its gate
-- [Configuration](../reference/configuration.md) — the settings a config surface edits
-- [Architecture](../concepts/architecture.md) — component boundaries
-- [Test matrix](test-matrix.md) — where a behaviour is proven
-- [KXM contracts](../contracts/README.md) — schemas behind the reference files
+- [Packages and workspaces](packages.md): the layout convention and its gate
+- [Configuration](../reference/configuration.md): the settings a config surface edits
+- [Architecture](../concepts/architecture.md): component boundaries
+- [Test matrix](test-matrix.md): where a behavior is proven
+- [KXM contracts](../contracts/README.md): schemas behind the reference files

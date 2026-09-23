@@ -1,322 +1,266 @@
-# Troubleshooting
+# Troubleshoot KXM
 
-Start with the smallest boundary: hub health, authentication, registration, peer discovery, then message delivery.
+Find the symptom you see, read its cause, and apply the fix. Start with the quick check, then go to the area that matches: install, hub and authentication, Claude Code, peer messaging, Pi workers, workflows, Runtime runs, context and memory, or operations.
 
-## Quick diagnostic sequence
+## Start with a quick check
 
-1. Confirm the hub terminal still shows `kxm hub listening`.
-2. Request `/health`, then `/ready` to confirm storage access.
-3. Compare the hub URL, token, and project on both agents.
-4. Confirm every agent has a unique name.
-5. Run `/kxm hub` in Pi or call `kxm_list` in Claude.
-6. Inspect hub logs for registration, stale-agent, or server-error events.
-7. If a workflow tool returns `workflow_forbidden`, read `operation`, `assignedCoordinatorName`, and `nextAction`. Do not retry as a peer.
+Work from the smallest boundary outward:
 
-## Common problems
+1. Run `kxm hub view`. Both `health` and `ready` must be `true`.
+2. Compare the hub URL, project and project token on every agent involved (`KXM_SERVER_URL`, `KXM_PROJECT`, and the token or plugin `auth_token`).
+3. Confirm every agent has a unique name within its project.
+4. List peers: `/kxm hub` in Pi, `kxm_list` in Claude Code, or `kxm peer list`.
+5. Read the hub log for `agent_registered`, `agent_stale` and `request_error` events; see [Monitor KXM](monitoring.md#read-the-logs).
+6. For a workflow, call `kxm_workflow_get` and work only on its `currentStage`, attempt and required evidence.
+7. For Runtime runs, run `kxm runtime status`.
 
-### A continued Pi session rejects every turn
+## Install
 
-If a worker was stopped during `kxm_await`, `--continue` may leave a `tool_use` without `tool_result`. The worker retries once without `--continue` and writes a project-and-agent identity-keyed recovery envelope under `.kxm/state`. Do not paste agent logs into the journal. Keep the same project and agent name so the hub identity and recovery key resume.
+| Symptom | Cause | Fix |
+|---|---|---|
+| `kxm: command not found` | Only the Pi package or the Claude Code plugin was installed; neither installs the CLI | `npm install --global --omit=peer @kontextmind/kxm`; see [Install KXM](../start/install.md) |
+| `kxm` works in one shell but not in another | npm's global bin directory is not on that shell's `PATH` | Run `kxm completion install` (bash and zsh also get a `PATH` entry), then open a new shell |
+| Tab completion does nothing | Completion is not installed for this shell | `kxm completion install --shell bash`, `zsh` or `fish`; it is idempotent, and `--dry-run` previews it |
+| Plugin tools fail on start | Node.js is older than 22.19 on the 22.x line, or older than 24 | Install a supported Node.js on the `PATH` the harness uses |
 
-### A model quota or provider error settles the agent
+Install the CLI from the npm registry as shown above; [Install KXM](../start/install.md) covers every supported path. Set `KXM_SKIP_COMPLETION_PROMPT=1` to skip the completion offer after `kxm init`.
 
-KXM waits until Pi has exhausted its own automatic retries. It then keeps the inbound message in `delivered` state, records an allowlisted `quota` or `provider_error` diagnostic without the provider body, and restarts the RPC child. Configure `KXM_WORKER_FALLBACK_MODELS` (or `--fallback-models`) to rotate immediately; otherwise the worker retries after `KXM_WORKER_PROVIDER_RETRY_MS`. Keep continuation enabled so finished peer calls and tool results survive the model switch. Use `--fresh-start`, not `--no-continue`, when only the first launch must avoid old session state.
+### `pi update` fails with `couldn't find remote ref refs/heads/master`
 
-### A worker heartbeat is healthy but one tool never finishes
-
-Set `KXM_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its 31-minute default intentionally gives a 30-minute `kxm_fanout` wait time to return durable pending handles before supervision intervenes. When that bound is exceeded, the structured worker log records `worker_tool_timeout` with only the allowlisted tool name and diagnostic class, the delivered hub request stays recoverable, and the RPC process is restarted. If the stuck worker was supposed to be read-only, also set `KXM_WORKER_TOOLS=read,grep,find,ls`; prompt wording alone does not remove shell or write capabilities.
-
-### A hub or worker PID claim is stale
-
-Version 0.4.3 prevents a second wrapper from replacing a live hub or worker claim. `kxm hub stop` ignores an invalid, non-running, or ownership-mismatched record rather than guessing. A hub claim whose wrapper PID is dead is reclaimed automatically on the next `kxm hub start`; the wrapper also terminates an orphaned hub server child recorded by a dead wrapper (for example after `SIGKILL`) before reclaiming, and `kxm hub stop` can stop such an orphan directly. If a pre-0.4.3 process left a malformed claim behind, inspect the exact `.pid` JSON and verify that its recorded PID is no longer running; for a hub, also verify the configured port has no listener. Then remove only that exact `.pid` and its recorded `.stop` control file before relaunching once. Worker filenames include a project/agent identity digest and their records include the exact names and generation, so do not substitute a similarly sanitized filename. Never delete the `.kxm/state` directory or SQLite database to clear a claim.
-
-### GitHub checks passed but the workflow is still waiting
-
-The hub does not poll GitHub. Run `kxm gate github watch` with the same `runId`, `stageId`, and `signalKey`. A watcher timeout posts the exact signed `failed` signal, retains bounded check evidence, and exits `4`; it never invents `passed`.
-
-### CI jobs stay queued and never start
-
-Every Linux workflow targets the ARC runner scale-set name `kontextmind-doks`.
-That name is not a custom label for repository runners. The scale set belongs to
-the selected-repository GitHub runner group `KontextMind DOKS ARC`, which must
-allow this public repository. The legacy `km-gh-rn01` runner must not carry the
-`kontextmind-doks` label; adding it bypasses ARC and serializes the build queue.
-
-Check GitHub routing first:
+The KXM default branch is `main`, and an older Pi checkout still tracks `master`. Remove the package and install it again with an explicit branch:
 
 ```bash
-gh api repos/kontextmind/kxm/actions/runners \
-  --jq '.runners[] | {name, status, busy, labels: [.labels[].name]}'
-gh api orgs/kontextmind/actions/runner-groups \
-  --jq '.runner_groups[] | select(.name == "KontextMind DOKS ARC") |
-    {name, visibility, allows_public_repositories}'
-```
-
-Then check ARC in DOKS:
-
-```bash
-kubectl -n arc-runners get autoscalingrunnerset kontextmind-doks
-kubectl -n arc-runners get ephemeralrunners,pods
-```
-
-The normal capacity policy keeps one warm runner, bursts to four, and requests
-three CPUs per runner so the DOKS node-pool autoscaler can add capacity instead of
-packing CPU-bound jobs onto already busy nodes. If repository jobs remain queued
-while the listener is assigned zero jobs, verify the runner group's selected
-repository and public-repository access. If ARC has pending pods, inspect node
-capacity and the cluster autoscaler. Do not relabel `km-gh-rn01` or push an
-empty commit as a routing workaround.
-
-### The hub refuses to start
-
-**`KXM_PORT must be an integer between 0 and 65535`**
-
-Set `KXM_PORT` to a valid integer. Remove the variable to use `7331`.
-
-**`KXM_AUTH_TOKEN is required when binding beyond localhost`**
-
-Either restore `KXM_HOST=127.0.0.1` or configure a token before using a non-loopback interface.
-
-**`KXM hub env file is malformed`**
-
-The persisted credential file (`hub-env.json` under the user state root) failed
-validation. It holds only `KXM_AUTH_TOKEN` / `KXM_PROJECT_TOKENS` values in
-`kxm.hub-env.v1` schema; fix its JSON or delete it to have kxm generate a
-fresh admin token on the next start. To rotate the generated token, delete
-the file and run `kxm hub start` again.
-
-#### Database schema is newer than this runtime supports
-
-Do not delete or rewrite the database. Start the package version that created it, or upgrade this runtime. Restore the pre-upgrade backup when rolling back.
-
-#### Address already in use
-
-Another process owns the port. Stop that process or choose another port, then update every agent's `KXM_SERVER_URL`.
-
-### `kxm harness list` says Claude Code is `not_detected` on Windows
-
-npm installs Claude Code as `claude.cmd` (and an extensionless shim), not
-`claude.exe` on `PATH`. The native binary lives next to the shim at
-`%AppData%\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe`.
-Older probes spawned `claude` without a shell, got `ENOENT` or `EINVAL`, and
-reported the CLI missing even when `claude --version` worked in cmd or Git Bash.
-
-Current `kxm harness list` retries `claude.exe`, then that inner package
-`.exe`, then `claude.cmd` on win32. It sets `issues: ["windows_shim"]` only
-when the npm shim is what answered. If the entry is still `not_detected`,
-confirm `%AppData%\Roaming\npm` is on `PATH` for the same process that runs
-`kxm`, then `claude --version` and `claude auth status`. Assignment dispatch
-(`just assign` / `harness-run`) follows the inner `claude.exe` (and Pi's
-`node.exe` plus `cli.js`) with `shell: false`; unverified `.cmd` launchers
-are still refused.
-
-The same npm-shim miss can appear for `pi` on Windows.
-
-### Pi shows `hub:off`
-
-- Confirm the hub is reachable from the Pi terminal.
-- Verify `KXM_AUTH_TOKEN` exactly matches the hub token.
-- Check whether a live agent already uses the same name in the same project.
-- Restart Pi after changing environment variables.
-- For an exact development load, use `pi --no-extensions -e ./plugins/kxm/src/extension.ts`. Add every required provider extension with another `-e`; otherwise Pi discovery is intentionally disabled.
-- For long-lived workers, set the reviewed `KXM_WORKER_EXTENSION_PATHS` and `KXM_WORKER_SKILL_PATHS` described in [Configuration](../reference/configuration.md#long-lived-worker-settings). Invalid paths fail before supervision instead of entering a restart loop.
-
-### Pi update fails looking for `refs/heads/master`
-
-The KXM default branch is `main`. An older Pi git checkout still tracking
-`master` fails with `couldn't find remote ref refs/heads/master`. Remove the
-package and reinstall with an explicit ref:
-
-```text
 pi remove git:github.com/kontextmind/kxm
 pi install git:github.com/kontextmind/kxm@main
 ```
 
-### `kxm --help` prints a former flat command list
+### `kxm harness list` says Claude Code is `not_detected` on Windows
 
-If the installed `kxm --help` prints `validate | status | hub | worker | stop | …`
-instead of the current Commander groups, the committed `plugins/kxm/dist/cli.js`
-is stale. Run `npm run build` and commit the generated `dist` so the operator
-CLI matches source.
+npm installs Claude Code as `claude.cmd` and an extensionless shim, not `claude.exe` on `PATH`. `kxm harness list` retries `claude.exe`, then the package's inner `claude.exe`, then `claude.cmd`, and reports `issues: ["windows_shim"]` when only the shim answered.
 
-### `kxm` is not recognized
+If it still reports `not_detected`, confirm that `%AppData%\Roaming\npm` is on the `PATH` of the process that runs `kxm`, then check `claude --version` and `claude auth status`. Assignment dispatch (`just assign`) runs the inner `claude.exe`, and Pi's `node.exe` with `cli.js`, without a shell; it refuses unverified `.cmd` launchers. The same shim miss can affect `pi`.
 
-`pi install git:github.com/kontextmind/kxm@main` installs the Pi extension
-and Agent Skill, not a global operator command. Install the versioned `.tgz`
-release asset through the authenticated `gh release download` flow in
-[Getting started](../start/quickstart-pi.md#1-install), or run
-`node scripts/kxm.mjs` from a clone after `npm ci`. `npx kxm` and a
-global `git+https` npm install are not supported installation paths.
+## Hub and authentication
 
-For bash and zsh, `kxm completion install` can add the kxm bin directory to
-`PATH` in the shell rc file when it is missing; restart the shell afterwards.
+### The hub refuses to start
 
-### Tab completion is not active
+| Message | Fix |
+|---|---|
+| `KXM_PORT must be an integer between 0 and 65535` | Set a valid port, or unset `KXM_PORT` to use `7331` |
+| `KXM_AUTH_TOKEN is required when binding beyond localhost` | Set `KXM_HOST=127.0.0.1`, or provide the admin token; see [Deploy KXM](deploy.md#choose-loopback-or-a-network-bind) |
+| `KXM hub env file is malformed at <file>` or `does not use schema kxm.hub-env.v1` | Fix the JSON. Removing the file drops every saved token, so start with the full `KXM_PROJECT_TOKENS` map and update all clients |
+| `KXM hub is already managed by PID <pid>` | A hub already owns this state directory; run `kxm hub stop` first |
+| `EADDRINUSE` (address already in use) | Stop the other process, or choose another `KXM_PORT` and update every client's hub URL |
+| `local_state_root_not_absolute` | Make `KXM_STATE_HOME` an absolute path |
+| `runtime_schema_newer` | The database came from a newer release; do not delete it; upgrade KXM |
+| `runtime_schema_outdated` | The database predates this release; see [Upgrade KXM](upgrade.md#understand-schema-changes) |
 
-Run `kxm completion install` for the detected shell, or pass
-`--shell bash|zsh|fish` explicitly. The install appends one guarded stanza to
-the shell rc file and is idempotent: rerunning never duplicates it. Fish needs
-no rc entry because fish auto-loads `~/.config/fish/completions`. After
-installing, start a new terminal or `source` the rc file. To inspect without
-writing, use `--dry-run`; to suppress the post-`kxm init` offer, set
-`KXM_SKIP_COMPLETION_PROMPT=1`.
+### Agents fail with `invalid_auth` after a hub restart
 
-### An expected peer is missing
+`KXM_PROJECT_TOKENS` replaces the hub's saved project map, and the hub saves the replacement. A start with a one-project value removes every other project, so their agents are refused. Restart the hub with the full map; the merge command in [Start the hub](../start/quickstart-claude-code.md#3-start-the-hub) builds it from the saved file.
 
-The two agents usually have different `KXM_PROJECT` values or one stopped sending heartbeats. Compare settings and check for an `agent_stale` event. Names and projects are case-sensitive for display; live-name uniqueness is case-insensitive.
+### A hub PID claim is stale
 
-### A request stays `queued`
+KXM refuses to replace a live hub or worker claim, and `kxm hub stop` ignores a claim that is invalid, not running, or owned by someone else rather than guessing. A claim whose wrapper died is reclaimed on the next `kxm hub start`, which first stops an orphaned server child; `kxm hub stop` can stop such an orphan directly.
 
-The recipient registered but has no active SSE stream. Confirm its process is running and connected. Proxies must disable response buffering for `/v1/events` and allow long-lived connections.
+If a malformed claim remains, read the exact `.pid` JSON in the state directory and confirm its PID is not running and, for a hub, that nothing listens on the port. Then remove only that `.pid` file and its recorded `.stop` control file, and start once. Worker claim names include an identity digest, so do not substitute a similar file name. Never delete the state directory or the database to clear a claim.
 
-### A request stays `delivered`
+### Pi shows `hub:off`
 
-The recipient acknowledged it but has not replied. It may still be working, waiting for approval, or blocked. Avoid sending the same request repeatedly. Check the recipient session directly if the wait is unexpected.
+- Confirm the hub is reachable from the Pi terminal (`kxm hub view`).
+- Check the project name, and give the agent its project token rather than the admin token.
+- Check whether a live agent already uses the same name in the project.
+- Restart Pi after you change environment variables.
+- For long-lived workers, check `KXM_WORKER_EXTENSION_PATHS` and `KXM_WORKER_SKILL_PATHS`; invalid paths fail before supervision starts. See [Run supervised Pi workers](../guides/pi-workers.md).
 
-If the work is obsolete, the sender can call `kxm_cancel`. This changes hub state only; it cannot reverse file changes or external effects already performed by the peer.
+### Admin routes return 401 or 503
+
+`/metrics`, `/v1/ops/*`, state promotion and quorum degradation need the admin token. A project token never substitutes for it, even when you hold every project's token.
+
+- **401 `invalid_auth`:** the request carried a project token or a wrong admin token. Once the hub has an admin token, this applies on loopback too.
+- **503 `admin_auth_not_configured`:** the hub was started without an admin token, which `kxm hub start` never does. Stop the hub, set `KXM_AUTH_TOKEN`, keep the full `KXM_PROJECT_TOKENS` map, and restart against the same database. Give the admin token only to the operator terminal.
+
+### `kxm hub bind` refuses the URL
+
+| Error | Fix |
+|---|---|
+| `hub_url_invalid` | Use an `http` or `https` URL without user info, query or fragment |
+| `hub_bind_unauthenticated` | The URL is remote and this machine has no token for the project; export it and bind again |
+| `hub_credential_unreadable` | Repair or remove `hub-env.json` under the user state root |
+
+## Claude Code plugin and MCP
+
+The [plugin troubleshooting guide](../../plugins/kxm/README.md#troubleshooting) has the full list. Run fixes in your own terminal, and never paste a token into Claude.
+
+| Symptom | Fix |
+|---|---|
+| `kxm_*` tools do not appear | Check `/mcp` for the `kxm` server, check `node --version`, run `/reload-plugins`, and confirm `claude plugin list` shows `kxm@kxm` enabled |
+| `KXM hub unreachable at <url>` | Start the hub, or correct `server_url` with `/plugin configure kxm@kxm` |
+| `no project token for project <p>` | Enter the project token at `/plugin configure kxm@kxm`, or add `<p>` to the hub's full `KXM_PROJECT_TOKENS` map and restart the hub |
+| `KXM hub rejected the project token for project <p>` | Enter the token the hub holds for `<p>` |
+| `tool_policy_denied: Session token on disk is malformed or expired` | Run `kxm session token --clear` |
+| Pushed requests never arrive | Start Claude Code with `claude --dangerously-load-development-channels plugin:kxm@kxm` and accept the trust prompt, or use `kxm_inbox` and `kxm_reply` |
+| `kxm is already at the latest version` but the plugin is old | The plugin version is pinned; reinstall as the [plugin update notes](../../plugins/kxm/README.md#update) describe |
+| No KXM brief at session start | Start Claude Code from the directory that contains `.kxm/` |
+
+## Peer messaging
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| An expected peer is missing | Different `KXM_PROJECT` values, or the peer stopped sending heartbeats | Compare settings and look for `agent_stale`; names display case-sensitively but live-name uniqueness ignores case |
+| Registration returns HTTP 409 `duplicate_agent_name` | A live agent already uses the name in this project | Stop the old session, or choose another name |
+| A request stays `queued` | The recipient has no active event stream | Confirm its process is connected; proxies must not buffer `/v1/events` |
+| A request stays `delivered` | The recipient acknowledged it and is still working, waiting for approval, or blocked | Check the recipient directly; do not resend. `kxm_cancel` changes hub state only; it cannot undo work already done |
+| A message disappears after completion | Terminal messages are purged after 7 days | Raise `KXM_MESSAGE_RETENTION_MS`, and keep durable results in Git |
 
 ### `kxm_await` times out
 
-`kxm_await` waits at most 60 seconds; that is both its default and its maximum. A timeout does not end the request. Use `kxm_get` to inspect the state, or `kxm_workflow_wait` for long external work. `cancelled`, `expired`, and `error` are terminal outcomes. Resend only when the task is safe to repeat, and use an idempotency key when retrying after an uncertain network result.
-
-### A message disappears after completion
-
-Terminal records are removed after seven days by default. Increase `KXM_MESSAGE_RETENTION_MS` if operators need a longer diagnostic window. Durable artifacts should live in Git or another system of record.
-
-### Claude tools do not appear
-
-1. Confirm the marketplace and plugin are installed.
-2. Run `/reload-plugins` or restart Claude Code.
-3. Inspect `/mcp` and verify the `kxm` server connected.
-4. Confirm Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, is on the `PATH` used by Claude Code.
-5. Reinstall or update the marketplace if the cached plugin predates the `dist/mcp-server.js` bundle.
-
-### Claude does not receive pushed requests
-
-Ordinary MCP tools and channel delivery are separate. During the research preview, start the community channel explicitly:
-
-```text
-claude --dangerously-load-development-channels plugin:kxm@kxm
-```
-
-Accept the trust prompt and check the channel startup notice. Organization policy can still block channels. If pushed delivery remains unavailable, use `kxm_inbox` and `kxm_reply`.
-
-### Jira webhook is rejected
-
-- HTTP 401 means the SHA-256 signature is missing, uses another algorithm, or does not match the raw UTF-8 body. Confirm Jira and `secretEnv` resolve the same secret.
-- HTTP 400 usually means the delivery identifier or JSON body is missing.
-- HTTP 409 means the configured coordinator has never registered. Start it once with the matching project and name; Jira retries 409 responses.
-- HTTP 204 means the event or JSON-path filter did not match, so no workflow was intended.
-- HTTP 200 with `duplicate: true` means a provider retry was safely deduplicated.
-
-### Long-lived worker keeps restarting
-
-Inspect the structured `worker_process_error` and `worker_exited` events. Confirm Pi is installed on the service account's `PATH`, the working directory exists, model credentials are available, the package is enabled, and non-interactive project trust was configured intentionally. Set `KXM_PI_COMMAND` to an explicit executable path when service-manager environments have a reduced `PATH`.
-
-### A workflow message stays queued while the worker restarts once
-
-This is normally the safe session-routing handshake. With `--session-isolation workflow`, a message for a different run is deliberately not acknowledged in the current Pi context. Look for `worker_session_routed`; the old child must close before one replacement starts with the run-specific `--session-dir`, after which the same message ID replays and advances to `delivered`.
-
-If it repeats, inspect `worker_session_request_rejected` and verify:
-
-- the worker was started through `kxm agent worker` with a valid state directory;
-- `KXM_WORKER_SESSION_SCOPE` was not manually set (the supervisor owns it);
-- the state directory is writable by only the service account;
-- the hub and worker are from the same release; and
-- the message has a canonical hub-owned `workflowRunId`, not only a correlation ID.
-
-Do not manually acknowledge the message, edit the route request, copy a run JSONL into `default`, or launch a second worker with the same identity. Those actions defeat context isolation.
-
-### `worker_session_state_recovered` appears
-
-The binding manifest did not match its bounded schema or exact worker owner. The supervisor renamed it to `worker-session-binding-<workerKey>.json.corrupt-<timestamp>` and started the stable default binding rather than guessing a workflow. Read `kxm_workflow_get` for unfinished stages and inspect queued/delivered message IDs. Preserve the quarantined manifest for diagnosis, then re-drive unfinished work from the hub. Repeated corruption suggests disk, antivirus, concurrent-service, or permission problems; confirm only one supervisor owns the exact project/agent PID claim.
-
-### A workflow seems to remember another run
-
-Confirm the worker log says `"sessionIsolation":"workflow"` and the Pi child has a `runs/<exact-runId>` session directory. Isolation is opt-in for upgrade compatibility, and both the CLI and raw supervisor default to `off`. Restart cleanly with `kxm agent worker ... --session-isolation workflow`. The first isolated start intentionally uses fresh scoped storage because KXM cannot safely infer which session in the former shared Pi directory belonged to this worker. Existing content created in a formerly shared Pi session cannot be automatically separated retroactively; treat authoritative workflow journal/assets as the recovery source and start a fresh run-specific history.
+`kxm_await` waits at most 60 seconds, which is both its default and its cap. A timeout does not end the request. Check it with `kxm_get`, and use `kxm_workflow_wait` for long external work. `cancelled`, `expired` and `error` are terminal. Resend only work that is safe to repeat, with an idempotency key after an uncertain network result.
 
 ### Fanout returns pending before a model replies
 
-`kxm_fanout.timeoutMs` is a local wait, not the message lifetime. A pending result includes the durable `messageId`, current message status, expiry, and whether the wait timed out or was aborted. Use `kxm_get` to inspect that ID, or repeat the exact fanout with the same correlation ID, idempotency prefix, targets, and content. Do not send a replacement with a new prefix while the original remains pending. Normally omit `ttlMs` for model work so time spent queued behind another request does not prematurely expire it. A pending peer has not contributed review or planning evidence and must not be counted toward a workflow checkpoint.
+`kxm_fanout.timeoutMs` is a local wait, not the message lifetime. A pending result includes the durable `messageId`, its status and expiry, and whether the wait timed out or was aborted. Inspect it with `kxm_get`, or repeat the exact fanout with the same correlation ID, idempotency prefix, targets and content. Do not send a replacement with a new prefix. Usually omit `ttlMs` for model work, and never count a pending peer toward a checkpoint. See [Message peer agents](../guides/peer-messaging.md).
 
-### Workflow cannot advance
+## Pi workers
 
-Call `kxm_workflow_get` and use only `currentStage`. A passing checkpoint needs
-a keyed, non-empty value for every declared `requiredEvidence` identity; extra
-or unrelated keys do not count. Warnings and failures remain active until
-corrected, and their evidence is journaled but does not satisfy a later passing
-attempt. If attempts are exhausted or the coordinator settles early, the run
-becomes failed and its journal records the reason; start a new provider delivery
-only after deciding whether repeating external effects is safe.
+| Symptom | Cause | Fix |
+|---|---|---|
+| A continued Pi session rejects every turn | The worker stopped during a tool call, leaving a `tool_use` without its `tool_result` | Nothing: the worker retries once without `--continue` and writes a recovery envelope; keep the same project and agent name |
+| The agent settles on a quota or provider error | Pi's own retries are exhausted | Set `--fallback-models` (or `KXM_WORKER_FALLBACK_MODELS`) to rotate at once; otherwise the worker retries after `KXM_WORKER_PROVIDER_RETRY_MS` |
+| The heartbeat is healthy but one tool never finishes | A tool exceeded `KXM_WORKER_TOOL_TIMEOUT_MS` (31 minutes by default, above the 30-minute fanout wait) | The worker logs `worker_tool_timeout` and restarts the child; raise the limit only above the longest legitimate call |
+| A long-lived worker keeps restarting | Pi is missing from the service `PATH`, the working directory is gone, or model credentials are missing | Read `worker_process_error` and `worker_exited`; set `KXM_PI_COMMAND` to an explicit path |
+| A read-only reviewer edits files | Prompt wording does not remove tools | Set `KXM_WORKER_TOOLS=read,grep,find,ls` |
 
-For a requirement with `kind: peer-reply`, inspect
-`resolvedEvidencePolicies`, `verifiedEvidence`, and the current attempt. An
-ordinary evidence string cannot satisfy it. Every eligible agent must have
-registered in the workflow project before the run starts, and a passing
-checkpoint must cite durable replied message IDs in `evidenceRefs` before those
-source messages reach terminal retention.
+Use `--fresh-start`, not `--no-continue`, when only the first launch must avoid old session state.
 
-Common provenance failures are:
+### A workflow message stays queued while the worker restarts once
 
-- `workflow_context_forbidden`: the sender is not the run's assigned coordinator;
-- `workflow_context_inactive`: the run or stage is not currently running;
-- `workflow_context_attempt_mismatch`: use `stage.attempts + 1` and send fresh work after a retry;
-- `workflow_evidence_producer_forbidden`: the target is not in the run's snapshotted eligible set;
-- `workflow_evidence_policy_missing` or `workflow_evidence_policy_unresolved`: the requirement has no usable resolved peer policy;
-- `workflow_provenance_invalid`: a cited message is missing, pending, ineligible, wrong-direction, or bound to another project, run, stage, requirement, or attempt;
-- `workflow_evidence_incomplete`: there are fewer unique verified producers than the effective minimum.
+With `--session-isolation workflow`, a message for a different run is deliberately left queued in the current Pi context. Look for `worker_session_routed`: the old child closes, one child starts with the run's `--session-dir`, and the same message ID replays and becomes `delivered`.
 
-Multiple replied messages from one peer count once. Correlation IDs and
-idempotency prefixes are retry controls, not provenance. Do not replace a
-rejected reference with an unscoped send.
+If it repeats, read `worker_session_request_rejected` and check that the worker was started with `kxm agent worker`, that `KXM_WORKER_SESSION_SCOPE` was not set by hand, that only the service account can write the state directory, that the hub and worker run the same release, and that the message has a hub-owned `workflowRunId`. Never acknowledge the message by hand, edit the route request, copy a run history into `default`, or start a second worker with the same identity.
 
-If policy declares a lower `degradation.minProducers`, an operator can inspect
-and approve it with `kxm gate --dry-run --json degrade ...` followed by
-the same command without `--dry-run`, using the administrative token. Approval
-must target the current stage and attempt and does not advance the workflow;
-the coordinator must still checkpoint with enough verified references. A
-callback, project token, or peer cannot approve degradation.
+### Session events
 
-### `kxm gate degrade` returns HTTP 503 `admin_auth_not_configured`
+| Event | Meaning | Action |
+|---|---|---|
+| `worker_session_routed` | Expected swap to another run's session | None unless it repeats for one message |
+| `worker_session_evicted` | An inactive run history was removed at the retention bound | Keep workflow facts in the journal, assets or Git |
+| `worker_session_state_recovered` | A malformed binding manifest was quarantined as `.corrupt-<timestamp>` and routing restarted at `default` | Read `kxm_workflow_get`, re-drive unfinished work from durable message IDs, keep the quarantined file, and check disk and permissions |
+| `worker_continue_fallback` | Pi history could not continue, so the same binding started fresh | Read the recovery envelope and the durable message state |
 
-The hub started without a non-empty `KXM_AUTH_TOKEN`, so no administrative
-credential exists for the degradation route. Project tokens deliberately cannot
-substitute for it, even when the operator holds every project credential. The
-route fails closed and does not create an approval.
+If a workflow seems to remember another run, confirm the worker log says `"sessionIsolation":"workflow"`. Isolation is off by default; restart with `--session-isolation workflow`. The first isolated start uses fresh storage, and history from a formerly shared session cannot be separated afterward. See [Run supervised Pi workers](../guides/pi-workers.md).
 
-Stop the hub gracefully, set a new high-entropy `KXM_AUTH_TOKEN` in the hub
-service, retain the explicit `KXM_PROJECT_TOKENS` mapping for workers, and
-restart against the same `.kxm/state/kxm.db`. Give the administrative token
-only to the operator terminal, never to agents or callbacks. Read the run again
-because the current attempt may have changed, run the exact degradation command
-with `--dry-run --json`, and then approve the current stage, requirement, and
-attempt without `--dry-run`. A restart does not make an earlier-attempt approval
-valid for the new attempt.
+## Workflows and gates
 
-### External workflow callback is rejected or does not resume
+### A workflow tool returns `workflow_forbidden`
 
-- HTTP 401 means the callback signature does not match the exact raw body. Use `signalSecretEnv` when configured; the workflow-start secret will not work in that case.
-- HTTP 404 means the workflow definition or run ID does not match this hub.
-- HTTP 409 with `workflow_not_waiting` means the coordinator did not successfully call `kxm_workflow_wait`, the deadline already failed the run, or a prior signal advanced it.
-- HTTP 409 with `workflow_signal_mismatch` means the URL's signal key differs from the active wait. Read the run and use its exact `waiting.signalKey`.
-- HTTP 409 with `workflow_signal_context_mismatch` means a supplied `workflow.run`, `workflow.stage`, or `workflow.signal` evidence value disagrees with the route or active wait. Correct it or omit optional context evidence.
-- HTTP 400 with `workflow_evidence_incomplete` means a passing callback omitted one or more named requirements. Read `missingRequirements`; extra checks and context fields cannot substitute for them.
-- HTTP 400 with `invalid_workflow_evidence` means evidence was not a keyed string object or contained duplicate keys after case/whitespace normalization.
-- HTTP 200 with `duplicate: true` is expected after retrying the same provider delivery ID. Do not generate a new ID for the same callback attempt.
-- A failed or timed-out callback consumes that wait attempt. Re-enter the wait and start a new `github watch` or `signal` command so its default delivery generation is new; reserve an explicit `--delivery-id` for retries of one unchanged callback body.
+Read `operation`, `assignedCoordinatorName` and `nextAction` in the error. Only the assigned coordinator can read, wait on, checkpoint or journal a run; do not retry as a peer.
 
-Inspect `workflow_wait_started`, `workflow_signal_received`, and `workflow_wait_timed_out` logs without copying secrets or full callback bodies. If a run timed out, review whether the external action completed before starting a replacement workflow.
+### A workflow cannot advance
 
-## Collecting a useful bug report
+A passing checkpoint needs a keyed, non-empty value for every declared `requiredEvidence` key; extra keys do not count. Warnings and failures stay active until corrected. When attempts run out, or the coordinator settles early, the run fails and its journal records why. Decide whether repeating external effects is safe before you start a new delivery.
+
+For a `peer-reply` requirement, read `resolvedEvidencePolicies`, `verifiedEvidence` and the current attempt. An evidence string cannot satisfy it; the checkpoint must cite replied message IDs in `evidenceRefs` before those messages are purged, and every eligible agent must have registered before the run started.
+
+| Code | Meaning |
+|---|---|
+| `workflow_context_forbidden` | The sender is not the run's assigned coordinator |
+| `workflow_context_inactive` | The run or stage is not running |
+| `workflow_context_attempt_mismatch` | Use `stage.attempts + 1`, and send fresh work after a retry |
+| `workflow_evidence_producer_forbidden` | The target is not in the run's eligible producer set |
+| `workflow_evidence_policy_missing`, `workflow_evidence_policy_unresolved` | The requirement has no usable peer policy |
+| `workflow_provenance_invalid` | A cited message is missing, pending, ineligible, or bound to another project, run, stage, requirement or attempt |
+| `workflow_evidence_incomplete` | Fewer unique verified producers than the minimum; several replies from one peer count once |
+
+If the policy declares a lower `degradation.minProducers`, an operator with the admin token can approve it for the current stage and attempt. Preview with `kxm gate degrade <run-id> <stage-id> --requirement <key> --reason <text> --dry-run --json`, then run it without `--dry-run`. Approval does not advance the run; the coordinator still checkpoints. See [Peer provenance and quorum gates](../guides/provenance-gates.md).
+
+### GitHub checks passed but the run is still waiting
+
+The hub does not poll GitHub. Run `kxm gate github watch` with the run's `--run-id`, `--stage-id` and `--signal-key`. On timeout it posts the signed `failed` signal and exits `4`; it never invents `passed`.
+
+### A webhook or callback is rejected
+
+| Response | Meaning |
+|---|---|
+| 401 | The HMAC-SHA256 signature is missing or does not match the raw body; a callback must use `signalSecretEnv` when the definition sets it |
+| 400 | The delivery ID or JSON body is missing; `workflow_evidence_incomplete` names `missingRequirements`; `invalid_workflow_evidence` means non-string or duplicate keys |
+| 404 | The definition or run ID does not match this hub |
+| 409 `workflow_target_unavailable` | The configured coordinator has never registered; start it once with the matching project and name |
+| 409 `workflow_not_waiting` | No wait is active: `kxm_workflow_wait` was not called, the deadline failed the run, or a prior signal advanced it |
+| 409 `workflow_signal_mismatch`, `workflow_signal_context_mismatch` | Use the run's exact `waiting.signalKey`; fix or omit `workflow.run`, `workflow.stage` and `workflow.signal` evidence |
+| 204 | The event or filter did not match, so no run was intended |
+| 200 with `duplicate: true` | A retry of the same delivery ID was deduplicated |
+
+A failed or timed-out callback consumes that wait. Re-enter the wait and start a new `github watch` or `kxm gate signal`; keep an explicit `--delivery-id` only for retries of one unchanged body. See [Run webhook workflows](../guides/webhook-workflows.md).
+
+### A workflow file fails to load with `gate_outcome_impossible`
+
+A gate step declares an outcome its `expect` value never produces. The message names the outcomes to declare instead.
+
+## Runtime runs
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `runtime supervisor is not running` or `runtime_not_running` | The supervisor stopped | `kxm runtime start`; commands such as `kxm run` also start it on demand |
+| `runtime_supervisor_unreachable` | A live supervisor process does not answer its token probe | Check the PID from `kxm runtime status`, stop a hung process with your OS tools, then `kxm runtime start` |
+| `project_required` | The command ran outside a KXM project | Run it from the checkout, or run `kxm init` |
+| `producer_route_not_admitted` | A live drive uses a model route that is not admitted | `kxm routes admit --model <provider/model>`, or drive with `--simulated` |
+| `run_busy` (HTTP 409) | The run is already admitted or queued for a drive | Wait, and check `kxm runs status <run-id>` |
+| A run store is refused with `runtime_schema_outdated` | The store predates this release | See [Upgrade KXM](upgrade.md#understand-schema-changes) |
+| Runs do not reach the hub | Sync is `no_hub`, `blocked` or `refusing` | See [Operate Runtime sync and leases](runtime-sync.md#check-sync-status) |
+
+## Context and memory
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| 403 `context_isolation_violation` | An agent asked for another project's context | Use the agent's own project; cross-project reads need the admin token |
+| State promotion returns 401 or 503 | Promotion needs the configured admin token; agents can only propose | Promote with `kxm context promote <project> <proposal-id>` from the operator terminal |
+| `kxm context recall` returns nothing | No live record matches; superseded and rejected records are excluded | Broaden the query, or check `unresolvedGaps` |
+| A new memory fact does not appear in `kxm memory brief` | `kxm memory note` records a candidate, which becomes active only when promoted through a pull request | Review and merge the candidate, then run `kxm memory sync` |
+
+See [Context and memory](../guides/context-and-memory.md).
+
+## Operations
+
+| Failure | Behavior | Recovery |
+|---|---|---|
+| An agent exits | It is marked offline after the stale window | Restart it with the same name to resume its ID |
+| The event stream drops | The client reconnects while heartbeats continue | If it repeats, check the network and proxy buffering |
+| The hub or a worker exits | SQLite keeps agents and messages, and binding manifests keep the Pi scope | Restart; queued and delivered work replays by the same message ID |
+| The disk fails or fills | Readiness or writes fail | Restore storage, then check database integrity and `/ready` |
+| An external callback is lost | The run stays `waiting` until its deadline, then fails and notifies the coordinator | Retry with the same delivery ID, or review side effects before a new delivery |
+| Requests return 429 `rate_limited` | The per-agent or per-address window is full | Honor `Retry-After`; raise `KXM_RATE_LIMIT_MAX` if the load is expected |
+
+For backup and restore errors such as `backup_no_stores`, see [Back up and restore KXM](backup-and-restore.md#troubleshooting). The dashboard's action keys do not act on runs; see [Monitor KXM](monitoring.md#keys).
+
+## Collect a useful bug report
 
 Include:
 
-- operating system and Node.js version;
-- Pi or Claude Code version;
-- package version or Git commit;
+- the operating system and Node.js version;
+- the Pi or Claude Code version, and the KXM version (`kxm --version`) or Git commit;
 - whether the hub is local or behind a proxy;
-- redacted environment values, excluding the token;
+- redacted environment values, never tokens;
 - the relevant structured hub events;
-- exact reproduction steps and expected behavior.
+- exact reproduction steps and the expected behavior.
 
-Never attach authentication tokens, private prompts, credentials, or unrelated repository contents.
+Never attach tokens, private prompts, credentials, raw `pi-agent-*.log` files, or unrelated repository content.
+
+## For maintainers
+
+- **`kxm --help` prints an old flat command list.** The committed `plugins/kxm/dist/cli.js` is stale. Run `npm run build` and commit the generated `dist`.
+- **Every CI job stays queued while a runner is online.** The self-hosted runner lost the custom label that `runs-on` in `.github/workflows/ci.yml` requests, for example after re-registration; the default labels alone never match. List the runners' labels, re-add the missing one, and push an empty commit if the queued run does not start. See [CI and release](../contributing/ci-and-release.md).
+
+  ```bash
+  gh api repos/kontextmind/kxm/actions/runners --jq '.runners[] | {id, name, labels: [.labels[].name]}'
+  gh api repos/kontextmind/kxm/actions/runners/<runner-id>/labels -X POST -f 'labels[]=<label>'
+  ```
+
+- **Loading an exact extension in Pi during development.** Use `pi --no-extensions -e ./plugins/kxm/src/extension.ts`, adding every required provider extension with another `-e`; see [Develop KXM](../contributing/development.md).
+
+## Related
+
+- [Monitor KXM](monitoring.md)
+- [Deploy KXM](deploy.md)
+- [CLI reference](../reference/cli-reference.md)
+- [Claude Code plugin](../../plugins/kxm/README.md)

@@ -1,240 +1,364 @@
-# Webhook workflows and long-lived agents
+# Run webhook workflows
 
-KXM can turn a signed Jira, GitHub, or generic webhook into a durable prompt for a long-lived coordinator. The hub verifies the original request body, deduplicates provider retries, records the workflow before acknowledging it, and queues the prompt even when a previously registered coordinator is temporarily offline.
+A webhook workflow turns a signed Jira, GitHub, or generic webhook into a durable, staged run on the KXM [hub](../glossary.md#hub). A long-lived [coordinator](../glossary.md#coordinator) agent works through the stages, proves each one with keyed evidence, and pauses for CI without holding a model turn open. This guide sets up the included Jira example end to end and explains definitions, checkpoints, waits, signals, and retrospectives.
 
-## How the runtime behaves
+> [!IMPORTANT]
+> Hub webhook workflows are separate from Runtime runs. `kxm run` executes `kxm.workflow.v1` YAML files in `.kxm/workflows/` on the local Runtime; see [Run your first workflow](../start/first-workflow.md). A webhook workflow is a JSON definition that the hub loads from `KXM_WEBHOOK_WORKFLOWS_FILE`. Pointing that variable at a YAML workflow stops the hub from starting.
 
-```text
-Jira webhook ── HMAC + delivery ID ──> Hub ── durable workflow + message
-                                             │
-                                             └── Pi coordinator
-                                                   ├── peer planning/review
-                                                   ├── checkpoints and retries
-                                                   ├── evidence journal
-                                                   ├── external wait ── signed result ──┐
-                                                   └── final result <── resumed prompt ─┘
+| | Hub webhook workflow | Runtime run |
+|---|---|---|
+| Defined in | A JSON array of definitions with ordered `stages` | `.kxm/workflows/<id>.yaml` with `steps` |
+| Started by | A signed `POST /v1/webhooks/<id>`, or `kxm workflow start` | `kxm run <workflow>` |
+| Executed by | A coordinator agent connected to the hub | The Runtime supervisor on your machine |
+| Inspected with | `kxm workflow list`, `kxm workflow get`, `kxm_workflow_get` | `kxm runs status`, `kxm runs list` |
+
+[Architecture](../concepts/architecture.md) explains how the two planes relate.
+
+## Before you begin
+
+- The `kxm` CLI, and Pi with the KXM package for the coordinator: see [Install KXM](../start/install.md).
+- An admin token for the hub and a project token for the `product` project. See [Trust model](../concepts/trust-model.md) for which credential goes where.
+- Two separate random secrets of at least 16 characters: one that starts workflows and one that signs callbacks.
+- For a real Jira connection, the hub behind a TLS proxy that Jira can reach, with ingress restricted to Jira. See [Deploy KXM](../operations/deploy.md). A loopback hub is enough for the local test below.
+- For the CI stage, a GitHub token that can read checks.
+
+## How a webhook workflow runs
+
+The sequence below shows one run of the Jira example, from the signed delivery to the final checkpoint.
+
+```mermaid
+sequenceDiagram
+  participant Jira
+  participant Hub as KXM hub
+  participant Coord as Coordinator (Pi worker)
+  participant Watch as kxm gate github watch
+  participant GitHub
+  Jira->>Hub: POST /v1/webhooks/jira-development (HMAC, delivery ID)
+  Hub->>Hub: store the run and the coordinator prompt
+  Hub->>Coord: workflow prompt
+  Coord->>Hub: kxm_workflow_checkpoint for reproduce, plan, implement
+  Coord->>Hub: kxm_workflow_wait on stage checks
+  Coord-->>Hub: settle the turn while the run waits
+  Watch->>GitHub: poll the required checks
+  Watch->>Hub: signed signal with status and evidence
+  Hub->>Hub: checkpoint the waiting stage
+  Hub->>Coord: resume prompt
+  Coord->>Hub: kxm_workflow_checkpoint for report
+  Hub-->>Coord: completed = true
 ```
 
-The coordinator must register at least once before a webhook can target it. An unknown target returns HTTP 409, which causes Jira Cloud to retry. A known but offline target retains the queued workflow until it reconnects.
+The hub verifies the signature over the raw body, deduplicates retries by delivery ID, and records the run before it answers. It keeps a SHA-256 hash of the payload and the rendered prompt, not the raw body, so keep prompt templates narrow.
 
-The hub stores a SHA-256 payload hash and the rendered coordinator prompt, not the complete raw webhook body. Keep prompt templates narrow so they copy only the issue fields the agent needs.
+## Copy the example definition
 
-## Configure the Jira example
+KXM ships a small, validated Jira definition at [`examples/webhook-workflows/jira-development.json`](../../examples/webhook-workflows/jira-development.json) and a matching test payload, `jira-issue-updated.json`. Copy both into your repository outside `.kxm`:
 
-The included [`jira-development.json`](../../.kxm/workflows/default.yaml) workspace configuration models this path:
+```bash
+mkdir -p ops/kxm
+# From a KXM source checkout, or from the npm package:
+EXAMPLES="$(npm root -g)/@kontextmind/kxm/examples/webhook-workflows"
+cp "$EXAMPLES/jira-development.json" ops/kxm/webhook-workflows.json
+cp "$EXAMPLES/jira-issue-updated.json" ops/kxm/jira-issue-updated.json
+```
 
-1. Jira issue enters **In Progress**.
-2. Reproduce the defect and create deterministic evidence.
-3. Plan with one agent or three independent strong planners, then synthesize their best ideas.
-4. Review and revise the plan.
-5. Implement with explicit ownership.
-6. Run lint, build/typecheck, security, and Playwright gates.
-7. Reproduce repository and CodeRabbit-style review gates.
-8. Update documentation.
-9. Push and watch required checks with `kxm gate github watch`; warnings and failures retry the same stage for correction until its attempt limit is exhausted.
-10. Merge only when policy and authorization allow it.
-11. Update Jira with links and evidence.
-12. Produce an evidence-backed improvement backlog.
+> [!WARNING]
+> Never put a definition in `.kxm/config/workflows/`. KXM treats JSON there as legacy state and refuses to load the whole project (`legacy_state_unsupported`).
 
-Load it without storing its secret in the JSON file:
+The definition has five stages: `reproduce`, `plan`, `implement`, `checks`, and `report`. This excerpt shows its top level and the stage that waits for CI.
+
+`ops/kxm/webhook-workflows.json` (excerpt):
+
+```json
+[
+  {
+    "id": "jira-development",
+    "source": "jira",
+    "project": "product",
+    "target": "coordinator",
+    "secretEnv": "JIRA_WEBHOOK_SECRET",
+    "signalSecretEnv": "WORKFLOW_SIGNAL_SECRET",
+    "event": "jira:issue_updated",
+    "filter": { "path": "issue.fields.status.name", "equals": "In Progress" },
+    "delivery": "followUp",
+    "promptTemplate": "Jira issue {{issue.key}} moved to In Progress: {{issue.fields.summary}}. ...",
+    "stages": [
+      {
+        "id": "checks",
+        "label": "Pull request checks",
+        "instructions": "Push the branch and open or update the pull request. Then call kxm_workflow_wait ...",
+        "requiredEvidence": ["github.check:ci"],
+        "maxAttempts": 3,
+        "area": "gates"
+      }
+    ]
+  }
+]
+```
+
+## Write your own definition
+
+A file holds a JSON array of definitions. The hub checks every limit below at start.
+
+| Field | Meaning |
+|---|---|
+| `id` | Up to 64 characters; the last segment of the webhook URL. |
+| `source` | `jira`, `github`, or `generic` (the default). A label on the run. |
+| `project`, `target` | Hub project, and the coordinator's agent name or ID. |
+| `secretEnv` | Variable holding the start secret. `secret` takes a literal instead; prefer the variable. |
+| `signalSecretEnv` | Variable holding the callback secret. Without it, callbacks use the start secret. |
+| `event` | Optional. Must equal the `X-GitHub-Event` header, or the payload's `webhookEvent` or `event` field. |
+| `filter` | Optional. `path` is a dotted payload path whose string value must equal `equals`. |
+| `delivery` | `followUp` (the default) or `steer` for the coordinator prompt. |
+| `ttlMs` | Coordinator prompt lifetime. Defaults to the hub message TTL (24 hours). |
+| `promptTemplate` | Up to 20,000 characters. `{{dotted.path}}` inserts payload values; a missing value becomes empty. |
+| `stages` | One to 32 ordered stages. |
+
+Each stage has an `id`, a `label`, `instructions` (up to 4,000 characters), `requiredEvidence` (up to 32 keys), `maxAttempts` (1 to 20, default 3), and an optional `area` that files its automatic journal entries under `harness`, `gates`, `implementation`, `workflow`, `documentation`, `security`, or `other`. A stage may also declare `evidencePolicies`, which require verified replies from named peers; see [Peer provenance and quorum gates](provenance-gates.md). Typed transitions (`on`, `maxTransitions`), `autoResumeLimit`, and the `reproOracle` and `planHash` locks are described in [Workflow definition reference](../reference/workflow-definitions.md).
+
+The hub appends the stages, their evidence keys, and the coordinator procedure to the rendered prompt, so the template only needs the task.
+
+## Validate the definition
+
+Set both secrets, then validate the file. Validation parses it exactly as the hub will and never prints a secret.
+
+```bash
+export JIRA_WEBHOOK_SECRET="replace-with-a-high-entropy-secret"
+export WORKFLOW_SIGNAL_SECRET="replace-with-a-separate-callback-secret"
+kxm gate validate --file ops/kxm/webhook-workflows.json
+```
+
+Expected output:
+
+```text
+validated 1 workflow(s) from file
+```
+
+## Start the hub with the definition
+
+Start the hub in the same environment. It loads the definitions once, at start; restart it after every change.
+
+```bash
+export KXM_AUTH_TOKEN="replace-with-the-admin-token"
+export KXM_PROJECT_TOKENS='{"product":"replace-with-the-project-token"}'
+export KXM_WEBHOOK_WORKFLOWS_FILE=ops/kxm/webhook-workflows.json
+kxm hub start
+```
+
+<details><summary>PowerShell</summary>
 
 ```powershell
 $env:JIRA_WEBHOOK_SECRET = "replace-with-a-high-entropy-secret"
 $env:WORKFLOW_SIGNAL_SECRET = "replace-with-a-separate-callback-secret"
-$env:KXM_WEBHOOK_WORKFLOWS_FILE = ".kxm/workflows/default.yaml"
+$env:KXM_AUTH_TOKEN = "replace-with-the-admin-token"
+$env:KXM_PROJECT_TOKENS = '{"product":"replace-with-the-project-token"}'
+$env:KXM_WEBHOOK_WORKFLOWS_FILE = "ops/kxm/webhook-workflows.json"
 kxm hub start
 ```
 
-Configure Jira to send `jira:issue_updated` to:
+</details>
+
+> [!WARNING]
+> `KXM_PROJECT_TOKENS` replaces the hub's saved project-token map; it does not merge. This example starts a hub that knows only this project. On a hub that already serves other projects, build the full map with the merge command in [Set up a new project](../start/quickstart-claude-code.md#3-start-the-hub).
+
+`KXM_WEBHOOK_WORKFLOWS` takes the JSON array inline instead. Setting both variables stops the hub from starting.
+
+## Start the coordinator
+
+The coordinator must have registered with the hub at least once before a webhook targets it. A delivery for a coordinator that never registered is refused with `409`, which makes Jira retry. A registered but offline coordinator is fine: the prompt waits for it in the queue.
+
+In another terminal, start a [supervised Pi worker](pi-workers.md) as the coordinator, with the project token and the hub tools its stages need:
+
+```bash
+export KXM_SERVER_URL=http://127.0.0.1:7331
+export KXM_AUTH_TOKEN="replace-with-the-project-token"
+export KXM_WORKDIR=~/work/product
+kxm agent worker --name coordinator --project product --model <pi-model> \
+  --session-isolation workflow
+```
+
+`--session-isolation workflow` gives each run its own Pi session. Any connected harness can coordinate instead, such as Claude Code with the agent name `coordinator`.
+
+## Send a test delivery
+
+`kxm workflow start` signs a payload and posts it to the hub at `KXM_SERVER_URL`, as a provider would. It signs with `KXM_WORKFLOW_SECRET`, or with the definition's own start secret when `KXM_WEBHOOK_WORKFLOWS_FILE` is set in the same shell.
+
+```bash
+export KXM_SERVER_URL=http://127.0.0.1:7331
+export KXM_WORKFLOW_SECRET="replace-with-a-high-entropy-secret"
+kxm workflow start jira-development \
+  --payload @ops/kxm/jira-issue-updated.json --delivery-id local-test-0001
+```
+
+Expected output:
 
 ```text
-https://your-kxm-host.example/v1/webhooks/jira-development
+started workflow run_7c187d2a0fde408ea408f0d8c53201c8
 ```
 
-Set the same secret when creating the Jira webhook. The endpoint requires `X-Hub-Signature` using SHA-256 and `X-Atlassian-Webhook-Identifier`. The stable delivery identifier makes Jira retries idempotent. Terminate TLS and restrict ingress before exposing the endpoint beyond a trusted network.
+Repeating the command with the same delivery ID returns the same run. Inspect runs from the hub's workspace on the hub host; these commands read its local SQLite store:
 
-Webhook authentication authorizes only workflow creation. The Jira-update stage requires a separate authorized Jira tool, MCP server, CLI, or automation callback in the coordinator's harness. Do not place Jira API credentials in the workflow definition or prompt.
-
-## Run a long-lived Pi coordinator
-
-Install the Pi package, then configure a stable identity that matches the workflow target:
-
-```powershell
-$env:KXM_SERVER_URL = "http://127.0.0.1:7331"
-$env:KXM_AUTH_TOKEN = "product-project-token"
-$env:KXM_PROJECT = "product"
-$env:KXM_AGENT_NAME = "coordinator"
-$env:KXM_AGENT_PURPOSE = "Coordinates Jira development workflows and quality gates"
-$env:KXM_WORKDIR = "D:\work\product-repository"
-kxm agent worker --session-isolation workflow
+```bash
+kxm workflow list
+kxm workflow get run_7c187d2a0fde408ea408f0d8c53201c8 --json
 ```
 
-Workflow isolation is explicit during the upgrade-compatible release and begins fresh scoped storage on first use. The worker launches Pi in headless RPC mode, keeps stdin open, preserves its active bound session by default, and restarts with bounded exponential backoff. Run the worker itself under the operating system's service manager for boot startup, resource limits, log collection, and crash policy. Set `KXM_WORKER_CONTINUE=false` only when every process restart should create a fresh Pi session.
+## Connect Jira
 
-## Workflow definition fields
+In Jira, create a webhook for the `jira:issue_updated` event that posts to `https://<kxm-host>/v1/webhooks/jira-development`, and set the same start secret. The hub accepts these headers:
 
-| Field | Meaning |
+| Header | Sent by | Purpose |
+|---|---|---|
+| `X-Hub-Signature-256` or `X-Hub-Signature` | GitHub, Jira, `kxm` | `sha256=<hex>` HMAC of the exact body. Other algorithms are refused. |
+| `X-Atlassian-Webhook-Identifier` | Jira | Delivery ID. Checked first. |
+| `X-GitHub-Delivery` | GitHub | Delivery ID. Checked second. |
+| `X-KXM-Delivery-ID` | `kxm` and your own senders | Delivery ID. Checked last. |
+
+| Response | Meaning |
 |---|---|
-| `id` | URL-safe workflow identifier |
-| `source` | `jira`, `github`, or `generic` |
-| `project` | Hub project containing the coordinator |
-| `target` | Stable coordinator name or durable agent ID |
-| `secretEnv` | Environment variable containing the HMAC secret |
-| `signalSecretEnv` | Optional separate HMAC secret for external result callbacks |
-| `event` | Optional provider event filter |
-| `filter.path` / `filter.equals` | Optional exact JSON-path value filter |
-| `delivery` | `followUp` or `steer` |
-| `ttlMs` | Time allowed for the coordinator prompt |
-| `promptTemplate` | Prompt with `{{nested.payload.path}}` substitutions |
-| `stages` | Ordered gates with instructions, evidence requirements, and attempt limits |
-| `stages[].evidencePolicies` | Optional per-requirement peer provenance and quorum rules |
+| `202` | Run created and coordinator prompt queued. |
+| `200` with `"duplicate": true` | The delivery ID was seen before; the existing run is returned. The body is not compared. |
+| `204` | The event or filter did not match. Nothing was stored. |
+| `401` | Missing, unsupported, or wrong signature. |
+| `404` | No definition with that ID. |
+| `409` | The coordinator has never registered. |
 
-Each stage may set `area` to route automatic warnings and failures into `harness`, `gates`, `implementation`, `workflow`, `documentation`, `security`, or `other`. It defaults to `workflow`.
+Webhook authentication authorizes only workflow creation. The `report` stage updates Jira through the coordinator's own authorized Jira tool; never put Jira credentials in a definition or prompt.
 
-An `evidencePolicies` key must match one canonical `requiredEvidence` identity.
-A `peer-reply` policy declares a `minProducers`, one or more
-`eligibleAgents`, and `acceptedStatuses: ["replied"]`. Eligible names or IDs
-must already be known in the workflow project. The hub resolves them to stable
-producer IDs when the run starts and fails closed if the coordinator is
-included or the unique resolved set cannot satisfy the configured minimum.
-See [Peer provenance and quorum gates](provenance-gates.md) for the complete
-schema and command-first example.
+## Follow the coordinator procedure
 
-Use `KXM_WEBHOOK_WORKFLOWS` for inline JSON or `KXM_WEBHOOK_WORKFLOWS_FILE` for a file, never both. Prefer `secretEnv` over a literal `secret`.
+For every stage, the coordinator:
 
-## Pause for CI, review, merge, or Jira
+1. Calls `kxm_workflow_get` and works only on `currentStage`.
+2. Records plans, decisions, contradictions, errors, and lessons with `kxm_workflow_record`, passing the `stageId`.
+3. Gathers evidence for every `requiredEvidence` key.
+4. For a stage with a peer policy, sends requests with `workflowContext` ([Peer provenance and quorum gates](provenance-gates.md)).
+5. Calls `kxm_workflow_checkpoint`, or `kxm_workflow_wait` when an external system must finish the stage.
+6. After a `warning` or `failed` result, corrects the problem and tries again until the stage passes or `maxAttempts` runs out.
+7. Replies to the prompt only after a checkpoint reports `completed: true`, or right after entering a wait.
 
-A coordinator should not hold an agent turn open while an external system runs for minutes or hours. On the active stage, call `kxm_workflow_wait` with:
+Replying while the run is `running` and stages remain fails the run and records a workflow error. Replying after a successful wait is expected: it releases the model turn, and the signed callback creates a fresh prompt later. If the prompt's TTL passes first, the run fails.
 
-- the run and active stage IDs;
-- a stable `signalKey`, such as `github-pr-42-checks`;
-- a concise description of the expected result;
-- optional local evidence keyed by its declared requirement identity;
-- an optional timeout from one second through 30 days; the default is 24 hours.
+## Checkpoint a stage
 
-The hub changes the run and stage to `waiting`. The coordinator may then settle its current prompt without triggering the premature-settlement failure. If the deadline passes first, the run fails and records a harness error.
+A passing checkpoint needs a non-empty value for every required evidence key. Keys are matched after trimming, collapsing whitespace, and ignoring case; an extra key never stands in for a missing one.
 
-The external system reports its result to:
-
-```text
-POST /v1/webhooks/:definitionId/runs/:runId/signals/:signalKey
-```
-
-The JSON body is:
+Tool call (`kxm_workflow_checkpoint`):
 
 ```json
 {
+  "runId": "run_7c187d2a0fde408ea408f0d8c53201c8",
+  "stageId": "reproduce",
   "status": "passed",
-  "summary": "All required GitHub checks passed",
-  "evidence": {
-    "github.check:ci": "conclusion:success url:https://github.example/org/repo/actions/runs/123"
-  }
+  "summary": "Reproduced with a failing test.",
+  "evidence": { "reproduction": "test/checkout.test.ts fails: npm test -- checkout" }
 }
 ```
 
-Sign the exact body bytes with SHA-256 HMAC. Supply the signature in `X-Hub-Signature-256` and a stable retry identifier in `X-GitHub-Delivery`, `X-Atlassian-Webhook-Identifier`, or `X-Mesh-Delivery-ID`. Repeating the same delivery ID and body returns minimal receipt metadata instead of checkpointing twice. Reusing a delivery ID for a different signal or body returns HTTP 409.
+The CLI twin is `kxm workflow checkpoint`, run under the coordinator's agent name.
 
-Use `signalSecretEnv` so CI and merge reporters do not need the secret that creates new workflows. If it is omitted, callbacks fall back to `secretEnv` for compatibility. A valid callback can checkpoint only the named run's current wait and must match its signal key.
+Only the assigned coordinator can read, journal, checkpoint, or wait a run, and checkpoints and waits apply only to the active stage. A `warning` or `failed` checkpoint uses up an attempt and records an error; its evidence stays in the journal but does not count toward a later pass. Reaching `maxAttempts` fails the run. The hub enforces stage order and evidence keys; the agents stay responsible for the truth of what they submit.
 
-Context evidence is optional. When a callback supplies `workflow.run`,
-`workflow.stage`, or `workflow.signal`, each value must exactly match the route
-run, active waiting stage, or route signal key respectively. A mismatch returns
-HTTP 409 without advancing the run or recording a delivery receipt. Adapters
-that do not need these diagnostic keys may omit them.
+## Wait for CI and other external work
 
-`passed` applies the normal evidence rule and advances or completes the run. `warning` or `failed` consumes an attempt, records an error, and queues a correction prompt when attempts remain. The run, signal receipt, optional journal entry, and optional resume message commit in one SQLite transaction before delivery. A terminal result does not create another prompt. Only the validated summary and evidence are retained; the complete callback body is not stored.
+A coordinator should not hold a model turn open while CI runs. On the active stage it calls `kxm_workflow_wait` with a stable signal key, a summary of the expected result, any evidence it already has, and an optional timeout from 1 second to 30 days (24 hours by default). The run and stage become `waiting`, and the coordinator settles its turn. If the deadline passes, the run fails and the coordinator receives a notice.
 
-Callback responses deliberately expose only status, stage, retry, completion, resumption, and duplicate metadata. They never return the workflow record, coordinator prompt, message routing, journal, or evidence. Those remain behind project and agent authentication.
+Tool call (`kxm_workflow_wait`):
 
-The repository includes a small callback sender for smoke tests and automation adapters:
-
-```powershell
-$env:KXM_SERVER_URL = "https://your-hub-host.example"
-$env:KXM_WORKFLOW_ID = "jira-development"
-$env:KXM_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
-$env:KXM_SIGNAL_DELIVERY_ID = "github-check-run-123-attempt-1"
-node --experimental-strip-types examples/workflow-signal.ts `
-  run_123 github-pr-42-checks passed "All required checks passed" `
-  "github.check:ci=https://github.example/org/repo/actions/runs/123"
+```json
+{
+  "runId": "run_7c187d2a0fde408ea408f0d8c53201c8",
+  "stageId": "checks",
+  "signalKey": "github-pr-42-checks",
+  "summary": "Waiting for the required GitHub checks on pull request 42",
+  "timeoutMs": 3600000
+}
 ```
 
-`examples/workflow-signal.ts` reads `KXM_SIGNAL_DELIVERY_ID` and sends it as
-`x-kxm-delivery-id`. The CLI equivalent is `kxm gate signal --delivery-id`.
+Store the run ID and signal key where the external system can find them, such as pull-request metadata; they are not secrets.
 
-In a real integration, store the `runId` and `signalKey` in Jira, pull-request metadata, or the external job's inputs when the coordinator starts the wait. Treat them as routing identifiers rather than secrets.
+The external system reports back with a signed signal to `POST /v1/webhooks/<definition-id>/runs/<run-id>/signals/<signal-key>`. The body is `{"status": "passed" | "warning" | "failed", "summary": "...", "evidence": {...}}`, signed with the callback secret in `X-Hub-Signature-256`, with a stable `X-KXM-Delivery-ID`.
 
-To watch GitHub checks and post that same signal, use the command-first adapter:
+- `passed` applies the evidence rule to the saved and new evidence together, then advances or completes the run.
+- `warning` or `failed` uses up an attempt, records an error, and sends the coordinator a correction prompt while attempts remain.
+- The same delivery ID and body returns the original receipt; the same delivery ID with a different signal or body is refused with `409`.
+- Optional `workflow.run`, `workflow.stage`, and `workflow.signal` evidence values must match the route, or the hub refuses the signal with `409`.
 
-```powershell
-$env:KXM_WORKFLOW_ID = "jira-development"
-$env:KXM_WORKFLOW_SIGNAL_SECRET = "replace-with-the-callback-secret"
-$env:GITHUB_TOKEN = "replace-with-a-checks-read-token"
-kxm gate github watch --run-id run_123 --stage-id watch --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci --timeout-ms 3600000
+The run, receipt, journal entry, and resume prompt commit in one transaction. The response carries only status flags, never the run or its evidence.
+
+## Send a signal from the CLI
+
+`kxm gate signal` signs and posts a signal. It needs `KXM_WORKFLOW_ID` and the callback secret, either through the active definition file or `KXM_WORKFLOW_SIGNAL_SECRET`. Evidence is `key=value` pairs.
+
+```bash
+export KXM_WORKFLOW_ID=jira-development
+export KXM_WORKFLOW_SIGNAL_SECRET="replace-with-a-separate-callback-secret"
+kxm gate signal run_7c187d2a0fde408ea408f0d8c53201c8 github-pr-42-checks passed \
+  "All required checks passed" "github.check:ci=https://github.example/org/repo/actions/runs/123" \
+  --delivery-id github-check-run-123-attempt-1
 ```
 
-The watcher binds every result to the exact run, stage, and signal key, requests
-up to 100 check runs per GitHub page, and follows every reported page. Each
-check is reported as `github.check:<check-name>`; diagnostic context such as
-`workflow.run` never satisfies an unrelated requirement. GitHub
-`startup_failure` is a failed result. On timeout the watcher posts a signed
-`failed` signal with summary `github_watch_timeout`, then exits `4`; it never
-invents a `passed` result.
+Expected output:
 
-Each watcher invocation creates a new bounded delivery generation and includes
-the pull-request head SHA when GitHub returned one. Transport retries within
-that invocation reuse the exact `x-kxm-delivery-id`. After a failed or timed
-out result, start a new watcher for the new workflow wait; do not reuse the old
-generated ID. Supply `--delivery-id` only when an external supervisor must
-retry the same callback attempt with a stable provider identifier. The standalone
-`kxm gate signal` command follows the same rule.
+```text
+posted signed signal
+```
 
-## Checkpoint contract
+> [!WARNING]
+> Run `kxm gate signal` and `kxm workflow wait` outside any KXM project directory. Inside a Git repository with `.kxm/project.yaml`, they treat a `run_<32-hex>` ID as a Runtime run and send it to the Runtime supervisor, not the hub. Check with `--dry-run`: the hub path prints `would post signed signal`, the Runtime path `would post signal to KXM run`.
 
-Only the assigned coordinator can read, journal, checkpoint, or wait a run. A
-passing checkpoint must provide a non-empty value for every exact
-`requiredEvidence` identity. Evidence is a JSON object rather than a list, so
-extra GitHub checks or generic context cannot replace an unrelated review,
-artifact, or retrospective requirement. Identities are normalized by trimming,
-collapsing repeated whitespace, and case-folding; normalized aliases in one
-submission are rejected as duplicates.
+For your own adapters, [`examples/workflow-signal.ts`](../../examples/workflow-signal.ts) shows the same signed request in about 60 lines.
 
-When a requirement has a peer policy, caller-authored evidence text cannot
-satisfy it. The coordinator must create peer messages with an authorized,
-immutable `workflowContext` for the exact run, active stage, canonical
-requirement, and current 1-based attempt. A passing checkpoint or wait cites the
-resulting durable message IDs in `evidenceRefs`. The hub verifies project,
-direction, eligible target, context, correlation, non-empty replied status,
-and coherent timestamps, then counts unique producer IDs. Old, pending,
-duplicate-producer, coordinator-authored, or cross-context messages do not
-count.
+## Watch GitHub checks
 
-Evidence supplied when entering `waiting` is accumulated with a later passing
-callback. `warning` and `failed` evidence is retained in the journal for
-diagnosis but intentionally does not satisfy a later passing attempt. Those
-results remain on the active stage and return a correction instruction.
-Reaching `maxAttempts` fails the run. Settling the coordinator prompt before all
-stages pass also fails the run and records a workflow error unless the
-coordinator deliberately placed the active stage in `waiting` first.
+`kxm gate github watch` polls a pull request's check runs and posts the signal for you. It reads the token from `GITHUB_TOKEN` or `GH_TOKEN`, and the workflow ID and callback secret as `kxm gate signal` does.
 
-If a policy declares `degradation.minProducers`, an operator may use
-`kxm gate degrade` with the administrative token to approve that exact
-lower minimum for only the current stage attempt. The coordinator, peer agents,
-and callback secret cannot authorize degradation. Approval alone never passes
-the stage; the coordinator must still provide the required verified references.
-The reason, policy minimum, approved minimum, attempt, and any eventual degraded
-pass are retained for audit.
+```bash
+export GITHUB_TOKEN="replace-with-a-checks-read-token"
+kxm gate github watch --run-id run_7c187d2a0fde408ea408f0d8c53201c8 --stage-id checks \
+  --signal-key github-pr-42-checks --repo org/repo --pr 42 --required ci
+```
 
-The hub enforces stage order and requirement identity; agents remain responsible
-for the truth of submitted evidence. Repository rules, human approvals, and
-harness permissions remain authoritative for push, merge, Jira mutation, and
-other external effects.
+- It reports each required check as evidence `github.check:<name>`, so `--required ci` satisfies the `github.check:ci` requirement. Without `--required`, every check counts.
+- `failure`, `cancelled`, `timed_out`, `action_required`, `stale`, and `startup_failure` fail the stage. Only `success` passes; a `neutral` or `skipped` check keeps the watcher waiting.
+- It polls every 15 seconds for up to 30 minutes (`--interval-ms`, `--timeout-ms`). On timeout it posts a signed `failed` signal with summary `github_watch_timeout` and exits `4`. It never invents a pass.
+- Each invocation uses a new delivery ID that includes the head commit, and its own retries reuse it. After a failure, start a new wait and a new watcher. Pass `--delivery-id` only when an outside supervisor must retry the same callback. Without a token it exits with `github_auth_unavailable`.
 
-Peer quorum proves provenance inside the hub project credential boundary. It
-does not prove answer quality, truth, distinct underlying models, independent
-inference, non-collusion, or human approval.
+## Keep a journal and export retrospectives
 
-## Platform references
+The coordinator records knowledge with `kxm_workflow_record` in ten categories: `plan`, `decision`, `contradiction`, `error`, `lesson`, `observation`, `hypothesis`, `experiment`, `state-change`, and `skill-candidate`. Lessons and skill candidates require evidence. Passing `stageId` binds the entry to that stage and its current attempt. The hub adds its own error entries for failed checkpoints and signals, timeouts, and early settlement.
 
-- [Pi extension lifecycle and message injection](https://pi.dev/docs/latest/extensions)
-- [Pi headless RPC mode](https://pi.dev/docs/latest/rpc)
-- [Jira Cloud webhook signing and retry behavior](https://developer.atlassian.com/cloud/jira/software/webhooks/)
+When a run completes or fails, the hub writes a proposed retrospective to `.kxm/assets/retrospectives/<run-id>.json` and `.md`. Regenerate it with `kxm workflow export <run-id>`, and summarize learning across runs with `kxm_improvement_report`. [Continuous improvement](continuous-improvement.md) describes the review loop.
+
+> [!CAUTION]
+> The hub deletes a finished run and its journal 7 days after it ends. Export anything you want to keep before then. Signal deduplication for that run ends at the same time.
+
+## Degrade a peer quorum
+
+If a stage's peer policy declares a lower `degradation.minProducers`, an operator holding the admin token can approve that lower minimum for the current attempt only with `kxm gate degrade`. Coordinators, peers, and callback secrets cannot. See [Peer provenance and quorum gates](provenance-gates.md#degrade-only-through-an-explicit-admin-decision).
+
+## Security notes
+
+- The start secret authorizes creating runs; the callback secret authorizes only checkpointing a waiting run with a matching signal key. Keep them separate with `signalSecretEnv`.
+- The signature covers the body, not the delivery-ID header, and there is no timestamp window. Anyone who captures a signed request can replay it under a new delivery ID, so terminate TLS and restrict ingress.
+- Repository rules, human approvals, and harness permissions stay in charge of pushing, merging, and changing Jira.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The hub does not start: `Unexpected token` or `must be a JSON array` | `KXM_WEBHOOK_WORKFLOWS_FILE` points at YAML or a single object. | Point it at a JSON array such as the example. |
+| `workflow.secret must be a string` | The variable named by `secretEnv` or `signalSecretEnv` is not set. | Export it in the hub's environment. |
+| Jira retries and the hub returns `409` | The coordinator never registered. | Start the coordinator once, then redeliver. |
+| `kxm workflow start` prints `started workflow accepted` and no run appears | The event or filter did not match (`204`). | Check the payload's event and filter path. |
+| `stage <id> is missing required evidence: <key>` | A required key is missing or empty. | Supply every key from `kxm_workflow_get`. |
+| `stage <id> is not currently active` or `workflow is waiting` | Wrong stage, or the stage is paused for a signal. | Use `currentStage`; send the signal instead of a checkpoint. |
+| The run fails right after the coordinator replies | It settled before the last checkpoint. | Checkpoint every stage, or wait, before replying. |
+| `kxm gate signal` prints `signed signal failed` | Wrong signal key, run not waiting, or a delivery-ID conflict. | Compare the run's `waiting.signalKey`; use a new delivery ID for a new result. |
+
+## Next steps
+
+- Make the coordinator long-lived and unattended: [Run supervised Pi workers](pi-workers.md)
+- Require verified replies from named reviewers before a stage passes: [Peer provenance and quorum gates](provenance-gates.md)
+- Turn journals into improvements: [Continuous improvement](continuous-improvement.md)
+- Every definition field: [Workflow definition reference](../reference/workflow-definitions.md); every route: [Hub HTTP API reference](../reference/http-api.md)
+- The Runtime alternative: [Run your first workflow](../start/first-workflow.md)

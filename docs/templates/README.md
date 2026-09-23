@@ -1,95 +1,100 @@
-# KXM Documentation Templates & Workflow Integration Guide
+# Artifact templates
 
-This directory contains standardized Markdown documentation templates adapted for KXM multi-agent orchestration, the 5-layer memory architecture, and the workflow taxonomy defined in [`docs/workflow-guide.md`](../reference/workflow-catalog.md).
+These templates give the artifacts a KXM workflow produces a common shape:
+feature specifications, research briefs, bug reports, architecture designs,
+decision records, test plans and reports, reviews, handoffs, runbooks and
+postmortems. Agents and people fill them in during a run. For a human-facing
+docs page, use the page template in
+[Write KXM documentation](../contributing/writing-docs.md) instead.
 
-## Core Principles
+## Principles
 
-1. **Markdown + YAML Frontmatter + Mermaid:** Standardized metadata for automated indexing by the Context Arbiter, paired with human-readable text and conservative Mermaid diagrams.
+1. **Markdown, YAML frontmatter and Mermaid.** The frontmatter carries metadata
+   for indexing, the body stays readable, and diagrams are plain Mermaid.
+2. **Keep plans, decisions and outcomes apart.** What should happen (feature,
+   architecture, test plan), what was decided (ADR), and what actually happened
+   (test report, witness receipt, postmortem) are separate artifacts.
+3. **Pin every piece of evidence.** A test or review report cites an exact
+   commit (`git rev-parse HEAD`), a branch such as
+   `kxm/run-<run-id>-<description>`, and content-addressed artifacts written as
+   `artifact:<path>@sha256:<digest>`.
+4. **Use the context vocabulary.** The `authority`, `confidence`, `summary` and
+   `tags` fields use the same values as KXM context items, so an indexer can
+   weigh an artifact. No KXM code reads this frontmatter today, and no JSON
+   Schema validates `kxm.doc.v1` yet.
 
-2. **Separation of Concerns:** Keep **what should happen** (Feature / Architecture / Test Plan), **what was decided** (ADR), and **what actually happened** (Test Report / Witness Receipt / Postmortem) distinct.
+## Templates
 
-3. **Immutable Evidence Chains:** Every test or review report must reference an exact commit pin (`git rev-parse HEAD`), deterministic branch (`kxm/run-<id>-<description>`), and content-addressed artifact reference (`artifact:<path>@sha256:<digest>`).
-
-4. **Context Arbiter Integration:** Frontmatter fields (`authority`, `confidence`, `summary`, `tags`) inform token budgeting in `kxm.context-packet.v2`: layer pruning plus lexical task-relevance ordering in the arbiter.
-
----
-
-## Template Directory
-
-| Template | File | Primary Workflow Stage | Key Outputs |
-
+| Template | Use it for | Stage | Key outputs |
 |---|---|---|---|
-| **Feature Specification** | [`feature.md`](feature.md) | Stage 1: Requirements & Scope | Observable behavior, acceptance criteria table, user flow diagram. |
+| [Feature specification](feature.md) | A new capability | Requirements and scope | Observable behavior, acceptance criteria, user flow |
+| [Research brief](research.md) | A spike or evaluation | Discovery | Falsifiable hypotheses, evidence register, option comparison |
+| [Bug investigation and fix](bug-fix.md) | A defect | Reproduce, fix, verify | Failing reproduction first, exact test command, before and after evidence |
+| [Architecture design](architecture.md) | A system or subsystem | Design | Trust boundaries, component ownership, failure modes |
+| [Architecture decision record](adr.md) | A technical decision | Any | Drivers, options with trade-offs, consequences, revisit triggers |
+| [Test plan](test-plan.md) | Verification design | Before implementation | Risk-to-coverage matrix, test cases, entry and exit criteria |
+| [Test execution report](test-report.md) | A witness run | Verification | Exact commit, case outcomes, coverage |
+| [Dual-critic review](review.md) | Independent review | Review | Findings by severity, `PASS` or `BLOCK` per critic |
+| [Handoff manifest](handoff.md) | A stage transition | Between stages | `kxm.handoff-manifest.v1` fields, base commit, deliverables |
+| [Operational runbook](runbook.md) | Diagnosis and mitigation | Operations | Triage steps, safe commands, rollback, escalation |
+| [Incident postmortem](postmortem.md) | A blameless retrospective | After an incident | Timeline, root cause, corrective actions |
 
-| **Research Brief** | [`research.md`](research.md) | Stage 1: Discovery & Spike | Falsifiable hypotheses, evidence register, option comparison matrix. |
-| **Bug Investigation & Fix** | [`bug-fix.md`](bug-fix.md) | Stages 1–3: Repro, Fix, Verify | Repro before oracle, sequenceDiagram, exact test command, before/after evidence. |
+## How the templates fit a workflow
 
-| **Architecture Design** | [`architecture.md`](architecture.md) | Stage 1: Architecture & System Design | Trust boundaries, component ownership, runtime scenarios, failure modes. |
-| **Architecture Decision Record (ADR)** | [`adr.md`](adr.md) | Ongoing: Technical Decisions | Decision drivers, considered options with pros/cons, consequences, revisit triggers. |
-
-| **Test Plan** | [`test-plan.md`](test-plan.md) | Stage 2: Verification Design | Risk-to-coverage matrix, test cases, environment prerequisites, entry/exit criteria. |
-| **Test Execution Report** | [`test-report.md`](test-report.md) | Stage 3: Witness Verification | Exact build/commit, execution timestamps, case outcomes, coverage diff. |
-
-| **Dual-Critic Review Report** | [`review.md`](review.md) | Stage 4: Critic Quorum | Independent Fable (arch) and Astra/Sol (CLI) findings, severity, quorum verdict. |
-| **Structured Handoff Manifest** | [`handoff.md`](handoff.md) | Inter-stage transitions | `kxm.handoff-manifest.v1` mapping, baseCommit, candidateTreeHash, deliverables. |
-
-| **Operational Runbook** | [`runbook.md`](runbook.md) | Reliability & Ops | Diagnosis steps, safe mitigation commands, rollback triggers, escalation paths. |
-| **Incident Postmortem** | [`postmortem.md`](postmortem.md) | Post-incident Retrospective | Timeline of events, root cause analysis, preventive action items. |
-
----
-
-## Workflow Guide Integration Matrix
-
-The 11 templates map directly across the 7 Areas and 22 Workflows in [`docs/workflow-guide.md`](../reference/workflow-catalog.md):
+Planning artifacts feed implementation and testing, which feed verification and
+review; runbooks and postmortems cover operations.
 
 ```mermaid
 flowchart TD
-    subgraph PlanStage ["1. Planning & Design"]
+    subgraph Plan ["1. Plan and design"]
         F["feature.md"]
         R["research.md"]
         A["architecture.md"]
         ADR["adr.md"]
     end
 
-    subgraph ExecStage ["2. Implementation & Testing"]
+    subgraph Build ["2. Implement and test"]
         B["bug-fix.md"]
         TP["test-plan.md"]
-        H1["handoff.md (Plan -> Write)"]
+        H1["handoff.md (plan to write)"]
     end
 
-    subgraph VerifyStage ["3. Verification & Review"]
-        TR["test-report.md (Witness)"]
-        REV["review.md (Dual Critics)"]
-        H2["handoff.md (Write -> Critic)"]
+    subgraph Verify ["3. Verify and review"]
+        TR["test-report.md (witness)"]
+        REV["review.md (two critics)"]
+        H2["handoff.md (write to review)"]
     end
 
-    subgraph OpsStage ["4. Operations & Maintenance"]
+    subgraph Operate ["4. Operate"]
         RB["runbook.md"]
         PM["postmortem.md"]
     end
 
-    PlanStage --> ExecStage
-    ExecStage --> VerifyStage
-    VerifyStage --> OpsStage
-
+    Plan -->|approved plan| Build
+    Build -->|candidate| Verify
+    Verify -->|accepted change| Operate
 ```
 
-### Mapping by Area
+## Templates by workflow
 
-1. **Software Engineering (`software-engineering`)**
-   - `feature-delivery`: [`feature.md`](feature.md) $\rightarrow$ [`architecture.md`](architecture.md) $\rightarrow$ [`test-plan.md`](test-plan.md) $\rightarrow$ [`review.md`](review.md).
-   - `bug-investigation`: [`bug-fix.md`](bug-fix.md) with mandatory reproduction test before oracle.
-   - `refactoring-migration`: [`architecture.md`](architecture.md) + [`adr.md`](adr.md) + [`test-report.md`](test-report.md).
+The slugs below come from the [workflow catalog](../reference/workflow-catalog.md).
+They are documentation identifiers only; they imply no runtime configuration.
 
-2. **Design & Experience (`design-experience`)**
-   - `ui-ux-design-system`: [`feature.md`](feature.md) (user flows) + [`review.md`](review.md) (a11y audits).
+| Area | Workflow | Templates |
+|---|---|---|
+| Software engineering | `build-feature` | `feature.md`, then `architecture.md`, `test-plan.md`, `review.md` |
+| Software engineering | `refactor-repair-regressions` | `architecture.md`, `adr.md`, `test-report.md` |
+| Software engineering | `stabilize-flaky-tests` | `bug-fix.md` with a failing reproduction first, then `test-report.md` |
+| Software engineering | `design-software-system` | `architecture.md`, `adr.md` |
+| Software engineering | `maintain-documentation` | `review.md` for the accuracy audit |
+| Design and experience | `build-design-system`, `audit-visual-accessibility` | `feature.md` for user flows, `review.md` for accessibility findings |
+| Data and analytics | `analyze-dataset`, `query-business-intelligence` | `research.md` for the evidence register, `architecture.md` for data flows |
+| Research and strategy | `prepare-decision-brief` | `research.md`, then `adr.md` for the decision |
+| Security and reliability | `patch-vulnerability` | `review.md` for the threat model, `bug-fix.md` for the fix |
+| Security and reliability | `investigate-incident` | `runbook.md` for triage, then `postmortem.md` |
 
-3. **Data & Analytics (`data-analytics`)**
-   - `data-pipeline-etl`: [`architecture.md`](architecture.md) (data flows, contracts) + [`runbook.md`](runbook.md).
+## Related
 
-4. **Research & Strategy (`research-strategy`)**
-   - `technology-evaluation` / `market-research`: [`research.md`](research.md) with evidence registers and confidence bounds.
-
-5. **Security & Reliability (`security-reliability`)**
-   - `vulnerability-audit`: [`review.md`](review.md) (threat model) + [`bug-fix.md`](bug-fix.md).
-   - `incident-response`: [`runbook.md`](runbook.md) (triage/mitigation) $\rightarrow$ [`postmortem.md`](postmortem.md) (blameless retrospective).
+- [Write KXM documentation](../contributing/writing-docs.md): the docs page template and style rules
+- [Workflow catalog](../reference/workflow-catalog.md): workflow and role slugs
+- [Assignment runner](../contributing/assignment-runner.md): witness, critics and acceptance in the KXM repository

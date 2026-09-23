@@ -35,7 +35,7 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 
 ## Decision Drivers
 
-1. **Operating Cost Control**: Keep infrastructure expenses predictable by utilizing our existing DigitalOcean Kubernetes Service (DOKS) cluster (`k8s-agentic-hub`).
+1. **Operating Cost Control**: Keep infrastructure expenses predictable by utilizing the maintainers' existing DigitalOcean Kubernetes Service (DOKS) cluster.
 2. **Unified Same-Session Takeover**: Enable a human to interact with the exact same browser tab and session state during authentication gates before handing control back to the agent.
 3. **Dual Automation Interfaces**: Support `agent-browser` for discovery and `Playwright` for permanent regression tests over standard Chrome DevTools Protocol (CDP).
 4. **Authoritative Credential Management**: Ensure `pass-cli` remains the exclusive source of truth for secrets and API keys.
@@ -52,7 +52,7 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 
 - **Good, because**: Zero marginal per-session fees; fully self-hosted on our Kubernetes cluster.
 - **Good, because**: Built-in REST API, CDP WebSocket proxy, and live session viewer UI (`/ui`).
-- **Good, because**: Both `Playwright` and `agent-browser` connect seamlessly over standard CDP (`wss://steel.kontextmind.com/v1/devtools`).
+- **Good, because**: Both `Playwright` and `agent-browser` connect seamlessly over standard CDP (`wss://<steel-host>/v1/devtools`).
 - **Good, because**: Dedicated shared memory (`/dev/shm`) and resource limits prevent workstation degradation.
 - **Bad, because**: Requires managing Kubernetes deployment and periodic orphaned session sweeping.
 
@@ -74,14 +74,14 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                      KXM Agent / Herdr                      │
+│                      KXM agent                              │
 │   (kxm-browser-session, kxm-browser-takeover, pass-cli)     │
 └───────────────┬─────────────────────────────┬───────────────┘
                 │ REST API (create/release)   │ CDP WebSocket
                 ▼                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                 DigitalOcean Kubernetes (DOKS)              │
-│                 https://steel.kontextmind.com               │
+│                 https://<steel-host>                        │
 │                                                             │
 │   ┌─────────────────────┐       ┌────────────────────────┐  │
 │   │   Steel API & CDP   │◄─────►│    Chromium Sandbox    │  │
@@ -98,6 +98,6 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 
 ## Confirmation & Verification Strategy
 
-- **Verification**: Health endpoint `https://steel.kontextmind.com/v1/health` verified with HTTP 200 and Let's Encrypt TLS.
+- **Verification**: Health endpoint `$STEEL_API_URL/v1/health` verified with HTTP 200 and Let's Encrypt TLS.
 - **Integration Test**: `test/core/browser.test.ts` validates session lifecycle, CDP endpoint formatting, takeover transitions, and secret redaction.
-- **Security Check**: `pass-cli` verified as the authoritative store for `STEEL_API_KEY` under vault `AI Provider Keys`.
+- **Security Check**: `pass-cli` verified as the authoritative store for `STEEL_API_KEY` in the operators' password manager.

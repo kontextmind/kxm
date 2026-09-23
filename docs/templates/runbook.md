@@ -2,9 +2,9 @@
 schema: "kxm.doc.v1"
 id: "RB-0001"
 type: "runbook"
-title: "Operational Runbook Title"
+title: "Operational runbook title"
 project: "kxm"
-status: "approved"
+status: "draft" # draft | in_review | approved | superseded | archived
 owner: "@ops"
 created: "2026-09-08"
 updated: "2026-09-08"
@@ -14,60 +14,68 @@ summary: "Procedures for diagnosing and mitigating <operational incident>."
 tags: ["operations", "runbook", "triage"]
 related: []
 details:
-  service: "hub"
+  service: "hub" # hub | runtime | worker | plugin
   target_environment: "local-or-server"
 ---
 
-# Operational Runbook: <Incident / Procedure Name>
+# Operational runbook: <incident or procedure name>
 
-## Symptoms & Alerts
+## Symptoms and alerts
 
-- **Alert / Observable Signal:** <Describe alert, log error code, or metric spike>
+- **Observable signal:** <alert, log event, error code, or metric>
+- **Impact:** <stuck workflow run, idle worker, refused sync, or failed signal>
 
-- **Impact:** <Worker starvation, stuck approval, or failed signal dispatch>
+## Triage
 
-## Triage & Diagnostic Steps
+Check the hub first, then the Runtime, then the workers.
 
 ```mermaid
 flowchart TD
-    Detect[Alert Detected] --> CheckHub{Is kxm hub running?}
-    CheckHub -->|No| Restart[Run kxm hub start]
-    CheckHub -->|Yes| CheckDB{Is SQLite DB locked?}
-    CheckDB -->|Yes| ClearLocks[Check .git/*.lock & WAL mode]
-    CheckDB -->|No| CheckLogs[Inspect .kxm/logs/telemetry.jsonl]
-
+    Detect[Signal detected] --> Hub{kxm hub view healthy?}
+    Hub -->|No| Start[Restart the hub]
+    Hub -->|Yes| Runtime{kxm runtime status running?}
+    Runtime -->|No| RtStart[kxm runtime start]
+    Runtime -->|Yes| Procs[Inspect workers in kxm dash --screen procs]
+    Procs --> Logs[Read .kxm/logs/ for the failing component]
 ```
 
-*Triage decision tree: Verify hub daemon health, inspect database locks, and triage worker logs.*
-
-1. **Verify Hub Daemon Status:**
+1. Check hub health and readiness:
 
    ```bash
    kxm hub view
    ```
 
-2. **Inspect Active Worker Processes:**
+2. Check the Runtime supervisor:
 
    ```bash
-   kxm procs --json
+   kxm runtime status
    ```
 
-3. **Check SQLite Integrity:**
+3. Inspect supervised worker processes:
 
    ```bash
-   sqlite3 .kxm/state/kxm.db "PRAGMA integrity_check;"
+   kxm dash --screen procs
    ```
 
-## Safe Mitigation Commands
+4. Check SQLite integrity, read-only, after taking a backup:
 
-| Issue | Remediation Command | Expected Outcome |
+   ```bash
+   kxm backup --out <backup-dir>
+   sqlite3 -readonly .kxm/state/kxm.db "PRAGMA integrity_check;"
+   ```
+
+## Safe mitigation commands
+
+| Issue | Command | Expected outcome |
 |---|---|---|
-| Orphaned Worktree Lock | `rm -f .git/kxm-worktree.lock` | Restores concurrent worktree creation |
-| Stale Dispatched Effect | `kxm routing unquarantine <routeId>` | Restores model route to roster |
-| Stuck Active Run | `kxm workflow signal <runId> cancel` | Safely aborts and cleans up attempt token |
+| Hub unhealthy or wedged | `kxm hub stop`, then `kxm hub start` | Hub restarts; queued and delivered messages replay |
+| Runtime run stuck | `kxm runs cancel <run-id>` | A durable cancellation request is recorded for the run |
+| Model route misbehaving | `kxm routes disable --model <provider/model>` | The route moves to the disabled list in `.kxm/routes.yaml`; commit it |
+| Sync rows refused by the hub | Fix the hub-side cause, then `kxm runtime sync-retry` | Refused outbox rows are queued again |
+| Hub workflow waiting on a lost callback | `kxm gate signal <run-id> <signal-key> failed "<summary>"` | The wait settles with a `failed` result; needs the callback secret |
 
-## Rollback & Escalation
+## Rollback and escalation
 
-- **Rollback Procedure:** <Exact command to restore previous database backup: `kxm restore <backup>`>
-
-- **Escalation Path:** <Primary on-call or human operator contact>
+- **Rollback:** restore the last verified backup with
+  `kxm restore <manifest>` while the hub is stopped.
+- **Escalation:** <primary on-call or human operator contact>

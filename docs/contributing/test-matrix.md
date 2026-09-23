@@ -1,132 +1,203 @@
 # Test matrix
 
-The release gate executes every test, measures the core source directly, type-checks strict TypeScript, lints documentation, verifies package versions, validates Claude manifests, rebuilds the generated runtimes, and installs and executes the npm artifact outside the repository.
+This matrix maps each KXM behavior to the automated test that proves it. Use it
+to find where a behavior is covered before you change it, and add a row in the
+same pull request when you add a behavior. Test files are under `test/core/`
+unless a row names another path.
 
-Run the commit gate with `npm run verify`. CI PR legs run `validate:pr` plus
-`check:generated`; pushes to main run `validate:ci`. Plugin validation is a hosted CI
-job.
+Run the whole commit gate with `npm run verify`. What CI runs on a pull request,
+on `main` and nightly is described in [CI and release](ci-and-release.md); how
+to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 
-```powershell
-npm run verify
-```
+## Hub and messaging
 
-## Product features
-
-| Feature | Automated evidence |
+| Behavior | Evidence |
 |---|---|
-| Portal tenant read composes two labelled authorities: hub runs carry `hub-projection`, Runtime runs carry `runtime-authoritative`; a down hub leaves runtime state readable and vice versa with stable reasons; projection/authoritative disagreements surface as `discrepancies`; binding scope is labelled loopback/remote | `test/core/studio-layout.test.ts` |
-| Structured-result settlement only: outcome words in prose, empty replies, and outcomes outside the step's declared set all fail closed; a declared JSON object and a JSON result block inside prose both settle, and the engine records `outcome_unknown` and terminates `failed` | `test/core/pi-producer.test.ts`, `test/core/engine.test.ts` |
-| Health, readiness, metrics, request IDs, security headers | `test/core/hub-api.test.ts` |
-| Shared and per-project authentication, project isolation | `test/core/hub-api.test.ts` |
-| Registration, discovery, presence, stale detection, identity resumption | `test/core/hub-api.test.ts`, `test/core/hub.test.ts` |
-| SQLite persistence, restart recovery, schema compatibility | `test/core/hub-api.test.ts`, `test/core/store.test.ts` |
-| All delivery modes, message fields, hop limits, and validation | `test/core/hub-api.test.ts`, `test/core/protocol.test.ts` |
-| Queue, acknowledgement, visibility, reply, and authorization | `test/core/hub-api.test.ts`, `test/core/hub.test.ts` |
-| Queued/delivered replay after recipient restart reuses one message record | `test/core/hub.test.ts`, `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
-| Known-offline peer send with `allowOffline` queues, delivers once on resumption, and expires unread by TTL | `test/core/hub-api.test.ts` |
-| Fenced hub leases: CAS acquire/renew/release, monotonic token on takeover only, hub-clocked expiry, and a shared external effect refused at commit under a superseded token | `test/core/hub-api.test.ts`, `test/core/store.test.ts`, `test/core/external-effects.test.ts` |
-| One-to-three-peer fanout, recoverable local timeouts/aborts, exact retries, and partial-error collection | `test/core/client.test.ts`, `test/core/hub-api.test.ts`, `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
-| TTL expiry, sender cancellation, and terminal retention | `test/core/hub-api.test.ts` |
-| Terminal inbound cleanup and next-request activation | `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
-| Exact-retry idempotency and conflicting-key rejection | `test/core/hub-api.test.ts` |
-| Rate limiting and retry guidance | `test/core/hub-api.test.ts` |
-| Redacted structured logs | `test/core/hub-api.test.ts` |
-| Client lifecycle, aborts, timeouts, invalid responses, reconnection | `test/core/client.test.ts` |
-| Pi tools, inbound turns, automatic replies, status command | `test/core/extension.test.ts` |
-| Claude MCP catalog, outbound and inbound tools, channel delivery | `test/core/mcp.test.ts` |
-| Responsive metadata-only TUI, authenticated ops mode, presence-only fallback, observer filtering, key controls, and local body-free projection | `test/core/tui.test.ts`, `test/core/hub-api.test.ts` |
-| Session manifest creation, fail-closed rosters, shared worker/result envelopes, and hub-owned envelope fields | `test/core/session.test.ts`, `test/core/cli.test.ts`, `test/core/envelope.test.ts`, `test/core/envelope-contract.test.ts` |
-| Generic CLI/project telemetry classification, JSONL recovery, and proposed `kxm improve` output | `test/core/telemetry.test.ts`, `test/core/cli.test.ts`, `test/core/improve.test.ts` |
-| `kxm improve` and `kxm routing report` read the project's Runtime event store read-only plus telemetry, resolve each attempt's outcome from the event log, drop simulated attempts and duplicate attempts, flag only same-ask repeats across runs, exclude write steps, and report promotion readiness that never authorizes | `test/core/improve.test.ts` (`kxm improve report resolves Runtime-settled attempts from the event log and flags only same-ask cross-run repeats`), `test/core/cli.test.ts`, `test/core/cli-experience.test.ts`, `test/core/commands-policy.test.ts` |
-| Engine routing records carry the engine-reserved `workflowId`, `askSha256`, `objectiveSha256` and `stepWrites` keys (stable across runs), default `agentRole` to the agent, and record only `blocked` or `failed` at settlement | `test/core/route-admission.test.ts` |
-| Runtime dispatch context: only committed, pinned project memory and hash-verified promoted skills reach a dispatched agent; malformed, drifted or uncommitted content is withheld with a `dispatch_context_*` gap outside the prompt, and the step still completes | `test/core/engine.test.ts` (`dispatch context: agents receive only committed, pinned memory and verified skills; anything else is withheld with a gap and the step still completes`) |
-| Signed Jira webhook verification, filtering, dispatch, and retry deduplication | `test/core/hub-api.test.ts` |
-| Ordered workflow checkpoints, normalized keyed evidence gates, unrelated-volume rejection, and warning/failure retry | `test/core/hub-api.test.ts`, `test/core/workflow.test.ts` |
-| Run-start eligible-producer resolution, immutable workflow context, per-requirement message-reference verification, unique-producer quorum, and replay/cross-context rejection | `test/core/workflow-provenance.test.ts`, `test/core/workflow.test.ts`, `test/core/hub-api.test.ts`, `test/core/client.test.ts`, `test/core/store.test.ts` |
-| Explicit current-attempt admin degradation, configured lower minimum, audit journal, idempotency, and forbidden or stale approvals | `test/core/workflow-provenance.test.ts`, `test/core/cli.test.ts` |
-| Durable external waits, local/callback evidence accumulation, safe settlement, checkpoint/expiry race rejection, minimal signed responses, retry/conflict deduplication, separate secrets, and timeout notification | `test/core/hub-api.test.ts`, `test/core/workflow.test.ts`, `test/core/workflow-provenance.test.ts` |
-| Plans, decisions, contradictions, errors, lessons, and improvement reports | `test/core/hub-api.test.ts`, `test/core/workflow.test.ts` |
-| All ten journal categories and `stageId` through the shared `kxm_workflow_record` tool, hub-derived attempt, stage-default area, stage-bound hub-authored entries, ranked redacted cross-run signals, and retrospectives refreshed by late entries and promotions | `test/core/journal-evolution.test.ts` (`kxm_workflow_record binds stage provenance and the stage's area end to end, and hub-authored entries carry it too`), `test/core/workflow.test.ts`, `test/core/retrospective.test.ts`, `test/core/hub-api.test.ts` |
-| Context packets rank by deterministic task relevance, fill the budget first-fit, deliver every selected item (including evidence) in a packet section, order ties newest first, and report numeric `audit.relevance`; recall ranks by phrase then relevance; hub logs carry sizes, not task or query text | `test/core/arbiter.test.ts` (`arbitrate ranks task-relevant candidates first, delivers every selected item in a packet section, orders ties newest first, and reports relevance`), `test/core/context-surfaces.test.ts` |
-| Safe diagnostic classification and redaction | `test/core/diagnostics.test.ts`, `test/core/extension.test.ts`, `test/core/hub-api.test.ts` |
-| Operator CLI init/validate/export/watch | `test/core/cli.test.ts`, `test/core/github-watch.test.ts` |
-| Local and isolated-global packed npm CLI plus hub runtimes | `test/core/package-install.test.ts` |
-| Required generated runtimes are present, tracked, and match the staged copy after build | `scripts/check-generated.mjs`, `test/core/generated-artifacts.test.ts` |
-| Tag release packs `kxm-<v>.tgz`, fail-closed draft GitHub upload, 404-then-list draft discovery, digest proof, no clobber | `scripts/kxm-release-github.mjs`, `test/core/kxm-release-github.test.ts`, `test/core/ci-contract.test.ts` |
-| Retrospective export snapshots, metadata-only provenance audit, body allowlisting, degradation records, and v1 compatibility | `test/core/retrospective.test.ts` |
-| Interrupted-worker continue fallback, exact run-bound recovery, unbound telemetry isolation, and one-turn durable replay | `test/core/worker.test.ts`, `test/core/recovery.test.ts`, `test/core/extension.test.ts` |
-| Hub-owned workflow affinity; integrated hub→extension→supervisor→replacement replay; pre-ack default/run/cross-run routing; one-child session-dir swapping; stable ordinary context; LRU retention; and corrupt-state/link containment | `test/core/hub-api.test.ts`, `test/core/extension.test.ts`, `test/core/worker.test.ts`, `test/core/cli.test.ts` |
-| Final provider-error retention, built-in retry ordering, metadata-only journaling, bounded fallback exhaustion, oversized-frame classification, and session-preserving restart | `test/core/extension.test.ts`, `test/core/worker.test.ts`, `test/core/diagnostics.test.ts`, `test/core/cli.test.ts` |
-| Tool capability allowlist, watchdog grace, bounded hung-tool recovery, oversized completed-tool cancellation, and race-safe hub/worker ownership claims | `test/core/worker.test.ts`, `test/core/cli.test.ts`, `test/core/server.test.ts` |
-| Exact worker extension/skill sets, discovery isolation, path preflight, multi-path ordering, and Windows argument safety | `test/core/worker.test.ts` |
-| Opt-in real-Pi smoke contract and safe skip paths | `test/core/smoke-real-pi.test.ts`, `test/core/smoke.test.ts` |
-| Durable workflow and journal recovery | `test/core/store.test.ts` |
-| Atomic workflow transition commit and rollback | `test/core/store.test.ts` |
-| Pi and Claude workflow/journal tools, workflow-context sends, and peer-reference checkpoints/waits | `test/core/extension.test.ts`, `test/core/mcp.test.ts` |
-| Package and marketplace version consistency | `scripts/check-versions.mjs` |
-| Planned KXM schemas, restricted YAML fixtures, cross-resource semantics, and sync-safe rejection | `test/core/contracts.test.ts` |
-| Production KXM restricted loader, deterministic bundle hashing, Git discovery, fail-closed semantics, init classification, provenance-tracked atomic creation, exact three-way repair, authority-change blocking, pinned crash resumption, shadow validation, explicit join, Runtime-local bindings, CLI isolation, and idempotence | `test/core/project-config.test.ts`, `test/core/cli.test.ts`, `test/core/package-install.test.ts` |
-| Legacy state is refused, never converted: a tree with `.kxm/config` JSON fails project load with `legacy_state_unsupported`, `kxm init` classifies it `mode: "legacy"` without writing, `kxm migrate` is an unknown command, and an older stamped store is refused without advancing `user_version` | `test/core/project-config.test.ts`, `test/core/cli.test.ts`, `test/core/e6-backup-restore-migrations.test.ts` |
-| Permission-diff trust workflow: structured authority projections, conservative lattice classification (access, network, budgets, quorums, snapshots, secrets, transitions, shapes), prose neutrality, Git base shadowing, CLI diff/check gating, and packed-consumer round trips | `test/core/permission.test.ts`, `test/core/cli.test.ts`, `test/core/contracts.test.ts`, `test/core/package-install.test.ts` |
-| Event-sourced local Runtime: supervisor singleton with stable logical identity, immutable home bindings, append-only per-project event stores, idempotent acceptance/cancel, projection rebuild equivalence, token-authenticated local API, auto-start, SIGKILL crash recovery, offline CLI, packed consumer | `test/core/runtime.test.ts`, `test/core/cli.test.ts`, `test/core/package-install.test.ts` |
+| Health, readiness, metrics, request IDs and security headers | `hub-api.test.ts` |
+| Shared and per-project authentication, and project isolation | `hub-api.test.ts` |
+| Registration, discovery, presence, stale detection and identity resumption | `hub-api.test.ts`, `hub.test.ts` |
+| SQLite persistence, restart recovery and schema compatibility | `hub-api.test.ts`, `store.test.ts` |
+| Delivery modes, message fields, hop limits and validation | `hub-api.test.ts`, `protocol.test.ts` |
+| Queue, acknowledgement, visibility, reply and authorization | `hub-api.test.ts`, `hub.test.ts` |
+| A queued or delivered message replays after a recipient restart as the same record | `hub.test.ts`, `extension.test.ts`, `mcp.test.ts` |
+| An `allowOffline` send queues, delivers once on resumption, and expires unread by TTL | `hub-api.test.ts` |
+| TTL expiry, sender cancellation and terminal retention | `hub-api.test.ts` |
+| Exact-retry idempotency, and rejection of a reused key with different content | `hub-api.test.ts` |
+| Fanout to one to three peers: local timeouts, aborts, exact retries, partial errors | `client.test.ts`, `hub-api.test.ts`, `extension.test.ts`, `mcp.test.ts` |
+| Fenced leases: compare-and-set acquire, renew and release; a stale token's shared effect is refused | `hub-api.test.ts`, `store.test.ts`, `external-effects.test.ts` |
+| Rate limiting and retry guidance | `hub-api.test.ts` |
+| Redacted structured logs | `hub-api.test.ts` |
+| Client lifecycle: aborts, timeouts, invalid responses and reconnection | `client.test.ts` |
+| Safe diagnostic classification and redaction | `diagnostics.test.ts`, `extension.test.ts`, `hub-api.test.ts` |
+| Failed MCP inbox notifications stay retryable; delivery deduplicates | `inbox.test.ts` |
 
-The CI minimums are 93% lines, 80% branches, and 93% functions across
-`plugins/kxm/src/**/*.ts` (excludes `server.ts` and `mcp-server.ts`). Those
-floors may only ratchet up. The generated MCP runtime is exercised as a child
-process, while the packed CLI and hub are installed in a clean consumer and
-exercised from `node_modules`.
+## Hub workflows and provenance
 
-## Executable examples and use cases
+| Behavior | Evidence |
+|---|---|
+| Signed Jira webhook verification, filtering, dispatch and retry deduplication | `hub-api.test.ts` |
+| Ordered checkpoints, keyed evidence gates, and warning or failure retry | `hub-api.test.ts`, `workflow.test.ts` |
+| Eligible producers fixed at run start; per-requirement message references; unique-producer quorum; replay rejected | `workflow-provenance.test.ts`, `workflow.test.ts`, `hub-api.test.ts`, `client.test.ts`, `store.test.ts` |
+| Admin degradation of the current attempt: configured minimum, audit journal, idempotency, stale approvals refused | `workflow-provenance.test.ts`, `cli.test.ts` |
+| Durable external waits: evidence accumulation, safe settlement, race rejection, signed callbacks, separate secrets | `hub-api.test.ts`, `workflow.test.ts`, `workflow-provenance.test.ts` |
+| Quorum parser boundaries, and a secret-free definition hash that survives credential rotation | `workflow-quorum.test.ts`, `workflow-definition-hash.test.ts` |
+| Durable workflow and journal recovery; atomic transition commit and rollback | `store.test.ts` |
+| Plans, decisions, contradictions, errors, lessons and improvement reports | `hub-api.test.ts`, `workflow.test.ts` |
+| All ten journal categories and `stageId` through `kxm_workflow_record`, with stage provenance end to end | `journal-evolution.test.ts` ("kxm_workflow_record binds stage provenance and the stage's area end to end, and hub-authored entries carry it too") |
+| Ranked, redacted cross-run signals; retrospectives refreshed by late entries and promotions | `journal-evolution.test.ts`, `workflow.test.ts`, `retrospective.test.ts` |
+| Retrospective export: snapshots, metadata-only provenance audit, body allowlist, degradation records | `retrospective.test.ts` |
+| Typed back-edges, transition budgets, bypass protection and restart recovery | `workflow-transitions.test.ts` |
+| GitHub check watch: pagination, conclusions, retries and per-wait delivery generations | `github-watch.test.ts` |
 
-| Scenario | Location | Verification |
-|---|---|---|
-| Self-contained planner/reviewer round trip | `examples/roundtrip.ts` | Executed by `test/core/examples.test.ts` |
-| Long-running deterministic reviewer | `examples/reviewer-agent.ts` | Type-checked and documented |
-| Command-line requester | `examples/requester.ts` | Type-checked and documented |
-| Plan then review | `examples/README.md` | Uses discovery, send, and wait |
-| Separate file ownership | `examples/README.md` | Documents non-overlapping writers |
-| Non-blocking delegation | `examples/README.md` | Uses send, independent work, and get |
-| Obsolete-work cancellation | `examples/README.md` | Uses cancel and states rollback boundary |
-| Safe network retry | `examples/README.md` | Uses stable idempotency keys |
-| Jira issue-to-merge workflow | `.kxm/workflows/default.yaml` | Parsed, type-checked through workflow tests, and exercised end to end with representative configuration |
-| `.kxm` workspace defaults and persisted hub/worker logs | `.kxm/`, `test/core/server.test.ts`, `test/core/worker.test.ts` | Executed with isolated temporary workspaces |
-| Signed external result callback | `examples/workflow-signal.ts` | Type-checked; equivalent signed callback path is exercised end to end in `test/core/hub-api.test.ts` |
-| Peer provenance and optional explicit degradation | `examples/provenance-workflow.json`, `.kxm/workflows/default.yaml`, `docs/provenance-gates.md` | Both definitions are parser-checked in `test/core/examples.test.ts`; adversarial evidence and degradation behavior is automated in `test/core/workflow-provenance.test.ts` |
-| Quorum parser boundaries and definition identity | `plugins/kxm/src/workflow.ts`, `test/core/workflow-quorum.test.ts`, `test/core/workflow-definition-hash.test.ts` | Rejects impossible peer pools, verifies degradation bounds, and proves secret-free semantic hash stamping plus credential-rotation invariance |
-| Artifact existence and containment gate | `plugins/kxm/src/artifacts-exist.ts`, `test/core/artifacts-exist.test.ts` | Non-empty regular files pass; missing, empty, non-file, lexical escape, and real-path escape cases fail closed (host-permitted symlink coverage) |
-| Harness inventory probe | `plugins/kxm/src/harness.ts`, `test/core/harness.test.ts` | Detect/auth/dispatch for the builtin catalog; win32 `.exe` / inner npm-package `.exe` / `.cmd` candidate order for npm shims (issue #168); `windows_shim` issue only when the shim answered; allowlisted `name.cmd` shell spawn only; rejected metacharacter commands; Linux still `not_detected` when the bare command is missing. |
-| Headless harness helper | `scripts/harness-run.mjs`, `justfile`, `test/core/harness-run.test.ts` | Offline auth success/logout/garbage, role/mode/pair/provider refusals before spawn, missing brief/schema fail closed with zero spawn, invocation-cwd relative `prompt_file`/`output_schema` vs `request.cwd` (absolute argv tokens; Claude/Codex stdin matches the brief), Pi JSONL multi-`message_end` sums, Claude auxiliary usage, native error-on-exit-0, timeout/empty payload, sidecar-only stderr/answer/error, shell:false argv metacharacters, win32 `.cmd` rejection, and win32 npm inner `claude.exe` / Pi `node.exe`+`cli.js` unwrap. Result v2 transport vs closed model claims, dispatch-before-spawn, grok/codex isolation flags, `max_turns` validation, obsolete v1 diagnosis without rewrite or unknown-schema echo, partial usage on fail/interrupt, signaled null `exitCode` plus exact `signal`, exit-before-stdio-close drain vs bounded linger, type-closed usage/cost (no object leak or zero-coercion), malformed optional text as run-stage failure with retained spend, stdin/pid-record write failures not completed, bounded timeout settle without descendant-death claims, spawn/write-failure stage and spend, and capability-fixture parser evidence (Codex `--ignore-user-config` is not invented in top-level help; captured help bytes are not rescrubbed). Recipe quoting is covered from the justfile body without a just binary (POSIX `sh` + positional argv; Windows uses the recipe's `node -e` / argv shape). The developer entry points are gated three ways: docs-to-recipe parity (a documented `just` verb in command form, across inline code or a fenced line with an optional `#`, tolerant of stray whitespace, pipe-separated alternations, leading interpreter options and `~~~` fences, reading a shell pipe as one command rather than an alternation, skipping a glob family like `review-*` instead of demanding a recipe, and *not* parsing prose, headings or captured listing output); per-recipe boundaries (**the load-bearing gate parses nothing**: every line that mentions `assignment-run.mjs` must be one of the seven pinned proof bodies and there must be exactly seven, so a header form no parser recognises still cannot hide a call site; column-0 comments are documentation and excluded), plus a normalized-text pass (`\`-continuations folded, comments stripped) and a second pass over `just --dump`, the interpreter's own rendering, skipped with a visible reason without the binary; the recipe name set must equal a pinned list, duplicate headers and duplicate `run :=` bindings are refused, `set allow-duplicate*`, `import`/`mod` in any spelling and `alias` are refused, `run :=` and `dispatch` are asserted exactly, and non-proof bodies are token-checked against raw text because comment-stripping first hid an executable suffix that `--dump` reproduced verbatim. Stated limit: drift protection, not a sandbox — a body can assemble its command at runtime, and anyone who can edit the file can already do what it does. Auto-loading a working-directory dotenv file is refused by a brake on any `set dotenv*` spelling, plus a real-`just` probe whose preload module writes a marker file itself — so the assertion is that injected code executed — paired with controls on the same entry point: explicit `--dotenv-path`, a justfile with the setting re-added, and a real `witness` recipe run both ways. Real just integration is optional and skipped when the binary is absent. No live paid smoke. |
-| Long-lived headless coordinator | `scripts/kxm-worker.mjs` | Restart limits, spawn failure, collision-resistant ownership, exact resource and tool loading, raw-output isolation, bounded RPC framing, bounded drain, hung-tool recovery, provider/model fallback, and `--continue` fallback are automated; the opt-in real-Pi gate verifies two workers, discovery, request/reply, fanout, durable restart/resume, journal, and checkpoint |
-| GitHub check signal adapter | `plugins/kxm/src/github-watch.ts` | Deterministic pagination, conclusion, retry, and per-wait delivery-generation states in `test/core/github-watch.test.ts` |
-| Operator CLI | `scripts/kxm.mjs` | Isolated workspace commands in `test/core/cli.test.ts`; the packed artifact is installed locally and with the documented global `--omit=peer` path by `test/core/package-install.test.ts` |
-| Hub-local session brief | `plugins/kxm/src/session-work.ts`, `test/core/session-work.test.ts`, `test/core/cli.test.ts` | Status line and task/plan lists from hub SQLite without message bodies; `init --hub` is an unknown option; `hub bind` reports on/off/unknown |
-| Native-free package install and Windows `pi.cmd` worker launch | `package.json`, `test/core/store.test.ts`, `test/core/worker.test.ts` | CI runs on Linux at Node 22.19 and Node 24; the Windows `pi.cmd` fixture stays in `test/core/worker.test.ts` and runs locally on Windows or when the paused Windows legs resume. |
+## Local Runtime and engine
 
-## Manual release checks
+| Behavior | Evidence |
+|---|---|
+| Event-sourced Runtime: singleton supervisor, append-only per-project stores, idempotent commands, projection rebuild, crash recovery | `runtime.test.ts`, `cli.test.ts`, `package-install.test.ts` |
+| A store the build refuses is reported unreadable, never empty | `runtime.test.ts` ("a project whose store the build refuses is reported as unreadable, never as empty") |
+| Supervisor drive: `202` with a poll link, duplicate drives refused, graceful shutdown waits | `runtime-supervisor.test.ts` |
+| Settlement from a structured result only; prose outcomes and undeclared outcomes end as `outcome_unknown` | `pi-producer.test.ts`, `engine.test.ts` |
+| Routing records carry `workflowId`, `askSha256`, `objectiveSha256` and `stepWrites`, and settle only `blocked` or `failed` | `route-admission.test.ts` |
+| Dispatch context: only committed, pinned memory and hash-verified promoted skills reach an agent; the rest is a `dispatch_context_*` gap | `engine.test.ts` ("dispatch context: agents receive only committed, pinned memory and verified skills; anything else is withheld with a gap and the step still completes") |
+| `kxm run` prints the simulated drive command for the new run | `cli.test.ts` ("kxm run prints the simulated drive command for the created run") |
+| `kxm workflow add --template` writes workflows that validate and plan; an impossible gate outcome is refused | `cli-experience.test.ts` ("workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused") |
+| `default.yaml` and the 13-step `fix.yaml` compile deterministically; back edges need budgets | `engine-compile.test.ts` |
+| Artifact gate: non-empty regular files pass; missing, empty, non-file and escaping paths fail | `artifacts-exist.test.ts` |
+| Vision gate: strict verdicts, admitted routes only, unreadable images fail closed | `vision-gate.test.ts` |
+| Tenant read labels hub projection versus Runtime authority and survives either side being down | `studio-layout.test.ts` |
 
-Automation cannot prove that a third-party harness UI renders perfectly. Before a release, connect two current Pi sessions, run `/kxm hub`, complete one inbound round trip, install the marketplace plugin in a clean Claude Code profile, and verify `kxm_list`. Exercise preview channel delivery only when the target Claude Code version supports community channels.
+## Context, memory and learning
 
-Create the versioned tarball with `npm pack`, attach it to the matching GitHub
-release, and verify the authenticated `gh release download` plus
-`npm install --global --omit=peer <local-tarball>` path before publishing the
-operator installation instructions. For version `<release-version>`, the required asset is
-`kxm-<release-version>.tgz`.
+| Behavior | Evidence |
+|---|---|
+| Packets rank by task relevance, fill the budget first-fit, and deliver every selected item, evidence included | `arbiter.test.ts` ("arbitrate ranks task-relevant candidates first, delivers every selected item in a packet section, orders ties newest first, and reports relevance") |
+| Recall ranks by phrase, then relevance; hub logs carry sizes, not task or query text | `context-surfaces.test.ts`, `arbiter.test.ts` |
+| An agent's state proposal is peer origin, decided by its credential, and capped at evidence | `context-authority.test.ts` ("a state proposal takes its origin from the verified credential, so an agent is peer and capped at evidence") |
+| Promotion needs the configured admin token with no loopback bypass; proposed items never reach a packet | `e5-memory-floor.test.ts` |
+| `kxm memory`: candidates, marker-delimited sync blocks, and one brief across CLI, Pi and the Claude hook | `e5b-harness-agnostic-memory.test.ts` |
+| `kxm improve report` reads Runtime-settled attempts, drops simulated and duplicate ones, and flags only same-ask repeats | `improve.test.ts` ("kxm improve report resolves Runtime-settled attempts from the event log and flags only same-ask cross-run repeats"), `cli.test.ts`, `cli-experience.test.ts`, `commands-policy.test.ts` |
+| Improvement candidates exclude write steps; promotion readiness never authorizes | `improve.test.ts` |
+| Telemetry classification and JSONL recovery | `telemetry.test.ts`, `cli.test.ts` |
 
-When adding a feature, add executable coverage and update this matrix in the same change. If a behavior can only be verified manually, state why and add it to the release checklist instead of implying automated coverage.
-
-## v0.5 context suites
+The context suites in detail:
 
 | Suite | Covers |
 |---|---|
-| `test/core/context.test.ts` | Context schema round-trips, hostile input, cross-project fail-closed, storage upgrade |
-| `test/core/state.test.ts` | Temporal state lifecycle, asOf queries, supersession, contradictions, restart durability |
-| `test/core/context-authority.test.ts` | Authority grant floor, reserialization escalation, lineage bounds, control-plane smuggling |
-| `test/core/arbiter.test.ts` | Role-aware packet assembly, task-relevance ranking, first-fit budgets, the evidence section, contradiction routing, journal conversion, hub surfaces |
-| `test/core/context-surfaces.test.ts` | CLI and Pi tool parity for the context API |
-| `test/core/journal-evolution.test.ts` | New journal categories, evidence requirements, governed promotion, stage provenance through the shared tool |
-| `test/core/wiki.test.ts` | Wiki compilation determinism, lifecycle preservation, contradiction visibility, lint |
-| `test/core/workflow-transitions.test.ts` | Typed back-edges, budgets, bypass protection, restart recovery |
-| `test/core/fix-workflow.test.ts` | /fix end-to-end, independent repro-review oracle, wrong-seam invalidation, failed self-retry, plan-hash gating, exhaustion |
-| `test/core/skills.test.ts` | Skill candidate lifecycle, quarantine, immutability, CLI |
-| `test/core/routing.test.ts` | Behavioral hash, record parsing, comparisons, routing report |
-| `test/core/improve.test.ts` | Routing-record sources, event-log outcome resolution, same-ask candidacy, candidate files, promotion readiness |
+| `context.test.ts` | Context schema round trips, hostile input, cross-project refusal, storage upgrade |
+| `state.test.ts` | Temporal state lifecycle, `asOf` queries, supersession, contradictions, restart durability |
+| `context-authority.test.ts` | Authority floor per origin, reserialization escalation, lineage bounds, control-plane smuggling |
+| `arbiter.test.ts` | Role-aware packets, relevance ranking, first-fit budgets, the evidence section, contradiction routing |
+| `context-surfaces.test.ts` | CLI and Pi tool parity for the context API |
+| `journal-evolution.test.ts` | Journal categories, evidence requirements, governed promotion, stage provenance |
+| `wiki.test.ts` | Wiki compilation determinism, lifecycle preservation, contradiction visibility, lint |
+| `skills.test.ts` | Skill candidate lifecycle, quarantine, immutability, CLI |
+| `routing.test.ts` | Behavioral hash, record parsing, comparisons, `kxm routing report` |
+| `improve.test.ts` | Routing-record sources, event-log outcomes, same-ask candidacy, candidate files, promotion readiness |
+
+## Claude Code plugin and MCP
+
+| Behavior | Evidence |
+|---|---|
+| MCP tool catalog, outbound and inbound tools, and channel delivery | `mcp.test.ts` |
+| The MCP server never registers with the persisted admin token | `mcp.test.ts` ("MCP server never registers with the persisted admin token") |
+| Expired disk tokens and invalid `KXM_SESSION_TOKEN` values produce errors that name the user's fix | `mcp.test.ts` |
+| MCP tools, Pi tools and CLI verbs match `AGENT_COMMANDS` exactly, plus the hook-only tools | `commands-drift.test.ts` |
+| The plugin README tool table lists every tool the MCP server publishes | `claude-plugin-docs.test.ts` |
+| `SessionStart` hook: silent outside a project, project-scoped, under 1,500 characters, never prints a session token | `claude-plugin-hooks.test.ts` |
+| Hooks use exec form under `CLAUDE_PLUGIN_ROOT` with bounded timeouts, and run from a copied plugin directory | `claude-plugin-hooks.test.ts` ("plugin hooks use exec form under CLAUDE_PLUGIN_ROOT with bounded timeouts") |
+| Terminal inbound cleanup and next-request activation | `extension.test.ts`, `mcp.test.ts` |
+
+## Pi extension and workers
+
+| Behavior | Evidence |
+|---|---|
+| Pi tools, inbound turns, automatic replies and the status command | `extension.test.ts` |
+| Workflow and journal tools, workflow-context sends, and peer-reference checkpoints and waits | `extension.test.ts`, `mcp.test.ts` |
+| Interrupted-worker continue fallback, run-bound recovery and one-turn durable replay | `worker.test.ts`, `recovery.test.ts`, `extension.test.ts` |
+| Hub-owned workflow affinity, pre-acknowledgement routing, one-child session-directory swap, LRU retention | `hub-api.test.ts`, `extension.test.ts`, `worker.test.ts`, `cli.test.ts` |
+| Provider-error retention, retry ordering, bounded fallback, oversized frames and session-preserving restart | `extension.test.ts`, `worker.test.ts`, `diagnostics.test.ts`, `cli.test.ts` |
+| Tool allowlist, watchdog grace, hung-tool recovery and race-safe ownership claims | `worker.test.ts`, `cli.test.ts`, `hub-autostart.test.ts` |
+| Exact extension and skill sets, discovery isolation, path preflight and Windows argument safety | `worker.test.ts` |
+| Workspace defaults and persisted worker logs under isolated temporary workspaces | `worker.test.ts`, `hub-autostart.test.ts` |
+| Opt-in real-Pi smoke contract and its safe skip paths | `smoke-real-pi.test.ts`, `smoke.test.ts` |
+
+## CLI, configuration and trust
+
+| Behavior | Evidence |
+|---|---|
+| `init`, `validate`, `export` and `watch` in isolated workspaces | `cli.test.ts`, `github-watch.test.ts` |
+| Every mutating command under `--dry-run` leaves the workspace, state root and hub untouched | `cli-experience.test.ts` ("every mutating command under --dry-run leaves the workspace, state root, and hub untouched") |
+| Hub auto-start reuses a healthy or claimed hub, persists one admin key, and fails closed on bad claims | `hub-autostart.test.ts` |
+| Hub-local session brief from SQLite without message bodies; `hub bind` reports on, off or unknown | `session-work.test.ts`, `cli.test.ts` |
+| Session manifests, fail-closed rosters, worker and result envelopes, hub-owned envelope fields | `session.test.ts`, `cli.test.ts`, `envelope.test.ts`, `envelope-contract.test.ts` |
+| Metadata-only dashboard: ops mode, presence-only fallback, observer filtering, keys, body-free local projection | `tui.test.ts`, `hub-api.test.ts` |
+| Restricted loader, deterministic bundle hash, init classification, atomic creation, three-way repair, crash resumption | `project-config.test.ts`, `cli.test.ts`, `package-install.test.ts` |
+| Legacy `.kxm/config` JSON is refused with `legacy_state_unsupported`; `kxm migrate` is unknown; older stores are refused | `project-config.test.ts`, `cli.test.ts`, `e6-backup-restore-migrations.test.ts` |
+| `kxm backup` and `kxm restore` round-trip every store; tampered or newer backups are refused | `e6-backup-restore-migrations.test.ts` |
+| Permission-diff trust: authority lattice, prose neutrality, Git base shadowing, CLI diff and check | `permission.test.ts`, `cli.test.ts`, `contracts.test.ts`, `package-install.test.ts` |
+| KXM schemas, restricted YAML fixtures, cross-resource semantics and sync-safe rejection | `contracts.test.ts`, `restricted-yaml.test.ts` |
+| Harness detection, auth and dispatch for the built-in catalog, including Windows launch rules | `harness.test.ts` |
+| `kxm update`: `update.yaml` validation, GitHub or npm version checks, install-kind detection, `kxm-<v>.tgz` asset selection | `kxm-update.test.ts`, `kxm-update-cli.test.ts`, `kxm-install-kind.test.ts` |
+
+## Packaging, release and repository gates
+
+| Behavior | Evidence |
+|---|---|
+| The packed CLI and hub run from a clean local install and an isolated global `--omit=peer` install | `package-install.test.ts` |
+| Generated bundles and skill mirrors exist, are tracked and match the staged copy; mirror emit refuses symlinks | `generated-artifacts.test.ts`, `scripts/check-generated.mjs` |
+| Every version surface matches; the bumper writes each workspace manifest and patches the lockfile by key | `scripts/check-versions.mjs`, `version-surfaces.test.ts` |
+| Release packs `kxm-<v>.tgz`, uploads to a draft fail-closed, proves the digest and never clobbers | `kxm-release-github.test.ts`, `ci-contract.test.ts` |
+| npm publish requires a published release and a matching asset digest | `kxm-publish-npm.test.ts` |
+| CI required jobs are unconditional; runner selector, coverage floors and release triggers are pinned | `ci-contract.test.ts` |
+| Skill suite: manifest shape, one owner per command, strict YAML frontmatter, no legacy names, mirror parity | `skill-suite.test.ts` ("every bundled SKILL.md frontmatter parses as strict YAML") |
+| The extension and MCP server never import the hub, store or workflow; library bundles stay host-neutral | `import-boundary.test.ts` |
+| Workspace packages keep their layers, required files and by-name imports | `package-layers.test.ts` |
+| Retired product names stay out of the scanned docs | `docs-copy.test.ts` |
+| Headless harness helper: auth probes, refusals before spawn, typed usage and cost, stdio and timeout handling | `harness-run.test.ts` |
+| `justfile` gates: documented `just` verbs exist, runner call sites are pinned, no dotenv auto-load | `harness-run.test.ts` |
+| Developer roster validation: vendors, read-only critics, pinned model-origin evidence | `roster-policy.test.ts` |
+
+The `justfile` gates are drift protection, not a sandbox: anyone who can edit
+the file can already do what it does. They run without the `just` binary and
+skip the real-`just` checks, with a visible reason, when it is absent.
+
+## Examples and fixtures
+
+| Scenario | Location | Verification |
+|---|---|---|
+| Self-contained planner and reviewer round trip | `examples/roundtrip.ts` | Executed by `examples.test.ts` |
+| Long-running deterministic reviewer | `examples/reviewer-agent.ts` | Type-checked |
+| Command-line requester | `examples/requester.ts` | Type-checked |
+| Signed external result callback | `examples/workflow-signal.ts` | Type-checked; the same signed path runs end to end in `hub-api.test.ts` |
+| Peer provenance with optional degradation | `examples/provenance-workflow.json`, `docs/guides/provenance-gates.md` | Parsed and matched to the guide by `examples.test.ts` |
+| Jira development webhook workflow | `examples/webhook-workflows/jira-development.json` | Not parsed by a test; `hub-api.test.ts` and `workflow.test.ts` exercise an inline definition of the same shape |
+| Project fixture with `default.yaml` and `fix.yaml` | `examples/project/` | Compiled by `engine-compile.test.ts`; schema-checked by `contracts.test.ts` |
+| Plan-then-review, separate ownership, delegation, cancellation, safe retry prompts | `examples/README.md` | Documented agent prompts; not executed |
+
+## Coverage floors
+
+| Run | Lines | Branches | Functions |
+|---|---:|---:|---:|
+| `test:coverage:core` (pushes to `main`, releases) | 91% | 80% | 92% |
+| `test:coverage:complete` (nightly) | 93% | 80% | 93% |
+
+Coverage measures `plugins/kxm/src/**/*.ts` and `packages/core/*/src/**/*.ts`,
+excluding the spawned entry points `server.ts`, `mcp-server.ts` and
+`runtime-supervisor.ts`. The generated MCP runtime is exercised as a child
+process, and the packed CLI and hub run from a clean consumer install. The
+floors only move up.
+
+## Behavior without automated coverage
+
+Some behavior can only be checked by hand, for example how a harness UI renders
+a channel event. List it in the manual checks in
+[CI and release](ci-and-release.md#manual-checks-before-announcing-a-release)
+instead of implying automated coverage here. The developer
+[assignment runner](assignment-runner.md#test-coverage-is-thin) has no
+end-to-end tests.
+
+## Related
+
+- [Develop KXM](development.md): test conventions and the commit gate
+- [CI and release](ci-and-release.md): which suites run where
+- [Write KXM documentation](writing-docs.md): doc gates and pinned paths

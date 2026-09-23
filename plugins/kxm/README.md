@@ -2,7 +2,7 @@
 
 This plugin connects a Claude Code session to a KXM hub. Claude can then exchange requests with Pi and Claude peers, work on durable workflow runs, and read the project's KXM context. The same directory is also the source of the repository's Pi extension and of the KXM Agent Skills.
 
-This page is the plugin reference. For the whole path from an empty repository to a first workflow (initialize, start the hub, install this plugin, run a workflow), follow the root README: [Set up a new project with Claude Code](../../README.md#set-up-a-new-project-with-claude-code).
+This page is the plugin reference. For the whole path from an empty repository to a first workflow (initialize, start the hub, install this plugin, run a workflow), follow [Set up a new project](../../docs/start/quickstart-claude-code.md#set-up-a-new-project) in the Claude Code quick start, then [Run your first workflow](../../docs/start/first-workflow.md).
 
 ## Requirements
 
@@ -71,7 +71,7 @@ The plugin acts as an agent of one hub project and authenticates with that proje
 - Never enter the hub admin token. It is the operator's credential. The hub accepts it for any project that has no token of its own, so an agent holding it could act in projects it was never given.
 - Without a project token, every `kxm_*` tool fails with `KXM has no project token for project <p> on this machine`, and the MCP server does not contact the hub.
 
-To give a project a token, the operator adds it to `KXM_PROJECT_TOKENS` and restarts the hub. That variable replaces the hub's saved token map rather than merging with it, so it must list every project, existing and new. The root README section [Add Claude Code to an existing KXM project](../../README.md#add-claude-code-to-an-existing-kxm-project) has a command that builds the full map. Run it in your own terminal, and never paste tokens or `hub-env.json` into Claude.
+To give a project a token, the operator adds it to `KXM_PROJECT_TOKENS` and restarts the hub. That variable replaces the hub's saved token map rather than merging with it, so it must list every project, existing and new. [Add Claude Code to an existing project](../../docs/start/quickstart-claude-code.md#add-claude-code-to-an-existing-project) has a command that builds the full map. Run it in your own terminal, and never paste tokens or `hub-env.json` into Claude.
 
 ## What the plugin adds
 
@@ -170,7 +170,7 @@ If your organization has approved the plugin through `allowedChannelPlugins`, us
 
 ## Update
 
-The root README section [Update an existing install](../../README.md#update-an-existing-install) covers the CLI and the plugin together. For the plugin alone:
+[Update KXM and the plugin](../../docs/start/quickstart-claude-code.md#update-kxm-and-the-plugin) covers the CLI and the plugin together. For the plugin alone:
 
 - User scope: `claude plugin marketplace update kxm`, then `claude plugin update kxm@kxm`.
 - Project scope: `claude plugin marketplace update kxm`, then `claude plugin update kxm@kxm --scope project`. Without `--scope project` the update fails with `Plugin "kxm" is not installed at scope user`.
@@ -269,7 +269,8 @@ The bundles include their dependencies, so marketplace installs need no post-ins
 
 ## More documentation
 
-- [KXM Handbook](../../docs/kxm-handbook.md): installation, configuration, Claude channel and pull modes, workflows, gates and recovery.
+- [KXM documentation](../../docs/README.md): install, quick starts, guides, reference, concepts and operations.
+- [MCP and Pi tools](../../docs/reference/tools.md): every tool with its parameters, limits and errors.
 - [Getting started](../../docs/start/quickstart-pi.md) and [Operations](../../docs/operations/deploy.md): task-focused guides.
 - [CLI reference](../../docs/reference/cli-reference.md): every `kxm` command, with options and output.
 - [Configuration reference](../../docs/reference/config-reference.md): every `.kxm` file, the workspace layout, and state outside the project.
