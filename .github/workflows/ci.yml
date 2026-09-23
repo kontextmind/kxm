@@ -85,7 +85,10 @@ jobs:
     name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
     needs: changes
     runs-on: kontextmind-doks
-    timeout-minutes: 30
+    # This is the merge-safety gate, not the exhaustive suite. Keep the
+    # started-job duration within the operator's three-minute budget; the
+    # complete suite and coverage floors run in nightly.yml.
+    timeout-minutes: 3
     strategy:
       fail-fast: false
       matrix:
@@ -126,24 +129,12 @@ jobs:
         if: needs.changes.outputs.code == 'true' && steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # PRs run the lean gate (core suite, no coverage instrumentation, no
-      # pack). Pushes to main run the full validate:ci; nightly.yml keeps the
-      # complete-suite coverage floors. Historical Windows coverage evidence
-      # remains in Tracking.
-      - name: Test core suite, type-check, and inspect generated artifacts
+      # Both PRs and main run the bounded merge-safety gate. The exhaustive
+      # suite, coverage instrumentation, docs lint, and package dry-run live in
+      # nightly.yml. Historical Windows coverage evidence remains in Tracking.
+      - name: Run the three-minute validation gate
         if: needs.changes.outputs.code == 'true'
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            npm run validate:pr
-          else
-            npm run validate:ci
-          fi
-      # validate:pr already checks the just-built artifacts without rebuilding.
-      - name: Verify generated runtime bundles are current
-        if: needs.changes.outputs.code == 'true' && github.event_name != 'pull_request'
-        run: npm run check:generated
+        run: npm run validate:pr
 
   plugin:
     name: Plugin validation

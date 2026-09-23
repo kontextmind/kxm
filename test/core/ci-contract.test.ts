@@ -100,6 +100,7 @@ type CiJobs = Record<
     name?: string;
     if?: unknown;
     "runs-on"?: unknown;
+    "timeout-minutes"?: unknown;
     steps?: Array<{ name?: string; if?: unknown; run?: string }>;
     strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
   }
@@ -163,12 +164,9 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
   for (const step of validateSteps.slice(1)) {
     assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
   }
-  const generatedStep = validateSteps.find(
-    (step) => step.name === "Verify generated runtime bundles are current",
-  );
   assert.equal(
-    generatedStep?.if,
-    "needs.changes.outputs.code == 'true' && github.event_name != 'pull_request'",
+    validateSteps.some((step) => step.name === "Verify generated runtime bundles are current"),
+    false,
   );
   assert.equal(validateSteps.some((step) => step.name === "Inspect package (main only)"), false);
 
@@ -181,8 +179,9 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
 
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
   const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");
-  assert.match(validateRuns, /npm run validate:ci/);
-  assert.match(validateRuns, /npm run check:generated/);
+  assert.match(validateRuns, /npm run validate:pr/);
+  assert.doesNotMatch(validateRuns, /npm run validate:ci/);
+  assert.equal(doc.jobs?.validate?.["timeout-minutes"], 3);
   assert.match(ciText, /@anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /npm install --no-save --ignore-scripts @anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /node node_modules\/@anthropic-ai\/claude-code\/install\.cjs/);
@@ -191,13 +190,18 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
   assert.doesNotMatch(ciText, /\.github\/PULL_REQUEST_TEMPLATE\.md/);
 });
 
-test("coverage floors stay 91/80/92 for core and 93/80/93 for complete with no third npm gate script", () => {
+test("the bounded merge gate stays focused while nightly owns exhaustive coverage", () => {
   const validatePr = pkg.scripts?.["validate:pr"] ?? "";
-  assert.match(validatePr, /^npm run build && node /);
-  assert.match(validatePr, /--test-concurrency=4 test\/core\/\*\.test\.ts/);
-  assert.match(validatePr, /npm run check/);
+  assert.match(validatePr, /^npm run build && npm run typecheck && node /);
+  assert.match(validatePr, /--test-concurrency=4 test\/core\/artifacts-exist\.test\.ts/);
+  assert.match(validatePr, /test\/core\/ci-contract\.test\.ts/);
+  assert.match(validatePr, /test\/core\/smoke\.test\.ts/);
+  assert.match(validatePr, /test\/core\/version-surfaces\.test\.ts/);
+  assert.doesNotMatch(validatePr, /test\/core\/\*\.test\.ts/);
+  assert.match(validatePr, /npm run check:versions/);
   assert.match(validatePr, /node scripts\/check-generated\.mjs$/);
-  assert.doesNotMatch(validatePr, /npm run (?:test:core|check:generated)/);
+  assert.doesNotMatch(validatePr, /npm run (?:test:core|check:generated|lint:docs)(?:\s|$)/);
+  assert.doesNotMatch(validatePr, /npm run check(?:\s|$)/);
 
   const coverageCore = pkg.scripts?.["test:coverage:core"] ?? "";
   const coverageComplete = pkg.scripts?.["test:coverage:complete"] ?? "";
