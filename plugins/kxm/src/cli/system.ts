@@ -2,10 +2,12 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { verifyArtifactExists } from "../artifacts-exist.ts";
 import { parseWorkflowDefinitions } from "../workflow.ts";
+import { KxmConfigError, KxmSchemaRegistry, parseRestrictedYaml } from "../project-config.ts";
+import { compileKxmWorkflow } from "../engine-compile.ts";
 import { redactSecrets } from "../redact.ts";
 import {
   telemetryPath,
@@ -477,6 +479,22 @@ export async function cmdValidate(runtime: Runtime, fileFlag?: string | undefine
   }
   try {
     const raw = file ? readFileSync(file, "utf8") : inline!;
+    // Local workflow mappings use the runner's restricted YAML/schema/compiler.
+    // Webhook sources remain JSON arrays with their existing secret checks.
+    if (file && !raw.trimStart().startsWith("[")) {
+      const value = parseRestrictedYaml(raw, file);
+      const issues = new KxmSchemaRegistry().validate("workflow", value, file);
+      if (issues.length > 0) throw new KxmConfigError(issues);
+      const id = basename(file, extname(file));
+      compileKxmWorkflow({ id, value, logicalPath: file });
+      printWorker(
+        runtime,
+        worker,
+        { ok: true, command: "validate", source: "file", file, workflows: [{ id, schema: value.schema }], warnings: [] },
+        `validated local workflow ${id} (schema and transitions); kxm init validates project references`,
+      );
+      return 0;
+    }
     const warnings: string[] = [];
     const definitions = parseWorkflowDefinitions(raw, runtime.env, (message) => warnings.push(message));
     const secretEnvs = definitions.map((definition) => ({
