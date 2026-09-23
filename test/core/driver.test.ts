@@ -5,8 +5,18 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { createTestMesh } from "../helpers.ts";
 import { makeGitRoot } from "../helpers/git-root.ts";
-import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
+import { RuntimeHubClient, type HubHttpError } from "../../plugins/kxm/src/client.ts";
+import {
+  ExternalEffectsLedger,
+  claimSharedEffect,
+  commitSharedEffect,
+  computeEffectKey,
+} from "../../plugins/kxm/src/external-effects.ts";
+import { loadKxmProject, syncEventSchemaErrors } from "../../plugins/kxm/src/project-config.ts";
+import { syncKxmOutbox } from "../../plugins/kxm/src/runtime-supervisor.ts";
+import type { KxmSyncEvent } from "../../plugins/kxm/src/sync-transform.ts";
 import {
   createKxmSimulatedProducer,
   driveKxmRun,
@@ -412,4 +422,148 @@ test("Phase 3 Driver: Caller-authored and untrusted producers are rejected", asy
   } finally {
     env.cleanup();
   }
+});
+
+test("two runtimes synchronize independent offline runs and a conflicting shared push is refused without the lease", async (t) => {
+  const homeA = "rtm_01JDRIVERA000000000000000";
+  const homeB = "rtm_01JDRIVERB000000000000000";
+  const envA = setupDriverEnv("kxm-driver-gate-a-");
+  const envB = setupDriverEnv("kxm-driver-gate-b-");
+  const contextA = openKxmRuntimeContext(envA.root, { stateRoot: envA.stateRoot, homeRuntimeId: homeA });
+  const contextB = openKxmRuntimeContext(envB.root, { stateRoot: envB.stateRoot, homeRuntimeId: homeB });
+  t.after(() => {
+    closeKxmRuntimeContext(contextA);
+    closeKxmRuntimeContext(contextB);
+    envA.cleanup();
+    envB.cleanup();
+  });
+
+  // 1. Offline: no hub exists yet. Each Runtime drives its own run to completion
+  //    and the outbox simply accumulates.
+  const producer = createKxmSimulatedProducer(async () => ({ outcome: "passed" }));
+  const offlineRun = async (context: KxmRuntimeContext, root: string, prompt: string): Promise<string> => {
+    const bundle = loadKxmProject(root);
+    const accepted = acceptKxmRun(context, bundle, { workflowId: "default", prompt });
+    pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+    const result = await driveKxmRun(context, accepted.run.runId, producer, { allowLimits: true });
+    assert.equal(result.state.status, "completed");
+    return accepted.run.runId;
+  };
+  const runA = await offlineRun(contextA, envA.root, "box A offline run");
+  const runB = await offlineRun(contextB, envB.root, "box B offline run");
+  assert.notEqual(runA, runB);
+
+  for (const [context, runId] of [[contextA, runA], [contextB, runB]] as const) {
+    const events = context.eventStore.events(runId, 0, 10_000);
+    const rows = context.eventStore.outboxForRun(runId);
+    assert.equal(rows.length, events.length, "every committed event has one outbox row");
+    assert.deepEqual(context.eventStore.pendingOutbox(10_000).map((row) => row.sequence), events.map((event) => event.sequence));
+    for (const row of rows) {
+      const sync = JSON.parse(row.syncEvent) as KxmSyncEvent;
+      assert.equal(syncEventSchemaErrors(sync), undefined, `${runId} row ${row.sequence} must validate kxm.sync-event.v1`);
+      assert.equal(sync.homeRuntimeId, context.homeRuntimeId);
+      assert.equal(row.ackedAt, undefined, "nothing is acknowledged while offline");
+    }
+  }
+
+  // 2. Reconnect: one hub, whose clock the test owns so the lease TTL below is
+  //    moved rather than slept through.
+  let hubClockMs = Date.now();
+  const mesh = await createTestMesh(t, { now: () => hubClockMs });
+  const project = "test-project";
+  const runtimeA = new RuntimeHubClient({ serverUrl: mesh.address.url, project, authToken: mesh.token, runtimeId: homeA, host: "box-a" });
+  const runtimeB = new RuntimeHubClient({ serverUrl: mesh.address.url, project, authToken: mesh.token, runtimeId: homeB, host: "box-b" });
+  assert.equal((await runtimeA.heartbeat()).presence, "online");
+  assert.equal((await runtimeB.heartbeat()).presence, "online");
+
+  const cursors = new Map<string, number>();
+  for (const [context, client, runId] of [[contextA, runtimeA, runA], [contextB, runtimeB, runB]] as const) {
+    const total = context.eventStore.outboxForRun(runId).length;
+    const pushed = await syncKxmOutbox(context.eventStore, client);
+    assert.deepEqual(pushed, { pushed: total, acked: total, conflicts: 0, rejected: 0 });
+    assert.deepEqual(context.eventStore.pendingOutbox(), [], "acknowledged rows advance the cursor");
+    cursors.set(runId, total);
+  }
+
+  // 3. The hub's snapshot shows each run under its own home Runtime.
+  const response = await fetch(`${mesh.address.url}/v1/ops/snapshot?project=${project}`, {
+    headers: { authorization: `Bearer ${mesh.token}` },
+  });
+  assert.equal(response.status, 200);
+  const snapshot = await response.json() as { homeRuntimes: Array<Record<string, unknown>> };
+  const homes = new Map(snapshot.homeRuntimes.map((home) => [home.runtimeId as string, home]));
+  assert.equal(homes.size, 2);
+  for (const [home, host, runId] of [[homeA, "box-a", runA], [homeB, "box-b", runB]] as const) {
+    const view = homes.get(home);
+    assert(view, `${home} is listed`);
+    assert.equal(view.host, host);
+    assert.equal(view.presence, "online");
+    assert.equal(view.orphaned, false);
+    const runs = view.runs as Array<Record<string, unknown>>;
+    assert.deepEqual(runs.map((run) => run.runId), [runId], "a run appears only under its home Runtime");
+    assert.equal(runs[0]!.status, "completed");
+    assert.equal(runs[0]!.lastSequence, cursors.get(runId));
+    assert.equal(runs[0]!.pendingGap, false);
+  }
+
+  // 4. Both boxes now attempt the same shared push. Their ledgers are separate,
+  //    so the hub lease is the only thing between them.
+  const agentA = mesh.makeClient("gate-box-a");
+  const agentB = mesh.makeClient("gate-box-b");
+  await agentA.start(() => undefined);
+  await agentB.start(() => undefined);
+  const ledgerA = new ExternalEffectsLedger(":memory:");
+  const ledgerB = new ExternalEffectsLedger(":memory:");
+  t.after(() => {
+    ledgerA.close();
+    ledgerB.close();
+  });
+  const targetRef = "refs/heads/main";
+  const shared = { stepId: "delivery", actionKind: "git-push", targetRef, leaseTtlMs: 5_000 } as const;
+
+  const claimA = await claimSharedEffect({ ledger: ledgerA, lease: agentA, runId: runA, attemptId: "att_gate_a1", ...shared });
+  if (!claimA.ok) throw new Error(`box A should have taken the lease: ${claimA.error}`);
+  assert.equal(claimA.fencingToken, 1);
+  assert.equal(claimA.leaseResource, `${project}/${targetRef}`);
+
+  // 5. Without the lease, box B is refused before it claims or executes anything.
+  const refused = await claimSharedEffect({ ledger: ledgerB, lease: agentB, runId: runB, attemptId: "att_gate_b1", ...shared });
+  assert.equal(refused.ok, false);
+  assert.equal(!refused.ok && refused.code, "effect_lease_held");
+  assert.equal(ledgerB.getReceipt(computeEffectKey(runB, "delivery", "git-push", targetRef)), undefined);
+
+  // Box A stalls past its TTL on the hub clock; box B takes over, which is the
+  // only thing that moves the fencing token.
+  hubClockMs += 6_000;
+  const takeover = await claimSharedEffect({ ledger: ledgerB, lease: agentB, runId: runB, attemptId: "att_gate_b2", ...shared });
+  if (!takeover.ok) throw new Error(`the TTL should have freed the resource: ${takeover.error}`);
+  assert.equal(takeover.fencingToken, 2);
+
+  // 6. Box A's late commit carries a superseded token: refused, the effect stays
+  //    in-flight, and the attempt parks uncertain.
+  const lateCommit = await commitSharedEffect({ ledger: ledgerA, lease: agentA, effectKey: claimA.effectKey, receiptPayload: { pushedSha: "deadbeef" } });
+  assert.equal(lateCommit.ok, false);
+  assert.equal(!lateCommit.ok && lateCommit.code, "effect_lease_superseded");
+  assert.equal(!lateCommit.ok && lateCommit.attemptState, "blocked_uncertain");
+  const parked = ledgerA.getReceipt(claimA.effectKey)!;
+  assert.equal(parked.status, "in-flight");
+  assert.equal(parked.completedAt, undefined);
+  assert.equal(parked.fencingToken, 1, "nothing re-acquired on the loser's behalf");
+  assert.deepEqual(parked.receiptPayload, {});
+
+  // Nothing retries: the resource stays with box B under token 2.
+  const stillHeld = await agentA.acquireLease(targetRef, 5_000).then(
+    () => undefined,
+    (error: unknown) => error as HubHttpError,
+  );
+  assert.equal(stillHeld?.statusCode, 409);
+  assert.equal(stillHeld?.code, "lease_held");
+
+  // Exactly one push lands, under the token the hub actually holds.
+  const winner = await commitSharedEffect({ ledger: ledgerB, lease: agentB, effectKey: takeover.effectKey, receiptPayload: { pushedSha: "cafebabe" } });
+  if (!winner.ok) throw new Error(`the lease holder should commit: ${winner.error}`);
+  assert.equal(winner.receipt.status, "committed");
+  assert.equal(winner.receipt.runId, runB);
+  assert.equal(winner.receipt.fencingToken, 2);
+  assert.equal(ledgerA.getReceipt(claimA.effectKey)?.status, "in-flight", "the loser never commits");
 });
