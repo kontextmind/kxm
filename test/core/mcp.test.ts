@@ -414,6 +414,42 @@ test("MCP inbox rehydrates one unacked message record after process restart", as
   await second.stop();
 });
 
+test("MCP inbox keeps an acknowledged, unanswered request across a restart under a durable agent name", async (context) => {
+  const mesh = await createTestMesh(context);
+  const peer = mesh.makeClient("durable-sender");
+  await peer.start(() => undefined);
+  async function startMcp() {
+    return await startMcpServer(context, spawnEnvFor(context, {
+      hubUrl: mesh.address.url,
+      authToken: mesh.token,
+      agentName: "claude-durable",
+      project: "test-project",
+    }), "durable-restart-test");
+  }
+  function channelEventsFor(server: Awaited<ReturnType<typeof startMcp>>, messageId: string) {
+    return server.notifications.filter((notification) =>
+      notification.method === "notifications/claude/channel" && JSON.stringify(notification).includes(messageId));
+  }
+
+  const first = await startMcp();
+  await first.tool("kxm_list");
+  const inbound = await peer.send({ target: "claude-durable", content: "answer this after your restart" });
+  await waitFor(() => channelEventsFor(first, inbound.id).length === 1);
+  // The first process acknowledged it, which moved the agent's consumer cursor past it.
+  assert.equal((await peer.getMessage(inbound.id)).status, "delivered");
+  await first.stop();
+
+  const second = await startMcp();
+  assert.match(JSON.stringify(second.value(await second.tool("kxm_inbox"))), new RegExp(inbound.id));
+  const durable = [...mesh.hub.state.agents.values()].filter((agent) => agent.name === "claude-durable");
+  assert.deepEqual(durable.map((agent) => agent.id), [inbound.to]);
+  await waitFor(() => channelEventsFor(second, inbound.id).length === 1);
+  const reply = second.value(await second.tool("kxm_reply", { messageId: inbound.id, content: "answered after restart" }));
+  assert.equal(reply.status, "replied");
+  assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "answered after restart");
+  assert.equal(channelEventsFor(second, inbound.id).length, 1);
+});
+
 test("isolated MCP spawn env points project dir, state, user config and hub URL at throwaway locations", (context) => {
   const leaked = {
     CLAUDE_PROJECT_DIR: process.cwd(),

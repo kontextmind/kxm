@@ -17294,8 +17294,13 @@ function enforceToolPolicy(commandName, env = process.env, options) {
 // plugins/kxm/src/inbox.ts
 async function deliverInboxNotification(messageId, delivered, notify) {
   if (delivered.has(messageId)) return false;
-  await notify();
   delivered.add(messageId);
+  try {
+    await notify();
+  } catch (error2) {
+    delivered.delete(messageId);
+    throw error2;
+  }
   return true;
 }
 
@@ -17344,15 +17349,13 @@ function sessionIdentity() {
     serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331"
   };
 }
-async function onHubEvent(event) {
+async function onHubEvent(client, event) {
   if (event.type === "cancelled" || event.type === "expired") {
     inbox.delete(event.message.id);
     notifiedInbox.delete(event.message.id);
     return;
   }
   if (event.type !== "message") return;
-  const client = meshClient;
-  if (!client) return;
   if (event.message.status === "queued") await client.acknowledge(event.message.id);
   inbox.set(event.message.id, event.message);
   const meta2 = {
@@ -17377,6 +17380,11 @@ async function onHubEvent(event) {
     });
   });
 }
+async function seedInbox(client) {
+  for (const message of await client.listInbox()) {
+    if (message.status === "delivered") await onHubEvent(client, { type: "message", message });
+  }
+}
 async function startClient(project, serverUrl, name, authToken) {
   const candidate = new HubClient({
     serverUrl,
@@ -17387,7 +17395,8 @@ async function startClient(project, serverUrl, name, authToken) {
     authToken
   });
   try {
-    await candidate.start(onHubEvent);
+    await candidate.start((event) => onHubEvent(candidate, event));
+    await seedInbox(candidate);
     meshClient = candidate;
     return candidate;
   } catch (error2) {

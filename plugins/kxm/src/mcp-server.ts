@@ -55,15 +55,13 @@ function sessionIdentity(): { projectDir: string; project: string; serverUrl: st
   };
 }
 
-async function onHubEvent(event: HubEvent): Promise<void> {
+async function onHubEvent(client: HubClient, event: HubEvent): Promise<void> {
   if (event.type === "cancelled" || event.type === "expired") {
     inbox.delete(event.message.id);
     notifiedInbox.delete(event.message.id);
     return;
   }
   if (event.type !== "message") return;
-  const client = meshClient;
-  if (!client) return;
   if (event.message.status === "queued") await client.acknowledge(event.message.id);
   inbox.set(event.message.id, event.message);
   const meta: Record<string, string> = {
@@ -89,6 +87,17 @@ async function onHubEvent(event: HubEvent): Promise<void> {
   });
 }
 
+/** A durable KXM_AGENT_NAME resumes its agent id, but the event stream replays only requests
+ * that agent has not acknowledged. One an earlier process acknowledged and never answered is
+ * still open on the hub, so it is read back here and announced like a pushed request: this
+ * session has not been told about it. Queued requests are left to the stream, which
+ * acknowledges them in order. */
+async function seedInbox(client: HubClient): Promise<void> {
+  for (const message of await client.listInbox()) {
+    if (message.status === "delivered") await onHubEvent(client, { type: "message", message });
+  }
+}
+
 async function startClient(project: string, serverUrl: string, name: string, authToken: string): Promise<HubClient> {
   const candidate = new HubClient({
     serverUrl,
@@ -99,7 +108,9 @@ async function startClient(project: string, serverUrl: string, name: string, aut
     authToken,
   });
   try {
-    await candidate.start(onHubEvent);
+    await candidate.start((event) => onHubEvent(candidate, event));
+    // A tool call waits for the seeded inbox: `starting` stays pending until this returns.
+    await seedInbox(candidate);
     meshClient = candidate;
     return candidate;
   } catch (error) {

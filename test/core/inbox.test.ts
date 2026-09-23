@@ -19,3 +19,20 @@ test("failed MCP inbox notifications remain retryable and successful delivery de
   }), false);
   assert.equal(attempts, 2);
 });
+
+test("concurrent MCP inbox notifications for one message announce it once", async () => {
+  const delivered = new Set<string>();
+  let sends = 0;
+  let releaseFirst!: () => void;
+  const firstSending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const first = deliverInboxNotification("msg_1", delivered, async () => {
+    sends += 1;
+    await firstSending;
+  });
+  const second = deliverInboxNotification("msg_1", delivered, async () => {
+    sends += 1;
+  });
+  releaseFirst();
+  assert.deepEqual(await Promise.all([first, second]), [true, false]);
+  assert.equal(sends, 1);
+});

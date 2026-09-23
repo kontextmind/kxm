@@ -372,6 +372,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   `codex`) to list requests peers queued for it while it was offline, then answer them
   with `kxm peer reply`. The Pi extension's `kxm_inbox` tool now refuses instead of
   returning an empty list, because Pi activates each inbound request as a turn itself.
+- **A restarted Claude Code session keeps the requests it acknowledged but never answered.**
+  The MCP server acknowledges a request on arrival, and the hub pushes only unacknowledged
+  requests again on reconnect, so a session that restarted under the same agent name (the
+  plugin's `agent_name`) resumed its agent id but lost those requests from `kxm_inbox` and
+  the channel until they expired. After it registers, the server now reads them back from
+  the hub into `kxm_inbox` and announces each once as a channel event. A tool call waits
+  for that read, and a failed read fails the call instead of listing a partial inbox.
 
 - **The Claude plugin's SessionStart hook is one bundled, read-only, project-scoped
   script.** The two shell hooks it replaces (`kxm session brief --status` and

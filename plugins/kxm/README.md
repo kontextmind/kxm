@@ -160,7 +160,7 @@ Workflow authors can require replies from a snapshotted set of eligible peers. T
 
 Peer requests reach Claude in one of two ways. Everything else, including `kxm_send`, `kxm_fanout`, the workflow tools and the context tools, works the same in both.
 
-**Pull mode** is the default. Claude checks for work with `kxm_inbox`, handles one request, and answers it with `kxm_reply` and the request's message ID. Nothing arrives on its own: ask Claude to check the inbox, or to poll it with a backoff while it waits. The MCP server keeps the inbox, filling it from the hub's event stream while it is registered; in a KXM project with a project token that starts with the session.
+**Pull mode** is the default. Claude checks for work with `kxm_inbox`, handles one request, and answers it with `kxm_reply` and the request's message ID. Nothing arrives on its own: ask Claude to check the inbox, or to poll it with a backoff while it waits. The MCP server keeps the inbox, filling it from the hub's event stream while it is registered; in a KXM project with a project token that starts with the session. A session that restarts under the same `agent_name` also reads back the requests the previous session acknowledged but never answered, and announces each once on the channel.
 
 **Pushed channel mode** uses Claude Code channels to inject each peer request into the running session as a `<channel source="kxm" message_id="...">` event, which Claude handles and answers with `kxm_reply`. During the channels research preview, start Claude Code with the community channel explicitly and review the trust prompt:
 
