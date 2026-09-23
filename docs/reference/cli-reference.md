@@ -3340,17 +3340,18 @@ price catalog stamped 2026-09-23 (list estimate only; vendor rates were not fetc
 ## `kxm backup`
 
 ```text
-kxm backup [--out <dir>]
+kxm backup [--out <dir>] [--all-projects]
 ```
 
-Creates a verified SQLite backup of the project hub store and the Runtime stores under the user state root, with a hashed `kxm.backup-manifest.v1` manifest. Relative to the current directory it discovers the hub store `.kxm/state/kxm.db`, and any `registry.db`, `bindings.db`, and `events/*.db` under `.kxm/runtime/`. Under the user state root (`KXM_STATE_HOME` or the platform default) it discovers `runtime/registry.db`, the `run-events.db` of every project under `runtime/projects/`, and each store's `run-events.db.run-prompts.json` prompt sidecar, which it copies as a plain file. Those Runtime stores belong to every project on the machine, not only this one. It ignores `--workspace` and `KXM_DATA_PATH`. Bindings, `update.yaml` and the other state roots are not included; see [Backup and restore](../operations/backup-and-restore.md).
+Creates a verified SQLite backup of this checkout's hub store and Runtime event store, with a hashed `kxm.backup-manifest.v1` manifest. It acts for the checkout the Runtime would use: the Git root that holds `.kxm/project.yaml`, or the current directory outside one. Under that checkout it discovers the hub store `.kxm/state/kxm.db`, and any `registry.db`, `bindings.db`, and `events/*.db` under `.kxm/runtime/`. Under the user state root (`KXM_STATE_HOME` or the platform default) it discovers the checkout's own `runtime/projects/<key>/run-events.db`, with `<key>` derived from the canonical checkout path as the Runtime derives it, and that store's `run-events.db.run-prompts.json` prompt sidecar, which it copies as a plain file. The shared `runtime/registry.db` and other projects' event stores are left out unless you pass `--all-projects`. It ignores `--workspace` and `KXM_DATA_PATH`. Bindings, `update.yaml` and the other state roots are not included; see [Backup and restore](../operations/backup-and-restore.md).
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--out` | `<dir>` | `.kxm/backups/backup-<timestamp>` | Directory to write backup and manifest |
+| `--all-projects` | | Off | Also back up the Runtime registry and the event store and prompt sidecar of every project under `runtime/projects/`. Restoring that backup needs `kxm restore --all-projects` |
 
-- Writes a copy of each store and sidecar and `manifest.json`. `--dry-run` lists the stores and files it found and the files it would write without opening any store, so no WAL is checkpointed (JSON: `outDir`, `stores` with `storeId`, `sourcePath`, `backupFile`, `files` with `id`, `sourcePath`, `backupFile`, plus `dryRun` and `planned`).
-- JSON keys: `ok`, `backupId`, `outDir`, `manifest` (`schema`, `backupId`, `createdAt`, `projectRoot`, `stores` with `storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `sha256`, `bytes`, `integrity`; `files` with `id`, `sourcePath`, `backupFile`, `sha256`, `bytes`; `complete`; `omitted`; `manifestSha256`).
+- Writes a copy of each store and sidecar and `manifest.json`. `--dry-run` lists the stores and files it found and the files it would write without opening any store, so no WAL is checkpointed (JSON: `scope`, `outDir`, `stores` with `storeId`, `sourcePath`, `backupFile`, `files` with `id`, `sourcePath`, `backupFile`, plus `dryRun` and `planned`).
+- JSON keys: `ok`, `backupId`, `outDir`, `manifest` (`schema`, `backupId`, `createdAt`, `projectRoot`, `scope` (`project` or `all-projects`), `stateRoot`, `runtimeProjectKey`, `stores` with `storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `sha256`, `bytes`, `integrity`; `files` with `id`, `sourcePath`, `backupFile`, `sha256`, `bytes`; `complete`; `omitted`; `manifestSha256`).
 - A store or sidecar that cannot be copied, or that appears while the backup runs, is listed in `omitted` and the manifest records `complete: false`. The command then prints `Backup is incomplete (<n> omitted); not ok:`, sets `ok: false`, and exits 1; `kxm restore` refuses that manifest.
 - Exit 1 with `backup_failed`; `issues` carry codes such as `backup_no_stores` (no store found, or none could be copied) and `database_corrupted`.
 
@@ -3359,31 +3360,29 @@ kxm backup --out ../bk
 ```
 
 ```text
-Created SQLite backup with 3 store(s):
+Created SQLite backup with 2 store(s) (project scope):
   - hub-store: /work/proj/.kxm/state/kxm.db -> kxm.db (schema v5, 110592 bytes, sha256 sha256:56c6d...)
-  - registry: /home/me/.local/state/kxm/runtime/registry.db -> registry.db (schema v1, 20480 bytes, sha256 sha256:a5bde...)
   - events:38ed26cb8eeaa297f3b0b452: /home/me/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db -> run-events.db (schema v7, 348160 bytes, sha256 sha256:27c13...)
 Manifest: /work/bk/manifest.json
 ```
 
 The summary lists stores; the prompt sidecar appears under `files` in the manifest.
 
-In a project with a hub store and one Runtime project:
+In a project with a hub store and a Runtime event store:
 
 ```bash
 kxm backup --dry-run
 ```
 
 ```text
-dry run: back up 3 store(s) and 1 file(s) to /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z (sources are not opened, so their WAL is not checkpointed)
+dry run: back up 2 store(s) and 1 file(s) (project scope) to /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z (sources are not opened, so their WAL is not checkpointed)
   would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/kxm.db
-  would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/registry.db
   would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/run-events.db
   would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/run-events.db.run-prompts.json
   would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/manifest.json
 ```
 
-On a machine with no hub store and no Runtime stores yet:
+On a machine with no hub store and no Runtime event store for this checkout yet:
 
 ```bash
 kxm backup --json
@@ -3396,17 +3395,20 @@ kxm backup --json
 ## `kxm restore`
 
 ```text
-kxm restore <manifest>
+kxm restore <manifest> [--all-projects]
 ```
 
-Restores SQLite stores and prompt sidecars from a verified backup manifest. It checks the manifest schema, refuses a manifest that records `complete: false` (`restore_incomplete`), checks that every backup file is present and each file's digest, then restores each store to its recorded source path, then each sidecar. A path under the manifest's project root is rebased onto the current directory when the manifest came from another project root; Runtime stores under the user state root go back to their recorded absolute paths. A manifest without a `complete` field, from an older build, still restores.
+Restores SQLite stores and prompt sidecars from a verified backup manifest into the checkout the Runtime would use, found as for `kxm backup`. It checks the manifest schema, refuses a manifest that records `complete: false` (`restore_incomplete`), checks that every backup file is present and each file's digest, and works out each target. A path under the manifest's project root is rebased onto this checkout. The backed-up checkout's own event store and its sidecar go to the store the Runtime derives for this checkout under the current user state root. Anything else under the user state root, such as the registry or another project's event store, is refused with `restore_requires_all_projects` unless you pass `--all-projects`, which rebases it onto the current user state root. A manifest written before backups were scoped records its Runtime stores as bare absolute paths; they count as machine-wide too, and `--all-projects` writes them back to those paths. A manifest without a `complete` field, from an older build, still restores.
 
-- Arguments: `<manifest>`, path to `manifest.json`.
-- No command-specific options.
-- Overwrites live stores, including the Runtime stores of every project the backup holds; it does not check whether the hub or the Runtime is running. Stop both before restoring.
-- Before overwriting anything, a restore checks every store's recorded schema version against the ceiling for that store, so a store newer than this build is refused (`runtime_schema_newer`) before the first file is replaced. `--dry-run` runs the same manifest, file, digest, and schema checks and plans each target it would overwrite (and any `-wal` or `-shm` sidecar it would delete) without touching them. Dry-run JSON keys: `backupId`, `manifestPath`, `stores` (`storeId`, `targetPath`, `schemaVersion`), `files` (`id`, `targetPath`), `dryRun`, `planned`.
-- JSON keys: `backupId`, `manifestPath`, `restoredStores` (`storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `integrity`).
-- Exit 1 with `restore_failed`; `issues` carry codes such as `runtime_path_invalid`, `restore_manifest_invalid`, `restore_incomplete`, `restore_file_missing`, `restore_manifest_digest_mismatch`, and `runtime_schema_newer`.
+| Option | Argument | Default | Description |
+|---|---|---|---|
+| `--all-projects` | | Off | Also restore the Runtime registry and other projects' event stores the backup holds, rolling back every project on the machine |
+
+- Arguments: `<manifest>`, path to `manifest.json` or the directory that holds it.
+- Refuses before writing anything while the Runtime supervisor is running (`restore_runtime_running`), judged as `kxm runtime status` judges it but through a read-only open of the registry, and while a live `hub.pid` claim sits beside a hub store it would overwrite (`restore_hub_running`). Stop both first.
+- Before overwriting anything, a restore checks every store's recorded schema version against the ceiling for that store, so a store newer than this build is refused (`runtime_schema_newer`) before the first file is replaced. `--dry-run` runs the same manifest, file, digest, schema, scope, supervisor and hub checks and plans each target it would overwrite (and any `-wal` or `-shm` sidecar it would delete) without touching them. Dry-run JSON keys: `backupId`, `manifestPath`, `scope`, `stores` (`storeId`, `targetPath`, `schemaVersion`), `files` (`id`, `targetPath`), `dryRun`, `planned`.
+- JSON keys: `backupId`, `manifestPath`, `scope`, `restoredStores` (`storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `integrity`). `scope` is absent for a manifest written before backups were scoped.
+- Exit 1 with `restore_failed`; `issues` carry codes such as `runtime_path_invalid`, `restore_manifest_invalid`, `restore_incomplete`, `restore_file_missing`, `restore_manifest_digest_mismatch`, `runtime_schema_newer`, `restore_requires_all_projects`, `restore_runtime_running`, `restore_runtime_unverified` (the registry could not be read to check the supervisor), and `restore_hub_running`.
 - Two more checks run per store while restoring, after the plan checks: a backup file whose schema version differs from the version the manifest records is refused with `runtime_schema_mismatch`, and one that fails its SQLite integrity check with `database_corrupted`. In a multi-store restore, stores restored before the refused one stay restored.
 
 ```bash
@@ -3414,11 +3416,20 @@ kxm restore ../bk/manifest.json --dry-run
 ```
 
 ```text
-dry run: restore 3 store(s) and 1 file(s) from /work/bk/manifest.json; digests verified against the manifest
+dry run: restore 2 store(s) and 1 file(s) from /work/bk/manifest.json; digests verified against the manifest
   would write /work/proj/.kxm/state/kxm.db
-  would write /home/me/.local/state/kxm/runtime/registry.db
   would write /home/me/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db
   would write /home/me/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db.run-prompts.json
+```
+
+While the Runtime supervisor is running:
+
+```bash
+kxm restore ../bk/manifest.json
+```
+
+```text
+restore failed: /home/me/.local/state/kxm/runtime/registry.db: restore_runtime_running: the Runtime supervisor is running (pid 48213); stop it with `kxm runtime stop` and keep it stopped until the restore finishes
 ```
 
 A missing manifest:

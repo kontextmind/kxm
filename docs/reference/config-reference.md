@@ -1731,7 +1731,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | `logs/` | Ignored runtime logs | The hub and workers |
 | `state/` | Ignored restart state: the hub database `kxm.db`, Pi sessions, worker manifests | The hub and workers |
 | `run/` | Ignored sockets (`run/ssh-sockets/`) | `kxm ssh` |
-| `backups/` | Ignored; each `backup-<time>/` holds copies of the hub database, the Runtime stores and their prompt sidecars, and `manifest.json` | `kxm backup` (without `--out`) |
+| `backups/` | Ignored; each `backup-<time>/` holds copies of the hub database, this project's Runtime event store and prompt sidecar (every project's, and the registry, with `--all-projects`), and `manifest.json` | `kxm backup` (without `--out`) |
 | `config/` | Legacy: its JSON files make the project unloadable | Nothing current |
 | `.kxm-init-transaction/` (sibling of `.kxm/` at the Git root) | Ignored; interrupted `kxm init` state | `kxm init` |
 

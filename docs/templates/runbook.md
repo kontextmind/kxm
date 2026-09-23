@@ -77,5 +77,6 @@ flowchart TD
 ## Rollback and escalation
 
 - **Rollback:** restore the last verified backup with
-  `kxm restore <manifest>` while the hub is stopped.
+  `kxm restore <manifest>` while the hub and the Runtime are stopped; it
+  refuses while either is running.
 - **Escalation:** <primary on-call or human operator contact>

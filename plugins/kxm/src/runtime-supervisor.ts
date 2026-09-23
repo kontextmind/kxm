@@ -8,12 +8,15 @@ import { loadKxmProject, KxmConfigError, type KxmConfigOptions } from "./project
 import {
   KxmRuntimeRegistry,
   projectRuntimeKey,
+  readKxmSupervisorRecord,
   runtimeError,
   verifyKxmDriveReceipt,
   kxmRuntimePaths,
   type KxmRunEventStore,
   type KxmRuntimePaths,
+  type KxmSupervisorRecord,
 } from "./runtime-store.ts";
+import { openReadOnlyDatabase } from "./sqlite.ts";
 import {
   acceptKxmRun,
   cancelKxmRun,
@@ -122,26 +125,44 @@ function readRecentSupervisorError(paths: KxmRuntimePaths): string | undefined {
   }
 }
 
-export function kxmSupervisorStatus(paths: KxmRuntimePaths): KxmSupervisorStatus {
+function supervisorStatusOf(record: KxmSupervisorRecord | undefined): KxmSupervisorStatus {
+  if (!record) return { running: false };
+  // Pid-only liveness is not enough: after a crash the pid may be reused by
+  // an unrelated process. A stale heartbeat is authoritative.
+  const heartbeatAgeMs = Date.now() - Date.parse(record.heartbeatAt);
+  const fresh = Number.isFinite(heartbeatAgeMs) && heartbeatAgeMs < HEARTBEAT_STALE_MS;
+  const alive = record.state === "running" && fresh && processAlive(record.pid);
+  return {
+    running: alive,
+    runtimeId: record.runtimeId,
+    pid: record.pid,
+    port: record.port,
+    state: alive ? record.state : "dead",
+    heartbeatAt: record.heartbeatAt,
+    startedAt: record.startedAt,
+  };
+}
+
+/**
+ * Is the supervisor up? `readOnly` gives the same answer without opening the
+ * registry for writing: the ordinary open takes the write lock and, as the last
+ * connection, checkpoints the WAL on close. `kxm restore` asks this way, dry run
+ * or not, because a project-scoped restore never otherwise touches the registry.
+ */
+export function kxmSupervisorStatus(paths: KxmRuntimePaths, options: { readOnly?: boolean } = {}): KxmSupervisorStatus {
   if (!existsSync(paths.registryDb)) return { running: false };
+  if (options.readOnly) {
+    const database = openReadOnlyDatabase(paths.registryDb);
+    try {
+      database.exec("PRAGMA busy_timeout = 5000");
+      return supervisorStatusOf(readKxmSupervisorRecord(database));
+    } finally {
+      database.close();
+    }
+  }
   const registry = new KxmRuntimeRegistry(paths.registryDb);
   try {
-    const record = registry.supervisor();
-    if (!record) return { running: false };
-    // Pid-only liveness is not enough: after a crash the pid may be reused by
-    // an unrelated process. A stale heartbeat is authoritative.
-    const heartbeatAgeMs = Date.now() - Date.parse(record.heartbeatAt);
-    const fresh = Number.isFinite(heartbeatAgeMs) && heartbeatAgeMs < HEARTBEAT_STALE_MS;
-    const alive = record.state === "running" && fresh && processAlive(record.pid);
-    return {
-      running: alive,
-      runtimeId: record.runtimeId,
-      pid: record.pid,
-      port: record.port,
-      state: alive ? record.state : "dead",
-      heartbeatAt: record.heartbeatAt,
-      startedAt: record.startedAt,
-    };
+    return supervisorStatusOf(registry.supervisor());
   } finally {
     registry.close();
   }
