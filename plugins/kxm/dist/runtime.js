@@ -32079,7 +32079,7 @@ var DEFAULT_MODES_CONFIG = Object.freeze({
     browser: {
       description: "Web application exploration, screenshotting, and UI testing",
       baseTools: ["read", "bash"],
-      contextFiles: ["docs/browser-automation.md"],
+      contextFiles: ["docs/guides/browser-automation.md"],
       thinkingLevel: "medium",
       model: "grok/grok-4.6"
     }

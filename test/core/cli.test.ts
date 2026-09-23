@@ -1571,7 +1571,7 @@ test("release workflow retries reuse one explicit delivery identifier", () => {
   assert.match(review.instructions, /provenance-review:<runId>:review:<attempt>/);
   assert.match(review.instructions, /Treat every returned messageId as the durable handle/);
   assert.match(review.instructions, /kxm_get to verify each stored message has the exact run, stage, requirement, and attempt binding/);
-  assert.match(review.instructions, /kxm_await with that messageId and timeoutMs 120000/);
+  assert.match(review.instructions, /kxm_await with that messageId and timeoutMs 60000 \(its maximum\)/);
   assert.match(review.instructions, /repeat the exact fanout parameters/);
   assert.match(launcher, /toolTimeoutMs = 180000/);
   assert.match(launcher, /fanoutTimeoutMs = 120000/);

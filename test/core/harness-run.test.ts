@@ -1767,10 +1767,10 @@ const EXPECTED_RECIPES = [
 const DOCUMENTED_RECIPE_SOURCES = [
   "AGENTS.md",
   ".claude/harness-cli.md",
-  "docs/assignment-runner.md",
+  "docs/contributing/assignment-runner.md",
   "docs/contracts/routing.md",
-  "docs/troubleshooting.md",
-  "docs/workflow-guide.md",
+  "docs/operations/troubleshooting.md",
+  "docs/reference/workflow-catalog.md",
   "plans/implementation-plan.md",
   "CHANGELOG.md",
 ];

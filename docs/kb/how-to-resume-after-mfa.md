@@ -7,22 +7,30 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-14"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
-summary: "Details the verification and observation refresh sequence when resuming automation after MFA."
+summary: "The verification and observation refresh an agent performs before resuming after MFA."
 tags: ["browser", "mfa", "resume", "verification"]
-related: ["docs/kb/how-to-take-over-session.md", "docs/browser-automation.md"]
+related: ["docs/kb/how-to-take-over-session.md", "docs/guides/browser-automation.md"]
 ---
 
 # How does an agent resume after MFA?
 
-Once the human completes the MFA challenge in the browser viewer, the agent must not immediately execute blind clicks. It follows this sequence:
+After you complete an MFA challenge in the session viewer, the agent does not
+click blindly. It follows this sequence:
 
-1. **State Transition**: Moves from `HUMAN_CONTROL` to `VERIFY_AUTHENTICATION`.
-2. **CDP Re-attachment**: Re-queries the active tab target from the remote Steel CDP endpoint.
-3. **App State Verification**:
-   - Inspects `page.url()` to confirm the browser navigated away from the MFA prompt to the intended destination (e.g. `/dashboard` or `/overview`).
-   - Checks for authenticated elements (e.g. account menu, logout button, user profile avatar).
-4. **Observation Refresh**: Runs a fresh `agent-browser snapshot` or queries fresh DOM locators before executing the next action.
-5. **Restore Control**: Returns to `AGENT_CONTROL` and proceeds with the task.
+1. **State transition.** The session moves from `HUMAN_CONTROL` to
+   `VERIFY_AUTHENTICATION`. The `SteelClient` keeps this state in memory for
+   its own lifetime; a new client does not inherit it.
+2. **CDP re-attachment.** The agent re-queries the active tab from the Steel
+   CDP endpoint.
+3. **Application state check.**
+   - It confirms that `page.url()` left the MFA prompt for the intended page,
+     for example `/dashboard`.
+   - It looks for signed-in elements such as an account menu or a sign-out
+     button.
+4. **Observation refresh.** It takes a fresh `agent-browser snapshot`, or
+   queries fresh DOM locators, before the next action.
+5. **Control returns.** The session returns to `AGENT_CONTROL` and the task
+   continues.

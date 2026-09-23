@@ -59,7 +59,9 @@ kxm restore .kxm/backups/pre-upgrade/manifest.json
 - `KXM_PROJECT_TOKENS` must list every project's token. It replaces the saved
   token map rather than merging with it, and the replacement is saved. When a
   hub already serves other projects, build the full map with the merge
-  command in the KXM README before restarting the hub.
+  command in the KXM documentation's Claude Code quick start
+  (docs/start/quickstart-claude-code.md, section "Start the hub") before
+  restarting the hub.
 - `kxm hub bind` to a remote (non-loopback) URL fails closed with
   `hub_bind_unauthenticated` unless a credential for the current project
   resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`.

@@ -118,7 +118,7 @@ Two helper prefixes are allowlisted after fail-closed `pi auth check
   `NOUS_INFERENCE_BASE_URL` (default
   `https://inference-api.nousresearch.com/v1`). Bills Portal, not
   OpenRouter. `nous-portal/tencent/hy4-preview` is the reviewed experiment
-  example (`pi -p nous-portal -m tencent/hy4-preview`). Verify live ids
+  example (`pi --model nous-portal/tencent/hy4-preview`). Verify live ids
   and list prices on Portal `/models`. Hy4 is **not** a second Pi writer.
 
 Same auth-or-fail-closed rule. Other `nous-portal` or OpenRouter writer

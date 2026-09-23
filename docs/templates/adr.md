@@ -2,7 +2,7 @@
 schema: "kxm.doc.v1"
 id: "ADR-0001"
 type: "adr"
-title: "Title of Architecture Decision"
+title: "ADR-<nnnn>: <decision title>"
 project: "kxm"
 status: "proposed" # proposed | accepted | superseded | deprecated | rejected
 owner: "@owner"
@@ -19,13 +19,13 @@ details:
   superseded_by: null
 ---
 
-# ADR-0001: <Title of Architecture Decision>
+# ADR-0001: <Title of architecture decision>
 
-## Context & Problem Statement
+## Context and problem statement
 
 <Describe the technical context, operational dilemma, or architectural friction. What forces are compelling this decision?>
 
-## Decision Drivers
+## Decision drivers
 
 1. **Driver 1:** <e.g., Eliminate native compilation failures across Node versions>
 
@@ -33,7 +33,7 @@ details:
 
 3. **Driver 3:** <e.g., Maintain fail-closed security invariants without loopback bypasses>
 
-## Considered Options
+## Considered options
 
 - **Option A:** <Name of Option A>
 
@@ -41,9 +41,9 @@ details:
 
 - **Option C:** <Name of Option C>
 
-## Evaluation & Tradeoff Matrix
+## Evaluation and tradeoff matrix
 
-### Option A: <Name of Option A>
+### Option A: <name of option A>
 
 - **Good, because:** <Advantage 1>
 
@@ -53,33 +53,33 @@ details:
 
 - **Bad, because:** <Drawback 2>
 
-### Option B: <Name of Option B>
+### Option B: <name of option B>
 
 - **Good, because:** <Advantage 1>
 
 - **Bad, because:** <Drawback 1>
 
-## Decision Outcome
+## Decision outcome
 
 **Chosen Option:** **Option A**, because <comprehensive justification referencing drivers>.
 
-### Positive Consequences
+### Positive consequences
 
 - <Favorable outcome 1>
 
 - <Favorable outcome 2>
 
-### Negative Consequences & Accepted Tradeoffs
+### Negative consequences and accepted tradeoffs
 
 - <Technical debt, limitation, or operational overhead incurred>
 
-## Confirmation & Verification Strategy
+## Confirmation and verification strategy
 
 - **Verification Gate:** <Exact test suite or contract check enforcing this decision>
 
 - **Enforcement Mechanism:** <Linter, type-check, or CI rule that prevents regressions>
 
-## Revisit Conditions
+## Revisit conditions
 
 This decision should be formally re-evaluated if:
 

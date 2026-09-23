@@ -271,7 +271,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   a message naming the process that recreates the store (`kxm hub start` for hub state, the Runtime for registry/event stores; `kxm init` is project-only) — and the refusal never
   advances `user_version`, so the store stays identifiably old (WAL sidecars may still be
   checkpointed by opening the file, so the whole state set remains the backup unit — see
-  [`docs/operations.md`](docs/operations.md)). Relabelling a store it refused to open would
+  [`docs/operations.md`](docs/operations/deploy.md)). Relabelling a store it refused to open would
   only hide the problem until a query hit a missing column. The coordinator fingerprint no
   longer recomputes over stored authority to forgive rows written before set canonicalisation:
   a stale coordinator is re-bound. Intake tests go from 23 to 22; the two forced-race tests
@@ -310,7 +310,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **Signed webhooks cannot be replayed.** KXM's own webhook senders now sign the
   timestamp, delivery ID, definition, run and signal key along with the body
   (`x-kxm-signature`, `x-kxm-timestamp`, `x-kxm-delivery-id`; see
-  `docs/webhook-workflows.md#kxm-sender-contract`), and the hub refuses a signature
+  `docs/guides/webhook-workflows.md#kxm-sender-contract`), and the hub refuses a signature
   more than 300 seconds old. Every `generic` workflow start and every signal callback
   must use this contract; a body-only `X-Hub-Signature-256` there is refused. Jira and
   GitHub deliveries keep their provider signature, and a signed body starts at most one

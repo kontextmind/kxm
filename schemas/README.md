@@ -28,7 +28,7 @@ Runtime-local records, and JSON events/results for the planned KXM contract.
 one validation layer; cross-file references, state-machine semantics,
 permission diffs, model diversity, path portability, and snapshot reproduction
 are deterministic semantic checks described in
-[`docs/contracts/validation.md`](../../docs/contracts/validation.md).
+[`docs/contracts/validation.md`](../docs/contracts/validation.md).
 
 Unknown fields fail closed. A new field requires a reviewed schema revision;
 do not add generic metadata escape hatches to event or synchronization payloads.

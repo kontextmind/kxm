@@ -2,84 +2,83 @@
 schema: "kxm.doc.v1"
 id: "REV-0001"
 type: "review"
-title: "Dual-Critic Review Report"
+title: "Dual-critic review report"
 project: "kxm"
-status: "approved" # draft | in_review | approved | rejected
+status: "draft" # draft | in_review | approved | superseded | archived
 owner: "@critics"
 created: "2026-09-08"
 updated: "2026-09-08"
 authority: "evidence"
 confidence: "verified"
-summary: "Independent dual-critic evaluation for candidate commit <git-sha>."
+summary: "Independent dual-critic review of candidate tree <tree-sha>."
 tags: ["review", "critics", "quorum"]
 related: []
 details:
-  quorum_verdict: "passed" # passed | rework_required | blocked
-  target_commit: "<git-sha>"
+  outcome: "accepted" # accepted | repair_required
+  target_commit: "<commit-sha>"
+  judged_tree: "<tree-sha>"
   critics:
-    - role: "reviewer-arch"
+    - kind: "review-arch"
+      role: "reviewer-arch"
       harness: "claude"
-      model: "claude-fable-5-1"
-      verdict: "pass_with_stipulations"
-    - role: "reviewer-cli"
+      model: "fable"
+      verdict: "PASS" # PASS | BLOCK
+    - kind: "review-cli"
+      role: "reviewer-cli"
       harness: "codex"
       model: "gpt-5.6-sol"
-      verdict: "pass"
+      verdict: "PASS" # PASS | BLOCK
 ---
 
-# Dual-Critic Review Report
+# Dual-critic review report
 
-## Review Scope & Provenance
+## Review scope and provenance
 
-- **Candidate Commit:** `<git-sha>`
+- **Candidate commit:** `<commit-sha>`
+- **Judged tree:** `<tree-sha>`. Each critic records the exact tree it
+  reviewed; a verdict on any other tree does not count.
+- **Branch:** `kxm/run-<run-id>-<description>`
+- **Independence rule:** each critic comes from a different vendor than the
+  writer and than each other. For example, a Grok (xAI) writer with Claude
+  (Anthropic) and Codex (OpenAI) critics.
 
-- **Candidate Tree Hash:** `<tree-sha>`
+## Critic 1: architecture (`review-arch`)
 
-- **Deterministic Branch:** `kxm/run-<id>-<description>`
-
-- **Independent Provider Rule:** Reviewers MUST originate from different providers than the implementer (Grok/xAI implementer $\rightarrow$ Claude/Anthropic + Codex/OpenAI critics).
-
-## Critic 1: Claude Fable 5.1 (Planning & Architecture Critic)
-
-- **Role:** `reviewer-arch`
-
-- **Focus Areas:** Fail-closed security boundaries, memory isolation, permission ceilings, state consistency.
-
-- **Verdict:** **PASS WITH STIPULATIONS**
-
-### Findings
-
-| ID | Severity | Category | Path | Line | Description |
-
-|---|---|---|---|---|---|
-| F-01 | warning | concurrency | `plugins/kxm/src/external-effects.ts` | 68 | Uncommitted CAS lease must enforce a 5-minute timeout on worker crash. |
-
-| F-02 | info | architecture | `plugins/kxm/src/arbiter.ts` | 240 | Project knowledge correctly prioritized ahead of `_shared` defaults. |
-
-## Critic 2: GPT Astra / Codex (CLI, Ergonomics & Failure Modes)
-
-- **Role:** `reviewer-cli`
-
-- **Focus Areas:** CLI flags, error messages, terminal output, performance, failure resilience.
-
-- **Verdict:** **PASS**
+- **Role:** `reviewer-arch`, read-only
+- **Focus:** fail-closed security boundaries, permission ceilings, state
+  consistency, memory isolation.
+- **Verdict:** `PASS` or `BLOCK`
 
 ### Findings
 
-| ID | Severity | Category | Path | Line | Description |
+| ID | Severity | Location | Finding |
+|---|---|---|---|
+| A-01 | warning | `<path>:<symbol>` | <What is wrong and why it matters> |
+| A-02 | info | `<path>:<symbol>` | <Observation that needs no change> |
 
-|---|---|---|---|---|---|
-| A-01 | info | ergonomics | `plugins/kxm/src/external-effects.ts` | 80 | Descriptive branch slugging provides clean readability in `git branch`. |
+## Critic 2: CLI and docs (`review-cli`)
 
-## Quorum & Dissent Reconciliation
+- **Role:** `reviewer-cli`, read-only
+- **Focus:** CLI flags, error messages, terminal output, documentation,
+  failure modes.
+- **Verdict:** `PASS` or `BLOCK`
 
-| Finding ID | Raised By | Severity | Author Response / Resolution | Status |
+### Findings
 
-|---|---|---|---|---|
-| F-01 | Claude Fable | warning | Implemented 300s expiration check in `claimEffect()`. | Resolved |
+| ID | Severity | Location | Finding |
+|---|---|---|---|
+| C-01 | info | `<path>:<symbol>` | <Observation> |
 
-## Final Quorum Signoff
+## Resolution of findings
 
-- **Quorum Status:** **RECONCILED PASS**
+| Finding | Raised by | Resolution | Status |
+|---|---|---|---|
+| A-01 | `review-arch` | <Change made, or why none is needed> | Resolved |
 
-- **Action:** Ready for acceptance binding via `just accept` or workflow stage transition.
+## Outcome
+
+- **Both critics `PASS` on the judged tree:** ready for acceptance, through
+  the workflow's next step or, in the KXM repository, `just accept`.
+- **Either critic `BLOCK`:** send the work back for repair, re-run the witness,
+  and review the new tree. In the KXM repository that is a `repair` assignment
+  with `rework_of`; see [Assignment runner](../contributing/assignment-runner.md).

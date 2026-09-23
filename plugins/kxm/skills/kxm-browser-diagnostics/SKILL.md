@@ -13,8 +13,8 @@ Use this skill to investigate and resolve connectivity failures, CDP attachment 
 
 - **Symptom**: `Failed to fetch Steel session (401)` or `Connection refused`.
 - **Diagnosis**:
-  - Verify Steel API endpoint is reachable: `curl -sI https://steel.kontextmind.com/v1/health`.
-  - Check `STEEL_API_KEY` in `pass-cli`: `pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)"`.
+  - Verify Steel API endpoint is reachable: `curl -sI "$STEEL_API_URL/v1/health"`.
+  - Check that `STEEL_API_KEY` is set in the environment (`test -n "$STEEL_API_KEY" && echo set`); never print its value.
 - **Remedy**: Update expired or missing API key in your session environment.
 
 ### 2. CDP WebSocket Attachment Failure
@@ -35,14 +35,14 @@ Use this skill to investigate and resolve connectivity failures, CDP attachment 
 
 ### 4. Interactive Takeover Viewer Inaccessible
 
-- **Symptom**: `https://steel.kontextmind.com/ui` opens but cannot interact with elements.
+- **Symptom**: `$STEEL_UI_URL` opens but cannot interact with elements.
 - **Diagnosis**: Self-hosted Steel OSS serves the session screencast and devtools.
-- **Remedy**: Connect directly to the devtools inspector URL: `https://steel.kontextmind.com/v1/devtools/inspector.html` or open the browser devtools panel to perform input actions.
+- **Remedy**: Connect directly to the devtools inspector URL: `$STEEL_API_URL/v1/devtools/inspector.html` or open the browser devtools panel to perform input actions.
 
 ### 5. Orphaned Browser Processes & Cleanup
 
 - **Symptom**: Node memory pressure or high active session counts.
-- **Diagnosis**: Query active sessions list: `curl -s https://steel.kontextmind.com/v1/sessions`.
+- **Diagnosis**: Query active sessions list: `printf 'x-steel-api-key: %s\n' "$STEEL_API_KEY" | curl -sS -H @- "$STEEL_API_URL/v1/sessions"`.
 - **Remedy**:
   - Iterate through inactive sessions and post `/release` for each stale ID.
   - Ensure all automation scripts wrap browser usage in `try...finally` to release sessions reliably.

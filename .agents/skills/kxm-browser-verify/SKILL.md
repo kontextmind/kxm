@@ -11,7 +11,7 @@ Use this skill to systematically reproduce UI issues, collect diagnostic evidenc
 
 - Support the standard KXM verification loop:
   `Request -> Reproduce -> Collect Diagnostic Evidence -> Create Playwright Test -> Demonstrate Failure -> Implement Fix -> Demonstrate Success`.
-- Connect Playwright tests to self-hosted Steel on DOKS via `chromium.connectOverCDP()`.
+- Connect Playwright tests to your self-hosted Steel deployment via `chromium.connectOverCDP()`.
 - Produce deterministic, reproducible test suites and sanitized evidence artifacts (traces, videos, screenshots).
 
 ## Test Lifecycle & Workflow

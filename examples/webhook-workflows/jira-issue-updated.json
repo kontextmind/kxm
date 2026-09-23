@@ -1,0 +1,12 @@
+{
+  "webhookEvent": "jira:issue_updated",
+  "issue": {
+    "key": "PROD-123",
+    "fields": {
+      "summary": "Checkout total ignores the discount code",
+      "status": {
+        "name": "In Progress"
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
 schema: "kxm.doc.v1"
 id: "BUG-0001"
 type: "bug"
-title: "Observable Failure / Defect Summary"
+title: "Bug: <observable failure>"
 project: "kxm"
 status: "draft" # draft | in_review | approved | superseded | archived
 owner: "@owner"
@@ -19,9 +19,9 @@ details:
   reproducibility: "always" # always | intermittent | environment_specific
 ---
 
-# Bug: <Observable Failure / Defect Summary>
+# Bug: <Observable failure / defect summary>
 
-## Impact & Affected Scope
+## Impact and affected scope
 
 - **User / Operator Impact:** <What fails, crashes, or produces incorrect outputs?>
 
@@ -29,35 +29,35 @@ details:
 
 - **Workaround:** <Temporary safe mitigation if available>
 
-## Expected vs. Actual Behavior
+## Expected and actual behavior
 
 - **Expected:** <Precise, observable contract expectation>
 
 - **Actual:** <Exact error message, stack trace, or wrong output>
 
-## Environment & Baseline State
+## Environment and baseline state
 
 - **Baseline Commit:** `<git-sha-before-fix>`
 
-- **Node / Runtime Version:** `Node 22.19.0 / Node 24.15.0`
+- **Node version:** `<for example 22.19.0 or 24>`
 
 - **Active Harness / Model:** `<Harness and model if relevant>`
 
 - **OS:** `macOS / Linux`
 
-## Mandatory Repro Before Fix (Oracle Invariant)
+## Mandatory reproduction before the fix
 
 To prevent phantom fixes, a failing reproduction test MUST be established before modifying production code:
 
 - **Failing Test File:** `test/core/<bug-name>.test.ts`
 
-- **Reproduction Command:** `node --test test/core/<bug-name>.test.ts`
+- **Reproduction Command:** `node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/core/<bug-name>.test.ts`
 
 - **Baseline Observed Result:** `FAIL` (exit code 1)
 
 - **Repro Failure Receipt:** `artifact:.kxm/assets/repro-fail.log@sha256:...`
 
-## Failure Path Sequence
+## Failure path sequence
 
 ```mermaid
 sequenceDiagram
@@ -74,7 +74,7 @@ sequenceDiagram
 
 *Failure sequence: Unhandled contention leads to ungraceful crash instead of deterministic retry or clean fail-closed error.*
 
-## Root Cause Analysis
+## Root cause analysis
 
 - **Immediate Cause:** <What line or condition directly triggered the symptom?>
 
@@ -82,7 +82,7 @@ sequenceDiagram
 
 - **Rejected Hypotheses:** <What initial assumptions were investigated and ruled out?>
 
-## Proposed Fix & Contract Changes
+## Proposed fix and contract changes
 
 - **Code Changes:** <Summary of modifications to code or schemas>
 
@@ -90,19 +90,16 @@ sequenceDiagram
 
 - **Security / Isolation:** <Does the fix maintain fail-closed invariants?>
 
-## Verification Witness Matrix
+## Verification witness matrix
 
 | Verification Check | Target Commit / Tree | Expected Result | Actual Result | Witness Artifact |
-
 |---|---|---|---|---|
 | Repro Test (Before Fix) | `<baseline-commit>` | FAIL | FAIL | `artifact:...@sha256` |
-
 | Repro Test (After Fix) | `<candidate-commit>` | PASS | PASS | `artifact:...@sha256` |
 | Full Core Test Suite | `<candidate-commit>` | 100% PASS | 100% PASS | `npm run test:core` |
-
 | Full Verify Gate | `<candidate-commit>` | PASS | PASS | `npm run verify` |
 
-## Regression Prevention
+## Regression prevention
 
 - **Automated Gate Added:** <New unit test or lint check preventing recurrence>
 

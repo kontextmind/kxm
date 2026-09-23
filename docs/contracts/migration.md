@@ -28,8 +28,8 @@ does exist:
   store needs is declared in its current schema definition, so an empty store is
   valid without any upgrade step.
 - **Backups stay whole.** The hub state set is copied as documented in
-  [`docs/operations.md`](../operations.md); a single `kxm.db` copy is not a
-  backup.
+  [Back up and restore KXM](../operations/backup-and-restore.md); a single `kxm.db`
+  copy is not a backup.
 - **Out-of-range versions refuse without touching the file.** The stamp is read
   before anything that can modify the store, so a database this build refuses —
   older or newer — comes back byte-identical: neither its schema nor its

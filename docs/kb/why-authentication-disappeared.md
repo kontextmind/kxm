@@ -7,26 +7,34 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-14"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
-summary: "Diagnosing lost authentication state, session expiration, and ephemeral container recreation."
+summary: "Diagnose lost sign-in state: session expiry, a new session instead of an attached one, and cookie scoping."
 tags: ["browser", "authentication", "cookies", "troubleshooting"]
-related: ["docs/browser-automation.md", "docs/kb/why-automation-opened-different-browser.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/why-automation-opened-different-browser.md"]
 ---
 
 # Why did authentication disappear?
 
-If an agent was authenticated on a previous step or run and suddenly encounters a login screen again, the root causes are typically:
+If an agent was signed in on an earlier step or run and now sees a login screen
+again, one of these is usually the cause.
 
-## Root Causes & Fixes
+## Causes and fixes
 
-1. **Session Released or Expired**:
-   - Steel sessions are ephemeral by default. Once a session reaches its timeout (e.g. 5–30 minutes) or is released via `POST /v1/sessions/:id/release`, all memory cookies and local storage are cleared.
-   - **Fix**: To reuse state across tasks, save `storageState` via Playwright and reload it on the next session initialization.
-2. **New Session Launched Instead of Attaching**:
-   - If the agent created a brand-new session instead of passing the existing `sessionId`, it opened a clean Chrome profile.
-   - **Fix**: Verify that the task passes `sessionId` to `getSession()` or uses the existing CDP endpoint.
-3. **Domain / Subdomain Cookie Scoping**:
-   - OAuth flows often set cookies on subdomains (e.g., `auth.example.com`) that do not automatically share with `app.example.com`.
-   - **Fix**: Ensure cookies were issued for the primary domain or that SSO redirect completed fully before saving state.
+1. **The session was released or expired.**
+   - Steel sessions are ephemeral. When a session reaches its timeout (the KXM
+     client defaults to five minutes) or is released through
+     `POST /v1/sessions/<session-id>/release`, its cookies and local storage
+     are gone.
+   - **Fix:** to reuse sign-in state across tasks, save Playwright
+     `storageState` and load it when you start the next session.
+2. **A new session was launched instead of attaching to the existing one.**
+   - A new session starts with a clean browser profile.
+   - **Fix:** make sure the task passes the existing `sessionId` to
+     `getSession()`, or connects to the existing CDP endpoint.
+3. **Cookies were scoped to another domain.**
+   - Sign-in flows often set cookies on a subdomain, such as
+     `auth.example.com`, that `app.example.com` does not receive.
+   - **Fix:** make sure the cookies were issued for the primary domain, or that
+     the single sign-on redirect finished, before you save state.
