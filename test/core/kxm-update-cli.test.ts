@@ -51,7 +51,7 @@ function writeUserUpdateYaml(stateHome: string, body: string): void {
   writeFileSync(join(stateHome, "update.yaml"), body);
 }
 
-function fakeNpmGlobal(): {
+function fakeNpmGlobal(version = currentVersion): {
   root: string;
   pkgRoot: string;
   npmRoot: string;
@@ -61,7 +61,10 @@ function fakeNpmGlobal(): {
   const root = mkdtempSync(join(tmpdir(), "kxm-npm-global-"));
   const pkgRoot = join(root, "node_modules", "@kontextmind", "kxm");
   mkdirSync(join(pkgRoot, "plugins", "kxm", "dist"), { recursive: true });
-  writeFileSync(join(pkgRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+  // The fixture install carries the version the assertions below expect. They used
+  // to get it from the process's own checkout through `resolve(".")`, which made
+  // them pass without ever reading the install they were about to classify.
+  writeFileSync(join(pkgRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version })}\n`);
   return {
     root,
     pkgRoot,
@@ -451,7 +454,10 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
   try {
     const piRoot = join(home, ".pi", "agent", "git", "github.com", "kontextmind", "kxm");
     mkdirSync(join(piRoot, ".git"), { recursive: true });
-    writeFileSync(join(piRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+    // The fixture install reports the version the feed will name, so "already
+    // current" is a property of the install and not of the directory the test
+    // process happens to be standing in.
+    writeFileSync(join(piRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: currentVersion })}\n`);
     const piIo = capture();
     const piSpawn = npmGlobalSpawn(join(home, "node_modules"));
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
@@ -504,7 +510,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
     }
 
     const unknownRoot = mkdtempSync(join(home, "plain-"));
-    writeFileSync(join(unknownRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+    writeFileSync(join(unknownRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: currentVersion })}\n`);
     const unknownIo = capture();
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
       ...unknownIo,
@@ -567,7 +573,10 @@ test("update --kxm refuses unsupported kinds when current or the release check f
   try {
     const piRoot = join(home, ".pi", "agent", "git", "github.com", "kontextmind", "kxm");
     mkdirSync(join(piRoot, ".git"), { recursive: true });
-    writeFileSync(join(piRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+    // The fixture install reports the version the feed will name, so "already
+    // current" is a property of the install and not of the directory the test
+    // process happens to be standing in.
+    writeFileSync(join(piRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: currentVersion })}\n`);
     const piIo = capture();
     const piSpawn = npmGlobalSpawn(join(home, "node_modules"));
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
@@ -589,7 +598,7 @@ test("update --kxm refuses unsupported kinds when current or the release check f
     assert.equal(piSpawn.calls.some((call) => call.command === "npm" && call.args.includes("install")), false);
 
     const unknownRoot = mkdtempSync(join(home, "plain-"));
-    writeFileSync(join(unknownRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+    writeFileSync(join(unknownRoot, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: currentVersion })}\n`);
     const unknownCurrent = capture();
     const unknownCurrentSpawn = npmGlobalSpawn(join(home, "node_modules"));
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
@@ -963,6 +972,34 @@ test("hub start prints the cached notice before spawning and refreshes in the ba
     assert.equal(io.read().stderr, `${availableNotice.message}\n`);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    fake.cleanup();
+  }
+});
+
+test("kxm update reads the installed version from the install root, never the caller's directory", async () => {
+  const fake = fakeNpmGlobal("0.0.1");
+  const bare = tempProject();
+  const stranger = tempProject();
+  try {
+    // The two shapes that broke: a directory with no package.json at all
+    // (`cd ~ && kxm update --kxm` died with an uncaught ENOENT), and a directory
+    // with somebody else's package.json, where the same code silently compared
+    // that stranger's version against the release feed.
+    writeFileSync(join(stranger, "package.json"), `${JSON.stringify({ name: "unrelated-app", version: "9.9.9" })}\n`);
+
+    for (const [cwd, label] of [[bare, "no package.json"], [stranger, "a stranger's package.json"]] as const) {
+      const io = capture();
+      const code = await runCli(["update", "--json", "--check"], {}, withGlobal(io, fake, {
+        fetchImpl: releaseFetch("v99.0.0"),
+      }), cwd);
+      assert.equal(code, 0, `update --check crashed from a cwd with ${label}: ${io.read().stderr.slice(0, 200)}`);
+      const payload = JSON.parse(io.read().stdout) as { current?: string; installKind?: string };
+      assert.match(payload.installKind ?? "", /^npm-/, "the fixture is an npm install, not a source checkout");
+      assert.equal(payload.current, "0.0.1", `the version must come from the fixture install, not ${label} in cwd`);
+    }
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+    rmSync(stranger, { recursive: true, force: true });
     fake.cleanup();
   }
 });

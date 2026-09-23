@@ -14781,9 +14781,9 @@ var require_dist = __commonJS({
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash12, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync12, lstatSync as lstatSync5, mkdirSync as mkdirSync6, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync13, lstatSync as lstatSync5, mkdirSync as mkdirSync7, readFileSync as readFileSync10, renameSync as renameSync4, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname8, isAbsolute as isAbsolute6, join as join16 } from "node:path";
+import { dirname as dirname9, isAbsolute as isAbsolute6, join as join15 } from "node:path";
 
 // plugins/kxm/src/repo-root.ts
 import { existsSync } from "node:fs";
@@ -14791,7 +14791,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 var ROOT_MARKERS = ["scripts/kxm-hub.mjs", "scripts/kxm.mjs"];
 var MAX_WALK_DEPTH = 10;
-function findKxmRepoRoot(fromUrl = import.meta.url) {
+function tryFindKxmRepoRoot(fromUrl = import.meta.url) {
   let dir = dirname(fileURLToPath(fromUrl));
   for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
     if (ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))) return dir;
@@ -14799,6 +14799,11 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
     if (parent === dir) break;
     dir = parent;
   }
+  return void 0;
+}
+function findKxmRepoRoot(fromUrl = import.meta.url) {
+  const found = tryFindKxmRepoRoot(fromUrl);
+  if (found !== void 0) return found;
   throw new Error(
     `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
   );
@@ -16919,8 +16924,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join17 = objectValue(step.join);
-    const minimumPassed = join17 && typeof join17.minimumPassed === "number" ? join17.minimumPassed : void 0;
+    const join16 = objectValue(step.join);
+    const minimumPassed = join16 && typeof join16.minimumPassed === "number" ? join16.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -18280,7 +18285,7 @@ function verifyKxmDriveReceipt(receipt, events, foldedStatus, binding) {
   if (reasons.length === 0) return { verified: true };
   return { verified: false, divergence: reasons.join("; ") };
 }
-var KXM_EVENT_STORE_SCHEMA_VERSION = 6;
+var KXM_EVENT_STORE_SCHEMA_VERSION = 7;
 var KXM_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
 var DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 var EVENT_STORE_TABLES = {
@@ -18386,7 +18391,17 @@ var EVENT_STORE_TABLES = {
     "record"
   ],
   project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"],
-  outbox: ["seq", "run_id", "sequence", "sync_event", "attempted_at", "acked_at"]
+  outbox: [
+    "seq",
+    "run_id",
+    "sequence",
+    "sync_event",
+    "attempted_at",
+    "attempt_count",
+    "acked_at",
+    "refused_code",
+    "refused_at"
+  ]
 };
 var KXM_EVENT_STORE_TABLE_NAMES = Object.keys(EVENT_STORE_TABLES).sort();
 var EVENT_STORE_SCHEMA = `
@@ -18580,10 +18595,14 @@ CREATE TABLE IF NOT EXISTS outbox (
   sequence INTEGER NOT NULL,
   sync_event TEXT NOT NULL,
   attempted_at TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
   acked_at TEXT,
+  refused_code TEXT,
+  refused_at TEXT,
   UNIQUE (run_id, sequence)
 ) STRICT;
-CREATE INDEX outbox_pending ON outbox(seq) WHERE acked_at IS NULL;
+CREATE INDEX outbox_pending ON outbox(seq) WHERE acked_at IS NULL AND refused_code IS NULL;
+CREATE INDEX outbox_refused ON outbox(seq) WHERE refused_code IS NOT NULL;
 `;
 var KxmRunEventStore = class {
   path;
@@ -18723,36 +18742,107 @@ var KxmRunEventStore = class {
     const syncEvent = deriveKxmSyncEvent(event, { redactor: this.syncRedactor });
     this.database.prepare("INSERT INTO outbox (run_id, sequence, sync_event) VALUES (?, ?, ?)").run(event.runId, event.sequence, kxmSyncEventBytes(syncEvent));
   }
-  /** Unacknowledged outbox rows after `afterSeq`, in outbox order, oldest first. */
+  /**
+   * Retryable outbox rows after `afterSeq`, in outbox order, oldest first.
+   * Acked and durably refused rows are never returned: a refused row is not
+   * waiting for a retry, it is waiting for an operator.
+   */
   pendingOutbox(limit = 100, afterSeq = 0) {
     const rows = this.database.prepare(`
-      SELECT seq, run_id, sequence, sync_event, attempted_at, acked_at
-      FROM outbox WHERE acked_at IS NULL AND seq > ? ORDER BY seq ASC LIMIT ?
+      SELECT seq, run_id, sequence, sync_event, attempt_count, attempted_at, acked_at, refused_code, refused_at
+      FROM outbox WHERE acked_at IS NULL AND refused_code IS NULL AND seq > ? ORDER BY seq ASC LIMIT ?
     `).all(afterSeq, limit);
     return rows.map(outboxFromRow);
   }
-  /** Every outbox row of one run, acknowledged or not, in sequence order. */
+  /** Every outbox row of one run, in any state, in sequence order. */
   outboxForRun(runId) {
     const rows = this.database.prepare(`
-      SELECT seq, run_id, sequence, sync_event, attempted_at, acked_at
+      SELECT seq, run_id, sequence, sync_event, attempt_count, attempted_at, acked_at, refused_code, refused_at
       FROM outbox WHERE run_id = ? ORDER BY sequence ASC
     `).all(runId);
     return rows.map(outboxFromRow);
   }
+  /**
+   * Count one attempt against each row. Refused rows are never re-counted: they
+   * are out of the queue, and a tick that reaches them again would mean the
+   * refusal was cleared (which resets the count).
+   */
   markOutboxAttempted(seqs, at) {
-    const statement = this.database.prepare("UPDATE outbox SET attempted_at = ? WHERE seq = ? AND acked_at IS NULL");
+    const statement = this.database.prepare(`
+      UPDATE outbox SET attempted_at = ?, attempt_count = attempt_count + 1
+      WHERE seq = ? AND acked_at IS NULL AND refused_code IS NULL
+    `);
     this.transaction(() => {
       for (const seq of seqs) statement.run(at, seq);
     });
   }
   /** Advance the cursor: the hub holds these rows now. Returns rows newly acked. */
   ackOutbox(seqs, at) {
-    const statement = this.database.prepare("UPDATE outbox SET acked_at = ? WHERE seq = ? AND acked_at IS NULL");
+    const statement = this.database.prepare("UPDATE outbox SET acked_at = ?, refused_code = NULL, refused_at = NULL WHERE seq = ? AND acked_at IS NULL");
     return this.transaction(() => {
       let changed = 0;
       for (const seq of seqs) changed += Number(statement.run(at, seq).changes);
       return changed;
     });
+  }
+  /**
+   * Record a durable hub refusal: the answer will not change if the same bytes
+   * are sent again. Returns rows newly moved out of the pending queue.
+   */
+  refuseOutbox(refusals, at) {
+    const statement = this.database.prepare(`
+      UPDATE outbox SET refused_code = ?, refused_at = ?
+      WHERE seq = ? AND acked_at IS NULL AND refused_code IS NULL
+    `);
+    return this.transaction(() => {
+      let changed = 0;
+      for (const refusal of refusals) changed += Number(statement.run(refusal.code, at, refusal.seq).changes);
+      return changed;
+    });
+  }
+  /**
+   * Operator revive: put refused rows back in the pending queue with a fresh
+   * attempt budget. Used after the hub-side state is corrected — the Runtime
+   * must not decide on its own that a refusal has become retryable.
+   */
+  retryRefusedOutbox() {
+    return Number(this.database.prepare(`
+      UPDATE outbox SET refused_code = NULL, refused_at = NULL, attempted_at = NULL, attempt_count = 0
+      WHERE acked_at IS NULL AND refused_code IS NOT NULL
+    `).run().changes);
+  }
+  /**
+   * The outbox as one read model: what is still retryable, what the hub holds,
+   * and what the hub refused with which codes. This is what makes a stalled
+   * sync answerable without opening SQLite.
+   */
+  outboxStatus() {
+    const counts = this.database.prepare(`
+      SELECT
+        COALESCE(SUM(acked_at IS NULL AND refused_code IS NULL), 0) AS pending,
+        COALESCE(SUM(acked_at IS NOT NULL), 0) AS acked,
+        COALESCE(SUM(acked_at IS NULL AND refused_code IS NOT NULL), 0) AS refused,
+        MAX(attempted_at) AS last_attempt_at
+      FROM outbox
+    `).get();
+    const refusals = this.database.prepare(`
+      SELECT refused_code AS code, COUNT(*) AS count
+      FROM outbox WHERE acked_at IS NULL AND refused_code IS NOT NULL
+      GROUP BY refused_code ORDER BY count DESC, code ASC
+    `).all();
+    const oldest = this.database.prepare(`
+      SELECT seq FROM outbox WHERE acked_at IS NULL AND refused_code IS NULL ORDER BY seq ASC LIMIT 1
+    `).get();
+    return {
+      pending: counts.pending,
+      acked: counts.acked,
+      refused: counts.refused,
+      ...counts.last_attempt_at !== null ? { lastAttemptAt: counts.last_attempt_at } : {},
+      ...oldest ? { oldestPendingSeq: oldest.seq } : {},
+      // Mapped, not spread: node:sqlite rows are null-prototype objects, and this
+      // read model is handed straight to the CLI and the supervisor's JSON answer.
+      refusals: refusals.map((refusal) => ({ code: refusal.code, count: refusal.count }))
+    };
   }
   events(runId, afterSequence = 0, limit = 200) {
     const rows = this.database.prepare(`
@@ -19275,8 +19365,11 @@ function outboxFromRow(row) {
     runId: row.run_id,
     sequence: row.sequence,
     syncEvent: row.sync_event,
+    attemptCount: row.attempt_count,
     ...row.attempted_at !== null ? { attemptedAt: row.attempted_at } : {},
-    ...row.acked_at !== null ? { ackedAt: row.acked_at } : {}
+    ...row.acked_at !== null ? { ackedAt: row.acked_at } : {},
+    ...row.refused_code !== null ? { refusedCode: row.refused_code } : {},
+    ...row.refused_at !== null ? { refusedAt: row.refused_at } : {}
   };
 }
 function runFromRow(row) {
@@ -20987,7 +21080,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join17 = compileJoin(step, id, sink);
+  const join16 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -21015,7 +21108,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join17
+    join: join16
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -21065,15 +21158,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join17 = objectValue2(step.join);
-  if (!join17) return { strategy: "all" };
-  const declared = stringValue2(join17.strategy);
+  const join16 = objectValue2(step.join);
+  if (!join16) return { strategy: "all" };
+  const declared = stringValue2(join16.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join17.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join16.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join17.cancelRemaining === "boolean" ? { cancelRemaining: join17.cancelRemaining } : {}
+    ...typeof join16.cancelRemaining === "boolean" ? { cancelRemaining: join16.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -27473,27 +27566,162 @@ function resolveClientHubAuthToken(env, project) {
   return record2?.projectTokens?.[project]?.trim() || record2?.authToken?.trim() || void 0;
 }
 
-// plugins/kxm/src/project-name.ts
-import { readFileSync as readFileSync10 } from "node:fs";
-import { basename as basename3, join as join15 } from "node:path";
-function defaultProjectName(cwd, env = process.env) {
-  const fromEnv = env.KXM_PROJECT?.trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const pkg = JSON.parse(readFileSync10(join15(cwd, "package.json"), "utf8"));
-    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
-  } catch {
+// plugins/kxm/src/logger.ts
+import { appendFileSync, existsSync as existsSync12, mkdirSync as mkdirSync6, renameSync as renameSync3, statSync as statSync3, unlinkSync as unlinkSync2 } from "node:fs";
+import { dirname as dirname8 } from "node:path";
+var LOG_LEVEL_PRIORITY = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40
+};
+var DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024;
+var DEFAULT_LOG_MAX_FILES = 3;
+var SENSITIVE_KEY_PATTERN = /(?:^|_)(?:token|secret|password|apiKey|api_key|authorization|bearer)(?:$|_)/i;
+var ALLOWED_EXACT_KEYS = /* @__PURE__ */ new Set(["auth", "authType", "authMethod", "authArgs", "canUpdate", "status"]);
+function redactLogValue(val, key) {
+  if (val === null || val === void 0) return val;
+  if (typeof val === "string") {
+    if (key && SENSITIVE_KEY_PATTERN.test(key) && !ALLOWED_EXACT_KEYS.has(key)) {
+      return "[redacted]";
+    }
+    return redactSecrets(val);
   }
-  return basename3(cwd);
+  if (typeof val === "number" || typeof val === "boolean") {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => redactLogValue(item, key));
+  }
+  if (typeof val === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      out[k] = redactLogValue(v, k);
+    }
+    return out;
+  }
+  return String(val);
+}
+function rotateLogFiles(filePath, maxFiles) {
+  for (let i = maxFiles; i >= 1; i--) {
+    const current = `${filePath}.${i}`;
+    if (existsSync12(current)) {
+      if (i >= maxFiles) {
+        try {
+          unlinkSync2(current);
+        } catch {
+        }
+      } else {
+        try {
+          renameSync3(current, `${filePath}.${i + 1}`);
+        } catch {
+        }
+      }
+    }
+  }
+  if (existsSync12(filePath)) {
+    try {
+      renameSync3(filePath, `${filePath}.1`);
+    } catch {
+    }
+  }
+}
+function createLogger(options) {
+  const component = options.component;
+  const filePath = options.path;
+  const maxBytes = Math.max(100, options.maxBytes ?? DEFAULT_LOG_MAX_BYTES);
+  const maxFiles = Math.max(1, options.maxFiles ?? DEFAULT_LOG_MAX_FILES);
+  const configuredLevel = options.level ?? "info";
+  const isDaemon = Boolean(options.daemon ?? (process.env.KXM_DAEMON === "1" || process.env.KXM_DAEMON === "true"));
+  const shouldStdout = options.stdout ?? !isDaemon;
+  const correlationDefaults = options.correlation ?? {};
+  let currentSize = 0;
+  if (filePath && existsSync12(filePath)) {
+    try {
+      currentSize = statSync3(filePath).size;
+    } catch {
+      currentSize = 0;
+    }
+  }
+  function emit(level, entryOrEvent, extra) {
+    const minPriority = LOG_LEVEL_PRIORITY[configuredLevel] ?? LOG_LEVEL_PRIORITY.info;
+    const currentPriority = LOG_LEVEL_PRIORITY[level] ?? LOG_LEVEL_PRIORITY.info;
+    if (currentPriority < minPriority) return;
+    let base;
+    if (typeof entryOrEvent === "string") {
+      base = { event: entryOrEvent, ...extra };
+    } else {
+      base = { ...entryOrEvent, ...extra };
+    }
+    const timestamp = typeof base.timestamp === "string" ? base.timestamp : (/* @__PURE__ */ new Date()).toISOString();
+    delete base.timestamp;
+    delete base.level;
+    delete base.component;
+    const payload = {
+      timestamp,
+      level,
+      component,
+      ...correlationDefaults,
+      ...base
+    };
+    const sanitized = redactLogValue(payload);
+    const line = `${JSON.stringify(sanitized)}
+`;
+    if (filePath) {
+      const lineBytes = Buffer.byteLength(line, "utf8");
+      if (currentSize + lineBytes > maxBytes) {
+        rotateLogFiles(filePath, maxFiles);
+        currentSize = 0;
+      }
+      try {
+        mkdirSync6(dirname8(filePath), { recursive: true });
+        appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
+        currentSize += lineBytes;
+      } catch {
+      }
+    }
+    if (shouldStdout) {
+      process.stdout.write(line);
+    }
+  }
+  const logFn = ((entryOrEvent, extra) => {
+    let lvl = "info";
+    if (typeof entryOrEvent === "object" && entryOrEvent !== null && typeof entryOrEvent.level === "string") {
+      const candidate = entryOrEvent.level.toLowerCase();
+      if (candidate === "debug" || candidate === "info" || candidate === "warn" || candidate === "error") {
+        lvl = candidate;
+      }
+    }
+    emit(lvl, entryOrEvent, extra);
+  });
+  logFn.info = (entryOrEvent, extra) => emit("info", entryOrEvent, extra);
+  logFn.warn = (entryOrEvent, extra) => emit("warn", entryOrEvent, extra);
+  logFn.error = (entryOrEvent, extra) => emit("error", entryOrEvent, extra);
+  logFn.debug = (entryOrEvent, extra) => emit("debug", entryOrEvent, extra);
+  logFn.child = (sub) => {
+    return createLogger({
+      ...options,
+      component: sub.component ? `${component}.${sub.component}` : component,
+      correlation: { ...correlationDefaults, ...sub.correlation }
+    });
+  };
+  logFn.close = () => {
+  };
+  Object.defineProperty(logFn, "options", {
+    value: Object.freeze({ ...options }),
+    writable: false,
+    enumerable: true
+  });
+  return logFn;
 }
 
 // plugins/kxm/src/runtime-supervisor.ts
 function kxmSupervisorTokenFile(paths) {
-  return join16(paths.runtimeDir, "supervisor.token");
+  return join15(paths.runtimeDir, "supervisor.token");
 }
 function publishKxmSupervisorToken(paths, token) {
   const file = kxmSupervisorTokenFile(paths);
-  mkdirSync6(dirname8(file), { recursive: true, mode: 448 });
+  mkdirSync7(dirname9(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
   writeFileSync6(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
@@ -27501,7 +27729,7 @@ function publishKxmSupervisorToken(paths, token) {
     chmodSync2(temp, 384);
   } catch {
   }
-  renameSync3(temp, file);
+  renameSync4(temp, file);
   try {
     chmodSync2(file, 384);
   } catch {
@@ -27517,7 +27745,7 @@ function readKxmSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync11(file, "utf8").trim();
+  const token = readFileSync10(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -27531,15 +27759,15 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join16(paths.runtimeDir, "supervisor.error");
+  return join15(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync12(file)) rmSync3(file, { force: true });
+  if (existsSync13(file)) rmSync3(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
-    mkdirSync6(paths.runtimeDir, { recursive: true, mode: 448 });
+    mkdirSync7(paths.runtimeDir, { recursive: true, mode: 448 });
     writeFileSync6(supervisorErrorFile(paths), `${message}
 `, { encoding: "utf8", mode: 384 });
   } catch {
@@ -27552,13 +27780,13 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync11(file, "utf8").trim();
+    return readFileSync10(file, "utf8").trim();
   } catch {
     return void 0;
   }
 }
 function kxmSupervisorStatus(paths) {
-  if (!existsSync12(paths.registryDb)) return { running: false };
+  if (!existsSync13(paths.registryDb)) return { running: false };
   const registry = new KxmRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
@@ -27628,7 +27856,7 @@ async function ensureKxmSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join16(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join15(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn3(process.execPath, [script], {
       detached: true,
@@ -27739,6 +27967,8 @@ var DEFAULT_RUNTIME_SYNC_INTERVAL_MS = 1e4;
 var MIN_RUNTIME_SYNC_INTERVAL_MS = 250;
 var MAX_RUNTIME_SYNC_INTERVAL_MS = 6e4;
 var OUTBOX_PUSH_BATCH = 32;
+var OUTBOX_PUSH_BATCH_BYTES = 2e5;
+var RUNTIME_SYNC_MAX_BACKOFF_MS = 5 * 6e4;
 function runtimeSyncIntervalMs(env = process.env) {
   const raw = env.KXM_RUNTIME_SYNC_INTERVAL_MS?.trim();
   if (!raw) return DEFAULT_RUNTIME_SYNC_INTERVAL_MS;
@@ -27746,16 +27976,72 @@ function runtimeSyncIntervalMs(env = process.env) {
   if (!Number.isInteger(parsed)) return DEFAULT_RUNTIME_SYNC_INTERVAL_MS;
   return Math.min(MAX_RUNTIME_SYNC_INTERVAL_MS, Math.max(MIN_RUNTIME_SYNC_INTERVAL_MS, parsed));
 }
+function isDurableRefusal(outcome) {
+  return outcome === "conflict" || outcome === "rejected";
+}
+function isOversizeRefusal(error) {
+  return error instanceof HubHttpError && (error.statusCode === 413 || error.code === "sync_batch_too_large" || error.code === "payload_too_large");
+}
 async function syncKxmOutbox(eventStore, client, options = {}) {
   const now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
-  const batchSize = options.batchSize ?? OUTBOX_PUSH_BATCH;
-  const result = { pushed: 0, acked: 0, conflicts: 0, rejected: 0 };
+  const batchSize = Math.max(1, options.batchSize ?? OUTBOX_PUSH_BATCH);
+  const result = { pushed: 0, acked: 0, refused: 0, refusals: [], unconfirmed: 0, blocked: false };
+  const refuse = (row, code) => {
+    if (eventStore.refuseOutbox([{ seq: row.seq, code }], now()) === 0) return;
+    result.refused += 1;
+    result.refusals.push({ runId: row.runId, sequence: row.sequence, code });
+  };
+  const deliver = async (batch) => {
+    const payload = [];
+    const sendable = [];
+    for (const row of batch) {
+      try {
+        payload.push(JSON.parse(row.syncEvent));
+        sendable.push(row);
+      } catch {
+        refuse(row, "sync_row_unreadable");
+      }
+    }
+    if (sendable.length === 0) return true;
+    eventStore.markOutboxAttempted(sendable.map((row) => row.seq), now());
+    let response;
+    try {
+      response = await client.pushSyncEvents(payload);
+    } catch (error) {
+      if (isOversizeRefusal(error)) {
+        if (sendable.length > 1) {
+          for (const row of sendable) {
+            if (!await deliver([row])) return false;
+          }
+          return true;
+        }
+        refuse(sendable[0], "sync_row_too_large");
+        return true;
+      }
+      result.blockedReason = syncFailureText(error);
+      return false;
+    }
+    result.pushed += sendable.length;
+    const acked = [];
+    sendable.forEach((row, index) => {
+      const entry = response.results[index];
+      const describesRow = entry !== void 0 && (entry.runId === void 0 || entry.runId === row.runId) && (entry.sequence === void 0 || entry.sequence === row.sequence);
+      if (!entry || !describesRow) {
+        result.unconfirmed += 1;
+        return;
+      }
+      if (entry.outcome === "accepted" || entry.outcome === "duplicate") acked.push(row.seq);
+      else if (isDurableRefusal(entry.outcome)) refuse(row, entry.code ?? `sync_${entry.outcome}`);
+      else result.unconfirmed += 1;
+    });
+    result.acked += eventStore.ackOutbox(acked, now());
+    return true;
+  };
   let afterSeq = 0;
   for (; ; ) {
     const rows = eventStore.pendingOutbox(batchSize, afterSeq);
     if (rows.length === 0) return result;
-    const MAX_BATCH_BYTES = 2e5;
-    let byteBudget = MAX_BATCH_BYTES;
+    let byteBudget = OUTBOX_PUSH_BATCH_BYTES;
     let sendCount = 0;
     for (const row of rows) {
       const rowBytes = Buffer.byteLength(row.syncEvent, "utf8") + 64;
@@ -27763,27 +28049,18 @@ async function syncKxmOutbox(eventStore, client, options = {}) {
       byteBudget -= rowBytes;
       sendCount += 1;
     }
-    const batch = rows.slice(0, sendCount);
-    if (batch.length === 0) batch.push(rows[0]);
+    const batch = rows.slice(0, Math.max(1, sendCount));
     afterSeq = batch[batch.length - 1].seq;
-    eventStore.markOutboxAttempted(batch.map((row) => row.seq), now());
-    const response = await client.pushSyncEvents(batch.map((row) => JSON.parse(row.syncEvent)));
-    result.pushed += batch.length;
-    const outcomes = new Map(response.results.map((entry) => [`${entry.runId}\0${entry.sequence}`, entry.outcome]));
-    const acked = [];
-    for (const row of batch) {
-      const outcome = outcomes.get(`${row.runId}\0${row.sequence}`);
-      if (outcome === "accepted" || outcome === "duplicate") acked.push(row.seq);
-      else if (outcome === "conflict") result.conflicts += 1;
-      else result.rejected += 1;
+    if (!await deliver(batch)) {
+      result.blocked = true;
+      return result;
     }
-    result.acked += eventStore.ackOutbox(acked, now());
   }
 }
 function runtimeHubClientFor(context, env) {
   const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
   if (!serverUrl) return void 0;
-  const project = defaultProjectName(context.projectRoot, env);
+  const project = context.projectId;
   const authToken = resolveClientHubAuthToken(env, project);
   return new RuntimeHubClient({
     serverUrl,
@@ -27792,11 +28069,24 @@ function runtimeHubClientFor(context, env) {
     ...authToken ? { authToken } : {}
   });
 }
+function syncBackoffMs(consecutiveStalls, intervalMs) {
+  if (consecutiveStalls <= 0) return 0;
+  return Math.min(RUNTIME_SYNC_MAX_BACKOFF_MS, intervalMs * 2 ** Math.min(5, consecutiveStalls - 1));
+}
+function syncFailureText(error) {
+  const code = error instanceof HubHttpError ? `${error.statusCode} ${error.code ?? "error"}` : void 0;
+  const message = error instanceof Error ? error.message : String(error);
+  return `${code ? `${code}: ` : ""}${message}`.replace(/(kxm_[A-Za-z0-9_]+|[A-Za-z0-9._-]{40,})/g, "[redacted]").slice(0, 300);
+}
+function runtimeSupervisorLogFile(paths) {
+  return join15(paths.runtimeDir, "logs", "kxm-runtime.jsonl");
+}
 async function startKxmRuntimeSupervisor(options = {}) {
   const now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
+  const env = options.env ?? process.env;
   const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : {});
   try {
-    return await startKxmRuntimeSupervisorInner(paths, options.port, now);
+    return await startKxmRuntimeSupervisorInner(paths, options.port, now, env);
   } catch (error) {
     if (!(error instanceof KxmConfigError && error.issues.some((issue3) => issue3.code === "runtime_supervisor_conflict"))) {
       recordSupervisorError(paths, error.message);
@@ -27804,9 +28094,15 @@ async function startKxmRuntimeSupervisor(options = {}) {
     throw error;
   }
 }
-async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
-  mkdirSync6(paths.runtimeDir, { recursive: true, mode: 448 });
-  mkdirSync6(paths.projectsDir, { recursive: true, mode: 448 });
+async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, env) {
+  mkdirSync7(paths.runtimeDir, { recursive: true, mode: 448 });
+  mkdirSync7(paths.projectsDir, { recursive: true, mode: 448 });
+  const logger = createLogger({
+    component: "runtime",
+    path: runtimeSupervisorLogFile(paths),
+    stdout: false,
+    maxBytes: 2 * 1024 * 1024
+  });
   const token = randomBytes2(32).toString("hex");
   const tokenHash = hashKxmSupervisorToken(token);
   const registry = new KxmRuntimeRegistry(paths.registryDb);
@@ -27814,12 +28110,13 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
   const contexts = /* @__PURE__ */ new Map();
+  const syncStatuses = /* @__PURE__ */ new Map();
   const registerSyncCredentials = (context) => {
-    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    const hubToken = resolveClientHubAuthToken(env, context.projectId);
     if (hubToken) context.eventStore.syncRedactor.register(hubToken);
-    for (const key of Object.keys(process.env)) {
+    for (const key of Object.keys(env)) {
       if (key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY")) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
-        const value = process.env[key]?.trim();
+        const value = env[key]?.trim();
         if (value) context.eventStore.syncRedactor.register(value);
       }
     }
@@ -27867,6 +28164,28 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
           setImmediate(() => {
             void stop();
           });
+          return;
+        }
+        if (request.method === "GET" && url.pathname === "/v1/sync/status") {
+          const projectRoot = url.searchParams.get("projectRoot");
+          const statuses = [...syncStatuses.values()].filter((status) => projectRoot === null || status.projectRoot === projectRoot).sort((left, right) => left.projectId.localeCompare(right.projectId));
+          sendJson(response, 200, { ok: true, runtimeId: activeRuntimeId, projects: statuses });
+          return;
+        }
+        if (request.method === "POST" && url.pathname === "/v1/sync/retry") {
+          const body = await readJsonBody(request);
+          const projectRoot = typeof body.projectRoot === "string" ? body.projectRoot : "";
+          const context = contextFor(projectRoot);
+          const key = projectRuntimeKey(context.projectRoot);
+          const retried = context.eventStore.retryRefusedOutbox();
+          const status = syncStatuses.get(key);
+          if (status) {
+            const cleared = { ...status, outbox: context.eventStore.outboxStatus(), consecutiveFailures: 0 };
+            delete cleared.nextAttemptAt;
+            syncStatuses.set(key, cleared);
+          }
+          logger({ event: "runtime_sync_retry", projectId: context.projectId, retried });
+          sendJson(response, 200, { ok: true, projectId: context.projectId, retried, outbox: context.eventStore.outboxStatus() });
           return;
         }
         if (request.method === "POST" && url.pathname === "/v1/runs") {
@@ -28168,26 +28487,93 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
     try {
       contextFor(reg.projectRoot);
     } catch {
+      logger.warn({
+        event: "runtime_sync_context_unavailable",
+        projectId: reg.projectId,
+        message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`
+      });
     }
   }
+  const recordSyncStatus = (context, next) => {
+    const key = projectRuntimeKey(context.projectRoot);
+    const previous = syncStatuses.get(key);
+    syncStatuses.set(key, next);
+    const changed = previous === void 0 || previous.state !== next.state || next.lastError !== void 0 && previous?.lastError !== next.lastError || JSON.stringify(next.outbox.refusals) !== JSON.stringify(previous?.outbox.refusals ?? []);
+    if (!changed) return;
+    const stalledState = next.state === "blocked" || next.state === "refusing";
+    const entry = {
+      event: stalledState ? "runtime_sync_stalled" : "runtime_sync_state",
+      projectId: next.projectId,
+      runtimeId: next.homeRuntimeId,
+      state: next.state,
+      pending: next.outbox.pending,
+      acked: next.outbox.acked,
+      refused: next.outbox.refused,
+      ...next.outbox.refusals.length > 0 ? { refusals: next.outbox.refusals } : {},
+      ...next.hubUrl ? { hubUrl: next.hubUrl } : {},
+      ...next.lastError ? { reason: next.lastError } : {},
+      ...next.nextAttemptAt ? { nextAttemptAt: next.nextAttemptAt } : {}
+    };
+    if (stalledState) logger.warn(entry);
+    else logger.info(entry);
+  };
   let syncing = false;
   const syncTimer = setInterval(() => {
     if (syncing || stopping) return;
     syncing = true;
     void (async () => {
       for (const context of [...contexts.values()]) {
+        const key = projectRuntimeKey(context.projectRoot);
+        const prior = syncStatuses.get(key);
+        if (prior?.nextAttemptAt && Date.parse(prior.nextAttemptAt) > Date.parse(now())) continue;
+        const base = {
+          projectId: context.projectId,
+          projectRoot: context.projectRoot,
+          homeRuntimeId: context.homeRuntimeId,
+          outbox: context.eventStore.outboxStatus(),
+          consecutiveFailures: 0
+        };
         try {
-          const client = runtimeHubClientFor(context, process.env);
-          if (!client) continue;
+          const client = runtimeHubClientFor(context, env);
+          if (!client) {
+            recordSyncStatus(context, { ...base, state: "no_hub" });
+            continue;
+          }
           await client.heartbeat();
-          await syncKxmOutbox(context.eventStore, client, { now });
-        } catch {
+          const pass = await syncKxmOutbox(context.eventStore, client, { now });
+          const outbox = context.eventStore.outboxStatus();
+          const failures = pass.blocked || pass.unconfirmed > 0 ? (prior?.consecutiveFailures ?? 0) + 1 : 0;
+          const delayMs = syncBackoffMs(failures, runtimeSyncIntervalMs(env));
+          recordSyncStatus(context, {
+            ...base,
+            hubUrl: client.options.serverUrl,
+            outbox,
+            state: pass.blocked ? "blocked" : outbox.refused > 0 || pass.unconfirmed > 0 ? "refusing" : "ok",
+            lastCompletedAt: now(),
+            lastPushed: pass.pushed,
+            lastAcked: pass.acked,
+            lastRefused: pass.refused,
+            lastUnconfirmed: pass.unconfirmed,
+            consecutiveFailures: failures,
+            ...pass.blockedReason !== void 0 ? { lastError: pass.blockedReason } : {},
+            ...delayMs > 0 ? { nextAttemptAt: new Date(Date.parse(now()) + delayMs).toISOString() } : {}
+          });
+        } catch (error) {
+          const failures = (prior?.consecutiveFailures ?? 0) + 1;
+          const delayMs = syncBackoffMs(failures, runtimeSyncIntervalMs(env));
+          recordSyncStatus(context, {
+            ...base,
+            state: "blocked",
+            consecutiveFailures: failures,
+            lastError: syncFailureText(error),
+            nextAttemptAt: new Date(Date.parse(now()) + delayMs).toISOString()
+          });
         }
       }
     })().finally(() => {
       syncing = false;
     });
-  }, runtimeSyncIntervalMs());
+  }, runtimeSyncIntervalMs(env));
   syncTimer.unref();
   let stopping = false;
   const stop = async () => {
@@ -28222,6 +28608,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
     }
     for (const context of contexts.values()) closeKxmRuntimeContext(context);
     contexts.clear();
+    logger.close();
     const closed = new Promise((resolveStop) => server.close(() => resolveStop()));
     server.closeIdleConnections?.();
     await closed;

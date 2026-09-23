@@ -27,10 +27,11 @@ import { createKxmOneShotProducer } from "./oneshot-producer.ts";
 import { isRouteAdmitted } from "./routes.ts";
 import { KxmRunScheduler, createKxmSimulatedProducer, recordDriveReceipt, recoverKxmRun, kxmDrivePollProjection } from "./engine.ts";
 import { kxmDriveSession, kxmOpenDriveSessions } from "./runtime-owner.ts";
-import { RuntimeHubClient } from "./client.ts";
+import { RuntimeHubClient, HubHttpError, type SyncPushResponse } from "./client.ts";
 import { readHubBinding } from "./hub-binding.ts";
 import { resolveClientHubAuthToken } from "./hub-env.ts";
-import { defaultProjectName } from "./project-name.ts";
+import { createLogger } from "./logger.ts";
+import type { KxmOutboxRow, KxmOutboxStatus } from "./runtime-store.ts";
 
 /* ------------------------------------------------------------------ *
  * Token management
@@ -364,6 +365,10 @@ export const DEFAULT_RUNTIME_SYNC_INTERVAL_MS = 10_000;
 const MIN_RUNTIME_SYNC_INTERVAL_MS = 250;
 const MAX_RUNTIME_SYNC_INTERVAL_MS = 60_000;
 const OUTBOX_PUSH_BATCH = 32;
+/** Hub body ceiling is 256 KiB; leave headroom for the JSON envelope. */
+const OUTBOX_PUSH_BATCH_BYTES = 200_000;
+/** How long the sync tick stops knocking on a hub that keeps failing. */
+const RUNTIME_SYNC_MAX_BACKOFF_MS = 5 * 60_000;
 
 /** How often the supervisor heartbeats and pushes its outbox. Keep it well
  * under the hub's presence lease (30 s by default). */
@@ -375,19 +380,54 @@ export function runtimeSyncIntervalMs(env: NodeJS.ProcessEnv = process.env): num
   return Math.min(MAX_RUNTIME_SYNC_INTERVAL_MS, Math.max(MIN_RUNTIME_SYNC_INTERVAL_MS, parsed));
 }
 
+export interface KxmOutboxRefusal {
+  runId: string;
+  sequence: number;
+  code: string;
+}
+
 export interface KxmOutboxSyncResult {
+  /** Rows carried to the hub in this pass, including rows later refused. */
   pushed: number;
+  /** Rows the hub accepted or already held — the cursor advanced. */
   acked: number;
-  conflicts: number;
-  rejected: number;
+  /** Rows the hub refused in a way re-sending cannot change. */
+  refused: number;
+  /** Per-row refusals, oldest first, carrying the hub's own code. */
+  refusals: KxmOutboxRefusal[];
+  /** Rows the hub gave no answer for. Left pending, never acked. */
+  unconfirmed: number;
+  /** A transport failure ended the pass; the rest of the queue stays pending. */
+  blocked: boolean;
+  /** Why the pass was blocked, already reduced to an operator-safe line. */
+  blockedReason?: string;
+}
+
+/** A hub answer that will not change if the same bytes are sent again. */
+function isDurableRefusal(outcome: string): boolean {
+  return outcome === "conflict" || outcome === "rejected";
+}
+
+/** An HTTP refusal that says "this batch is too big", not "try again later". */
+function isOversizeRefusal(error: unknown): boolean {
+  return error instanceof HubHttpError
+    && (error.statusCode === 413 || error.code === "sync_batch_too_large" || error.code === "payload_too_large");
 }
 
 /**
- * Push every pending outbox row to the bound hub in outbox order and advance
- * the cursor on each acknowledgement. Accepted and duplicate rows are acked;
- * a conflict or rejection stays pending (the hub has raised the alert) and is
- * skipped for the rest of this pass. A transport failure leaves every row
- * pending for a safe retry.
+ * Push every pending outbox row to the bound hub in outbox order.
+ *
+ * Accepted and duplicate rows are acked. A row the hub **durably** refuses — a
+ * sequence already used with other bytes, a project id another hub project
+ * claimed, an event that fails the sync schema — is refused locally too: it
+ * leaves the pending queue with the hub's code recorded, because re-sending the
+ * same bytes can only re-raise the same alert. That is the difference between a
+ * retry and a stampede, and it is what keeps one unreachable row from parking
+ * every row behind it.
+ *
+ * A transport failure marks the pass `blocked` and returns: the rows stay
+ * pending for a real retry, with the failure carried back to the caller so it
+ * can be logged and backed off instead of swallowed.
  */
 export async function syncKxmOutbox(
   eventStore: KxmRunEventStore,
@@ -395,8 +435,74 @@ export async function syncKxmOutbox(
   options: { now?: () => string; batchSize?: number } = {},
 ): Promise<KxmOutboxSyncResult> {
   const now = options.now ?? (() => new Date().toISOString());
-  const batchSize = options.batchSize ?? OUTBOX_PUSH_BATCH;
-  const result: KxmOutboxSyncResult = { pushed: 0, acked: 0, conflicts: 0, rejected: 0 };
+  const batchSize = Math.max(1, options.batchSize ?? OUTBOX_PUSH_BATCH);
+  const result: KxmOutboxSyncResult = { pushed: 0, acked: 0, refused: 0, refusals: [], unconfirmed: 0, blocked: false };
+
+  const refuse = (row: KxmOutboxRow, code: string): void => {
+    if (eventStore.refuseOutbox([{ seq: row.seq, code }], now()) === 0) return;
+    result.refused += 1;
+    result.refusals.push({ runId: row.runId, sequence: row.sequence, code });
+  };
+
+  /**
+   * Deliver one batch. Returns false only for a transient failure, where every
+   * row of the batch stays pending. One result per event, in order, is the
+   * hub's contract, so the answer for a row is found at its index and then
+   * verified against the row it claims to describe.
+   */
+  const deliver = async (batch: readonly KxmOutboxRow[]): Promise<boolean> => {
+    const payload: unknown[] = [];
+    const sendable: KxmOutboxRow[] = [];
+    for (const row of batch) {
+      try {
+        payload.push(JSON.parse(row.syncEvent) as unknown);
+        sendable.push(row);
+      } catch {
+        // Written by the transform, so unparseable bytes are local corruption —
+        // durable, visible, and never a reason to stop the queue behind it.
+        refuse(row, "sync_row_unreadable");
+      }
+    }
+    if (sendable.length === 0) return true;
+    eventStore.markOutboxAttempted(sendable.map((row) => row.seq), now());
+    let response: SyncPushResponse;
+    try {
+      response = await client.pushSyncEvents(payload);
+    } catch (error) {
+      if (isOversizeRefusal(error)) {
+        if (sendable.length > 1) {
+          // Isolate the offender one row at a time so the batch never becomes
+          // a permanent head-of-line block.
+          for (const row of sendable) {
+            if (!(await deliver([row]))) return false;
+          }
+          return true;
+        }
+        refuse(sendable[0]!, "sync_row_too_large");
+        return true;
+      }
+      result.blockedReason = syncFailureText(error);
+      return false;
+    }
+    result.pushed += sendable.length;
+    const acked: number[] = [];
+    sendable.forEach((row, index) => {
+      const entry = response.results[index];
+      const describesRow = entry !== undefined
+        && (entry.runId === undefined || entry.runId === row.runId)
+        && (entry.sequence === undefined || entry.sequence === row.sequence);
+      if (!entry || !describesRow) {
+        result.unconfirmed += 1;
+        return;
+      }
+      if (entry.outcome === "accepted" || entry.outcome === "duplicate") acked.push(row.seq);
+      else if (isDurableRefusal(entry.outcome)) refuse(row, entry.code ?? `sync_${entry.outcome}`);
+      else result.unconfirmed += 1;
+    });
+    result.acked += eventStore.ackOutbox(acked, now());
+    return true;
+  };
+
   let afterSeq = 0;
   for (;;) {
     const rows = eventStore.pendingOutbox(batchSize, afterSeq);
@@ -405,8 +511,7 @@ export async function syncKxmOutbox(
     // over its body ceiling (HTTP 413), and retrying the same oversized batch
     // would permanently block the queue. Trim to the byte budget and leave the
     // rest for the next iteration.
-    const MAX_BATCH_BYTES = 200_000; // hub ceiling is 256 KiB; leave headroom
-    let byteBudget = MAX_BATCH_BYTES;
+    let byteBudget = OUTBOX_PUSH_BATCH_BYTES;
     let sendCount = 0;
     for (const row of rows) {
       const rowBytes = Buffer.byteLength(row.syncEvent, "utf8") + 64; // JSON overhead
@@ -414,21 +519,12 @@ export async function syncKxmOutbox(
       byteBudget -= rowBytes;
       sendCount += 1;
     }
-    const batch = rows.slice(0, sendCount);
-    if (batch.length === 0) batch.push(rows[0]!); // one oversized row: send alone, hub will 413
+    const batch = rows.slice(0, Math.max(1, sendCount));
     afterSeq = batch[batch.length - 1]!.seq;
-    eventStore.markOutboxAttempted(batch.map((row) => row.seq), now());
-    const response = await client.pushSyncEvents(batch.map((row) => JSON.parse(row.syncEvent) as unknown));
-    result.pushed += batch.length;
-    const outcomes = new Map(response.results.map((entry) => [`${entry.runId}\u0000${entry.sequence}`, entry.outcome]));
-    const acked: number[] = [];
-    for (const row of batch) {
-      const outcome = outcomes.get(`${row.runId}\u0000${row.sequence}`);
-      if (outcome === "accepted" || outcome === "duplicate") acked.push(row.seq);
-      else if (outcome === "conflict") result.conflicts += 1;
-      else result.rejected += 1;
+    if (!(await deliver(batch))) {
+      result.blocked = true;
+      return result;
     }
-    result.acked += eventStore.ackOutbox(acked, now());
   }
 }
 
@@ -436,7 +532,12 @@ export async function syncKxmOutbox(
 function runtimeHubClientFor(context: KxmRuntimeContext, env: NodeJS.ProcessEnv): RuntimeHubClient | undefined {
   const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
   if (!serverUrl) return undefined;
-  const project = defaultProjectName(context.projectRoot, env);
+  // Use the context's actual projectId — the same identity sync events carry — so the
+  // ops snapshot can join runs to their home Runtime. The npm package name (what an
+  // earlier build sent) never matches project.yaml's prj_* id: presence lands under one
+  // label and runs under the other, and the hub pins the project id to the first label
+  // it ever saw, which refuses every later push. See the supervisor sync gate.
+  const project = context.projectId;
   const authToken = resolveClientHubAuthToken(env, project);
   return new RuntimeHubClient({
     serverUrl,
@@ -444,6 +545,54 @@ function runtimeHubClientFor(context: KxmRuntimeContext, env: NodeJS.ProcessEnv)
     runtimeId: context.homeRuntimeId,
     ...(authToken ? { authToken } : {}),
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * Sync status: what the tick saw, readable without opening SQLite
+ * ------------------------------------------------------------------ */
+
+/**
+ * One project's outbound sync state as the supervisor last observed it.
+ *
+ * `state` is the answer to "is this Runtime talking to the hub?":
+ * `ok` (rows are acking), `no_hub` (nothing bound — keeping rows locally is the
+ * design), `blocked` (a transport or credential failure; retryable, backing
+ * off), or `refusing` (the hub answered durably; an operator has to change
+ * something). `blocked` and `refusing` are the two states that mean run facts
+ * are not reaching the hub.
+ */
+export interface KxmProjectSyncStatus {
+  projectId: string;
+  projectRoot: string;
+  homeRuntimeId: string;
+  state: "ok" | "no_hub" | "blocked" | "refusing";
+  outbox: KxmOutboxStatus;
+  consecutiveFailures: number;
+  hubUrl?: string;
+  lastCompletedAt?: string;
+  lastPushed?: number;
+  lastAcked?: number;
+  lastRefused?: number;
+  lastUnconfirmed?: number;
+  lastError?: string;
+  nextAttemptAt?: string;
+}
+
+/** Exponential backoff on consecutive stalls, capped so a hub outage heals by itself. */
+function syncBackoffMs(consecutiveStalls: number, intervalMs: number): number {
+  if (consecutiveStalls <= 0) return 0;
+  return Math.min(RUNTIME_SYNC_MAX_BACKOFF_MS, intervalMs * 2 ** Math.min(5, consecutiveStalls - 1));
+}
+
+/** A failure worth showing an operator: bounded, and never the bearer token. */
+function syncFailureText(error: unknown): string {
+  const code = error instanceof HubHttpError ? `${error.statusCode} ${error.code ?? "error"}` : undefined;
+  const message = error instanceof Error ? error.message : String(error);
+  return `${code ? `${code}: ` : ""}${message}`.replace(/(kxm_[A-Za-z0-9_]+|[A-Za-z0-9._-]{40,})/g, "[redacted]").slice(0, 300);
+}
+
+function runtimeSupervisorLogFile(paths: KxmRuntimePaths): string {
+  return join(paths.runtimeDir, "logs", "kxm-runtime.jsonl");
 }
 
 export interface KxmRuntimeSupervisor {
@@ -454,12 +603,13 @@ export interface KxmRuntimeSupervisor {
 }
 
 export async function startKxmRuntimeSupervisor(
-  options: { stateRoot?: string; port?: number; now?: () => string } = {},
+  options: { stateRoot?: string; port?: number; now?: () => string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<KxmRuntimeSupervisor> {
   const now = options.now ?? (() => new Date().toISOString());
+  const env = options.env ?? process.env;
   const paths = kxmRuntimePaths(options.stateRoot !== undefined ? { stateRoot: options.stateRoot } : {});
   try {
-    return await startKxmRuntimeSupervisorInner(paths, options.port, now);
+    return await startKxmRuntimeSupervisorInner(paths, options.port, now, env);
   } catch (error) {
     // Startup failures are recorded so auto-start clients see the real cause
     // instead of a bare timeout. Conflict is not an error: the winner is
@@ -475,9 +625,19 @@ async function startKxmRuntimeSupervisorInner(
   paths: KxmRuntimePaths,
   requestedPortOption: number | undefined,
   now: () => string,
+  env: NodeJS.ProcessEnv,
 ): Promise<KxmRuntimeSupervisor> {
   mkdirSync(paths.runtimeDir, { recursive: true, mode: 0o700 });
   mkdirSync(paths.projectsDir, { recursive: true, mode: 0o700 });
+  // The supervisor is spawned detached with stdio ignored, so this file is its
+  // only durable voice. Without it, a sync path that refuses every row is
+  // indistinguishable from a sync path that never ran.
+  const logger = createLogger({
+    component: "runtime",
+    path: runtimeSupervisorLogFile(paths),
+    stdout: false,
+    maxBytes: 2 * 1024 * 1024,
+  });
   // The token is generated in memory and written only after the supervisor
   // singleton is owned: a losing supervisor can never overwrite a winner's
   // token and lock every client out.
@@ -490,16 +650,21 @@ async function startKxmRuntimeSupervisorInner(
   let activeRuntimeId = runtimeId;
 
   const contexts = new Map<string, KxmRuntimeContext>();
+  // Declared with the contexts rather than with the timer that fills it: the
+  // listener is up before the tick is armed, and `GET /v1/sync/status` must be
+  // answerable in that window rather than reach for a binding that is not there
+  // yet.
+  const syncStatuses = new Map<string, KxmProjectSyncStatus>();
   const registerSyncCredentials = (context: KxmRuntimeContext): void => {
     // Register credentials on the store's redactor at context creation —
     // BEFORE any event can be appended — so the very first outbox row is
     // already scrubbed. Registering on the sync tick leaves a window where
     // appended events retain credentials.
-    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    const hubToken = resolveClientHubAuthToken(env, context.projectId);
     if (hubToken) context.eventStore.syncRedactor.register(hubToken);
-    for (const key of Object.keys(process.env)) {
+    for (const key of Object.keys(env)) {
       if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
-        const value = process.env[key]?.trim();
+        const value = env[key]?.trim();
         if (value) context.eventStore.syncRedactor.register(value);
       }
     }
@@ -549,6 +714,42 @@ async function startKxmRuntimeSupervisorInner(
         if (request.method === "POST" && url.pathname === "/v1/shutdown") {
           sendJson(response, 200, { ok: true, stopping: true });
           setImmediate(() => { void stop(); });
+          return;
+        }
+
+        // What the sync loop last saw, per project this Runtime owns. This is the
+        // surface that makes "the supervisor is running clean" mean something:
+        // pending, acked and refused rows, the hub's refusal codes, and when the
+        // next attempt is due.
+        if (request.method === "GET" && url.pathname === "/v1/sync/status") {
+          const projectRoot = url.searchParams.get("projectRoot");
+          const statuses = [...syncStatuses.values()]
+            .filter((status) => projectRoot === null || status.projectRoot === projectRoot)
+            .sort((left, right) => left.projectId.localeCompare(right.projectId));
+          sendJson(response, 200, { ok: true, runtimeId: activeRuntimeId, projects: statuses });
+          return;
+        }
+
+        // Operator-only revive: a durably refused row stays refused until someone
+        // says the hub-side state has been corrected. The Runtime never decides on
+        // its own that a refusal has become retryable, because the refusal is
+        // usually the hub holding a claim this Runtime cannot see.
+        if (request.method === "POST" && url.pathname === "/v1/sync/retry") {
+          const body = await readJsonBody(request);
+          const projectRoot = typeof body.projectRoot === "string" ? body.projectRoot : "";
+          const context = contextFor(projectRoot);
+          const key = projectRuntimeKey(context.projectRoot);
+          const retried = context.eventStore.retryRefusedOutbox();
+          const status = syncStatuses.get(key);
+          // Clear the backoff gate so the rows go out on the next tick, and let
+          // that tick re-derive the state from what the hub actually says.
+          if (status) {
+            const cleared: KxmProjectSyncStatus = { ...status, outbox: context.eventStore.outboxStatus(), consecutiveFailures: 0 };
+            delete (cleared as Partial<KxmProjectSyncStatus>).nextAttemptAt;
+            syncStatuses.set(key, cleared);
+          }
+          logger({ event: "runtime_sync_retry", projectId: context.projectId, retried });
+          sendJson(response, 200, { ok: true, projectId: context.projectId, retried, outbox: context.eventStore.outboxStatus() });
           return;
         }
 
@@ -887,7 +1088,10 @@ async function startKxmRuntimeSupervisorInner(
 
   // Outbound only: the supervisor pulls nothing and exposes nothing to the hub.
   // A tick that finds no bound hub, no credential or an unreachable hub does
-  // nothing; outbox rows stay pending and local execution never waits on it.
+  // not fail a run; outbox rows stay pending and local execution never waits on
+  // it. "Never waits" is not "never says anything": every tick records what it
+  // saw into the sync status this process serves at `GET /v1/sync/status`, and
+  // a transport failure backs off instead of knocking every interval.
   //
   // Restart recovery: contexts are only populated on demand (a project request
   // opens one), so a restarted supervisor would see an empty map and silently
@@ -900,8 +1104,43 @@ async function startKxmRuntimeSupervisorInner(
       // A project whose checkout has moved or been deleted stays skipped; its
       // outbox rows remain pending and its presence expires, which is visible
       // in the ops snapshot as orphaned.
+      logger.warn({
+        event: "runtime_sync_context_unavailable",
+        projectId: reg.projectId,
+        message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`,
+      });
     }
   }
+
+  const recordSyncStatus = (context: KxmRuntimeContext, next: KxmProjectSyncStatus): void => {
+    const key = projectRuntimeKey(context.projectRoot);
+    const previous = syncStatuses.get(key);
+    syncStatuses.set(key, next);
+    const changed = previous === undefined || previous.state !== next.state
+      || (next.lastError !== undefined && previous?.lastError !== next.lastError)
+      || JSON.stringify(next.outbox.refusals) !== JSON.stringify(previous?.outbox.refusals ?? []);
+    if (!changed) return;
+    // One line per state change — never one per tick, which is how a stalled
+    // sync turns its own log into noise. `refusing` and `blocked` are the two
+    // states that mean "run facts are not reaching the hub", so they are the
+    // states an operator must be able to see without opening SQLite.
+    const stalledState = next.state === "blocked" || next.state === "refusing";
+    const entry = {
+      event: stalledState ? "runtime_sync_stalled" : "runtime_sync_state",
+      projectId: next.projectId,
+      runtimeId: next.homeRuntimeId,
+      state: next.state,
+      pending: next.outbox.pending,
+      acked: next.outbox.acked,
+      refused: next.outbox.refused,
+      ...(next.outbox.refusals.length > 0 ? { refusals: next.outbox.refusals } : {}),
+      ...(next.hubUrl ? { hubUrl: next.hubUrl } : {}),
+      ...(next.lastError ? { reason: next.lastError } : {}),
+      ...(next.nextAttemptAt ? { nextAttemptAt: next.nextAttemptAt } : {}),
+    };
+    if (stalledState) logger.warn(entry);
+    else logger.info(entry);
+  };
 
   let syncing = false;
   const syncTimer = setInterval(() => {
@@ -909,18 +1148,63 @@ async function startKxmRuntimeSupervisorInner(
     syncing = true;
     void (async () => {
       for (const context of [...contexts.values()]) {
-
+        const key = projectRuntimeKey(context.projectRoot);
+        const prior = syncStatuses.get(key);
+        if (prior?.nextAttemptAt && Date.parse(prior.nextAttemptAt) > Date.parse(now())) continue;
+        const base = {
+          projectId: context.projectId,
+          projectRoot: context.projectRoot,
+          homeRuntimeId: context.homeRuntimeId,
+          outbox: context.eventStore.outboxStatus(),
+          consecutiveFailures: 0,
+        };
         try {
-          const client = runtimeHubClientFor(context, process.env);
-          if (!client) continue;
+          const client = runtimeHubClientFor(context, env);
+          if (!client) {
+            // Not a failure: a box with no bound hub simply keeps its rows.
+            recordSyncStatus(context, { ...base, state: "no_hub" });
+            continue;
+          }
           await client.heartbeat();
-          await syncKxmOutbox(context.eventStore, client, { now });
-        } catch {
-          // Retry on the next tick.
+          const pass = await syncKxmOutbox(context.eventStore, client, { now });
+          const outbox = context.eventStore.outboxStatus();
+          // A refused row is out of the pending queue, so there is nothing left to
+          // stampede over: back off only for failures a later pass could actually
+          // fix. The `refusing` state persists for as long as the store holds
+          // refusals, which is the part an operator has to see.
+          const failures = pass.blocked || pass.unconfirmed > 0 ? (prior?.consecutiveFailures ?? 0) + 1 : 0;
+          const delayMs = syncBackoffMs(failures, runtimeSyncIntervalMs(env));
+          recordSyncStatus(context, {
+            ...base,
+            hubUrl: client.options.serverUrl,
+            outbox,
+            state: pass.blocked ? "blocked" : (outbox.refused > 0 || pass.unconfirmed > 0) ? "refusing" : "ok",
+            lastCompletedAt: now(),
+            lastPushed: pass.pushed,
+            lastAcked: pass.acked,
+            lastRefused: pass.refused,
+            lastUnconfirmed: pass.unconfirmed,
+            consecutiveFailures: failures,
+            ...(pass.blockedReason !== undefined ? { lastError: pass.blockedReason } : {}),
+            ...(delayMs > 0 ? { nextAttemptAt: new Date(Date.parse(now()) + delayMs).toISOString() } : {}),
+          });
+        } catch (error) {
+          // The hub is unreachable, unauthenticated or answering garbage. The
+          // rows are still pending, so this is retryable — but it is never
+          // silently retried: the reason is recorded and the tick backs off.
+          const failures = (prior?.consecutiveFailures ?? 0) + 1;
+          const delayMs = syncBackoffMs(failures, runtimeSyncIntervalMs(env));
+          recordSyncStatus(context, {
+            ...base,
+            state: "blocked",
+            consecutiveFailures: failures,
+            lastError: syncFailureText(error),
+            nextAttemptAt: new Date(Date.parse(now()) + delayMs).toISOString(),
+          });
         }
       }
     })().finally(() => { syncing = false; });
-  }, runtimeSyncIntervalMs());
+  }, runtimeSyncIntervalMs(env));
   syncTimer.unref();
 
   let stopping = false;
@@ -957,6 +1241,7 @@ async function startKxmRuntimeSupervisorInner(
     }
     for (const context of contexts.values()) closeKxmRuntimeContext(context);
     contexts.clear();
+    logger.close();
     const closed = new Promise<void>((resolveStop) => server.close(() => resolveStop()));
     server.closeIdleConnections?.();
     await closed;

@@ -14,7 +14,12 @@ const MAX_WALK_DEPTH = 10;
  * layout; marker discovery is correct in both, and in npm-installed
  * layouts, which also ship `scripts/`.
  */
-export function findKxmRepoRoot(fromUrl: string = import.meta.url): string {
+/**
+ * The repo/package root this module was loaded from, or `undefined` when the
+ * layout is not recognisable. For callers that must degrade to "cannot tell how
+ * it was installed" instead of throwing — install classification, mostly.
+ */
+export function tryFindKxmRepoRoot(fromUrl: string = import.meta.url): string | undefined {
   let dir = dirname(fileURLToPath(fromUrl));
   for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
     if (ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))) return dir;
@@ -22,6 +27,12 @@ export function findKxmRepoRoot(fromUrl: string = import.meta.url): string {
     if (parent === dir) break;
     dir = parent;
   }
+  return undefined;
+}
+
+export function findKxmRepoRoot(fromUrl: string = import.meta.url): string {
+  const found = tryFindKxmRepoRoot(fromUrl);
+  if (found !== undefined) return found;
   throw new Error(
     `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} ` +
       `(walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`,

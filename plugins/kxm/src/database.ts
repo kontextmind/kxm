@@ -585,25 +585,50 @@ export function restoreDatabaseFile(
   };
 }
 
+/**
+ * Per-store restore ceilings, held in **one** table read by both backup discovery
+ * and restore. Two copies of these numbers drifted once already: a schema bump
+ * raised the restore ceiling and left the discovery ceiling behind, and nothing
+ * caught it because nothing read the stale copy.
+ *
+ * Each value MUST track the version its store declares — `HUB_STORE_SCHEMA_VERSION`
+ * in `store.ts`, `KXM_REGISTRY_SCHEMA_VERSION` and `KXM_EVENT_STORE_SCHEMA_VERSION`
+ * in `runtime-store.ts`. Those modules import this one, so the constants cannot be
+ * named here; the gate is the named test
+ * `restore ceilings track every store's own schema version` in
+ * `test/core/e6-backup-restore-migrations.test.ts`, which is what the deleted
+ * "must track" comments were only pretending to be.
+ */
+export const KXM_BACKUP_CEILINGS = {
+  "hub-store": 5,
+  registry: 1,
+  "binding-store": 1,
+  events: 7,
+} as const;
+
+export function kxmBackupCeiling(storeId: string): number {
+  if (storeId.startsWith("events:")) return KXM_BACKUP_CEILINGS.events;
+  // An id this build does not know keeps the ceiling restore has always defaulted to.
+  return KXM_BACKUP_CEILINGS[storeId as keyof typeof KXM_BACKUP_CEILINGS] ?? KXM_BACKUP_CEILINGS["hub-store"];
+}
+
 export function discoverProjectStores(projectRoot: string, options: { hubDataPath?: string } = {}): Array<{ storeId: string; sourcePath: string; maxSupportedVersion: number }> {
   const root = resolve(projectRoot);
   const stores: Array<{ storeId: string; sourcePath: string; maxSupportedVersion: number }> = [];
 
   const hubPath = options.hubDataPath ? resolve(options.hubDataPath) : join(root, ".kxm", "state", "kxm.db");
   if (existsSync(hubPath)) {
-    // Must track HUB_STORE_SCHEMA_VERSION in store.ts: the hub's own fresh backup is
-    // restored through this ceiling, so a bump left behind here refuses it.
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 5 });
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: kxmBackupCeiling("hub-store") });
   }
 
   const registryPath = join(root, ".kxm", "runtime", "registry.db");
   if (existsSync(registryPath)) {
-    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: 1 });
+    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: kxmBackupCeiling("registry") });
   }
 
   const bindingsPath = join(root, ".kxm", "runtime", "bindings.db");
   if (existsSync(bindingsPath)) {
-    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: 1 });
+    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: kxmBackupCeiling("binding-store") });
   }
 
   const eventsDir = join(root, ".kxm", "runtime", "events");
@@ -615,7 +640,7 @@ export function discoverProjectStores(projectRoot: string, options: { hubDataPat
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join(eventsDir, entry.name),
-          maxSupportedVersion: 6,
+          maxSupportedVersion: kxmBackupCeiling(`events:${key}`),
         });
       }
     }
@@ -729,17 +754,7 @@ export function restoreBackup(
       );
     }
 
-    // The hub-store ceiling. Must track HUB_STORE_SCHEMA_VERSION in store.ts for the
-    // same reason as the events ceiling below.
-    let maxSupported = 5;
-    if (store.storeId === "registry" || store.storeId === "binding-store") {
-      maxSupported = 1;
-    } else if (store.storeId.startsWith("events:")) {
-      // Must track KXM_EVENT_STORE_SCHEMA_VERSION in runtime-store.ts. The pin is
-      // the e6 backup/restore round-trip test: bump one without the other and it
-      // refuses its own fresh backup.
-      maxSupported = 6;
-    }
+    const maxSupported = kxmBackupCeiling(store.storeId);
 
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {

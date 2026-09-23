@@ -18176,6 +18176,13 @@ function readInstalledKxmVersion(root) {
   }
   return pkg.version;
 }
+function installedKxmVersion(root) {
+  try {
+    return readInstalledKxmVersion(root);
+  } catch {
+    return void 0;
+  }
+}
 function parseSemver(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
   if (!match) return void 0;
@@ -18335,7 +18342,7 @@ import { dirname, join as join2 } from "node:path";
 import { fileURLToPath } from "node:url";
 var ROOT_MARKERS = ["scripts/kxm-hub.mjs", "scripts/kxm.mjs"];
 var MAX_WALK_DEPTH = 10;
-function findKxmRepoRoot(fromUrl = import.meta.url) {
+function tryFindKxmRepoRoot(fromUrl = import.meta.url) {
   let dir = dirname(fileURLToPath(fromUrl));
   for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
     if (ROOT_MARKERS.some((marker) => existsSync2(join2(dir, marker)))) return dir;
@@ -18343,6 +18350,11 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
     if (parent === dir) break;
     dir = parent;
   }
+  return void 0;
+}
+function findKxmRepoRoot(fromUrl = import.meta.url) {
+  const found = tryFindKxmRepoRoot(fromUrl);
+  if (found !== void 0) return found;
   throw new Error(
     `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
   );
@@ -23980,20 +23992,30 @@ function restoreDatabaseFile(backupPath, targetPath, storeId, expectedSchemaVers
     integrity: "ok"
   };
 }
+var KXM_BACKUP_CEILINGS = {
+  "hub-store": 5,
+  registry: 1,
+  "binding-store": 1,
+  events: 7
+};
+function kxmBackupCeiling(storeId) {
+  if (storeId.startsWith("events:")) return KXM_BACKUP_CEILINGS.events;
+  return KXM_BACKUP_CEILINGS[storeId] ?? KXM_BACKUP_CEILINGS["hub-store"];
+}
 function discoverProjectStores(projectRoot, options = {}) {
   const root = resolve5(projectRoot);
   const stores = [];
   const hubPath = options.hubDataPath ? resolve5(options.hubDataPath) : join8(root, ".kxm", "state", "kxm.db");
   if (existsSync8(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 5 });
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: kxmBackupCeiling("hub-store") });
   }
   const registryPath = join8(root, ".kxm", "runtime", "registry.db");
   if (existsSync8(registryPath)) {
-    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: 1 });
+    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: kxmBackupCeiling("registry") });
   }
   const bindingsPath = join8(root, ".kxm", "runtime", "bindings.db");
   if (existsSync8(bindingsPath)) {
-    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: 1 });
+    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: kxmBackupCeiling("binding-store") });
   }
   const eventsDir = join8(root, ".kxm", "runtime", "events");
   if (existsSync8(eventsDir)) {
@@ -24004,7 +24026,7 @@ function discoverProjectStores(projectRoot, options = {}) {
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join8(eventsDir, entry.name),
-          maxSupportedVersion: 6
+          maxSupportedVersion: kxmBackupCeiling(`events:${key}`)
         });
       }
     }
@@ -24091,12 +24113,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
         `backup file ${store.backupFile} sha256 ${actualSha256} does not match manifest hash ${store.sha256}`
       );
     }
-    let maxSupported = 5;
-    if (store.storeId === "registry" || store.storeId === "binding-store") {
-      maxSupported = 1;
-    } else if (store.storeId.startsWith("events:")) {
-      maxSupported = 6;
-    }
+    const maxSupported = kxmBackupCeiling(store.storeId);
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
@@ -24449,7 +24466,17 @@ var EVENT_STORE_TABLES = {
     "record"
   ],
   project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"],
-  outbox: ["seq", "run_id", "sequence", "sync_event", "attempted_at", "acked_at"]
+  outbox: [
+    "seq",
+    "run_id",
+    "sequence",
+    "sync_event",
+    "attempted_at",
+    "attempt_count",
+    "acked_at",
+    "refused_code",
+    "refused_at"
+  ]
 };
 var KXM_EVENT_STORE_TABLE_NAMES = Object.keys(EVENT_STORE_TABLES).sort();
 
@@ -25970,6 +25997,9 @@ async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
   }
 }
 
+// plugins/kxm/src/logger.ts
+var DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024;
+
 // plugins/kxm/src/runtime-supervisor.ts
 function kxmSupervisorTokenFile(paths) {
   return join13(paths.runtimeDir, "supervisor.token");
@@ -26117,6 +26147,7 @@ async function ensureKxmSupervisor(options = {}) {
   }
   throw runtimeError("runtime_supervisor_start_failed", scriptPath, `runtime supervisor (pid ${pid}) did not become ready in time`);
 }
+var RUNTIME_SYNC_MAX_BACKOFF_MS = 5 * 6e4;
 async function kxmRuntimeRequest(handle, method, path4, body) {
   const response = await fetch(`http://127.0.0.1:${handle.port}${path4}`, {
     method,
@@ -32758,8 +32789,31 @@ async function cmdKxmRuntime(runtime, action) {
     }
     if (action === "status") {
       const status = kxmSupervisorStatus(paths);
-      print(runtime.io, runtime.json, { ok: true, command: "runtime status", ...status }, status.running ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}` : "runtime supervisor is not running");
+      const sync = status.running ? await readKxmSupervisorSync(runtime) : void 0;
+      print(runtime.io, runtime.json, { ok: true, command: "runtime status", ...status, ...sync ? { sync } : {} }, [
+        status.running ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}` : "runtime supervisor is not running",
+        ...formatKxmSyncStatus(sync, status.running)
+      ].join("\n"));
       return status.running ? 0 : 1;
+    }
+    if (action === "sync-retry") {
+      const supervisor = await attachKxmSupervisor({ env: runtime.env });
+      if (!supervisor) {
+        print(runtime.io, runtime.json, { ok: false, command: "runtime sync-retry", error: "runtime_not_running" }, "runtime supervisor is not running");
+        return 1;
+      }
+      const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+      if (!projectRoot) {
+        print(runtime.io, runtime.json, { ok: false, command: "runtime sync-retry", error: "project_required" }, "kxm runtime sync-retry requires a KXM project (run kxm init first)");
+        return 1;
+      }
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime sync-retry", projectRoot, dryRun: true }, "would re-queue rows the hub durably refused");
+        return 0;
+      }
+      const result = await kxmRuntimeRequest(supervisor, "POST", "/v1/sync/retry", { projectRoot });
+      print(runtime.io, runtime.json, { ok: true, command: "runtime sync-retry", ...result }, `re-queued ${String(result.retried ?? 0)} refused outbox rows for ${String(result.projectId ?? projectRoot)}`);
+      return 0;
     }
     if (action === "stop") {
       const status = kxmSupervisorStatus(paths);
@@ -32786,6 +32840,27 @@ async function cmdKxmRuntime(runtime, action) {
     print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "runtime_io_failed" }, "runtime failed because a local operation did not complete");
     return 1;
   }
+}
+async function readKxmSupervisorSync(runtime) {
+  const supervisor = await attachKxmSupervisor({ env: runtime.env });
+  if (!supervisor) return void 0;
+  try {
+    const response = await kxmRuntimeRequest(supervisor, "GET", "/v1/sync/status");
+    return response.projects;
+  } catch {
+    return void 0;
+  }
+}
+function formatKxmSyncStatus(sync, running) {
+  if (!running) return [];
+  if (sync === void 0) return ["sync: the supervisor is running but did not answer /v1/sync/status"];
+  if (sync.length === 0) return ["sync: no project registered with this Runtime yet"];
+  return sync.map((project) => {
+    const codes = project.outbox.refusals.map((refusal) => `${refusal.code} x${refusal.count}`).join(", ");
+    const counts = `pending ${project.outbox.pending}, acked ${project.outbox.acked}, refused ${project.outbox.refused}`;
+    const tail = project.state === "refusing" ? ` (${codes || "see log"}) \u2014 fix the hub, then: kxm runtime sync-retry` : project.state === "blocked" ? ` \u2014 last error: ${project.lastError ?? "unreachable"}${project.nextAttemptAt ? `; next attempt ${project.nextAttemptAt}` : ""}` : "";
+    return `sync ${project.projectId}: ${project.state} (${counts})${tail}`;
+  });
 }
 async function cmdKxmRunReceipt(runtime, runId, options = {}) {
   try {
@@ -44525,13 +44600,29 @@ async function hubGet(url, fetchImpl) {
 }
 function installProbeFrom(runtime) {
   const partial = runtime.io.installProbe ?? {};
+  const moduleDir = partial.moduleDir ?? dirname20(fileURLToPath3(import.meta.url));
   return {
-    moduleDir: partial.moduleDir ?? dirname20(fileURLToPath3(import.meta.url)),
-    repoRoot: partial.repoRoot ?? resolve24("."),
+    moduleDir,
+    // Classify the install that is **running**, never the directory the caller
+    // happens to be standing in. Deriving this from cwd made `kxm update --kxm`
+    // answer "kxm is running from source at <cwd>; update it with git pull there"
+    // on an npm-global install whenever the operator ran it inside a kxm
+    // checkout — and a git pull there deploys nothing, because the services exec
+    // the installed copy. An unrecognisable layout falls back to the module
+    // directory, which classifies as `unknown` ("update it the way it was
+    // installed") rather than inventing a source install.
+    repoRoot: partial.repoRoot ?? tryFindKxmRepoRoot(import.meta.url) ?? moduleDir,
     homeDir: partial.homeDir ?? homedir7(),
     platform: partial.platform ?? process.platform,
     env: partial.env ?? runtime.env
   };
+}
+function moduleInstallRoot() {
+  try {
+    return findKxmRepoRoot(import.meta.url);
+  } catch {
+    return dirname20(fileURLToPath3(import.meta.url));
+  }
 }
 function warnIgnoredProjectUpdateYaml(runtime) {
   const projectFile = join41(runtime.dirs.workspace, "update.yaml");
@@ -44540,11 +44631,20 @@ function warnIgnoredProjectUpdateYaml(runtime) {
   runtime.io.stderr(`kxm: ignoring .kxm/update.yaml in ${runtime.dirs.workdir}; update settings are read only from ${userFile}
 `);
 }
-async function refreshKxmUpdateNotice(runtime, config) {
+async function refreshKxmUpdateNotice(runtime, config, current) {
   const resolved = config ?? loadKxmUpdateConfig(runtime.env);
-  const current = readInstalledKxmVersion(resolve24("."));
+  const installed = current ?? installedKxmVersion(findKxmRepoRoot(import.meta.url)) ?? installedKxmVersion(moduleInstallRoot());
+  if (installed === void 0) {
+    return {
+      current: "unknown",
+      available: false,
+      auto: false,
+      source: resolved.source,
+      message: `kxm update check skipped: the installed version is unreadable at ${moduleInstallRoot()}`
+    };
+  }
   const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
-  const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error, fetched.asset);
+  const notice = noticeFromVersions(installed, fetched.latest, resolved, fetched.error, fetched.asset);
   writeUpdateCache(runtime.dirs.state, notice);
   return notice;
 }
@@ -47065,16 +47165,16 @@ async function cmdUpdate(runtime, harness, options) {
   warnIgnoredProjectUpdateYaml(runtime);
   const probe = installProbeFrom(runtime);
   const classified = classifyInstallRoot(probe);
-  const current = readInstalledKxmVersion(findKxmRepoRoot(import.meta.url));
+  const current = installedKxmVersion(classified.root) ?? installedKxmVersion(findKxmRepoRoot(import.meta.url));
   let notice;
   let kindReport = classified;
   if (classified.kind === "source") {
     if (options.check) {
-      const message = `kxm ${current} (running from source at ${classified.root})`;
+      const message = `kxm ${current ?? "unknown"} (running from source at ${classified.root})`;
       print(runtime.io, runtime.json, {
         ok: true,
         command: "update check",
-        current,
+        current: current ?? "unknown",
         available: false,
         auto: false,
         source: "github",
@@ -47096,15 +47196,15 @@ async function cmdUpdate(runtime, harness, options) {
       return 2;
     }
     notice = {
-      current,
+      current: current ?? "unknown",
       available: false,
       auto: false,
       source: "github",
-      message: `kxm ${current} (running from source)`
+      message: `kxm ${current ?? "unknown"} (running from source)`
     };
   } else {
     try {
-      notice = await refreshKxmUpdateNotice(runtime);
+      notice = await refreshKxmUpdateNotice(runtime, void 0, current);
     } catch (error) {
       if (error instanceof KxmUpdateConfigError) {
         print(runtime.io, runtime.json, { ok: false, command: "update", error: error.code, ...installKindPayload(classified) }, error.message);
@@ -47846,6 +47946,9 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(runtimeCmd.command("status").description("Show Runtime supervisor liveness")).action(async function runtimeStatusAction() {
     result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "status");
+  });
+  addGlobalOptions(runtimeCmd.command("sync-retry").description("Re-queue outbox rows the hub durably refused, after the hub-side state is corrected")).action(async function runtimeSyncRetryAction() {
+    result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "sync-retry");
   });
   addGlobalOptions(runtimeCmd.command("stop").description("Gracefully stop the Runtime supervisor")).action(async function runtimeStopAction() {
     result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "stop");

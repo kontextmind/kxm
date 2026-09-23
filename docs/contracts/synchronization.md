@@ -1,8 +1,9 @@
 # Hub synchronization contract
 
 > **Status.** `kxm.sync-event.v1` is a **schema-tested contract with an
-> implementation** (cross-host P5): the event store `outbox` (v6), the
-> `sync-transform.ts` derivation under the default policy, supervisor push to
+> implementation** (cross-host P5): the event store `outbox` (v7, which adds
+> `attempt_count` and the refusal columns named below), the `sync-transform.ts`
+> derivation under the default policy, supervisor push to
 > `POST /v1/sync/events`, and hub ingestion into `sync_events` (hub store v5).
 > Custom project policies and on-demand content transfer remain unimplemented.
 > Phase 8 gate: [implementation plan](../../plans/implementation-plan.md#phase-8-multi-project-hub-kxm).
@@ -87,6 +88,12 @@ values. Extensions require a new reviewed schema revision.
 The outbox stores only the already-derived sync object plus retry transport
 metadata. It does not retain the full local source payload for later redaction.
 
+A row sits in exactly one of three states: **pending** (retryable), **acked**
+(the hub holds it), or **refused** (the hub answered in a way that re-sending the
+same bytes cannot change). `refused_code` carries the hub's own code, and it is
+what keeps a permanently unacceptable row from being re-pushed on every tick —
+see Ordering and idempotency.
+
 ## Redaction
 
 Before transformation, the Runtime registers resolved secret values with an
@@ -108,13 +115,34 @@ values MUST NOT be persisted merely to support later redaction.
 - The hub accepts an exact event once by `{projectId, runId, sequence}`.
 - Repeating identical bytes is idempotent.
 - Reusing a sequence with different content is a conflict and security alert.
+- The hub answers **one result per event, in request order**. The Runtime reads the
+  answer at its row's index and verifies the echoed `runId`/`sequence` against the
+  row it claims to describe; an answer that does not describe its row is treated as
+  no answer at all, never as an acknowledgement.
+- The project a Runtime names on the wire MUST be the same identity its sync events
+  carry — the `prj_*` id in `.kxm/project.yaml`. The hub pins a project id to the
+  first hub project that claims it, so a second label on the same facts is refused
+  forever after, not merely once.
 - A gap remains pending until filled or explicitly declared unavailable.
 - Hub projections never invent missing events.
 - A hub acknowledgement advances the outbox cursor; loss before acknowledgement
   causes a safe transport retry.
+- A **durable** refusal — `sync_sequence_reused`, `sync_project_mismatch`,
+  `sync_home_runtime_mismatch`, `sync_event_invalid`, or a row too large to carry —
+  moves that row out of the pending queue with the hub's code, because the next tick
+  would raise the same alert on the same bytes. Nothing is deleted: the row, its
+  code and its attempt count stay until an operator clears the refusal
+  (`kxm runtime sync-retry`) after correcting the hub-side state. Only an operator
+  decides that a refusal has become retryable.
+- A **transient** failure (unreachable hub, refused credential, a batch that
+  isolation could not resolve) leaves every row pending, records the reason, and
+  backs the next attempt off exponentially.
 
 Synchronization delay does not pause local execution except when the next action
-requires a shared-operation lease.
+requires a shared-operation lease. It is never silent either: the supervisor keeps a
+per-project sync state (pending, acked and refused counts, the last failure and when
+the next attempt is due) at `GET /v1/sync/status`, surfaced by `kxm runtime status`
+and logged once per state change.
 
 ## Prompts and evidence on demand
 

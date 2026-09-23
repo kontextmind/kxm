@@ -51,6 +51,21 @@ export function readInstalledKxmVersion(root: string): string {
   return pkg.version;
 }
 
+/**
+ * `readInstalledKxmVersion` without the raw filesystem failure. The installed
+ * version is read to decide whether a candidate is an upgrade, a downgrade or
+ * the same thing — so a directory that has no readable `package.json` must come
+ * back as "unknown" and be refused in words, not surface as an uncaught ENOENT
+ * stack from `kxm update`.
+ */
+export function installedKxmVersion(root: string): string | undefined {
+  try {
+    return readInstalledKxmVersion(root);
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseSemver(value: string): [number, number, number] | undefined {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
   if (!match) return undefined;

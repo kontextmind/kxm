@@ -1785,8 +1785,40 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   | P2 **(delivered)** | Queued delivery to a known offline peer: `allowOffline` on `POST /v1/messages` and `kxm peer send`, stored `queued`, delivered once on resumption via the existing cursor, TTL expiry | P1 | send to a stopped agent; restart delivers once; short TTL expires unread and reports `expired` | `a peer request to a known offline agent queues, delivers once on resumption, and expires by its TTL` in `test/core/hub-api.test.ts` (landed) |
   | P3 **(delivered)** | Fenced hub leases (hub store **v3→v4**: `leases` table) with a real consumer: shared external effects (`git-push`, `pr-create`, `tracker-issue`, `webhook`) acquire a lease keyed by `targetRef` before execution, renew on heartbeat, refuse with `effect_lease_unavailable` when the hub is unreachable; superseded token at commit → `blocked_uncertain`, never retried | P0 | two clients contend for one `targetRef`; loser refused; TTL frees the resource; store v4 with table pin + restore ceiling + deployed witness re-run | `a shared external effect cannot commit with a fencing token the hub has superseded` in `test/core/hub-api.test.ts` (landed; deployed restore witness still to re-run) |
   | P4 **(behind trigger)** | Coordinator intake from peer messages: opens only when a cross-box request targets a role (observed `target_not_found` for a coordinator slot from P0/P2). Four sub-slices (identity history, arrival sequence, hub→intake bridge, dispatch via audited pi one-shot) — see [plan-cross-host-phase.md](plan-cross-host-phase.md) P4a–P4d | P2 + trigger | one real cross-box request to an offline role produces exactly one run and one reply carrying its receipt | named per sub-slice in the plan |
-  | P5 **(delivered)** | Runtime→hub sync-event outbox with Runtime presence (event store **v5→v6**): event store `outbox` table, sync-transform deriving `kxm.sync-event.v1` per the synchronization contract, supervisor push with cursor ack; hub store **v4→v5** (`sync_events`, `runtime_presence`); snapshot lists runs by home Runtime with `orphaned` on lease expiry | P1, P3 | a run on box B appears in hub A's snapshot with bounded fields; replay idempotent; altered bytes under a used sequence refused | `outbox rows are sync-safe and the hub accepts each project-run-sequence exactly once` in `test/core/runtime.test.ts` (landed; box-B→hub-A witness and deployed restore witness still to run) |
-  | P6 | Phase 8 gate witness: two Runtimes execute independent offline runs, reconnect, sync through P5, and attempt the same shared push; the second is refused without the P3 lease | P3, P5 | driver green; live witness records both run ids, the sync cursor and the refused push | `two runtimes synchronize independent offline runs and a conflicting shared push is refused without the lease` in `test/core/driver.test.ts` |
+  | P5 **(delivered; deployed restore witness re-run after v5→v6 + v4→v5 bumps: passed — old v3 hub refused, fresh v5 hub created, services active)** | Runtime→hub sync-event outbox with Runtime presence (event store **v5→v6**): event store `outbox` table, sync-transform deriving `kxm.sync-event.v1` per the synchronization contract, supervisor push with cursor ack; hub store **v4→v5** (`sync_events`, `runtime_presence`); snapshot lists runs by home Runtime with `orphaned` on lease expiry | P1, P3 | a run on box B appears in hub A's snapshot with bounded fields; replay idempotent; altered bytes under a used sequence refused | `outbox rows are sync-safe and the hub accepts each project-run-sequence exactly once` in `test/core/runtime.test.ts` (landed; box-B→hub-A witness and deployed restore witness still to run) |
+  | P6 **(delivered: PR #277; Phase 8 gate witness closed 2026-09-23)** | Phase 8 gate witness: two Runtimes execute independent offline runs, reconnect, sync through P5, and attempt the same shared push; the second is refused without the P3 lease. Driver green. Live witness on kxm-dev-svr: **finding 1 (#280, landed)** presence was registered under the npm package name while sync events carry the `project.yaml` id, so the snapshot could not join them. **Finding 2 (this slice)** — the report that "the sync push loop silently doesn't push pending outbox rows" was wrong about the mechanism and right about the symptom: the loop *was* pushing every tick, and the hub refused all 23 rows with `sync_project_mismatch`, because the pre-#280 push had already let hub project `@kontextmind/kxm` claim `prj_kxm_project` and the hub pins a project id to its first claimant. A durable refusal was treated as transient: the same 23 rows were re-pushed every 10 s for ~35 h (hub `kxm_sync_events_refused_total` reached **30,406**), `syncKxmOutbox`'s conflict/reject counters were discarded by the tick, the tick's `catch {}` logged nothing, and the supervisor has no stdio — so a stampede was indistinguishable from a loop that never ran. **Fixed** in event store **v6→v7** (`outbox.attempt_count`, `refused_code`, `refused_at`): a durable refusal leaves the pending queue carrying the hub's own code (revivable only by `kxm runtime sync-retry`, never by the Runtime itself); an oversized row is isolated instead of parking every row behind it; a hub answer must describe the row it acks; a transient failure records its reason and backs off exponentially; and each project's sync state is served at `GET /v1/sync/status`, printed by `kxm runtime status`, and logged once per state change to `$S/runtime/logs/kxm-runtime.jsonl`. **Deployed witness (kxm-dev-svr):** the hub's 23 mislabeled rows were relabeled to `prj_kxm_project` from a file backup — same content hashes, same home Runtime, so a claim correction, not a rewrite — and the pending 23 synced inside one tick: hub holds 46 events, both runs listed under home runtime `rtm_8c48121cef7192c5f9f226d0` with `lastSequence 23`, `pendingGap false`, `orphaned false`, presence online under the same label. The two-Runtime *offline* half of the gate stays witnessed by the driver test, not by this box. Witnessing it also surfaced a leftover this slice created: backup ceilings lived in **two** tables and the bump updated one — now one `KXM_BACKUP_CEILINGS` table read by both discovery and restore, pinned by `restore ceilings track every store's own schema version` (see the recorded gap below for the larger backup-coverage hole it exposed) | P3, P5 | driver green; live witness records both run ids, the sync cursor and the refused push | `two runtimes synchronize independent offline runs and a conflicting shared push is refused without the lease` in `test/core/driver.test.ts`, plus `a hub that durably refuses a row takes it out of the pending queue and says why`, `one row the hub cannot carry is refused on its own instead of parking the queue behind it`, `the supervisor sync tick pushes under the identity its own sync events carry` and `a hub this Runtime cannot reach is reported by the sync status, not swallowed` in `test/core/runtime.test.ts` |
+- **Recorded gap, not scheduled (2026-09-23, found while running the P7 deployed restore witness):**
+  **`kxm backup` cannot see the stores the Runtime actually owns.** `discoverProjectStores`
+  (`database.ts`) looks for `registry.db`, `bindings.db` and event stores under
+  `<projectRoot>/.kxm/runtime/…`, but the Runtime writes them to the **user state root**:
+  `$S/runtime/registry.db` and `$S/runtime/projects/<projectKey>/run-events.db`. Observed on
+  kxm-dev-svr, on the real project, with the supervisor's own hub live: `kxm backup --json`
+  answered **`ok: true`** with a manifest holding exactly one store —
+  `hub-store` (176 KB) — while the same box held `registry.db` (20 KB) and
+  `projects/6d41c43d…/run-events.db` (303 KB, 46 outbox rows, including the 23 this slice exists
+  because of). A second project with no in-project hub answered `backup_no_stores`. So the
+  verified, hashed manifest passes while omitting every run event, drive receipt, gate record and
+  outbox row — including the `refused_code` state P6 just added — and the operator sees `ok`.
+  `docs/operations.md` already
+  tells operators to copy the whole state tree, so the file-level recipe is honest; the
+  **command** claims "all stores" and does not mean it. Not scheduled here because the fix is a
+  scope decision, not a bug fix: it must decide whether one command backs up two roots (the
+  project and the user state root), how `kxm restore` remaps `$S/...` paths onto a new box, and
+  what a *partial* manifest must refuse. First slice should start from that question, not from a path patch.
+  Gate it needs: a named test asserting a backup of a project with a live event store in the
+  user state root lists that store in the manifest, and that restoring it into a fresh root
+  brings the outbox back — the current round-trip test only ever puts stores inside
+  `projectRoot`, which is why the gap survived.
+  **Consequence for P6, so the row is not read as more than it is:** the v6→v7 bump's deployed
+  witness covers the **brake** (kxm-dev-svr, 2026-09-23: the real pre-bump `run-events.db` copy,
+  46/46 acked, refused by the v7 build with `runtime_schema_outdated … is schema version 6; this
+  build requires 7`) and **fresh creation** (a new store at v7 with `attempt_count`/`refused_code`
+  /`refused_at` and both partial indexes). It does **not** cover a deployed backup/restore
+  round-trip of the event store, because the command cannot enumerate it. Do not mark the P6
+  deployed restore witness passed for the event store until this gap is closed; the v7
+  round-trip is proven only by the suite (`restore ceilings track every store's own schema
+  version` plus the e6 round-trip).
+
 - **Recorded gap, not scheduled (2026-09-20, found while fixing S3):**
   `producerPolicy.acceptedStatuses` compiles to `["passed"]` in
   `engine-compile.ts` / `engine-plan.ts` and is **never consulted at settlement**. The
@@ -2523,6 +2555,16 @@ here.
 
 **Gate:** two Runtimes execute and synchronize independent offline runs but
 cannot perform conflicting shared mutable actions without fencing.
+
+**Gate status (2026-09-23): held by the P6 driver witness, not yet by two boxes.**
+Proven: two Runtimes drive independent offline runs, sync through the P5 outbox, and a
+conflicting shared push is refused without the P3 lease — deterministically, in
+`test/core/driver.test.ts`. Live on kxm-dev-svr: a run's facts reached the hub, both runs
+are listed by home Runtime with a gapless cursor, and a conflicting push was refused. Not
+yet run live: a **second physical box** — and that box must be running the fixed supervisor,
+because the P6 sync-push finding (a durable hub refusal retried forever and never surfaced)
+is exactly what a one-box witness could not see. `synchronization contract is schema-tested
+only today` above is historical: the outbox, transform, push and ingestion are implemented.
 
 ## Phase 9: context and reviewed improvement
 
