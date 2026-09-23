@@ -345,6 +345,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   picking a global definition wrote the one-step scaffold under its id and reported
   success. It now writes the global definition's content, with `--description` replacing
   its description, and the loader check refuses one the project cannot load.
+- **`kxm role add --pick <global-id>` copies the global role.** In local scope, picking a
+  global role wrote an empty `Role <id>` with no skills or roster under its ID. It now
+  writes the global role's content, with `--description`, `--skills` and `--model`
+  replacing those fields the way they do for a built-in template.
+- **`kxm role add` no longer leaves a project that refuses to load.** A local add now needs
+  a KXM project (`project_not_found` otherwise, and no stray `.kxm/` that would make
+  `kxm init` refuse), writes under the project root from any subdirectory, and is checked
+  by the project loader first with the new role in place of any file of that ID. A
+  `writer` role whose roster leaves out the `implementer` agent's model, including the
+  built-in `writer` template for such a project, is refused with `role_invalid`, exit 2,
+  and nothing is written, also under `--dry-run`.
 - **Live `kxm runs drive` can author on an audited writer profile.** A write-repository
   step on pi (`-a`, with extensions, skills, and the session off) or grok
   (`--always-approve`, with subagents and web search off) runs against the checkout.

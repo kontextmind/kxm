@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { stringify } from "yaml";
 import { runCli as runCliImpl } from "../../plugins/kxm/src/cli.ts";
+import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import {
   addRole,
@@ -199,6 +200,9 @@ test("Workflow manager subsystem: add, get, list, modify, remove with global/loc
 test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", async () => {
   const tempUserDir = mkdtempSync(join(tmpdir(), "kxm-cli-user-"));
   const tempRepoDir = mkdtempSync(join(tmpdir(), "kxm-cli-repo-"));
+  // Local roles belong to a KXM project.
+  assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", tempRepoDir]).status, 0);
+  initializeKxmProject(tempRepoDir, { projectId: "prj_01JROLECLI0000000000000000" });
 
   const env = {
     KXM_USER_CONFIG_DIR: tempUserDir,
@@ -754,6 +758,135 @@ test("workflow add --pick <global-id> copies that global definition into the pro
     assert.equal(refused.code, 2, refused.out);
     assert.equal((JSON.parse(refused.err) as { error: string }).error, "workflow_invalid");
     assert.equal(existsSync(join(workflows, "gold.yaml")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("role add --pick <global-id> copies that global role into the project, with --description, --skills and --model applied over it", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-pick-global-")));
+  const project = join(root, "project");
+  const roles = join(project, ".kxm", "roles");
+  const globalRoles = join(root, "user-config", "roles");
+  const env: NodeJS.ProcessEnv = {
+    HOME: join(root, "home"),
+    KXM_STATE_HOME: join(root, "state"),
+    KXM_USER_CONFIG_DIR: join(root, "user-config"),
+    KXM_USER_TELEMETRY_DIR: join(root, "telemetry"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const kxm = async (argv: string[]): Promise<{ code: number; out: string; err: string }> => {
+    let out = "";
+    let err = "";
+    const code = await runCliImpl([...argv, "--json"], env, { stdout: (text) => { out += text; }, stderr: (text) => { err += text; } }, project);
+    return { code, out, err };
+  };
+  try {
+    mkdirSync(project, { recursive: true });
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
+    assert.equal((await kxm(["init", "--project-id", "prj_01JROLEPICKGLOBAL00000000", "--name", "Role pick"])).code, 0);
+
+    // A global role arrives in the project as written, not as an empty role under its id.
+    const kept = await kxm(["role", "add", "qa-lead", "--scope", "global", "--description", "QA lead", "--skills", "testing,e2e", "--harness", "grok", "--model", "grok-4.6"]);
+    assert.equal(kept.code, 0, kept.err);
+    const picked = await kxm(["role", "add", "--pick", "qa-lead"]);
+    assert.equal(picked.code, 0, picked.err);
+    assert.equal((JSON.parse(picked.out) as { filePath: string }).filePath, join(roles, "qa-lead.yaml"));
+    assert.deepEqual(parseRoleFile(join(roles, "qa-lead.yaml")), parseRoleFile(join(globalRoles, "qa-lead.yaml")));
+
+    // A `.yml` global, which a lookup by `<id>.yaml` misses, takes the overrides and keeps the rest.
+    writeFileSync(join(globalRoles, "reviewer.yml"), [
+      "schema: kxm.role.v1",
+      "id: reviewer",
+      "description: Reviews diffs",
+      "skills:",
+      "  - review",
+      "tools:",
+      "  preset: critic",
+      "roster:",
+      "  - harness: codex",
+      "    model: openai/gpt-5.6-sol",
+      "",
+    ].join("\n"));
+    const overridden = await kxm(["role", "add", "--pick", "reviewer", "--description", "Project reviewer", "--skills", "review,security", "--harness", "claude", "--model", "anthropic/claude-fable-5-1"]);
+    assert.equal(overridden.code, 0, overridden.err);
+    const copy = parseRoleFile(join(roles, "reviewer.yaml"));
+    assert.equal(copy?.description, "Project reviewer");
+    assert.deepEqual(copy?.skills, ["review", "security"]);
+    assert.deepEqual(copy?.roster, [{ harness: "claude", model: "anthropic/claude-fable-5-1" }]);
+    assert.deepEqual(copy?.tools, { preset: "critic" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("role add writes a local role only at the project root, and only if the project loader accepts it", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-add-load-")));
+  const project = join(root, "project");
+  const roles = join(project, ".kxm", "roles");
+  const env: NodeJS.ProcessEnv = {
+    HOME: join(root, "home"),
+    KXM_STATE_HOME: join(root, "state"),
+    KXM_USER_CONFIG_DIR: join(root, "user-config"),
+    KXM_USER_TELEMETRY_DIR: join(root, "telemetry"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const kxm = async (argv: string[], cwd = project): Promise<{ code: number; out: string; err: string }> => {
+    let out = "";
+    let err = "";
+    const code = await runCliImpl([...argv, "--json"], env, { stdout: (text) => { out += text; }, stderr: (text) => { err += text; } }, cwd);
+    return { code, out, err };
+  };
+  try {
+    mkdirSync(join(project, "sub"), { recursive: true });
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
+
+    // No project to hold it yet, and a stray .kxm/ would make `kxm init` refuse.
+    const early = await kxm(["role", "add", "early"]);
+    assert.equal(early.code, 2, early.err);
+    assert.equal((JSON.parse(early.err) as { error: string }).error, "project_not_found");
+    assert.equal(existsSync(join(project, ".kxm")), false);
+
+    assert.equal((await kxm(["init", "--project-id", "prj_01JROLEADDLOAD000000000000", "--name", "Role load"])).code, 0);
+    // An implementer on a model the built-in writer template's roster leaves out.
+    const implementer = join(project, ".kxm", "agents", "implementer.yaml");
+    const undeclared = readFileSync(implementer, "utf8").replace(/^harness:.*\n/m, "").replace(/^model:.*\n(?: {2}.*\n)*/m, "");
+    writeFileSync(implementer, `${undeclared}harness: claude\nmodel:\n  provider: anthropic\n  model: claude-fable-5-1\n`);
+    assert.ok(loadKxmProject(project));
+
+    // The writer template's roster leaves out the implementer's model, so the loader would refuse the project.
+    for (const dryRun of [["--dry-run"], []]) {
+      const refused = await kxm(["role", "add", "--pick", "writer", ...dryRun]);
+      assert.equal(refused.code, 2, refused.err);
+      const refusal = JSON.parse(refused.err) as { error: string; issues: Array<{ code: string; file: string }> };
+      assert.equal(refusal.error, "role_invalid");
+      assert.ok(refusal.issues.some((entry) => entry.code === "role_roster_conflicts_with_agent" && entry.file === ".kxm/roles/writer.yaml"), refused.err);
+      assert.equal(existsSync(join(roles, "writer.yaml")), false);
+    }
+
+    // With the implementer's model, from a subdirectory, the role lands where the loader reads it.
+    const added = await kxm(["role", "add", "--pick", "writer", "--harness", "claude", "--model", "anthropic/claude-fable-5-1"], join(project, "sub"));
+    assert.equal(added.code, 0, added.err);
+    assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, join(roles, "writer.yaml"));
+    assert.equal(existsSync(join(project, "sub", ".kxm")), false);
+    assert.ok(loadKxmProject(project));
+
+    // A conflicting writer left on disk is judged by what replaces it, so --overwrite repairs it.
+    writeFileSync(join(roles, "writer.yaml"), "schema: kxm.role.v1\nid: writer\nroster:\n  - model: xai/grok-4.6\n");
+    assert.throws(() => loadKxmProject(project), /role_roster_conflicts_with_agent/);
+    const repaired = await kxm(["role", "add", "writer", "--harness", "claude", "--model", "anthropic/claude-fable-5-1", "--overwrite"]);
+    assert.equal(repaired.code, 0, repaired.err);
+    assert.ok(loadKxmProject(project));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

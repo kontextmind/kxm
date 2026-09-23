@@ -1197,7 +1197,7 @@ Not run with a configured role; in a fresh project it exits 1 with `kxm: role 'w
 kxm role add [roleId] [--file <path>] [--description <text>] [--skills <skills>] [--harness <harness>] [--model <model>] [--scope global|local] [--overwrite] [--pick [selection]]
 ```
 
-Adds a role definition. Without a role ID, or with `--pick`, you choose from the built-in templates (`writer`, `planner`, `critic-arch`, `critic-cli`, `verifier`) and, for local scope, existing global roles. With `--file`, the YAML file is used and its `id` is replaced by the role ID.
+Adds a role definition. Without a role ID, or with `--pick`, you choose from the built-in templates (`writer`, `planner`, `critic-arch`, `critic-cli`, `verifier`) and, for local scope, existing global roles; a global role with a template's ID is not offered. The choice is written under its own ID with its content: the template, or a copy of the global role's file, with `--description`, `--skills`, and `--model` (with `--harness`) replacing its description, skills, and roster. With `--file`, the YAML file is used and its `id` is replaced by the role ID. Otherwise a role with only the given options is written.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1211,6 +1211,8 @@ Adds a role definition. Without a role ID, or with `--pick`, you choose from the
 | `--pick` | `[selection]` | none | Pick from available role templates (index or id) |
 
 - Writes `<scope dir>/roles/<id>.yaml`. `--dry-run` plans the write and writes nothing.
+- Local scope belongs to a KXM project: the file lands in the project root's `.kxm/roles/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new role in place of any file of that ID. The loader reads only `writer.yaml`, whose enabled roster must include the `implementer` agent's model (see [Roles](config-reference.md#kxmrolesroleyaml-kxmrolev1)). If the project would not load, the command refuses with `role_invalid`, lists each issue and writes nothing, also under `--dry-run`, and `--overwrite` replaces a `writer.yaml` the loader refuses. Global scope is not checked, because no loader reads it.
+- Refusals exit 2 and honor `--json`: `project_not_found` and `role_invalid` (with `issues`, each `{phase, code, file, message}`). An existing role without `--overwrite` exits 1 with a plain `role add failed: role_already_exists: ...` line, also under `--dry-run`.
 - JSON keys: `roleId`, `id`, `filePath`, `scope`.
 
 > [!WARNING]
