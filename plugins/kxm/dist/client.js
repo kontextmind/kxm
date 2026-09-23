@@ -417,47 +417,78 @@ var HubClient = class {
     await this.register();
   }
   async request(path, init = {}, includeIdentity = true) {
-    const requestTimeoutMs = this.options.requestTimeoutMs ?? 15e3;
-    const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
-    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-    let response;
+    return await hubJsonRequest(this.options, path, init, this.headers(includeIdentity));
+  }
+};
+async function hubJsonRequest(options, path, init, headers) {
+  const requestTimeoutMs = options.requestTimeoutMs ?? 15e3;
+  const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
+  const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+  let response;
+  try {
+    response = await (options.fetchImpl ?? fetch)(`${options.serverUrl.replace(/\/$/, "")}${path}`, {
+      ...init,
+      signal,
+      headers: { ...headers, ...init.headers ?? {} }
+    });
+  } catch (error) {
+    if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
+    throw error;
+  }
+  const text = await response.text();
+  let body = {};
+  if (text) {
     try {
-      response = await (this.options.fetchImpl ?? fetch)(`${this.options.serverUrl.replace(/\/$/, "")}${path}`, {
-        ...init,
-        signal,
-        headers: { ...this.headers(includeIdentity), ...init.headers ?? {} }
-      });
-    } catch (error) {
-      if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
-      throw error;
+      body = JSON.parse(text);
+    } catch {
+      throw new Error(`hub returned invalid JSON with HTTP ${response.status}`);
     }
-    const text = await response.text();
-    let body = {};
-    if (text) {
-      try {
-        body = JSON.parse(text);
-      } catch {
-        throw new Error(`hub returned invalid JSON with HTTP ${response.status}`);
-      }
+  }
+  if (!response.ok) {
+    const extras = {};
+    for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
+      if (typeof body[key] === "string") extras[key] = body[key];
     }
-    if (!response.ok) {
-      const extras = {};
-      for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
-        if (typeof body[key] === "string") extras[key] = body[key];
-      }
-      if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
-      throw new HubHttpError(
-        response.status,
-        String(body.error ?? `HTTP ${response.status}`),
-        typeof body.code === "string" ? body.code : void 0,
-        response.headers.get("x-request-id") ?? void 0,
-        Object.keys(extras).length > 0 ? extras : void 0
-      );
-    }
-    return body;
+    if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
+    throw new HubHttpError(
+      response.status,
+      String(body.error ?? `HTTP ${response.status}`),
+      typeof body.code === "string" ? body.code : void 0,
+      response.headers.get("x-request-id") ?? void 0,
+      Object.keys(extras).length > 0 ? extras : void 0
+    );
+  }
+  return body;
+}
+var RuntimeHubClient = class {
+  options;
+  constructor(options) {
+    this.options = options;
+  }
+  async heartbeat() {
+    const result = await this.request("/v1/runtime/presence", {
+      project: this.options.project,
+      runtimeId: this.options.runtimeId,
+      host: this.options.host ?? defaultHostLabel()
+    });
+    return result.presence;
+  }
+  /** Push already-derived `kxm.sync-event.v1` objects, in outbox order. */
+  async pushSyncEvents(events) {
+    return await this.request("/v1/sync/events", {
+      project: this.options.project,
+      runtimeId: this.options.runtimeId,
+      events
+    });
+  }
+  async request(path, body) {
+    const headers = { "content-type": "application/json" };
+    if (this.options.authToken) headers.authorization = `Bearer ${this.options.authToken}`;
+    return await hubJsonRequest(this.options, path, { method: "POST", body: JSON.stringify(body) }, headers);
   }
 };
 export {
   HubClient,
-  HubHttpError
+  HubHttpError,
+  RuntimeHubClient
 };

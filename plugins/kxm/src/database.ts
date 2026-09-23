@@ -593,7 +593,7 @@ export function discoverProjectStores(projectRoot: string, options: { hubDataPat
   if (existsSync(hubPath)) {
     // Must track HUB_STORE_SCHEMA_VERSION in store.ts: the hub's own fresh backup is
     // restored through this ceiling, so a bump left behind here refuses it.
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 4 });
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 5 });
   }
 
   const registryPath = join(root, ".kxm", "runtime", "registry.db");
@@ -615,7 +615,7 @@ export function discoverProjectStores(projectRoot: string, options: { hubDataPat
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join(eventsDir, entry.name),
-          maxSupportedVersion: 4,
+          maxSupportedVersion: 6,
         });
       }
     }
@@ -731,14 +731,14 @@ export function restoreBackup(
 
     // The hub-store ceiling. Must track HUB_STORE_SCHEMA_VERSION in store.ts for the
     // same reason as the events ceiling below.
-    let maxSupported = 4;
+    let maxSupported = 5;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {
       // Must track KXM_EVENT_STORE_SCHEMA_VERSION in runtime-store.ts. The pin is
       // the e6 backup/restore round-trip test: bump one without the other and it
       // refuses its own fresh backup.
-      maxSupported = 5;
+      maxSupported = 6;
     }
 
     let targetPath = store.sourcePath;

@@ -163,6 +163,7 @@ export class KxmSchemaRegistry {
   readonly driveReceiptValidator: ValidateFunction;
   readonly coordinatorValidator: ValidateFunction;
   readonly intakeMessageValidator: ValidateFunction;
+  readonly syncEventValidator: ValidateFunction;
 
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve(schemasDir);
@@ -180,6 +181,7 @@ export class KxmSchemaRegistry {
     const driveReceiptFile = "drive-receipt.schema.json";
     const coordinatorFile = "coordinator.schema.json";
     const intakeMessageFile = "intake-message.schema.json";
+    const syncEventFile = "sync-event.schema.json";
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, initOperationFile)));
@@ -188,6 +190,7 @@ export class KxmSchemaRegistry {
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, driveReceiptFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, coordinatorFile)));
     this.ajv.addSchema(readJsonObject(join(this.schemasDir, intakeMessageFile)));
+    this.ajv.addSchema(readJsonObject(join(this.schemasDir, syncEventFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA) as [KxmResourceKind, { identity: string; file: string }][]) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -201,6 +204,7 @@ export class KxmSchemaRegistry {
     const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${driveReceiptFile}`);
     const coordinatorValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${coordinatorFile}`);
     const intakeMessageValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${intakeMessageFile}`);
+    const syncEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${syncEventFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -209,6 +213,7 @@ export class KxmSchemaRegistry {
     if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
     if (!coordinatorValidator) throw new Error(`schema did not compile: ${coordinatorFile}`);
     if (!intakeMessageValidator) throw new Error(`schema did not compile: ${intakeMessageFile}`);
+    if (!syncEventValidator) throw new Error(`schema did not compile: ${syncEventFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -217,6 +222,7 @@ export class KxmSchemaRegistry {
     this.driveReceiptValidator = driveReceiptValidator;
     this.coordinatorValidator = coordinatorValidator;
     this.intakeMessageValidator = intakeMessageValidator;
+    this.syncEventValidator = syncEventValidator;
   }
 
   validate(kind: KxmResourceKind, value: JsonObject, file: string): KxmConfigIssue[] {
@@ -272,6 +278,15 @@ export function validateRunEvent(value: unknown, file: string): void {
       registry.ajv.errorsText(registry.runEventValidator.errors, { separator: "; " }),
     )]);
   }
+}
+
+/** Check a derived sync object against `kxm.sync-event.v1`. Returns the
+ * schema errors instead of throwing so the transform can fall back to a
+ * degraded object and the hub can refuse one event without failing a batch. */
+export function syncEventSchemaErrors(value: unknown): string | undefined {
+  const registry = (cachedRunEventRegistry ??= new KxmSchemaRegistry());
+  if (registry.syncEventValidator(value)) return undefined;
+  return registry.ajv.errorsText(registry.syncEventValidator.errors, { separator: "; " });
 }
 
 /** Validate a drive receipt against `kxm.drive-receipt.v1`. Throws `drive_receipt_invalid`. */

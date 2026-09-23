@@ -34,8 +34,12 @@ import {
   kxmRuntimeRequest,
   kxmSupervisorStatus,
   kxmSupervisorTokenFile,
+  syncKxmOutbox,
 } from "../../plugins/kxm/src/runtime-supervisor.ts";
-import { loadKxmProject, KxmConfigError } from "../../plugins/kxm/src/project-config.ts";
+import { loadKxmProject, KxmConfigError, syncEventSchemaErrors } from "../../plugins/kxm/src/project-config.ts";
+import { createMeshHub } from "../../plugins/kxm/src/hub.ts";
+import { RuntimeHubClient } from "../../plugins/kxm/src/client.ts";
+import { deriveKxmSyncEvent, KXM_DEFAULT_SYNC_POLICY_REVISION, type KxmSyncEvent } from "../../plugins/kxm/src/sync-transform.ts";
 
 function cleanup(...paths: string[]): void {
   removeTempDir(...paths);
@@ -75,7 +79,8 @@ for (const kind of ["registry", "events"] as const) {
       try {
         const version = database.prepare("PRAGMA user_version").get() as { user_version: number };
         assert.equal(version.user_version, kind === "registry" ? KXM_REGISTRY_SCHEMA_VERSION : KXM_EVENT_STORE_SCHEMA_VERSION);
-        const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
+        // `sqlite_sequence` is SQLite's own bookkeeping for the outbox AUTOINCREMENT, not a store table.
+        const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>;
         assert.deepEqual(tables.map(({ name }) => name), kind === "registry"
           ? ["projects", "supervisor"]
           : [...KXM_EVENT_STORE_TABLE_NAMES]);
@@ -751,5 +756,166 @@ test("supervisor token reader rejects token file if it is a symbolic link", () =
     );
   } finally {
     cleanup(dir);
+  }
+});
+
+test("outbox rows are sync-safe and the hub accepts each project-run-sequence exactly once", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-outbox-");
+  const secret = "s3cr3t-registered-value-7781";
+  const entries: Array<Record<string, unknown>> = [];
+  let clock = Date.now();
+  const authToken = "outbox-test-admin-token";
+  const hub = createMeshHub({ port: 0, authToken, rateLimit: false, now: () => clock, logger: (entry) => entries.push(entry) });
+  try {
+    // An event store one schema back is refused, never reshaped.
+    const outdated = join(stateRoot, "v5-events.db");
+    const prior = new DatabaseSync(outdated);
+    prior.exec("PRAGMA user_version = 5");
+    prior.close();
+    assert.throws(
+      () => new KxmRunEventStore(outdated),
+      new RegExp(`runtime_schema_outdated[\\s\\S]*is schema version 5; this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}`),
+    );
+    assert.equal(KXM_EVENT_STORE_SCHEMA_VERSION, 6);
+    assert(KXM_EVENT_STORE_TABLE_NAMES.includes("outbox"));
+
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JTEST000000000000000000" });
+    try {
+      context.eventStore.syncRedactor.register(secret);
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "default", prompt: "private prompt body do-not-sync" });
+      const runId = accepted.run.runId;
+      cancelKxmRun(context, runId, { reason: `operator stop ${secret} at /Users/operator/.ssh/id_ed25519 token=abc123` });
+
+      // Every committed event has exactly one outbox row, and the row is the
+      // derived sync object — never the local event.
+      const events = context.eventStore.events(runId, 0, 100);
+      const rows = context.eventStore.outboxForRun(runId);
+      assert.equal(rows.length, events.length);
+      assert.equal(rows.length, 3);
+      for (const [index, row] of rows.entries()) {
+        const local = events[index]!;
+        const sync = JSON.parse(row.syncEvent) as KxmSyncEvent;
+        assert.equal(syncEventSchemaErrors(sync), undefined, `row ${row.sequence} must validate kxm.sync-event.v1`);
+        assert.equal(sync.schema, "kxm.sync-event.v1");
+        assert.equal(sync.sourceEventId, local.eventId);
+        assert.equal(sync.sequence, local.sequence);
+        assert.equal(sync.homeRuntimeId, context.homeRuntimeId);
+        assert.equal(sync.syncPolicyRevision, KXM_DEFAULT_SYNC_POLICY_REVISION, "the transform records its policy revision");
+        assert.equal(row.ackedAt, undefined);
+        assert.doesNotMatch(row.syncEvent, /private prompt body/);
+        assert.doesNotMatch(row.syncEvent, new RegExp(secret));
+        assert.doesNotMatch(row.syncEvent, /\/Users\/operator|id_ed25519|abc123/);
+        assert.equal("monotonicNs" in sync, false, "host clock internals stay local");
+      }
+      const created = JSON.parse(rows[0]!.syncEvent) as KxmSyncEvent;
+      assert.deepEqual(
+        created.redaction.fieldsOmitted.filter((field) => ["executorIds", "executors", "repositoryIds", "repositories"].includes(field)).sort(),
+        Object.keys(events[0]!.payload).filter((field) => ["executorIds", "executors", "repositoryIds", "repositories"].includes(field)).sort(),
+        "fields outside the allowlist are named, never carried",
+      );
+      const cancelSync = JSON.parse(rows[1]!.syncEvent) as KxmSyncEvent;
+      assert.match(String(cancelSync.payload.reason), /\[redacted\]/);
+      assert(cancelSync.redaction.valuesReplaced >= 3, "registered value, credential shape and path are all counted");
+
+      // A prompt, a receipt URL or any unknown key never survives the transform.
+      const crafted = deriveKxmSyncEvent({
+        ...events[0]!,
+        payload: {
+          ...events[0]!.payload,
+          prompt: "full private prompt",
+          receipt: { provider: "github", kind: "pull-request", id: "41", url: "https://user:tok@example.test/pull/41" },
+        },
+      });
+      assert.equal(syncEventSchemaErrors(crafted), undefined);
+      assert(crafted.redaction.fieldsOmitted.includes("prompt"));
+      assert(crafted.redaction.fieldsOmitted.includes("receipt.url"));
+      assert.doesNotMatch(JSON.stringify(crafted), /full private prompt|user:tok/);
+
+      const { url } = await hub.start();
+      const client = new RuntimeHubClient({ serverUrl: url, project: "runtime-test", authToken, runtimeId: context.homeRuntimeId, host: "box-b" });
+      const presence = await client.heartbeat();
+      assert.equal(presence.presence, "online");
+      assert.equal(presence.host, "box-b");
+
+      const pushed = await syncKxmOutbox(context.eventStore, client);
+      assert.deepEqual(pushed, { pushed: 3, acked: 3, conflicts: 0, rejected: 0 });
+      assert.deepEqual(context.eventStore.pendingOutbox(), [], "acknowledged rows advance the cursor");
+      assert(context.eventStore.outboxForRun(runId).every((row) => row.ackedAt !== undefined));
+
+      // Replaying the same bytes is idempotent.
+      const replay = await client.pushSyncEvents(rows.map((row) => JSON.parse(row.syncEvent) as unknown));
+      assert.deepEqual(replay.results.map((result) => result.outcome), ["duplicate", "duplicate", "duplicate"]);
+      assert.deepEqual(replay.cursors, [{ projectId: created.projectId, runId, cursor: 3 }]);
+      assert.equal(entries.some((entry) => entry.event === "security_alert"), false, "an exact replay is not an alert");
+
+      // Different bytes under a used sequence are refused and alerted.
+      const altered = JSON.parse(rows[1]!.syncEvent) as KxmSyncEvent;
+      altered.payload.reason = "rewritten after the fact";
+      const conflict = await client.pushSyncEvents([altered]);
+      assert.deepEqual(conflict.results, [{ projectId: altered.projectId, runId, sequence: 2, outcome: "conflict", code: "sync_sequence_reused" }]);
+      const alert = entries.find((entry) => entry.event === "security_alert" && entry.alert === "sync_sequence_conflict");
+      assert(alert, "conflicting reuse raises a security alert");
+      assert.equal(alert.sequence, 2);
+
+      // A schema escape field is rejected before it is stored.
+      const escaped = { ...(JSON.parse(rows[2]!.syncEvent) as KxmSyncEvent), sequence: 9 };
+      (escaped.payload as Record<string, unknown>).rawLogs = ["secret output"];
+      const invalid = await client.pushSyncEvents([escaped]);
+      assert.equal(invalid.results[0]!.outcome, "rejected");
+      assert.equal(invalid.results[0]!.code, "sync_event_invalid");
+
+      // Another Runtime cannot push this run's events.
+      const impostor = new RuntimeHubClient({ serverUrl: url, project: "runtime-test", authToken, runtimeId: "rtm_01JIMPOSTOR0000000000000" });
+      const mismatch = await impostor.pushSyncEvents([JSON.parse(rows[0]!.syncEvent) as unknown]);
+      assert.equal(mismatch.results[0]!.code, "sync_runtime_mismatch");
+
+      // A gap stays pending: sequence 5 is held, the cursor stays at 3.
+      const ahead = { ...(JSON.parse(rows[2]!.syncEvent) as KxmSyncEvent), sequence: 5, sourceEventId: "evt_0000000000000000000000000000ahead" };
+      const gap = await client.pushSyncEvents([ahead]);
+      assert.equal(gap.results[0]!.outcome, "accepted");
+      assert.deepEqual(gap.cursors, [{ projectId: created.projectId, runId, cursor: 3 }]);
+
+      const snapshot = async (): Promise<Record<string, unknown>> => {
+        const response = await fetch(`${url}/v1/ops/snapshot?project=runtime-test`, { headers: { authorization: `Bearer ${authToken}` } });
+        assert.equal(response.status, 200);
+        return await response.json() as Record<string, unknown>;
+      };
+      const live = await snapshot();
+      const homes = live.homeRuntimes as Array<Record<string, unknown>>;
+      assert.equal(homes.length, 1);
+      assert.equal(homes[0]!.runtimeId, context.homeRuntimeId);
+      assert.equal(homes[0]!.host, "box-b");
+      assert.equal(homes[0]!.presence, "online");
+      assert.equal(homes[0]!.orphaned, false);
+      const [run] = homes[0]!.runs as Array<Record<string, unknown>>;
+      assert.equal(run!.runId, runId);
+      assert.equal(run!.status, "cancelled", "the projection reads the gapless prefix only");
+      assert.equal(run!.lastSequence, 3);
+      assert.equal(run!.pendingGap, true);
+      assert.equal(run!.orphaned, false);
+      assert.deepEqual(
+        Object.keys(run!).filter((key) => !["projectId", "runId", "workflowId", "displayTitle", "status", "lastSequence", "pendingGap", "updatedAt", "orphaned"].includes(key)),
+        [],
+        "the snapshot shows bounded fields only",
+      );
+      assert.doesNotMatch(JSON.stringify(live), new RegExp(`${secret}|private prompt body`));
+
+      // The presence lease lapses on the hub's clock: the run is orphaned in the
+      // view, and nothing about it moves.
+      clock += 31_000;
+      const lapsed = await snapshot();
+      const lapsedHome = (lapsed.homeRuntimes as Array<Record<string, unknown>>)[0]!;
+      assert.equal(lapsedHome.presence, "expired");
+      assert.equal(lapsedHome.orphaned, true);
+      const [orphan] = lapsedHome.runs as Array<Record<string, unknown>>;
+      assert.equal(orphan!.orphaned, true);
+      assert.equal(orphan!.lastSequence, 3);
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    await hub.close();
+    cleanup(root, stateRoot);
   }
 });

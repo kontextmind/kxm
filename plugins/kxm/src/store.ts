@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { DatabaseSync } from "./sqlite.ts";
-import type { AgentIdentity, LeaseRecord, MessageRecord } from "./protocol.ts";
+import type { AgentIdentity, LeaseRecord, MessageRecord, RuntimePresenceRecord, StoredSyncEvent } from "./protocol.ts";
 import type { ContextItem } from "./context.ts";
 import type { WorkflowJournalEntry, WorkflowRun } from "./workflow.ts";
 import {
@@ -9,7 +9,7 @@ import {
   type DatabaseSchemaSpec,
 } from "./database.ts";
 
-export const HUB_STORE_SCHEMA_VERSION = 4;
+export const HUB_STORE_SCHEMA_VERSION = 5;
 
 export const HUB_STORE_TABLES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   agents: Object.freeze(["id", "record"]),
@@ -20,9 +20,13 @@ export const HUB_STORE_TABLES: Readonly<Record<string, readonly string[]>> = Obj
   workflow_journal: Object.freeze(["id", "run_id", "category", "area", "record"]),
   context_items: Object.freeze(["id", "project", "kind", "record"]),
   leases: Object.freeze(["resource", "holder_agent_id", "fencing_token", "expires_at", "record"]),
+  sync_events: Object.freeze([
+    "project_id", "run_id", "sequence", "hub_project", "home_runtime_id", "event_type", "content_hash", "received_at", "record",
+  ]),
+  runtime_presence: Object.freeze(["runtime_id", "hub_project", "host", "heartbeat", "record"]),
 });
 
-export const HUB_STORE_SCHEMA_V4 = `
+export const HUB_STORE_SCHEMA_V5 = `
   CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     record TEXT NOT NULL
@@ -78,10 +82,31 @@ export const HUB_STORE_SCHEMA_V4 = `
     expires_at TEXT NOT NULL,
     record TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS sync_events (
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    hub_project TEXT NOT NULL,
+    home_runtime_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    record TEXT NOT NULL,
+    PRIMARY KEY (project_id, run_id, sequence)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS sync_events_hub_project ON sync_events(hub_project, run_id, sequence);
+  CREATE TABLE IF NOT EXISTS runtime_presence (
+    runtime_id TEXT NOT NULL,
+    hub_project TEXT NOT NULL,
+    host TEXT,
+    heartbeat TEXT NOT NULL,
+    record TEXT NOT NULL,
+    PRIMARY KEY (hub_project, runtime_id)
+  ) STRICT;
 `;
 
 export const HUB_STORE_SCHEMA_SPEC: DatabaseSchemaSpec = Object.freeze({
-  schema: HUB_STORE_SCHEMA_V4,
+  schema: HUB_STORE_SCHEMA_V5,
   version: HUB_STORE_SCHEMA_VERSION,
   tables: HUB_STORE_TABLES,
 });
@@ -112,6 +137,17 @@ export interface LeaseAcquireInput {
   nowMs: number;
 }
 
+/** How one pushed sync event landed. `conflict` is a security alert: the
+ * same `{projectId, runId, sequence}` already holds different bytes, or the
+ * run already belongs to another project or home Runtime. */
+export type SyncIngestOutcome =
+  | { outcome: "accepted" | "duplicate" }
+  | { outcome: "conflict"; reason: "sequence_reused" | "project_mismatch" | "home_runtime_mismatch"; existingHash?: string };
+
+function syncKey(projectId: string, runId: string, sequence: number): string {
+  return `${projectId}\u0000${runId}\u0000${sequence}`;
+}
+
 function parseLeaseRecord(record: string): LeaseRecord | undefined {
   try {
     return JSON.parse(record) as LeaseRecord;
@@ -125,6 +161,32 @@ function parseLeaseRecord(record: string): LeaseRecord | undefined {
 function leaseHasLapsed(lease: LeaseRecord, nowMs: number): boolean {
   const expiresAtMs = Date.parse(lease.expiresAt);
   return !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs;
+}
+
+type SyncEventSqlRow = {
+  project_id: string;
+  run_id: string;
+  sequence: number;
+  hub_project: string;
+  home_runtime_id: string;
+  event_type: string;
+  content_hash: string;
+  received_at: string;
+  record: string;
+};
+
+function syncEventFromRow(row: SyncEventSqlRow): StoredSyncEvent {
+  return {
+    projectId: row.project_id,
+    runId: row.run_id,
+    sequence: row.sequence,
+    hubProject: row.hub_project,
+    homeRuntimeId: row.home_runtime_id,
+    eventType: row.event_type,
+    contentHash: row.content_hash,
+    receivedAt: row.received_at,
+    bytes: row.record,
+  };
 }
 
 class MessageMap extends Map<string, MessageRecord> {
@@ -167,6 +229,9 @@ export class MeshStore {
   readonly journal = new Map<string, WorkflowJournalEntry>();
   readonly contextItems = new Map<string, ContextItem>();
   readonly leases = new Map<string, LeaseRecord>();
+  /** Memory-only stores keep sync state here; a database store reads SQLite. */
+  private readonly syncEvents = new Map<string, StoredSyncEvent>();
+  private readonly runtimePresence = new Map<string, RuntimePresenceRecord>();
   readonly path?: string;
   private readonly database?: DatabaseSync;
   private readonly agentSequences = new Map<string, number>();
@@ -506,6 +571,144 @@ export class MeshStore {
   private deleteLease(resource: string): void {
     this.leases.delete(resource);
     this.database?.prepare("DELETE FROM leases WHERE resource = ?").run(resource);
+  }
+
+  // ----- Runtime → hub sync (P5) -----
+
+  /**
+   * Accept one sync event exactly once by `{projectId, runId, sequence}`,
+   * deciding inside one transaction. Identical bytes are an idempotent
+   * duplicate; different bytes under a used sequence are refused, and so is a
+   * run that already belongs to another hub project or home Runtime.
+   */
+  ingestSyncEvent(event: StoredSyncEvent): SyncIngestOutcome {
+    const decide = (): SyncIngestOutcome => {
+      const existing = this.readSyncEvent(event.projectId, event.runId, event.sequence);
+      if (existing) {
+        if (existing.contentHash === event.contentHash && existing.hubProject === event.hubProject) return { outcome: "duplicate" };
+        return { outcome: "conflict", reason: "sequence_reused", existingHash: existing.contentHash };
+      }
+      const owner = this.syncProjectOwner(event.projectId);
+      if (owner !== undefined && owner !== event.hubProject) return { outcome: "conflict", reason: "project_mismatch" };
+      const home = this.syncRunHome(event.projectId, event.runId);
+      if (home !== undefined && home !== event.homeRuntimeId) return { outcome: "conflict", reason: "home_runtime_mismatch" };
+      this.writeSyncEvent(event);
+      return { outcome: "accepted" };
+    };
+    return this.database ? withDatabaseTransaction(this.database, decide) : decide();
+  }
+
+  /** Every sync event one hub project holds, by run then sequence. */
+  listSyncEvents(hubProject: string): StoredSyncEvent[] {
+    if (!this.database) {
+      return [...this.syncEvents.values()]
+        .filter((event) => event.hubProject === hubProject)
+        .sort((left, right) => left.runId.localeCompare(right.runId) || left.sequence - right.sequence);
+    }
+    const rows = this.database.prepare(`
+      SELECT project_id, run_id, sequence, hub_project, home_runtime_id, event_type, content_hash, received_at, record
+      FROM sync_events WHERE hub_project = ? ORDER BY run_id ASC, sequence ASC
+    `).all(hubProject) as SyncEventSqlRow[];
+    return rows.map(syncEventFromRow);
+  }
+
+  /** Highest sequence of one run with no gap below it; 0 when sequence 1 is missing. */
+  syncCursor(projectId: string, runId: string): number {
+    const sequences = this.database
+      ? (this.database.prepare("SELECT sequence FROM sync_events WHERE project_id = ? AND run_id = ? ORDER BY sequence ASC")
+        .all(projectId, runId) as Array<{ sequence: number }>).map((row) => row.sequence)
+      : [...this.syncEvents.values()]
+        .filter((event) => event.projectId === projectId && event.runId === runId)
+        .map((event) => event.sequence)
+        .sort((left, right) => left - right);
+    let cursor = 0;
+    for (const sequence of sequences) {
+      if (sequence !== cursor + 1) break;
+      cursor = sequence;
+    }
+    return cursor;
+  }
+
+  saveRuntimePresence(record: RuntimePresenceRecord): void {
+    this.runtimePresence.set(`${record.project}\u0000${record.runtimeId}`, record);
+    this.database?.prepare(`
+      INSERT INTO runtime_presence (runtime_id, hub_project, host, heartbeat, record) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(hub_project, runtime_id) DO UPDATE SET
+        host = excluded.host,
+        heartbeat = excluded.heartbeat,
+        record = excluded.record
+    `).run(record.runtimeId, record.project, record.host ?? null, record.heartbeatAt, JSON.stringify(record));
+  }
+
+  getRuntimePresence(project: string, runtimeId: string): RuntimePresenceRecord | undefined {
+    if (!this.database) return this.runtimePresence.get(`${project}\u0000${runtimeId}`);
+    const row = this.database.prepare("SELECT record FROM runtime_presence WHERE hub_project = ? AND runtime_id = ?")
+      .get(project, runtimeId) as { record: string } | undefined;
+    return row ? JSON.parse(row.record) as RuntimePresenceRecord : undefined;
+  }
+
+  listRuntimePresence(project: string): RuntimePresenceRecord[] {
+    if (!this.database) {
+      return [...this.runtimePresence.values()]
+        .filter((record) => record.project === project)
+        .sort((left, right) => left.runtimeId.localeCompare(right.runtimeId));
+    }
+    const rows = this.database.prepare("SELECT record FROM runtime_presence WHERE hub_project = ? ORDER BY runtime_id ASC")
+      .all(project) as Array<{ record: string }>;
+    return rows.map((row) => JSON.parse(row.record) as RuntimePresenceRecord);
+  }
+
+  private readSyncEvent(projectId: string, runId: string, sequence: number): StoredSyncEvent | undefined {
+    if (!this.database) return this.syncEvents.get(syncKey(projectId, runId, sequence));
+    const row = this.database.prepare(`
+      SELECT project_id, run_id, sequence, hub_project, home_runtime_id, event_type, content_hash, received_at, record
+      FROM sync_events WHERE project_id = ? AND run_id = ? AND sequence = ?
+    `).get(projectId, runId, sequence) as SyncEventSqlRow | undefined;
+    return row ? syncEventFromRow(row) : undefined;
+  }
+
+  private syncProjectOwner(projectId: string): string | undefined {
+    if (!this.database) {
+      for (const event of this.syncEvents.values()) if (event.projectId === projectId) return event.hubProject;
+      return undefined;
+    }
+    const row = this.database.prepare("SELECT hub_project FROM sync_events WHERE project_id = ? LIMIT 1").get(projectId) as
+      | { hub_project: string }
+      | undefined;
+    return row?.hub_project;
+  }
+
+  private syncRunHome(projectId: string, runId: string): string | undefined {
+    if (!this.database) {
+      for (const event of this.syncEvents.values()) {
+        if (event.projectId === projectId && event.runId === runId) return event.homeRuntimeId;
+      }
+      return undefined;
+    }
+    const row = this.database.prepare("SELECT home_runtime_id FROM sync_events WHERE project_id = ? AND run_id = ? LIMIT 1")
+      .get(projectId, runId) as { home_runtime_id: string } | undefined;
+    return row?.home_runtime_id;
+  }
+
+  private writeSyncEvent(event: StoredSyncEvent): void {
+    if (!this.database) {
+      this.syncEvents.set(syncKey(event.projectId, event.runId, event.sequence), event);
+      return;
+    }
+    this.database.prepare(`
+      INSERT INTO sync_events (project_id, run_id, sequence, hub_project, home_runtime_id, event_type, content_hash, received_at, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.projectId,
+      event.runId,
+      event.sequence,
+      event.hubProject,
+      event.homeRuntimeId,
+      event.eventType,
+      event.contentHash,
+      event.receivedAt,
+      event.bytes,
+    );
   }
 
   deleteWorkflowRun(runId: string): void {

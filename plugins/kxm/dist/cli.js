@@ -19594,46 +19594,49 @@ var HubClient = class {
     await this.register();
   }
   async request(path4, init = {}, includeIdentity = true) {
-    const requestTimeoutMs = this.options.requestTimeoutMs ?? 15e3;
-    const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
-    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-    let response;
-    try {
-      response = await (this.options.fetchImpl ?? fetch)(`${this.options.serverUrl.replace(/\/$/, "")}${path4}`, {
-        ...init,
-        signal,
-        headers: { ...this.headers(includeIdentity), ...init.headers ?? {} }
-      });
-    } catch (error) {
-      if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
-      throw error;
-    }
-    const text = await response.text();
-    let body = {};
-    if (text) {
-      try {
-        body = JSON.parse(text);
-      } catch {
-        throw new Error(`hub returned invalid JSON with HTTP ${response.status}`);
-      }
-    }
-    if (!response.ok) {
-      const extras = {};
-      for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
-        if (typeof body[key] === "string") extras[key] = body[key];
-      }
-      if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
-      throw new HubHttpError(
-        response.status,
-        String(body.error ?? `HTTP ${response.status}`),
-        typeof body.code === "string" ? body.code : void 0,
-        response.headers.get("x-request-id") ?? void 0,
-        Object.keys(extras).length > 0 ? extras : void 0
-      );
-    }
-    return body;
+    return await hubJsonRequest(this.options, path4, init, this.headers(includeIdentity));
   }
 };
+async function hubJsonRequest(options, path4, init, headers) {
+  const requestTimeoutMs = options.requestTimeoutMs ?? 15e3;
+  const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
+  const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+  let response;
+  try {
+    response = await (options.fetchImpl ?? fetch)(`${options.serverUrl.replace(/\/$/, "")}${path4}`, {
+      ...init,
+      signal,
+      headers: { ...headers, ...init.headers ?? {} }
+    });
+  } catch (error) {
+    if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
+    throw error;
+  }
+  const text = await response.text();
+  let body = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error(`hub returned invalid JSON with HTTP ${response.status}`);
+    }
+  }
+  if (!response.ok) {
+    const extras = {};
+    for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
+      if (typeof body[key] === "string") extras[key] = body[key];
+    }
+    if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
+    throw new HubHttpError(
+      response.status,
+      String(body.error ?? `HTTP ${response.status}`),
+      typeof body.code === "string" ? body.code : void 0,
+      response.headers.get("x-request-id") ?? void 0,
+      Object.keys(extras).length > 0 ? extras : void 0
+    );
+  }
+  return body;
+}
 
 // plugins/kxm/src/hub-env.ts
 import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, renameSync, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
@@ -22167,6 +22170,7 @@ var KxmSchemaRegistry = class {
   driveReceiptValidator;
   coordinatorValidator;
   intakeMessageValidator;
+  syncEventValidator;
   constructor(schemasDir = DEFAULT_SCHEMA_DIR) {
     this.schemasDir = resolve3(schemasDir);
     this.ajv = new import__.Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -22183,6 +22187,7 @@ var KxmSchemaRegistry = class {
     const driveReceiptFile = "drive-receipt.schema.json";
     const coordinatorFile = "coordinator.schema.json";
     const intakeMessageFile = "intake-message.schema.json";
+    const syncEventFile = "sync-event.schema.json";
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, localBindingsFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, templateProvenanceFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, initOperationFile)));
@@ -22191,6 +22196,7 @@ var KxmSchemaRegistry = class {
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, driveReceiptFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, coordinatorFile)));
     this.ajv.addSchema(readJsonObject(join6(this.schemasDir, intakeMessageFile)));
+    this.ajv.addSchema(readJsonObject(join6(this.schemasDir, syncEventFile)));
     for (const [kind, definition] of Object.entries(RESOURCE_SCHEMA)) {
       const validator = this.ajv.getSchema(`https://schemas.kxm.dev/${definition.file}`);
       if (!validator) throw new Error(`schema did not compile: ${definition.file}`);
@@ -22204,6 +22210,7 @@ var KxmSchemaRegistry = class {
     const driveReceiptValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${driveReceiptFile}`);
     const coordinatorValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${coordinatorFile}`);
     const intakeMessageValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${intakeMessageFile}`);
+    const syncEventValidator = this.ajv.getSchema(`https://schemas.kxm.dev/${syncEventFile}`);
     if (!localBindingsValidator) throw new Error(`schema did not compile: ${localBindingsFile}`);
     if (!templateProvenanceValidator) throw new Error(`schema did not compile: ${templateProvenanceFile}`);
     if (!initOperationValidator) throw new Error(`schema did not compile: ${initOperationFile}`);
@@ -22212,6 +22219,7 @@ var KxmSchemaRegistry = class {
     if (!driveReceiptValidator) throw new Error(`schema did not compile: ${driveReceiptFile}`);
     if (!coordinatorValidator) throw new Error(`schema did not compile: ${coordinatorFile}`);
     if (!intakeMessageValidator) throw new Error(`schema did not compile: ${intakeMessageFile}`);
+    if (!syncEventValidator) throw new Error(`schema did not compile: ${syncEventFile}`);
     this.localBindingsValidator = localBindingsValidator;
     this.templateProvenanceValidator = templateProvenanceValidator;
     this.initOperationValidator = initOperationValidator;
@@ -22220,6 +22228,7 @@ var KxmSchemaRegistry = class {
     this.driveReceiptValidator = driveReceiptValidator;
     this.coordinatorValidator = coordinatorValidator;
     this.intakeMessageValidator = intakeMessageValidator;
+    this.syncEventValidator = syncEventValidator;
   }
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
@@ -23258,12 +23267,12 @@ function planKxmInitialization(start = process.cwd(), options = {}) {
 
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash11, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync12, lstatSync as lstatSync6, mkdirSync as mkdirSync8, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync8 } from "node:fs";
-import { dirname as dirname8, isAbsolute as isAbsolute5, join as join12 } from "node:path";
+import { createHash as createHash12, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+import { chmodSync as chmodSync4, existsSync as existsSync13, lstatSync as lstatSync6, mkdirSync as mkdirSync9, readFileSync as readFileSync12, renameSync as renameSync4, rmSync as rmSync4, writeFileSync as writeFileSync9 } from "node:fs";
+import { dirname as dirname9, isAbsolute as isAbsolute6, join as join13 } from "node:path";
 
 // plugins/kxm/src/runtime-store.ts
-import { createHash as createHash9, randomUUID as randomUUID4 } from "node:crypto";
+import { createHash as createHash10, randomUUID as randomUUID4 } from "node:crypto";
 import { existsSync as existsSync9, lstatSync as lstatSync4, mkdirSync as mkdirSync6, readFileSync as readFileSync8, realpathSync as realpathSync3, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname7, join as join9, resolve as resolve6 } from "node:path";
 
@@ -23620,8 +23629,88 @@ function writeKxmLocalBindings(projectRoot, projectId, repositories, options = {
   return { file, written: true, record };
 }
 
+// plugins/kxm/src/sync-transform.ts
+import { createHash as createHash8 } from "node:crypto";
+
+// plugins/kxm/src/redact.ts
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
+  /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
+  /\b1\/\/[A-Za-z0-9_-]+/g,
+  /\b1\/[A-Za-z0-9_-]{20,}/g,
+  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
+  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
+  /\b[A-Fa-f0-9]{64}\b/g
+];
+function redactSecrets(value) {
+  let result = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result = result.replace(pattern, "[redacted]");
+  }
+  return result;
+}
+function redactStringList(values, maxItems = 32) {
+  return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
+}
+
+// plugins/kxm/src/sync-transform.ts
+var KXM_DEFAULT_SYNC_POLICY = Object.freeze({
+  prompts: "title-only",
+  results: "bounded-summary",
+  evidence: "references",
+  artifacts: "metadata",
+  fileChanges: "paths-only",
+  rawLogs: false,
+  diffs: false,
+  environmentValues: false
+});
+var KXM_DEFAULT_SYNC_POLICY_REVISION = `sha256:${createHash8("sha256").update(kxmCanonicalJson(KXM_DEFAULT_SYNC_POLICY), "utf8").digest("hex")}`;
+var SCALAR_FIELDS = [
+  "workflowId",
+  "promptHash",
+  "status",
+  "previousStatus",
+  "outcome",
+  "stepId",
+  "stepAttempt",
+  "fromStepId",
+  "toStepId",
+  "assignmentId",
+  "attemptId",
+  "agentId",
+  "instanceNo",
+  "scopeEpoch",
+  "resolutionAction"
+];
+var CARRIED_FIELDS = /* @__PURE__ */ new Set([
+  ...SCALAR_FIELDS,
+  "displayTitle",
+  "summary",
+  "reason",
+  "executor",
+  "model",
+  "timing",
+  "usage",
+  "evidenceRefs",
+  "artifacts",
+  "receipt",
+  "error",
+  "effect",
+  "lease",
+  "actor",
+  "resolvedBy",
+  "suppliedRefs",
+  "counts"
+]);
+
 // plugins/kxm/src/database.ts
-import { createHash as createHash8, randomBytes } from "node:crypto";
+import { createHash as createHash9, randomBytes } from "node:crypto";
 import {
   chmodSync as chmodSync3,
   copyFileSync,
@@ -23774,7 +23863,7 @@ function checkIntegrity(database) {
 }
 function fileSha256(filePath) {
   const bytes = readFileSync7(filePath);
-  return `sha256:${createHash8("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash9("sha256").update(bytes).digest("hex")}`;
 }
 function backupDatabaseFile(sourcePath, targetPath, storeId) {
   const resolvedSource = resolve5(sourcePath);
@@ -23896,7 +23985,7 @@ function discoverProjectStores(projectRoot, options = {}) {
   const stores = [];
   const hubPath = options.hubDataPath ? resolve5(options.hubDataPath) : join8(root, ".kxm", "state", "kxm.db");
   if (existsSync8(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 4 });
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 5 });
   }
   const registryPath = join8(root, ".kxm", "runtime", "registry.db");
   if (existsSync8(registryPath)) {
@@ -23915,7 +24004,7 @@ function discoverProjectStores(projectRoot, options = {}) {
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join8(eventsDir, entry.name),
-          maxSupportedVersion: 4
+          maxSupportedVersion: 6
         });
       }
     }
@@ -23958,7 +24047,7 @@ function createBackup(options = {}) {
     stores: backedUpStores
   };
   const manifestJson = JSON.stringify(manifest, null, 2) + "\n";
-  const manifestSha256 = `sha256:${createHash8("sha256").update(manifestJson, "utf8").digest("hex")}`;
+  const manifestSha256 = `sha256:${createHash9("sha256").update(manifestJson, "utf8").digest("hex")}`;
   manifest.manifestSha256 = manifestSha256;
   const finalJson = JSON.stringify(manifest, null, 2) + "\n";
   const manifestPath = join8(outDir, "manifest.json");
@@ -24002,11 +24091,11 @@ function restoreBackup(manifestPathOrDir, options = {}) {
         `backup file ${store.backupFile} sha256 ${actualSha256} does not match manifest hash ${store.sha256}`
       );
     }
-    let maxSupported = 4;
+    let maxSupported = 5;
     if (store.storeId === "registry" || store.storeId === "binding-store") {
       maxSupported = 1;
     } else if (store.storeId.startsWith("events:")) {
-      maxSupported = 5;
+      maxSupported = 6;
     }
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
@@ -24054,7 +24143,7 @@ function projectRuntimeKey(projectRoot) {
     canonical2 = resolve6(projectRoot);
   }
   const folded = process.platform === "win32" ? canonical2.toLocaleLowerCase("en-US") : canonical2;
-  return createHash9("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
+  return createHash10("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
 }
 var KXM_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {
@@ -24174,6 +24263,15 @@ var KxmRuntimeRegistry = class {
     return this.readSupervisorRow();
   }
   /** Register or revalidate a project's home binding. Home Runtime is immutable. */
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId) {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at"
+    ).all(homeRuntimeId);
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
+  }
   registerProject(registration) {
     const projectRoot = resolve6(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
@@ -24350,7 +24448,8 @@ var EVENT_STORE_TABLES = {
     "schema",
     "record"
   ],
-  project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"]
+  project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"],
+  outbox: ["seq", "run_id", "sequence", "sync_event", "attempted_at", "acked_at"]
 };
 var KXM_EVENT_STORE_TABLE_NAMES = Object.keys(EVENT_STORE_TABLES).sort();
 
@@ -24867,7 +24966,7 @@ var RECORD_LIMIT = 16 * 1024 * 1024;
 
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 import { existsSync as existsSync10, readFileSync as readFileSync9, statSync } from "node:fs";
 import { join as join10 } from "node:path";
 
@@ -24930,7 +25029,7 @@ function hashPriceCatalog(catalog) {
       }))
     })).sort((a, b2) => a.id.localeCompare(b2.id))
   };
-  return createHash10("sha256").update(JSON.stringify(canonical2), "utf8").digest("hex");
+  return createHash11("sha256").update(JSON.stringify(canonical2), "utf8").digest("hex");
 }
 function parsePriceCatalog(text) {
   const parsed = (0, import_yaml3.parse)(text);
@@ -25736,9 +25835,144 @@ function formatRoutingReport(report2, options = {}) {
   return lines.join("\n");
 }
 
+// plugins/kxm/src/hub-binding.ts
+import { existsSync as existsSync12, mkdirSync as mkdirSync8, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync8 } from "node:fs";
+import { homedir as homedir4 } from "node:os";
+import { dirname as dirname8, isAbsolute as isAbsolute5, join as join12, resolve as resolve8 } from "node:path";
+var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
+var HUB_HEALTH_PROBE_MS = 300;
+var HubBindingError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "HubBindingError";
+  }
+};
+function resolveUserStateRoot2(env) {
+  const explicit = env.KXM_STATE_HOME?.trim();
+  if (explicit) {
+    if (!isAbsolute5(explicit)) throw new HubBindingError("local_state_root_not_absolute");
+    return resolve8(explicit);
+  }
+  if (process.platform === "win32") {
+    const localAppData = env.LOCALAPPDATA?.trim();
+    const base2 = localAppData && isAbsolute5(localAppData) ? localAppData : join12(homedir4(), "AppData", "Local");
+    return resolve8(base2, "KXM");
+  }
+  if (process.platform === "darwin") return resolve8(homedir4(), "Library", "Application Support", "KXM");
+  const xdgState = env.XDG_STATE_HOME?.trim();
+  const base = xdgState && isAbsolute5(xdgState) ? xdgState : join12(homedir4(), ".local", "state");
+  return resolve8(base, "kxm");
+}
+function hubBindingFile(env = process.env) {
+  return join12(resolveUserStateRoot2(env), "hub-binding.json");
+}
+function validateHubUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new HubBindingError("hub_url_invalid");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== "" || raw.includes("?") || raw.includes("#")) {
+    throw new HubBindingError("hub_url_invalid");
+  }
+  return parsed.href.replace(/\/$/, "");
+}
+function hubBindingScope(url) {
+  let host;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return "remote";
+  }
+  if (host === "localhost" || host === "::1" || host === "[::1]" || host.endsWith(".localhost")) return "loopback";
+  const v4 = /^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/.exec(host);
+  return v4 && [v4[1], v4[2], v4[3]].every((part) => Number(part) <= 255) ? "loopback" : "remote";
+}
+function isIsoTimestamp(value) {
+  if (Number.isNaN(Date.parse(value))) return false;
+  return value === new Date(value).toISOString();
+}
+function isAbortError(error) {
+  return Boolean(
+    error && typeof error === "object" && ("name" in error && error.name === "AbortError" || "code" in error && error.code === "ABORT_ERR")
+  );
+}
+function readHubBinding(env = process.env) {
+  const file = hubBindingFile(env);
+  if (!existsSync12(file)) return void 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync11(file, "utf8"));
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  const row = parsed;
+  const keys = Object.keys(row);
+  if (keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  let url;
+  try {
+    url = validateHubUrl(row.url);
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
+}
+function writeHubBinding(record, env = process.env) {
+  const file = hubBindingFile(env);
+  mkdirSync8(dirname8(file), { recursive: true, mode: 448 });
+  const temporary = join12(dirname8(file), `.hub-binding-${process.pid}.tmp`);
+  try {
+    writeFileSync8(temporary, `${JSON.stringify(record, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+    renameSync3(temporary, file);
+  } finally {
+    rmSync3(temporary, { force: true });
+  }
+  return file;
+}
+function removeHubBinding(env = process.env) {
+  const file = hubBindingFile(env);
+  try {
+    rmSync3(file);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(`${url}/health`, { signal: controller.signal });
+    if (!response.ok) return { health: "unknown", probeMs: Date.now() - started };
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      return { health: "unknown", probeMs: Date.now() - started };
+    }
+    if (body && typeof body === "object" && body.ok === true) {
+      return { health: "on", probeMs: Date.now() - started };
+    }
+    return { health: "unknown", probeMs: Date.now() - started };
+  } catch (error) {
+    return { health: isAbortError(error) ? "unknown" : "off", probeMs: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // plugins/kxm/src/runtime-supervisor.ts
 function kxmSupervisorTokenFile(paths) {
-  return join12(paths.runtimeDir, "supervisor.token");
+  return join13(paths.runtimeDir, "supervisor.token");
 }
 function readKxmSupervisorToken(paths) {
   const file = kxmSupervisorTokenFile(paths);
@@ -25747,7 +25981,7 @@ function readKxmSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync11(file, "utf8").trim();
+  const token = readFileSync12(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -25761,11 +25995,11 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join12(paths.runtimeDir, "supervisor.error");
+  return join13(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync12(file)) rmSync3(file, { force: true });
+  if (existsSync13(file)) rmSync4(file, { force: true });
 }
 function readRecentSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
@@ -25774,13 +26008,13 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync11(file, "utf8").trim();
+    return readFileSync12(file, "utf8").trim();
   } catch {
     return void 0;
   }
 }
 function kxmSupervisorStatus(paths) {
-  if (!existsSync12(paths.registryDb)) return { running: false };
+  if (!existsSync13(paths.registryDb)) return { running: false };
   const registry = new KxmRuntimeRegistry(paths.registryDb);
   try {
     const record = registry.supervisor();
@@ -25850,7 +26084,7 @@ async function ensureKxmSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join12(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join13(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn2(process.execPath, [script], {
       detached: true,
@@ -25905,36 +26139,9 @@ async function kxmRuntimeRequest(handle, method, path4, body) {
 import { spawn as spawn3 } from "node:child_process";
 import { join as join15, resolve as resolve9 } from "node:path";
 
-// plugins/kxm/src/redact.ts
-var SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
-  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
-  /\bghp_[A-Za-z0-9_]{20,}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
-  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
-  /\b1\/\/[A-Za-z0-9_-]+/g,
-  /\b1\/[A-Za-z0-9_-]{20,}/g,
-  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
-  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
-  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
-  /\b[A-Fa-f0-9]{64}\b/g
-];
-function redactSecrets(value) {
-  let result = value;
-  for (const pattern of SECRET_PATTERNS) {
-    result = result.replace(pattern, "[redacted]");
-  }
-  return result;
-}
-function redactStringList(values, maxItems = 32) {
-  return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
-}
-
 // plugins/kxm/src/telemetry.ts
-import { appendFileSync, mkdirSync as mkdirSync9, readFileSync as readFileSync12 } from "node:fs";
-import { dirname as dirname9, join as join13 } from "node:path";
+import { appendFileSync, mkdirSync as mkdirSync10, readFileSync as readFileSync13 } from "node:fs";
+import { dirname as dirname10, join as join14 } from "node:path";
 var TELEMETRY_SCHEMA = "kxm.telemetry.v1";
 function inferImprovementTarget(input) {
   const explicit = input.env?.KXM_IMPROVE_TARGET?.trim();
@@ -25944,12 +26151,12 @@ function inferImprovementTarget(input) {
   return project || workflowId ? "project" : "cli";
 }
 function appendTelemetry(path4, event) {
-  mkdirSync9(dirname9(path4), { recursive: true });
+  mkdirSync10(dirname10(path4), { recursive: true });
   appendFileSync(path4, `${JSON.stringify(event)}
 `, { encoding: "utf8", mode: 384 });
 }
 function telemetryPath(logsDir) {
-  return join13(logsDir, "telemetry.jsonl");
+  return join14(logsDir, "telemetry.jsonl");
 }
 function makeTelemetryEvent(input) {
   return {
@@ -25964,7 +26171,7 @@ function makeTelemetryEvent(input) {
 function readRoutingRecords(path4) {
   const records = [];
   try {
-    const raw = readFileSync12(path4, "utf8");
+    const raw = readFileSync13(path4, "utf8");
     for (const line of raw.split(/\r?\n/)) {
       if (!line.trim()) continue;
       try {
@@ -26038,141 +26245,6 @@ function workerResult(worker, payload) {
     outcome: outcome ?? (payload.ok ? "passed" : "failed"),
     summary
   };
-}
-
-// plugins/kxm/src/hub-binding.ts
-import { existsSync as existsSync13, mkdirSync as mkdirSync10, readFileSync as readFileSync13, renameSync as renameSync4, rmSync as rmSync4, writeFileSync as writeFileSync9 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
-import { dirname as dirname10, isAbsolute as isAbsolute6, join as join14, resolve as resolve8 } from "node:path";
-var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
-var HUB_HEALTH_PROBE_MS = 300;
-var HubBindingError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "HubBindingError";
-  }
-};
-function resolveUserStateRoot2(env) {
-  const explicit = env.KXM_STATE_HOME?.trim();
-  if (explicit) {
-    if (!isAbsolute6(explicit)) throw new HubBindingError("local_state_root_not_absolute");
-    return resolve8(explicit);
-  }
-  if (process.platform === "win32") {
-    const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute6(localAppData) ? localAppData : join14(homedir4(), "AppData", "Local");
-    return resolve8(base2, "KXM");
-  }
-  if (process.platform === "darwin") return resolve8(homedir4(), "Library", "Application Support", "KXM");
-  const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute6(xdgState) ? xdgState : join14(homedir4(), ".local", "state");
-  return resolve8(base, "kxm");
-}
-function hubBindingFile(env = process.env) {
-  return join14(resolveUserStateRoot2(env), "hub-binding.json");
-}
-function validateHubUrl(raw) {
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new HubBindingError("hub_url_invalid");
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== "" || raw.includes("?") || raw.includes("#")) {
-    throw new HubBindingError("hub_url_invalid");
-  }
-  return parsed.href.replace(/\/$/, "");
-}
-function hubBindingScope(url) {
-  let host;
-  try {
-    host = new URL(url).hostname.toLowerCase();
-  } catch {
-    return "remote";
-  }
-  if (host === "localhost" || host === "::1" || host === "[::1]" || host.endsWith(".localhost")) return "loopback";
-  const v4 = /^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/.exec(host);
-  return v4 && [v4[1], v4[2], v4[3]].every((part) => Number(part) <= 255) ? "loopback" : "remote";
-}
-function isIsoTimestamp(value) {
-  if (Number.isNaN(Date.parse(value))) return false;
-  return value === new Date(value).toISOString();
-}
-function isAbortError(error) {
-  return Boolean(
-    error && typeof error === "object" && ("name" in error && error.name === "AbortError" || "code" in error && error.code === "ABORT_ERR")
-  );
-}
-function readHubBinding(env = process.env) {
-  const file = hubBindingFile(env);
-  if (!existsSync13(file)) return void 0;
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync13(file, "utf8"));
-  } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  const row = parsed;
-  const keys = Object.keys(row);
-  if (keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  let url;
-  try {
-    url = validateHubUrl(row.url);
-  } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
-}
-function writeHubBinding(record, env = process.env) {
-  const file = hubBindingFile(env);
-  mkdirSync10(dirname10(file), { recursive: true, mode: 448 });
-  const temporary = join14(dirname10(file), `.hub-binding-${process.pid}.tmp`);
-  try {
-    writeFileSync9(temporary, `${JSON.stringify(record, null, 2)}
-`, { encoding: "utf8", mode: 384 });
-    renameSync4(temporary, file);
-  } finally {
-    rmSync4(temporary, { force: true });
-  }
-  return file;
-}
-function removeHubBinding(env = process.env) {
-  const file = hubBindingFile(env);
-  try {
-    rmSync4(file);
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") return false;
-    throw error;
-  }
-}
-async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
-  const started = Date.now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetchImpl(`${url}/health`, { signal: controller.signal });
-    if (!response.ok) return { health: "unknown", probeMs: Date.now() - started };
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      return { health: "unknown", probeMs: Date.now() - started };
-    }
-    if (body && typeof body === "object" && body.ok === true) {
-      return { health: "on", probeMs: Date.now() - started };
-    }
-    return { health: "unknown", probeMs: Date.now() - started };
-  } catch (error) {
-    return { health: isAbortError(error) ? "unknown" : "off", probeMs: Date.now() - started };
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 // plugins/kxm/src/cli/types.ts
@@ -29956,7 +30028,7 @@ import { dirname as dirname15, isAbsolute as isAbsolute7, join as join24, relati
 
 // plugins/kxm/src/permission.ts
 import { spawnSync as spawnSync4 } from "node:child_process";
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 import { existsSync as existsSync20, mkdtempSync, mkdirSync as mkdirSync17, readFileSync as readFileSync20, rmSync as rmSync7, writeFileSync as writeFileSync16 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname as dirname14, join as join23, resolve as resolve17, sep as sep3 } from "node:path";
@@ -30162,7 +30234,7 @@ function kxmProseEntries(resource) {
   return entries;
 }
 function valueHash(canonicalValue) {
-  return `sha256:${createHash12("sha256").update(canonicalValue, "utf8").digest("hex")}`;
+  return `sha256:${createHash13("sha256").update(canonicalValue, "utf8").digest("hex")}`;
 }
 function rankDirection(rank, baseValue, candidateValue) {
   const base = JSON.parse(baseValue);
@@ -30482,7 +30554,7 @@ function loadKxmProjectAtRevision(root, revision, options = {}) {
   const paths = listing.split("\0").filter((line) => line.length > 0 && (line.startsWith(".kxm/") || line.includes("/.kxm/")));
   const shadow = mkdtempSync(join23(tmpdir(), "kxm-permission-base-"));
   const shadowResolved = resolve17(shadow);
-  const shadowMembersDir = `.kxm-shadow-members-${createHash12("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
+  const shadowMembersDir = `.kxm-shadow-members-${createHash13("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
   try {
     for (const path4 of paths) {
       const segments = path4.split("/");
@@ -33379,7 +33451,7 @@ remains Grok.
 
 // plugins/kxm/src/skills.ts
 var import_yaml14 = __toESM(require_dist(), 1);
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 import { existsSync as existsSync25, mkdirSync as mkdirSync20, readdirSync as readdirSync10, readFileSync as readFileSync24, renameSync as renameSync7, rmSync as rmSync9, statSync as statSync3, writeFileSync as writeFileSync19 } from "node:fs";
 import { join as join29 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
@@ -33404,7 +33476,7 @@ var SkillLifecycleError = class extends Error {
   }
 };
 function skillContentSha256(content) {
-  return createHash13("sha256").update(content, "utf8").digest("hex");
+  return createHash14("sha256").update(content, "utf8").digest("hex");
 }
 function skillIdFor(name, contentSha256) {
   const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -45044,14 +45116,14 @@ async function cmdSessionStart(runtime, options) {
 
 // plugins/kxm/src/cli/system.ts
 import { spawnSync as spawnSync8 } from "node:child_process";
-import { createHash as createHash15 } from "node:crypto";
+import { createHash as createHash16 } from "node:crypto";
 import { existsSync as existsSync37, mkdtempSync as mkdtempSync2, readFileSync as readFileSync36, rmSync as rmSync12 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
 import { join as join47, resolve as resolve28 } from "node:path";
 import { createInterface as createInterface3 } from "node:readline";
 
 // plugins/kxm/src/improve.ts
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 import { existsSync as existsSync32, mkdirSync as mkdirSync26, writeFileSync as writeFileSync24 } from "node:fs";
 import { join as join42, relative as relative6, resolve as resolve25 } from "node:path";
 var CANDIDATE_SCHEMA = "kxm.candidate.v1";
@@ -45199,7 +45271,7 @@ function groupRoutingRecords(records, options = {}) {
     const isCandidate = recurrence >= minRecurrence && verifyPassRate >= minPassRate;
     const candidateKind = isCandidate ? classifyCandidateKind(group.stepId, group.agentRole) : void 0;
     const safeSlug = group.stepId.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 16) || "step";
-    const keyHash = createHash14("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
+    const keyHash = createHash15("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
     const candidateId = isCandidate && candidateKind ? `cand_${candidateKind.replace(/-/g, "_")}_${safeSlug}_${keyHash}` : void 0;
     rows.push({
       workflowHash: group.workflowHash,
@@ -46874,7 +46946,7 @@ function applyKxmPackageUpdate(runtime, notice) {
     for (const step of planned) {
       if (step.kind === "verify") {
         if (!verifyReleaseAssetDigest(step.path, step.sha256)) {
-          const actual = existsSync37(step.path) ? createHash15("sha256").update(readFileSync36(step.path)).digest("hex") : "missing";
+          const actual = existsSync37(step.path) ? createHash16("sha256").update(readFileSync36(step.path)).digest("hex") : "missing";
           return {
             ok: false,
             error: "release_digest_mismatch",

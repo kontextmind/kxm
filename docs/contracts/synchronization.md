@@ -1,8 +1,11 @@
 # Hub synchronization contract
 
-> **Status.** `kxm.sync-event.v1` is a **schema-tested contract**. There is no
-> outbox table, sync transform, or hub ingestion in source. Implementation
-> begins in [Phase 8](../../plans/implementation-plan.md#phase-8-multi-project-hub-kxm).
+> **Status.** `kxm.sync-event.v1` is a **schema-tested contract with an
+> implementation** (cross-host P5): the event store `outbox` (v6), the
+> `sync-transform.ts` derivation under the default policy, supervisor push to
+> `POST /v1/sync/events`, and hub ingestion into `sync_events` (hub store v5).
+> Custom project policies and on-demand content transfer remain unimplemented.
+> Phase 8 gate: [implementation plan](../../plans/implementation-plan.md#phase-8-multi-project-hub-kxm).
 
 Synchronization is summary-first, project-scoped, at-least-once, and
 allowlist-based. The full local event is never placed directly in the outbox.

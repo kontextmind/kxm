@@ -11,6 +11,7 @@ import {
   runtimeError,
   verifyKxmDriveReceipt,
   kxmRuntimePaths,
+  type KxmRunEventStore,
   type KxmRuntimePaths,
 } from "./runtime-store.ts";
 import {
@@ -26,6 +27,10 @@ import { createKxmOneShotProducer } from "./oneshot-producer.ts";
 import { isRouteAdmitted } from "./routes.ts";
 import { KxmRunScheduler, createKxmSimulatedProducer, recordDriveReceipt, recoverKxmRun, kxmDrivePollProjection } from "./engine.ts";
 import { kxmDriveSession, kxmOpenDriveSessions } from "./runtime-owner.ts";
+import { RuntimeHubClient } from "./client.ts";
+import { readHubBinding } from "./hub-binding.ts";
+import { resolveClientHubAuthToken } from "./hub-env.ts";
+import { defaultProjectName } from "./project-name.ts";
 
 /* ------------------------------------------------------------------ *
  * Token management
@@ -351,6 +356,96 @@ async function driveSessionStillPending(settled: Promise<unknown>): Promise<bool
   return pending;
 }
 
+/* ------------------------------------------------------------------ *
+ * Runtime → hub sync (P5): outbound only
+ * ------------------------------------------------------------------ */
+
+export const DEFAULT_RUNTIME_SYNC_INTERVAL_MS = 10_000;
+const MIN_RUNTIME_SYNC_INTERVAL_MS = 250;
+const MAX_RUNTIME_SYNC_INTERVAL_MS = 60_000;
+const OUTBOX_PUSH_BATCH = 32;
+
+/** How often the supervisor heartbeats and pushes its outbox. Keep it well
+ * under the hub's presence lease (30 s by default). */
+export function runtimeSyncIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.KXM_RUNTIME_SYNC_INTERVAL_MS?.trim();
+  if (!raw) return DEFAULT_RUNTIME_SYNC_INTERVAL_MS;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed)) return DEFAULT_RUNTIME_SYNC_INTERVAL_MS;
+  return Math.min(MAX_RUNTIME_SYNC_INTERVAL_MS, Math.max(MIN_RUNTIME_SYNC_INTERVAL_MS, parsed));
+}
+
+export interface KxmOutboxSyncResult {
+  pushed: number;
+  acked: number;
+  conflicts: number;
+  rejected: number;
+}
+
+/**
+ * Push every pending outbox row to the bound hub in outbox order and advance
+ * the cursor on each acknowledgement. Accepted and duplicate rows are acked;
+ * a conflict or rejection stays pending (the hub has raised the alert) and is
+ * skipped for the rest of this pass. A transport failure leaves every row
+ * pending for a safe retry.
+ */
+export async function syncKxmOutbox(
+  eventStore: KxmRunEventStore,
+  client: RuntimeHubClient,
+  options: { now?: () => string; batchSize?: number } = {},
+): Promise<KxmOutboxSyncResult> {
+  const now = options.now ?? (() => new Date().toISOString());
+  const batchSize = options.batchSize ?? OUTBOX_PUSH_BATCH;
+  const result: KxmOutboxSyncResult = { pushed: 0, acked: 0, conflicts: 0, rejected: 0 };
+  let afterSeq = 0;
+  for (;;) {
+    const rows = eventStore.pendingOutbox(batchSize, afterSeq);
+    if (rows.length === 0) return result;
+    // Batch by serialized byte size, not just count: the hub rejects requests
+    // over its body ceiling (HTTP 413), and retrying the same oversized batch
+    // would permanently block the queue. Trim to the byte budget and leave the
+    // rest for the next iteration.
+    const MAX_BATCH_BYTES = 200_000; // hub ceiling is 256 KiB; leave headroom
+    let byteBudget = MAX_BATCH_BYTES;
+    let sendCount = 0;
+    for (const row of rows) {
+      const rowBytes = Buffer.byteLength(row.syncEvent, "utf8") + 64; // JSON overhead
+      if (sendCount > 0 && byteBudget - rowBytes < 0) break;
+      byteBudget -= rowBytes;
+      sendCount += 1;
+    }
+    const batch = rows.slice(0, sendCount);
+    if (batch.length === 0) batch.push(rows[0]!); // one oversized row: send alone, hub will 413
+    afterSeq = batch[batch.length - 1]!.seq;
+    eventStore.markOutboxAttempted(batch.map((row) => row.seq), now());
+    const response = await client.pushSyncEvents(batch.map((row) => JSON.parse(row.syncEvent) as unknown));
+    result.pushed += batch.length;
+    const outcomes = new Map(response.results.map((entry) => [`${entry.runId}\u0000${entry.sequence}`, entry.outcome]));
+    const acked: number[] = [];
+    for (const row of batch) {
+      const outcome = outcomes.get(`${row.runId}\u0000${row.sequence}`);
+      if (outcome === "accepted" || outcome === "duplicate") acked.push(row.seq);
+      else if (outcome === "conflict") result.conflicts += 1;
+      else result.rejected += 1;
+    }
+    result.acked += eventStore.ackOutbox(acked, now());
+  }
+}
+
+/** Where this Runtime reports one project, or nothing when no hub is bound. */
+function runtimeHubClientFor(context: KxmRuntimeContext, env: NodeJS.ProcessEnv): RuntimeHubClient | undefined {
+  const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
+  if (!serverUrl) return undefined;
+  const project = defaultProjectName(context.projectRoot, env);
+  const authToken = resolveClientHubAuthToken(env, project);
+  return new RuntimeHubClient({
+    serverUrl,
+    project,
+    runtimeId: context.homeRuntimeId,
+    ...(authToken ? { authToken } : {}),
+  });
+}
+
 export interface KxmRuntimeSupervisor {
   server: Server;
   port: number;
@@ -395,6 +490,21 @@ async function startKxmRuntimeSupervisorInner(
   let activeRuntimeId = runtimeId;
 
   const contexts = new Map<string, KxmRuntimeContext>();
+  const registerSyncCredentials = (context: KxmRuntimeContext): void => {
+    // Register credentials on the store's redactor at context creation —
+    // BEFORE any event can be appended — so the very first outbox row is
+    // already scrubbed. Registering on the sync tick leaves a window where
+    // appended events retain credentials.
+    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    if (hubToken) context.eventStore.syncRedactor.register(hubToken);
+    for (const key of Object.keys(process.env)) {
+      if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
+        const value = process.env[key]?.trim();
+        if (value) context.eventStore.syncRedactor.register(value);
+      }
+    }
+  };
+
   const contextFor = (projectRoot: string): KxmRuntimeContext => {
     if (!isAbsolute(projectRoot)) {
       throw runtimeError("runtime_request_invalid", "projectRoot", "projectRoot must be an absolute path");
@@ -403,6 +513,7 @@ async function startKxmRuntimeSupervisorInner(
     const existing = contexts.get(key);
     if (existing) return existing;
     const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot });
+    registerSyncCredentials(context);
     contexts.set(key, context);
     return context;
   };
@@ -774,11 +885,50 @@ async function startKxmRuntimeSupervisorInner(
   }, 1000);
   heartbeat.unref();
 
+  // Outbound only: the supervisor pulls nothing and exposes nothing to the hub.
+  // A tick that finds no bound hub, no credential or an unreachable hub does
+  // nothing; outbox rows stay pending and local execution never waits on it.
+  //
+  // Restart recovery: contexts are only populated on demand (a project request
+  // opens one), so a restarted supervisor would see an empty map and silently
+  // stop syncing every registered project's pending outbox rows. Reopen the
+  // projects this Runtime owns before the first tick.
+  for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
+    try {
+      contextFor(reg.projectRoot);
+    } catch {
+      // A project whose checkout has moved or been deleted stays skipped; its
+      // outbox rows remain pending and its presence expires, which is visible
+      // in the ops snapshot as orphaned.
+    }
+  }
+
+  let syncing = false;
+  const syncTimer = setInterval(() => {
+    if (syncing || stopping) return;
+    syncing = true;
+    void (async () => {
+      for (const context of [...contexts.values()]) {
+
+        try {
+          const client = runtimeHubClientFor(context, process.env);
+          if (!client) continue;
+          await client.heartbeat();
+          await syncKxmOutbox(context.eventStore, client, { now });
+        } catch {
+          // Retry on the next tick.
+        }
+      }
+    })().finally(() => { syncing = false; });
+  }, runtimeSyncIntervalMs());
+  syncTimer.unref();
+
   let stopping = false;
   const stop = async (): Promise<void> => {
     if (stopping) return;
     stopping = true;
     clearInterval(heartbeat);
+    clearInterval(syncTimer);
     try { registry.markStopping(process.pid, now()); } catch { /* best effort */ }
     const openSessions = [...contexts.values()].flatMap((context) => (
       kxmOpenDriveSessions(context.eventStore.path).map((session) => ({ context, session }))

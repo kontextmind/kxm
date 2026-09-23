@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
 import { KxmConfigError, validateCoordinator, validateDriveReceipt, validateIntakeMessage, validateRunEvent, kxmCanonicalJson, type JsonValue, type KxmConfigIssue, type KxmConfigOptions } from "./project-config.ts";
 import { kxmUserStateRoot } from "./bindings.ts";
+import { deriveKxmSyncEvent, kxmSyncEventBytes, KxmSyncRedactor } from "./sync-transform.ts";
 
 /* ------------------------------------------------------------------ *
  * Runtime registry (per-user, platform state root)
@@ -225,6 +226,16 @@ export class KxmRuntimeRegistry {
   }
 
   /** Register or revalidate a project's home binding. Home Runtime is immutable. */
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId: string): Array<{ projectRoot: string; projectId: string }> {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at",
+    ).all(homeRuntimeId) as Array<{ project_root: string; project_id: string }>;
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
+  }
+
   registerProject(registration: { projectId: string; projectRoot: string; homeRuntimeId: string; configRevision?: string; now: string }): KxmProjectRegistration {
     const projectRoot = resolve(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
@@ -550,7 +561,7 @@ export interface KxmCommandRecord {
   recordedAt: string;
 }
 
-export const KXM_EVENT_STORE_SCHEMA_VERSION = 5;
+export const KXM_EVENT_STORE_SCHEMA_VERSION = 6;
 export const KXM_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
 export const DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 
@@ -586,6 +597,7 @@ const EVENT_STORE_TABLES = {
     "schema", "record",
   ],
   project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"],
+  outbox: ["seq", "run_id", "sequence", "sync_event", "attempted_at", "acked_at"],
 } as const;
 
 /**
@@ -780,7 +792,30 @@ CREATE TABLE project_controls (
   schema TEXT NOT NULL,
   record TEXT NOT NULL
 ) STRICT;
+CREATE TABLE IF NOT EXISTS outbox (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  sync_event TEXT NOT NULL,
+  attempted_at TEXT,
+  acked_at TEXT,
+  UNIQUE (run_id, sequence)
+) STRICT;
+CREATE INDEX outbox_pending ON outbox(seq) WHERE acked_at IS NULL;
 `;
+
+/**
+ * One outbox row: the already-derived `kxm.sync-event.v1` bytes plus retry
+ * transport metadata. The local source payload is never kept here.
+ */
+export interface KxmOutboxRow {
+  seq: number;
+  runId: string;
+  sequence: number;
+  syncEvent: string;
+  attemptedAt?: string;
+  ackedAt?: string;
+}
 
 /** One persisted coordinator identity (`kxm.coordinator.v1`). */
 export interface KxmCoordinatorRow {
@@ -818,6 +853,9 @@ export interface KxmProjectControlRow {
 
 export class KxmRunEventStore {
   readonly path: string;
+  /** Secret values registered here are replaced in every sync object this
+   * store derives. In memory only: they are never written anywhere. */
+  readonly syncRedactor = new KxmSyncRedactor();
   private readonly database: DatabaseSync;
 
   constructor(path: string) {
@@ -933,6 +971,16 @@ export class KxmRunEventStore {
     return row ? runFromRow(row) : undefined;
   }
 
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId: string): Array<{ projectRoot: string; projectId: string }> {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at",
+    ).all(homeRuntimeId) as Array<{ project_root: string; project_id: string }>;
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
+  }
+
   runsForProject(projectId: string, limit = 50): KxmRunRecord[] {
     const rows = this.database.prepare(`
       SELECT run_id, project_id, home_runtime_id, workflow_id, prompt_sha256, status, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, created_at, updated_at
@@ -974,6 +1022,46 @@ export class KxmRunEventStore {
       event.schema,
       event.homeRuntimeId,
     );
+    // Allowlist before outbox: the row holds only the derived sync object, and
+    // it commits (or rolls back) with the event in the caller's transaction.
+    const syncEvent = deriveKxmSyncEvent(event, { redactor: this.syncRedactor });
+    this.database.prepare("INSERT INTO outbox (run_id, sequence, sync_event) VALUES (?, ?, ?)")
+      .run(event.runId, event.sequence, kxmSyncEventBytes(syncEvent));
+  }
+
+  /** Unacknowledged outbox rows after `afterSeq`, in outbox order, oldest first. */
+  pendingOutbox(limit = 100, afterSeq = 0): KxmOutboxRow[] {
+    const rows = this.database.prepare(`
+      SELECT seq, run_id, sequence, sync_event, attempted_at, acked_at
+      FROM outbox WHERE acked_at IS NULL AND seq > ? ORDER BY seq ASC LIMIT ?
+    `).all(afterSeq, limit) as OutboxSqlRow[];
+    return rows.map(outboxFromRow);
+  }
+
+  /** Every outbox row of one run, acknowledged or not, in sequence order. */
+  outboxForRun(runId: string): KxmOutboxRow[] {
+    const rows = this.database.prepare(`
+      SELECT seq, run_id, sequence, sync_event, attempted_at, acked_at
+      FROM outbox WHERE run_id = ? ORDER BY sequence ASC
+    `).all(runId) as OutboxSqlRow[];
+    return rows.map(outboxFromRow);
+  }
+
+  markOutboxAttempted(seqs: readonly number[], at: string): void {
+    const statement = this.database.prepare("UPDATE outbox SET attempted_at = ? WHERE seq = ? AND acked_at IS NULL");
+    this.transaction(() => {
+      for (const seq of seqs) statement.run(at, seq);
+    });
+  }
+
+  /** Advance the cursor: the hub holds these rows now. Returns rows newly acked. */
+  ackOutbox(seqs: readonly number[], at: string): number {
+    const statement = this.database.prepare("UPDATE outbox SET acked_at = ? WHERE seq = ? AND acked_at IS NULL");
+    return this.transaction(() => {
+      let changed = 0;
+      for (const seq of seqs) changed += Number(statement.run(at, seq).changes);
+      return changed;
+    });
   }
 
   events(runId: string, afterSequence = 0, limit = 200): KxmRunEvent[] {
@@ -1583,6 +1671,26 @@ function parseDriveReceipt(raw: string): KxmDriveReceipt {
   const parsed = JSON.parse(raw) as unknown;
   validateDriveReceipt(parsed, "drive-receipt");
   return parsed as KxmDriveReceipt;
+}
+
+type OutboxSqlRow = {
+  seq: number;
+  run_id: string;
+  sequence: number;
+  sync_event: string;
+  attempted_at: string | null;
+  acked_at: string | null;
+};
+
+function outboxFromRow(row: OutboxSqlRow): KxmOutboxRow {
+  return {
+    seq: row.seq,
+    runId: row.run_id,
+    sequence: row.sequence,
+    syncEvent: row.sync_event,
+    ...(row.attempted_at !== null ? { attemptedAt: row.attempted_at } : {}),
+    ...(row.acked_at !== null ? { ackedAt: row.acked_at } : {}),
+  };
 }
 
 function runFromRow(row: {

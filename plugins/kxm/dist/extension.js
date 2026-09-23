@@ -14952,46 +14952,49 @@ var HubClient = class {
     await this.register();
   }
   async request(path, init = {}, includeIdentity = true) {
-    const requestTimeoutMs = this.options.requestTimeoutMs ?? 15e3;
-    const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
-    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-    let response;
-    try {
-      response = await (this.options.fetchImpl ?? fetch)(`${this.options.serverUrl.replace(/\/$/, "")}${path}`, {
-        ...init,
-        signal,
-        headers: { ...this.headers(includeIdentity), ...init.headers ?? {} }
-      });
-    } catch (error2) {
-      if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
-      throw error2;
-    }
-    const text = await response.text();
-    let body = {};
-    if (text) {
-      try {
-        body = JSON.parse(text);
-      } catch {
-        throw new Error(`hub returned invalid JSON with HTTP ${response.status}`);
-      }
-    }
-    if (!response.ok) {
-      const extras = {};
-      for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
-        if (typeof body[key] === "string") extras[key] = body[key];
-      }
-      if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
-      throw new HubHttpError(
-        response.status,
-        String(body.error ?? `HTTP ${response.status}`),
-        typeof body.code === "string" ? body.code : void 0,
-        response.headers.get("x-request-id") ?? void 0,
-        Object.keys(extras).length > 0 ? extras : void 0
-      );
-    }
-    return body;
+    return await hubJsonRequest(this.options, path, init, this.headers(includeIdentity));
   }
 };
+async function hubJsonRequest(options, path, init, headers) {
+  const requestTimeoutMs = options.requestTimeoutMs ?? 15e3;
+  const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
+  const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+  let response;
+  try {
+    response = await (options.fetchImpl ?? fetch)(`${options.serverUrl.replace(/\/$/, "")}${path}`, {
+      ...init,
+      signal,
+      headers: { ...headers, ...init.headers ?? {} }
+    });
+  } catch (error2) {
+    if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
+    throw error2;
+  }
+  const text = await response.text();
+  let body = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error(`hub returned invalid JSON with HTTP ${response.status}`);
+    }
+  }
+  if (!response.ok) {
+    const extras = {};
+    for (const key of ["operation", "nextAction", "assignedCoordinatorName"]) {
+      if (typeof body[key] === "string") extras[key] = body[key];
+    }
+    if (body.lease && typeof body.lease === "object") extras.lease = body.lease;
+    throw new HubHttpError(
+      response.status,
+      String(body.error ?? `HTTP ${response.status}`),
+      typeof body.code === "string" ? body.code : void 0,
+      response.headers.get("x-request-id") ?? void 0,
+      Object.keys(extras).length > 0 ? extras : void 0
+    );
+  }
+  return body;
+}
 
 // plugins/kxm/src/commands.ts
 function requiredString(value, name) {
