@@ -57,6 +57,12 @@ never creates an instruction file. If the project has none of the three, sync
 refuses; create the file your harness reads yourself rather than expecting KXM
 to author it.
 
+Each file must hold exactly one start marker followed by exactly one end
+marker, or neither. An orphan marker, an end before its start, or a second
+block makes sync refuse, name the file and the problem, and write no file at
+all. Fix the markers by hand — keep one pair, or delete both so sync appends a
+fresh block — rather than letting sync guess which text is yours.
+
 Do not invent search, save, delete, list, or clear subcommands under memory.
 Use context retrieval for discovery and reviewed authored changes for
 corrections, respecting provenance and historical records.

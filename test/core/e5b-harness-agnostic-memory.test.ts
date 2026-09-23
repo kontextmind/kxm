@@ -274,6 +274,37 @@ test("E5b: memory sync into a fresh project creates no harness file and rewrites
   }
 });
 
+test("E5b: memory sync refuses malformed memory markers, naming the file, and writes no file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-e5b-markers-"));
+  const block = formatHarnessMemoryBlock([]);
+  // Unmarked files sync would append to. GEMINI.md is checked last, so a sync that wrote as it
+  // went would already have changed these two before reaching the malformed one.
+  const unmarked = { "AGENTS.md": "# Agents\n\nNo block yet.\n", "CLAUDE.md": "# Claude\n\nNo block yet.\n" };
+  const cases = [
+    // An orphan start: an appended block would let the next sync delete "User notes" up to its end.
+    { problem: `has ${MEMORY_MARKER_START} with no ${MEMORY_MARKER_END}`, text: `# Gemini\n\n${MEMORY_MARKER_START}\n\nUser notes.\n` },
+    { problem: `has ${MEMORY_MARKER_END} with no ${MEMORY_MARKER_START}`, text: `# Gemini\n\nUser notes.\n${MEMORY_MARKER_END}\n` },
+    // An end before its start: slicing from the start to the end duplicates the text between them.
+    { problem: `has ${MEMORY_MARKER_END} before ${MEMORY_MARKER_START}`, text: `# Gemini\n\n${MEMORY_MARKER_END}\nUser notes.\n${MEMORY_MARKER_START}\n` },
+    // Two blocks: only the first would be replaced and the second would go stale.
+    { problem: `has 2 ${MEMORY_MARKER_START} and 2 ${MEMORY_MARKER_END} markers, not one block`, text: `# Gemini\n\n${block}\n\nUser notes.\n\n${block}\n` },
+  ];
+  try {
+    for (const { problem, text } of cases) {
+      for (const [name, content] of Object.entries(unmarked)) writeFileSync(join(dir, name), content);
+      writeFileSync(join(dir, "GEMINI.md"), text);
+      assert.throws(() => syncHarnessMemory(dir), (error: Error) => {
+        assert.equal(error.message.split("; wrote no file.")[0], `GEMINI.md ${problem}`);
+        return true;
+      });
+      for (const [name, content] of Object.entries(unmarked)) assert.equal(readFileSync(join(dir, name), "utf8"), content, `${name}: ${problem}`);
+      assert.equal(readFileSync(join(dir, "GEMINI.md"), "utf8"), text, problem);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("E5b: gate - no fact in any harness view is absent from the authored set", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-e5b-views-"));
   try {
