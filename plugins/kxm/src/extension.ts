@@ -898,6 +898,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
           throw new Error(`tool_policy_denied: ${policy.detail ?? policy.error}`);
         }
         // A request sent while handling the active inbound request continues its hop chain.
+        // No inbox and no hubInbox: `pending` owns activation, so kxm_inbox refuses here.
         const handling = activeInbound ? [activeInbound] : [];
         return result(
           await workflowCall(() =>

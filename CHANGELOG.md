@@ -365,6 +365,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **Workflow prompts no longer point agents at `.kxm/config`**, a path KXM refuses.
 - **`kxm gate signal` and `kxm workflow wait` inside a KXM project reach the hub for hub
   runs.** They go to the local Runtime only for a run its store holds.
+- **`kxm peer inbox` lists the requests waiting for a named CLI agent.** It returned
+  `{"messages":[]}` every time. The hub now serves `GET /v1/agents/:id/inbox`
+  (agent-authenticated, project-scoped): the caller's queued and delivered requests,
+  oldest first, acknowledging nothing. Run with a stable `KXM_AGENT_NAME` (for example
+  `codex`) to list requests peers queued for it while it was offline, then answer them
+  with `kxm peer reply`. The Pi extension's `kxm_inbox` tool now refuses instead of
+  returning an empty list, because Pi activates each inbound request as a turn itself.
 
 - **The Claude plugin's SessionStart hook is one bundled, read-only, project-scoped
   script.** The two shell hooks it replaces (`kxm session brief --status` and
