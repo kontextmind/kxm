@@ -651,12 +651,19 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
     // hub store, and a verified backup of it.
     assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
     await seed(["init", "--project-id", "prj_01JDRYRUN0000000000000000", "--name", "Dry Run"]);
+    // Task planning requires a route the live read-only Runtime can execute.
+    writeFileSync(join(project, ".kxm", "workflows", "inspect.yaml"), "schema: kxm.workflow.v1\ncoordinator: coordinator\nsteps:\n  - id: inspect\n    kind: agent\n    agent: implementer\n    repositories:\n      control: read\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n      failed:\n        target: $terminal\n        terminalStatus: failed\n");
+    writeFileSync(join(project, ".kxm", "agents", "implementer.yaml"), JSON.stringify({
+      schema: "kxm.agent.v1", purpose: "Inspect", repositories: { control: "write" },
+      model: { provider: "openrouter", model: "qwen/qwen3-coder-plus" },
+    }));
+    writeFileSync(join(project, ".kxm", "routes.yaml"), "schema: kxm.routes.v2\nadmitted:\n  - openrouter/qwen/qwen3-coder-plus\ndisabled: []\nroles: {}\n");
     writeFileSync(join(project, "AGENTS.md"), "# Dry Run\n");
     assert.equal(spawnSync("git", ["-C", project, "add", "-A"]).status, 0);
     assert.equal(spawnSync("git", ["-C", project, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"]).status, 0);
     await seed(["role", "add", "seed-role", "--description", "seed"]);
     await seed(["workflow", "add", "seed-flow", "--description", "seed", "--scope", "global"]);
-    const taskId = ((await seed(["task", "create", "Seed task", "--tracker", "github", "--issue", "1"])).task as { id: string }).id;
+    const taskId = ((await seed(["task", "create", "Seed task", "--workflow", "inspect", "--tracker", "github", "--issue", "1"])).task as { id: string }).id;
     writeFileSync(join(root, "SKILL.md"), "---\nname: seed-skill\ndescription: seed skill\n---\nDo the thing.\n");
     const skillId = ((await seed([
       "skills", "create", "--file", join(root, "SKILL.md"), "--name", "seed-skill", "--created-by", "author",

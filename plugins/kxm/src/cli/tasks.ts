@@ -9,7 +9,6 @@ import {
   listGoals,
   listTasks,
   getTask,
-  updateTaskStatus,
   syncTaskWithTracker,
   goalFilePath,
   taskFilePath,
@@ -217,27 +216,21 @@ export async function cmdTaskRun(runtime: Runtime, taskId: string): Promise<numb
       runtime.io.stderr(`Task ${taskId} not found\n`);
       return 1;
     }
-    const workflow = task.assignedWorkflow ?? "default";
+    const workflow = task.assignedWorkflow;
     if (runtime.dryRun) {
-      const target = resolveKxmRunTarget(runtime, workflow);
+      const target = resolveKxmRunTarget(runtime, workflow, true);
       if (typeof target === "number") return target;
-      const started = updateTaskStatus(runtime.cwd, taskId, "in_progress", { dryRun: true });
       printPlan(
         runtime,
-        { command: "task run", taskId, ...target, status: started.status },
+        { command: "task run", taskId, ...target, status: task.status, execution: { status: "not_started", mode: "live" } },
         [
           { action: "request", target: "POST kxm-runtime /v1/runs (starts the Runtime supervisor if it is not running)" },
-          { action: "write", target: taskFilePath(runtime.cwd, taskId) },
         ],
-        `run workflow ${workflow} for task ${taskId}, then mark it ${started.status}`,
+        `create workflow ${target.workflowId} for task ${taskId}; task status stays ${task.status} until work actually starts`,
       );
       return 0;
     }
-    const exitCode = await cmdKxmRun(runtime, workflow, [task.objective]);
-    if (exitCode === 0) {
-      updateTaskStatus(runtime.cwd, taskId, "in_progress");
-    }
-    return exitCode;
+    return await cmdKxmRun(runtime, workflow, [task.objective], true);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     runtime.io.stderr(`task run failed: ${message}\n`);

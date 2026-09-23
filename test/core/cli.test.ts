@@ -13,6 +13,7 @@ import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
 import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { stringify } from "yaml";
+import { createTask, getTask, taskFilePath } from "../../plugins/kxm/src/task-manager.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
@@ -688,9 +689,15 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
       run: { runId: string; status: string; homeRuntimeId: string; configRevision: string };
       idempotent: boolean;
       supervisor: { runtimeId: string; port: number; started: boolean };
+      execution: { status: string; defaultHarness: string; prerequisites: Array<{ field?: string; detail: string }>; nextSteps: { drive: string; status: string; receipt: string } };
     };
     assert.equal(created.run.status, "created");
     assert.equal(created.supervisor.started, true);
+    assert.equal(created.execution.status, "not_started");
+    assert(created.execution.prerequisites.some((item) => item.field === "repositories"));
+    assert(created.execution.prerequisites.some((item) => item.field === "gates.test.argv"));
+    assert.equal(created.execution.nextSteps.drive, `kxm runs drive ${created.run.runId} --wait`);
+    assert.equal(created.execution.nextSteps.receipt, `kxm runs receipt ${created.run.runId} --json`);
     assert(!runIo.read().stdout.includes("flaky gate"), "prompt content never appears in output");
 
     const listIo = capture();
@@ -700,7 +707,7 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
     assert.equal(list.runs[0]!.runId, created.run.runId);
 
     const statusIo = capture();
-    assert.equal(await runCli(["runs", "status", created.run.runId, "--json"], env, statusIo, cwd), 0);
+    assert.equal(await runCli(created.execution.nextSteps.status.split(" ").slice(1), env, statusIo, cwd), 0);
     const status = JSON.parse(statusIo.read().stdout) as { run: { status: string; updatedAt: string } };
     assert.equal(status.run.status, "created");
 
@@ -808,29 +815,82 @@ test("kxm runs drive requires driveId, poll, and accepted before printing succes
   }
 });
 
-test("kxm run prints the simulated drive command for the created run", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "kxm-run-notice-cli-"));
-  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-notice-cli-state-"));
+
+test("kxm top-level help names the product KXM", async () => {
+  const help = capture();
+  assert.equal(await runCli(["--help"], {}, help), 0);
+  assert.match(help.read().stdout, /KXM local-first orchestration CLI/);
+  assert.doesNotMatch(help.read().stdout, /KontextMind/);
+});
+
+test("task run refuses unavailable live work before mutation and honors an executable project default", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-task-prerequisites-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-task-prerequisites-state-"));
   try {
     makeGitRoot(cwd);
-    initializeKxmProject(cwd, { projectId: "prj_01JRUNNOTICE0000000000000", projectName: "Run notice" });
-    const handle = { runtimeId: "rtm_runnotice", port: 9, token: "tok", started: true as const };
-    const run = { runId: "run_notice0123", homeRuntimeId: "rtm_runnotice0000", status: "created", configRevision: `sha256:${"a".repeat(64)}` };
-    kxmDriveCliSeams.ensureSupervisor = async () => handle;
-    kxmDriveCliSeams.runtimeRequest = async () => ({ ok: true, idempotent: false, run });
+    initializeKxmProject(cwd, { projectId: "prj_01JTASKRUN0000000000000", projectName: "Task route" });
+    const projectFile = join(cwd, ".kxm", "project.yaml");
+    writeFileSync(projectFile, readFileSync(projectFile, "utf8").replace("defaultHarness: pi", "defaultHarness: claude"));
+    const task = createTask(cwd, { title: "Inspect the bug", objective: "Inspect the bug without changing files" });
+    const taskBefore = readFileSync(taskFilePath(cwd, task.id), "utf8");
     const env = { KXM_STATE_HOME: stateRoot };
+    let supervisorStarts = 0;
+    kxmDriveCliSeams.ensureSupervisor = async () => {
+      supervisorStarts += 1;
+      return { runtimeId: "rtm_taskroute", port: 9, token: "tok", started: true };
+    };
+    for (const extra of [[], ["--dry-run"]]) {
+      const refused = capture();
+      assert.equal(await runCli(["task", "run", task.id, "--json", ...extra], env, refused, cwd), 1);
+      const failure = JSON.parse(refused.read().stderr) as {
+        error: string; defaultHarness: string; execution: { status: string; prerequisites: Array<{ field: string; detail: string }> };
+      };
+      assert.equal(failure.error, "run_execution_unavailable");
+      assert.equal(failure.defaultHarness, "claude");
+      assert.equal(failure.execution.status, "not_started");
+      assert(failure.execution.prerequisites.some((item) => item.field === "repositories" && item.detail.includes("read-only")));
+      assert(failure.execution.prerequisites.some((item) => item.field === "gates.test.argv" && item.detail.includes(".kxm/gates.yaml")));
+      assert.equal(readFileSync(taskFilePath(cwd, task.id), "utf8"), taskBefore);
+    }
+    assert.equal(supervisorStarts, 0);
 
-    const text = capture();
-    assert.equal(await runCli(["run", "default", "fix it"], env, text, cwd), 0);
-    const lines = text.read().stdout.trim().split("\n");
-    assert.match(lines[0]!, /^run created: run_notice0123 /);
-    assert.equal(lines[1], "drive it model-free: kxm runs drive run_notice0123 --simulated --wait (or cancel: kxm runs cancel run_notice0123)");
-
-    const json = capture();
-    assert.equal(await runCli(["run", "default", "--json", "fix it"], env, json, cwd), 0);
-    const payload = JSON.parse(json.read().stdout) as { phase: string; run: { runId: string } };
-    assert.equal(payload.phase, "pre-3a", "the phase stays a JSON contract");
-    assert.equal(payload.run.runId, "run_notice0123");
+    // An unassigned task uses the configured project default, not a hard-coded "default".
+    writeFileSync(projectFile, readFileSync(projectFile, "utf8").replace("defaultWorkflow: default", "defaultWorkflow: inspect"));
+    writeFileSync(join(cwd, ".kxm", "workflows", "inspect.yaml"), stringify({
+      schema: "kxm.workflow.v1", coordinator: "coordinator",
+      steps: [{
+        id: "inspect", kind: "agent", agent: "implementer", repositories: { control: "read" },
+        on: { passed: { target: "$terminal", terminalStatus: "completed" }, failed: { target: "$terminal", terminalStatus: "failed" } },
+      }],
+    }));
+    writeFileSync(join(cwd, ".kxm", "agents", "implementer.yaml"), stringify({
+      schema: "kxm.agent.v1", purpose: "Inspect the issue", repositories: { control: "write" },
+      model: { provider: "anthropic", model: "claude-sonnet-4-6" },
+    }));
+    writeFileSync(join(cwd, ".kxm", "routes.yaml"), stringify({
+      schema: "kxm.routes.v2", admitted: ["anthropic/claude-sonnet-4-6"], disabled: [], roles: {},
+    }));
+    const dryRun = capture();
+    assert.equal(await runCli(["task", "run", task.id, "--json", "--dry-run"], env, dryRun, cwd), 0);
+    assert.equal(supervisorStarts, 0);
+    assert.equal(readFileSync(taskFilePath(cwd, task.id), "utf8"), taskBefore);
+    const requests: string[] = [];
+    kxmDriveCliSeams.runtimeRequest = async (_handle, method, path, body) => {
+      requests.push(`${method} ${path}`);
+      assert(body && typeof body === "object" && "workflowId" in body);
+      assert.equal(body.workflowId, "inspect");
+      return { ok: true, run: { runId: "run_taskroute", homeRuntimeId: "rtm_taskroute", status: "created", configRevision: `sha256:${"a".repeat(64)}` } };
+    };
+    const created = capture();
+    assert.equal(await runCli(["task", "run", task.id, "--json"], env, created, cwd), 0);
+    const result = JSON.parse(created.read().stdout) as { phase?: string; execution: { status: string; defaultHarness: string; prerequisites: unknown[]; nextSteps: { drive: string } } };
+    assert.equal(result.phase, undefined);
+    assert.equal(result.execution.status, "not_started");
+    assert.equal(result.execution.defaultHarness, "claude");
+    assert.deepEqual(result.execution.prerequisites, []);
+    assert.equal(result.execution.nextSteps.drive, "kxm runs drive run_taskroute --wait");
+    assert.deepEqual(requests, ["POST /v1/runs"], "creation does not silently launch a paid harness");
+    assert.equal(getTask(cwd, task.id)?.status, "todo", "created is not in progress");
   } finally {
     delete kxmDriveCliSeams.ensureSupervisor;
     delete kxmDriveCliSeams.runtimeRequest;
@@ -839,12 +899,21 @@ test("kxm run prints the simulated drive command for the created run", async () 
   }
 });
 
-test("kxm top-level help names the product KXM", async () => {
-  const help = capture();
-  assert.equal(await runCli(["--help"], {}, help), 0);
-  assert.match(help.read().stdout, /KXM local-first orchestration CLI/);
-  assert.doesNotMatch(help.read().stdout, /KontextMind/);
-  assert.match(help.read().stdout.replace(/\s+/g, " "), /Create a KXM run \(offline-first; kxm runs drive <runId> --simulated executes it model-free\)/);
+test("harness list reports the current project default rather than the global fallback", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-harness-project-default-"));
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JHARNESSDEFAULT0000000", projectName: "Harness default" });
+    const projectFile = join(cwd, ".kxm", "project.yaml");
+    writeFileSync(projectFile, readFileSync(projectFile, "utf8").replace("defaultHarness: pi", "defaultHarness: claude"));
+    const output = capture();
+    assert.equal(await runCli(["harness", "list", "--json"], { PATH: cwd, APPDATA: cwd, USERPROFILE: cwd }, output, cwd), 0);
+    const inventory = JSON.parse(output.read().stdout) as { defaultHarness: string; harnesses: Array<{ id: string; default: boolean }> };
+    assert.equal(inventory.defaultHarness, "claude");
+    assert.deepEqual(inventory.harnesses.filter((entry) => entry.default).map((entry) => entry.id), ["claude"]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("kxm runs status prints a drive line and passes the receipt through JSON", async () => {

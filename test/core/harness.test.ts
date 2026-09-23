@@ -279,6 +279,19 @@ test("probe reports detect/auth without a preferences overlay", () => {
   assert(!JSON.stringify(inventory).includes("preferences"));
 });
 
+test("inventory selects the requested project default even when that harness is unavailable", async () => {
+  const inventory = await probeHarnessesAsync({
+    defaultHarness: "claude",
+    runCommand: runner({
+      "pi --version": { ok: true, code: 0, stdout: "pi\n", stderr: "" },
+    }),
+  });
+  assert.equal(inventory.defaultHarness, "claude");
+  assert.deepEqual(inventory.harnesses.filter((entry) => entry.default).map((entry) => entry.id), ["claude"]);
+  assert.equal(inventory.harnesses.find((entry) => entry.id === "claude")?.detected, false);
+  assert.match(formatHarnessInventory(inventory), /^claude\s+yes\s+no\b/m);
+});
+
 test("update plans native commands and dry-run does not spawn", () => {
   const inventory = probeHarnesses({
     runCommand: runner({

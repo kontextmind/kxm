@@ -427,7 +427,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
     });
 
-  addGlobalOptions(program.command("run").description("Create a KXM run (offline-first; kxm runs drive <runId> --simulated executes it model-free)")
+  addGlobalOptions(program.command("run").description("Create a KXM run without executing steps; follow its prerequisites, then kxm runs drive <runId> --wait")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
