@@ -17756,7 +17756,13 @@ function deriveKxmSyncEvent(event, options = {}) {
   if (syncEventSchemaErrors(full) === void 0) return full;
   const degradedPayload = { degraded: true };
   for (const key of CONTROL_FIELDS) {
-    if (builder.payload[key] === void 0) continue;
+    if (builder.payload[key] === void 0) {
+      const sourceValue = source[key];
+      if (sourceValue !== void 0) {
+        degradedPayload[key] = isRecord(sourceValue) ? { id: "[redacted]" } : "[redacted]";
+      }
+      continue;
+    }
     const value = builder.payload[key];
     if (typeof value === "string" && value.trim().length === 0) {
       degradedPayload[key] = "[redacted]";
@@ -28152,13 +28158,12 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
     syncing = true;
     void (async () => {
       for (const context of [...contexts.values()]) {
-        const syncRedactor = new KxmSyncRedactor();
         const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
-        if (hubToken) syncRedactor.register(hubToken);
+        if (hubToken) context.eventStore.syncRedactor.register(hubToken);
         for (const key of Object.keys(process.env)) {
           if (key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY")) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
             const value = process.env[key]?.trim();
-            if (value) syncRedactor.register(value);
+            if (value) context.eventStore.syncRedactor.register(value);
           }
         }
         try {

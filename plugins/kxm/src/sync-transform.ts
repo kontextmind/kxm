@@ -320,16 +320,24 @@ export function deriveKxmSyncEvent(event: KxmRunEvent, options: KxmSyncTransform
 
   const degradedPayload: Picked = { degraded: true };
   for (const key of CONTROL_FIELDS) {
-    if (builder.payload[key] === undefined) continue;
+    // A scrubbed-required field that was REMOVED (scrubbing produced an empty
+    // string and text() returned undefined) must be restored with a valid
+    // placeholder, not left absent — the schema requires it and a missing
+    // field aborts the caller's transaction with sync_event_invalid.
+    if (builder.payload[key] === undefined) {
+      const sourceValue = source[key];
+      if (sourceValue !== undefined) {
+        degradedPayload[key] = isRecord(sourceValue) ? { id: "[redacted]" } : "[redacted]";
+      }
+      continue;
+    }
     const value = builder.payload[key];
     // A scrubbed-required field that is now empty or whitespace-only must carry
     // a valid placeholder, not an invalid empty string that fails schema
-    // validation and aborts the caller's transaction. The placeholder is
-    // clearly marked as redacted.
+    // validation and aborts the caller's transaction.
     if (typeof value === "string" && value.trim().length === 0) {
       degradedPayload[key] = "[redacted]";
     } else if (isRecord(value)) {
-      // Scrub any empty string fields inside nested objects (actor.id etc.)
       const patched: Picked = {};
       for (const [k, v] of Object.entries(value)) {
         if (typeof v === "string" && v.trim().length === 0) patched[k] = "[redacted]";

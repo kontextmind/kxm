@@ -24,7 +24,6 @@ import {
   type KxmRuntimeContext,
 } from "./runtime-service.ts";
 import { createKxmOneShotProducer } from "./oneshot-producer.ts";
-import { KxmSyncRedactor } from "./sync-transform.ts";
 import { isRouteAdmitted } from "./routes.ts";
 import { KxmRunScheduler, createKxmSimulatedProducer, recordDriveReceipt, recoverKxmRun, kxmDrivePollProjection } from "./engine.ts";
 import { kxmDriveSession, kxmOpenDriveSessions } from "./runtime-owner.ts";
@@ -895,16 +894,15 @@ async function startKxmRuntimeSupervisorInner(
     void (async () => {
       for (const context of [...contexts.values()]) {
         // Production redactor registration: known credentials are registered
-        // so values matching none of the built-in credential shapes are still
-        // scrubbed from outbound sync events. The hub token and environment
-        // variables with credential-suggesting suffixes are the source.
-        const syncRedactor = new KxmSyncRedactor();
+        // on the event STORE's redactor — the one deriveKxmSyncEvent actually
+        // uses — so values matching none of the built-in credential shapes are
+        // scrubbed from outbound sync events before the outbox row is written.
         const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
-        if (hubToken) syncRedactor.register(hubToken);
+        if (hubToken) context.eventStore.syncRedactor.register(hubToken);
         for (const key of Object.keys(process.env)) {
           if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
             const value = process.env[key]?.trim();
-            if (value) syncRedactor.register(value);
+            if (value) context.eventStore.syncRedactor.register(value);
           }
         }
         try {
