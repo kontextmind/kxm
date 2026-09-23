@@ -5,9 +5,28 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { parse, stringify } from "yaml";
+import { join } from "node:path";
+import { stringify } from "yaml";
 import { repoConfigDirectory, userConfigDirectory } from "./config.ts";
+import { compileKxmWorkflow } from "./engine-compile.ts";
+import { KxmConfigError, KxmSchemaRegistry, kxmResourceIdentifier, parseRestrictedYaml } from "./project-config.ts";
+
+function assertWorkflowId(workflowId: string): void {
+  if (!kxmResourceIdentifier(workflowId)) {
+    throw new Error(`workflow_id_invalid: '${workflowId}' must be a flat lowercase slug of at most 64 characters, starting with a letter and using letters, digits, single hyphens or underscores; paths and platform-reserved names are not allowed (use 'bug-fix', not 'software-engineering/bug-fix')`);
+  }
+}
+
+let workflowSchemaRegistry: KxmSchemaRegistry | undefined;
+
+function workflowPayload(workflowId: string, content: Record<string, unknown> | string, filePath: string): string {
+  const payload = typeof content === "string" ? content : stringify(content);
+  const value = parseRestrictedYaml(payload, filePath);
+  const issues = (workflowSchemaRegistry ??= new KxmSchemaRegistry()).validate("workflow", value, filePath);
+  if (issues.length > 0) throw new KxmConfigError(issues);
+  compileKxmWorkflow({ id: workflowId, value, logicalPath: filePath });
+  return payload;
+}
 
 export interface WorkflowDefSummary {
   id: string;
@@ -197,9 +216,7 @@ export function parseWorkflowFile(filePath: string): Record<string, unknown> | u
   if (!existsSync(filePath)) return undefined;
   try {
     const raw = readFileSync(filePath, "utf8");
-    const parsed = parse(raw) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object") return undefined;
-    return parsed;
+    return parseRestrictedYaml(raw, filePath);
   } catch {
     return undefined;
   }
@@ -218,11 +235,11 @@ export function listWorkflowDefinitions(options: {
   const localDefs = new Map<string, { def: Record<string, unknown>; filePath: string }>();
   if (scopeFilter !== "global" && existsSync(localDir)) {
     for (const entry of readdirSync(localDir)) {
-      if (entry.endsWith(".yaml") || entry.endsWith(".yml")) {
+      if (entry.endsWith(".yaml") && kxmResourceIdentifier(entry.slice(0, -5))) {
         const filePath = join(localDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
-          const id = (def.id as string) || entry.replace(/\.ya?ml$/i, "");
+          const id = entry.slice(0, -5);
           localDefs.set(id, { def, filePath });
         }
       }
@@ -232,11 +249,11 @@ export function listWorkflowDefinitions(options: {
   const globalDefs = new Map<string, { def: Record<string, unknown>; filePath: string }>();
   if (scopeFilter !== "local" && existsSync(globalDir)) {
     for (const entry of readdirSync(globalDir)) {
-      if (entry.endsWith(".yaml") || entry.endsWith(".yml")) {
+      if (entry.endsWith(".yaml") && kxmResourceIdentifier(entry.slice(0, -5))) {
         const filePath = join(globalDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
-          const id = (def.id as string) || entry.replace(/\.ya?ml$/i, "");
+          const id = entry.slice(0, -5);
           globalDefs.set(id, { def, filePath });
         }
       }
@@ -248,7 +265,7 @@ export function listWorkflowDefinitions(options: {
     const steps = Array.isArray(def.steps) ? def.steps : [];
     for (const step of steps) {
       if (step && typeof step === "object") {
-        const role = (step as Record<string, unknown>).role || (step as Record<string, unknown>).agent;
+        const role = (step as Record<string, unknown>).agent;
         if (typeof role === "string" && !roles.includes(role)) {
           roles.push(role);
         }
@@ -298,6 +315,7 @@ export function getWorkflowDefinition(
     userConfigDir?: string | undefined;
   } = {},
 ): { workflow: Record<string, unknown>; scope: "global" | "local"; filePath: string } | undefined {
+  assertWorkflowId(workflowId);
   const scope = options.scope ?? "all";
   const repoRoot = options.repoRoot ?? process.cwd();
 
@@ -331,19 +349,21 @@ export function addWorkflowDefinition(
     dryRun?: boolean | undefined;
   } = {},
 ): { id: string; filePath: string; scope: "global" | "local" } {
+  assertWorkflowId(workflowId);
   const scope = options.scope ?? "local";
   const repoRoot = options.repoRoot ?? process.cwd();
-  const dir = options.dryRun
-    ? workflowsDirectory(scope, repoRoot, options.userConfigDir)
-    : ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
+  const dir = workflowsDirectory(scope, repoRoot, options.userConfigDir);
   const filePath = join(dir, `${workflowId}.yaml`);
 
   if (existsSync(filePath) && !options.overwrite) {
     throw new Error(`workflow_already_exists: workflow '${workflowId}' already exists at ${filePath}`);
   }
 
-  const payload = typeof content === "string" ? content : stringify(content);
-  if (!options.dryRun) writeFileSync(filePath, payload, "utf8");
+  const payload = workflowPayload(workflowId, content, filePath);
+  if (!options.dryRun) {
+    ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
+    writeFileSync(filePath, payload, "utf8");
+  }
   return { id: workflowId, filePath, scope };
 }
 
@@ -356,6 +376,7 @@ export function removeWorkflowDefinition(
     dryRun?: boolean | undefined;
   } = {},
 ): { id: string; removed: boolean; filePath: string; scope: "global" | "local" } {
+  assertWorkflowId(workflowId);
   const scope = options.scope ?? "local";
   const repoRoot = options.repoRoot ?? process.cwd();
   const dir = workflowsDirectory(scope, repoRoot, options.userConfigDir);
@@ -392,11 +413,13 @@ export function modifyWorkflowDefinition(
 
   const scope = options.scope ?? target.scope;
   const repoRoot = options.repoRoot ?? process.cwd();
-  const dir = options.dryRun
-    ? workflowsDirectory(scope, repoRoot, options.userConfigDir)
-    : ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
+  const dir = workflowsDirectory(scope, repoRoot, options.userConfigDir);
   const filePath = join(dir, `${workflowId}.yaml`);
 
-  if (!options.dryRun) writeFileSync(filePath, stringify(updated), "utf8");
+  const payload = workflowPayload(workflowId, updated, filePath);
+  if (!options.dryRun) {
+    ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
+    writeFileSync(filePath, payload, "utf8");
+  }
   return { id: workflowId, workflow: updated, filePath, scope };
 }

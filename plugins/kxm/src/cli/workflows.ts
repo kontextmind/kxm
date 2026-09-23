@@ -213,61 +213,59 @@ export async function cmdWorkflowAdd(
   },
 ): Promise<number> {
   const scope = options.scope ?? "local";
-  let content: Record<string, unknown> | string | undefined;
-  if (options.template !== undefined) {
-    const refuse = (error: string, text: string): number => {
-      print(runtime.io, runtime.json, { ok: false, command: "workflow add", error }, `workflow add failed: ${text}`);
-      return 2;
-    };
-    if (options.file !== undefined || options.pick !== undefined) {
-      return refuse("workflow_add_conflict", "--template cannot be combined with --file or --pick");
-    }
-    if (!workflowId) return refuse("workflow_id_required", "usage: kxm workflow add <workflowId> --template <name>");
-    const template = Object.hasOwn(WORKFLOW_TEMPLATES, options.template) ? WORKFLOW_TEMPLATES[options.template] : undefined;
-    if (!template) {
-      return refuse("workflow_template_unknown", `unknown template ${options.template}; choose ${Object.keys(WORKFLOW_TEMPLATES).join(", ")}`);
-    }
-    content = { ...template, ...(options.description ? { description: options.description } : {}) };
-  } else if (!workflowId || options.pick) {
-    const candidates: PickCandidate[] = Object.entries(WORKFLOW_TEMPLATES).map(([id, tmpl]) => ({
-      id,
-      description: String(tmpl.description ?? id),
-      label: "template",
-      payload: tmpl,
-    }));
-    if (scope === "local") {
-      const globalDefs = listWorkflowDefinitions({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
-      for (const gd of globalDefs) {
-        if (!candidates.some((c) => c.id === gd.id)) {
-          candidates.push({ id: gd.id, description: gd.description, label: "global" });
+  const refuse = (error: string, message: string, code = 2): number => {
+    print(runtime.io, runtime.json, { ok: false, command: "workflow add", error, message }, `workflow add failed: ${message}`);
+    return code;
+  };
+  try {
+    let content: Record<string, unknown> | string | undefined;
+    if (options.template !== undefined) {
+      if (options.file !== undefined || options.pick !== undefined) {
+        return refuse("workflow_add_conflict", "--template cannot be combined with --file or --pick");
+      }
+      if (!workflowId) return refuse("workflow_id_required", "usage: kxm workflow add <workflowId> --template <name>");
+      const template = Object.hasOwn(WORKFLOW_TEMPLATES, options.template) ? WORKFLOW_TEMPLATES[options.template] : undefined;
+      if (!template) {
+        return refuse("workflow_template_unknown", `unknown template ${options.template}; choose ${Object.keys(WORKFLOW_TEMPLATES).join(", ")}`);
+      }
+      content = { ...template, ...(options.description ? { description: options.description } : {}) };
+    } else if (!workflowId || options.pick) {
+      const candidates: PickCandidate[] = Object.entries(WORKFLOW_TEMPLATES).map(([id, tmpl]) => ({
+        id,
+        description: String(tmpl.description ?? id),
+        label: "template",
+        payload: tmpl,
+      }));
+      if (scope === "local") {
+        const globalDefs = listWorkflowDefinitions({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+        for (const gd of globalDefs) {
+          if (!candidates.some((c) => c.id === gd.id)) {
+            candidates.push({ id: gd.id, description: gd.description, label: "global", payload: gd.filePath });
+          }
         }
       }
-    }
-    const picked = await resolvePickItem(runtime.io, `Select a workflow template to add (${scope})`, candidates, options.pick, runtime.env);
-    if (!picked) {
-      if (!workflowId) {
-        runtime.io.stderr("workflow add failed: missing workflowId or pick selection\n");
-        return 1;
+      const picked = await resolvePickItem(runtime.io, `Select a workflow template to add (${scope})`, candidates, options.pick, runtime.env);
+      if (!picked) {
+        return refuse("workflow_id_required", "provide a workflowId or select an available workflow with --pick <id>", 1);
       }
-    } else {
-      workflowId = picked.id;
-      if (!options.file && picked.payload) {
-        content = {
-          ...picked.payload,
-          ...(options.description ? { description: options.description } : {}),
-        };
+      workflowId ??= picked.id;
+      if (options.file === undefined) {
+        content = typeof picked.payload === "string"
+          ? readFileSync(picked.payload, "utf8")
+          : {
+            ...picked.payload,
+            ...(options.description ? { description: options.description } : {}),
+          };
       }
     }
-  }
 
-  if (options.file) {
-    const filePath = resolve(runtime.cwd, options.file);
-    content = readFileSync(filePath, "utf8");
-  } else if (!content) {
-    content = scaffoldWorkflowDefinition(options.description || `Workflow ${workflowId}`);
-  }
+    if (options.file !== undefined) {
+      const filePath = resolve(runtime.cwd, options.file);
+      content = readFileSync(filePath, "utf8");
+    } else if (!content) {
+      content = scaffoldWorkflowDefinition(options.description || `Workflow ${workflowId}`);
+    }
 
-  try {
     const res = addWorkflowDefinition(workflowId!, content, {
       scope,
       repoRoot: runtime.cwd,
@@ -287,8 +285,7 @@ export async function cmdWorkflowAdd(
     );
     return 0;
   } catch (err: unknown) {
-    runtime.io.stderr(`workflow add failed: ${(err as Error).message}\n`);
-    return 1;
+    return refuse("workflow_add_failed", err instanceof Error ? err.message : String(err), 1);
   }
 }
 

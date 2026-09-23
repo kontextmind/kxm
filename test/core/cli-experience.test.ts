@@ -39,6 +39,8 @@ import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
 import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
 import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
 import { WORKFLOW_TEMPLATES } from "../../plugins/kxm/src/workflow-manager.ts";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
+import { compileKxmWorkflow } from "../../plugins/kxm/src/engine-compile.ts";
 
 function createSandbox(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "kxm-cli-exp-"));
@@ -778,11 +780,27 @@ test("workflow add templates validate and plan a run, and a gate outcome the ste
       assert.equal(added.code, 0, added.err);
       assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, workflowFile(id));
       ids.push(id);
+
+      const beforePick = treeSnapshot(root);
+      const pickPlan = await kxm(["workflow", "add", "--pick", template, "--dry-run"]);
+      assert.equal(pickPlan.code, 0, pickPlan.err);
+      assert.deepEqual(treeSnapshot(root), beforePick, `--pick ${template} --dry-run leaves all paths unchanged`);
+      const picked = await kxm(["workflow", "add", "--pick", template]);
+      assert.equal(picked.code, 0, picked.err);
+      ids.push(template);
     }
+    const expectedStages: Record<string, string[]> = {
+      demo: ["step-1"],
+      "implement-and-verify": ["implement", "verify"],
+      "dual-critic-review": ["implement", "review-arch", "review-cli", "verify"],
+      "spec-and-plan": ["plan", "review-arch"],
+    };
+    const bundle = loadKxmProject(project);
     for (const id of ids) {
-      const text = readFileSync(workflowFile(id), "utf8");
-      assert.doesNotMatch(text, /^id:/m, `${id}: the file name is the workflow id`);
-      assert.doesNotMatch(text, /\brole:/, `${id}: steps name an agent, not a role`);
+      const definition = bundle.workflows.get(id);
+      assert.ok(definition, `${id} is available to the project loader`);
+      const plan = compileKxmWorkflow({ id, value: definition.value, logicalPath: definition.logicalPath });
+      assert.deepEqual(plan.order, expectedStages[id.replace(/^demo-/, "")], `${id} compiles to its executable stage sequence`);
     }
     const unknown = await kxm(["workflow", "add", "other", "--template", "nope"]);
     assert.equal(unknown.code, 2);
