@@ -1,6 +1,6 @@
 ---
 name: kxm-mind
-description: Router for the KontextMind knowledge plane on any agent harness. Use when the user mentions KontextMind, the mind, km_ tools, kontext CLI, harvest, triage, handoffs, insights, reindex, or KM-Session trailers. Does not replace the KXM peer/workflow skill named kxm.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Routes a KontextMind request to the matching knowledge-plane skill. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client (Claude Code, Cursor, Codex, Pi, Gemini, Grok, and others). No vendor-only tools.
 metadata:
@@ -31,7 +31,7 @@ Slash / skill menu hint — `[intent]`
 | work, handoff, in-flight | `kxm-work` |
 | insights, loop, gap | `kxm-insights` |
 | project, reindex, invite | `kxm-projects` |
-| serve, login, init, doctor | `kxm-setup` |
+| serve, login, init, doctor | `kxm-mind-setup` |
 | trailer, trust, gate, authz | `kxm-protocol` |
 | peer, fanout, checkpoint | `kxm` |
 | brief, hub bind, status line | `kxm-session` |

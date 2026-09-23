@@ -808,6 +808,45 @@ test("kxm runs drive requires driveId, poll, and accepted before printing succes
   }
 });
 
+test("kxm run prints the simulated drive command for the created run", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-run-notice-cli-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-notice-cli-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JRUNNOTICE0000000000000", projectName: "Run notice" });
+    const handle = { runtimeId: "rtm_runnotice", port: 9, token: "tok", started: true as const };
+    const run = { runId: "run_notice0123", homeRuntimeId: "rtm_runnotice0000", status: "created", configRevision: `sha256:${"a".repeat(64)}` };
+    kxmDriveCliSeams.ensureSupervisor = async () => handle;
+    kxmDriveCliSeams.runtimeRequest = async () => ({ ok: true, idempotent: false, run });
+    const env = { KXM_STATE_HOME: stateRoot };
+
+    const text = capture();
+    assert.equal(await runCli(["run", "default", "fix it"], env, text, cwd), 0);
+    const lines = text.read().stdout.trim().split("\n");
+    assert.match(lines[0]!, /^run created: run_notice0123 /);
+    assert.equal(lines[1], "drive it model-free: kxm runs drive run_notice0123 --simulated --wait (or cancel: kxm runs cancel run_notice0123)");
+
+    const json = capture();
+    assert.equal(await runCli(["run", "default", "--json", "fix it"], env, json, cwd), 0);
+    const payload = JSON.parse(json.read().stdout) as { phase: string; run: { runId: string } };
+    assert.equal(payload.phase, "pre-3a", "the phase stays a JSON contract");
+    assert.equal(payload.run.runId, "run_notice0123");
+  } finally {
+    delete kxmDriveCliSeams.ensureSupervisor;
+    delete kxmDriveCliSeams.runtimeRequest;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm top-level help names the product KXM", async () => {
+  const help = capture();
+  assert.equal(await runCli(["--help"], {}, help), 0);
+  assert.match(help.read().stdout, /KXM local-first orchestration CLI/);
+  assert.doesNotMatch(help.read().stdout, /KontextMind/);
+  assert.match(help.read().stdout.replace(/\s+/g, " "), /Create a KXM run \(offline-first; kxm runs drive <runId> --simulated executes it model-free\)/);
+});
+
 test("kxm runs status prints a drive line and passes the receipt through JSON", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "kxm-run-status-cli-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-run-status-cli-state-"));

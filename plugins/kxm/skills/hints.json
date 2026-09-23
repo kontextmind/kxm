@@ -58,7 +58,7 @@
       "complete": ["km_projects", "km_project_add", "km_reindex", "km_invite"]
     },
     {
-      "name": "kxm-setup",
+      "name": "kxm-mind-setup",
       "argumentHint": "[serve|login|init|doctor]",
       "triggers": ["install", "serve", "login", "kontext init", "kontext doctor"],
       "complete": ["npx kontextmind serve", "kontext login", "kontext init", "kontext doctor"]

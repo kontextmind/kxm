@@ -497,6 +497,106 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Claude plugin hooks, MCP auth, skills and first-workflow path (2026-09-23;
+  PR #299 (stacked on #298), `e1b26f1`..`7b82b79`; operator decisions pending,
+  see Still open):** the plugin's two shell-form SessionStart hooks (`kxm session brief
+  --status`, `kxm memory brief`) exited 127 without `kxm` on `PATH`, ran whichever `kxm` was
+  on `PATH`, minted a 24-hour operator token and wrote `.kxm/state/session-brief.json` at
+  every session start, ignored `server_url`, and had no timeout. With a blank `auth_token`
+  the MCP server resolved the persisted hub admin token and registered the agent in a
+  project nobody had issued it a token for; its tool errors named no fix, a second session
+  with the same agent name collided with the first, and a session registered only at its
+  first tool call. The plugin README's tool table had drifted from the server. Nine
+  KontextMind knowledge-plane skills (`kxm-setup` among them) competed with the KXM command
+  skills, several top-level commands had no owning skill, and the command skills still said
+  the run engine had not landed. `kxm workflow add` wrote a scaffold and three templates
+  that failed `kxm.workflow.v1` (`role:` instead of `agent:`, a top-level `id`, a
+  `verify-gate` no project defines, gate failures on `failed`), so a first workflow broke
+  `kxm run` for the whole project; the loader accepted a gate step that routes failures
+  only on `failed`, which can never settle; `kxm run` said no steps execute until the run
+  engine lands; `kxm runs drive` dropped the handoff reason from `run_handoff_required`;
+  and `kxm suggest` recommended skills that do not ship. **Changed:** one exec-form hook,
+  `node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start` (5 s timeout, new
+  generated artifact and import-boundary surface), reads only the project Claude Code
+  opened, prints nothing outside a KXM project, writes nothing, mints no token, spawns
+  nothing and always exits 0; its context is at most 1,500 characters of status (hub state
+  at `server_url`, up to three of this project's active runs, the open-request count for
+  this agent, user-directed fixes) followed by the unmodified memory brief.
+  `loadLocalMeshSnapshot` gains a scope and a busy timeout and, when scoped, opens only
+  this project's run store. `resolveAgentHubAuthToken` (`hub-env.ts`) returns `KXM_AUTH_TOKEN` or this
+  project's saved token, never the admin token; with neither, the MCP server refuses
+  before contacting the hub. Tool errors name the fix (`kxm hub start` or
+  `/plugin configure kxm@kxm` for an unreachable hub, the project token for
+  `invalid_auth`, the shared `sessionTokenFixHint` for `session_token_invalid`); a second
+  session registers once as `<name>-<pid>`; in a KXM project with a project token and a
+  policy allowing `kxm_inbox` and `kxm_reply` the server registers after the handshake and
+  leaves the hub when stdin closes. The README is rewritten, and a test pins its
+  `## MCP tools` rows to `tools/list`. `skill-suite.json` declares all 29 skills (13
+  command, 7 browser, 9 knowledge plane) and gives each of the 34 registered top-level
+  commands exactly one owner; `kxm-setup` is renamed `kxm-mind-setup` with no alias; the
+  knowledge-plane descriptions trigger only when the user names KontextMind;
+  `kxm-project-setup` teaches init through a trust-reviewed first workflow to a simulated,
+  receipt-verified run. `kxm workflow add --template
+  implement-and-verify|dual-critic-review|spec-and-plan` and the scaffold write valid
+  definitions that use only what `kxm init` creates; the loader refuses a gate step that
+  declares an outcome it never produces while leaving a produced one undeclared
+  (`gate_outcome_impossible`); `kxm run` prints the simulated drive and cancel commands;
+  drive refusals carry `(handoff reason …; field …; detail …)`, each capped at 200
+  characters; top-level help names KXM; `kxm init` text lists each issue; `kxm suggest`
+  recommends only KXM command skills; `.kxm/workflows/default.yaml`, the example project
+  and the unsupported-gate fixture route gate failures on `implementation-failure`.
+  **Gate:** existing `npm run verify`, no new npm script or CI job. New named tests:
+  `claude hook runs from a copied plugin directory without the repo root`, `claude
+  session-start hook is silent and writes nothing outside a KXM project`, `claude
+  session-start status sections stay within 1500 chars and never contain a session
+  token`, `claude session-start hook probes the plugin server_url option`, `claude
+  session-start context omits other projects runs and requests`, `claude session-start
+  hook asks the user to clear an expired session token file`, `claude session-start hook
+  asks the user to fix an invalid KXM_SESSION_TOKEN in the launch environment` and `plugin
+  hooks use exec form under CLAUDE_PLUGIN_ROOT with bounded timeouts` in
+  `test/core/claude-plugin-hooks.test.ts`; `isolated MCP spawn env points project dir,
+  state, user config and hub URL at throwaway locations`, `every test that spawns
+  dist/mcp-server.js uses the isolated spawn helper`, `MCP server never registers with the
+  persisted admin token`, `MCP tool call asks the user to start the hub when it is
+  unreachable`, `MCP policy error for an expired disk token asks the user to clear it and
+  never mentions --issue`, `MCP policy error for an invalid KXM_SESSION_TOKEN asks the user
+  to fix the launch environment`, `second MCP session with the same agent name registers
+  with a pid suffix`, `MCP server registers with the hub before any tool call in a KXM
+  project` and `MCP instructions point at kxm_context and stay under 800 characters` in
+  `test/core/mcp.test.ts`; `resolveAgentHubAuthToken never returns the persisted admin
+  token` in `test/core/hub-env.test.ts`; `the MCP server publishes AGENT_COMMANDS plus
+  exactly the hook-only tools` in `test/core/commands-drift.test.ts`; `plugin README tool
+  table lists every tool the bundled MCP server publishes` in
+  `test/core/claude-plugin-docs.test.ts`; `every bundled SKILL.md frontmatter parses as
+  strict YAML` in `test/core/skill-suite.test.ts`; `kxm run prints the simulated drive
+  command for the created run` and `kxm top-level help names the product KXM` in
+  `test/core/cli.test.ts`; `runs drive surfaces handoff field and detail on
+  run_handoff_required` in `test/core/runtime-supervisor.test.ts`; and `suggest recommends
+  only KXM command skills shipped in plugins/kxm/skills` and `workflow add templates
+  validate and plan a run, and a gate outcome the step can never produce is refused` in
+  `test/core/cli-experience.test.ts`. Modified: `every registered top-level kxm command is
+  owned by exactly one bundled skill` (was the fixed 30-command list) and the skill-suite
+  declaration, name and mirror checks; `role and memory skill commands correspond to
+  registered CLI subcommands` and `SKILL.md files teach kxm peer and workflow commands with
+  zero mesh_ or MCP-only instructions` (`commands-policy.test.ts`: loop-registered routes,
+  `session brief` only under Operator steps); `E5b: gate - brief returns the exact same
+  facts from CLI, Pi extension, and Claude hook` (the bundled hook); `bundled MCP server
+  initializes and publishes the mesh tool catalog` (isolated spawn); and the docs-copy
+  scan, which now covers every Markdown file under `plugins/kxm/skills`. Zero schema
+  change: no schema file, SQLite table, column or store version; `plugin.json` changes its
+  hook and `userConfig` descriptions only. **Not done here:** the `PostToolUseFailure`
+  failure-journal hook tool (`kxm_hook_tool_failure`) was dropped, because its live
+  witness (A0) needs a logged-in, isolated Claude config; the plugin version pin stays
+  0.7.1, so existing installs keep the cached plugin until the documented uninstall and
+  reinstall (D-2); the nine KontextMind knowledge-plane skills are kept and rescoped, and
+  deleting them is the operator's call (D-1); the always-on skill descriptions now cost
+  about 2,072 tokens; and the drive-time gate check in `engine.ts` still says "declare
+  implementation-failure or failed", and on an `expect: fail` gate step it still requires
+  `implementation-failure` or `failed`, which that step never produces, where the loader
+  asks for `passed` and `repro-missing`. The `default` workflow `kxm init` writes still
+  sets `limits.maxAgentTimeMs` and is handed off at drive time, so the first-workflow path
+  goes through `workflow add --template`.
+
 - **`kxm improve` and `kxm routing report` resolve Runtime attempts from the event log;
   coded-repeat candidates need a repeated ask; promotion reports readiness only
   (2026-09-23; PR #298 slice 4, `bee1fac`; the operator decisions it implements are
@@ -2124,6 +2224,27 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   **Owner:** the operator decides; the current writer route (per Decided) applies any
   reversal. **Trigger:** the operator's answers on PR #298. Confirmed answers then move to
   Decided with the date they were given.
+
+- **Operator decisions on the plugin/skills PR, pending (2026-09-23;
+  PR #299 (stacked on #298)).** Each is implemented with the default named here
+  and stays pending until the operator confirms or changes it; none is a Decided entry.
+  - **D-1, KontextMind knowledge-plane skills:** delete them, or keep and rescope them.
+    Implemented default: the nine skills are kept, their descriptions trigger only when
+    the user names KontextMind, and `kxm-setup` is renamed `kxm-mind-setup` with no alias.
+    Deleting them would also lower the always-on skill description cost (about 2,072
+    tokens).
+  - **D-2, plugin version bump:** `plugin.json` and `marketplace.json` stay at 0.7.1, so
+    `claude plugin update` leaves existing installs on the cached copy; they get the new
+    SessionStart hook and MCP behaviour only through the uninstall and reinstall in the
+    plugin README. A bump delivers them through a normal update.
+  - **A0, failure-hook witness:** run the live Claude Code witness for the
+    `PostToolUseFailure` hook tool (`kxm_hook_tool_failure`) in a logged-in, isolated
+    Claude config (`CLAUDE_CONFIG_DIR`). The tool does not ship until that witness passes;
+    `commands-drift.test.ts` pins that no hook-only tool is published.
+
+  **Owner:** the operator decides D-1 and D-2 and runs A0 (or names who does); the current
+  writer route (per Decided) applies the result. **Trigger:** the operator's answers on the
+  plugin/skills PR.
 
 - **Recorded gap, not scheduled (2026-09-23, found while implementing PR #298): Runtime runs
   have no journal or retrospective.** `kxm_workflow_record` and `kxm workflow record` post

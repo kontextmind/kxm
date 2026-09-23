@@ -604,6 +604,14 @@ Graph rules checked by the loader:
   `ready` and no other step may (`verify_must_precede_ready`).
 - On gate steps, `implementation_failure` and `repro_missing` are misspellings
   of `implementation-failure` and `repro-missing` (`gate_outcome_renamed`).
+- A gate step settles only on `passed` or `implementation-failure` when
+  `expect` is `pass`, and only on `passed` or `repro-missing` when `expect` is
+  `fail`. A gate step is refused when it declares an outcome it never
+  produces (such as `failed`) and also leaves an outcome it does produce
+  undeclared (`gate_outcome_impossible`); the message names the outcomes to
+  declare. An extra outcome next to every produced one is accepted, which is
+  why the `verify` step `kxm init` writes, with `failed` beside
+  `implementation-failure`, still loads.
 
 Outcomes the Runtime produces:
 
@@ -614,14 +622,24 @@ Outcomes the Runtime produces:
 | `artifacts-exist` gate | All paths present gives `passed`; otherwise `implementation-failure` (`expect: fail` is refused) |
 | Agent step | The producer asks the model for a JSON object whose `outcome` is one of the step's declared outcomes; anything else becomes `failed` |
 
-Declare `implementation-failure` on every `expect: pass` gate step. The
-Runtime's pre-flight check accepts `failed` in its place
-(`gate_outcome_undeclared` only when both are missing), but a failing command
-always records `implementation-failure`. With only `failed` declared, the gate
-attempt cannot settle: the run is handed off with `attempt_unsettled`, stays
-`running`, and later gate steps in the same project are held with
-`gate_recovery_pending`. Declare `failed` on every agent step, because the
-producer falls back to it.
+Declare `passed` and `implementation-failure` on every `expect: pass` gate
+step, and `passed` and `repro-missing` on every `expect: fail` gate step. A
+gate step that routes a failure on `failed` instead of `implementation-failure`
+is refused when the project loads (`gate_outcome_impossible`), so `kxm init`,
+`kxm run`, and `kxm run --dry-run` report it before a run exists. Without that
+check, a failing gate attempt could not settle: the Runtime records the
+produced outcome, finds no transition for it, hands the run off with
+`attempt_unsettled`, leaves it `running`, and holds later gate steps in the
+same project with `gate_recovery_pending`.
+
+The Runtime's drive-time pre-flight check is separate. It hands off
+(`gate_outcome_undeclared`) an `expect: pass` gate step without `passed`, an
+`expect: fail` gate step without `repro-missing`, and any gate step that
+declares no failure outcome, accepting either `implementation-failure` or
+`failed` as that outcome. An `expect: fail` gate step therefore also needs
+`implementation-failure` or `failed` declared to be driven, although it never
+produces either. Declare `failed` on every agent step, because the producer
+falls back to it.
 
 ### Steps the Runtime does not execute yet
 
@@ -799,11 +817,15 @@ it as a field reference; the
 Commands: `kxm init` validates; `kxm run <id> [prompt]` compiles and creates a
 run (`--dry-run` only loads the bundle); `kxm runs drive <runId> --simulated`
 drives without models; `kxm runs status|list|cancel`; `kxm trust` diffs.
-`kxm workflow add` writes files under `.kxm/workflows/` (or
+`kxm workflow add <id> --template <name>` writes a built-in template
+(`implement-and-verify`, `dual-critic-review`, or `spec-and-plan`), and
+`kxm workflow add <id>` a one-step scaffold, under `.kxm/workflows/` (or
 `~/.config/kxm/workflows/` with `--scope global`, which the loader never
-reads), but its built-in templates and its default skeleton use a `role:`
-field (and the skeleton an `id:` field) that the schema rejects. Edit the
-result before running `kxm init`.
+reads). Both are valid `kxm.workflow.v1` definitions that use only what
+`kxm init` creates: the `coordinator` and `implementer` agents, the `control`
+repository, and the `test` gate. The templates route gate failures on
+`implementation-failure`. Review the new file with `kxm trust check` before
+committing it.
 
 ## `.kxm/gates.yaml` (`kxm.gate-registry.v1`)
 
@@ -1468,7 +1490,8 @@ Front matter may not contain control-plane fields: `permissions`, `tools`,
 `allow`, `deny`, `grants`, `approval`, `policy`, `scopes`, `credentials`,
 `secrets`, `token`, `apiKey`, or `password`. The text after the front matter is
 the body. One malformed authored file makes `kxm memory brief` and
-`kxm memory sync` fail, including the Claude Code plugin's session-start hook.
+`kxm memory sync` fail. The Claude Code plugin's session-start hook still
+runs; it leaves out the memory brief and keeps the status sections.
 
 ```markdown
 ---
@@ -1643,14 +1666,17 @@ declares `userConfig` fields that Claude Code asks each user for. The plugin's
 | `userConfig` field | Environment variable | Required, default | Notes |
 |---|---|---|---|
 | `server_url` | `KXM_SERVER_URL` | Required, `http://127.0.0.1:7331` | The MCP server also falls back to that URL when empty |
-| `auth_token` | `KXM_AUTH_TOKEN` | Optional; marked sensitive | When empty, the MCP server uses the persisted hub credential (`hub-env.json`), preferring a project token for this project |
-| `agent_name` | `KXM_AGENT_NAME` | Required, `claude` | When empty, `claude-<pid>` |
+| `auth_token` | `KXM_AUTH_TOKEN` | Optional; marked sensitive | Use the project token, never the admin token. When empty, the MCP server uses only this project's saved project token from the hub credential file (`hub-env.json`) and never falls back to the admin token; with neither, tool calls fail with a message naming the fix |
+| `agent_name` | `KXM_AGENT_NAME` | Required, `claude` | When empty, `claude-<pid>`. If another live session already holds the name, the server registers once more as `<name>-<pid>` |
 | `agent_purpose` | `KXM_AGENT_PURPOSE` | Required, `Claude Code implementation and review agent` | |
 | `project` | `KXM_PROJECT` | Optional | When empty, the `name` in `package.json` at the project directory, else the directory name |
 | (not a user field) | `KXM_PROJECT_DIR` | Set from `${CLAUDE_PROJECT_DIR}` | Used to derive the default project |
 
-The manifest also registers a `SessionStart` hook that runs
-`kxm session brief --status` and `kxm memory brief`.
+The manifest also registers one `SessionStart` hook,
+`node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start`, with a 5-second
+timeout. It runs only inside a KXM project, reads this project's state only,
+never mints a token or writes a file, and always exits 0. See the
+[plugin README](../plugins/kxm/README.md) for what it adds to the session.
 
 ## Updater settings (`kxm.update.v1`)
 
@@ -1880,8 +1906,10 @@ Why each piece is there:
 - `implement` routes a failure straight to a terminal `failed` status and
   declares `failed`, the outcome the producer falls back to.
 - `verify` declares `implementation-failure`, the outcome a failing command
-  produces. The edge back to `implement` makes it a back-edge, so it carries
-  `maxTransitions: 2` and the workflow carries `limits.maxTransitions`.
+  produces. Routing that edge on `failed` instead is refused when the project
+  loads (`gate_outcome_impossible`). The edge back to `implement` makes it a
+  back-edge, so it carries `maxTransitions: 2` and the workflow carries
+  `limits.maxTransitions`.
 - The gate step lists `control: write`; the Runtime refuses command gate steps
   without a writable repository.
 - The workflow omits `limits.maxAgentTimeMs`; with it, the Runtime refuses to
@@ -1907,3 +1935,9 @@ the run returns to `implement` and fails with `budget_step_attempts` once
 today, because the `implement` step has write access (see
 [Steps the Runtime does not execute yet](#steps-the-runtime-does-not-execute-yet)).
 Stop the Runtime afterwards with `kxm runtime stop`.
+
+In a project that `kxm init` created,
+`kxm workflow add <id> --template implement-and-verify` writes a workflow of the
+same shape (without the `requiredEvidence` entries), and `kxm run` prints the
+matching `kxm runs drive <runId> --simulated --wait` command for each run it
+creates.

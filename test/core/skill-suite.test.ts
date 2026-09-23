@@ -4,6 +4,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = join(__filename, '..');
@@ -13,6 +14,28 @@ describe('KXM Skill Suite', () => {
   const rootDir = resolve(__dirname, '../..');
   const suiteManifestPath = join(rootDir, 'plugins/kxm', 'skill-suite.json');
   const skillsDir = join(rootDir, 'plugins', 'kxm', 'skills');
+
+  // The separate KontextMind knowledge plane (kontext CLI, km_ tools). These
+  // skills ship with the plugin but are not KXM command skills (D-1 path R).
+  const KNOWLEDGE_PLANE_SKILLS = [
+    'kxm-mind', 'kxm-query', 'kxm-harvest', 'kxm-triage', 'kxm-work',
+    'kxm-insights', 'kxm-projects', 'kxm-protocol', 'kxm-mind-setup',
+  ];
+  const KNOWLEDGE_PLANE_PREFIX =
+    'KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM';
+
+  const skillDirNames = (): string[] =>
+    readdirSync(skillsDir, { withFileTypes: true })
+      .filter((dirent) => dirent.isDirectory())
+      .map((dirent) => dirent.name)
+      .sort();
+
+  const frontmatterBlock = (skillName: string): string => {
+    const text = readFileSync(join(skillsDir, skillName, 'SKILL.md'), 'utf8');
+    const match = text.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+    assert.ok(match, `SKILL.md for "${skillName}" should open with a --- fenced frontmatter block`);
+    return match[1]!;
+  };
 
   let suiteManifest: any;
 
@@ -32,55 +55,29 @@ describe('KXM Skill Suite', () => {
     assert.ok(suiteManifest.skills.length > 0, 'Manifest should have at least one skill');
   });
 
-  it('should cover all 30 current top-level commands exactly once', () => {
-    // Define the expected top-level commands based on the plan
-    const expectedCommands = [
-      'init', 'trust', 'config', 'completion',
-      'harness', 'auth', 'update', 'runtime', 'agent',
-      'hub', 'backup', 'restore',
-      'session', 'dash', 'studio',
-      'peer',
-      'workflow', 'gate',
-      'role',
-      'run', 'runs',
-      'context', 'memory',
-      'skills',
-      'routing', 'improve',
-      'suggest', 'goal', 'task'
-    ];
+  it('every registered top-level kxm command is owned by exactly one bundled skill', () => {
+    const cliSource = readFileSync(join(rootDir, 'plugins', 'kxm', 'src', 'cli.ts'), 'utf8');
+    const registered = [...new Set(
+      [...cliSource.matchAll(/program\s*\.command\("([a-z][a-z0-9-]*)/g)].map((match) => match[1]!),
+    )].sort();
+    assert.ok(registered.length >= 30, `found only ${registered.length} top-level commands in cli.ts; the scan is broken`);
 
-    // Collect all owned commands from the skill manifest
-    const allOwnedCommands: string[] = [];
-    const commandToSkillMap = new Map<string, string>();
-
-    suiteManifest.skills.forEach((skill: any) => {
-      if (Array.isArray(skill.ownedCommands)) {
-        skill.ownedCommands.forEach((cmd: string) => {
-          allOwnedCommands.push(cmd);
-          if (commandToSkillMap.has(cmd)) {
-            throw new Error(`Command "${cmd}" is owned by multiple skills: ${commandToSkillMap.get(cmd)} and ${skill.name}`);
-          }
-          commandToSkillMap.set(cmd, skill.name);
-        });
+    const owners = new Map<string, string[]>();
+    for (const skill of suiteManifest.skills) {
+      assert.ok(Array.isArray(skill.ownedCommands), `Skill "${skill.name}" must declare ownedCommands`);
+      for (const command of skill.ownedCommands as string[]) {
+        owners.set(command, [...(owners.get(command) ?? []), skill.name]);
       }
-    });
+    }
 
-    // Check that all expected commands are covered
-    expectedCommands.forEach(cmd => {
-      assert.ok(allOwnedCommands.includes(cmd), `Command "${cmd}" should be covered by a skill`);
-    });
-
-    // Check that no extra commands are covered
-    allOwnedCommands.forEach(cmd => {
-      assert.ok(expectedCommands.includes(cmd), `Command "${cmd}" is not in the expected list`);
-    });
-
-    // Check that each command is covered exactly once
-    assert.strictEqual(new Set(allOwnedCommands).size, allOwnedCommands.length,
-      'Each command should be owned by exactly one skill');
-
-    assert.strictEqual(allOwnedCommands.length, expectedCommands.length,
-      `Should have exactly ${expectedCommands.length} covered commands`);
+    for (const command of registered) {
+      const skills = owners.get(command) ?? [];
+      assert.equal(skills.length, 1,
+        `kxm ${command} must be owned by exactly one skill; owners: ${skills.join(', ') || 'none'}`);
+    }
+    for (const command of owners.keys()) {
+      assert.ok(registered.includes(command), `skill-suite.json owns "${command}", which cli.ts does not register`);
+    }
   });
 
   it('should validate standard frontmatter constraints for each skill', () => {
@@ -145,24 +142,82 @@ describe('KXM Skill Suite', () => {
       // Ensure directory name matches frontmatter name
       assert.strictEqual(skill.name, frontmatter.name,
         `Directory name "${skill.name}" should match frontmatter name "${frontmatter.name}"`);
+
+      // A KontextMind knowledge-plane skill says it is not KXM in its first
+      // words, so it never competes with a KXM command skill for a KXM request.
+      if (KNOWLEDGE_PLANE_SKILLS.includes(skill.name)) {
+        const description = String(parseYaml(frontmatterBlock(skill.name))?.description ?? '');
+        assert.ok(description.startsWith(KNOWLEDGE_PLANE_PREFIX),
+          `Knowledge-plane skill "${skill.name}" description must start with "${KNOWLEDGE_PLANE_PREFIX}"`);
+        assert.ok(description.includes('Use only when the user names KontextMind'),
+          `Knowledge-plane skill "${skill.name}" description must say "Use only when the user names KontextMind"`);
+      }
     });
+
+    // Every skill directory is declared, so every shipped skill has an owner
+    // and a generated .agents/skills mirror.
+    const declared = new Set(suiteManifest.skills.map((skill: any) => skill.name));
+    for (const name of skillDirNames()) {
+      assert.ok(declared.has(name), `Skill directory "${name}" is not declared in skill-suite.json`);
+    }
+    for (const name of KNOWLEDGE_PLANE_SKILLS) {
+      assert.ok(declared.has(name), `Knowledge-plane skill "${name}" must be declared in skill-suite.json`);
+    }
+  });
+
+  it('every bundled SKILL.md frontmatter parses as strict YAML', () => {
+    // Pi and Codex parse frontmatter as strict YAML; an unquoted value holding
+    // ': ' is a nested mapping there, which the colon-split check above and
+    // `claude plugin validate --strict` both accept.
+    const names = skillDirNames();
+    assert.ok(names.length > 0, 'no skill directories found');
+    for (const name of names) {
+      const block = frontmatterBlock(name);
+      let parsed: unknown;
+      assert.doesNotThrow(() => { parsed = parseYaml(block); },
+        `SKILL.md frontmatter for "${name}" must parse as strict YAML (quote any value holding ': ')`);
+      assert.ok(parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed),
+        `SKILL.md frontmatter for "${name}" must be a YAML mapping`);
+      const fields = parsed as Record<string, unknown>;
+      assert.equal(typeof fields.name, 'string', `SKILL.md frontmatter for "${name}" needs a string name`);
+      assert.equal(typeof fields.description, 'string', `SKILL.md frontmatter for "${name}" needs a string description`);
+      assert.equal(fields.name, name, `SKILL.md frontmatter name "${String(fields.name)}" must equal its directory "${name}"`);
+      assert.ok((fields.description as string).length <= 1024,
+        `SKILL.md description for "${name}" is ${(fields.description as string).length} chars; the limit is 1024`);
+    }
   });
 
   it('should check for absence of legacy product names', () => {
+    const knowledgePlaneTerms = [
+      /\bkm_[a-z]/,
+      /\bkontext (init|login|doctor|search|read|append|review|chat)\b/,
+      /npx kontextmind/,
+    ];
     suiteManifest.skills.forEach((skill: any) => {
-      const skillDir = join(skillsDir, skill.name);
-      const skillMdPath = join(skillDir, 'SKILL.md');
-
-      if (existsSync(skillMdPath)) {
-        const content = readFileSync(skillMdPath, 'utf8');
+      for (const file of getAllFilesRecursive(join(skillsDir, skill.name))) {
+        const content = readFileSync(file, 'utf8');
 
         // Check for legacy "Mesh" or "pi-extensions" references
         assert.ok(!content.toLowerCase().includes('mesh'),
-          `Skill "${skill.name}" should not contain legacy "Mesh" references`);
+          `${file} should not contain legacy "Mesh" references`);
         assert.ok(!content.toLowerCase().includes('pi-extensions'),
-          `Skill "${skill.name}" should not contain legacy "pi-extensions" references`);
+          `${file} should not contain legacy "pi-extensions" references`);
+
+        // KXM command and browser skills never teach the separate KontextMind
+        // knowledge plane (bare "kontextmind" stays legal: steel.kontextmind.com).
+        if (!KNOWLEDGE_PLANE_SKILLS.includes(skill.name)) {
+          for (const term of knowledgePlaneTerms) {
+            assert.doesNotMatch(content, term, `${file} names a KontextMind knowledge-plane tool (${term})`);
+          }
+        }
       }
     });
+
+    // kxm-setup was renamed to kxm-mind-setup with no alias.
+    for (const file of getAllFilesRecursive(skillsDir)) {
+      assert.doesNotMatch(readFileSync(file, 'utf8'), /\bkxm-setup\b/,
+        `${file} names the retired kxm-setup skill`);
+    }
   });
 
   it('should compare authored skills with .agents/skills mirror', () => {

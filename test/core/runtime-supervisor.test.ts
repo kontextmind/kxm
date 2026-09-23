@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import test from "node:test";
 import { removeTempDir } from "../helpers.ts";
@@ -17,6 +18,7 @@ import { kxmRuntimePaths, type KxmDriveReceipt } from "../../plugins/kxm/src/run
 import { KxmRunScheduler, kxmPanelDispatchSeams } from "../../plugins/kxm/src/engine.ts";
 import { kxmAdmittedToken } from "../../plugins/kxm/src/runtime-owner.ts";
 import { closeKxmRuntimeContext, openKxmRuntimeContext } from "../../plugins/kxm/src/runtime-service.ts";
+import { KxmConfigError } from "../../plugins/kxm/src/project-config.ts";
 
 test("supervisor /drive returns 202 with poll link and completes asynchronously", async () => {
   const { root, stateRoot } = engineProject("kxm-supervisor-drive-202-");
@@ -484,6 +486,47 @@ test("supervisor /drive returns 409 for still-unsupported maxAgentTimeMs", async
     assert.equal(body.handoff?.reason, "limit_unsupported");
     assert.equal(body.handoff?.field, "limits.maxAgentTimeMs");
   } finally {
+    if (supervisor) await supervisor.stop();
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("runs drive surfaces handoff field and detail on run_handoff_required", async () => {
+  const { root, stateRoot } = engineProject("kxm-supervisor-drive-handoff-text-");
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  const stub = createServer((_request, response) => {
+    response.writeHead(409, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: false, error: "run_handoff_required", handoff: { reason: "r".repeat(300), field: "f".repeat(300), detail: "d".repeat(300) } }));
+  });
+  try {
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot });
+    const token = readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", { projectRoot: root, workflowId: "default", prompt: "handoff text" });
+    const runId = (acceptance.run as { runId: string }).runId;
+    // The same request `kxm runs drive` makes; its refusal text is what the CLI prints.
+    await assert.rejects(
+      kxmRuntimeRequest(handle, "POST", `/v1/runs/${runId}/drive?projectRoot=${encodeURIComponent(root)}`, { mode: "simulated" }),
+      (error: unknown) => {
+        assert(error instanceof KxmConfigError);
+        assert.equal(error.issues[0]?.code, "run_handoff_required");
+        assert.match(error.message, /runtime request failed with HTTP 409 \(handoff reason limit_unsupported; field limits\.maxAgentTimeMs; detail agent-time budget enforcement is not available in this slice\)$/);
+        return true;
+      },
+    );
+
+    await new Promise<void>((resolveListen) => stub.listen(0, "127.0.0.1", resolveListen));
+    const port = (stub.address() as { port: number }).port;
+    await assert.rejects(
+      kxmRuntimeRequest({ runtimeId: "rtm_stub", port, token: "tok", started: false }, "POST", "/v1/runs/run_x/drive", { mode: "simulated" }),
+      (error: unknown) => {
+        assert(error instanceof KxmConfigError);
+        assert.match(error.message, new RegExp(`\\(handoff reason r{200}; field f{200}; detail d{200}\\)$`), "each handoff part is capped at 200 characters");
+        return true;
+      },
+    );
+  } finally {
+    stub.close();
     if (supervisor) await supervisor.stop();
     removeTempDir(root, stateRoot);
   }

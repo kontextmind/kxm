@@ -16991,6 +16991,19 @@ function validateAgentScope(agent, step, repositories, file, stepId, issues) {
     }
   }
 }
+var GATE_STEP_OUTCOMES = {
+  pass: ["passed", "implementation-failure"],
+  fail: ["passed", "repro-missing"]
+};
+function gateOutcomeImpossible(step, stepId, file) {
+  const expect = step.expect === "fail" ? "fail" : "pass";
+  const produced = GATE_STEP_OUTCOMES[expect];
+  const declared = Object.keys(objectValue(step.on) ?? {});
+  const impossible = declared.filter((outcome) => !produced.includes(outcome) && outcome !== "implementation_failure" && outcome !== "repro_missing");
+  const missing = produced.filter((outcome) => !declared.includes(outcome));
+  if (impossible.length === 0 || missing.length === 0) return void 0;
+  return issue2("semantic", "gate_outcome_impossible", file, `${stepId} declares ${impossible.join(", ")}, which a gate step with expect ${expect} never produces; it settles on ${produced.join(" or ")}, so declare ${missing.join(" and ")}`);
+}
 function transition(value) {
   if (typeof value === "string") return { target: value };
   const object = objectValue(value);
@@ -17055,6 +17068,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
       issues.push(issue2("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
     }
+    const impossibleOutcome = kind === "gate" ? gateOutcomeImpossible(step, stepId, file) : void 0;
+    if (impossibleOutcome) issues.push(impossibleOutcome);
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
@@ -30650,9 +30665,19 @@ async function kxmRuntimeRequest(handle, method, path, body) {
   if (!response.ok) {
     const code = typeof payload.error === "string" ? payload.error : "runtime_request_failed";
     const message = typeof payload.message === "string" ? payload.message : `runtime request failed with HTTP ${response.status}`;
-    throw runtimeError(code, path, message);
+    throw runtimeError(code, path, `${message}${handoffSuffix(payload.handoff)}`);
   }
   return payload;
+}
+var HANDOFF_TEXT_MAX = 200;
+function handoffSuffix(handoff) {
+  if (!handoff || typeof handoff !== "object" || Array.isArray(handoff)) return "";
+  const parts = [];
+  for (const key of ["reason", "field", "detail"]) {
+    const value = handoff[key];
+    if (typeof value === "string" && value.length > 0) parts.push(`${key} ${value.slice(0, HANDOFF_TEXT_MAX)}`);
+  }
+  return parts.length > 0 ? ` (handoff ${parts.join("; ")})` : "";
 }
 
 // plugins/kxm/src/pi-producer.ts

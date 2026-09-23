@@ -2,7 +2,7 @@
 
 This page documents every command and subcommand the `kxm` operator CLI registers in KXM 0.7.1 (`@kontextmind/kxm`). For each command it states what the command does, which files and services it reads and writes, whether it needs a running hub or the KXM Runtime supervisor, what `--json` returns, and the exit codes and refusal codes you are likely to see. It supersedes the "Complete CLI guide" section of the [KXM Handbook](kxm-handbook.md). Environment variables are described in [Configuration](configuration.md); this page names them only where a command reads them directly.
 
-Output shown under examples was captured from KXM 0.7.1 run from a source checkout, inside a throwaway Git repository, with `HOME`, `KXM_STATE_HOME`, `KXM_USER_CONFIG_DIR`, and the XDG directories pointed at a temporary directory, no harness CLIs on `PATH`, and (where a hub was needed) a disposable hub on a random loopback port. Paths are shortened to `/work/proj` (the project), `/work/kxm` (the KXM checkout), `/state` (the user state root), and `~/.config/kxm` (the user config directory); session tokens are replaced with `<token>`, the machine's host name with `host.local`, and long JSON is trimmed with `...`. Several mutating commands ignore `--dry-run` (see [Dry runs](#dry-runs)); where an example shows such a command with `--dry-run`, the caption says so, and the write happened inside the throwaway project. An example captioned "Not run" was not executed for this reference because it starts a long-lived process, writes durable state, stores credentials, or calls an external service; its output is not shown.
+Output shown under examples was captured from KXM 0.7.1 run from a source checkout, inside a throwaway Git repository, with `HOME`, `KXM_STATE_HOME`, `KXM_USER_CONFIG_DIR`, and the XDG directories pointed at a temporary directory, no harness CLIs on `PATH`, and (where a hub was needed) a disposable hub on a random loopback port. Paths are shortened to `/work/proj` (the project), `/work/kxm` (the KXM checkout), `/state` (the user state root), and `~/.config/kxm` (the user config directory); session tokens are replaced with `<token>`, the machine's host name with `host.local`, and long JSON is trimmed with `...`. Every command either plans under `--dry-run` without changing anything or refuses the flag (see [Dry runs](#dry-runs)); the dry-run examples were captured from the current source tree, with a digest of the throwaway tree taken before and after to confirm that nothing was written. An example captioned "Not run" was not executed for this reference because it starts a long-lived process, writes durable state, stores credentials, or calls an external service; its output is not shown.
 
 ## Contents
 
@@ -25,6 +25,13 @@ An installed CLI is on `PATH` as `kxm`. Install it from the versioned release ta
 
 ```bash
 kxm --help
+```
+
+```text
+Usage: kxm [options] [command]
+
+KXM local-first orchestration CLI
+...
 ```
 
 From a source checkout, run the wrapper script instead. It executes the committed `plugins/kxm/dist/cli.js`, so run `npm run build` after changing CLI source.
@@ -84,18 +91,37 @@ kxm -V
 - The `command` field is not always the words you typed: `hub stop` and `session stop` report `stop`, `session token` reports `auth token`, `routes admit` and `routes disable` report `routes admitted` and `routes disabled`, `models inventory-refresh` reports `models inventory refresh`, `workflow export` reports `retrospective export`, `gate degrade` reports `workflow degrade`, `gate signal` and `workflow signal` report `signal`, `gate github watch` reports `github watch`, `agent worker` reports `worker`, and `improve report` reports `improve`.
 - A result with `ok: false` is written to stderr in both text and JSON mode; everything else goes to stdout. `runtime status` is the exception: when the supervisor is down it prints `ok: true, running: false` on stdout and exits 1.
 - `peer` subcommands and `workflow checkpoint|record|wait` print the hub's result object as returned, tagged with `schema` but without `ok` or `command`. Their failures print `{"ok":false,"error":"command_failed","detail":"..."}`. Text mode prints the same JSON.
-- Several error paths ignore `--json` and print one plain line on stderr: argument checks in `agent worker`, `session start`, `workflow start`, `gate degrade`, `gate signal`, and `gate github watch`; every error from `config`, `role`, `workflow definitions|add|remove|modify`, `goal`, `task`, `memory`, `skills` (other than `skills create --dry-run`), `suggest`, `studio`, and `completion`. Check the exit code before parsing stdout.
+- Several error paths ignore `--json` and print one plain line on stderr: argument checks in `agent worker`, `session start`, `workflow start`, `gate degrade`, `gate signal`, and `gate github watch`; every error from `config`, `role`, `workflow definitions|add|remove|modify` (except the three `workflow add --template` refusals, which honor `--json`), `goal`, `task`, `memory`, `skills` (other than `skills create --dry-run`), `suggest`, `studio`, and `completion`. Check the exit code before parsing stdout.
 - Every `context` subcommand exits 1 with a Node.js stack trace and no JSON when the hub cannot be reached.
 - Output is redacted. Values of environment variables whose names contain `TOKEN`, `SECRET`, `KEY`, or `PASSWORD` are replaced with `[redacted]`, and 64-character hex strings are replaced unless they appear in a known digest field such as `configRevision` or `sha256`. `session brief` and `auth token` print the session token itself; treat their output as a credential.
 
 ### Dry runs
 
-`--dry-run` is a global flag, but each command decides whether to honor it.
+`--dry-run` changes nothing: no file is written, deleted, or moved, no request that changes hub or Runtime state is sent, no process is started, and no remote command runs. A command that cannot say what it would do without doing some of it refuses the flag instead of acting.
 
-- Honored (nothing is written or sent): `init`, `run`, `runs drive`, `runs cancel`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, `improve report`, and `role resume` for KXM run IDs. `gate github watch --dry-run` still polls GitHub but does not post the signal.
-- Ignored (the command writes anyway): `backup`, `restore`, `config set`, `role add|remove|modify|set-host`, `role resume` for hub workflow runs, `workflow add|remove|modify`, `goal create`, `task create`, `task run` (the run is only planned, but the task status still moves to `in_progress`), `task sync`, `memory note`, `memory sync`, `skills evaluate|promote|reject`, `context promote` (the request is sent to the hub), `context wiki-compile --out`, `auth token`, `session token`, `session brief` (persists a session token), and `ssh run|file|close` (the remote command runs).
+- Plan with `planned`: `backup`, `restore`, `config set`, `role add|remove|modify|set-host|resume`, `workflow add|remove|modify`, `goal create`, `task create|run|sync`, `memory note|sync`, `skills evaluate|promote|reject`, `context promote`, `context wiki-compile --out`, `auth token`, `session token`, `session brief`, and `ssh run|file|close`. Each prints its normal result plus `dryRun: true` and `planned`, a list of `{action, target}` entries whose `action` is `write`, `delete`, `move`, `request`, or `ssh`. Text mode prints `dry run: <summary>` and one indented `would <action> <target>` line per entry (`session brief` appends `dry run: would write <file>` lines to the brief instead).
+- Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, and `improve report`. `gate github watch --dry-run` still polls GitHub but does not post the signal.
+- Read-only commands run as usual, without leaving a trace: a local SQLite store is opened without creating `-wal` or `-shm` files, and `runs status|list|receipt` only attach to a running Runtime supervisor. With no supervisor running they exit 2 with `dry_run_unsupported` instead of starting one. `context wiki-compile --dry-run` still asks the hub to compile, which is a read.
+- Refused: `kxm models` (the interactive screen) exits 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
 
-Warning: `kxm restore --dry-run` overwrites the live SQLite store, and `kxm ssh run --dry-run` executes the remote command. Do not rely on `--dry-run` for the commands in the second list.
+```bash
+kxm config set user.theme light --dry-run
+```
+
+```text
+dry run: set user.theme = light in project config
+  would write /work/proj/.kxm/config.yaml
+```
+
+```bash
+kxm models --dry-run --json
+```
+
+```text
+{"schema":"kxm.cli-result.v1","ok":false,"command":"models","dryRun":true,"error":"dry_run_unsupported","detail":"this command cannot plan without making changes; rerun without --dry-run"}
+```
+
+For this page, 63 `--dry-run` invocations (every command in the first list, the refusals, and a sample of the others) ran in a throwaway project seeded with a role, a global workflow, a task, a goal, a skill candidate with passing evaluations, a WAL-mode hub store, and a backup, with no harness CLIs on `PATH`. A digest of every file under the temporary root before and after showed nothing created, changed, or removed; no Runtime supervisor was started; and the hub saw only the wiki compile. Harness probes (`update`, `suggest`, `harness list`) run the installed harness CLIs to read their versions and login state, and those CLIs can write their own files: Codex creates `~/.codex/tmp/` whenever it runs.
 
 ### Exit codes
 
@@ -103,7 +129,7 @@ Warning: `kxm restore --dry-run` overwrites the live SQLite store, and `kxm ssh 
 |---|---|
 | 0 | Success, including `--help`, `--version`, and dry-run plans. |
 | 1 | The command ran and failed or found a problem: an `ok: false` result, an unreachable hub for `hub view`, permission expansions for `trust check`, a stopped supervisor for `runtime status`, missing local state, or a planning-only `init`. |
-| 2 | Usage error: unknown command or option, a missing argument or required option, a value KXM rejects before acting, `--workspace` where unsupported, conflicting flags, a group run without a subcommand, or a removed command (`removed_command`). |
+| 2 | Usage error: unknown command or option, a missing argument or required option, a value KXM rejects before acting, `--workspace` where unsupported, conflicting flags, a group run without a subcommand, a removed command (`removed_command`), or `--dry-run` on a command that cannot plan (`dry_run_unsupported`). |
 | 4 | `gate github watch` timed out and posted (or, under `--dry-run`, would have posted) a signed `failed` signal. |
 | other | `hub start` and `agent worker` return the exit code of the foreground process; `ssh run` returns the remote command's exit code. |
 
@@ -155,7 +181,7 @@ Creates, validates, repairs, resumes, or joins a KXM project at the Git root tha
 - Writes `.kxm/project.yaml`, `.kxm/agents/coordinator.yaml`, `.kxm/agents/implementer.yaml`, `.kxm/gates.yaml`, `.kxm/repo/repo.yaml`, `.kxm/workflows/default.yaml`, and `.kxm/template-provenance.yaml`, using a `.kxm-init-transaction` directory at the Git root while a create or repair is in flight. Repository bindings are written under the user state root, never into Git. `--dry-run` writes nothing.
 - On an interactive terminal without `--json` or `--dry-run`, a successful create or join offers to install shell completion (suppress with `KXM_SKIP_COMPLETION_PROMPT=1`) and to write workflow-guide agents for authenticated harnesses (suppress with `KXM_SKIP_GUIDE_SETUP_PROMPT=1`).
 - JSON keys: `action` (`planned`, `created`, `joined`, `repaired`, `resumed`, or `validated`), `mode`, `inspectedFrom`, `projectRoot`, `changesRequired`, `legacyInputs`, `issues`, `configRevision`, `files`, `plannedOnly`, and, when relevant, `localBindingFile`, `bindingsChanged`, `repairPlan`, `resumePending`, `transactionKind`.
-- Exit 0 for every completed action and every dry-run plan. Exit 1 when the result is planning-only (legacy state, blocked repair, partial state without provenance) or for `initialization_failed` (with `issues`) and `initialization_io_failed`.
+- Exit 0 for every completed action and every dry-run plan. Exit 1 when the result is planning-only (legacy state, blocked repair, partial state without provenance) or for `initialization_failed` (with `issues`) and `initialization_io_failed`. A planning-only text result prints the reason and then one `<file>: <code>: <message>` line per validation issue, for example `.kxm/workflows/first.yaml: gate_outcome_impossible: ...`.
 
 Preview what a new project would contain:
 
@@ -285,17 +311,15 @@ Writes one value into exactly one scope file.
 
 - Arguments: `<key>` (dotted path) and `<value>`. The value is parsed as JSON when it parses (`true`, `5`, `"text"`, `{"a":1}`); otherwise it is stored as a string. Keys are not validated.
 - `--scope user` writes `<KXM_USER_CONFIG_DIR>/config.yaml`; any other value writes `.kxm/config.yaml` in the current directory.
-- Mutates. Ignores `--dry-run`.
-- JSON keys: `key`, `value`, `scope`. Exit 1 with a plain `config set failed:` line on error.
-
-Captured with `--dry-run`, which did not prevent the write to `.kxm/config.yaml`:
+- Mutates. `--dry-run` names the file it would write and writes nothing.
+- JSON keys: `key`, `value`, `scope` (plus `dryRun` and `planned` under `--dry-run`). Exit 1 with a plain `config set failed:` line on error.
 
 ```bash
 kxm config set user.theme light --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"config set","key":"user.theme","value":"light","scope":"project"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"config set","key":"user.theme","value":"light","scope":"project","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/config.yaml"}]}
 ```
 
 Stop harness extensions from starting a hub (Not run):
@@ -629,7 +653,7 @@ Prints recent tasks (workflow runs) and plans (journal entries) from the local h
 | `--status` | none | off | Print only the status line |
 | `--token` | none | off | Issue interactive session token with operator policy |
 
-- Side effects: on first use it mints a 24-hour operator session token and writes it to `<KXM_USER_CONFIG_DIR>/session.token` (mode 0600), and it caches the brief in `.kxm/state/session-brief.json`. `--dry-run` does not prevent either write.
+- Side effects: on first use it mints a 24-hour operator session token and writes it to `<KXM_USER_CONFIG_DIR>/session.token` (mode 0600), and it caches the brief in `.kxm/state/session-brief.json`. Under `--dry-run` it still probes the hub and prints the brief, but it mints no token, writes neither file, and appends a `dry run: would write <file>` line for each (JSON: `dryRun` and `planned`); with no saved token the output carries no token. `--token --dry-run` plans only the token file.
 - The default text output ends with the session token, and `--token` prints only the token. Treat the output as a credential.
 - JSON (`kxm.session-brief.v1`) keys: `generatedAt`, `staleSeconds`, `source`, `hub` (`state`, `evidence`, `online`, `url`, `scope`), `stats`, `tasks`, `plans`, `statusLine`, `widgetLines`, `sessionToken`.
 
@@ -659,6 +683,18 @@ kxm session brief --json
 
 ```text
 {"schema":"kxm.session-brief.v1","generatedAt":"2026-09-23T13:49:55.253Z","staleSeconds":5,"source":"legacy","hub":{"state":"off","evidence":"probed","online":false,"url":"http://127.0.0.1:59998","scope":"loopback"},"stats":{"activeTasks":0,"waitingTasks":0,"planCount":0,"inbox":0,"runTotal":0},"tasks":[],"plans":[],"statusLine":"kxm hub:off · idle",...,"sessionToken":"<token>"}
+```
+
+Before the first token exists:
+
+```bash
+kxm session brief --status --dry-run
+```
+
+```text
+kxm hub:on · idle · dirty
+dry run: would write ~/.config/kxm/session.token
+dry run: would write /work/proj/.kxm/state/session-brief.json
 ```
 
 ### `kxm session token`
@@ -885,8 +921,8 @@ Inspects, issues, or clears the local session token that scopes CLI agent-tool c
 | `--issue` | none | off | Force issuing a fresh session token |
 
 - With no flag, prints the valid on-disk token, minting and saving one if none exists. `--issue` always mints and saves a new one. `--clear` deletes the file. `--status` checks `KXM_SESSION_TOKEN` first, then the file.
-- Mutates (except `--status`). Ignores `--dry-run`. No hub needed.
-- JSON keys: `token`; `cleared`; or for `--status`: `source` (`env` or `disk`), `valid`, `sessionId`, `issuedAt`, `expiresAt`, `path`.
+- Mutates (except `--status`). Under `--dry-run`, `--issue` (or no flag with no saved token) plans the token file write and prints no token, `--clear` plans the deletion (`cleared` reports whether the file exists), and no flag with a saved token prints that token as usual. No hub needed.
+- JSON keys: `token`; `cleared`; or for `--status`: `source` (`env` or `disk`), `valid`, `sessionId`, `issuedAt`, `expiresAt`, `path`. Dry runs add `dryRun` and `planned`.
 - `--status` exits 1 with `no_token` when neither source has a token, and 1 when the environment token is invalid or expired.
 - A malformed or expired `KXM_SESSION_TOKEN` or token file makes agent-tool commands fail with `session_token_invalid`; a policy that excludes a tool fails with `tool_policy_denied`.
 
@@ -896,6 +932,14 @@ kxm auth token --status
 
 ```text
 No active session token found in env or disk
+```
+
+```bash
+kxm auth token --issue --dry-run --json
+```
+
+```text
+{"schema":"kxm.cli-result.v1","ok":true,"command":"auth token","dryRun":true,"planned":[{"action":"write","target":"~/.config/kxm/session.token"}]}
 ```
 
 ```bash
@@ -925,7 +969,7 @@ Checks for or applies a KXM operator package update, and runs the native updater
 - From a source checkout, `--check` reports the running version without network access, and `--kxm` is refused (exit 2, `install_kind_source`) with an instruction to `git pull`. Only npm-global installs can apply `--kxm`; other install kinds exit 2 with `install_kind_<kind>`. A GitHub release must publish a sha256 digest for `kxm-<version>.tgz` or the install fails closed (`release_digest_missing`, `release_digest_mismatch`).
 - Settings come only from `update.yaml` under the user state root (`auto: true` enables auto-apply); a project `.kxm/update.yaml` is ignored with a warning.
 - Without `--check` or a lone `--kxm`, KXM probes harnesses (as `harness list` does) and runs each updater for the selected scope. An unknown harness id exits 2 (`unknown_harness` step); a failed step exits 1.
-- Honors `--dry-run`: steps are planned, not run.
+- Honors `--dry-run`: steps are planned, not run, and the cached update notice is not refreshed.
 - JSON keys: `--check` gives `current`, `available`, `auto`, `source`, `latest`, `message`, `installKind`, `root`; otherwise `dryRun`, `scope`, `notice`, `kxm` (when applying), `steps` (`harness`, `scope`, `command`, `args`, `outcome`, `detail`), `installKind`, `root`.
 
 ```bash
@@ -1151,17 +1195,15 @@ Adds a role definition. Without a role ID, or with `--pick`, you choose from the
 | `--overwrite` | none | off | Overwrite existing role definition if present |
 | `--pick` | `[selection]` | none | Pick from available role templates (index or id) |
 
-- Writes `<scope dir>/roles/<id>.yaml`. Ignores `--dry-run`.
+- Writes `<scope dir>/roles/<id>.yaml`. `--dry-run` plans the write and writes nothing.
 - JSON keys: `roleId`, `id`, `filePath`, `scope`.
-
-Captured with `--dry-run`, which did not prevent the write:
 
 ```bash
 kxm role add demo-role --description "Demo role" --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role add","roleId":"demo-role","id":"demo-role","filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role add","roleId":"demo-role","id":"demo-role","filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
 ```
 
 Add a reviewer role with a Claude model, and copy a built-in template into global scope (Not run):
@@ -1187,17 +1229,15 @@ Removes a role definition file.
 | `--scope` | `<scope>` | `local` | Configuration scope: global or local (default: local) |
 | `--pick` | `[selection]` | none | Pick a role to remove (index or id) |
 
-- Deletes a file. Ignores `--dry-run`.
+- Deletes a file. `--dry-run` plans the deletion, deletes nothing, and reports `removed: false`.
 - JSON keys: `roleId`, `id`, `removed`, `filePath`, `scope`.
-
-Captured with `--dry-run`, which did not prevent the deletion:
 
 ```bash
 kxm role remove demo-role --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role remove","roleId":"demo-role","id":"demo-role","removed":true,"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role remove","roleId":"demo-role","id":"demo-role","removed":false,"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"delete","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
 ```
 
 ### `kxm role modify`
@@ -1218,17 +1258,15 @@ Updates an existing role's description, skills, or model roster and rewrites its
 | `--scope` | `<scope>` | first match | Configuration scope: global or local |
 | `--pick` | `[selection]` | none | Pick a role to modify (index or id) |
 
-- `--add-model` without a colon uses harness `pi`. Ignores `--dry-run`.
+- `--add-model` without a colon uses harness `pi`. `--dry-run` returns the modified role and plans the write without making it.
 - JSON keys: `roleId`, `id`, `role`, `filePath`, `scope`.
-
-Captured with `--dry-run`, which did not prevent the write:
 
 ```bash
 kxm role modify demo-role --add-skill kxm --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"demo-role","id":"demo-role","role":{"schema":"kxm.role.v1","id":"demo-role","description":"Demo role","skills":["kxm"],"roster":[]},"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"demo-role","id":"demo-role","role":{"schema":"kxm.role.v1","id":"demo-role","description":"Demo role","skills":["kxm"],"roster":[]},"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
 ```
 
 Add a Claude model to a role's roster (Not run):
@@ -1278,17 +1316,15 @@ Binds a role seat to a host in `role-hosts.yaml`.
 | `--effort` | `<effort>` | none | Effort level: low, medium, high, xhigh |
 | `--scope` | `<scope>` | `local` | Configuration scope: global or local (default: local) |
 
-- Writes `.kxm/role-hosts.yaml` (or the global file). Ignores `--dry-run`.
+- Writes `.kxm/role-hosts.yaml` (or the global file). `--dry-run` plans the write and writes nothing.
 - JSON keys: `seatId`, `host`, `binding`, `filePath`, `scope`.
-
-Captured with `--dry-run`, which did not prevent the write:
 
 ```bash
 kxm role set-host writer claude --model fable --effort high --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role set-host","seatId":"writer","host":"claude","binding":{"host":"claude","model":"fable","effort":"high"},"filePath":"/work/proj/.kxm/role-hosts.yaml","scope":"local"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role set-host","seatId":"writer","host":"claude","binding":{"host":"claude","model":"fable","effort":"high"},"filePath":"/work/proj/.kxm/role-hosts.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/role-hosts.yaml"}]}
 ```
 
 ### `kxm role resume`
@@ -1300,8 +1336,8 @@ kxm role resume <runId> [ruling]
 Resumes an audit-escalated run with an operator directive. The default ruling is `operator_ruling: waived and resumed`.
 
 - Arguments: `<runId>`; `[ruling]`, free text recorded with the decision.
-- For a KXM run ID (`run_` followed by 32 hex digits) inside a project, posts an `audit_escalation` signal with action `unblock` to the Runtime, starting the supervisor if needed. Honors `--dry-run`. JSON keys: `runId`, `ruling`, `unblocked`.
-- For any other ID, updates the hub store at `.kxm/state/kxm.db` in the current directory directly (ignoring `--workspace` and `KXM_DATA_PATH`) and adds a `decision` journal entry. This path ignores `--dry-run`. JSON keys: `runId`, `stageId`, `ruling`, `status`.
+- For a KXM run ID (`run_` followed by 32 hex digits) inside a project, posts an `audit_escalation` signal with action `unblock` to the Runtime, starting the supervisor if needed. `--dry-run` plans the request without starting the supervisor. JSON keys: `runId`, `ruling`, `unblocked`.
+- For any other ID, updates the hub store at `.kxm/state/kxm.db` in the current directory directly (ignoring `--workspace` and `KXM_DATA_PATH`) and adds a `decision` journal entry. `--dry-run` reads the store read-only, reports the stage it would resume and the resulting `status`, and plans the write. JSON keys: `runId`, `stageId`, `ruling`, `status`.
 - Errors: `resume_failed` (exit 1), or a plain `not found` line (exit 1).
 
 ```bash
@@ -1309,7 +1345,18 @@ kxm role resume run_0123456789abcdef0123456789abcdef "waive the audit" --dry-run
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role resume","runId":"run_0123456789abcdef0123456789abcdef","ruling":"waive the audit"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role resume","runId":"run_0123456789abcdef0123456789abcdef","ruling":"waive the audit","dryRun":true,"planned":[{"action":"request","target":"POST kxm-runtime /v1/runs/run_0123456789abcdef0123456789abcdef/signal (audit_escalation unblock)"}]}
+```
+
+A hub workflow run waiting on an audit escalation:
+
+```bash
+kxm role resume wf_dry_run "carry on" --dry-run
+```
+
+```text
+dry run: resume workflow run wf_dry_run (stage: review)
+  would write /work/proj/.kxm/state/kxm.db (workflow_runs wf_dry_run, one workflow_journal decision)
 ```
 
 ## `kxm run`
@@ -1318,13 +1365,14 @@ kxm role resume run_0123456789abcdef0123456789abcdef "waive the audit" --dry-run
 kxm run <workflow> [prompt...]
 ```
 
-Creates an immutable KXM run offline. The run pins the project's `homeRuntimeId`, config revision, and executor and tool policy revisions, and stores only a hash of the prompt. The Runtime supervisor is started first if it is not running. No steps execute until the run is driven (see [`kxm runs drive`](#kxm-runs-drive)).
+Create a KXM run (offline-first; `kxm runs drive <runId> --simulated` executes it model-free). The run is immutable and pins the project's `homeRuntimeId`, config revision, and executor and tool policy revisions, and it stores only a hash of the prompt. The Runtime supervisor is started first if it is not running. No steps execute until the run is driven (see [`kxm runs drive`](#kxm-runs-drive)); the text output's second line prints the command that drives the new run model-free and the one that cancels it.
 
 - Arguments: `<workflow>`, Workflow id to run (a file under `.kxm/workflows/`); `[prompt...]`, Run prompt (hashed, never stored raw).
 - No command-specific options. Refuses `--workspace` (exit 2).
 - Needs a KXM project. Starts and uses the Runtime; no hub needed. Honors `--dry-run`, which validates the project and prints the plan without starting the supervisor.
-- JSON keys: `phase`, `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`). Dry run: `projectRoot`, `workflowId`, `configRevision`.
-- Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `run_failed` with `issues` (any invalid file in the project fails the load), `run_io_failed` (exit 1).
+- JSON keys: `phase`, `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`). Dry run: `projectRoot`, `workflowId`, `configRevision`. The JSON result does not carry the drive command.
+- Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `run_failed` with `issues` (any invalid file in the project fails the load, for example `gate_outcome_impossible`), `run_io_failed` (exit 1).
+- The `default` workflow that `kxm init` writes sets `limits.maxAgentTimeMs`, which the Runtime does not enforce yet, so a run of it is created but `kxm runs drive` refuses it with `run_handoff_required`. A workflow written by `kxm workflow add <id> --template implement-and-verify` omits that limit.
 
 ```bash
 kxm run default "Fix the flaky login test" --dry-run
@@ -1342,15 +1390,20 @@ kxm run default "Fix the flaky login test" --dry-run --json
 {"schema":"kxm.cli-result.v1","ok":true,"command":"run","dryRun":true,"projectRoot":"/work/proj","workflowId":"default","configRevision":"sha256:80457232cbfc0d1a88c53a2b693061083c83df6e95409e3ae7f75ccfc9f93cf4"}
 ```
 
+Create a run (this starts the Runtime supervisor; stop it afterwards with `kxm runtime stop`):
+
 ```bash
 kxm run default "Fix the flaky login test"
 ```
 
-Not run: starts the Runtime supervisor and creates a run.
+```text
+run created: run_a80e84c98f514299b82f0157f4537ea3 (home rtm_1a42e069…, config sha256:b45f8f51a506…)
+drive it model-free: kxm runs drive run_a80e84c98f514299b82f0157f4537ea3 --simulated --wait (or cancel: kxm runs cancel run_a80e84c98f514299b82f0157f4537ea3)
+```
 
 ## `kxm runs`
 
-Reads and drives runs through the Runtime supervisor. Every subcommand needs a KXM project, and every subcommand except a dry run starts the supervisor if it is not running. The run ID is the `runId` printed by `kxm run`. Errors carry `issues` from the Runtime, for example `run_unknown`.
+Reads and drives runs through the Runtime supervisor. Every subcommand needs a KXM project, and every subcommand except a dry run starts the supervisor if it is not running. Under `--dry-run`, `status`, `list`, and `receipt` read from a supervisor that is already running and otherwise exit 2 with `dry_run_unsupported`; `drive` and `cancel` print a plan without contacting it. The run ID is the `runId` printed by `kxm run`. Errors carry `issues` from the Runtime, for example `run_unknown`.
 
 ### `kxm runs status`
 
@@ -1360,16 +1413,28 @@ kxm runs status <runId>
 
 Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned).
 
-- Arguments: `<runId>`, Run id. No command-specific options. Reads run state, but starts the supervisor if needed.
+- Arguments: `<runId>`, Run id. No command-specific options. Reads run state, but starts the supervisor if needed (not under `--dry-run`).
 - Text: `run <id>: <status> (workflow <id>, updated <time>)`, plus a drive line such as `drive <id>: open`, `completed (receipt verified)`, `unsettled <reason>`, `handoff`, `cancelled (<reason>)`, or `no receipt (orphaned)`.
 - JSON keys: `run` (`runId`, `status`, `workflowId`, `configRevision`, `updatedAt`, ...), `drive` (`driveId`, `mode`, `openedAt`, `receipt`, `verified`, `divergence`).
 - Errors: `project_required`, `run_status_failed`, `run_status_io_failed` (exit 1).
 
 ```bash
-kxm runs status run_0123456789abcdef0123456789abcdef --json
+kxm runs status run_a80e84c98f514299b82f0157f4537ea3
 ```
 
-Not run: starts the Runtime supervisor.
+```text
+run run_a80e84c98f514299b82f0157f4537ea3: preparing (workflow default, updated 2026-09-23T17:47:29.682Z)
+```
+
+With no supervisor running:
+
+```bash
+kxm runs status run_0123456789abcdef0123456789abcdef --dry-run
+```
+
+```text
+kxm runs status --dry-run refused: the Runtime supervisor is not running and --dry-run will not start it
+```
 
 ### `kxm runs drive`
 
@@ -1389,7 +1454,7 @@ Opens a drive of the run. With `--simulated`, a model-free producer reports ever
 - `--timeout-ms` applies only with `--wait` and must be an integer from 1 to 600000 (`run_drive_timeout_invalid`, exit 1).
 - Mutates run state. Honors `--dry-run`.
 - JSON keys without `--wait`: `runId`, `driveId`, `poll`, `mode`, `status` (`accepted`). With `--wait`: `receipt`, `verified`; a timeout prints `error: "timeout"`.
-- Exit 0 when accepted, or with `--wait` only for a verified completed settlement; otherwise 1. Runtime refusals include `run_handoff_required` and `run_busy`.
+- Exit 0 when accepted, or with `--wait` only for a verified completed settlement; otherwise 1. Runtime refusals include `run_handoff_required` and `run_busy`, printed as `run drive failed: <request path>: <code>: <message>` (JSON: `error: "run_drive_failed"` with the code in `issues`). A `run_handoff_required` message ends with `(handoff reason <reason>; field <field>; detail <detail>)`, each part capped at 200 characters, so the refusal names what to change.
 
 ```bash
 kxm runs drive run_0123456789abcdef0123456789abcdef --simulated --dry-run
@@ -1397,6 +1462,16 @@ kxm runs drive run_0123456789abcdef0123456789abcdef --simulated --dry-run
 
 ```text
 drive plan: run run_0123456789abcdef0123456789abcdef in simulated mode (no events written)
+```
+
+The `default` workflow from `kxm init` is handed off (see [`kxm run`](#kxm-run)):
+
+```bash
+kxm runs drive run_a80e84c98f514299b82f0157f4537ea3 --simulated
+```
+
+```text
+run drive failed: /v1/runs/run_a80e84c98f514299b82f0157f4537ea3/drive?projectRoot=%2Fwork%2Fproj: run_handoff_required: runtime request failed with HTTP 409 (handoff reason limit_unsupported; field limits.maxAgentTimeMs; detail agent-time budget enforcement is not available in this slice)
 ```
 
 ```bash
@@ -1417,7 +1492,7 @@ Print the newest drive receipt for a run.
 |---|---|---|---|
 | `--all` | none | off | Print the capped receipt list for the run |
 
-- Arguments: `<runId>`, Run id. Text mode prints the newest receipt's settlement as JSON; `--all` prints the list.
+- Arguments: `<runId>`, Run id. Text mode prints the newest receipt's settlement as JSON; `--all` prints the list. Starts the supervisor if needed (not under `--dry-run`).
 - JSON keys: `receipt`, or `receipts` with `--all`. Exit 1 with `no_receipts` when the run was never driven.
 
 ```bash
@@ -1456,7 +1531,7 @@ List recent runs for the current project. A run whose event log could not be fol
 
 No command-specific options.
 
-- JSON keys: `runs` (`runId`, `status`, `workflowId`, `createdAt`, `projectionError`). Text prints `no runs` when empty.
+- JSON keys: `runs` (`runId`, `status`, `workflowId`, `createdAt`, `projectionError`). Text prints `no runs` when empty. Starts the supervisor if needed (not under `--dry-run`).
 
 ```bash
 kxm runs list
@@ -1866,31 +1941,50 @@ WORKFLOW DEFINITIONS:
 ### `kxm workflow add`
 
 ```text
-kxm workflow add [workflowId] [--file <path>] [--description <text>] [--scope global|local] [--overwrite] [--pick [selection]]
+kxm workflow add [workflowId] [--template <name> | --file <path> | --pick [selection]] [--description <text>] [--scope global|local] [--overwrite]
 ```
 
-Add a workflow definition to global or local configuration. Without a workflow ID, or with `--pick`, you choose from the built-in templates (`implement-and-verify`, `dual-critic-review`, `spec-and-plan`) and, for local scope, existing global definitions. With `--file`, the YAML file is copied as-is. Otherwise a one-step scaffold is written.
+Add a workflow definition to global or local configuration. With `--template <name>`, the named built-in template is written under the workflow ID. Without a workflow ID, or with `--pick`, you choose from the built-in templates and, for local scope, existing global definitions. With `--file`, the YAML file is copied as-is. Otherwise a one-step scaffold is written: one `implementer` agent step with write access to `control` that ends the run `completed` on `passed` and `failed` on `failed`.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--file` | `<path>` | none | Path to YAML workflow definition file |
-| `--description` | `<text>` | `Workflow <id>` | Workflow description |
+| `--description` | `<text>` | `Workflow <id>`, or the template's | Workflow description |
 | `--scope` | `<scope>` | `local` | Configuration scope: global or local (default: local) |
 | `--overwrite` | none | off | Overwrite existing workflow definition if present |
 | `--pick` | `[selection]` | none | Pick from available workflow templates (index or id) |
+| `--template` | `<name>` | none | Start from a built-in template: `implement-and-verify`, `dual-critic-review`, or `spec-and-plan` |
 
-- Writes `<scope dir>/workflows/<id>.yaml`. Ignores `--dry-run`.
-- Warning: in 0.7.1 the scaffold and the built-in templates do not validate against the `kxm.workflow.v1` schema that `kxm run` loads (they use `role:` where an agent step needs `agent:`, and the scaffold adds a top-level `id`). Once such a file is in `.kxm/workflows/`, `kxm run` fails for every workflow with `run_failed`. Prefer `--file` with a definition you have checked with `kxm run <id> --dry-run`.
+- Templates: `implement-and-verify` runs the `implementer` agent, then the project's `test` gate, and a failing gate (`implementation-failure`) sends the work back to `implement` at most twice. `dual-critic-review` adds two review steps between them, both run as the `coordinator` agent with read access; point `review-arch` and `review-cli` at your own agents for independent critics. `spec-and-plan` plans and then reviews the plan, both as `coordinator`, reading the repository only.
+- The templates and the scaffold are valid `kxm.workflow.v1` definitions that use only what `kxm init` creates: the `coordinator` and `implementer` agents, the `control` repository, and the `test` gate. Each was checked with `kxm init --json` and `kxm run <id> --dry-run` for this page. A new file under `.kxm/workflows/` is a permission expansion that `kxm trust check` asks you to review before you commit it.
+- Writes `<scope dir>/workflows/<id>.yaml`. `kxm run` loads only `.kxm/workflows/`, so a `--scope global` definition is not runnable until it is copied into a project. `--dry-run` plans the write and writes nothing.
+- `--template` refusals exit 2 and honor `--json`: `workflow_template_unknown` (the text names the three templates), `workflow_id_required` (no workflow ID), and `workflow_add_conflict` (combined with `--file` or `--pick`). An existing definition without `--overwrite` exits 1 with a plain `workflow add failed: workflow_already_exists: ...` line, also under `--dry-run`.
 - JSON keys: `workflowId`, `id`, `filePath`, `scope`.
 
-Captured with `--dry-run`, which did not prevent the write (the scaffold it wrote then made `kxm run` fail with `run_failed`):
+Start a first workflow from a template:
+
+```bash
+kxm workflow add implement --template implement-and-verify
+```
+
+```text
+Added workflow 'implement' to local (/work/proj/.kxm/workflows/implement.yaml)
+```
 
 ```bash
 kxm workflow add demo-flow --description "Demo" --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"workflow add","workflowId":"demo-flow","id":"demo-flow","filePath":"/work/proj/.kxm/workflows/demo-flow.yaml","scope":"local"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"workflow add","workflowId":"demo-flow","id":"demo-flow","filePath":"/work/proj/.kxm/workflows/demo-flow.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/workflows/demo-flow.yaml"}]}
+```
+
+```bash
+kxm workflow add implement --template nope
+```
+
+```text
+workflow add failed: unknown template nope; choose implement-and-verify, dual-critic-review, spec-and-plan
 ```
 
 Add a definition you wrote yourself (Not run):
@@ -1912,13 +2006,16 @@ Remove a workflow definition.
 | `--scope` | `<scope>` | `local` | Configuration scope: global or local (default: local) |
 | `--pick` | `[selection]` | none | Pick a workflow to remove (index or id) |
 
-- Deletes a file. Ignores `--dry-run`. JSON keys: `workflowId`, `id`, `removed`, `filePath`, `scope`.
+- Deletes a file. `--dry-run` plans the deletion, deletes nothing, and reports `removed: false`. JSON keys: `workflowId`, `id`, `removed`, `filePath`, `scope`.
 
 ```bash
-kxm workflow remove release-check
+kxm workflow remove release-check --dry-run
 ```
 
-Not run: deletes a workflow file (`--dry-run` would not prevent it).
+```text
+dry run: remove workflow 'release-check' from local
+  would delete /work/proj/.kxm/workflows/release-check.yaml
+```
 
 ### `kxm workflow modify`
 
@@ -1934,16 +2031,14 @@ Modify a workflow definition's description and rewrite its file.
 | `--scope` | `<scope>` | first match | Configuration scope: global or local |
 | `--pick` | `[selection]` | none | Pick a workflow to modify (index or id) |
 
-- Rewrites the file (re-serialized YAML). Ignores `--dry-run`. JSON keys: `workflowId`, `id`, `workflow`, `filePath`, `scope`.
-
-Captured with `--dry-run`, which did not prevent the rewrite:
+- Rewrites the file (re-serialized YAML). `--dry-run` returns the modified definition and plans the write without making it. JSON keys: `workflowId`, `id`, `workflow`, `filePath`, `scope`.
 
 ```bash
 kxm workflow modify default --description "Changed" --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"workflow modify","workflowId":"default","id":"default","workflow":{"schema":"kxm.workflow.v1","description":"Changed","coordinator":"coordinator",...},"filePath":"/work/proj/.kxm/workflows/default.yaml","scope":"local"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"workflow modify","workflowId":"default","id":"default","workflow":{"schema":"kxm.workflow.v1","description":"Changed","coordinator":"coordinator",...},"filePath":"/work/proj/.kxm/workflows/default.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/workflows/default.yaml"}]}
 ```
 
 ## `kxm gate`
@@ -2344,16 +2439,14 @@ Create a task with status `todo`.
 | `--issue` | `<key>` | none | Issue number or Jira key |
 
 - A tracker link is recorded only when both `--tracker` and `--issue` are given.
-- Writes `.kxm/tasks/<id>.yaml`. Ignores `--dry-run`. JSON keys: `task`.
-
-Captured with `--dry-run`, which did not prevent the write:
+- Writes `.kxm/tasks/<id>.yaml`. `--dry-run` shows the task it would create and plans the write; the ID is assigned when the task is created, so a dry run's ID is not the one a real run gets. JSON keys: `task`.
 
 ```bash
 kxm task create "Fix flaky test" --objective "Stabilize CI" --workflow default --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"task create","task":{"schema":"kxm.task.v1","id":"task_4f79c0833e41","title":"Fix flaky test","objective":"Stabilize CI","acceptanceCriteria":[],"status":"todo","assignedWorkflow":"default",...}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"task create","task":{"schema":"kxm.task.v1","id":"task_0e77833bc462","title":"Fix flaky test","objective":"Stabilize CI","acceptanceCriteria":[],"status":"todo","assignedWorkflow":"default",...},"dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/tasks/task_0e77833bc462.yaml"}]}
 ```
 
 ### `kxm task list`
@@ -2410,14 +2503,16 @@ kxm task run <taskId>
 Launch a workflow run driven by this task: runs `kxm run <workflow> <objective>` with the task's assigned workflow (default `default`), then sets the task status to `in_progress` when that succeeds.
 
 - Output, requirements, and errors are those of [`kxm run`](#kxm-run), including the `--workspace` refusal.
-- Mutates the task file. With `--dry-run` the run is only planned, but the status still changes to `in_progress`.
+- Mutates the task file. `--dry-run` validates the project and the workflow as `kxm run --dry-run` does, then plans the run request and the task file write without making either; the status stays unchanged. Dry-run JSON keys: `taskId`, `projectRoot`, `workflowId`, `configRevision`, `status` (the status it would set), `dryRun`, `planned`.
 
 ```bash
 kxm task run task_4f79c0833e41 --dry-run
 ```
 
 ```text
-run plan: workflow default at sha256:80457232cbfc… (no run created)
+dry run: run workflow default for task task_4f79c0833e41, then mark it in_progress
+  would request POST kxm-runtime /v1/runs (starts the Runtime supervisor if it is not running)
+  would write /work/proj/.kxm/tasks/task_4f79c0833e41.yaml
 ```
 
 ### `kxm task sync`
@@ -2428,7 +2523,7 @@ kxm task sync <taskId>
 
 Sync task status and evidence with its linked issue board. In 0.7.1 this is local only: it marks the task's tracker link `synced` and updates timestamps without contacting GitHub or Jira.
 
-- Writes the task file. Ignores `--dry-run`. JSON keys: `task`.
+- Writes the task file. `--dry-run` returns the synced task and plans the write without making it. JSON keys: `task`.
 - Exit 1 when the task does not exist or has no tracker link.
 
 ```bash
@@ -2457,16 +2552,14 @@ Create a project goal with status `active`.
 | `--metric` | `<metric...>` | none | Success metrics for this goal |
 | `--target-date` | `<date>` | none | Target achievement date (ISO-8601 or YYYY-MM-DD) |
 
-- Writes `.kxm/goals/<id>.yaml`. Ignores `--dry-run`. JSON keys: `goal`.
-
-Captured with `--dry-run`, which did not prevent the write:
+- Writes `.kxm/goals/<id>.yaml`. `--dry-run` shows the goal it would create and plans the write; the ID is assigned when the goal is created. JSON keys: `goal`.
 
 ```bash
 kxm goal create "Ship v1" --area software-engineering --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"goal create","goal":{"schema":"kxm.goal.v1","id":"goal_cebbbf714ed4","title":"Ship v1","area":"software-engineering","status":"active","successMetrics":[],"createdAt":"2026-09-23T13:50:33.254Z","updatedAt":"2026-09-23T13:50:33.254Z"}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"goal create","goal":{"schema":"kxm.goal.v1","id":"goal_47c05405528d","title":"Ship v1","area":"software-engineering","status":"active","successMetrics":[],"createdAt":"2026-09-23T17:51:23.667Z","updatedAt":"2026-09-23T17:51:23.667Z"},"dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/goals/goal_47c05405528d.yaml"}]}
 ```
 
 With metrics and a target date (Not run):
@@ -2505,6 +2598,7 @@ Recommends a workflow, area, roles, and skills for a prompt or issue description
 
 - Arguments: `<prompt...>`, the task description.
 - No command-specific options. Probes harnesses as `harness list` does; reads nothing else. No hub needed.
+- Suggested skills are always KXM command skills shipped in `plugins/kxm/skills` (for example `kxm-workflow`, `kxm-runs`, `kxm-peer`, `kxm-context-memory`), never the KontextMind knowledge-plane skills.
 - JSON keys: `prompt`, `workflowId`, `area`, `confidence`, `reasons`, `suggestedSkills`, `roles` (`planner`, `writer`, `critics`, `verifier`), `suggestedCommand`.
 
 ```bash
@@ -2515,7 +2609,7 @@ kxm suggest "Add retry with backoff to the payment webhook handler"
 Suggested Workflow: software-engineering/feature-implementation (software-engineering)
 Confidence: 65%
 Reasons: Matched keywords: add
-Suggested Skills: modern-web-guidance, kxm, kxm-mind, kxm-query
+Suggested Skills: kxm-workflow, kxm-peer, kxm-context-memory
 Roles:
   Planner:     claude (fable)
   Writer:      grok (grok-4.6)
@@ -2707,8 +2801,17 @@ Promote an approved state proposal (control plane).
 | `--evidence` | `<refs>` | required | Comma-separated durable evidence references |
 
 - `--evidence` must contain at least one reference (exit 2).
-- Mutates hub state. Ignores `--dry-run`: the request is sent.
+- Mutates hub state. `--dry-run` sends nothing and plans the request (`POST <hub>/v1/context/state/promote`).
 - Errors from the hub include `state_proposal_not_found` (404).
+
+```bash
+kxm context promote proj prop_1 --evidence wf_1:journal:1 --dry-run
+```
+
+```text
+dry run: promote proposal prop_1 in proj
+  would request POST http://127.0.0.1:7331/v1/context/state/promote
+```
 
 ```bash
 KXM_AUTH_TOKEN="$ADMIN_TOKEN" kxm context promote proj prop_missing --evidence wf_1:journal:1 --json
@@ -2749,8 +2852,8 @@ Compile the Karpathy-style knowledge wiki for review. Without `--out` the pages 
 |---|---|---|---|
 | `--out` | `<dir>` | dry-run output only | Workspace root to write .kxm/knowledge/wiki into (default: dry-run output only) |
 
-- With `--out`, writes the pages under `<dir>/.kxm/knowledge/wiki/` regardless of `--dry-run`.
-- Output keys: `project`, `pages`, `openContradictions`, and `written` and `outDir` or `dryRun: true`.
+- With `--out`, writes the pages under `<dir>/.kxm/knowledge/wiki/`. With `--out` and `--dry-run`, the hub still compiles (a read) and the pages are listed as `planned` writes; nothing is written.
+- Output keys: `project`, `pages`, `openContradictions`, and `written` and `outDir` or `dryRun: true` (plus `outDir` and `planned` for `--out --dry-run`).
 
 ```bash
 KXM_AUTH_TOKEN="$ADMIN_TOKEN" kxm context wiki-compile proj --json
@@ -2828,17 +2931,15 @@ Record an evidence-based memory candidate (promoted via PR).
 | `--body` | `<text>` | none | Detailed markdown context for the fact |
 
 - Arguments: `<fact>`, Summary of the observed fact or learning.
-- Writes `.kxm/memory/candidates/<id>.md`. Ignores `--dry-run`.
+- Writes `.kxm/memory/candidates/<id>.md`. `--dry-run` shows the candidate and plans the write; the ID is assigned when the candidate is recorded.
 - JSON keys: `candidate`, `path`.
-
-Captured with `--dry-run`, which did not prevent the write:
 
 ```bash
 kxm memory note "Use pnpm, not npm" --kind convention --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"memory note","candidate":{"schema":"kxm.memory.v1","id":"cand_project_25f25136b8c2","scope":"project","kind":"convention","summary":"Use pnpm, not npm",...,"lifecycle":"active","evidenceRefs":[]},"path":".kxm/memory/candidates/cand_project_25f25136b8c2.md"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"memory note","candidate":{"schema":"kxm.memory.v1","id":"cand_project_bf337cc76dda","scope":"project","kind":"convention","summary":"Use pnpm, not npm",...,"lifecycle":"active","evidenceRefs":[]},"path":".kxm/memory/candidates/cand_project_bf337cc76dda.md","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/memory/candidates/cand_project_bf337cc76dda.md"}]}
 ```
 
 ### `kxm memory sync`
@@ -2851,18 +2952,18 @@ Regenerate memory projection blocks across AGENTS.md, CLAUDE.md, and GEMINI.md: 
 
 No command-specific options.
 
-- Writes up to three files in the current directory. Ignores `--dry-run`.
+- Writes up to three files in the current directory. `--dry-run` reports which files it would update or create and plans the writes without making them.
 - Warning: a missing `CLAUDE.md` or `GEMINI.md` is created with a header copied from the KXM repository's own agent instructions (planner role, Grok as default writer, links to `plans/implementation-plan.md`). Review or replace the header before committing in another project.
 - JSON keys: `updated`, `created`.
 
-Captured with `--dry-run` in a project without these files; the three files were created anyway:
+In a project without these files:
 
 ```bash
 kxm memory sync --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"memory sync","updated":[],"created":["AGENTS.md","CLAUDE.md","GEMINI.md"]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"memory sync","updated":[],"created":["AGENTS.md","CLAUDE.md","GEMINI.md"],"dryRun":true,"planned":[{"action":"write","target":"/work/proj/AGENTS.md"},{"action":"write","target":"/work/proj/CLAUDE.md"},{"action":"write","target":"/work/proj/GEMINI.md"}]}
 ```
 
 ## `kxm skills`
@@ -2916,7 +3017,7 @@ Record a protected evaluation for a candidate. A failed evaluation can quarantin
 | `--score` | `<n>` | none | Numeric score |
 | `--details` | `<text>` | none | Bounded evaluation details |
 
-- Arguments: `<skillId>`, Skill candidate ID. Mutates. Ignores `--dry-run`.
+- Arguments: `<skillId>`, Skill candidate ID. Mutates. `--dry-run` returns the evaluation and whether it would quarantine the candidate, and plans the history write (and the move to `quarantined/`) without making them.
 - JSON keys: `skillId`, `quarantined`, `evaluation`.
 
 ```bash
@@ -2941,7 +3042,19 @@ Promote a candidate that passed all protected evaluations (`static-review`, `san
 | `--evidence` | `<refs>` | required | Comma-separated durable evidence references |
 | `--reason` | `<text>` | `passed protected evaluation` | Decision reason |
 
-- Mutates. Ignores `--dry-run`. JSON keys: `skillId`, `metadata`, `patchPath`.
+- Mutates. `--dry-run` checks the evaluations and the promoter as a real promotion does, returns the metadata with the patch it would write, and plans the promoted files, the patch, and the history entry without writing them. JSON keys: `skillId`, `metadata`, `patchPath`.
+
+```bash
+kxm skills promote seed-skill.af5155e66be7 --decided-by promoter --evidence receipt:seed --dry-run
+```
+
+```text
+dry run: promote skill seed-skill.af5155e66be7
+  would write /work/proj/.kxm/skills/promoted/seed-skill.af5155e66be7/SKILL.md
+  would write /work/proj/.kxm/skills/promoted/seed-skill.af5155e66be7/metadata.json
+  would write /work/proj/.kxm/skills/patches/seed-skill.af5155e66be7.patch
+  would write /work/proj/.kxm/skills/history/seed-skill.af5155e66be7.jsonl
+```
 
 ```bash
 kxm skills promote skill_x --decided-by bob --evidence wf_123:journal:4
@@ -2962,7 +3075,7 @@ Reject a candidate; history is retained for learning.
 | `--decided-by` | `<id>` | required | Decider identity |
 | `--reason` | `<text>` | `rejected` | Decision reason |
 
-- Mutates. Ignores `--dry-run`. JSON keys: `skillId`, `metadata`.
+- Mutates. `--dry-run` plans the move to `rejected/` and the history entry without making them. JSON keys: `skillId`, `metadata`.
 
 ```bash
 kxm skills reject skill_x --decided-by bob --reason "duplicates an existing skill"
@@ -3172,7 +3285,7 @@ Creates a verified SQLite backup with a hashed `kxm.backup-manifest.v1` manifest
 |---|---|---|---|
 | `--out` | `<dir>` | `.kxm/backups/backup-<timestamp>` | Directory to write backup and manifest |
 
-- Writes a copy of each store and `manifest.json`. Ignores `--dry-run`.
+- Writes a copy of each store and `manifest.json`. `--dry-run` lists the stores it found and the files it would write without opening any store, so no WAL is checkpointed (JSON: `outDir`, `stores` with `storeId`, `sourcePath`, `backupFile`, plus `dryRun` and `planned`).
 - JSON keys: `backupId`, `outDir`, `manifest` (`schema`, `backupId`, `createdAt`, `projectRoot`, `stores` with `storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `sha256`, `bytes`, `integrity`; `manifestSha256`).
 - Exit 1 with `backup_failed`; `issues` carry codes such as `backup_no_stores` and `database_corrupted`.
 
@@ -3186,14 +3299,16 @@ Created SQLite backup with 1 store(s):
 Manifest: /work/bk/manifest.json
 ```
 
-Captured with `--dry-run` in a project with a hub store; the backup was written anyway:
+In a project with a hub store:
 
 ```bash
-kxm backup --dry-run --json
+kxm backup --dry-run
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"backup","backupId":"bk_15989160c226547e","outDir":"/work/proj/.kxm/backups/backup-2026-09-23T13-54-13-695Z","manifest":{"schema":"kxm.backup-manifest.v1",...,"stores":[{"storeId":"hub-store","sourcePath":"/work/proj/.kxm/state/kxm.db","backupFile":"kxm.db","schemaVersion":5,"sha256":"sha256:56c6d1be941d14a32925f58f899f1ee83b8480626137e6b60f29cf30918f73fc","bytes":110592,"integrity":"ok"}],"manifestSha256":"sha256:[redacted]"}}
+dry run: back up 1 store(s) to /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z (sources are not opened, so their WAL is not checkpointed)
+  would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/kxm.db
+  would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/manifest.json
 ```
 
 In a project without a hub store yet:
@@ -3216,18 +3331,18 @@ Restores SQLite stores from a verified backup manifest. It checks the manifest s
 
 - Arguments: `<manifest>`, path to `manifest.json`.
 - No command-specific options.
-- Overwrites live stores. Ignores `--dry-run`. Stop the hub and the Runtime before restoring.
+- Overwrites live stores. Stop the hub and the Runtime before restoring.
+- Before overwriting anything, a restore checks every store's recorded schema version against the ceiling for that store, so a store newer than this build is refused (`runtime_schema_newer`) before the first file is replaced. `--dry-run` runs the same manifest, file, digest, and schema checks and plans each target it would overwrite (and any `-wal` or `-shm` sidecar it would delete) without touching them. Dry-run JSON keys: `backupId`, `manifestPath`, `stores` (`storeId`, `targetPath`, `schemaVersion`), `dryRun`, `planned`.
 - JSON keys: `backupId`, `manifestPath`, `restoredStores` (`storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `integrity`).
 - Exit 1 with `restore_failed`; `issues` carry codes such as `runtime_path_invalid`, `restore_manifest_invalid`, `restore_file_missing`, `restore_manifest_digest_mismatch`, and `runtime_schema_newer`.
 
-Captured with `--dry-run` in a disposable project; the store was restored anyway:
-
 ```bash
-kxm restore .kxm/backups/backup-2026-09-23T13-54-13-695Z/manifest.json --dry-run --json
+kxm restore ../bk/manifest.json --dry-run
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"restore","backupId":"bk_15989160c226547e","manifestPath":"/work/proj/.kxm/backups/backup-2026-09-23T13-54-13-695Z/manifest.json","restoredStores":[{"storeId":"hub-store","sourcePath":"/work/proj/.kxm/state/kxm.db","backupFile":"kxm.db","schemaVersion":5,"integrity":"ok"}]}
+dry run: restore 1 store(s) from /work/bk/manifest.json; digests verified against the manifest
+  would write /work/proj/.kxm/state/kxm.db
 ```
 
 A missing manifest:
@@ -3278,7 +3393,7 @@ kxm tenant status --json
 
 ## `kxm ssh`
 
-Multiplexed remote SSH execution. Commands reuse an OpenSSH ControlMaster socket in `.kxm/run/ssh-sockets/` in the current directory (`ControlPersist=10m`, `BatchMode=yes`, `StrictHostKeyChecking=yes`, 120 second timeout). JSON results carry `ok`, `action`, `host`, and the fields below, but no `command` field except `ssh close`. None of these commands honors `--dry-run`.
+Multiplexed remote SSH execution. Commands reuse an OpenSSH ControlMaster socket in `.kxm/run/ssh-sockets/` in the current directory (`ControlPersist=10m`, `BatchMode=yes`, `StrictHostKeyChecking=yes`, 120 second timeout). JSON results carry `ok`, `action`, `host`, and the fields below, but no `command` field except `ssh close`. Under `--dry-run`, `ssh run`, `ssh file`, and `ssh close` connect to nothing: they print a plan (`command`, `host`, the remote command or path, `dryRun`, and `planned` with action `ssh`) instead. `ssh info` reads only, with or without the flag.
 
 ### `kxm ssh info`
 
@@ -3319,8 +3434,17 @@ Execute a command on a remote SSH host via multiplexed ControlMaster socket. Com
 |---|---|---|---|
 | `--sudo` | none | off | Execute remote command with sudo privileges |
 
-- Connects to the remote host and runs the command, even with `--dry-run`.
+- Connects to the remote host and runs the command. `--dry-run` connects to nothing and prints the command it would run.
 - JSON keys: `exitCode`, `stdout`, `stderr`, `truncated`, `socketReused`, `durationMs`, `error`. The exit code is the remote command's.
+
+```bash
+kxm ssh run build-01 uptime --dry-run
+```
+
+```text
+dry run: run a command on build-01
+  would ssh build-01: uptime
+```
 
 ```bash
 kxm ssh run build-01 uptime
@@ -3344,7 +3468,7 @@ Read or write remote files over SSH.
 | `--sudo` | none | off | Use sudo privileges on remote file |
 
 - Warning: without `--read` or `--append` the command overwrites the remote file, with empty content when `--content` is omitted.
-- Connects to the remote host, even with `--dry-run`. JSON keys include `stdout` for reads and `bytesProcessed` for writes.
+- Connects to the remote host; `--dry-run` connects to nothing and names the read or write it would make. JSON keys include `stdout` for reads and `bytesProcessed` for writes.
 
 ```bash
 kxm ssh file build-01 /etc/hostname --read
@@ -3391,9 +3515,7 @@ Inspect KXM runs
 
 These are behaviors of the current build that differ from what the help text or the flag names suggest. Each is also noted in the command's section.
 
-- `--dry-run` is ignored by the commands listed under [Dry runs](#dry-runs), including `restore`, `backup`, `ssh run`, and `ssh file`.
-- `kxm task run --dry-run` changes the task status to `in_progress` even though no run is created.
-- `kxm workflow add` writes definitions (scaffold and templates) that fail the `kxm.workflow.v1` schema, which breaks `kxm run` for the whole project until the file is removed.
+- The `default` workflow that `kxm init` writes sets `limits.maxAgentTimeMs`, so `kxm runs drive` hands every run of it off with `run_handoff_required` (`limit_unsupported`). Use a `kxm workflow add --template` workflow, or remove the limit, to drive a first run.
 - `kxm memory sync` creates `CLAUDE.md` and `GEMINI.md` with headers taken from the KXM repository's own instructions.
 - `kxm routing benchmark` prints constant placeholder figures.
 - `kxm task sync` does not contact GitHub or Jira.

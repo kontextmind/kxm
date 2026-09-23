@@ -7187,6 +7187,10 @@ var require_dist = __commonJS({
   }
 });
 
+// plugins/kxm/src/mcp-server.ts
+import { statSync } from "node:fs";
+import { join as join4 } from "node:path";
+
 // node_modules/zod/v4/core/core.js
 var _a;
 // @__NO_SIDE_EFFECTS__
@@ -16368,11 +16372,12 @@ function readHubEnvRecord(env = process.env) {
     ...record2.projectTokens !== void 0 ? { projectTokens: record2.projectTokens } : {}
   };
 }
-function resolveClientHubAuthToken(env, project) {
+function resolveAgentHubAuthToken(env, project) {
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
-  const record2 = readHubEnvRecord(env);
-  return record2?.projectTokens?.[project]?.trim() || record2?.authToken?.trim() || void 0;
+  const tokens = readHubEnvRecord(env)?.projectTokens;
+  if (!tokens || !Object.hasOwn(tokens, project)) return void 0;
+  return tokens[project]?.trim() || void 0;
 }
 
 // plugins/kxm/src/project-name.ts
@@ -17271,8 +17276,17 @@ async function deliverInboxNotification(messageId, delivered, notify) {
   return true;
 }
 
+// plugins/kxm/src/session-token-hint.ts
+var ENV_TEXT = "KXM_SESSION_TOKEN in the environment Claude Code was launched from is malformed or expired, so every kxm_* tool fails with tool_policy_denied. Ask the user to unset or replace KXM_SESSION_TOKEN in the environment Claude Code was launched from, then restart Claude Code.";
+var DISK_TEXT = "The KXM session token file on this machine is expired, malformed or unreadable, so every kxm_* tool fails with tool_policy_denied. Ask the user to run `kxm session token --clear` in their own terminal. `kxm session token --status` reports No active session token found for an expired file even though the file still blocks tools. The kxm plugin no longer refreshes that 24-hour token.";
+function sessionTokenFixHint(policy) {
+  if (policy.error !== "session_token_invalid") return void 0;
+  return policy.detail?.startsWith("KXM_SESSION_TOKEN") ? ENV_TEXT : DISK_TEXT;
+}
+
 // plugins/kxm/src/mcp-server.ts
 var VERSION = "0.7.1";
+var CONFIGURE_PLUGIN = "/plugin configure kxm@kxm";
 var inbox = /* @__PURE__ */ new Map();
 var notifiedInbox = /* @__PURE__ */ new Set();
 var meshClient;
@@ -17285,11 +17299,11 @@ var mcp = new Server(
       tools: {}
     },
     instructions: [
-      'KXM peer requests can arrive as <channel source="kxm" message_id="..."> events.',
-      "Handle the request using normal safety rules, then call kxm_reply with message_id and the final response.",
-      "Use kxm_inbox as a fallback when channel delivery is not enabled.",
-      "For durable workflow requests, call kxm_workflow_get, record material knowledge with kxm_workflow_record in any of its ten categories (plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate), pass the stageId each entry belongs to, and pass every checkpoint before replying.",
-      "If work is running in an external system, call kxm_workflow_wait and then kxm_reply so a signed callback can resume the workflow later."
+      'Peer requests arrive as <channel source="kxm" message_id="..."> events, or in kxm_inbox; handle each under normal safety rules, then call kxm_reply with message_id and the final response.',
+      "For workflow requests, call kxm_workflow_get, record material knowledge with kxm_workflow_record in its ten categories (plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate), pass the stageId each entry belongs to, and pass every checkpoint before replying.",
+      "For external work, call kxm_workflow_wait, then kxm_reply; a signed callback resumes the run.",
+      "In a KXM project, call kxm_context with your role and task before planning.",
+      "If a KXM tool reports a problem with the hub or token, continue without KXM and tell the user the next step it names."
     ].join(" ")
   }
 );
@@ -17298,6 +17312,14 @@ function textResult(value) {
 }
 function asRecord2(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function sessionIdentity() {
+  const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  return {
+    projectDir,
+    project: defaultProjectName(projectDir, process.env),
+    serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331"
+  };
 }
 async function onHubEvent(event) {
   if (event.type === "cancelled" || event.type === "expired") {
@@ -17332,28 +17354,44 @@ async function onHubEvent(event) {
     });
   });
 }
+async function startClient(project, serverUrl, name, authToken) {
+  const candidate = new HubClient({
+    serverUrl,
+    name,
+    purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
+    project,
+    model: "claude-code",
+    authToken
+  });
+  try {
+    await candidate.start(onHubEvent);
+    meshClient = candidate;
+    return candidate;
+  } catch (error2) {
+    await candidate.stop();
+    throw error2;
+  }
+}
 async function ensureClient() {
   if (meshClient?.agent) return meshClient;
   if (starting) return starting;
   starting = (async () => {
-    const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    const project = defaultProjectName(projectDir, process.env);
-    const authToken = resolveClientHubAuthToken(process.env, project);
-    const candidate = new HubClient({
-      serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
-      name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
-      purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
-      project,
-      model: "claude-code",
-      ...authToken ? { authToken } : {}
-    });
+    const { project, serverUrl } = sessionIdentity();
+    const authToken = resolveAgentHubAuthToken(process.env, project);
+    if (!authToken) {
+      throw new Error(
+        `KXM has no project token for project ${project} on this machine. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) or to add ${project} to the hub KXM_PROJECT_TOKENS, listing every existing project too because that variable replaces the saved map.`
+      );
+    }
+    const name = process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`;
     try {
-      await candidate.start(onHubEvent);
-      meshClient = candidate;
-      return candidate;
+      return await startClient(project, serverUrl, name, authToken);
     } catch (error2) {
-      await candidate.stop();
-      throw error2;
+      if (!(error2 instanceof HubHttpError && error2.code === "duplicate_agent_name")) throw error2;
+      const substitute = `${name}-${process.pid}`;
+      process.stderr.write(`kxm: agent name ${name} is already active in project ${project}; this session registers as ${substitute}
+`);
+      return await startClient(project, serverUrl, substitute, authToken);
     }
   })();
   try {
@@ -17362,15 +17400,45 @@ async function ensureClient() {
     starting = void 0;
   }
 }
+function unreachableCause(error2) {
+  if (!(error2 instanceof Error)) return void 0;
+  if (error2.message.startsWith("request timed out after")) return error2.message;
+  const cause = error2.cause;
+  const causeCode = cause && typeof cause === "object" ? cause.code : void 0;
+  if (error2.message === "fetch failed") {
+    if (typeof causeCode === "string") return causeCode;
+    return cause instanceof Error && cause.message ? cause.message : error2.message;
+  }
+  if (error2.code === "ECONNREFUSED" || error2.message.includes("ECONNREFUSED")) return "ECONNREFUSED";
+  return void 0;
+}
+async function connectedClient() {
+  try {
+    return await ensureClient();
+  } catch (error2) {
+    const cause = unreachableCause(error2);
+    if (!cause) throw error2;
+    throw new Error(
+      `KXM hub unreachable at ${sessionIdentity().serverUrl} (${cause}). Ask the user to start the hub (\`kxm hub start\`) or to correct the kxm plugin server_url with ${CONFIGURE_PLUGIN}.`
+    );
+  }
+}
+function toolErrorText(error2) {
+  if (error2 instanceof HubHttpError && error2.code === "invalid_auth") {
+    return `KXM hub rejected the project token for project ${sessionIdentity().project}. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) to that project's token from the hub KXM_PROJECT_TOKENS.`;
+  }
+  return error2 instanceof Error ? error2.message : String(error2);
+}
 var tools = getMcpTools();
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   try {
     const policy = enforceToolPolicy(request.params.name);
     if (!policy.allowed) {
-      throw new Error(`tool_policy_denied: ${policy.detail ?? policy.error}`);
+      const hint = sessionTokenFixHint(policy);
+      throw new Error(hint ? `tool_policy_denied: ${policy.detail}. ${hint}` : `tool_policy_denied: ${policy.detail ?? policy.error}`);
     }
-    const client = await ensureClient();
+    const client = await connectedClient();
     const cmd = AGENT_COMMANDS_MAP.get(request.params.name);
     if (!cmd) throw new Error(`unknown tool: ${request.params.name}`);
     const args = asRecord2(request.params.arguments);
@@ -17378,15 +17446,34 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     return textResult(result);
   } catch (error2) {
     return {
-      content: [{ type: "text", text: error2 instanceof Error ? error2.message : String(error2) }],
+      content: [{ type: "text", text: toolErrorText(error2) }],
       isError: true
     };
   }
 });
+function registersAtStartup() {
+  const { projectDir, project } = sessionIdentity();
+  try {
+    if (!statSync(join4(projectDir, ".kxm")).isDirectory()) return false;
+    if (!resolveAgentHubAuthToken(process.env, project)) return false;
+  } catch {
+    return false;
+  }
+  return enforceToolPolicy("kxm_inbox").allowed && enforceToolPolicy("kxm_reply").allowed;
+}
+mcp.oninitialized = () => {
+  if (registersAtStartup()) void ensureClient().catch(() => void 0);
+};
 await mcp.connect(new StdioServerTransport());
-async function shutdown() {
-  await meshClient?.stop();
-  await mcp.close();
+var shuttingDown;
+function shutdown() {
+  shuttingDown ??= (async () => {
+    const client = meshClient ?? await starting?.catch(() => void 0);
+    await client?.stop();
+    await mcp.close();
+  })();
+  return shuttingDown;
 }
 process.once("SIGINT", () => void shutdown());
 process.once("SIGTERM", () => void shutdown());
+process.stdin.once("end", () => void shutdown());

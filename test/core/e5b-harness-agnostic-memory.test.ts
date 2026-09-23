@@ -345,22 +345,25 @@ test("E5b: gate - brief returns the exact same facts from CLI, Pi extension, and
     const memDir = join(dir, ".kxm", "memory");
     mkdirSync(memDir, { recursive: true });
 
-    const fact: MemoryRecord = {
-      schema: MEMORY_SCHEMA,
-      id: "mem_consistent",
-      scope: "project",
-      kind: "policy",
-      summary: "Memory facts are consistent across all surfaces",
-      provenance: { sourceType: "human" },
-      authority: "instruction",
-      confidence: "verified",
-      lifecycle: "active",
-      evidenceRefs: [],
-    };
-    writeFileSync(join(memDir, "fact.md"), formatMemoryRecord(fact));
+    for (let index = 1; index <= 6; index++) {
+      const fact: MemoryRecord = {
+        schema: MEMORY_SCHEMA,
+        id: `mem_consistent_${index}`,
+        scope: "project",
+        kind: "policy",
+        summary: `Memory fact ${index} is consistent across all surfaces`,
+        provenance: { sourceType: "human" },
+        authority: "instruction",
+        confidence: "verified",
+        lifecycle: "active",
+        evidenceRefs: [],
+      };
+      writeFileSync(join(memDir, `fact-${index}.md`), formatMemoryRecord(fact));
+    }
 
     // 1. Core memory brief
     const coreBrief = generateMemoryBrief(dir);
+    assert.equal(coreBrief.facts.length, 6);
     const expectedText = formatMemoryBriefText(coreBrief);
 
     // 2. CLI memory brief execution
@@ -382,15 +385,35 @@ test("E5b: gate - brief returns the exact same facts from CLI, Pi extension, and
     assert.equal(parsedCli.ok, true);
     assert.deepEqual(parsedCli.brief.facts, coreBrief.facts);
 
-    // 3. Claude hook command
-    // From plugins/kxm/.claude-plugin/plugin.json: "kxm memory brief"
-    // Executed in project cwd, stdout is expectedText
-    const hookResult = spawnSync(process.execPath, [cliScript, "memory", "brief", "--workspace", dir], {
+    // 3. Claude hook: the SessionStart command from the plugin manifest, run
+    // in an isolated HOME, state and config with no reachable hub. Its
+    // additionalContext carries the brief verbatim after the status sections.
+    const pluginRoot = resolve(repoRoot, "plugins/kxm");
+    const manifest = JSON.parse(readFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")) as {
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string; args: string[] }> }> };
+    };
+    const hook = manifest.hooks.SessionStart[0]!.hooks[0]!;
+    assert.equal(hook.command, "node");
+    const isolated = join(dir, "isolated");
+    const hookEnv: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of Object.keys(hookEnv)) if (key.startsWith("CLAUDE_PLUGIN_")) delete hookEnv[key];
+    for (const key of ["KXM_SESSION_TOKEN", "KXM_ATTEMPT_TOKEN", "KXM_PROJECT", "KXM_STATE_DIR", "KXM_DATA_PATH"]) delete hookEnv[key];
+    const hookResult = spawnSync(process.execPath, hook.args.map((arg) => arg.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot)), {
       cwd: dir,
       encoding: "utf8",
+      input: "{}",
+      env: {
+        ...hookEnv,
+        HOME: join(isolated, "home"),
+        KXM_STATE_HOME: join(isolated, "state"),
+        KXM_USER_CONFIG_DIR: join(isolated, "config"),
+        CLAUDE_PROJECT_DIR: dir,
+        CLAUDE_PLUGIN_OPTION_SERVER_URL: "http://127.0.0.1:1",
+      },
     });
-    assert.equal(hookResult.status, 0);
-    assert.equal(hookResult.stdout.trim(), expectedText.trim());
+    assert.equal(hookResult.status, 0, hookResult.stderr);
+    const hookContext = (JSON.parse(hookResult.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    assert.ok(hookContext.includes(`\n\n${expectedText}`), hookContext);
 
     // 4. Pi extension handler returns identical brief text
     // The Pi extension handler does:

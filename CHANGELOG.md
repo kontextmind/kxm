@@ -6,6 +6,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **`kxm workflow add --template <name>` writes a valid first workflow.**
+  `implement-and-verify` (the `implementer` agent, then the project's `test` gate; a
+  failing gate sends the work back to `implement` at most twice), `dual-critic-review` (two
+  review steps run as the `coordinator` agent between them) and `spec-and-plan` (plan, then
+  review the plan, both as `coordinator`, read-only) are written under the workflow id you
+  give. Each uses only what `kxm init` creates, the `coordinator` and `implementer` agents,
+  the `control` repository and the `test` gate, so it loads and plans as generated.
+  `--template` needs a workflow id (`workflow_id_required`), cannot be combined with
+  `--file` or `--pick` (`workflow_add_conflict`), and names the three templates when the
+  name is unknown (`workflow_template_unknown`); the three refusals exit 2 and honour
+  `--json`.
+
 - **Fenced hub leases, and shared external effects that will not run without one.**
   `POST /v1/leases/:resource/acquire|renew|release` are agent-authenticated and
   project-scoped (the hub prefixes the caller's project onto the resource name). Each call
@@ -57,6 +69,69 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **The workflow loader refuses a gate step that can never settle
+  (`gate_outcome_impossible`).** A gate step settles only on `passed` or
+  `implementation-failure` when `expect` is `pass`, and only on `passed` or `repro-missing`
+  when `expect` is `fail`. A step that declares an outcome it never produces (typically
+  `failed`) and leaves one it does produce undeclared is now a load error naming the
+  outcomes to declare, so `kxm init`, `kxm run` and `kxm run --dry-run` report it before a
+  run exists. Such a workflow used to load, and a failing gate attempt could not settle:
+  the run was handed off with `attempt_unsettled` and later gate steps in the project were
+  held with `gate_recovery_pending`. An extra outcome next to every produced one still
+  loads, as in the `verify` step `kxm init` writes. This repository's `default` workflow,
+  the example project and the unsupported-gate fixture now route gate failures on
+  `implementation-failure`. **Check your workflows:** a gate step that routes failures only
+  on `failed` no longer loads.
+- **`kxm run` prints how to drive the run it created, and drive refusals say why.** The
+  text output's second line is
+  `drive it model-free: kxm runs drive <runId> --simulated --wait (or cancel: kxm runs cancel <runId>)`,
+  and the command's help now reads "Create a KXM run (offline-first;
+  `kxm runs drive <runId> --simulated` executes it model-free)" instead of saying no steps
+  execute until the run engine lands. The JSON result and its
+  `phase` are unchanged. A `run_handoff_required` refusal from `kxm runs drive` now ends
+  with `(handoff reason …; field …; detail …)`, each part capped at 200 characters; a run of
+  the `default` workflow that `kxm init` writes, for example, reports `limit_unsupported`
+  on `limits.maxAgentTimeMs`. Top-level help names the product KXM instead of KontextMind,
+  and `kxm init` text output lists each validation issue as `file: code: message`.
+- **`kxm suggest` recommends only KXM command skills.** Suggested skills come from the
+  command skills shipped in `plugins/kxm/skills` (such as `kxm-workflow`, `kxm-runs`,
+  `kxm-peer` and `kxm-context-memory`), never from skills that do not ship
+  (`troubleshooting`, `modern-web-guidance`) or from the KontextMind knowledge-plane
+  skills.
+- **The Claude plugin's MCP errors name the user's next step, and a session appears to
+  peers before its first tool call.** An unreachable hub names the URL and `kxm hub start`
+  or `/plugin configure kxm@kxm`; `invalid_auth` names the project token; a
+  `session_token_invalid` denial says to unset or replace `KXM_SESSION_TOKEN` when the token
+  came from the environment, or to run `kxm session token --clear` when it came from the
+  token file. Denials still fail closed. A second concurrent session whose agent name is
+  already active registers once as `<name>-<pid>` and says so on stderr. In a KXM project
+  with a project token and a session policy that allows `kxm_inbox` and `kxm_reply`, the
+  server registers right after the MCP handshake instead of at the first tool call, and it
+  leaves the hub when stdin closes. The server instructions point Claude at `kxm_context`
+  and at telling the user the next step, in under 800 characters.
+- **The Claude plugin README is rewritten, and its tool table is pinned to the MCP
+  server.** It covers requirements (`node` on `PATH`, a hub, and the `kxm` CLI for the
+  operator only), installing from Claude Code or the shell, each `userConfig` option and
+  which token to use (this project's token, never the hub admin token), what the MCP server
+  and the SessionStart hook do, every published MCP tool, pushed channel mode versus pull
+  mode, the 0.7.1 version pin with the uninstall-and-reinstall refresh (plugin options must
+  be entered again), and troubleshooting for each user-directed error. A test fails when
+  the README's `## MCP tools` rows and the server's `tools/list` disagree in either
+  direction. The configuration docs now say that `kxm_await` waits at most 60 seconds.
+- **The skill suite is rescoped: every command has one owning skill, and `kxm-setup` is
+  renamed `kxm-mind-setup` with no alias.** `skill-suite.json` declares all 29 bundled
+  skills (13 KXM command skills, 7 browser skills, 9 KontextMind knowledge-plane skills),
+  and each of the 34 registered top-level `kxm` commands is owned by exactly one of them
+  (`models`, `routes` and `ssh` by `kxm-harness-auth`, `tenant` by `kxm-hub-ops`, `explain`
+  by `kxm-context-memory`). The nine knowledge-plane skills are kept; their descriptions now
+  start by saying they cover only the separate `kontext` CLI and `km_` tools, so they
+  trigger only when the user names KontextMind. The command skills were rewritten against
+  the current CLI help and drop stale claims (the run engine "not landed", port 8787,
+  `gate validate` on YAML, `fanout --idempotency-key`). `kxm-project-setup` now walks from
+  `kxm init` through a trust-reviewed first workflow to a simulated, receipt-verified run,
+  stopping where the user reviews and commits `.kxm` changes, and `kxm session brief`
+  (which saves a 24-hour operator token) appears only under its operator steps. **Rename:**
+  anything that names the `kxm-setup` skill must name `kxm-mind-setup`.
 - **Context packets rank by deterministic task relevance.** `kxm context get`,
   `kxm_context` and Runtime dispatch order eligible items by nine keys: open
   contradictions first, project before `_shared` defaults, items that share a word with
@@ -231,6 +306,31 @@ All notable user-facing changes are documented here. The project follows [Semant
   false `run_projection_divergent`.
 
 ### Fixed
+
+- **The Claude plugin's SessionStart hook is one bundled, read-only, project-scoped
+  script.** The two shell hooks it replaces (`kxm session brief --status` and
+  `kxm memory brief`) exited 127 without `kxm` on `PATH`, ran whichever `kxm` was on
+  `PATH`, minted a 24-hour operator token and wrote `.kxm/state/session-brief.json` at
+  every session start, ignored the `server_url` option, and had no timeout. The new hook is
+  `node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start` with a 5-second timeout.
+  It reads only the project Claude Code opened (no walk-up), prints nothing outside a KXM
+  project, writes no files, mints no token, spawns nothing and always exits 0. Its context
+  is at most 1,500 characters of status (hub state probed at the plugin's `server_url`, up
+  to three of this project's active runs, the count of open requests for this agent, and
+  user-directed fixes) followed by the unchanged memory brief. The plugin version stays
+  0.7.1, so an existing install gets the hook only after the reinstall described in the
+  plugin README.
+- **The Claude plugin's MCP server never authenticates with the hub admin token.** With a
+  blank `auth_token` it fell back to the admin token saved in `hub-env.json` and registered
+  the agent in a project nobody had issued it a token for. It now uses `KXM_AUTH_TOKEN` or
+  this project's saved project token, and with neither it refuses before contacting the
+  hub. The operator CLI and the Runtime supervisor resolve credentials as before.
+- **`kxm workflow add` writes workflows that load.** The one-step scaffold and the three
+  built-in templates used `role:` where an agent step needs `agent:`, the scaffold added a
+  top-level `id`, and the templates' gate steps named a `verify-gate` no project defines
+  and routed failures on `failed`. One such file in `.kxm/workflows/` made `kxm run` fail
+  with `run_failed` for every workflow in the project. The scaffold is now one
+  `implementer` step, and the templates are the ones described under Added.
 
 - **`kxm improve` sees the Runtime's settled attempts and flags only same-ask repeats
   across runs.** It read only `.kxm/logs/telemetry.jsonl`, which no Runtime step writes, so
