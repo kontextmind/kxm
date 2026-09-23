@@ -42,6 +42,6 @@ steps:
       passed:
         target: $terminal
         terminalStatus: completed
-      failed:
+      implementation-failure:
         target: implement
         maxTransitions: 2

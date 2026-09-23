@@ -15,6 +15,7 @@ export const STATIC_GENERATED_ARTIFACTS = Object.freeze([
   "plugins/kxm/dist/runtime.js",
   "plugins/kxm/dist/client.js",
   "plugins/kxm/dist/extension.js",
+  "plugins/kxm/dist/claude-hook.js",
   "packages/core/tui/dist/index.js",
   "AGENTS.md",
   "CLAUDE.md",

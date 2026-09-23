@@ -79,7 +79,9 @@ function skillFiles(dir: string): string[] {
     const path = join(dir, name);
     const st = statSync(path);
     if (st.isDirectory()) files.push(...skillFiles(path));
-    else if (name === "SKILL.md") files.push(path);
+    // Every Markdown file a skill ships (SKILL.md, references/, SUITE.md) is
+    // model-visible copy, not only the SKILL.md entry point.
+    else if (name.endsWith(".md")) files.push(path);
   }
   return files;
 }

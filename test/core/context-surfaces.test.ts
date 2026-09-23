@@ -124,7 +124,8 @@ test("kxm context CLI commands call the hub context API with parity", async () =
 });
 
 test("Pi extension kxm_* tools expose the context API with project isolation", async (context) => {
-  const mesh = await createTestMesh(context);
+  const logs: Array<Record<string, unknown>> = [];
+  const mesh = await createTestMesh(context, { logger: (entry) => logs.push(entry) });
   const keys = ["KXM_SERVER_URL", "KXM_AUTH_TOKEN", "KXM_PROJECT", "KXM_AGENT_NAME", "KXM_STATE_DIR"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   Object.assign(process.env, {
@@ -174,6 +175,27 @@ test("Pi extension kxm_* tools expose the context API with project isolation", a
     evidenceRefs: ["journal:1"],
   }) as { details: { proposalId: string } };
   assert.match(proposed.details.proposalId, /^ctx_/);
+
+  // Recall ranks the proposed item and returns relevance, never summaries.
+  const flaky = await fake.tools.get("kxm_recall")!.execute("recall-flaky", { query: "flaky gates" }) as {
+    details: { items: Array<Record<string, unknown>> };
+  };
+  assert.ok(flaky.details.items.length >= 1);
+  assert.equal(typeof flaky.details.items[0]!.relevance, "number");
+  assert.ok((flaky.details.items[0]!.relevance as number) > 0);
+  assert.ok(flaky.details.items.every((item) => !("summary" in item)));
+
+  // Hub logs carry task and query sizes, never the text (Q-J).
+  const recallLogs = logs.filter((entry) => entry.event === "context_recall");
+  assert.ok(recallLogs.length >= 2);
+  for (const entry of recallLogs) {
+    assert.equal(typeof entry.queryChars, "number");
+    assert.ok(!("query" in entry));
+  }
+  const assembled = logs.find((entry) => entry.event === "context_packet_assembled");
+  assert.ok(assembled);
+  assert.equal(assembled.taskChars, "plan the CI migration".length);
+  assert.ok(!("task" in assembled));
 
   await fake.emit("session_shutdown");
 });

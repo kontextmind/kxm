@@ -261,6 +261,14 @@ test("role and memory skill commands correspond to registered CLI subcommands", 
     names.add(match[2]!);
     registeredByGroup.set(group, names);
   }
+  // Subcommands registered in a loop over a literal list, such as
+  // `for (const status of ["admit", "disable"] as const) { ...routesCmd.command(status)`.
+  for (const match of source.matchAll(/for \(const (\w+) of \[([^\]]*)\](?: as const)?\) \{\s*(?:addGlobalOptions\()?(\w+)\.command\(\1\)/g)) {
+    const group = varToGroup.get(match[3]!) ?? match[3]!;
+    const names = registeredByGroup.get(group) ?? new Set<string>();
+    for (const literal of match[2]!.matchAll(/"([a-z][a-z0-9-]*)"/g)) names.add(literal[1]!);
+    registeredByGroup.set(group, names);
+  }
   for (const skill of suite.skills) {
     const skillPath = join(process.cwd(), "plugins/kxm/skills", skill.name, "SKILL.md");
     const text = readFileSync(skillPath, "utf8");
@@ -297,6 +305,18 @@ test("SKILL.md files teach kxm peer and workflow commands with zero mesh_ or MCP
 
     // Zero occurrences of MCP-only mcp__
     assert.equal(content.includes("mcp__"), false, `SKILL.md in ${skillDir} must not contain mcp__`);
+
+    // kxm session brief saves a 24-hour operator session token in every form,
+    // so a skill may name it only under its "## Operator steps" heading.
+    const body = content.replace(/^---\n[\s\S]*?\n---(?:\n|$)/, "");
+    let heading: string | undefined;
+    for (const line of body.split("\n")) {
+      if (line.startsWith("## ")) heading = line.trim();
+      if (/session brief/.test(line)) {
+        assert.equal(heading, "## Operator steps",
+          `SKILL.md in ${skillDir} names kxm session brief outside "## Operator steps": ${line.trim()}`);
+      }
+    }
   }
 
   const suiteContent = allContent.join("\n");
@@ -518,12 +538,22 @@ test("CLI subcommands and options parse thoroughly in dry-run mode", async () =>
   // Workflow agent subcommands with options
   for (const args of [
     ["workflow", "checkpoint", "--run-id", "r1", "--stage-id", "s1", "--status", "passed", "--summary", "checkpoint summary", "--evidence", '{"check":"pass"}', "--dry-run", "--json"],
-    ["workflow", "record", "--run-id", "r1", "--category", "bug", "--area", "implementation", "--severity", "info", "--summary", "fixed bug", "--dry-run", "--json"],
+    ["workflow", "record", "--run-id", "r1", "--category", "bug", "--area", "implementation", "--stage-id", "s1", "--severity", "info", "--summary", "fixed bug", "--dry-run", "--json"],
   ]) {
     const res = await runCli(args);
     assert.equal(res.exit, 0, `Command failed: ${args.join(" ")}`);
     assert.match(res.stdout, /"dryRun":true/);
+    if (args[1] === "record") assert.match(res.stdout, /"stageId":"s1"/);
   }
+
+  // Area is optional: three positionals are runId, category, and summary.
+  const positional = await runCli(["workflow", "record", "r1", "lesson", "Flaky test hid a race", "--stage-id", "s1", "--dry-run", "--json"]);
+  assert.equal(positional.exit, 0);
+  const positionalArgs = JSON.parse(positional.stdout).args as Record<string, unknown>;
+  assert.deepEqual(
+    { runId: positionalArgs.runId, category: positionalArgs.category, summary: positionalArgs.summary, stageId: positionalArgs.stageId, area: positionalArgs.area },
+    { runId: "r1", category: "lesson", summary: "Flaky test hid a race", stageId: "s1", area: undefined },
+  );
 });
 
 test("timingSafeStringCompare evaluates equality without timing leaks", () => {

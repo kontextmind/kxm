@@ -5,6 +5,7 @@ import {
   canonicalWorkflowEvidenceKey,
   journalPromotionState,
   normalizeVerifiedWorkflowEvidence,
+  rankImprovementSignals,
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "./workflow.ts";
@@ -248,12 +249,14 @@ export function buildRetrospective(
   const byCategory: Record<string, number> = {};
   const byArea: Record<string, number> = {};
   const byClass: Record<string, number> = {};
+  const byErrorClass: Record<string, number> = {};
   for (const entry of entries) {
     increment(byCategory, entry.category);
     increment(byArea, entry.area);
     increment(byClass, classFromEvidence(entry.evidence));
+    if (entry.category === "error") increment(byErrorClass, classFromEvidence(entry.evidence));
   }
-  const recurringErrorClasses = Object.entries(byClass)
+  const recurringErrorClasses = Object.entries(byErrorClass)
     .map(([errorClass, count]) => ({ class: errorClass, count }))
     .sort((left, right) => right.count - left.count || left.class.localeCompare(right.class));
   const resolvedContradictions = new Set(entries.filter((entry) => entry.category === "decision" || entry.category === "lesson").flatMap((entry) => entry.relatedEntryIds));
@@ -263,15 +266,18 @@ export function buildRetrospective(
   const decisions = entries
     .filter((entry) => entry.category === "decision")
     .map((entry) => ({ id: entry.id, summary: entry.summary, area: entry.area }));
-  const proposedImprovements = entries
-    .filter((entry) => entry.category === "lesson" || entry.category === "error")
-    .slice(0, 12)
-    .map((entry) => ({
-      area: entry.area,
-      summary: entry.summary,
-      successMeasure: "reduce recurrence of this class in the next comparable run",
-      status: "proposed" as const,
-    }));
+  // Ranked, merged error and lesson signals over this run's raw entries. The
+  // category filter runs before the limit so up to 12 of them survive.
+  const proposedImprovements = rankImprovementSignals(
+    journal.filter((entry) => entry.runId === run.id && (entry.category === "error" || entry.category === "lesson")),
+    new Map([[run.id, run]]),
+    12,
+  ).map((signal) => ({
+    area: signal.area,
+    summary: signal.summary,
+    successMeasure: redactSecrets(`no recurrence of ${signal.key} in the next ${run.definitionId} run`),
+    status: "proposed" as const,
+  }));
   const evidenceAudit = buildEvidenceAudit(run);
   const degradedStageIds = run.stages
     .filter((stage) => stage.degraded)

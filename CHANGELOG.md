@@ -6,6 +6,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **`kxm workflow add --template <name>` writes a valid first workflow.**
+  `implement-and-verify` (the `implementer` agent, then the project's `test` gate; a
+  failing gate sends the work back to `implement` at most twice), `dual-critic-review` (two
+  review steps run as the `coordinator` agent between them) and `spec-and-plan` (plan, then
+  review the plan, both as `coordinator`, read-only) are written under the workflow id you
+  give. Each uses only what `kxm init` creates, the `coordinator` and `implementer` agents,
+  the `control` repository and the `test` gate, so it loads and plans as generated.
+  `--template` needs a workflow id (`workflow_id_required`), cannot be combined with
+  `--file` or `--pick` (`workflow_add_conflict`), and names the three templates when the
+  name is unknown (`workflow_template_unknown`); the three refusals exit 2 and honour
+  `--json`.
+
 - **Fenced hub leases, and shared external effects that will not run without one.**
   `POST /v1/leases/:resource/acquire|renew|release` are agent-authenticated and
   project-scoped (the hub prefixes the caller's project onto the resource name). Each call
@@ -56,6 +68,127 @@ All notable user-facing changes are documented here. The project follows [Semant
   and the bindings that make the box reproducible.
 
 ### Changed
+
+- **The workflow loader refuses a gate step that can never settle
+  (`gate_outcome_impossible`).** A gate step settles only on `passed` or
+  `implementation-failure` when `expect` is `pass`, and only on `passed` or `repro-missing`
+  when `expect` is `fail`. A step that declares an outcome it never produces (typically
+  `failed`) and leaves one it does produce undeclared is now a load error naming the
+  outcomes to declare, so `kxm init`, `kxm run` and `kxm run --dry-run` report it before a
+  run exists. Such a workflow used to load, and a failing gate attempt could not settle:
+  the run was handed off with `attempt_unsettled` and later gate steps in the project were
+  held with `gate_recovery_pending`. An extra outcome next to every produced one still
+  loads, as in the `verify` step `kxm init` writes. This repository's `default` workflow,
+  the example project and the unsupported-gate fixture now route gate failures on
+  `implementation-failure`. **Check your workflows:** a gate step that routes failures only
+  on `failed` no longer loads.
+- **`kxm run` prints how to drive the run it created, and drive refusals say why.** The
+  text output's second line is
+  `drive it model-free: kxm runs drive <runId> --simulated --wait (or cancel: kxm runs cancel <runId>)`,
+  and the command's help now reads "Create a KXM run (offline-first;
+  `kxm runs drive <runId> --simulated` executes it model-free)" instead of saying no steps
+  execute until the run engine lands. The JSON result and its
+  `phase` are unchanged. A `run_handoff_required` refusal from `kxm runs drive` now ends
+  with `(handoff reason …; field …; detail …)`, each part capped at 200 characters; a run of
+  the `default` workflow that `kxm init` writes, for example, reports `limit_unsupported`
+  on `limits.maxAgentTimeMs`. Top-level help names the product KXM instead of KontextMind,
+  and `kxm init` text output lists each validation issue as `file: code: message`.
+- **`kxm suggest` recommends only KXM command skills.** Suggested skills come from the
+  command skills shipped in `plugins/kxm/skills` (such as `kxm-workflow`, `kxm-runs`,
+  `kxm-peer` and `kxm-context-memory`), never from skills that do not ship
+  (`troubleshooting`, `modern-web-guidance`) or from the KontextMind knowledge-plane
+  skills.
+- **The Claude plugin's MCP errors name the user's next step, and a session appears to
+  peers before its first tool call.** An unreachable hub names the URL and `kxm hub start`
+  or `/plugin configure kxm@kxm`; `invalid_auth` names the project token; a
+  `session_token_invalid` denial says to unset or replace `KXM_SESSION_TOKEN` when the token
+  came from the environment, or to run `kxm session token --clear` when it came from the
+  token file. Denials still fail closed. A second concurrent session whose agent name is
+  already active registers once as `<name>-<pid>` and says so on stderr. In a KXM project
+  with a project token and a session policy that allows `kxm_inbox` and `kxm_reply`, the
+  server registers right after the MCP handshake instead of at the first tool call, and it
+  leaves the hub when stdin closes. The server instructions point Claude at `kxm_context`
+  and at telling the user the next step, in under 800 characters.
+- **The Claude plugin README is rewritten, and its tool table is pinned to the MCP
+  server.** It covers requirements (`node` on `PATH`, a hub, and the `kxm` CLI for the
+  operator only), installing from Claude Code or the shell, each `userConfig` option and
+  which token to use (this project's token, never the hub admin token), what the MCP server
+  and the SessionStart hook do, every published MCP tool, pushed channel mode versus pull
+  mode, the 0.7.1 version pin with the uninstall-and-reinstall refresh (plugin options must
+  be entered again), and troubleshooting for each user-directed error. A test fails when
+  the README's `## MCP tools` rows and the server's `tools/list` disagree in either
+  direction. The configuration docs now say that `kxm_await` waits at most 60 seconds.
+- **The skill suite is rescoped: every command has one owning skill, and `kxm-setup` is
+  renamed `kxm-mind-setup` with no alias.** `skill-suite.json` declares all 29 bundled
+  skills (13 KXM command skills, 7 browser skills, 9 KontextMind knowledge-plane skills),
+  and each of the 34 registered top-level `kxm` commands is owned by exactly one of them
+  (`models`, `routes` and `ssh` by `kxm-harness-auth`, `tenant` by `kxm-hub-ops`, `explain`
+  by `kxm-context-memory`). The nine knowledge-plane skills are kept; their descriptions now
+  start by saying they cover only the separate `kontext` CLI and `km_` tools, so they
+  trigger only when the user names KontextMind. The command skills were rewritten against
+  the current CLI help and drop stale claims (the run engine "not landed", port 8787,
+  `gate validate` on YAML, `fanout --idempotency-key`). `kxm-project-setup` now walks from
+  `kxm init` through a trust-reviewed first workflow to a simulated, receipt-verified run,
+  stopping where the user reviews and commits `.kxm` changes, and `kxm session brief`
+  (which saves a 24-hour operator token) appears only under its operator steps. **Rename:**
+  anything that names the `kxm-setup` skill must name `kxm-mind-setup`.
+- **Context packets rank by deterministic task relevance.** `kxm context get`,
+  `kxm_context` and Runtime dispatch order eligible items by nine keys: open
+  contradictions first, project before `_shared` defaults, items that share a word with
+  the task before items that do not, role kind priority, a lexical BM25 score over the
+  item's summary and state key, confidence, authority, recency (newest first), then id.
+  Scoring uses a fixed English stopword list and no model, clock or randomness, so the
+  same records and request give the same packet. Contradiction and project-first order
+  are unchanged. The token budget is filled first-fit, so one oversized item no longer
+  stops smaller ones from fitting, and non-current state and proposed skills no longer
+  consume budget. `audit.relevance` reports numbers only (`taskTokens`,
+  `matchedCandidates`, and a rounded score per selected item).
+- **`kxm_improvement_report` returns ranked, redacted cross-run signals.** Alongside the
+  per-area reports, `GET /v1/improvements` returns `signals`: journal entries from the
+  project's runs merged by evidence class, then an error's stage, then a normalized
+  summary that is redacted before it becomes a key. Only errors, open contradictions,
+  lessons and still-proposed skill candidates count. Priority is distinct runs × severity
+  (3/2/1) × mean run attempts × evidence confidence; an unknown run cost counts as 1 and
+  is labelled `unknown`, never 0; security signals rank first. The journal and
+  retrospective loop covers hub webhook runs only; `kxm run` (Runtime) runs have no
+  journal yet.
+- **Recall ranks exact phrases, then token relevance, then id, and returns a relevance
+  per item.** `kxm context recall` and `kxm_recall` previously returned substring matches
+  in id order. Items that neither contain the query nor share a word with it are still
+  left out, and results still carry metadata only, never summaries.
+- **The hub logs task and query sizes, not their text.** `context_packet_assembled` now
+  records `taskChars`, `taskTokens` and `matchedCandidates`, and `context_recall` records
+  `queryChars` and `queryTokens`. The caller still receives its own request in the
+  response.
+- **Engine routing records carry an ask identity and only gate-negative outcomes.** Every
+  `routing.attempt.recorded` record carries four engine-reserved `providerMetadata` keys,
+  written after the producer's so a producer cannot spoof them: `workflowId`, `askSha256`
+  (the same for one step and agent across runs, whatever the run was asked to do),
+  `objectiveSha256` (the run prompt's digest) and `stepWrites`. A producer keeps up to 28
+  keys of its own. `agentRole` defaults to the dispatched agent. `finalOutcome` is written
+  only as `blocked` (a back edge) or `failed` (a producer error, an undeclared outcome or a
+  failing terminal); acceptance is resolved later from the event log. Records written
+  before this change are not backfilled.
+- **`improvement.promotionPolicy` reports review readiness and never authorizes.**
+  `kxm improve` now reads `improvement.*` and reports, per candidate, `readyForReview` and a
+  reason under the configured policy: `manual_pr` is always ready for an operator PR,
+  `critic_quorum` waits for two critic receipts (the CLI supplies none, so it reports not
+  ready), and `auto_threshold` needs `minRuns` distinct runs, `minPassRate`, and a mean
+  recorded cost of at least `minCostSavings` over at least one cost sample. Every policy
+  ends at an operator PR; the old `authorized` result is gone. Values fail closed field by
+  field: an unknown policy is `manual_pr`, a half-life outside (0, 3650] days is 14, and
+  out-of-range thresholds fall back to 10, 0.95 and 0.5.
+  `improvement.telemetryHalfLifeDays` orders report rows through `weightedRecurrence` and
+  never decides candidacy.
+- **`kxm routing report` reads Runtime records by default and counts only event-log
+  acceptance as a Runtime pass.** Without `--file` it reads the current project's Runtime
+  event store and then `.kxm/logs/telemetry.jsonl` (the same sources as `kxm improve`),
+  and `--json` output gains `sources`. A Runtime attempt counts as a pass only when its run
+  completed and the step was not re-entered. The ranking code is unchanged, and the rework
+  column still reads `transitions`, which Runtime records do not set.
+- **`kxm improve --target` is removed.** It was accepted and never applied. Passing it
+  is now an unknown-option error. `KXM_IMPROVE_TARGET` still labels telemetry when it is
+  written; no report reads that label.
 
 - **Hub store schema v3 → v4, external-effects ledger v1 → v2.** The hub store gains a
   `leases` table and the ledger gains `lease_resource`/`fencing_token` columns. Neither has
@@ -173,6 +306,77 @@ All notable user-facing changes are documented here. The project follows [Semant
   false `run_projection_divergent`.
 
 ### Fixed
+
+- **The Claude plugin's SessionStart hook is one bundled, read-only, project-scoped
+  script.** The two shell hooks it replaces (`kxm session brief --status` and
+  `kxm memory brief`) exited 127 without `kxm` on `PATH`, ran whichever `kxm` was on
+  `PATH`, minted a 24-hour operator token and wrote `.kxm/state/session-brief.json` at
+  every session start, ignored the `server_url` option, and had no timeout. The new hook is
+  `node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start` with a 5-second timeout.
+  It reads only the project Claude Code opened (no walk-up), prints nothing outside a KXM
+  project, writes no files, mints no token, spawns nothing and always exits 0. Its context
+  is at most 1,500 characters of status (hub state probed at the plugin's `server_url`, up
+  to three of this project's active runs, the count of open requests for this agent, and
+  user-directed fixes) followed by the unchanged memory brief. The plugin version stays
+  0.7.1, so an existing install gets the hook only after the reinstall described in the
+  plugin README.
+- **The Claude plugin's MCP server never authenticates with the hub admin token.** With a
+  blank `auth_token` it fell back to the admin token saved in `hub-env.json` and registered
+  the agent in a project nobody had issued it a token for. It now uses `KXM_AUTH_TOKEN` or
+  this project's saved project token, and with neither it refuses before contacting the
+  hub. The operator CLI and the Runtime supervisor resolve credentials as before.
+- **`kxm workflow add` writes workflows that load.** The one-step scaffold and the three
+  built-in templates used `role:` where an agent step needs `agent:`, the scaffold added a
+  top-level `id`, and the templates' gate steps named a `verify-gate` no project defines
+  and routed failures on `failed`. One such file in `.kxm/workflows/` made `kxm run` fail
+  with `run_failed` for every workflow in the project. The scaffold is now one
+  `implementer` step, and the templates are the ones described under Added.
+
+- **`kxm improve` sees the Runtime's settled attempts and flags only same-ask repeats
+  across runs.** It read only `.kxm/logs/telemetry.jsonl`, which no Runtime step writes, so
+  it never saw an agent step; and on engine records it grouped per run and scored every pass
+  rate 0. It now reads the current checkout's Runtime event store read-only (one query over
+  the events table; it never creates, writes or migrates a store) plus telemetry, dropping
+  a telemetry copy of an attempt the store already supplied; `--file` still reads only the
+  named file. Each attempt's outcome is resolved from the event log: `accepted` when the run
+  completed and the step was not re-entered, `reworked` when the step was entered again,
+  `failed` when the run failed, and undecided otherwise. Simulated attempts are excluded
+  and counted. Groups key on workflow, step, agent role and ask; a coded-repeat candidate
+  needs the same ask decided in at least 2 runs, an accepted share of at least 0.75, and a
+  step that writes no repository, and a passing group that misses says why
+  (`writes-repository` or `ask-not-repeated`). The output names every source it read, with
+  counts; an unreadable store exits 1 with `improve_source_unreadable` and its path.
+  Workflow-step candidates now propose a `kind: gate` step and a `gates.yaml` entry with a
+  placeholder command, and skill candidates are labelled consolidation. Candidates remain
+  proposals; nothing is applied.
+- **Runtime-dispatched agents receive committed, pinned project memory and hash-verified
+  promoted skills.** The engine built each agent's context packet with no project items, so
+  `.kxm/memory` and promoted skills never reached a `kxm run` agent. Now, when either
+  exists, the Runtime delivers active memory in project or operator scope and promoted
+  skills whose hash verifies, selected for the agent's role and step within 4,000 tokens,
+  and only when those files are tracked and clean at HEAD and still match the run's pinned
+  memory revision. Otherwise the context is withheld with a `dispatch_context_*` gap in the
+  packet (never in the prompt) and the step still runs. Promoted skills render under a new
+  `### Active Skills` heading. No hub call is made at dispatch.
+- **Journal entries accept all ten categories and stage provenance.** The shared
+  `kxm_workflow_record` tool (MCP, Pi and `kxm workflow record`) offered 5 of the 10
+  categories, required an area and dropped `stageId`. It now takes every category and an
+  optional `stageId`; area defaults to the stage's declared area; and the hub, not the
+  caller, derives the attempt: the current attempt for an active or waiting stage, the last
+  one consumed for a finished stage (previously always one past it). Entries the hub writes
+  itself (checkpoint results, signal results, wait timeout, prompt expiry, degraded-quorum
+  approval and premature settlement) carry the stage and attempt; the checkpoint and
+  premature-settlement cases are the ones under test. `kxm workflow record` gained
+  `--stage-id` and accepts `record <runId> <category> <summary>` when area is omitted.
+- **Late journal entries and promotions refresh the exported retrospective.** A terminal
+  run's retrospective is re-exported when an entry is recorded or a promotion decided
+  afterwards. Retrospectives also count only error entries as recurring error classes and
+  propose up to 12 ranked error and lesson signals. A promotion now publishes its update to
+  the run's project rather than to the run id.
+- **Context packets deliver the evidence they select.** Evidence items could be selected
+  and budgeted but no packet section carried them; packets now have an `evidence` section,
+  and the repro and implementer roles receive evidence, so the error, observation and
+  state-change entries they recall reach them.
 
 - **`kxm memory sync` no longer writes this repository's agent policy into other
   projects.** A missing `CLAUDE.md` or `GEMINI.md` used to be created from a header

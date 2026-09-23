@@ -11,6 +11,6 @@ steps:
       passed:
         target: $terminal
         terminalStatus: completed
-      failed:
+      implementation-failure:
         target: $terminal
         terminalStatus: failed

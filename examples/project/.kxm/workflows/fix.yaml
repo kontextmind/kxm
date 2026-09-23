@@ -329,7 +329,7 @@ steps:
     timeoutMs: 1800000
     on:
       passed: ci-watch
-      failed:
+      implementation-failure:
         target: $terminal
         terminalStatus: failed
       blocked:

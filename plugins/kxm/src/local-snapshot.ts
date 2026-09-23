@@ -56,6 +56,31 @@ export interface LocalMeshSnapshot {
   spend?: Array<{ recordedAt: string; routing: RoutingRecord | RoutingRecordV2 }> | undefined;
 }
 
+/** Limits a snapshot to one project and one recipient.
+ *
+ * `hubProject` is the hub project key stored on legacy messages and runs.
+ * `runtimeProjectId` is the `.kxm/project.yaml` id that keys Runtime runs;
+ * without it the snapshot reads no Runtime runs. `recipientName` selects the
+ * open messages addressed to this agent; without it no messages are read. A
+ * scoped snapshot never reads journal plans. */
+export interface LocalMeshSnapshotScope {
+  hubProject: string;
+  runtimeProjectId?: string | undefined;
+  recipientName?: string | undefined;
+}
+
+export interface LocalMeshSnapshotOptions {
+  env?: NodeJS.ProcessEnv;
+  projectRoot?: string;
+  kxmStateRoot?: string;
+  /** SQLite busy timeout for every database this snapshot opens. Default 5000. */
+  busyTimeoutMs?: number;
+  scope?: LocalMeshSnapshotScope;
+}
+
+const DEFAULT_BUSY_TIMEOUT_MS = 5000;
+const RUNTIME_PROJECT_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+
 function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -65,8 +90,8 @@ function processExists(pid: number): boolean {
   }
 }
 
-function readJsonRows<T>(database: DatabaseSync, sql: string): T[] {
-  const rows = database.prepare(sql).all() as Array<{ record: string }>;
+function readJsonRows<T>(database: DatabaseSync, sql: string, params: string[] = []): T[] {
+  const rows = database.prepare(sql).all(...params) as Array<{ record: string }>;
   const out: T[] = [];
   for (const row of rows) {
     try {
@@ -155,12 +180,17 @@ function readPlanMetadata(database: DatabaseSync): MeshTuiPlan[] {
   }
 }
 
-function countRows(database: DatabaseSync, table: "messages" | "workflow_runs", where = ""): number {
-  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get() as { count?: number | bigint } | undefined;
+function countRows(database: DatabaseSync, table: "messages" | "workflow_runs", where = "", params: string[] = []): number {
+  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get(...params) as { count?: number | bigint } | undefined;
   return Number(row?.count ?? 0);
 }
 
-function readOpenMessageMetadata(database: DatabaseSync): MeshTuiOpenMessage[] {
+const OPEN_MESSAGE_WHERE = " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')";
+const SCOPED_MESSAGE_WHERE = `${OPEN_MESSAGE_WHERE}
+      AND json_extract(record, '$.project') = ?
+      AND COALESCE(json_extract(record, '$.toName'), json_extract(record, '$.to')) = ?`;
+
+function readOpenMessageMetadata(database: DatabaseSync, where = OPEN_MESSAGE_WHERE, params: string[] = []): MeshTuiOpenMessage[] {
   const rows = database.prepare(`
     SELECT
       json_extract(record, '$.id') AS id,
@@ -170,11 +200,10 @@ function readOpenMessageMetadata(database: DatabaseSync): MeshTuiOpenMessage[] {
       json_extract(record, '$.delivery') AS delivery,
       json_extract(record, '$.createdAt') AS createdAt,
       json_extract(record, '$.correlationId') AS correlationId
-    FROM messages
-    WHERE json_extract(record, '$.status') IN ('queued', 'delivered')
+    FROM messages${where}
     ORDER BY json_extract(record, '$.createdAt') DESC
     LIMIT 16
-  `).all() as Array<Record<string, unknown>>;
+  `).all(...params) as Array<Record<string, unknown>>;
   const messages: MeshTuiOpenMessage[] = [];
   for (const row of rows) {
     if (
@@ -236,11 +265,41 @@ function resolveKxmStateRoot(
   return undefined;
 }
 
+function readRuntimeRuns(eventDb: DatabaseSync, projectId: string | undefined): { runs: MeshTuiRun[]; total: number } {
+  const where = projectId === undefined ? "" : " WHERE project_id = ?";
+  const params = projectId === undefined ? [] : [projectId];
+  const runRows = eventDb.prepare(`
+    SELECT run_id, project_id, workflow_id, status, created_at, updated_at
+    FROM runs${where} ORDER BY created_at DESC, run_id DESC LIMIT 8
+  `).all(...params) as Array<{
+    run_id: string;
+    project_id: string;
+    workflow_id: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+  const countRow = eventDb.prepare(`SELECT COUNT(*) AS total FROM runs${where}`).get(...params) as { total: number } | undefined;
+  return {
+    total: Number(countRow?.total ?? runRows.length),
+    runs: runRows.map((r) => ({
+      id: r.run_id,
+      status: r.status,
+      definitionId: r.workflow_id,
+      project: r.project_id,
+      updatedAt: r.updated_at || r.created_at,
+    })),
+  };
+}
+
 export function loadLocalMeshSnapshot(
   dataPath: string,
   stateDir: string,
-  options?: { env?: NodeJS.ProcessEnv; projectRoot?: string; kxmStateRoot?: string },
+  options?: LocalMeshSnapshotOptions,
 ): LocalMeshSnapshot {
+  const busyTimeoutMs = Math.max(0, Math.trunc(Number(options?.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS)) || 0);
+  const busyTimeout = `PRAGMA busy_timeout = ${busyTimeoutMs}`;
+  const scope = options?.scope;
   let hasLegacy = false;
   let agents: AgentRecord[] = [];
   let openMessages: MeshTuiOpenMessage[] = [];
@@ -252,7 +311,7 @@ export function loadLocalMeshSnapshot(
     hasLegacy = true;
     const database = openReadOnlyDatabase(dataPath);
     try {
-      database.exec("PRAGMA busy_timeout = 5000");
+      database.exec(busyTimeout);
       // Stored rows carry identity only. Presence is derived here against the
       // default lease window, because the hub's configured `staleAfterMs` is
       // not in the file; a reachable hub's own records replace these.
@@ -262,11 +321,24 @@ export function loadLocalMeshSnapshot(
       // `online` boolean is the only durable truth; the hub's /v1/agents or the
       // ops snapshot is the authoritative presence source.
       agents = readJsonRows<AgentIdentity>(database, "SELECT record FROM agents");
-      openMessages = readOpenMessageMetadata(database);
-      openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
-      legacyRuns = readJsonRows<WorkflowRun>(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
-      legacyRunTotal = countRows(database, "workflow_runs");
-      plans = readPlanMetadata(database);
+      if (!scope) {
+        openMessages = readOpenMessageMetadata(database);
+        openMessageTotal = countRows(database, "messages", OPEN_MESSAGE_WHERE);
+        legacyRuns = readJsonRows<WorkflowRun>(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+        legacyRunTotal = countRows(database, "workflow_runs");
+        plans = readPlanMetadata(database);
+      } else {
+        // Scoped: this project's runs and this recipient's open messages only.
+        // Plans stay empty: journal text belongs to other agents' runs.
+        if (scope.recipientName) {
+          const messageParams = [scope.hubProject, scope.recipientName];
+          openMessages = readOpenMessageMetadata(database, SCOPED_MESSAGE_WHERE, messageParams);
+          openMessageTotal = countRows(database, "messages", SCOPED_MESSAGE_WHERE, messageParams);
+        }
+        const runWhere = " WHERE json_extract(record, '$.project') = ?";
+        legacyRuns = readJsonRows<WorkflowRun>(database, `SELECT record FROM workflow_runs${runWhere} ORDER BY rowid DESC LIMIT 8`, [scope.hubProject]);
+        legacyRunTotal = countRows(database, "workflow_runs", runWhere, [scope.hubProject]);
+      }
     } finally {
       database.close();
     }
@@ -276,7 +348,8 @@ export function loadLocalMeshSnapshot(
   let hasKxm = false;
   const kxmRuns: MeshTuiRun[] = [];
   let kxmRunTotal = 0;
-  const kxmStateRoot = resolveKxmStateRoot(stateDir, options);
+  // A scoped snapshot without a Runtime project id reads no Runtime runs.
+  const kxmStateRoot = scope && !scope.runtimeProjectId ? undefined : resolveKxmStateRoot(stateDir, options);
   if (kxmStateRoot) {
     const runtimeDir = join(kxmStateRoot, "runtime");
     const registryDbPath = join(runtimeDir, "registry.db");
@@ -289,8 +362,10 @@ export function loadLocalMeshSnapshot(
       try {
         const regDb = openReadOnlyDatabase(registryDbPath);
         try {
-          regDb.exec("PRAGMA busy_timeout = 5000");
-          const pRows = regDb.prepare("SELECT project_key FROM projects").all() as Array<{ project_key: string }>;
+          regDb.exec(busyTimeout);
+          const pRows = (scope
+            ? regDb.prepare("SELECT project_key FROM projects WHERE project_id = ?").all(scope.runtimeProjectId)
+            : regDb.prepare("SELECT project_key FROM projects").all()) as Array<{ project_key: string }>;
           for (const row of pRows) {
             if (row.project_key) projectKeys.add(row.project_key);
           }
@@ -300,7 +375,9 @@ export function loadLocalMeshSnapshot(
       } catch { /* registry error */ }
     }
 
-    if (existsSync(projectsDir)) {
+    // Scoped: only the registry's key for this project, never every project
+    // directory on the machine.
+    if (!scope && existsSync(projectsDir)) {
       try {
         for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
           if (entry.isDirectory()) {
@@ -311,35 +388,17 @@ export function loadLocalMeshSnapshot(
     }
 
     for (const key of projectKeys) {
+      if (scope && !RUNTIME_PROJECT_KEY.test(key)) continue;
       const eventDbPath = join(projectsDir, key, "run-events.db");
       if (existsSync(eventDbPath)) {
         hasKxm = true;
         try {
           const eventDb = openReadOnlyDatabase(eventDbPath);
           try {
-            eventDb.exec("PRAGMA busy_timeout = 5000");
-            const runRows = eventDb.prepare(`
-              SELECT run_id, project_id, workflow_id, status, created_at, updated_at
-              FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
-            `).all() as Array<{
-              run_id: string;
-              project_id: string;
-              workflow_id: string;
-              status: string;
-              created_at: string;
-              updated_at: string;
-            }>;
-            const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get() as { total: number } | undefined;
-            kxmRunTotal += Number(countRow?.total ?? runRows.length);
-            for (const r of runRows) {
-              kxmRuns.push({
-                id: r.run_id,
-                status: r.status,
-                definitionId: r.workflow_id,
-                project: r.project_id,
-                updatedAt: r.updated_at || r.created_at,
-              });
-            }
+            eventDb.exec(busyTimeout);
+            const { runs, total } = readRuntimeRuns(eventDb, scope?.runtimeProjectId);
+            kxmRunTotal += total;
+            kxmRuns.push(...runs);
           } finally {
             eventDb.close();
           }

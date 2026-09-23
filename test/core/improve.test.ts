@@ -15,6 +15,7 @@ import {
   evaluatePromotionPolicy,
   CANDIDATE_SCHEMA,
   type ImprovementCandidate,
+  type PromotionReadiness,
 } from "../../plugins/kxm/src/improve.ts";
 import {
   ensureSkillFrontmatter,
@@ -56,27 +57,30 @@ function makeGitRoot(root: string): void {
 }
 
 type SampleRecordInput = Partial<RoutingRecordV2> & {
-  workflowDefinitionSha256?: string;
-  rolePromptSha256?: string;
+  workflowId?: string;
+  askSha256?: string;
 };
 
+let sampleCounter = 0;
+
 function sampleRoutingRecord(overrides: SampleRecordInput = {}): RoutingRecordV2 {
-  const { workflowDefinitionSha256, rolePromptSha256, ...rest } = overrides;
+  sampleCounter += 1;
+  const { workflowId, askSha256, providerMetadata: extraMetadata, ...rest } = overrides;
   const providerMetadata: Record<string, string | number | boolean> = {
-    workflowDefinitionSha256: workflowDefinitionSha256 ?? "wf_hash_sample",
-    rolePromptSha256: rolePromptSha256 ?? "prompt_hash_1",
-    ...(rest.providerMetadata ?? {}),
+    workflowId: workflowId ?? "wf_sample",
+    askSha256: askSha256 ?? `sha256:${"1".repeat(64)}`,
+    ...(extraMetadata ?? {}),
   };
 
   return {
     schema: "kxm.routing-record.v2",
-    runId: "run_sample_1",
+    runId: `run_sample_${sampleCounter}`,
     stepId: "verify",
     assignmentId: "asg_sample_1",
-    attemptId: "att_sample_1",
+    attemptId: `att_sample_${sampleCounter}`,
     project: "demo",
     agentRole: "verifier",
-    behavioralSha256: "beh_hash_1",
+    behavioralSha256: `sha256:${"b".repeat(64)}`,
     harness: "pi",
     provider: "pi",
     requestedModel: "claude-3-5-sonnet",
@@ -112,21 +116,21 @@ test("groupRoutingRecords groups by (workflowHash, step, role, promptHash) and c
     sampleRoutingRecord({ stepId: "verify", agentRole: "verifier", costUsd: 0.06, latencyMs: 700 }),
 
     // Skill candidate: 4 records, 75% pass, rework 1
-    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", rolePromptSha256: "p_plan", costUsd: 0.1, latencyMs: 1000, verifierOutcome: "passed" }),
-    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", rolePromptSha256: "p_plan", costUsd: 0.2, latencyMs: 1200, verifierOutcome: "passed" }),
-    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", rolePromptSha256: "p_plan", costUsd: 0.1, latencyMs: 800, verifierOutcome: "passed" }),
-    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", rolePromptSha256: "p_plan", costUsd: 0.2, latencyMs: 1000, verifierOutcome: "failed", finalOutcome: "failed", retries: 1 }),
+    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", askSha256: "p_plan", costUsd: 0.1, latencyMs: 1000, verifierOutcome: "passed" }),
+    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", askSha256: "p_plan", costUsd: 0.2, latencyMs: 1200, verifierOutcome: "passed" }),
+    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", askSha256: "p_plan", costUsd: 0.1, latencyMs: 800, verifierOutcome: "passed" }),
+    sampleRoutingRecord({ stepId: "plan", agentRole: "planner", askSha256: "p_plan", costUsd: 0.2, latencyMs: 1000, verifierOutcome: "failed", finalOutcome: "failed", retries: 1 }),
 
     // Workflow step candidate: 2 records, 100% pass
-    sampleRoutingRecord({ stepId: "package", agentRole: "worker", rolePromptSha256: "p_pkg", costUsd: 0.02, latencyMs: 300 }),
-    sampleRoutingRecord({ stepId: "package", agentRole: "worker", rolePromptSha256: "p_pkg", costUsd: 0.02, latencyMs: 300 }),
+    sampleRoutingRecord({ stepId: "package", agentRole: "worker", askSha256: "p_pkg", costUsd: 0.02, latencyMs: 300 }),
+    sampleRoutingRecord({ stepId: "package", agentRole: "worker", askSha256: "p_pkg", costUsd: 0.02, latencyMs: 300 }),
 
     // Non-candidate: low recurrence (1 record)
-    sampleRoutingRecord({ stepId: "one-off", agentRole: "worker", rolePromptSha256: "p_one" }),
+    sampleRoutingRecord({ stepId: "one-off", agentRole: "worker", askSha256: "p_one" }),
 
     // Non-candidate: low pass rate (50% < 75%)
-    sampleRoutingRecord({ stepId: "flaky", agentRole: "tester", rolePromptSha256: "p_flaky", verifierOutcome: "passed" }),
-    sampleRoutingRecord({ stepId: "flaky", agentRole: "tester", rolePromptSha256: "p_flaky", verifierOutcome: "failed", finalOutcome: "failed" }),
+    sampleRoutingRecord({ stepId: "flaky", agentRole: "tester", askSha256: "p_flaky", verifierOutcome: "passed" }),
+    sampleRoutingRecord({ stepId: "flaky", agentRole: "tester", askSha256: "p_flaky", verifierOutcome: "failed", finalOutcome: "failed" }),
   ];
 
   const groups = groupRoutingRecords(records, { minRecurrence: 2, minPassRate: 0.75 });
@@ -164,6 +168,62 @@ test("groupRoutingRecords groups by (workflowHash, step, role, promptHash) and c
   assert.ok(flakyGroup);
   assert.equal(flakyGroup.verifyPassRate, 0.5);
   assert.equal(flakyGroup.isCandidate, false);
+
+  // A retry in the same run supersedes the earlier attempt: one run with rework is never a candidate.
+  const [reworkGroup] = groupRoutingRecords([
+    sampleRoutingRecord({ runId: "run_rw", stepId: "rework-step", agentRole: "worker", askSha256: "p_rw", verifierOutcome: undefined, finalOutcome: "accepted", retries: 0 }),
+    sampleRoutingRecord({ runId: "run_rw", stepId: "rework-step", agentRole: "worker", askSha256: "p_rw", verifierOutcome: undefined, finalOutcome: "accepted", retries: 1 }),
+  ]);
+  assert.ok(reworkGroup);
+  assert.equal(reworkGroup.recurrence, 2);
+  assert.equal(reworkGroup.distinctRuns, 1);
+  assert.equal(reworkGroup.verifyPassRate, 0.5);
+  assert.equal(reworkGroup.isCandidate, false);
+
+  // A step that writes a repository is reported, never proposed.
+  const [writesGroup] = groupRoutingRecords([
+    sampleRoutingRecord({ stepId: "apply", agentRole: "implementer", askSha256: "p_apply", providerMetadata: { stepWrites: true } }),
+    sampleRoutingRecord({ stepId: "apply", agentRole: "implementer", askSha256: "p_apply", providerMetadata: { stepWrites: true } }),
+  ]);
+  assert.ok(writesGroup);
+  assert.equal(writesGroup.writesRepository, true);
+  assert.equal(writesGroup.isCandidate, false);
+  assert.equal(writesGroup.excludedReason, "writes-repository");
+
+  // The same step asked about different objectives recurs across runs but is not a repeated ask.
+  const [askGroup] = groupRoutingRecords([
+    sampleRoutingRecord({ stepId: "summarize", agentRole: "worker", askSha256: "p_sum", verifierOutcome: undefined, providerMetadata: { objectiveSha256: `sha256:${"c".repeat(64)}` } }),
+    sampleRoutingRecord({ stepId: "summarize", agentRole: "worker", askSha256: "p_sum", verifierOutcome: undefined, providerMetadata: { objectiveSha256: `sha256:${"d".repeat(64)}` } }),
+  ]);
+  assert.ok(askGroup);
+  assert.equal(askGroup.distinctRuns, 2);
+  assert.equal(askGroup.askRecurrence, 1);
+  assert.equal(askGroup.isCandidate, false);
+  assert.equal(askGroup.excludedReason, "ask-not-repeated");
+
+  // improvement.telemetryHalfLifeDays weights recency: it orders rows and never decides candidacy.
+  const undated = sampleRoutingRecord({ stepId: "undated", agentRole: "worker", askSha256: "p_undated" });
+  delete (undated as Partial<RoutingRecordV2>).recordedAt;
+  const weighted = groupRoutingRecords([
+    sampleRoutingRecord({ stepId: "older", agentRole: "worker", askSha256: "p_x", recordedAt: "2026-08-11T10:00:00.000Z" }),
+    sampleRoutingRecord({ stepId: "older", agentRole: "worker", askSha256: "p_x", recordedAt: "2026-08-11T10:00:00.000Z" }),
+    sampleRoutingRecord({ stepId: "older", agentRole: "worker", askSha256: "p_x", recordedAt: "2026-08-11T10:00:00.000Z" }),
+    sampleRoutingRecord({ stepId: "recent", agentRole: "worker", askSha256: "p_y", recordedAt: "2026-09-08T10:00:00.000Z" }),
+    sampleRoutingRecord({ stepId: "recent", agentRole: "worker", askSha256: "p_y", recordedAt: "2026-09-08T10:00:00.000Z" }),
+    undated,
+  ], { halfLifeDays: 14, now: Date.parse("2026-09-08T10:00:00Z") });
+  const olderIndex = weighted.findIndex((g) => g.stepId === "older");
+  const recentIndex = weighted.findIndex((g) => g.stepId === "recent");
+  const older = weighted[olderIndex];
+  const recent = weighted[recentIndex];
+  assert.ok(older && recent);
+  assert.equal(older.weightedRecurrence, 0.75);
+  assert.equal(older.recurrence, 3);
+  assert.equal(recent.weightedRecurrence, 2);
+  assert.equal(older.isCandidate, true);
+  assert.equal(recent.isCandidate, true);
+  assert.ok(recentIndex < olderIndex, "the recent group sorts first despite lower raw recurrence");
+  assert.equal(weighted.find((g) => g.stepId === "undated")?.undatedRecords, 1);
 });
 
 test("buildImprovementReport emits valid kxm.candidate.v1 files and diffs", () => {
@@ -175,6 +235,8 @@ test("buildImprovementReport emits valid kxm.candidate.v1 files and diffs", () =
       sampleRoutingRecord({ stepId: "lint", agentRole: "verifier", costUsd: 0.01, latencyMs: 250 }),
       sampleRoutingRecord({ stepId: "plan-arch", agentRole: "planner", costUsd: 0.15, latencyMs: 900 }),
       sampleRoutingRecord({ stepId: "plan-arch", agentRole: "planner", costUsd: 0.15, latencyMs: 950 }),
+      sampleRoutingRecord({ stepId: "package", agentRole: "worker", costUsd: 0.02, latencyMs: 300 }),
+      sampleRoutingRecord({ stepId: "package", agentRole: "worker", costUsd: 0.02, latencyMs: 300 }),
     ];
 
     const report = buildImprovementReport(records, {
@@ -185,8 +247,8 @@ test("buildImprovementReport emits valid kxm.candidate.v1 files and diffs", () =
     });
 
     assert.equal(report.schema, "kxm.improvement-report.v2");
-    assert.equal(report.recordsCount, 4);
-    assert.equal(report.candidates.length, 2);
+    assert.equal(report.recordsCount, 6);
+    assert.equal(report.candidates.length, 3);
 
     // Validate candidates against schemas/candidate.schema.json
     const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -223,7 +285,14 @@ test("buildImprovementReport emits valid kxm.candidate.v1 files and diffs", () =
       assert.equal(existsSync(diffPath), true);
       const diffContent = readFileSync(diffPath, "utf8");
       assert.match(diffContent, /^diff --git /);
+      if (cand.kind === "workflow-step") {
+        // The coded step replaces the model turn with a gate.
+        assert.match(diffContent, /\+\s+kind: gate/);
+        assert.doesNotMatch(diffContent, /\+\s+kind: agent/);
+      }
+      if (cand.kind === "skill") assert.match(cand.summary, /consolidation/);
     }
+    assert.deepEqual(report.candidates.map((cand) => cand.kind).sort(), ["gate", "skill", "workflow-step"]);
 
     // Assert writeImprovementReport
     const reportsDir = join(tempDir, "improvements");
@@ -231,7 +300,7 @@ test("buildImprovementReport emits valid kxm.candidate.v1 files and diffs", () =
     assert.equal(existsSync(writtenPath), true);
     const writtenReport = JSON.parse(readFileSync(writtenPath, "utf8"));
     assert.equal(writtenReport.schema, "kxm.improvement-report.v2");
-    assert.equal(writtenReport.candidates.length, 2);
+    assert.equal(writtenReport.candidates.length, 3);
 
     // Assert formatImprovementReport
     const text = formatImprovementReport(report);
@@ -267,11 +336,12 @@ test("kxm improve report CLI reads telemetry routing records and emits candidate
       };
     };
 
-    // Run kxm improve report --json --file <telemetryFile>
+    // Run kxm improve report --json --file <telemetryFile>; isolated from the real user config and state.
+    const env = { KXM_LOGS_DIR: logs, KXM_USER_CONFIG_DIR: logs, KXM_STATE_HOME: logs };
     const jsonIo = capture();
     const jsonCode = await runCliImpl(
       ["improve", "report", "--json", "--file", telemetryFile],
-      { KXM_LOGS_DIR: logs },
+      env,
       jsonIo,
       cwd,
     );
@@ -282,6 +352,8 @@ test("kxm improve report CLI reads telemetry routing records and emits candidate
     assert.equal(jsonOut.recordsCount, 2);
     assert.equal(jsonOut.candidatesCount, 1);
     assert.equal(existsSync(jsonOut.path), true);
+    // --file reads only the named file.
+    assert.deepEqual(jsonOut.sources, [{ kind: "file", path: telemetryFile, exists: true, records: 2, duplicatesDropped: 0 }]);
 
     // Verify candidate file exists under cwd/.kxm/candidates/
     const candidate = jsonOut.candidates[0];
@@ -292,7 +364,7 @@ test("kxm improve report CLI reads telemetry routing records and emits candidate
     const textIo = capture();
     const textCode = await runCliImpl(
       ["improve", "report", "--file", telemetryFile],
-      { KXM_LOGS_DIR: logs },
+      env,
       textIo,
       cwd,
     );
@@ -301,6 +373,174 @@ test("kxm improve report CLI reads telemetry routing records and emits candidate
     assert.match(textIo.read().stdout, /test-unit/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(logs, { recursive: true, force: true });
+  }
+});
+
+test("kxm improve report resolves Runtime-settled attempts from the event log and flags only same-ask cross-run repeats", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const root = mkdtempSync(join(tmpdir(), "kxm-improve-engine-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-improve-engine-state-"));
+  const logs = mkdtempSync(join(tmpdir(), "kxm-improve-engine-logs-"));
+  try {
+    cpSync(join(repoRoot, "examples/project"), root, { recursive: true });
+    cpSync(join(repoRoot, "test/fixtures/engine/agent-only.yaml"), join(root, ".kxm", "workflows", "agent-only.yaml"));
+    makeGitRoot(root);
+    makeGitRoot(join(root, "repositories", "api"));
+    makeGitRoot(join(root, "repositories", "web"));
+    const gateScriptPath = join(root, "gate-script.cjs");
+    writeFileSync(gateScriptPath, "process.exit(0);\n");
+    writeFileSync(
+      join(root, ".kxm", "gates.yaml"),
+      `schema: kxm.gate-registry.v1
+gates:
+  test:
+    kind: command
+    argv: [${JSON.stringify(NODE)}, ${JSON.stringify(gateScriptPath)}]
+    timeoutMs: 3600000
+  scm-delivery:
+    kind: command
+    argv: [${JSON.stringify(NODE)}, ${JSON.stringify(gateScriptPath)}]
+    timeoutMs: 1800000
+`,
+    );
+    spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
+    spawnSync(
+      "git",
+      ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"],
+      { windowsHide: true },
+    );
+
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    const enginePath = context.eventStore.path;
+    let firstPlanRecord: RoutingRecordV2 | undefined;
+    try {
+      const drive = async (
+        workflowId: string,
+        prompt: string,
+        script: Parameters<typeof createKxmSimulatedProducer>[0],
+      ): Promise<string> => {
+        const accepted = acceptKxmRun(context, bundle, { workflowId, prompt });
+        pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+        const driven = await driveKxmRun(context, accepted.run.runId, createKxmSimulatedProducer(script), { allowLimits: true });
+        assert.equal(driven.state.status, "completed");
+        return accepted.run.runId;
+      };
+      const live = () => ({ outcome: "passed", harness: "pi" });
+      // R1 and R2: the same ask; R3: a simulated drive; R4: rework inside one run; R5: a different objective.
+      const r1 = await drive("default", "Summarize the release notes", live);
+      await drive("default", "Summarize the release notes", live);
+      await drive("default", "Summarize the release notes", () => ({ outcome: "passed" }));
+      let bCalls = 0;
+      await drive("agent-only", "Rework loop", (request) => {
+        if (request.stepId === "b" && bCalls++ === 0) return { outcome: "failed", harness: "pi" };
+        return { outcome: "passed", harness: "pi" };
+      });
+      await drive("default", "Draft the migration guide", live);
+      firstPlanRecord = context.eventStore.events(r1, 0, 10_000)
+        .filter((event) => event.eventType === "routing.attempt.recorded")
+        .map((event) => (event.payload as unknown as { routing: RoutingRecordV2 }).routing)
+        .find((record) => record.stepId === "plan");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+    assert.ok(firstPlanRecord);
+    // The same attempt mirrored into telemetry is dropped in favour of the engine's copy.
+    writeFileSync(join(logs, "telemetry.jsonl"), `${JSON.stringify({ eventType: "routing.attempt.recorded", payload: { routing: firstPlanRecord } })}\n`);
+
+    const env = { KXM_STATE_HOME: stateRoot, KXM_LOGS_DIR: logs, KXM_USER_CONFIG_DIR: join(stateRoot, "user-config") };
+    const capture = () => {
+      let stdout = "";
+      let stderr = "";
+      return {
+        stdout: (text: string) => { stdout += text; },
+        stderr: (text: string) => { stderr += text; },
+        read: () => ({ stdout, stderr }),
+      };
+    };
+
+    const jsonIo = capture();
+    assert.equal(await runCliImpl(["improve", "report", "--json"], env, jsonIo, root), 0, jsonIo.read().stderr);
+    const out = JSON.parse(jsonIo.read().stdout) as {
+      ok: boolean;
+      recordsCount: number;
+      candidatesCount: number;
+      candidates: Array<{ id: string }>;
+      projectRoot: string | null;
+      sources: Array<Record<string, unknown>>;
+      report: {
+        groups: Array<{ workflowHash: string; stepId: string; promptHash: string; recurrence: number; distinctRuns: number; askRecurrence: number; verifyPassRate: number; isCandidate: boolean; candidateKind?: string; excludedReason?: string }>;
+        promotion: Array<Record<string, unknown>>;
+      };
+    };
+    assert.equal(out.ok, true);
+    assert.equal(out.recordsCount, 14);
+    assert.ok(out.projectRoot);
+
+    const engine = out.sources.find((source) => source.kind === "engine");
+    assert.ok(engine);
+    assert.equal(engine.path, enginePath);
+    assert.equal(engine.exists, true);
+    assert.equal(engine.records, 14);
+    assert.equal(engine.excludedSimulated, 3);
+    assert.equal(engine.skippedInvalid, 0);
+    assert.equal(engine.undecided, 0);
+    const telemetry = out.sources.find((source) => source.kind === "telemetry");
+    assert.ok(telemetry);
+    assert.equal(telemetry.records, 1);
+    assert.equal(telemetry.duplicatesDropped, 1);
+
+    const groups = out.report.groups;
+    assert.equal(groups.length, 6);
+    const group = (workflow: string, step: string) => {
+      const found = groups.find((g) => g.workflowHash === workflow && g.stepId === step);
+      assert.ok(found, `${workflow}/${step}`);
+      return found;
+    };
+    const plan = group("default", "plan");
+    assert.equal(plan.recurrence, 3);
+    assert.equal(plan.distinctRuns, 3);
+    assert.equal(plan.askRecurrence, 2, "R5 asked a different objective and does not raise the same-ask count");
+    assert.equal(plan.verifyPassRate, 1);
+    assert.equal(plan.isCandidate, true);
+    assert.equal(plan.candidateKind, "skill");
+    assert.equal(group("default", "ready").isCandidate, true);
+    assert.equal(group("default", "implement").excludedReason, "writes-repository");
+    const a = group("agent-only", "a");
+    assert.equal(a.recurrence, 2);
+    assert.equal(a.distinctRuns, 1);
+    assert.equal(a.verifyPassRate, 0.5);
+    assert.equal(a.isCandidate, false);
+    assert.equal(group("agent-only", "b").verifyPassRate, 0.5);
+
+    assert.equal(out.candidatesCount, 2);
+    for (const candidate of out.candidates) {
+      assert.equal(existsSync(join(root, ".kxm", "candidates", `${candidate.id}.json`)), true);
+      assert.equal(existsSync(join(root, ".kxm", "candidates", `${candidate.id}.diff`)), true);
+    }
+    for (const g of groups) assert.match(g.promptHash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(out.report.promotion.length, 2);
+    for (const entry of out.report.promotion) {
+      assert.equal(typeof entry.readyForReview, "boolean");
+      assert.equal("authorized" in entry, false);
+    }
+
+    const textIo = capture();
+    assert.equal(await runCliImpl(["improve", "report"], env, textIo, root), 0, textIo.read().stderr);
+    assert.match(textIo.read().stdout, /Sources:/);
+    assert.ok(textIo.read().stdout.includes(enginePath));
+
+    // `kxm routing report` without --file ranks the same resolved records.
+    const routingIo = capture();
+    assert.equal(await runCliImpl(["--json", "routing", "report"], env, routingIo, root), 0, routingIo.read().stderr);
+    const routing = JSON.parse(routingIo.read().stdout) as { file: string; report: { totalAttempts: number }; sources: Array<{ path: string }> };
+    assert.equal(routing.report.totalAttempts, 14);
+    assert.equal(routing.file, join(logs, "telemetry.jsonl"));
+    assert.ok(routing.sources.some((source) => source.path === enginePath));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
     rmSync(logs, { recursive: true, force: true });
   }
 });
@@ -542,7 +782,7 @@ test("exportFederatedTelemetry and readFederatedTelemetry isolate code and promp
 
     // Ensure raw prompts, runIds, and project names are NOT in federated export
     const rawFile = readFileSync(join(tempDir, "telemetry", "model-metrics.jsonl"), "utf8");
-    assert.doesNotMatch(rawFile, /prompt_hash|wf_hash_sample|run_sample_1/);
+    assert.doesNotMatch(rawFile, /wf_sample|run_sample_/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -564,39 +804,53 @@ test("evaluatePromotionPolicy enforces governed promotion policies (Decision Q11
     },
     declaredOutcome: "Deterministic verification",
     measure: "100% cost reduction",
-    proposedDiffPath: ".kxm/gates.yaml",
+    proposedDiffPath: ".kxm/candidates/cand_gate_test_01.diff",
     status: "proposed",
     createdAt: new Date().toISOString(),
   };
+  const results: PromotionReadiness[] = [];
+  const evaluate = (...args: Parameters<typeof evaluatePromotionPolicy>): PromotionReadiness => {
+    const readiness = evaluatePromotionPolicy(...args);
+    results.push(readiness);
+    return readiness;
+  };
 
-  // manual_pr requires PR signoff
-  const manualDec = evaluatePromotionPolicy(candidate, "manual_pr");
-  assert.equal(manualDec.eligible, true);
-  assert.equal(manualDec.authorized, false);
-  assert.match(manualDec.reason, /Manual PR review/);
+  // manual_pr: ready for the operator's PR review.
+  const manual = evaluate(candidate, "manual_pr");
+  assert.equal(manual.readyForReview, true);
+  assert.match(manual.reason, /operator PR applying \.kxm\/candidates\/cand_gate_test_01\.diff required/);
 
-  // critic_quorum requires 2 critic approvals
-  const unapprovedQuorum = evaluatePromotionPolicy(candidate, "critic_quorum", { criticApprovals: ["fable"] });
-  assert.equal(unapprovedQuorum.authorized, false);
+  // critic_quorum: two distinct, non-empty critic receipts.
+  assert.equal(evaluate(candidate, "critic_quorum", { criticReceipts: ["fable", "astra"] }).readyForReview, true);
+  assert.equal(evaluate(candidate, "critic_quorum", { criticReceipts: ["fable", "fable"] }).readyForReview, false);
+  const noReceipts = evaluate(candidate, "critic_quorum", { criticReceipts: [] });
+  assert.equal(noReceipts.readyForReview, false);
+  assert.match(noReceipts.reason, /awaiting 2 distinct critic receipts \(have 0\)/);
 
-  const approvedQuorum = evaluatePromotionPolicy(candidate, "critic_quorum", { criticApprovals: ["fable", "astra"] });
-  assert.equal(approvedQuorum.authorized, true);
+  // auto_threshold: the candidate's distinct runs, not its raw recurrence, when known.
+  const threshold = { minRuns: 10, minPassRate: 0.95 };
+  assert.equal(evaluate(candidate, "auto_threshold", { autoThreshold: threshold }).readyForReview, true);
+  assert.equal(evaluate(candidate, "auto_threshold", { autoThreshold: threshold, distinctRuns: 3 }).readyForReview, false);
 
-  // auto_threshold requires recurrence >= 10 and passRate >= 0.95
-  const autoApproved = evaluatePromotionPolicy(candidate, "auto_threshold", {
-    autoThreshold: { minRuns: 10, minPassRate: 0.95 },
-  });
-  assert.equal(autoApproved.authorized, true);
-
-  const autoFailing = evaluatePromotionPolicy(
-    {
-      ...candidate,
-      baselineMetrics: { ...candidate.baselineMetrics, verifyPassRate: 0.80 },
-    },
+  // With minCostSavings set, a group without cost samples is never ready.
+  const costed = { ...threshold, minCostSavings: 0.5 };
+  assert.equal(evaluate(candidate, "auto_threshold", { autoThreshold: costed, costSamples: 0 }).readyForReview, false);
+  assert.equal(evaluate(
+    { ...candidate, baselineMetrics: { ...candidate.baselineMetrics, meanCost: 0.6 } },
     "auto_threshold",
-    { autoThreshold: { minRuns: 10, minPassRate: 0.95 } },
-  );
-  assert.equal(autoFailing.authorized, false);
+    { autoThreshold: costed, costSamples: 3 },
+  ).readyForReview, true);
+
+  const unknown = evaluate(candidate, "auto_merge");
+  assert.equal(unknown.readyForReview, false);
+  assert.equal(unknown.reason, "unknown promotion policy");
+
+  // Readiness never authorizes.
+  for (const readiness of results) {
+    assert.equal(typeof readiness.readyForReview, "boolean");
+    assert.equal("authorized" in readiness, false);
+    assert.equal("eligible" in readiness, false);
+  }
 });
 
 test("kxm routing benchmark command executes side-by-side comparison (Decision Q12)", async () => {

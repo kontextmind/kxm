@@ -18,10 +18,40 @@ export interface WorkflowDefSummary {
   roles: string[];
 }
 
+// Fresh objects per use: YAML stringify turns a repeated object into an
+// anchor and alias, which the restricted project loader refuses.
+const completed = () => ({ target: "$terminal", terminalStatus: "completed" });
+const failed = () => ({ target: "$terminal", terminalStatus: "failed" });
+
+/** The project's `test` gate from `kxm init`. A gate step settles on `passed` or
+ * `implementation-failure`, never `failed`. `maxAttempts` counts entries into a
+ * step, so every step a back-edge re-enters allows one entry per transition. */
+function verifyStep(retryStep: string): Record<string, unknown> {
+  return {
+    id: "verify",
+    kind: "gate",
+    gate: "test",
+    expect: "pass",
+    maxAttempts: 3,
+    repositories: { control: "write" },
+    on: {
+      passed: completed(),
+      "implementation-failure": { target: retryStep, maxTransitions: 2 },
+    },
+  };
+}
+
+/**
+ * Built-in `kxm workflow add --template` definitions. Each is a complete
+ * kxm.workflow.v1 document (the file name is the workflow id) that uses only
+ * what `kxm init` creates: the coordinator and implementer agents, the control
+ * repository, and the `test` gate. Agent steps declare `failed` because the
+ * producer falls back to it.
+ */
 export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
   "implement-and-verify": {
     schema: "kxm.workflow.v1",
-    description: "Standard implement and verify workflow",
+    description: "Implement a change, then run the project's test gate; a failing gate sends the work back to implement.",
     coordinator: "coordinator",
     limits: {
       maxTransitions: 8,
@@ -30,38 +60,20 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "implement",
         kind: "agent",
-        role: "writer",
-        maxAttempts: 2,
+        agent: "implementer",
+        maxAttempts: 3,
+        repositories: { control: "write" },
         on: {
           passed: "verify",
-          failed: {
-            target: "$terminal",
-            terminalStatus: "failed",
-          },
+          failed: failed(),
         },
       },
-      {
-        id: "verify",
-        kind: "gate",
-        gate: "verify-gate",
-        expect: "pass",
-        maxAttempts: 1,
-        on: {
-          passed: {
-            target: "$terminal",
-            terminalStatus: "completed",
-          },
-          failed: {
-            target: "implement",
-            maxTransitions: 2,
-          },
-        },
-      },
+      verifyStep("implement"),
     ],
   },
   "dual-critic-review": {
     schema: "kxm.workflow.v1",
-    description: "Dual-critic review workflow with independent Fable architecture and Sol CLI critics",
+    description: "Implement, review twice, then run the project's test gate. Both reviews run as the coordinator agent; for independent critics, add agents under .kxm/agents and point review-arch and review-cli at them.",
     coordinator: "coordinator",
     limits: {
       maxTransitions: 12,
@@ -70,101 +82,91 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "implement",
         kind: "agent",
-        role: "writer",
-        maxAttempts: 2,
+        agent: "implementer",
+        maxAttempts: 3,
+        repositories: { control: "write" },
         on: {
           passed: "review-arch",
-          failed: {
-            target: "$terminal",
-            terminalStatus: "failed",
-          },
+          failed: failed(),
         },
       },
       {
         id: "review-arch",
         kind: "agent",
-        role: "critic-arch",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
           passed: "review-cli",
-          failed: {
-            target: "implement",
-            maxTransitions: 2,
-          },
+          failed: { target: "implement", maxTransitions: 2 },
         },
       },
       {
         id: "review-cli",
         kind: "agent",
-        role: "critic-cli",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
           passed: "verify",
-          failed: {
-            target: "implement",
-            maxTransitions: 2,
-          },
+          failed: { target: "implement", maxTransitions: 2 },
         },
       },
-      {
-        id: "verify",
-        kind: "gate",
-        gate: "verify-gate",
-        expect: "pass",
-        maxAttempts: 1,
-        on: {
-          passed: {
-            target: "$terminal",
-            terminalStatus: "completed",
-          },
-          failed: {
-            target: "implement",
-            maxTransitions: 2,
-          },
-        },
-      },
+      verifyStep("implement"),
     ],
   },
   "spec-and-plan": {
     schema: "kxm.workflow.v1",
-    description: "Specification and architecture breakdown planning workflow",
+    description: "Plan a change, then review the plan. Both steps run as the coordinator agent and only read the repository.",
     coordinator: "coordinator",
     limits: {
-      maxTransitions: 6,
+      maxTransitions: 8,
     },
     steps: [
       {
         id: "plan",
         kind: "agent",
-        role: "planner",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
           passed: "review-arch",
-          failed: {
-            target: "$terminal",
-            terminalStatus: "failed",
-          },
+          failed: failed(),
         },
       },
       {
         id: "review-arch",
         kind: "agent",
-        role: "critic-arch",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
-          passed: {
-            target: "$terminal",
-            terminalStatus: "completed",
-          },
-          failed: {
-            target: "plan",
-            maxTransitions: 2,
-          },
+          passed: completed(),
+          failed: { target: "plan", maxTransitions: 2 },
         },
       },
     ],
   },
 };
+
+/** The one-step definition `kxm workflow add <id>` writes without a template or file. */
+export function scaffoldWorkflowDefinition(description: string): Record<string, unknown> {
+  return {
+    schema: "kxm.workflow.v1",
+    description,
+    coordinator: "coordinator",
+    limits: { maxTransitions: 8 },
+    steps: [
+      {
+        id: "step-1",
+        kind: "agent",
+        agent: "implementer",
+        repositories: { control: "write" },
+        on: { passed: completed(), failed: failed() },
+      },
+    ],
+  };
+}
 
 export const DEFAULT_WORKFLOW_TEMPLATE = WORKFLOW_TEMPLATES["implement-and-verify"]!;
 
