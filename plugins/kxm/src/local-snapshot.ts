@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { DatabaseSync } from "./sqlite.ts";
+import { DatabaseSync, openReadOnlyDatabase } from "./sqlite.ts";
 import type { AgentIdentity, AgentRecord, MessageRecord } from "./protocol.ts";
 import type { WorkflowRun } from "./workflow.ts";
 import { readRoutingRecords } from "./telemetry.ts";
@@ -250,7 +250,7 @@ export function loadLocalMeshSnapshot(
   let plans: MeshTuiPlan[] = [];
   if (existsSync(dataPath)) {
     hasLegacy = true;
-    const database = new DatabaseSync(dataPath, { readOnly: true });
+    const database = openReadOnlyDatabase(dataPath);
     try {
       database.exec("PRAGMA busy_timeout = 5000");
       // Stored rows carry identity only. Presence is derived here against the
@@ -287,7 +287,7 @@ export function loadLocalMeshSnapshot(
     if (existsSync(registryDbPath)) {
       hasKxm = true;
       try {
-        const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
+        const regDb = openReadOnlyDatabase(registryDbPath);
         try {
           regDb.exec("PRAGMA busy_timeout = 5000");
           const pRows = regDb.prepare("SELECT project_key FROM projects").all() as Array<{ project_key: string }>;
@@ -315,7 +315,7 @@ export function loadLocalMeshSnapshot(
       if (existsSync(eventDbPath)) {
         hasKxm = true;
         try {
-          const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
+          const eventDb = openReadOnlyDatabase(eventDbPath);
           try {
             eventDb.exec("PRAGMA busy_timeout = 5000");
             const runRows = eventDb.prepare(`

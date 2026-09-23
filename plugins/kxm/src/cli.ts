@@ -30,6 +30,7 @@ import { ensureKxmSupervisor, kxmRuntimeRequest } from "./runtime-supervisor.ts"
 // Submodule imports
 import {
   print,
+  refuseDryRun,
   runtimeFrom,
   redactConfiguredValues,
   type CliContext,
@@ -172,6 +173,54 @@ const USAGE_ERROR_CODES = new Set([
   "commander.invalidOptionArgument",
   "commander.optionMissingArgument",
 ]);
+
+/**
+ * Every command that answers `--dry-run` without changing anything: it only
+ * reads, or it prints the plan (`dryRun: true` plus `planned`) and stops.
+ * A command missing from this set is refused under `--dry-run` with
+ * `dry_run_unsupported` before its action runs, so a new command that forgets
+ * to check the flag fails closed instead of mutating. Keyed by command path.
+ */
+const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
+  "init", "backup", "restore", "run", "explain", "suggest", "update", "dash", "completion", "completion install",
+  "runs status", "runs drive", "runs receipt", "runs cancel", "runs list",
+  "tenant status", "models inventory-refresh", "harness list", "auth token",
+  "routes list", "routes count", "routes admit", "routes disable",
+  "runtime start", "runtime status", "runtime sync-retry", "runtime stop",
+  "trust diff", "trust check", "agent worker",
+  "session status", "session brief", "session token", "session start", "session stop",
+  "peer list", "peer send", "peer get", "peer await", "peer cancel", "peer fanout", "peer inbox", "peer reply",
+  "workflow list", "workflow get", "workflow checkpoint", "workflow record", "workflow wait", "workflow signal",
+  "workflow start", "workflow export", "workflow definitions", "workflow add", "workflow remove", "workflow modify",
+  "role list", "role get", "role add", "role remove", "role modify", "role hosts", "role set-host", "role resume",
+  "gate validate", "gate artifacts-exist", "gate degrade", "gate signal", "gate github watch",
+  "improve report",
+  "context get", "context recall", "context state", "context episode", "context promote", "context explain",
+  "context wiki-compile", "context wiki-lint",
+  "skills create", "skills evaluate", "skills promote", "skills reject", "skills list", "skills verify",
+  "memory brief", "memory note", "memory sync",
+  "routing report", "routing benchmark",
+  "ssh info", "ssh run", "ssh file", "ssh close",
+  "hub view", "hub start", "hub stop", "hub bind", "hub unbind",
+  "config get", "config set", "config list",
+  "goal create", "goal list",
+  "task create", "task list", "task get", "task run", "task sync",
+  "studio layout", "studio serve",
+]);
+
+class DryRunRefused extends Error {
+  readonly code: number;
+  constructor(code: number) {
+    super("dry_run_unsupported");
+    this.code = code;
+  }
+}
+
+function commandPath(command: Command): string {
+  const names: string[] = [];
+  for (let current: Command | null = command; current?.parent; current = current.parent) names.unshift(current.name());
+  return names.join(" ");
+}
 
 function addGlobalOptions(command: Command): Command {
   return command
@@ -332,6 +381,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     })
     .helpCommand("help", "Show help");
   addGlobalOptions(program);
+  program.hook("preAction", (_program, actionCommand) => {
+    const opts = actionCommand.optsWithGlobals() as { dryRun?: boolean; json?: boolean };
+    if (!opts.dryRun) return;
+    const path = commandPath(actionCommand);
+    if (DRY_RUN_COMMANDS.has(path)) return;
+    throw new DryRunRefused(refuseDryRun(ctx.io, Boolean(opts.json), path, "this command cannot plan without making changes; rerun without --dry-run"));
+  });
 
   program.command("init").description("Create, validate, repair, or join a KXM project")
     .option("--json", "Print machine-readable JSON")
@@ -1230,6 +1286,7 @@ export async function runCli(
     return result.code;
   } catch (error) {
     if (error instanceof CommanderError) return mapCommanderError(error);
+    if (error instanceof DryRunRefused) return error.code;
     throw error;
   }
 }

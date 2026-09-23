@@ -58,6 +58,14 @@ function tasksDirectory(repoRoot: string): string {
   return resolve(repoRoot, ".kxm", "tasks");
 }
 
+export function goalFilePath(repoRoot: string, goalId: string): string {
+  return join(goalsDirectory(repoRoot), `${goalId}.yaml`);
+}
+
+export function taskFilePath(repoRoot: string, taskId: string): string {
+  return join(tasksDirectory(repoRoot), `${taskId}.yaml`);
+}
+
 export function createGoal(
   repoRoot: string,
   input: {
@@ -66,9 +74,8 @@ export function createGoal(
     successMetrics?: string[] | undefined;
     targetDate?: string | undefined;
   },
+  options: { dryRun?: boolean | undefined } = {},
 ): GoalRecord {
-  const dir = goalsDirectory(repoRoot);
-  mkdirSync(dir, { recursive: true });
 
   const id = `goal_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const now = new Date().toISOString();
@@ -84,8 +91,9 @@ export function createGoal(
     updatedAt: now,
   };
 
-  const filePath = join(dir, `${id}.yaml`);
-  writeFileSync(filePath, stringify(record).trim() + "\n", "utf8");
+  if (options.dryRun) return record;
+  mkdirSync(goalsDirectory(repoRoot), { recursive: true });
+  writeFileSync(goalFilePath(repoRoot, id), stringify(record).trim() + "\n", "utf8");
   return record;
 }
 
@@ -123,9 +131,8 @@ export function createTask(
       issueKey: string;
     } | undefined;
   },
+  options: { dryRun?: boolean | undefined } = {},
 ): TaskRecord {
-  const dir = tasksDirectory(repoRoot);
-  mkdirSync(dir, { recursive: true });
 
   const id = `task_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const now = new Date().toISOString();
@@ -151,8 +158,9 @@ export function createTask(
     updatedAt: now,
   };
 
-  const filePath = join(dir, `${id}.yaml`);
-  writeFileSync(filePath, stringify(record).trim() + "\n", "utf8");
+  if (options.dryRun) return record;
+  mkdirSync(tasksDirectory(repoRoot), { recursive: true });
+  writeFileSync(taskFilePath(repoRoot, id), stringify(record).trim() + "\n", "utf8");
   return record;
 }
 
@@ -201,7 +209,7 @@ export function updateTaskStatus(
   repoRoot: string,
   taskId: string,
   status: TaskStatus,
-  options: { workflowRunId?: string } = {},
+  options: { workflowRunId?: string; dryRun?: boolean | undefined } = {},
 ): TaskRecord {
   const task = getTask(repoRoot, taskId);
   if (!task) {
@@ -212,8 +220,7 @@ export function updateTaskStatus(
   if (options.workflowRunId) task.workflowRunId = options.workflowRunId;
   task.updatedAt = new Date().toISOString();
 
-  const filePath = join(tasksDirectory(repoRoot), `${taskId}.yaml`);
-  writeFileSync(filePath, stringify(task).trim() + "\n", "utf8");
+  if (!options.dryRun) writeFileSync(taskFilePath(repoRoot, taskId), stringify(task).trim() + "\n", "utf8");
   return task;
 }
 
@@ -223,6 +230,7 @@ export function syncTaskWithTracker(
   options: {
     mockRemoteState?: string;
     commentReceipt?: string;
+    dryRun?: boolean | undefined;
   } = {},
 ): TaskRecord {
   const task = getTask(repoRoot, taskId);
@@ -238,7 +246,6 @@ export function syncTaskWithTracker(
   task.trackerSync.lastSyncedAt = now;
   task.updatedAt = now;
 
-  const filePath = join(tasksDirectory(repoRoot), `${taskId}.yaml`);
-  writeFileSync(filePath, stringify(task).trim() + "\n", "utf8");
+  if (!options.dryRun) writeFileSync(taskFilePath(repoRoot, taskId), stringify(task).trim() + "\n", "utf8");
   return task;
 }

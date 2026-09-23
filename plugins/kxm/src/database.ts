@@ -752,27 +752,61 @@ export function discoverProjectStores(projectRoot: string, options: { hubDataPat
   return discoverBackupSources(projectRoot, options).stores;
 }
 
+export interface BackupPlan {
+  projectRoot: string;
+  outDir: string;
+  createdAt: string;
+  stores: Array<{ storeId: string; sourcePath: string; backupFile: string }>;
+  files: Array<{ id: string; sourcePath: string; backupFile: string }>;
+}
+
+function backupDiscoverOptions(options: { hubDataPath?: string; env?: NodeJS.ProcessEnv }): { hubDataPath?: string; env?: NodeJS.ProcessEnv } {
+  return {
+    ...(options.hubDataPath !== undefined ? { hubDataPath: options.hubDataPath } : {}),
+    ...(options.env !== undefined ? { env: options.env } : {}),
+  };
+}
+
+/** Which stores and files a backup would copy and where, without opening any of them.
+ * Opening a source for backup checkpoints its WAL, so the plan stays at paths. */
+export function planBackup(options: {
+  projectRoot?: string;
+  outDir?: string;
+  hubDataPath?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}): BackupPlan {
+  const projectRoot = options.projectRoot ? resolve(options.projectRoot) : process.cwd();
+  const discovered = discoverBackupSources(projectRoot, backupDiscoverOptions(options));
+
+  if (discovered.stores.length === 0) {
+    throw databaseError("backup_no_stores", projectRoot, "no existing SQLite stores found to backup");
+  }
+
+  const createdAt = new Date().toISOString();
+  const timestamp = createdAt.replace(/[:.]/g, "-");
+  const outDir = options.outDir ? resolve(options.outDir) : join(projectRoot, ".kxm", "backups", `backup-${timestamp}`);
+  const usedFilenames = new Set<string>();
+  const stores = discovered.stores.map((store) => ({
+    storeId: store.storeId,
+    sourcePath: store.sourcePath,
+    backupFile: backupFilename(store.sourcePath, store.storeId, usedFilenames),
+  }));
+  const files = discovered.files.map((file) => ({
+    id: file.id,
+    sourcePath: file.sourcePath,
+    backupFile: backupFilename(file.sourcePath, file.id, usedFilenames),
+  }));
+  return { projectRoot, outDir, createdAt, stores, files };
+}
+
 export function createBackup(options: {
   projectRoot?: string;
   outDir?: string;
   hubDataPath?: string;
   env?: NodeJS.ProcessEnv;
 } = {}): { manifest: BackupManifest; outDir: string } {
-  const projectRoot = options.projectRoot ? resolve(options.projectRoot) : process.cwd();
-  const discoverOptions = {
-    ...(options.hubDataPath !== undefined ? { hubDataPath: options.hubDataPath } : {}),
-    ...(options.env !== undefined ? { env: options.env } : {}),
-  };
-  const discovered = discoverBackupSources(projectRoot, discoverOptions);
-
-  if (discovered.stores.length === 0) {
-    throw databaseError("backup_no_stores", projectRoot, "no existing SQLite stores found to backup");
-  }
-
-  const now = new Date();
-  const timestamp = now.toISOString().replace(/[:.]/g, "-");
+  const { projectRoot, outDir, createdAt, stores, files } = planBackup(options);
   const backupId = `bk_${randomBytes(8).toString("hex")}`;
-  const outDir = options.outDir ? resolve(options.outDir) : join(projectRoot, ".kxm", "backups", `backup-${timestamp}`);
 
   if (!existsSync(outDir)) {
     mkdirSync(outDir, { recursive: true, mode: 0o700 });
@@ -781,20 +815,17 @@ export function createBackup(options: {
   const backedUpStores: BackupStoreRecord[] = [];
   const backedUpFiles: BackupFileRecord[] = [];
   const omitted: string[] = [];
-  const usedFilenames = new Set<string>();
 
-  for (const store of discovered.stores) {
-    const filename = backupFilename(store.sourcePath, store.storeId, usedFilenames);
+  for (const store of stores) {
     try {
-      backedUpStores.push(backupDatabaseFile(store.sourcePath, join(outDir, filename), store.storeId));
+      backedUpStores.push(backupDatabaseFile(store.sourcePath, join(outDir, store.backupFile), store.storeId));
     } catch {
       omitted.push(store.storeId);
     }
   }
-  for (const file of discovered.files) {
-    const filename = backupFilename(file.sourcePath, file.id, usedFilenames);
+  for (const file of files) {
     try {
-      backedUpFiles.push(backupPlainFile(file.sourcePath, join(outDir, filename), file.id));
+      backedUpFiles.push(backupPlainFile(file.sourcePath, join(outDir, file.backupFile), file.id));
     } catch {
       omitted.push(file.id);
     }
@@ -804,7 +835,7 @@ export function createBackup(options: {
     throw databaseError("backup_no_stores", projectRoot, "no SQLite store could be copied");
   }
 
-  const again = discoverBackupSources(projectRoot, discoverOptions);
+  const again = discoverBackupSources(projectRoot, backupDiscoverOptions(options));
   for (const store of again.stores) {
     if (!backedUpStores.some((copied) => copied.storeId === store.storeId) && !omitted.includes(store.storeId)) {
       omitted.push(store.storeId);
@@ -819,7 +850,7 @@ export function createBackup(options: {
   const manifest: BackupManifest = {
     schema: "kxm.backup-manifest.v1",
     backupId,
-    createdAt: now.toISOString(),
+    createdAt,
     projectRoot,
     stores: backedUpStores,
     ...(backedUpFiles.length > 0 ? { files: backedUpFiles } : {}),
@@ -838,10 +869,20 @@ export function createBackup(options: {
   return { manifest, outDir };
 }
 
-export function restoreBackup(
+export interface RestorePlan {
+  manifestPath: string;
+  backupId: string;
+  stores: Array<{ storeId: string; backupFilePath: string; targetPath: string; schemaVersion: number; maxSupportedVersion: number }>;
+  files: Array<{ id: string; backupFilePath: string; targetPath: string }>;
+}
+
+/** Everything restore checks before it overwrites anything: the manifest, each
+ * backup file's digest, and each store's schema against this build's ceiling
+ * (from the manifest). Reads files; opens no database. */
+export function planRestore(
   manifestPathOrDir: string,
   options: { projectRoot?: string } = {},
-): RestoreResult {
+): RestorePlan {
   let manifestPath = resolve(manifestPathOrDir);
   const stat = lstatSync(manifestPath, { throwIfNoEntry: false });
   if (!stat) {
@@ -871,8 +912,7 @@ export function restoreBackup(
     throw databaseError("restore_incomplete", manifestPath, "backup manifest is incomplete; refusing to restore a partial copy");
   }
 
-  const restoredStores: RestoreStoreRecord[] = [];
-
+  const stores: RestorePlan["stores"] = [];
   for (const store of manifest.stores) {
     const backupFilePath = join(manifestDir, store.backupFile);
     if (!existsSync(backupFilePath)) {
@@ -888,24 +928,24 @@ export function restoreBackup(
       );
     }
 
-    const maxSupported = kxmBackupCeiling(store.storeId);
+    const maxSupportedVersion = kxmBackupCeiling(store.storeId);
+    if (store.schemaVersion > maxSupportedVersion) {
+      throw databaseError(
+        "runtime_schema_newer",
+        backupFilePath,
+        `backup store ${store.storeId} schema version ${store.schemaVersion} is newer than supported maximum ${maxSupportedVersion}`,
+      );
+    }
 
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
       targetPath = join(resolve(options.projectRoot), rel);
     }
-
-    const result = restoreDatabaseFile(
-      backupFilePath,
-      targetPath,
-      store.storeId,
-      store.schemaVersion,
-      maxSupported,
-    );
-    restoredStores.push(result);
+    stores.push({ storeId: store.storeId, backupFilePath, targetPath, schemaVersion: store.schemaVersion, maxSupportedVersion });
   }
 
+  const files: RestorePlan["files"] = [];
   for (const file of manifest.files ?? []) {
     const backupFilePath = join(manifestDir, file.backupFile);
     if (!existsSync(backupFilePath)) {
@@ -924,12 +964,30 @@ export function restoreBackup(
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
       targetPath = join(resolve(options.projectRoot), rel);
     }
-    restorePlainFile(backupFilePath, targetPath);
+    files.push({ id: file.id, backupFilePath, targetPath });
   }
 
+  return { manifestPath, backupId: manifest.backupId, stores, files };
+}
+
+export function restoreBackup(
+  manifestPathOrDir: string,
+  options: { projectRoot?: string } = {},
+): RestoreResult {
+  const plan = planRestore(manifestPathOrDir, options);
+  const restoredStores = plan.stores.map((store) => restoreDatabaseFile(
+    store.backupFilePath,
+    store.targetPath,
+    store.storeId,
+    store.schemaVersion,
+    store.maxSupportedVersion,
+  ));
+  for (const file of plan.files) {
+    restorePlainFile(file.backupFilePath, file.targetPath);
+  }
   return {
-    manifestPath,
-    backupId: manifest.backupId,
+    manifestPath: plan.manifestPath,
+    backupId: plan.backupId,
     restoredStores,
   };
 }

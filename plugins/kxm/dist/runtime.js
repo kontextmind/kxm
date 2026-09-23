@@ -18487,39 +18487,53 @@ function restorePlainFile(backupFilePath, targetPath) {
 function discoverProjectStores(projectRoot, options = {}) {
   return discoverBackupSources(projectRoot, options).stores;
 }
-function createBackup(options = {}) {
-  const projectRoot = options.projectRoot ? resolve3(options.projectRoot) : process.cwd();
-  const discoverOptions = {
+function backupDiscoverOptions(options) {
+  return {
     ...options.hubDataPath !== void 0 ? { hubDataPath: options.hubDataPath } : {},
     ...options.env !== void 0 ? { env: options.env } : {}
   };
-  const discovered = discoverBackupSources(projectRoot, discoverOptions);
+}
+function planBackup(options = {}) {
+  const projectRoot = options.projectRoot ? resolve3(options.projectRoot) : process.cwd();
+  const discovered = discoverBackupSources(projectRoot, backupDiscoverOptions(options));
   if (discovered.stores.length === 0) {
     throw databaseError("backup_no_stores", projectRoot, "no existing SQLite stores found to backup");
   }
-  const now = /* @__PURE__ */ new Date();
-  const timestamp = now.toISOString().replace(/[:.]/g, "-");
-  const backupId = `bk_${randomBytes(8).toString("hex")}`;
+  const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+  const timestamp = createdAt.replace(/[:.]/g, "-");
   const outDir = options.outDir ? resolve3(options.outDir) : join4(projectRoot, ".kxm", "backups", `backup-${timestamp}`);
+  const usedFilenames = /* @__PURE__ */ new Set();
+  const stores = discovered.stores.map((store) => ({
+    storeId: store.storeId,
+    sourcePath: store.sourcePath,
+    backupFile: backupFilename(store.sourcePath, store.storeId, usedFilenames)
+  }));
+  const files = discovered.files.map((file) => ({
+    id: file.id,
+    sourcePath: file.sourcePath,
+    backupFile: backupFilename(file.sourcePath, file.id, usedFilenames)
+  }));
+  return { projectRoot, outDir, createdAt, stores, files };
+}
+function createBackup(options = {}) {
+  const { projectRoot, outDir, createdAt, stores, files } = planBackup(options);
+  const backupId = `bk_${randomBytes(8).toString("hex")}`;
   if (!existsSync4(outDir)) {
     mkdirSync(outDir, { recursive: true, mode: 448 });
   }
   const backedUpStores = [];
   const backedUpFiles = [];
   const omitted = [];
-  const usedFilenames = /* @__PURE__ */ new Set();
-  for (const store of discovered.stores) {
-    const filename = backupFilename(store.sourcePath, store.storeId, usedFilenames);
+  for (const store of stores) {
     try {
-      backedUpStores.push(backupDatabaseFile(store.sourcePath, join4(outDir, filename), store.storeId));
+      backedUpStores.push(backupDatabaseFile(store.sourcePath, join4(outDir, store.backupFile), store.storeId));
     } catch {
       omitted.push(store.storeId);
     }
   }
-  for (const file of discovered.files) {
-    const filename = backupFilename(file.sourcePath, file.id, usedFilenames);
+  for (const file of files) {
     try {
-      backedUpFiles.push(backupPlainFile(file.sourcePath, join4(outDir, filename), file.id));
+      backedUpFiles.push(backupPlainFile(file.sourcePath, join4(outDir, file.backupFile), file.id));
     } catch {
       omitted.push(file.id);
     }
@@ -18527,7 +18541,7 @@ function createBackup(options = {}) {
   if (backedUpStores.length === 0) {
     throw databaseError("backup_no_stores", projectRoot, "no SQLite store could be copied");
   }
-  const again = discoverBackupSources(projectRoot, discoverOptions);
+  const again = discoverBackupSources(projectRoot, backupDiscoverOptions(options));
   for (const store of again.stores) {
     if (!backedUpStores.some((copied) => copied.storeId === store.storeId) && !omitted.includes(store.storeId)) {
       omitted.push(store.storeId);
@@ -18541,7 +18555,7 @@ function createBackup(options = {}) {
   const manifest = {
     schema: "kxm.backup-manifest.v1",
     backupId,
-    createdAt: now.toISOString(),
+    createdAt,
     projectRoot,
     stores: backedUpStores,
     ...backedUpFiles.length > 0 ? { files: backedUpFiles } : {},
@@ -18556,7 +18570,7 @@ function createBackup(options = {}) {
   writeFileSync(manifestPath, finalJson, "utf8");
   return { manifest, outDir };
 }
-function restoreBackup(manifestPathOrDir, options = {}) {
+function planRestore(manifestPathOrDir, options = {}) {
   let manifestPath = resolve3(manifestPathOrDir);
   const stat = lstatSync2(manifestPath, { throwIfNoEntry: false });
   if (!stat) {
@@ -18582,7 +18596,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
   if (manifest.complete === false) {
     throw databaseError("restore_incomplete", manifestPath, "backup manifest is incomplete; refusing to restore a partial copy");
   }
-  const restoredStores = [];
+  const stores = [];
   for (const store of manifest.stores) {
     const backupFilePath = join4(manifestDir, store.backupFile);
     if (!existsSync4(backupFilePath)) {
@@ -18596,21 +18610,22 @@ function restoreBackup(manifestPathOrDir, options = {}) {
         `backup file ${store.backupFile} sha256 ${actualSha256} does not match manifest hash ${store.sha256}`
       );
     }
-    const maxSupported = kxmBackupCeiling(store.storeId);
+    const maxSupportedVersion = kxmBackupCeiling(store.storeId);
+    if (store.schemaVersion > maxSupportedVersion) {
+      throw databaseError(
+        "runtime_schema_newer",
+        backupFilePath,
+        `backup store ${store.storeId} schema version ${store.schemaVersion} is newer than supported maximum ${maxSupportedVersion}`
+      );
+    }
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
       targetPath = join4(resolve3(options.projectRoot), rel);
     }
-    const result = restoreDatabaseFile(
-      backupFilePath,
-      targetPath,
-      store.storeId,
-      store.schemaVersion,
-      maxSupported
-    );
-    restoredStores.push(result);
+    stores.push({ storeId: store.storeId, backupFilePath, targetPath, schemaVersion: store.schemaVersion, maxSupportedVersion });
   }
+  const files = [];
   for (const file of manifest.files ?? []) {
     const backupFilePath = join4(manifestDir, file.backupFile);
     if (!existsSync4(backupFilePath)) {
@@ -18629,11 +18644,25 @@ function restoreBackup(manifestPathOrDir, options = {}) {
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
       targetPath = join4(resolve3(options.projectRoot), rel);
     }
-    restorePlainFile(backupFilePath, targetPath);
+    files.push({ id: file.id, backupFilePath, targetPath });
+  }
+  return { manifestPath, backupId: manifest.backupId, stores, files };
+}
+function restoreBackup(manifestPathOrDir, options = {}) {
+  const plan = planRestore(manifestPathOrDir, options);
+  const restoredStores = plan.stores.map((store) => restoreDatabaseFile(
+    store.backupFilePath,
+    store.targetPath,
+    store.storeId,
+    store.schemaVersion,
+    store.maxSupportedVersion
+  ));
+  for (const file of plan.files) {
+    restorePlainFile(file.backupFilePath, file.targetPath);
   }
   return {
-    manifestPath,
-    backupId: manifest.backupId,
+    manifestPath: plan.manifestPath,
+    backupId: plan.backupId,
     restoredStores
   };
 }
@@ -29291,17 +29320,38 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
     }
   }, 1e3);
   heartbeat.unref();
-  for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
-    try {
-      contextFor(reg.projectRoot);
-    } catch {
-      logger.warn({
-        event: "runtime_sync_context_unavailable",
-        projectId: reg.projectId,
-        message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`
-      });
+  const reopenRegisteredProjects = () => {
+    for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
+      const key = projectRuntimeKey(reg.projectRoot);
+      if (contexts.has(key)) continue;
+      try {
+        contextFor(reg.projectRoot);
+        syncStatuses.delete(key);
+      } catch (error) {
+        const reason = syncFailureText(error);
+        const prior = syncStatuses.get(key);
+        if (prior === void 0 || prior.lastError !== reason) {
+          logger.warn({
+            event: "runtime_sync_context_unavailable",
+            projectId: reg.projectId,
+            message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`,
+            reason
+          });
+        }
+        syncStatuses.set(key, {
+          projectId: reg.projectId,
+          projectRoot: reg.projectRoot,
+          homeRuntimeId: activeRuntimeId,
+          state: "blocked",
+          outbox: { pending: 0, acked: 0, refused: 0, refusals: [] },
+          storeReadable: false,
+          consecutiveFailures: 1,
+          lastError: reason
+        });
+      }
     }
-  }
+  };
+  reopenRegisteredProjects();
   const recordSyncStatus = (context, next) => {
     const key = projectRuntimeKey(context.projectRoot);
     const previous = syncStatuses.get(key);
@@ -29330,6 +29380,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
     if (syncing || stopping) return;
     syncing = true;
     void (async () => {
+      reopenRegisteredProjects();
       for (const context of [...contexts.values()]) {
         const key = projectRuntimeKey(context.projectRoot);
         const prior = syncStatuses.get(key);
@@ -31704,7 +31755,9 @@ export {
   parsePiOneShotUsage,
   parseSshConfig,
   persistKxmRunState,
+  planBackup,
   planHarnessUpdate,
+  planRestore,
   probeHarnessAssignment,
   probeHarnessAssignmentAsync,
   probeHarnesses,

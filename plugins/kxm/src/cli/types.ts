@@ -101,6 +101,36 @@ export function print(io: CliIo, jsonMode: boolean, payload: object, text: strin
   else io.stdout(line);
 }
 
+/** One change a command would have made had `--dry-run` not been given. */
+export interface PlannedChange {
+  action: "write" | "delete" | "move" | "request" | "ssh";
+  target: string;
+}
+
+/** The `--dry-run` answer of a mutating command: the envelope the real run
+ * prints, marked `dryRun: true`, plus every write, request, or remote step it
+ * would have taken. Nothing is written by the caller before or after this. */
+export function printPlan(
+  runtime: Runtime,
+  payload: Record<string, unknown> & { command: string },
+  planned: readonly PlannedChange[],
+  text: string,
+): void {
+  print(runtime.io, runtime.json, { ok: true, ...payload, dryRun: true, planned }, [
+    `dry run: ${text}`,
+    ...(planned.length === 0 ? ["  no changes"] : planned.map((change) => `  would ${change.action} ${change.target}`)),
+  ].join("\n"));
+}
+
+export const DRY_RUN_UNSUPPORTED = "dry_run_unsupported";
+
+/** For a command that cannot say what it would do without doing some of it:
+ * refuse under `--dry-run` instead of executing. */
+export function refuseDryRun(io: CliIo, jsonMode: boolean, command: string, reason: string): number {
+  print(io, jsonMode, { ok: false, command, dryRun: true, error: DRY_RUN_UNSUPPORTED, detail: reason }, `kxm ${command} --dry-run refused: ${reason}`);
+  return 2;
+}
+
 export function printWorker(
   runtime: Runtime,
   worker: Worker,
