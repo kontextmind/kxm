@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import test from "node:test";
 
 const FORBIDDEN = [
@@ -31,6 +31,11 @@ const BINARY_NAME_RE = /(^|[^A-Za-z0-9._/-])(kxm-hub|kxm-worker)(?![A-Za-z0-9._-
  * them here would make the gate depend on which old sessions happen to be on
  * disk. This is a scope correction, not an exemption: the same tokens are still
  * refused everywhere in this worktree.
+ *
+ * A worktree that *contains* this one (the main checkout, when this run is in
+ * `.claude/worktrees/<session>`) is not excluded: every file here sits under its
+ * path, so excluding it would empty the scan. Its own files outside this tree
+ * are never listed from here anyway.
  */
 function otherWorktrees(): string[] {
   const result = spawnSync("git", ["worktree", "list", "--porcelain"], { encoding: "utf8" });
@@ -40,7 +45,7 @@ function otherWorktrees(): string[] {
     .split("\n")
     .filter((line) => line.startsWith("worktree "))
     .map((line) => resolve(line.slice("worktree ".length).trim()))
-    .filter((path) => path !== root);
+    .filter((path) => path !== root && !root.startsWith(`${path}${sep}`));
 }
 
 function markdownFiles(dir: string): string[] {
@@ -81,10 +86,9 @@ function skillFiles(dir: string): string[] {
 
 test("operator docs do not keep removed Mesh product names", () => {
   const outside = otherWorktrees();
-  const separator = process.platform === "win32" ? "\\" : "/";
   const inAnotherWorktree = (file: string): boolean => {
     const absolute = resolve(file);
-    return outside.some((worktree) => absolute.startsWith(`${worktree}${separator}`));
+    return outside.some((worktree) => absolute.startsWith(`${worktree}${sep}`));
   };
   const files = [
     "README.md",
