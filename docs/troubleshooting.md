@@ -59,7 +59,7 @@ kubectl -n arc-runners get autoscalingrunnerset kontextmind-doks
 kubectl -n arc-runners get ephemeralrunners,pods
 ```
 
-The normal capacity policy keeps one warm runner, bursts to eight, and requests
+The normal capacity policy keeps one warm runner, bursts to five, and requests
 three CPUs per runner so the DOKS node-pool autoscaler can add capacity instead of
 packing CPU-bound jobs onto already busy nodes. If repository jobs remain queued
 while the listener is assigned zero jobs, verify the runner group's selected
