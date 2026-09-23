@@ -1335,7 +1335,7 @@ test("a shared external effect cannot commit with a fencing token the hub has su
   assert.equal(!lateCommit.ok && lateCommit.code, "effect_lease_superseded");
   assert.equal(!lateCommit.ok && lateCommit.attemptState, "blocked_uncertain");
   const parked = ledgerA.getReceipt(claimA.effectKey)!;
-  assert.equal(parked.status, "in-flight");
+  assert.equal(parked.status, "uncertain", "the uncertainty is persisted, not just returned");
   assert.equal(parked.completedAt, undefined);
   assert.equal(parked.fencingToken, 1, "nothing re-acquired on the loser's behalf");
   assert.deepEqual(parked.receiptPayload, {}, "a refused commit writes no receipt payload");
