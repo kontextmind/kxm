@@ -15,7 +15,7 @@ invent restart or status subcommands.
 |---|---|---|
 | `kxm hub view` | Check `/health` and `/ready`; exits 1 when the hub is down | `--json` |
 | `kxm tenant status` | Hub metadata and Runtime run state as one labeled view; reads only and never starts the supervisor | `--json` |
-| `kxm backup` | Verified SQLite backup of the hub store and the Runtime stores with a hashed manifest; exits 1 when the backup is incomplete | `--out <dir>`, `--json` |
+| `kxm backup` | Verified SQLite backup of this project's hub store and Runtime event store with a hashed manifest; exits 1 when the backup is incomplete | `--out <dir>`, `--all-projects`, `--json` |
 
 ```bash
 kxm hub view --json
@@ -30,9 +30,12 @@ runs have separate ID spaces, so a comparison with no shared ID is
 `unverified`, never agreement.
 
 The durable hub store defaults to `.kxm/state/kxm.db` (`KXM_DATA_PATH`). Do not
-hand-edit it. `kxm backup` also copies the Runtime registry and every
-project's run event store and prompt sidecar under the user state root, so a
-`kxm restore` rolls back every project on the machine, not only this one.
+hand-edit it. `kxm backup` also copies this project's Runtime event store and
+prompt sidecar from the user state root. The shared Runtime registry and other
+projects' event stores are copied only with `--all-projects`, and only
+`kxm restore --all-projects` restores them, rolling back every project on the
+machine. Do not pass `--all-projects` unless the user asked for a whole-machine
+backup or restore.
 
 ## Operator steps
 
@@ -45,7 +48,7 @@ the hub admin token or a project token.
 | `kxm hub stop` | Request managed hub and worker shutdown | `--wait-ms <ms>` |
 | `kxm hub bind <url>` | Bind this machine to a running hub | http or https URL |
 | `kxm hub unbind` | Remove this machine's hub binding | `--json` |
-| `kxm restore <manifest>` | Replace the live stores from a verified backup manifest | `--json` |
+| `kxm restore <manifest>` | Replace this project's live stores from a verified backup manifest | `--all-projects`, `--json` |
 
 ```bash
 kxm hub start
@@ -70,5 +73,9 @@ kxm restore .kxm/backups/pre-upgrade/manifest.json
   claim is reclaimed automatically, an orphaned server is terminated first,
   and `kxm hub stop` recovers such orphans directly.
 - `kxm restore` replaces the live stores. Preview it with
-  `kxm restore <manifest> --dry-run`, stop the hub first, and never skip
-  restore verification.
+  `kxm restore <manifest> --dry-run`, and never skip restore verification. It
+  refuses before writing while the Runtime supervisor runs
+  (`restore_runtime_running`) or a hub holds the hub store
+  (`restore_hub_running`), so stop both first (`kxm runtime stop`,
+  `kxm hub stop`). A backup that holds the registry or another project's
+  event store is refused with `restore_requires_all_projects`.

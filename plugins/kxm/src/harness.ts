@@ -62,6 +62,7 @@ export type HarnessRunCommand = (command: string, args: readonly string[], timeo
 export type HarnessRunCommandAsync = (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult | Promise<HarnessCommandResult>;
 
 export interface HarnessProbeOptions {
+  defaultHarness?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   runCommand?: HarnessRunCommand | undefined;
   timeoutMs?: number | undefined;
@@ -96,7 +97,7 @@ export interface HarnessStatus {
 }
 
 export interface HarnessInventory {
-  defaultHarness: typeof DEFAULT_HARNESS;
+  defaultHarness: string;
   harnesses: readonly HarnessStatus[];
 }
 
@@ -958,7 +959,7 @@ function probeEntry(
   runCommand: (command: string, args: readonly string[], timeoutMs: number) => HarnessCommandResult,
   timeoutMs: number,
   platform: NodeJS.Platform,
-  probe: Pick<HarnessProbeOptions, "env" | "existsSync"> = {},
+  probe: Pick<HarnessProbeOptions, "env" | "existsSync" | "defaultHarness"> = {},
 ): HarnessStatus {
   const issues: string[] = [];
   const found = detectHarnessCommand(entry, runCommand, timeoutMs, platform, probe);
@@ -987,7 +988,7 @@ function probeEntry(
   return {
     id: entry.id,
     label: entry.label,
-    default: entry.default,
+    default: entry.id === (probe.defaultHarness ?? DEFAULT_HARNESS),
     mode: entry.mode,
     detected,
     authenticated,
@@ -1009,7 +1010,7 @@ export function probeHarnesses(options: HarnessProbeOptions = {}): HarnessInvent
   const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
   const platform = options.platform ?? process.platform;
   return {
-    defaultHarness: DEFAULT_HARNESS,
+    defaultHarness: options.defaultHarness ?? DEFAULT_HARNESS,
     harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform, options)),
   };
 }
@@ -1508,7 +1509,7 @@ export function formatHarnessInventory(inventory: HarnessInventory): string {
     ].join(" ");
   });
   return [
-    `default harness: ${inventory.defaultHarness} (omit agent harness: to use headless Pi)`,
+    `default harness: ${inventory.defaultHarness} (used when an agent omits harness:)`,
     "enable/disable = Git YAML (.kxm/agents, .kxm/models) or the harness's own plugin CLI",
     "governed kxm skills are not auto-updated",
     header,

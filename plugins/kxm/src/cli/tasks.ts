@@ -9,7 +9,6 @@ import {
   listGoals,
   listTasks,
   getTask,
-  updateTaskStatus,
   syncTaskWithTracker,
   goalFilePath,
   taskFilePath,
@@ -27,40 +26,71 @@ import { readSessionTokenFromDisk } from "../commands.ts";
 import { print, printPlan, type Runtime } from "./types.ts";
 import { cmdKxmRun, resolveKxmRunTarget } from "./project.ts";
 
-export async function cmdSuggest(runtime: Runtime, promptParts: string[]): Promise<number> {
+export async function cmdSuggest(
+  runtime: Runtime,
+  promptParts: string[],
+  probeHarnesses = probeHarnessesAsync,
+): Promise<number> {
   try {
     const prompt = promptParts.join(" ").trim();
     if (!prompt) {
-      runtime.io.stderr("prompt must be non-empty\n");
+      print(runtime.io, runtime.json, { ok: false, command: "suggest", error: "prompt_required" }, "prompt must be non-empty");
       return 2;
     }
-    const inventory = await probeHarnessesAsync({ env: runtime.env });
-    const availableHarnesses = inventory.harnesses.map((h) => ({
-      harness: h.id,
-      auth: h.authenticated === true ? "authenticated" : "unauthenticated",
-    }));
-    const suggestion = suggestWorkflowAndRoles(prompt, { availableHarnesses });
-
+    // Native authentication probes may initialize state. A dry run must not invoke them.
+    const inventory = runtime.dryRun ? undefined : await probeHarnesses({ env: runtime.env });
+    const suggestion = suggestWorkflowAndRoles(prompt, { availableHarnesses: inventory?.harnesses });
+    if (suggestion.execution.supported && [".yaml", ".yml"].some((extension) =>
+      existsSync(join(runtime.cwd, ".kxm", "workflows", `${suggestion.workflowId}${extension}`)))) {
+      suggestion.roles = [];
+      suggestion.execution = {
+        supported: false,
+        error: "workflow_already_exists",
+        reason: `Workflow ${suggestion.workflowId} already exists; its agents and permissions may differ from the recommended template.`,
+        nextSteps: ["Review the existing definition and every agent's harness/model before running it, or install the recommended template under a fresh flat ID. No existing workflow is overwritten or recommended for execution."],
+      };
+    }
+    const execution = suggestion.execution;
     const text = [
       `Suggested Workflow: ${suggestion.workflowId} (${suggestion.area})`,
+      `Template: ${suggestion.template}`,
       `Confidence: ${(suggestion.confidence * 100).toFixed(0)}%`,
       `Reasons: ${suggestion.reasons.join("; ")}`,
       `Suggested Skills: ${suggestion.suggestedSkills.join(", ") || "none"}`,
-      `Roles:`,
-      `  Planner:     ${suggestion.roles.planner.harness} (${suggestion.roles.planner.model})`,
-      `  Writer:      ${suggestion.roles.writer.harness} (${suggestion.roles.writer.model})`,
-      `  Critics:     ${suggestion.roles.critics.map((c) => `${c.harness}:${c.model}`).join(", ")}`,
-      `  Verifier:    ${suggestion.roles.verifier.command}`,
-      ``,
-      `Execute with:`,
+      "",
+      "Install definition only (requires kxm init; does not execute):",
       `  ${suggestion.suggestedCommand}`,
+      "",
+      ...(execution.supported ? [
+        "Suggested agent routing (not applied):",
+        ...suggestion.roles.map((role) => `  ${role.agent}: ${role.harness} (${role.role}; use a configured compatible model)`),
+        "Prerequisites:",
+        ...execution.prerequisites.map((step) => `  ${step}`),
+        `Create a run only (${execution.shell}; does not execute steps):`,
+        `  ${execution.createCommand}`,
+        "Then drive the returned run ID with live calls and inspect its result:",
+        `  ${execution.driveCommand}`,
+        `  ${execution.statusCommand}`,
+        `  ${execution.receiptCommand}`,
+      ] : [
+        `Execution unavailable: ${execution.reason}`,
+        ...execution.nextSteps.map((step) => `  ${step}`),
+        ...(runtime.dryRun ? ["Harness authentication was not probed during --dry-run."] : []),
+      ]),
     ].join("\n");
 
-    print(runtime.io, runtime.json, { ok: true, command: "suggest", prompt, ...suggestion }, text);
-    return 0;
+    print(runtime.io, runtime.json, {
+      ok: execution.supported,
+      command: "suggest",
+      prompt,
+      ...suggestion,
+      ...(runtime.dryRun ? { dryRun: true } : {}),
+      ...(!execution.supported ? { error: execution.error } : {}),
+    }, text);
+    return execution.supported ? 0 : 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    runtime.io.stderr(`suggest failed: ${message}\n`);
+    print(runtime.io, runtime.json, { ok: false, command: "suggest", error: "suggest_failed", detail: message }, `suggest failed: ${message}`);
     return 1;
   }
 }
@@ -196,27 +226,21 @@ export async function cmdTaskRun(runtime: Runtime, taskId: string): Promise<numb
       runtime.io.stderr(`Task ${taskId} not found\n`);
       return 1;
     }
-    const workflow = task.assignedWorkflow ?? "default";
+    const workflow = task.assignedWorkflow;
     if (runtime.dryRun) {
-      const target = resolveKxmRunTarget(runtime, workflow);
+      const target = resolveKxmRunTarget(runtime, workflow, true);
       if (typeof target === "number") return target;
-      const started = updateTaskStatus(runtime.cwd, taskId, "in_progress", { dryRun: true });
       printPlan(
         runtime,
-        { command: "task run", taskId, ...target, status: started.status },
+        { command: "task run", taskId, ...target, status: task.status, execution: { status: "not_started", mode: "live" } },
         [
           { action: "request", target: "POST kxm-runtime /v1/runs (starts the Runtime supervisor if it is not running)" },
-          { action: "write", target: taskFilePath(runtime.cwd, taskId) },
         ],
-        `run workflow ${workflow} for task ${taskId}, then mark it ${started.status}`,
+        `create workflow ${target.workflowId} for task ${taskId}; task status stays ${task.status} until work actually starts`,
       );
       return 0;
     }
-    const exitCode = await cmdKxmRun(runtime, workflow, [task.objective]);
-    if (exitCode === 0) {
-      updateTaskStatus(runtime.cwd, taskId, "in_progress");
-    }
-    return exitCode;
+    return await cmdKxmRun(runtime, workflow, [task.objective], true);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     runtime.io.stderr(`task run failed: ${message}\n`);

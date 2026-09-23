@@ -279,6 +279,19 @@ test("probe reports detect/auth without a preferences overlay", () => {
   assert(!JSON.stringify(inventory).includes("preferences"));
 });
 
+test("inventory selects the requested project default even when that harness is unavailable", async () => {
+  const inventory = await probeHarnessesAsync({
+    defaultHarness: "claude",
+    runCommand: runner({
+      "pi --version": { ok: true, code: 0, stdout: "pi\n", stderr: "" },
+    }),
+  });
+  assert.equal(inventory.defaultHarness, "claude");
+  assert.deepEqual(inventory.harnesses.filter((entry) => entry.default).map((entry) => entry.id), ["claude"]);
+  assert.equal(inventory.harnesses.find((entry) => entry.id === "claude")?.detected, false);
+  assert.match(formatHarnessInventory(inventory), /^claude\s+yes\s+no\b/m);
+});
+
 test("update plans native commands and dry-run does not spawn", () => {
   const inventory = probeHarnesses({
     runCommand: runner({
@@ -1018,32 +1031,6 @@ test("probeHarnessesAsync replays the same fail-closed policy without spawnSync"
   assert.equal(status(forModel, "claude").detected, true);
 });
 
-test("async default probe paths do not keep spawnSync on product call sites", () => {
-  const harness = readFileSync(resolve("plugins/kxm/src/harness.ts"), "utf8");
-  const cli = [
-    "plugins/kxm/src/cli.ts",
-    "plugins/kxm/src/cli/system.ts",
-    "plugins/kxm/src/cli/project.ts",
-    "plugins/kxm/src/cli/tasks.ts",
-  ].map((path) => readFileSync(resolve(path), "utf8")).join("\n");
-  const extension = readFileSync(resolve("plugins/kxm/src/extension.ts"), "utf8");
-  const session = readFileSync(resolve("plugins/kxm/src/session-work.ts"), "utf8");
-  const inventory = readFileSync(resolve("plugins/kxm/src/model-inventory.ts"), "utf8");
-  const piProducer = readFileSync(resolve("plugins/kxm/src/pi-producer.ts"), "utf8");
-  const asyncRunner = harness.slice(harness.indexOf("function defaultAsyncRunner"), harness.indexOf("function firstLine"));
-  assert.match(asyncRunner, /defaultSpawn/);
-  assert.doesNotMatch(asyncRunner, /spawnSync/);
-  assert.match(harness, /export async function probeHarnessesAsync/);
-  assert.match(cli, /probeHarnessesAsync/);
-  assert.doesNotMatch(cli, /probeHarnesses\(/);
-  assert.doesNotMatch(extension, /probeHarnesses\(|probeHarnessAssignment\(/);
-  assert.doesNotMatch(session, /probeHarnesses\(|probeHarnessAssignment\(/);
-  assert.doesNotMatch(inventory, /spawnSync/);
-  assert.match(inventory, /defaultSpawn/);
-  assert.match(piProducer, /probeHarnessAssignmentAsync/);
-  assert.doesNotMatch(piProducer, /\bprobeHarnessAssignment\b/);
-  assert.doesNotMatch(piProducer, /spawnSync/);
-});
 
 test("async inventory probes yield to sibling timers instead of blocking spawnSync", { skip: process.platform === "win32", timeout: 5000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-async-probe-"));

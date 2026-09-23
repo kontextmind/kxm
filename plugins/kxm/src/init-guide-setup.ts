@@ -16,8 +16,15 @@
  * and does not use the kxm.role.v1 subsystem.
  *
  * Guide research ids are not dispatch ids. Only the admitted map below is
- * written, and only when that harness is authenticated. Google goes through
- * the Pi `antigravity` provider. Unmapped ids are skipped.
+ * written, and only when that harness is authenticated. Unmapped ids are skipped.
+ *
+ * Google candidates are unmapped on purpose. Google's route is the Pi
+ * `antigravity` provider, which only the KXM Pi extension registers. The
+ * Runtime's Pi one-shot runs with `--no-extensions`, and `pi auth check` never
+ * loads extensions, so a drive of an `antigravity/…` role fails at dispatch.
+ * Mapping Google to `agy` instead would contradict the routing decision. Add
+ * Google back only when drive can reach `antigravity` and a reviewed
+ * admission decision says so.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -55,8 +62,6 @@ const ADMITTED_GUIDE_BINDINGS: Readonly<Record<string, AgentBinding>> = Object.f
   "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
   "x-ai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
   "xai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
-  "google/gemini-3.8-flash": { harness: "pi", provider: "antigravity", model: "gemini-3.8-flash-high" },
-  "google/gemini-3.8-flash-high": { harness: "pi", provider: "antigravity", model: "gemini-3.8-flash-high" },
   "qwen/qwen3-coder-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" },
 });
 

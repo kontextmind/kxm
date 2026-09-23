@@ -38,6 +38,16 @@ In an interactive terminal, `kxm init` then offers shell completion and workflow
 
 > [!TIP]
 > If your tests do not run with `npm test`, change `gates.test.argv` in `.kxm/gates.yaml` now, before you commit.
+>
+> The starter settings are not repository detection. For a Claude project, set
+> `defaultHarness: claude` in `.kxm/project.yaml`, update any explicit `harness` overrides
+> in `.kxm/agents/*.yaml`, and configure compatible agent models;
+> `kxm harness list` reports that project default. Claude's Runtime one-shot profile is
+> read-only: a Claude-only bug-fix suggestion or incompatible `task run`
+> refuses with prerequisites rather than substituting another writer. Implement
+> directly in Claude Code, or use a genuinely read-only Runtime workflow. A local
+> `kxm run` only creates a run; execute supported work with `kxm runs drive <runId>
+> --wait` and inspect it with `kxm runs status`, not `kxm workflow get`.
 
 ### 2. Ignore runtime state and commit `.kxm/`
 
@@ -331,7 +341,7 @@ kxm runtime stop
 `kxm backup` writes a verified copy and a hashed manifest to `.kxm/backups/backup-<timestamp>/`.
 
 > [!WARNING]
-> `kxm backup` copies the hub store and the Runtime's registry and run event stores, and those Runtime stores belong to every project on this machine. A later `kxm restore` rolls all of them back. It does not copy bindings, `update.yaml` or the other state roots; [Back up everything else](../operations/backup-and-restore.md#back-up-everything-else) covers those.
+> `kxm backup` copies this project's hub store and its Runtime run event store. The Runtime registry and other projects' run stores are shared by every project on this machine, so they are copied only with `--all-projects`, and a later `kxm restore` refuses to roll them back without the same flag. It does not copy bindings, `update.yaml` or the other state roots; [Back up everything else](../operations/backup-and-restore.md#back-up-everything-else) covers those.
 
 [Back up and restore KXM](../operations/backup-and-restore.md) and [Upgrade KXM](../operations/upgrade.md) cover restores and rollback.
 

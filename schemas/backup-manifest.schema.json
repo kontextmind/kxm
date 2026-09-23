@@ -23,6 +23,21 @@
       "type": "string",
       "maxLength": 1024
     },
+    "scope": {
+      "description": "project: the checkout's stores and its own Runtime event store. all-projects: also the shared Runtime registry and every project's event store. Absent on manifests written before backups were scoped.",
+      "enum": ["project", "all-projects"]
+    },
+    "stateRoot": {
+      "description": "The user state root the Runtime stores were copied from.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "runtimeProjectKey": {
+      "description": "The Runtime store key of the checkout the backup ran from.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{24}$"
+    },
     "stores": {
       "type": "array",
       "items": {

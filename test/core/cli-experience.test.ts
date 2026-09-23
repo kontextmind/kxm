@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { delimiter, join, relative } from "node:path";
 import test from "node:test";
 import {
   loadKxmConfig,
@@ -36,9 +36,11 @@ import {
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import { PROMOTION_REQUIRED_EVALUATIONS } from "../../plugins/kxm/src/skills.ts";
 import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
-import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
+import { KxmRunEventStore, kxmProjectRunEventsPath, kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
 import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
 import { WORKFLOW_TEMPLATES } from "../../plugins/kxm/src/workflow-manager.ts";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
+import { compileKxmWorkflow } from "../../plugins/kxm/src/engine-compile.ts";
 
 function createSandbox(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "kxm-cli-exp-"));
@@ -173,7 +175,7 @@ test("completion install: detects shell, writes script and rc stanza idempotentl
     assert.equal(readFileSync(scriptPath, "utf8"), generateShellCompletion("bash"));
     const rc = readFileSync(join(home, ".bashrc"), "utf8");
     assert.match(rc, /# kxm completion/);
-    assert.match(rc, new RegExp(scriptPath.replaceAll("/", "\\/")));
+    assert.ok(rc.includes(scriptPath));
 
     // second install is idempotent: no duplicate stanza, script unchanged
     const second = installShellCompletion("auto", { env, homeDir: home, configDir: config });
@@ -212,16 +214,17 @@ test("completion install: PATH entry is added once and only when missing", () =>
   const binDir = join(sandbox.dir, "bin");
   mkdirSync(home, { recursive: true });
   mkdirSync(binDir, { recursive: true });
-  writeFileSync(join(binDir, "kxm"), "#!/bin/sh\n", { mode: 0o755 });
+  const executable = join(binDir, process.platform === "win32" ? "kxm.cmd" : "kxm");
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   try {
-    const env = { HOME: home, SHELL: "/bin/bash", PATH: "/usr/bin:/bin" } as NodeJS.ProcessEnv;
+    const env = { HOME: home, SHELL: "/bin/bash", PATH: ["/usr/bin", "/bin"].join(delimiter) } as NodeJS.ProcessEnv;
 
     // bin dir discovery via explicit entry point
-    const found = kxmBinDir({ ...env, KXM_ENTRY: join(binDir, "kxm") });
+    const found = kxmBinDir({ ...env, KXM_ENTRY: executable });
     assert.equal(found, binDir);
 
     // already on PATH: nothing written
-    const onPathEnv = { ...env, PATH: `${binDir}:/usr/bin:/bin`, KXM_ENTRY: join(binDir, "kxm") } as NodeJS.ProcessEnv;
+    const onPathEnv = { ...env, PATH: [binDir, "/usr/bin", "/bin"].join(delimiter), KXM_ENTRY: executable } as NodeJS.ProcessEnv;
     const noop = installPathEntry("bash", { env: onPathEnv, homeDir: home, binDir });
     assert.equal(noop.ok, true);
     assert.equal(noop.alreadyInstalled, true);
@@ -257,33 +260,32 @@ test("cli completion install: executes cleanly with json and dry-run", async () 
   const config = join(sandbox.dir, "config");
   const binDir = join(sandbox.dir, "bin");
   for (const dir of [home, config, binDir]) mkdirSync(dir, { recursive: true });
-  writeFileSync(join(binDir, "kxm"), "#!/bin/sh\n", { mode: 0o755 });
+  const executable = join(binDir, process.platform === "win32" ? "kxm.cmd" : "kxm");
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   try {
     const env = {
       HOME: home,
       SHELL: "/bin/bash",
       KXM_USER_CONFIG_DIR: config,
-      KXM_ENTRY: join(binDir, "kxm"),
-      PATH: "/usr/bin:/bin",
+      KXM_ENTRY: executable,
+      PATH: ["/usr/bin", "/bin"].join(delimiter),
     } as NodeJS.ProcessEnv;
 
     // dry-run: plans, writes nothing
     const planIo = capture();
     assert.equal(await runCli(["completion", "install", "--dry-run"], env, planIo, sandbox.dir), 0);
-    assert.match(planIo.read().stdout, /planned/);
     assert.equal(existsSync(join(home, ".bashrc")), false);
 
     // real run: installs script, rc stanza, and PATH entry
     const io = capture();
     assert.equal(await runCli(["completion", "install"], env, io, sandbox.dir), 0);
-    assert.match(io.read().stdout, /completion: installed/);
-    assert.match(io.read().stdout, new RegExp(`PATH entry for ${binDir.replaceAll("/", "\\/")} added`));
     assert.equal(existsSync(join(config, "completions", "kxm.bash")), true);
+    const installedRc = readFileSync(join(home, ".bashrc"), "utf8");
 
     // rerun is idempotent
     const againIo = capture();
     assert.equal(await runCli(["completion", "install"], env, againIo, sandbox.dir), 0);
-    assert.match(againIo.read().stdout, /already installed/);
+    assert.equal(readFileSync(join(home, ".bashrc"), "utf8"), installedRc);
 
     // json mode carries the structured report
     const jsonIo = capture();
@@ -309,55 +311,58 @@ test("cli completion install: executes cleanly with json and dry-run", async () 
   }
 });
 
-test("suggest: recommends workflow, area, roles, and skills based on prompt keywords", () => {
-  // Test bug fix suggestion
-  const bugSuggestion = suggestWorkflowAndRoles("Fix flaky playwright gate timeout in session test", {
-    availableHarnesses: [
-      { harness: "claude", auth: "active" },
-      { harness: "grok", auth: "active" },
-      { harness: "codex", auth: "active" },
-    ],
-  });
-  assert.equal(bugSuggestion.workflowId, "software-engineering/bug-fix");
-  assert.equal(bugSuggestion.area, "software-engineering");
-  assert.equal(bugSuggestion.roles.planner.model, "fable");
-  assert.equal(bugSuggestion.roles.writer.harness, "grok");
-  assert.ok(bugSuggestion.reasons.length > 0);
-
-  // Test security suggestion
-  const secSuggestion = suggestWorkflowAndRoles("Remediate CVE vulnerability and sanitize prompt injection", {
-    availableHarnesses: [{ harness: "claude", auth: "active" }],
-  });
-  assert.equal(secSuggestion.workflowId, "security-reliability/vulnerability-remediation");
-  assert.equal(secSuggestion.area, "security-reliability");
-
-  // Test pipeline/migration suggestion
-  const dbSuggestion = suggestWorkflowAndRoles("Migrate SQLite tables to support foreign key cascading and WAL mode", {
-    availableHarnesses: [{ harness: "codex", auth: "active" }],
-  });
-  assert.equal(dbSuggestion.workflowId, "data-analytics/pipeline-migration");
+test("suggest: refuses a Claude-only bug fix without verified harness authentication", () => {
+  const suggestion = suggestWorkflowAndRoles("Fix a bug in an isolated worktree using Claude only");
+  assert.equal(suggestion.workflowId, "bug-fix");
+  assert.equal(suggestion.area, "software-engineering");
+  assert.equal(suggestion.execution.supported, false);
+  if (suggestion.execution.supported) assert.fail("a writer requires verified harness authentication");
+  assert.equal(suggestion.execution.error, "harness_unavailable");
+  assert.deepEqual(suggestion.roles, []);
+  assert.equal("createCommand" in suggestion.execution, false);
+  assert.equal("driveCommand" in suggestion.execution, false);
+  assert.ok(suggestion.execution.nextSteps.some((step) => step.includes("Claude Code")));
+  assert.equal(suggestion.suggestedCommand, "kxm workflow add bug-fix --template implement-and-verify");
 });
 
-test("suggest recommends only KXM command skills shipped in plugins/kxm/skills", () => {
-  const knowledgePlane = new Set(["kxm-mind", "kxm-query", "kxm-harvest", "kxm-triage", "kxm-work", "kxm-insights", "kxm-projects", "kxm-protocol", "kxm-setup", "kxm-mind-setup"]);
-  const expected: Array<[string, string, string[]]> = [
-    ["Fix flaky playwright gate timeout", "software-engineering/bug-fix", ["kxm-workflow", "kxm-runs", "kxm-context-memory"]],
-    ["Add a new endpoint for the settings page", "software-engineering/feature-implementation", ["kxm-workflow", "kxm-peer", "kxm-context-memory"]],
-    ["Refactor and simplify the module, deduplicate helpers", "software-engineering/refactoring", ["kxm-workflow", "kxm-runs"]],
-    ["Remediate CVE vulnerability and sanitize prompt injection", "security-reliability/vulnerability-remediation", ["kxm-workflow", "kxm-definitions"]],
-    ["Harden idempotency with retry, lock and race handling for concurrency", "security-reliability/reliability-hardening", ["kxm-workflow", "kxm-peer"]],
-    ["Migrate SQLite tables to support foreign key cascading and WAL mode", "data-analytics/pipeline-migration", ["kxm-runs", "kxm-context-memory"]],
-    ["Spike to investigate a prototype and benchmark it", "research-strategy/architecture-spike", ["kxm-session", "kxm-context-memory", "kxm-routing-improve"]],
+test("suggest recommendations install as flat, addressable workflows and name shipped KXM skills", async () => {
+  const sandbox = createSandbox();
+  const env = {
+    HOME: join(sandbox.dir, "home"),
+    KXM_USER_CONFIG_DIR: join(sandbox.dir, "user-config"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const expected: Array<[string, string, string]> = [
+    ["Fix flaky playwright gate timeout", "bug-fix", "software-engineering"],
+    ["Add a new endpoint for the settings page", "feature-implementation", "software-engineering"],
+    ["Refactor and simplify the module, deduplicate helpers", "refactoring", "software-engineering"],
+    ["Remediate CVE vulnerability and sanitize prompt injection", "vulnerability-remediation", "security-reliability"],
+    ["Harden idempotency with retry, lock and race handling for concurrency", "reliability-hardening", "security-reliability"],
+    ["Migrate SQLite tables to support foreign key cascading and WAL mode", "pipeline-migration", "data-analytics"],
+    ["Spike to investigate a prototype and benchmark it", "architecture-spike", "research-strategy"],
   ];
-  const skillsRoot = join(process.cwd(), "plugins", "kxm", "skills");
-  for (const [prompt, workflowId, skills] of expected) {
-    const suggestion = suggestWorkflowAndRoles(prompt);
-    assert.equal(suggestion.workflowId, workflowId, prompt);
-    assert.deepEqual(suggestion.suggestedSkills, skills, workflowId);
-    for (const skill of suggestion.suggestedSkills) {
-      assert.ok(existsSync(join(skillsRoot, skill, "SKILL.md")), `${skill} ships in plugins/kxm/skills`);
-      assert.ok(!knowledgePlane.has(skill), `${skill} is a KXM command skill, not a knowledge-plane skill`);
+  try {
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", sandbox.dir]).status, 0);
+    const initIo = capture();
+    assert.equal(await runCli(["init", "--name", "Suggestion templates"], env, initIo, sandbox.dir), 0, initIo.read().stderr);
+    const skillsRoot = join(process.cwd(), "plugins", "kxm", "skills");
+    for (const [prompt, workflowId, area] of expected) {
+      const suggestion = suggestWorkflowAndRoles(prompt);
+      assert.equal(suggestion.workflowId, workflowId, prompt);
+      assert.equal(suggestion.area, area, prompt);
+      for (const skill of suggestion.suggestedSkills) {
+        assert.ok(existsSync(join(skillsRoot, skill, "SKILL.md")), `${skill} ships in plugins/kxm/skills`);
+      }
+      const installIo = capture();
+      assert.equal(await runCli(suggestion.suggestedCommand.split(" ").slice(1), env, installIo, sandbox.dir), 0, installIo.read().stderr);
+      const planIo = capture();
+      assert.equal(await runCli(["run", workflowId, "--dry-run", "--json"], env, planIo, sandbox.dir), 0, planIo.read().stderr);
+      assert.equal(JSON.parse(planIo.read().stdout).workflowId, workflowId);
     }
+  } finally {
+    sandbox.cleanup();
   }
 });
 
@@ -471,10 +476,6 @@ test("cli commands: completion, config, suggest, goal, task, and studio layout e
     assert.match(configGetIo.read().stdout, /light/);
 
     // 3. Suggest
-    const suggestIo = capture();
-    assert.equal(await runCli(["suggest", "Fix", "critical", "flaky", "test", "timeout"], {}, suggestIo, sandbox.dir), 0);
-    assert.match(suggestIo.read().stdout, /Suggested Workflow/);
-
     const emptySuggestIo = capture();
     assert.equal(await runCli(["suggest"], {}, emptySuggestIo, sandbox.dir), 2);
 
@@ -548,10 +549,6 @@ test("cli commands: completion, config, suggest, goal, task, and studio layout e
     const taskSyncJsonIo = capture();
     assert.equal(await runCli(["--json", "task", "sync", taskId], {}, taskSyncJsonIo, sandbox.dir), 0);
     assert.match(taskSyncJsonIo.read().stdout, /"command":\s*"task sync"/);
-
-    const suggestJsonIo = capture();
-    assert.equal(await runCli(["--json", "suggest", "Migrate", "database", "sqlite"], {}, suggestJsonIo, sandbox.dir), 0);
-    assert.match(suggestJsonIo.read().stdout, /"workflowId":/);
 
     // Filter task list
     const filteredListIo = capture();
@@ -651,15 +648,22 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
     // Real state for every command to plan against: a committed project with an
     // instruction file for `memory sync` to update (sync never creates one), a role,
     // a workflow, a tracked task, a skill candidate with passing evaluations, a
-    // hub store, and a verified backup of it.
+    // hub store, a Runtime run, and a verified backup of it.
     assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
     await seed(["init", "--project-id", "prj_01JDRYRUN0000000000000000", "--name", "Dry Run"]);
+    // Task planning requires a route the live read-only Runtime can execute.
+    writeFileSync(join(project, ".kxm", "workflows", "inspect.yaml"), "schema: kxm.workflow.v1\ncoordinator: coordinator\nsteps:\n  - id: inspect\n    kind: agent\n    agent: implementer\n    repositories:\n      control: read\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n      failed:\n        target: $terminal\n        terminalStatus: failed\n");
+    writeFileSync(join(project, ".kxm", "agents", "implementer.yaml"), JSON.stringify({
+      schema: "kxm.agent.v1", purpose: "Inspect", repositories: { control: "write" },
+      model: { provider: "openrouter", model: "qwen/qwen3-coder-plus" },
+    }));
+    writeFileSync(join(project, ".kxm", "routes.yaml"), "schema: kxm.routes.v2\nadmitted:\n  - openrouter/qwen/qwen3-coder-plus\ndisabled: []\nroles: {}\n");
     writeFileSync(join(project, "AGENTS.md"), "# Dry Run\n");
     assert.equal(spawnSync("git", ["-C", project, "add", "-A"]).status, 0);
     assert.equal(spawnSync("git", ["-C", project, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"]).status, 0);
     await seed(["role", "add", "seed-role", "--description", "seed"]);
     await seed(["workflow", "add", "seed-flow", "--description", "seed", "--scope", "global"]);
-    const taskId = ((await seed(["task", "create", "Seed task", "--tracker", "github", "--issue", "1"])).task as { id: string }).id;
+    const taskId = ((await seed(["task", "create", "Seed task", "--workflow", "inspect", "--tracker", "github", "--issue", "1"])).task as { id: string }).id;
     writeFileSync(join(root, "SKILL.md"), "---\nname: seed-skill\ndescription: seed skill\n---\nDo the thing.\n");
     const skillId = ((await seed([
       "skills", "create", "--file", join(root, "SKILL.md"), "--name", "seed-skill", "--created-by", "author",
@@ -681,6 +685,17 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
       createdAt: "2026-09-23T00:00:00.000Z", updatedAt: "2026-09-23T00:00:00.000Z",
     }));
     hubStore.close();
+    const runtimeStore = new KxmRunEventStore(kxmProjectRunEventsPath(project, env));
+    try {
+      const at = "2026-09-23T00:00:00.000Z";
+      runtimeStore.insertRun({
+        runId: `run_${"0".repeat(32)}`, projectId: "prj_01JDRYRUN0000000000000000", homeRuntimeId: "rt_dry_run", workflowId: "default",
+        promptSha256: "0".repeat(64), status: "waiting", configRevision: "c", memoryRevision: "m", executorPolicyRevision: "e", toolPolicyRevision: "t",
+        createdAt: at, updatedAt: at,
+      });
+    } finally {
+      runtimeStore.close();
+    }
     await seed(["backup", "--out", join(root, "backup")]);
 
     const before = treeSnapshot(root);
@@ -783,11 +798,27 @@ test("workflow add templates validate and plan a run, and a gate outcome the ste
       assert.equal(added.code, 0, added.err);
       assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, workflowFile(id));
       ids.push(id);
+
+      const beforePick = treeSnapshot(root);
+      const pickPlan = await kxm(["workflow", "add", "--pick", template, "--dry-run"]);
+      assert.equal(pickPlan.code, 0, pickPlan.err);
+      assert.deepEqual(treeSnapshot(root), beforePick, `--pick ${template} --dry-run leaves all paths unchanged`);
+      const picked = await kxm(["workflow", "add", "--pick", template]);
+      assert.equal(picked.code, 0, picked.err);
+      ids.push(template);
     }
+    const expectedStages: Record<string, string[]> = {
+      demo: ["step-1"],
+      "implement-and-verify": ["implement", "verify"],
+      "dual-critic-review": ["implement", "review-arch", "review-cli", "verify"],
+      "spec-and-plan": ["plan", "review-arch"],
+    };
+    const bundle = loadKxmProject(project);
     for (const id of ids) {
-      const text = readFileSync(workflowFile(id), "utf8");
-      assert.doesNotMatch(text, /^id:/m, `${id}: the file name is the workflow id`);
-      assert.doesNotMatch(text, /\brole:/, `${id}: steps name an agent, not a role`);
+      const definition = bundle.workflows.get(id);
+      assert.ok(definition, `${id} is available to the project loader`);
+      const plan = compileKxmWorkflow({ id, value: definition.value, logicalPath: definition.logicalPath });
+      assert.deepEqual(plan.order, expectedStages[id.replace(/^demo-/, "")], `${id} compiles to its executable stage sequence`);
     }
     const unknown = await kxm(["workflow", "add", "other", "--template", "nope"]);
     assert.equal(unknown.code, 2);

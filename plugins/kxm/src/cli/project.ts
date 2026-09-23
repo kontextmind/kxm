@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { createBackup, planBackup, planRestore, restoreBackup } from "../database.ts";
+import { applyRestorePlan, createBackup, databaseError, planBackup, planRestore, type RestorePlan } from "../database.ts";
+import { readLiveHubClaim } from "../hub-autostart.ts";
 import { refreshModelInventory } from "../model-inventory.ts";
 import { listInventoryModels, listRoleBindings, loadRoutePolicy, setRouteState, updateRouteState } from "../routes.ts";
 import {
@@ -15,6 +16,7 @@ import { initializeKxmProject } from "../init.ts";
 import { diffKxmProjectAgainstRevision, formatKxmPermissionDiff } from "../permission.ts";
 import { readKxmLocalBindings, kxmUserStateRoot } from "../bindings.ts";
 import { loadKxmProject } from "../project-config.ts";
+import { kxmLiveRunPrerequisites, type KxmRunHandoff } from "../engine.ts";
 import {
   attachKxmSupervisor,
   ensureKxmSupervisor,
@@ -114,6 +116,13 @@ export async function cmdKxmInit(
       localStateRoot: kxmUserStateRoot({ env: runtime.env }),
       dryRun: runtime.dryRun,
     });
+    const starterGuidance = initialized.action === "created" || (initialized.action === "planned" && initialized.plan.mode === "create")
+      ? [
+          "defaultHarness: pi and the npm test gate are generic starter settings, not repository detection.",
+          "For Claude, set defaultHarness: claude in .kxm/project.yaml, update any explicit harness overrides in .kxm/agents/*.yaml, and configure compatible agent models.",
+          "For .NET or other non-npm repositories, set gates.test.argv in .kxm/gates.yaml to the repository's actual test runner before driving a workflow.",
+        ]
+      : [];
     const payload = {
       ok: initialized.action !== "planned" || runtime.dryRun,
       command: "init",
@@ -127,9 +136,10 @@ export async function cmdKxmInit(
       ...(initialized.resumePending === undefined ? {} : { resumePending: initialized.resumePending }),
       ...(initialized.transactionKind === undefined ? {} : { transactionKind: initialized.transactionKind }),
       plannedOnly: initialized.action === "planned",
+      ...(starterGuidance.length > 0 ? { guidance: starterGuidance } : {}),
     };
     const finishInit = (code: number, text: string): number => {
-      print(runtime.io, runtime.json, payload, text);
+      print(runtime.io, runtime.json, payload, [text, ...starterGuidance].join("\n"));
       return code;
     };
     if (initialized.action === "created") {
@@ -181,23 +191,30 @@ export async function cmdKxmInit(
   }
 }
 
-export async function cmdBackup(runtime: Runtime, options: { out?: string | undefined }): Promise<number> {
+/** The checkout backup and restore act for, found as the Runtime finds it, so the
+ * project's event store key is the one the Runtime derives. */
+function backupProjectRoot(runtime: Runtime): string {
+  return discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+}
+
+export async function cmdBackup(runtime: Runtime, options: { out?: string | undefined; allProjects?: boolean | undefined }): Promise<number> {
   try {
     const backupOptions = {
-      projectRoot: runtime.cwd,
+      projectRoot: backupProjectRoot(runtime),
       env: runtime.env,
+      ...(options.allProjects === true ? { allProjects: true } : {}),
       ...(options.out ? { outDir: resolve(runtime.cwd, options.out) } : {}),
     };
     if (runtime.dryRun) {
       const plan = planBackup(backupOptions);
       printPlan(
         runtime,
-        { command: "backup", outDir: plan.outDir, stores: plan.stores, files: plan.files },
+        { command: "backup", scope: plan.scope, outDir: plan.outDir, stores: plan.stores, files: plan.files },
         [
           ...[...plan.stores, ...plan.files].map((entry) => ({ action: "write" as const, target: join(plan.outDir, entry.backupFile) })),
           { action: "write", target: join(plan.outDir, "manifest.json") },
         ],
-        `back up ${plan.stores.length} store(s) and ${plan.files.length} file(s) to ${plan.outDir} (sources are not opened, so their WAL is not checkpointed)`,
+        `back up ${plan.stores.length} store(s) and ${plan.files.length} file(s) (${plan.scope} scope) to ${plan.outDir} (sources are not opened, so their WAL is not checkpointed)`,
       );
       return 0;
     }
@@ -212,7 +229,7 @@ export async function cmdBackup(runtime: Runtime, options: { out?: string | unde
     };
     const summary = [
       complete
-        ? `Created SQLite backup with ${manifest.stores.length} store(s):`
+        ? `Created SQLite backup with ${manifest.stores.length} store(s) (${manifest.scope ?? "project"} scope):`
         : `Backup is incomplete (${manifest.omitted?.length ?? 0} omitted); not ok:`,
       ...manifest.stores.map((s) => `  - ${s.storeId}: ${s.sourcePath} -> ${s.backupFile} (schema v${s.schemaVersion}, ${s.bytes} bytes, sha256 ${s.sha256.slice(0, 12)}...)`),
       ...(manifest.omitted ?? []).map((id) => `  - omitted ${id}`),
@@ -230,16 +247,63 @@ export async function cmdBackup(runtime: Runtime, options: { out?: string | unde
   }
 }
 
-export async function cmdRestore(runtime: Runtime, manifestArg: string): Promise<number> {
+/**
+ * Refuse while anything holds the stores a restore would overwrite. Replacing a
+ * SQLite file under an open connection loses the writer's next commit or corrupts
+ * the store, and the supervisor holds the registry and every project's event store
+ * open. Reads only: the registry is opened read-only and the hub claim is a file,
+ * so the check is the same under --dry-run.
+ */
+function assertRestoreTargetsStopped(runtime: Runtime, plan: RestorePlan): void {
+  const paths = kxmRuntimePaths({ env: runtime.env });
+  let supervisor: ReturnType<typeof kxmSupervisorStatus>;
   try {
+    supervisor = kxmSupervisorStatus(paths, { readOnly: true });
+  } catch (error) {
+    // Fail closed, but name the way out: a registry too broken to read is also one a
+    // restore may be meant to replace.
+    throw databaseError(
+      "restore_runtime_unverified",
+      paths.registryDb,
+      `cannot read the Runtime registry to check whether the supervisor is running (${error instanceof Error ? error.message : String(error)}); stop the Runtime, move the registry aside, and restore again`,
+    );
+  }
+  if (supervisor.running) {
+    throw databaseError(
+      "restore_runtime_running",
+      paths.registryDb,
+      `the Runtime supervisor is running (pid ${String(supervisor.pid)}); stop it with \`kxm runtime stop\` and keep it stopped until the restore finishes`,
+    );
+  }
+  for (const store of plan.stores) {
+    if (store.storeId !== "hub-store") continue;
+    const claim = readLiveHubClaim(dirname(store.targetPath));
+    if (claim) {
+      throw databaseError(
+        "restore_hub_running",
+        store.targetPath,
+        `a hub (pid ${String(claim.pid)}) is running on ${store.targetPath}; stop it with \`kxm hub stop\` before restoring`,
+      );
+    }
+  }
+}
+
+export async function cmdRestore(runtime: Runtime, manifestArg: string, options: { allProjects?: boolean | undefined } = {}): Promise<number> {
+  try {
+    const plan = planRestore(resolve(runtime.cwd, manifestArg), {
+      projectRoot: backupProjectRoot(runtime),
+      env: runtime.env,
+      ...(options.allProjects === true ? { allProjects: true } : {}),
+    });
+    assertRestoreTargetsStopped(runtime, plan);
     if (runtime.dryRun) {
-      const plan = planRestore(resolve(runtime.cwd, manifestArg), { projectRoot: runtime.cwd });
       printPlan(
         runtime,
         {
           command: "restore",
           backupId: plan.backupId,
           manifestPath: plan.manifestPath,
+          ...(plan.scope !== undefined ? { scope: plan.scope } : {}),
           stores: plan.stores.map(({ storeId, targetPath, schemaVersion }) => ({ storeId, targetPath, schemaVersion })),
           files: plan.files.map(({ id, targetPath }) => ({ id, targetPath })),
         },
@@ -256,14 +320,13 @@ export async function cmdRestore(runtime: Runtime, manifestArg: string): Promise
       );
       return 0;
     }
-    const result = restoreBackup(resolve(runtime.cwd, manifestArg), {
-      projectRoot: runtime.cwd,
-    });
+    const result = applyRestorePlan(plan);
     const payload = {
       ok: true,
       command: "restore",
       backupId: result.backupId,
       manifestPath: result.manifestPath,
+      ...(plan.scope !== undefined ? { scope: plan.scope } : {}),
       restoredStores: result.restoredStores,
     };
     const summary = [
@@ -334,11 +397,16 @@ async function readSupervisor(runtime: Runtime, command: string): Promise<Awaite
   return attached ?? refuseDryRun(runtime.io, runtime.json, command, "the Runtime supervisor is not running and --dry-run will not start it");
 }
 
-export const RUN_ENGINE_PHASE = "pre-3a";
-
-/** The next step `kxm run` prints for the run it just created. */
-export function runEngineNotice(runId: string): string {
-  return `drive it model-free: kxm runs drive ${runId} --simulated --wait (or cancel: kxm runs cancel ${runId})`;
+/** Creation is not execution; local runs are driven and inspected in the runs namespace. */
+export function runEngineNotice(runId: string, defaultHarness: string, prerequisites: readonly KxmRunHandoff[]): string {
+  return [
+    `No steps executed. Project default harness: ${defaultHarness}; per-agent harness settings take precedence.`,
+    ...prerequisites.map((item) => `Live prerequisite${item.stepId ? ` (${item.stepId})` : ""}: ${item.detail}`),
+    "Live execution uses one-shot harness calls; no hub or Pi worker is required. Check installation/authentication with kxm harness list.",
+    `${prerequisites.length > 0 ? "Resolve the prerequisites above, then execute" : "Execute"}: kxm runs drive ${runId} --wait`,
+    `Inspect: kxm runs status ${runId} --json; receipt: kxm runs receipt ${runId} --json; cancel: kxm runs cancel ${runId}`,
+    "These are local Runtime runs, not webhook workflows; use kxm runs, not kxm workflow get.",
+  ].join("\n");
 }
 
 /** Where `kxm run <workflow>` would create its run, or the exit code of the
@@ -346,7 +414,8 @@ export function runEngineNotice(runId: string): string {
 export function resolveKxmRunTarget(
   runtime: Runtime,
   workflow: string | undefined,
-): { projectRoot: string; workflowId: string; configRevision: string } | number {
+  forTask = false,
+): { projectRoot: string; workflowId: string; configRevision: string; defaultHarness: string; prerequisites: KxmRunHandoff[] } | number {
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
@@ -355,7 +424,7 @@ export function resolveKxmRunTarget(
     }, "kxm run discovers the authoritative project from the current directory; --workspace is not supported");
     return 2;
   }
-  if (!workflow) {
+  if (!workflow && !forTask) {
     print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required" }, "usage: kxm run <workflow> [prompt]");
     return 2;
   }
@@ -365,16 +434,26 @@ export function resolveKxmRunTarget(
     return 1;
   }
   const bundle = loadKxmProject(projectRoot, {});
-  if (!bundle.workflows.has(workflow)) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow }, `workflow ${workflow} does not exist in this project`);
+  const workflowId = workflow ?? String(bundle.project.value.defaultWorkflow ?? "default");
+  if (!bundle.workflows.has(workflowId)) {
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow: workflowId }, `workflow ${workflowId} does not exist in this project`);
     return 1;
   }
-  return { projectRoot, workflowId: workflow, configRevision: bundle.configRevision };
+  const defaultHarness = String(bundle.project.value.defaultHarness ?? "pi");
+  const prerequisites = kxmLiveRunPrerequisites(bundle, workflowId, projectRoot);
+  if (forTask && prerequisites.length > 0) {
+    print(runtime.io, runtime.json, {
+      ok: false, command: "task run", error: "run_execution_unavailable", workflowId, defaultHarness,
+      execution: { status: "not_started", mode: "live", prerequisites },
+    }, `task run refused; no run created or task changed (default harness: ${defaultHarness}).\n${prerequisites.map((item) => `${item.stepId ?? workflowId}: ${item.detail}`).join("\n")}`);
+    return 1;
+  }
+  return { projectRoot, workflowId, configRevision: bundle.configRevision, defaultHarness, prerequisites };
 }
 
-export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
+export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[], forTask = false): Promise<number> {
   try {
-    const target = resolveKxmRunTarget(runtime, workflow);
+    const target = resolveKxmRunTarget(runtime, workflow, forTask);
     if (typeof target === "number") return target;
     const { projectRoot } = target;
     if (runtime.dryRun) {
@@ -397,11 +476,23 @@ export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, 
     print(runtime.io, runtime.json, {
       ok: true,
       command: "run",
-      phase: RUN_ENGINE_PHASE,
+      execution: {
+        status: "not_started",
+        mode: "live",
+        defaultHarness: target.defaultHarness,
+        authentication: "not_checked",
+        prerequisites: target.prerequisites,
+        nextSteps: {
+          harnesses: "kxm harness list",
+          drive: `kxm runs drive ${run.runId} --wait`,
+          status: `kxm runs status ${run.runId} --json`,
+          receipt: `kxm runs receipt ${run.runId} --json`,
+        },
+      },
       idempotent: acceptance.idempotent === true,
       run,
       supervisor: { runtimeId: supervisor.runtimeId, port: supervisor.port, started: supervisor.started },
-    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)\n${runEngineNotice(run.runId)}`);
+    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)\n${runEngineNotice(run.runId, target.defaultHarness, target.prerequisites)}`);
     return 0;
   } catch (error) {
     if (error instanceof KxmConfigError) {
@@ -728,9 +819,20 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
 }
 
 export async function cmdHarnessList(runtime: Runtime): Promise<number> {
-  const inventory = await probeHarnessesAsync({ env: runtime.env });
-  print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
-  return 0;
+  try {
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+    const defaultHarness = projectRoot ? String(loadKxmProject(projectRoot).project.value.defaultHarness ?? "pi") : undefined;
+    const inventory = await probeHarnessesAsync({ env: runtime.env, defaultHarness });
+    print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
+    return 0;
+  } catch (error) {
+    if (error instanceof KxmConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "harness list", error: "harness_list_failed", issues: error.issues }, `harness list failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "harness list", error: "harness_list_io_failed" }, "harness list failed because a local operation did not complete");
+    return 1;
+  }
 }
 
 export async function selectInventoryModel(runtime: Runtime, requested?: string | undefined): Promise<string | undefined> {

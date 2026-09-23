@@ -169,7 +169,7 @@ Every store opens in WAL mode with a 5-second busy timeout, `synchronous=NORMAL`
 ## Reset a store
 
 > [!CAUTION]
-> Deleting a store erases its history for good. Back it up first if you might need it. `kxm backup` copies the hub store and the Runtime stores in the user state root, for every project on the machine.
+> Deleting a store erases its history for good. Back it up first if you might need it. `kxm backup` copies the hub store and this project's Runtime event store; `kxm backup --all-projects` adds the Runtime registry and every project's event store.
 
 Stop every writer first, then delete each database together with its sidecars:
 

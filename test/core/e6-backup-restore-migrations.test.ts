@@ -12,6 +12,7 @@ import {
   checkpointWal,
   checkIntegrity,
   createBackup,
+  planRestore,
   restoreBackup,
   backupDatabaseFile,
   restoreDatabaseFile,
@@ -31,6 +32,9 @@ import {
   KxmRunEventStore,
   KXM_REGISTRY_SCHEMA_VERSION,
   KXM_EVENT_STORE_SCHEMA_VERSION,
+  kxmProjectRunEventsPath,
+  kxmRuntimePaths,
+  projectRuntimeKey,
 } from "../../plugins/kxm/src/runtime-store.ts";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
@@ -400,7 +404,7 @@ test("kxm backup and kxm restore CLI commands succeed end-to-end and handle erro
     const backupTextIo = capture();
     const backupTextCode = await runCli(["backup", "--out", customBackupDir], isolated, backupTextIo, projectRoot);
     assert.equal(backupTextCode, 0, backupTextIo.read().stderr);
-    assert.match(backupTextIo.read().stdout, /Created SQLite backup with 1 store\(s\):/);
+    assert.match(backupTextIo.read().stdout, /Created SQLite backup with 1 store\(s\) \(project scope\):/);
 
     // Wipe store
     rmSync(hubStorePath, { force: true });
@@ -408,7 +412,7 @@ test("kxm backup and kxm restore CLI commands succeed end-to-end and handle erro
 
     // 3. Run in-process runCli(["restore", backupJson.outDir, "--json"])
     const restoreJsonIo = capture();
-    const restoreCode = await runCli(["restore", backupJson.outDir, "--json"], {}, restoreJsonIo, projectRoot);
+    const restoreCode = await runCli(["restore", backupJson.outDir, "--json"], isolated, restoreJsonIo, projectRoot);
     assert.equal(restoreCode, 0, restoreJsonIo.read().stderr);
     const restoreJson = JSON.parse(restoreJsonIo.read().stdout);
     assert.equal(restoreJson.ok, true);
@@ -422,7 +426,7 @@ test("kxm backup and kxm restore CLI commands succeed end-to-end and handle erro
 
     // 4. Run text-mode restore
     const restoreTextIo = capture();
-    const restoreTextCode = await runCli(["restore", join(customBackupDir, "manifest.json")], {}, restoreTextIo, projectRoot);
+    const restoreTextCode = await runCli(["restore", join(customBackupDir, "manifest.json")], isolated, restoreTextIo, projectRoot);
     assert.equal(restoreTextCode, 0, restoreTextIo.read().stderr);
     assert.match(restoreTextIo.read().stdout, /Restored 1 SQLite store\(s\) from/);
 
@@ -439,7 +443,7 @@ test("kxm backup and kxm restore CLI commands succeed end-to-end and handle erro
 
     // 6. Error case: restore non-existent manifest fails with exit code 1
     const errRestoreIo = capture();
-    const errRestoreCode = await runCli(["restore", "nonexistent-manifest.json"], {}, errRestoreIo, projectRoot);
+    const errRestoreCode = await runCli(["restore", "nonexistent-manifest.json"], isolated, errRestoreIo, projectRoot);
     assert.equal(errRestoreCode, 1);
     assert.match(errRestoreIo.read().stderr, /restore failed/);
   } finally {
@@ -594,7 +598,7 @@ test("restore ceilings track every store's own schema version", () => {
   }
 });
 
-test("backup discovers user-state runtime stores and refuses a partial manifest", () => {
+test("an all-projects backup discovers user-state runtime stores and refuses a partial manifest", () => {
   const env = setupTestEnv();
   const stateHome = join(env.dir, "user-state");
   try {
@@ -612,8 +616,10 @@ test("backup discovers user-state runtime stores and refuses a partial manifest"
       projectRoot,
       outDir: join(projectRoot, "backup-user"),
       env: { KXM_STATE_HOME: stateHome },
+      allProjects: true,
     });
     assert.equal(manifest.complete, true);
+    assert.equal(manifest.scope, "all-projects");
     assert.ok(manifest.stores.some((store) => store.storeId === "registry" && store.sourcePath === registryPath));
     assert.ok(manifest.stores.some((store) => store.storeId === "events:projkey"));
     assert.ok(manifest.files?.some((file) => file.id === "events:projkey:run-prompts"));
@@ -625,10 +631,244 @@ test("backup discovers user-state runtime stores and refuses a partial manifest"
       projectRoot,
       outDir: join(projectRoot, "backup-partial"),
       env: { KXM_STATE_HOME: junkHome },
+      allProjects: true,
     });
     assert.equal(partial.manifest.complete, false);
     assert.ok(partial.manifest.omitted?.includes("registry"));
     assert.throws(() => restoreBackup(partial.outDir, { projectRoot }), /restore_incomplete/);
+  } finally {
+    env.cleanup();
+  }
+});
+
+const SEEDED_AT = "2026-09-23T12:00:00.000Z";
+
+function seedRun(path: string, runId: string, projectId: string): void {
+  const store = new KxmRunEventStore(path);
+  try {
+    store.transaction(() => {
+      store.insertRun({
+        runId,
+        projectId,
+        homeRuntimeId: "rt_scope",
+        workflowId: "wf_test",
+        promptSha256: "abc",
+        status: "created",
+        configRevision: "rev1",
+        memoryRevision: "ctxrev_001",
+        executorPolicyRevision: "exec1",
+        toolPolicyRevision: "tool1",
+        createdAt: SEEDED_AT,
+        updatedAt: SEEDED_AT,
+      });
+    });
+  } finally {
+    store.close();
+  }
+}
+
+function hasRun(path: string, runId: string): boolean {
+  const store = new KxmRunEventStore(path);
+  try {
+    return store.run(runId) !== undefined;
+  } finally {
+    store.close();
+  }
+}
+
+/** Two checkouts sharing one user state root, each with a Runtime event store and
+ * prompt sidecar, both registered in the shared registry. Project A has a hub store. */
+function seedTwoProjects(dir: string) {
+  const env = { KXM_STATE_HOME: join(dir, "state") };
+  const projectA = join(dir, "project-a");
+  const projectB = join(dir, "project-b");
+  mkdirSync(join(projectA, ".kxm", "state"), { recursive: true });
+  mkdirSync(projectB, { recursive: true });
+  const hub = new MeshStore(join(projectA, ".kxm", "state", "kxm.db"));
+  hub.saveAgent(makeStoredAgent("agt_a", { name: "A" }));
+  hub.close();
+  const registryDb = kxmRuntimePaths({ env }).registryDb;
+  const registry = new KxmRuntimeRegistry(registryDb);
+  registry.registerProject({ projectId: "prj_a", projectRoot: projectA, homeRuntimeId: "rt_scope", now: SEEDED_AT });
+  registry.registerProject({ projectId: "prj_b", projectRoot: projectB, homeRuntimeId: "rt_scope", now: SEEDED_AT });
+  registry.close();
+  const eventsA = kxmProjectRunEventsPath(projectA, env);
+  const eventsB = kxmProjectRunEventsPath(projectB, env);
+  seedRun(eventsA, "run_a_before", "prj_a");
+  seedRun(eventsB, "run_b_before", "prj_b");
+  writeFileSync(`${eventsA}.run-prompts.json`, "{\"a\":\"before\"}\n");
+  writeFileSync(`${eventsB}.run-prompts.json`, "{\"b\":\"before\"}\n");
+  return { env, projectA, projectB, eventsA, eventsB, registryDb, hubStorePath: join(projectA, ".kxm", "state", "kxm.db") };
+}
+
+test("a project backup holds only its own Runtime event store, and its restore leaves other projects alone", () => {
+  const env = setupTestEnv();
+  try {
+    const { env: stateEnv, projectA, eventsA, eventsB, registryDb, hubStorePath } = seedTwoProjects(env.dir);
+    const outDir = join(env.dir, "backup-a");
+    const { manifest } = createBackup({ projectRoot: projectA, outDir, env: stateEnv });
+
+    assert.equal(manifest.complete, true);
+    assert.equal(manifest.scope, "project");
+    assert.equal(manifest.runtimeProjectKey, projectRuntimeKey(projectA));
+    assert.deepEqual(manifest.stores.map((store) => store.storeId).sort(), [`events:${projectRuntimeKey(projectA)}`, "hub-store"]);
+    assert.deepEqual(manifest.files?.map((file) => file.sourcePath), [`${eventsA}.run-prompts.json`]);
+    const copied = [...manifest.stores.map((store) => store.sourcePath), ...(manifest.files ?? []).map((file) => file.sourcePath)];
+    assert.equal(copied.includes(registryDb), false, "the shared registry is not in a project backup");
+    assert.equal(copied.some((path) => path.startsWith(eventsB)), false, "another project's event store is not in a project backup");
+
+    const schemaFile = JSON.parse(readFileSync("schemas/backup-manifest.schema.json", "utf8"));
+    const ajv = new Ajv2020({ allErrors: true });
+    ajv.addSchema(JSON.parse(readFileSync("schemas/common.schema.json", "utf8")));
+    const validate = ajv.compile(schemaFile);
+    assert.equal(validate(manifest), true, JSON.stringify(validate.errors));
+
+    // Every project moves on after the backup, and a third registers.
+    seedRun(eventsA, "run_a_after", "prj_a");
+    seedRun(eventsB, "run_b_after", "prj_b");
+    writeFileSync(`${eventsB}.run-prompts.json`, "{\"b\":\"after\"}\n");
+    const registry = new KxmRuntimeRegistry(registryDb);
+    registry.registerProject({ projectId: "prj_c", projectRoot: join(env.dir, "project-c"), homeRuntimeId: "rt_scope", now: SEEDED_AT });
+    registry.close();
+
+    const result = restoreBackup(outDir, { projectRoot: projectA, env: stateEnv });
+    assert.deepEqual(result.restoredStores.map((store) => store.sourcePath).sort(), [eventsA, hubStorePath].sort());
+    assert.equal(hasRun(eventsA, "run_a_before"), true);
+    assert.equal(hasRun(eventsA, "run_a_after"), false, "project A rolled back");
+    assert.equal(readFileSync(`${eventsA}.run-prompts.json`, "utf8"), "{\"a\":\"before\"}\n");
+    assert.equal(hasRun(eventsB, "run_b_after"), true, "project B kept its later run");
+    assert.equal(readFileSync(`${eventsB}.run-prompts.json`, "utf8"), "{\"b\":\"after\"}\n");
+    const after = new KxmRuntimeRegistry(registryDb);
+    assert.equal(after.project("prj_c")?.projectId, "prj_c", "the registry was not rolled back");
+    after.close();
+
+    // The event store goes where the Runtime looks for this checkout, so a moved user
+    // state root receives it rather than the path the backup recorded.
+    const movedEnv = { KXM_STATE_HOME: join(env.dir, "state-moved") };
+    restoreBackup(outDir, { projectRoot: projectA, env: movedEnv });
+    const movedEvents = kxmProjectRunEventsPath(projectA, movedEnv);
+    assert.equal(hasRun(movedEvents, "run_a_before"), true);
+    assert.equal(readFileSync(`${movedEvents}.run-prompts.json`, "utf8"), "{\"a\":\"before\"}\n");
+  } finally {
+    env.cleanup();
+  }
+});
+
+test("an --all-projects backup holds every project and the registry, and only --all-projects restores it", async () => {
+  const env = setupTestEnv();
+  try {
+    const { env: stateEnv, projectA, eventsA, eventsB, registryDb } = seedTwoProjects(env.dir);
+    const outDir = join(env.dir, "backup-all");
+    const backupIo = capture();
+    assert.equal(await runCli(["backup", "--all-projects", "--out", outDir, "--json"], stateEnv, backupIo, projectA), 0, backupIo.read().stderr);
+    const { manifest } = JSON.parse(backupIo.read().stdout) as { manifest: { scope: string; stores: Array<{ storeId: string; sourcePath: string }>; files: Array<{ sourcePath: string }> } };
+    assert.equal(manifest.scope, "all-projects");
+    assert.ok(manifest.stores.some((store) => store.storeId === "registry" && store.sourcePath === registryDb));
+    assert.ok(manifest.stores.some((store) => store.sourcePath === eventsA));
+    assert.ok(manifest.stores.some((store) => store.sourcePath === eventsB));
+    assert.equal(manifest.files.length, 2);
+
+    seedRun(eventsB, "run_b_after", "prj_b");
+
+    const refusedIo = capture();
+    assert.equal(await runCli(["restore", outDir, "--json"], stateEnv, refusedIo, projectA), 1);
+    const refused = JSON.parse(refusedIo.read().stderr) as { error: string; issues: Array<{ code: string }> };
+    assert.equal(refused.error, "restore_failed");
+    assert.equal(refused.issues[0]?.code, "restore_requires_all_projects");
+    assert.equal(hasRun(eventsB, "run_b_after"), true, "a refused restore writes nothing");
+
+    // A manifest written before scopes records the same stores as bare absolute paths;
+    // they are still machine-wide and still need the flag.
+    const manifestPath = join(outDir, "manifest.json");
+    const legacy = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    delete legacy.scope;
+    delete legacy.stateRoot;
+    delete legacy.runtimeProjectKey;
+    writeFileSync(manifestPath, JSON.stringify(legacy, null, 2));
+    assert.throws(() => planRestore(outDir, { projectRoot: projectA, env: stateEnv }), /restore_requires_all_projects/);
+
+    const restoreIo = capture();
+    assert.equal(await runCli(["restore", outDir, "--all-projects", "--json"], stateEnv, restoreIo, projectA), 0, restoreIo.read().stderr);
+    assert.equal(hasRun(eventsB, "run_b_after"), false, "--all-projects rolls every project back");
+    assert.equal(hasRun(eventsB, "run_b_before"), true);
+  } finally {
+    env.cleanup();
+  }
+});
+
+test("kxm restore refuses while the Runtime supervisor is running, before any write and under --dry-run", async () => {
+  const env = setupTestEnv();
+  try {
+    const { env: stateEnv, projectA, eventsA, registryDb } = seedTwoProjects(env.dir);
+    const outDir = join(env.dir, "backup-live");
+    createBackup({ projectRoot: projectA, outDir, env: stateEnv });
+    seedRun(eventsA, "run_a_after", "prj_a");
+
+    // A live supervisor as `kxm runtime status` judges one: running, a fresh heartbeat,
+    // and a pid that exists (this test process).
+    const registry = new KxmRuntimeRegistry(registryDb);
+    registry.claimSupervisor({ runtimeId: "rt_scope", pid: process.pid, port: 4567, tokenHash: "hash", now: new Date().toISOString() });
+    registry.close();
+    const registryBefore = readFileSync(registryDb);
+
+    for (const argv of [["restore", outDir, "--json"], ["restore", outDir, "--dry-run", "--json"]]) {
+      const io = capture();
+      assert.equal(await runCli(argv, stateEnv, io, projectA), 1, argv.join(" "));
+      const payload = JSON.parse(io.read().stderr) as { error: string; issues: Array<{ code: string }> };
+      assert.equal(payload.error, "restore_failed", argv.join(" "));
+      assert.equal(payload.issues[0]?.code, "restore_runtime_running", argv.join(" "));
+    }
+    assert.equal(hasRun(eventsA, "run_a_after"), true, "nothing was restored");
+    assert.deepEqual(readFileSync(registryDb), registryBefore, "the liveness check does not write the registry");
+    assert.equal(existsSync(`${registryDb}-wal`), false);
+    assert.equal(existsSync(`${registryDb}-shm`), false);
+
+    // A registry too broken to read cannot prove the supervisor is down.
+    const registryAside = `${registryDb}.aside`;
+    writeFileSync(registryAside, registryBefore);
+    writeFileSync(registryDb, "not a database");
+    const unverifiedIo = capture();
+    assert.equal(await runCli(["restore", outDir, "--json"], stateEnv, unverifiedIo, projectA), 1);
+    assert.equal((JSON.parse(unverifiedIo.read().stderr) as { issues: Array<{ code: string }> }).issues[0]?.code, "restore_runtime_unverified");
+    assert.equal(hasRun(eventsA, "run_a_after"), true, "nothing was restored");
+    writeFileSync(registryDb, readFileSync(registryAside));
+
+    const stopped = new KxmRuntimeRegistry(registryDb);
+    stopped.markStopped(process.pid, new Date().toISOString());
+    stopped.close();
+    const io = capture();
+    assert.equal(await runCli(["restore", outDir, "--json"], stateEnv, io, projectA), 0, io.read().stderr);
+    assert.equal(hasRun(eventsA, "run_a_after"), false);
+  } finally {
+    env.cleanup();
+  }
+});
+
+test("kxm restore refuses while a hub holds the hub store it would overwrite", async () => {
+  const env = setupTestEnv();
+  try {
+    const { env: stateEnv, projectA, hubStorePath } = seedTwoProjects(env.dir);
+    const outDir = join(env.dir, "backup-hub");
+    createBackup({ projectRoot: projectA, outDir, env: stateEnv });
+    const hub = new MeshStore(hubStorePath);
+    hub.saveAgent(makeStoredAgent("agt_after", { name: "After" }));
+    hub.close();
+    const claim = join(projectA, ".kxm", "state", "hub.pid");
+    writeFileSync(claim, JSON.stringify({ version: 1, role: "hub", pid: process.pid }));
+
+    const refusedIo = capture();
+    assert.equal(await runCli(["restore", outDir, "--dry-run", "--json"], stateEnv, refusedIo, projectA), 1);
+    assert.equal((JSON.parse(refusedIo.read().stderr) as { issues: Array<{ code: string }> }).issues[0]?.code, "restore_hub_running");
+    const stillLive = new MeshStore(hubStorePath);
+    assert.equal(stillLive.agents.get("agt_after")?.name, "After");
+    stillLive.close();
+
+    rmSync(claim);
+    const io = capture();
+    assert.equal(await runCli(["restore", outDir, "--json"], stateEnv, io, projectA), 0, io.read().stderr);
+    const restored = new MeshStore(hubStorePath);
+    assert.equal(restored.agents.has("agt_after"), false);
+    restored.close();
   } finally {
     env.cleanup();
   }

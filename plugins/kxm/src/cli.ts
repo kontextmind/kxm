@@ -419,18 +419,20 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       });
     });
 
-  addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of the project hub store and the Runtime stores under the user state root, with a hashed manifest"))
+  addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of this project's hub store and Runtime event store, with a hashed manifest"))
     .option("--out <dir>", "Directory to write backup and manifest")
-    .action(async function backupAction(this: Command, options: { out?: string }) {
+    .option("--all-projects", "Also back up the shared Runtime registry and every project's event store on this machine")
+    .action(async function backupAction(this: Command, options: { out?: string; allProjects?: boolean }) {
       result.code = await cmdBackup(runtimeFrom(ctx, this), options);
     });
 
-  addGlobalOptions(program.command("restore <manifest>").description("Restore SQLite stores from a verified backup manifest"))
-    .action(async function restoreAction(this: Command, manifest: string) {
-      result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
+  addGlobalOptions(program.command("restore <manifest>").description("Restore this project's SQLite stores from a verified backup manifest; refuses while the Runtime or hub is running"))
+    .option("--all-projects", "Also restore the shared Runtime registry and other projects' event stores the backup holds")
+    .action(async function restoreAction(this: Command, manifest: string, options: { allProjects?: boolean }) {
+      result.code = await cmdRestore(runtimeFrom(ctx, this), manifest, options);
     });
 
-  addGlobalOptions(program.command("run").description("Create a KXM run (offline-first; kxm runs drive <runId> --simulated executes it model-free)")
+  addGlobalOptions(program.command("run").description("Create a KXM run without executing steps; follow its prerequisites, then kxm runs drive <runId> --wait")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {

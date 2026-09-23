@@ -20,6 +20,7 @@ to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 | Delivery modes, message fields, hop limits and validation | `hub-api.test.ts`, `protocol.test.ts` |
 | Queue, acknowledgement, visibility, reply and authorization | `hub-api.test.ts`, `hub.test.ts` |
 | An unacknowledged (queued) message replays after a recipient restart as the same record | `hub.test.ts`, `extension.test.ts`, `mcp.test.ts` |
+| An acknowledged, unanswered request survives a Claude Code restart under the same agent name and is announced once; one cancelled during the restart is not announced | `mcp.test.ts`, `inbox.test.ts` |
 | An `allowOffline` send queues, delivers once on resumption, and expires unread by TTL | `hub-api.test.ts` |
 | TTL expiry, sender cancellation and terminal retention | `hub-api.test.ts` |
 | Exact-retry idempotency, and rejection of a reused key with different content | `hub-api.test.ts` |
@@ -59,8 +60,11 @@ to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 | Settlement from a structured result only; prose outcomes and undeclared outcomes end as `outcome_unknown` | `pi-producer.test.ts`, `engine.test.ts` |
 | Routing records carry `workflowId`, `askSha256`, `objectiveSha256` and `stepWrites`, and settle only `blocked` or `failed` | `route-admission.test.ts` |
 | Dispatch context: only committed, pinned memory and hash-verified promoted skills reach an agent; the rest is a `dispatch_context_*` gap | `engine.test.ts` ("dispatch context: agents receive only committed, pinned memory and verified skills; anything else is withheld with a gap and the step still completes") |
-| `kxm run` prints the simulated drive command for the new run | `cli.test.ts` ("kxm run prints the simulated drive command for the created run") |
+| Run creation reports no execution and concrete live prerequisites; task refusal leaves task/Runtime unchanged; project harness default is honored | `cli.test.ts`, `engine.test.ts`, `harness.test.ts` |
 | `kxm workflow add --template` writes workflows that validate and plan; an impossible gate outcome is refused | `cli-experience.test.ts` ("workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused") |
+| Flat workflow IDs and schema/compiler validation precede mutations; imported/picked local/global dry runs write nothing | `role-and-workflow-manager.test.ts`, `cli-experience.test.ts` |
+| Claude-only suggestions honor detected/authenticated routes, require audited writer profiles, refuse existing unchecked definitions, and quote shell arguments literally | `suggest.test.ts`, `cli-experience.test.ts` |
+| Explicit local YAML validates with runner schema/transitions; webhook environment sources retain JSON/secret checks | `gate-validation.test.ts` |
 | `kxm workflow add` writes a local workflow only where the loader reads it and only if the project still loads; outside a project it refuses | `role-and-workflow-manager.test.ts` ("workflow add writes only what the project loader accepts, at the project root, and loadKxmProject still loads") |
 | `kxm workflow add --pick <global-id>` copies the global definition into the project, not the scaffold, and the loader check refuses one that does not fit | `role-and-workflow-manager.test.ts` ("workflow add --pick <global-id> copies that global definition into the project, and refuses one the project loader rejects") |
 | `default.yaml` and the 13-step `fix.yaml` compile deterministically; back edges need budgets | `engine-compile.test.ts` |
@@ -135,17 +139,19 @@ The context suites in detail:
 | Metadata-only dashboard: ops mode, presence-only fallback, observer filtering, keys, body-free local projection | `tui.test.ts`, `hub-api.test.ts` |
 | Restricted loader, deterministic bundle hash, init classification, atomic creation, three-way repair, crash resumption | `project-config.test.ts`, `cli.test.ts`, `package-install.test.ts` |
 | Legacy `.kxm/config` JSON is refused with `legacy_state_unsupported`; `kxm migrate` is unknown; older stores are refused | `project-config.test.ts`, `cli.test.ts`, `e6-backup-restore-migrations.test.ts` |
-| `kxm backup` and `kxm restore` round-trip the hub store and Runtime stores seeded under `.kxm/runtime/`; Runtime stores and prompt sidecars under `KXM_STATE_HOME` are discovered; tampered, newer or incomplete (`complete: false`) backups are refused | `e6-backup-restore-migrations.test.ts` |
+| `kxm backup` and `kxm restore` round-trip the hub store and Runtime stores seeded under `.kxm/runtime/`; a project backup under `KXM_STATE_HOME` holds only its own event store and sidecar, and its restore leaves another project and the registry alone; `--all-projects` holds and restores every project and the registry, and restore refuses it without the flag; restore refuses while the supervisor or a hub is live, `--dry-run` included; tampered, newer or incomplete (`complete: false`) backups are refused | `e6-backup-restore-migrations.test.ts` |
 | Permission-diff trust: authority lattice, prose neutrality, Git base shadowing, CLI diff and check | `permission.test.ts`, `cli.test.ts`, `contracts.test.ts`, `package-install.test.ts` |
 | KXM schemas, restricted YAML fixtures, cross-resource semantics and sync-safe rejection | `contracts.test.ts`, `restricted-yaml.test.ts` |
 | Harness detection, auth and dispatch for the built-in catalog, including Windows launch rules | `harness.test.ts` |
 | `kxm update`: `update.yaml` validation, GitHub or npm version checks, install-kind detection, `kxm-<v>.tgz` asset selection | `kxm-update.test.ts`, `kxm-update-cli.test.ts`, `kxm-install-kind.test.ts` |
 
 The round trip seeds its Runtime stores in a project-local `.kxm/runtime/`
-layout that the Runtime never writes. A separate test seeds a registry, an event
-store and its prompt sidecar under a temporary `KXM_STATE_HOME` and checks that
-`kxm backup` finds them and that a partial manifest is refused. No test backs up
-stores a running supervisor wrote.
+layout that the Runtime never writes. Separate tests seed two projects' event
+stores, their prompt sidecars and a shared registry under a temporary
+`KXM_STATE_HOME`, at the paths the Runtime derives, and check each scope and
+that a partial manifest is refused. The supervisor-liveness test fakes a live
+supervisor with a fresh registry record naming the test's own PID; no test backs
+up or restores stores a running supervisor wrote.
 
 ## Packaging, release and repository gates
 
