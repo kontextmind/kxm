@@ -8,7 +8,10 @@
  * flag `readOnly`, Bun spells it `readonly`. Options are normalized here so
  * callers keep using the Node spelling everywhere.
  */
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export interface DatabaseSyncOptions {
   readOnly?: boolean;
@@ -73,4 +76,19 @@ export class DatabaseSync {
   close(): void {
     this.inner.close();
   }
+}
+
+/**
+ * Open a database for reading without touching its directory. A plain
+ * read-only open of a WAL database creates the `-wal` and `-shm` sidecars when
+ * they are missing and leaves them behind. With no `-wal` present, the main
+ * file already holds every committed page, so it is opened `immutable` (no
+ * locks, no sidecars); a present `-wal` means a writer or un-checkpointed
+ * frames, and the ordinary read-only open reads through them.
+ */
+export function openReadOnlyDatabase(path: string): DatabaseSync {
+  if (existsSync(`${path}-wal`)) return new DatabaseSync(path, { readOnly: true });
+  const uri = pathToFileURL(resolve(path));
+  uri.searchParams.set("immutable", "1");
+  return new DatabaseSync(uri.href, { readOnly: true });
 }
