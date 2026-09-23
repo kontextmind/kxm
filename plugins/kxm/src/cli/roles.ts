@@ -15,9 +15,10 @@ import {
   loadRoleHostsConfig,
   setRoleSeatHost,
   resolveRoleSeat,
+  parseRoleFile,
   type KxmRoleDefinition,
 } from "../role.ts";
-import { discoverKxmProjectRoot } from "../project-config.ts";
+import { discoverKxmProjectRoot, kxmRoleWriteIssues } from "../project-config.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import { resumeWorkflowFromRuling, type WorkflowRun } from "../workflow.ts";
@@ -156,6 +157,7 @@ export async function cmdRoleAdd(
   },
 ): Promise<number> {
   const scope = options.scope ?? "local";
+  let base: KxmRoleDefinition | undefined;
   if (!roleId || options.pick) {
     const candidates: PickCandidate[] = Object.values(DEFAULT_ROLES).map((r) => ({
       id: r.id,
@@ -166,8 +168,10 @@ export async function cmdRoleAdd(
     if (scope === "local") {
       const globalRoles = listRoles({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
       for (const gr of globalRoles) {
-        if (!candidates.some((c) => c.id === gr.id)) {
-          candidates.push({ id: gr.id, description: gr.description, label: "global", payload: gr });
+        // The listing is a summary; the copy needs the definition, read from the listed file (it may be `.yml`).
+        const definition = parseRoleFile(gr.filePath);
+        if (definition && !candidates.some((c) => c.id === gr.id)) {
+          candidates.push({ id: gr.id, description: gr.description, label: "global", payload: definition });
         }
       }
     }
@@ -179,63 +183,66 @@ export async function cmdRoleAdd(
       }
     } else {
       roleId = picked.id;
-      if (!options.file && picked.payload && DEFAULT_ROLES[picked.id]) {
-        const base = DEFAULT_ROLES[picked.id]!;
-        const roleDef: KxmRoleDefinition = {
-          ...base,
-          description: options.description || base.description,
-          skills: options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : base.skills,
-          roster: options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : base.roster,
-        };
-        try {
-          const res = addRole(roleDef, {
-            scope,
-            repoRoot: runtime.cwd,
-            userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
-            overwrite: options.overwrite,
-            dryRun: runtime.dryRun,
-          });
-          if (runtime.dryRun) {
-            printPlan(runtime, { command: "role add", roleId, ...res }, [{ action: "write", target: res.filePath }], `add role '${roleId}' to ${res.scope}`);
-            return 0;
-          }
-          print(
-            runtime.io,
-            runtime.json,
-            { ok: true, command: "role add", roleId, ...res },
-            `Added role '${roleId}' to ${res.scope} (${res.filePath})\n`,
-          );
-          return 0;
-        } catch (err: unknown) {
-          runtime.io.stderr(`role add failed: ${(err as Error).message}\n`);
-          return 1;
-        }
-      }
+      base = picked.payload as KxmRoleDefinition;
     }
   }
 
+  const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
+  const roster = options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : undefined;
   let roleDef: KxmRoleDefinition;
   if (options.file) {
     const filePath = resolve(runtime.cwd, options.file);
     const content = readFileSync(filePath, "utf8");
     roleDef = parseYaml(content) as KxmRoleDefinition;
     roleDef.id = roleId!;
+  } else if (base) {
+    roleDef = {
+      ...base,
+      description: options.description || base.description,
+      skills: skills ?? base.skills,
+      roster: roster ?? base.roster,
+    };
   } else {
-    const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : [];
-    const roster = options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : [];
     roleDef = {
       schema: "kxm.role.v1",
       id: roleId!,
       description: options.description || `Role ${roleId}`,
-      skills,
-      roster,
+      skills: skills ?? [],
+      roster: roster ?? [],
     };
+  }
+
+  // A local role file sits in the project the loader reads, and the loader refuses the
+  // whole project over a writer roster it rejects, so the role is checked before it lands.
+  let repoRoot = runtime.cwd;
+  if (scope === "local") {
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "role add", error: "project_not_found" },
+        "role add failed: local roles belong to a KXM project; run kxm init at the repository root, or pass --scope global",
+      );
+      return 2;
+    }
+    const issues = kxmRoleWriteIssues(projectRoot, roleDef.id, stringifyYaml(roleDef));
+    if (issues.length > 0) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "role add", error: "role_invalid", issues },
+        `role add failed: with this role the project would not load, so nothing was written\n${issues.map((entry) => `  ${entry.file}: ${entry.code}: ${entry.message}`).join("\n")}`,
+      );
+      return 2;
+    }
+    repoRoot = projectRoot;
   }
 
   try {
     const res = addRole(roleDef, {
       scope,
-      repoRoot: runtime.cwd,
+      repoRoot,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
       overwrite: options.overwrite,
       dryRun: runtime.dryRun,

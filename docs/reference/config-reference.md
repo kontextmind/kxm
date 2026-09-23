@@ -965,7 +965,7 @@ read different fields:
 |---|---|---|---|
 | Project loader (`validateBundle`) | `.kxm/roles/writer.yaml` only | `roster[].model`, `roster[].enabled` | Cross-checks the writer roster against the `implementer` agent's model (see below). Parsed as restricted YAML. |
 | Runtime route check (`listRoleBindings` in `plugins/kxm/src/routes.ts`) | `.kxm/roles/<role>.yaml`, role = agent ID, `writer` for `implementer` | `roster[].model` | The agent's `provider/model` must appear exactly. `enabled` is ignored, so a disabled entry still admits. The role name comes from the filename. |
-| `kxm role` commands (`plugins/kxm/src/role.ts`) | `.kxm/roles/*.yaml` and `~/.config/kxm/roles/*.yaml` | Everything below | Listing and editing only. A file without `schema: kxm.role.v1` is silently skipped. A local file overrides a global one with the same ID. |
+| `kxm role` commands (`plugins/kxm/src/role.ts`) | `.kxm/roles/*.yaml` and `~/.config/kxm/roles/*.yaml` | Everything below | Listing and editing only. A file without `schema: kxm.role.v1` is silently skipped. A local file overrides a global one with the same ID. A local `kxm role add` runs the project loader check above first and refuses with `role_invalid` a role the loader would reject. |
 
 The loader check applies when the agent `implementer` (or else `writer`)
 declares a model and the roster has at least one enabled entry. One enabled

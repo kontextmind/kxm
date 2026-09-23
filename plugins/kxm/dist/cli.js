@@ -23246,7 +23246,7 @@ function validateModelReferences(models, issues) {
   };
   for (const id of models.keys()) walk(id, []);
 }
-function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot) {
+function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot, writerRole) {
   const issues = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const repositoryIds = /* @__PURE__ */ new Set();
@@ -23317,9 +23317,9 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   if (projectRoot) {
     const writerRolePath = join6(projectRoot, ".kxm", "roles", "writer.yaml");
     const implementerAgent = agents.get("implementer") ?? agents.get("writer");
-    if (existsSync6(writerRolePath) && implementerAgent) {
+    if ((writerRole !== void 0 || existsSync6(writerRolePath)) && implementerAgent) {
       try {
-        const rawRole = parseRestrictedYaml2(readFileSync5(writerRolePath, "utf8"));
+        const rawRole = parseRestrictedYaml2(writerRole ?? readFileSync5(writerRolePath, "utf8"));
         const roleObj = objectValue(rawRole);
         const rosterEntries = valuesOf(roleObj ?? {}, "roster").map((candidate) => objectValue(candidate)).filter((entry) => Boolean(entry));
         const enabledRosterModels = rosterEntries.filter((entry) => entry.enabled !== false).map((entry) => stringValue(entry.model)).filter((m2) => Boolean(m2));
@@ -23390,15 +23390,23 @@ function loadKxmProject(projectRoot, options = {}) {
   return loadProjectBundle(projectRoot, options);
 }
 function kxmWorkflowWriteIssues(projectRoot, workflowId, document, options = {}) {
+  return candidateIssues(projectRoot, options, { kind: "workflow", id: workflowId, document });
+}
+function kxmRoleWriteIssues(projectRoot, roleId, document, options = {}) {
+  return candidateIssues(projectRoot, options, { kind: "role", id: roleId, document });
+}
+function candidateIssues(projectRoot, options, candidate) {
   try {
-    loadProjectBundle(projectRoot, options, { id: workflowId, document });
+    loadProjectBundle(projectRoot, options, candidate);
     return [];
   } catch (error) {
     if (error instanceof KxmConfigError) return error.issues;
     throw error;
   }
 }
-function loadProjectBundle(projectRoot, options, workflowCandidate) {
+function loadProjectBundle(projectRoot, options, candidate) {
+  const workflowCandidate = candidate?.kind === "workflow" ? candidate : void 0;
+  const writerRole = candidate?.kind === "role" && candidate.id.toLocaleLowerCase("en-US") === "writer" ? candidate.document : void 0;
   assertNoRegisteredGates(options);
   const root = resolve3(projectRoot);
   const legacyPresent = legacyConfigFilesAt(root);
@@ -23421,7 +23429,7 @@ function loadProjectBundle(projectRoot, options, workflowCandidate) {
       earlyIssues.push(issue2("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
     }
   }
-  const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate) => stringValue(objectValue(candidate)?.id)).filter((candidate) => candidate !== void 0));
+  const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate2) => stringValue(objectValue(candidate2)?.id)).filter((candidate2) => candidate2 !== void 0));
   for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits3)) {
     if (!resourceIdentifier(repositoryId)) {
       earlyIssues.push(issue2("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
@@ -23437,7 +23445,7 @@ function loadProjectBundle(projectRoot, options, workflowCandidate) {
     const { id, document } = workflowCandidate;
     const logicalPath = `.kxm/workflows/${id}.yaml`;
     if (!resourceIdentifier(id)) fail2("path", "resource_id_invalid", logicalPath, `filename-derived identity ${id} is invalid or platform-reserved`);
-    const collision = [...workflows.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
+    const collision = [...workflows.keys()].find((candidate2) => candidate2.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
     if (collision) fail2("path", "resource_id_collision", logicalPath, `${id} case-folds to existing ${collision}`);
     workflows.set(id, { kind: "workflow", id, file: join6(root, logicalPath), logicalPath, value: resourceValue(registry, document, logicalPath, "workflow") });
   }
@@ -23456,8 +23464,8 @@ function loadProjectBundle(projectRoot, options, workflowCandidate) {
     }
   }
   const seenBindings = /* @__PURE__ */ new Map();
-  for (const candidate of valuesOf(project.value, "repositories")) {
-    const entry = objectValue(candidate);
+  for (const candidate2 of valuesOf(project.value, "repositories")) {
+    const entry = objectValue(candidate2);
     const repositoryId = entry && stringValue(entry.id);
     const pathHint = entry && stringValue(entry.pathHint);
     const role = entry && stringValue(entry.role);
@@ -23554,7 +23562,7 @@ function loadProjectBundle(projectRoot, options, workflowCandidate) {
     }
   }
   if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
   if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath));
   return {
@@ -29074,6 +29082,7 @@ async function cmdRoleGet(runtime, roleId, options) {
 }
 async function cmdRoleAdd(runtime, roleId, options) {
   const scope = options.scope ?? "local";
+  let base;
   if (!roleId || options.pick) {
     const candidates = Object.values(DEFAULT_ROLES).map((r) => ({
       id: r.id,
@@ -29084,8 +29093,9 @@ async function cmdRoleAdd(runtime, roleId, options) {
     if (scope === "local") {
       const globalRoles = listRoles({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
       for (const gr of globalRoles) {
-        if (!candidates.some((c) => c.id === gr.id)) {
-          candidates.push({ id: gr.id, description: gr.description, label: "global", payload: gr });
+        const definition = parseRoleFile(gr.filePath);
+        if (definition && !candidates.some((c) => c.id === gr.id)) {
+          candidates.push({ id: gr.id, description: gr.description, label: "global", payload: definition });
         }
       }
     }
@@ -29097,63 +29107,62 @@ async function cmdRoleAdd(runtime, roleId, options) {
       }
     } else {
       roleId = picked.id;
-      if (!options.file && picked.payload && DEFAULT_ROLES[picked.id]) {
-        const base = DEFAULT_ROLES[picked.id];
-        const roleDef2 = {
-          ...base,
-          description: options.description || base.description,
-          skills: options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : base.skills,
-          roster: options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : base.roster
-        };
-        try {
-          const res = addRole(roleDef2, {
-            scope,
-            repoRoot: runtime.cwd,
-            userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
-            overwrite: options.overwrite,
-            dryRun: runtime.dryRun
-          });
-          if (runtime.dryRun) {
-            printPlan(runtime, { command: "role add", roleId, ...res }, [{ action: "write", target: res.filePath }], `add role '${roleId}' to ${res.scope}`);
-            return 0;
-          }
-          print(
-            runtime.io,
-            runtime.json,
-            { ok: true, command: "role add", roleId, ...res },
-            `Added role '${roleId}' to ${res.scope} (${res.filePath})
-`
-          );
-          return 0;
-        } catch (err) {
-          runtime.io.stderr(`role add failed: ${err.message}
-`);
-          return 1;
-        }
-      }
+      base = picked.payload;
     }
   }
+  const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
+  const roster = options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : void 0;
   let roleDef;
   if (options.file) {
     const filePath = resolve15(runtime.cwd, options.file);
     const content = readFileSync19(filePath, "utf8");
     roleDef = (0, import_yaml10.parse)(content);
     roleDef.id = roleId;
+  } else if (base) {
+    roleDef = {
+      ...base,
+      description: options.description || base.description,
+      skills: skills ?? base.skills,
+      roster: roster ?? base.roster
+    };
   } else {
-    const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : [];
-    const roster = options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : [];
     roleDef = {
       schema: "kxm.role.v1",
       id: roleId,
       description: options.description || `Role ${roleId}`,
-      skills,
-      roster
+      skills: skills ?? [],
+      roster: roster ?? []
     };
+  }
+  let repoRoot = runtime.cwd;
+  if (scope === "local") {
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+    if (!projectRoot) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "role add", error: "project_not_found" },
+        "role add failed: local roles belong to a KXM project; run kxm init at the repository root, or pass --scope global"
+      );
+      return 2;
+    }
+    const issues = kxmRoleWriteIssues(projectRoot, roleDef.id, (0, import_yaml10.stringify)(roleDef));
+    if (issues.length > 0) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "role add", error: "role_invalid", issues },
+        `role add failed: with this role the project would not load, so nothing was written
+${issues.map((entry) => `  ${entry.file}: ${entry.code}: ${entry.message}`).join("\n")}`
+      );
+      return 2;
+    }
+    repoRoot = projectRoot;
   }
   try {
     const res = addRole(roleDef, {
       scope,
-      repoRoot: runtime.cwd,
+      repoRoot,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
       overwrite: options.overwrite,
       dryRun: runtime.dryRun
