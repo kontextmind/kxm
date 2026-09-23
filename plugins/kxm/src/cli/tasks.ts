@@ -27,40 +27,61 @@ import { readSessionTokenFromDisk } from "../commands.ts";
 import { print, printPlan, type Runtime } from "./types.ts";
 import { cmdKxmRun, resolveKxmRunTarget } from "./project.ts";
 
-export async function cmdSuggest(runtime: Runtime, promptParts: string[]): Promise<number> {
+export async function cmdSuggest(
+  runtime: Runtime,
+  promptParts: string[],
+  probeHarnesses = probeHarnessesAsync,
+): Promise<number> {
   try {
     const prompt = promptParts.join(" ").trim();
     if (!prompt) {
-      runtime.io.stderr("prompt must be non-empty\n");
+      print(runtime.io, runtime.json, { ok: false, command: "suggest", error: "prompt_required" }, "prompt must be non-empty");
       return 2;
     }
-    const inventory = await probeHarnessesAsync({ env: runtime.env });
-    const availableHarnesses = inventory.harnesses.map((h) => ({
-      harness: h.id,
-      auth: h.authenticated === true ? "authenticated" : "unauthenticated",
-    }));
-    const suggestion = suggestWorkflowAndRoles(prompt, { availableHarnesses });
-
+    // Native authentication probes may initialize state. A dry run must not invoke them.
+    const inventory = runtime.dryRun ? undefined : await probeHarnesses({ env: runtime.env });
+    const suggestion = suggestWorkflowAndRoles(prompt, { availableHarnesses: inventory?.harnesses });
+    const execution = suggestion.execution;
     const text = [
       `Suggested Workflow: ${suggestion.workflowId} (${suggestion.area})`,
+      `Template: ${suggestion.template}`,
       `Confidence: ${(suggestion.confidence * 100).toFixed(0)}%`,
       `Reasons: ${suggestion.reasons.join("; ")}`,
       `Suggested Skills: ${suggestion.suggestedSkills.join(", ") || "none"}`,
-      `Roles:`,
-      `  Planner:     ${suggestion.roles.planner.harness} (${suggestion.roles.planner.model})`,
-      `  Writer:      ${suggestion.roles.writer.harness} (${suggestion.roles.writer.model})`,
-      `  Critics:     ${suggestion.roles.critics.map((c) => `${c.harness}:${c.model}`).join(", ")}`,
-      `  Verifier:    ${suggestion.roles.verifier.command}`,
-      ``,
-      `Execute with:`,
+      "",
+      "Install definition only (requires kxm init; does not execute):",
       `  ${suggestion.suggestedCommand}`,
+      "",
+      ...(execution.supported ? [
+        "Suggested agent routing (not applied):",
+        ...suggestion.roles.map((role) => `  ${role.agent}: ${role.harness} (${role.role}; use a configured compatible model)`),
+        "Prerequisites:",
+        ...execution.prerequisites.map((step) => `  ${step}`),
+        `Create a run only (${execution.shell}; does not execute steps):`,
+        `  ${execution.createCommand}`,
+        "Then drive the returned run ID with live calls and inspect its result:",
+        `  ${execution.driveCommand}`,
+        `  ${execution.statusCommand}`,
+        `  ${execution.receiptCommand}`,
+      ] : [
+        `Execution unavailable: ${execution.reason}`,
+        ...execution.nextSteps.map((step) => `  ${step}`),
+        ...(runtime.dryRun ? ["Harness authentication was not probed during --dry-run."] : []),
+      ]),
     ].join("\n");
 
-    print(runtime.io, runtime.json, { ok: true, command: "suggest", prompt, ...suggestion }, text);
-    return 0;
+    print(runtime.io, runtime.json, {
+      ok: execution.supported,
+      command: "suggest",
+      prompt,
+      ...suggestion,
+      ...(runtime.dryRun ? { dryRun: true } : {}),
+      ...(!execution.supported ? { error: execution.error } : {}),
+    }, text);
+    return execution.supported ? 0 : 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    runtime.io.stderr(`suggest failed: ${message}\n`);
+    print(runtime.io, runtime.json, { ok: false, command: "suggest", error: "suggest_failed", detail: message }, `suggest failed: ${message}`);
     return 1;
   }
 }

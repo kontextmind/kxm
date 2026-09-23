@@ -309,55 +309,58 @@ test("cli completion install: executes cleanly with json and dry-run", async () 
   }
 });
 
-test("suggest: recommends workflow, area, roles, and skills based on prompt keywords", () => {
-  // Test bug fix suggestion
-  const bugSuggestion = suggestWorkflowAndRoles("Fix flaky playwright gate timeout in session test", {
-    availableHarnesses: [
-      { harness: "claude", auth: "active" },
-      { harness: "grok", auth: "active" },
-      { harness: "codex", auth: "active" },
-    ],
-  });
-  assert.equal(bugSuggestion.workflowId, "software-engineering/bug-fix");
-  assert.equal(bugSuggestion.area, "software-engineering");
-  assert.equal(bugSuggestion.roles.planner.model, "fable");
-  assert.equal(bugSuggestion.roles.writer.harness, "grok");
-  assert.ok(bugSuggestion.reasons.length > 0);
-
-  // Test security suggestion
-  const secSuggestion = suggestWorkflowAndRoles("Remediate CVE vulnerability and sanitize prompt injection", {
-    availableHarnesses: [{ harness: "claude", auth: "active" }],
-  });
-  assert.equal(secSuggestion.workflowId, "security-reliability/vulnerability-remediation");
-  assert.equal(secSuggestion.area, "security-reliability");
-
-  // Test pipeline/migration suggestion
-  const dbSuggestion = suggestWorkflowAndRoles("Migrate SQLite tables to support foreign key cascading and WAL mode", {
-    availableHarnesses: [{ harness: "codex", auth: "active" }],
-  });
-  assert.equal(dbSuggestion.workflowId, "data-analytics/pipeline-migration");
+test("suggest: refuses live bug-fix execution without violating Claude-only routing", () => {
+  const suggestion = suggestWorkflowAndRoles("Fix a bug in an isolated worktree using Claude only");
+  assert.equal(suggestion.workflowId, "bug-fix");
+  assert.equal(suggestion.area, "software-engineering");
+  assert.equal(suggestion.execution.supported, false);
+  if (suggestion.execution.supported) assert.fail("a writer cannot run through a read-only live profile");
+  assert.equal(suggestion.execution.error, "live_write_unsupported");
+  assert.deepEqual(suggestion.roles, []);
+  assert.equal("createCommand" in suggestion.execution, false);
+  assert.equal("driveCommand" in suggestion.execution, false);
+  assert.ok(suggestion.execution.nextSteps.some((step) => step.includes("Claude Code")));
+  assert.equal(suggestion.suggestedCommand, "kxm workflow add bug-fix --template implement-and-verify");
 });
 
-test("suggest recommends only KXM command skills shipped in plugins/kxm/skills", () => {
-  const knowledgePlane = new Set(["kxm-mind", "kxm-query", "kxm-harvest", "kxm-triage", "kxm-work", "kxm-insights", "kxm-projects", "kxm-protocol", "kxm-setup", "kxm-mind-setup"]);
-  const expected: Array<[string, string, string[]]> = [
-    ["Fix flaky playwright gate timeout", "software-engineering/bug-fix", ["kxm-workflow", "kxm-runs", "kxm-context-memory"]],
-    ["Add a new endpoint for the settings page", "software-engineering/feature-implementation", ["kxm-workflow", "kxm-peer", "kxm-context-memory"]],
-    ["Refactor and simplify the module, deduplicate helpers", "software-engineering/refactoring", ["kxm-workflow", "kxm-runs"]],
-    ["Remediate CVE vulnerability and sanitize prompt injection", "security-reliability/vulnerability-remediation", ["kxm-workflow", "kxm-definitions"]],
-    ["Harden idempotency with retry, lock and race handling for concurrency", "security-reliability/reliability-hardening", ["kxm-workflow", "kxm-peer"]],
-    ["Migrate SQLite tables to support foreign key cascading and WAL mode", "data-analytics/pipeline-migration", ["kxm-runs", "kxm-context-memory"]],
-    ["Spike to investigate a prototype and benchmark it", "research-strategy/architecture-spike", ["kxm-session", "kxm-context-memory", "kxm-routing-improve"]],
+test("suggest recommendations install as flat, addressable workflows and name shipped KXM skills", async () => {
+  const sandbox = createSandbox();
+  const env = {
+    HOME: join(sandbox.dir, "home"),
+    KXM_USER_CONFIG_DIR: join(sandbox.dir, "user-config"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const expected: Array<[string, string, string]> = [
+    ["Fix flaky playwright gate timeout", "bug-fix", "software-engineering"],
+    ["Add a new endpoint for the settings page", "feature-implementation", "software-engineering"],
+    ["Refactor and simplify the module, deduplicate helpers", "refactoring", "software-engineering"],
+    ["Remediate CVE vulnerability and sanitize prompt injection", "vulnerability-remediation", "security-reliability"],
+    ["Harden idempotency with retry, lock and race handling for concurrency", "reliability-hardening", "security-reliability"],
+    ["Migrate SQLite tables to support foreign key cascading and WAL mode", "pipeline-migration", "data-analytics"],
+    ["Spike to investigate a prototype and benchmark it", "architecture-spike", "research-strategy"],
   ];
-  const skillsRoot = join(process.cwd(), "plugins", "kxm", "skills");
-  for (const [prompt, workflowId, skills] of expected) {
-    const suggestion = suggestWorkflowAndRoles(prompt);
-    assert.equal(suggestion.workflowId, workflowId, prompt);
-    assert.deepEqual(suggestion.suggestedSkills, skills, workflowId);
-    for (const skill of suggestion.suggestedSkills) {
-      assert.ok(existsSync(join(skillsRoot, skill, "SKILL.md")), `${skill} ships in plugins/kxm/skills`);
-      assert.ok(!knowledgePlane.has(skill), `${skill} is a KXM command skill, not a knowledge-plane skill`);
+  try {
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", sandbox.dir]).status, 0);
+    const initIo = capture();
+    assert.equal(await runCli(["init", "--name", "Suggestion templates"], env, initIo, sandbox.dir), 0, initIo.read().stderr);
+    const skillsRoot = join(process.cwd(), "plugins", "kxm", "skills");
+    for (const [prompt, workflowId, area] of expected) {
+      const suggestion = suggestWorkflowAndRoles(prompt);
+      assert.equal(suggestion.workflowId, workflowId, prompt);
+      assert.equal(suggestion.area, area, prompt);
+      for (const skill of suggestion.suggestedSkills) {
+        assert.ok(existsSync(join(skillsRoot, skill, "SKILL.md")), `${skill} ships in plugins/kxm/skills`);
+      }
+      const installIo = capture();
+      assert.equal(await runCli(suggestion.suggestedCommand.split(" ").slice(1), env, installIo, sandbox.dir), 0, installIo.read().stderr);
+      const planIo = capture();
+      assert.equal(await runCli(["run", workflowId, "--dry-run", "--json"], env, planIo, sandbox.dir), 0, planIo.read().stderr);
+      assert.equal(JSON.parse(planIo.read().stdout).workflowId, workflowId);
     }
+  } finally {
+    sandbox.cleanup();
   }
 });
 
@@ -471,10 +474,6 @@ test("cli commands: completion, config, suggest, goal, task, and studio layout e
     assert.match(configGetIo.read().stdout, /light/);
 
     // 3. Suggest
-    const suggestIo = capture();
-    assert.equal(await runCli(["suggest", "Fix", "critical", "flaky", "test", "timeout"], {}, suggestIo, sandbox.dir), 0);
-    assert.match(suggestIo.read().stdout, /Suggested Workflow/);
-
     const emptySuggestIo = capture();
     assert.equal(await runCli(["suggest"], {}, emptySuggestIo, sandbox.dir), 2);
 
@@ -548,10 +547,6 @@ test("cli commands: completion, config, suggest, goal, task, and studio layout e
     const taskSyncJsonIo = capture();
     assert.equal(await runCli(["--json", "task", "sync", taskId], {}, taskSyncJsonIo, sandbox.dir), 0);
     assert.match(taskSyncJsonIo.read().stdout, /"command":\s*"task sync"/);
-
-    const suggestJsonIo = capture();
-    assert.equal(await runCli(["--json", "suggest", "Migrate", "database", "sqlite"], {}, suggestJsonIo, sandbox.dir), 0);
-    assert.match(suggestJsonIo.read().stdout, /"workflowId":/);
 
     // Filter task list
     const filteredListIo = capture();
