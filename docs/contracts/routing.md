@@ -264,6 +264,6 @@ store: there is no cross-worktree aggregation.
 ## Precedence
 
 [AGENTS.md](../../AGENTS.md) and
-[Tracking](../../plans/implementation-plan.md#tracking-working-tree-not-a-release)
+Tracking (the implementation plan in the repository's `plans/` directory, which is not shipped)
 win where they differ from historical 2026-09-04 reviews.
 Issue 86 stays open for later-phase remainder (see Tracking).
