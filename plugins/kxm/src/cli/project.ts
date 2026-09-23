@@ -758,7 +758,7 @@ export async function cmdKxmRuntime(runtime: Runtime, action: string): Promise<n
         status.running
           ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}`
           : "runtime supervisor is not running",
-        ...formatKxmSyncStatus(sync),
+        ...formatKxmSyncStatus(sync, status.running),
       ].join("\n"));
       return status.running ? 0 : 1;
     }
@@ -820,8 +820,11 @@ async function readKxmSupervisorSync(runtime: Runtime): Promise<KxmProjectSyncSt
   }
 }
 
-function formatKxmSyncStatus(sync: KxmProjectSyncStatus[] | undefined): string[] {
-  if (sync === undefined) return ["sync: the supervisor did not answer /v1/sync/status"];
+function formatKxmSyncStatus(sync: KxmProjectSyncStatus[] | undefined, running: boolean): string[] {
+  // Nothing was asked, so nothing failed to answer. Saying "did not answer" here
+  // would blame a supervisor that was never up.
+  if (!running) return [];
+  if (sync === undefined) return ["sync: the supervisor is running but did not answer /v1/sync/status"];
   if (sync.length === 0) return ["sync: no project registered with this Runtime yet"];
   return sync.map((project) => {
     const codes = project.outbox.refusals.map((refusal) => `${refusal.code} x${refusal.count}`).join(", ");
