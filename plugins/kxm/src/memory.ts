@@ -323,26 +323,30 @@ export function formatHarnessMemoryBlock(records: MemoryRecord[]): string {
  * carry KXM's words instead of the project's. */
 const HARNESS_INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] as const;
 
-/** Replace the marker-delimited block, or append one when the file has none. Nothing
- * outside the markers is rewritten. Returns whether the block changed the file; `dryRun`
- * answers without writing. */
-export function updateHarnessDocument(filePath: string, block: string, dryRun = false): boolean {
-  const original = readFileSync(filePath, "utf8");
-  let updated: string;
-  if (original.includes(MEMORY_MARKER_START) && original.includes(MEMORY_MARKER_END)) {
-    const startIdx = original.indexOf(MEMORY_MARKER_START);
-    const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
-    updated = original.slice(0, startIdx) + block + original.slice(endIdx);
-  } else {
-    const head = original.trimEnd();
-    updated = head ? `${head}\n\n${block}\n` : `${block}\n`;
-  }
+/** What is wrong with the memory markers in `text`, or undefined when it has exactly one
+ * start marker followed by exactly one end marker, or neither. Any other shape has no single
+ * block to replace: an orphan start would make the next sync delete the project's text up to
+ * a later end, an end before its start would duplicate text, and a second block goes stale. */
+function memoryMarkerProblem(text: string): string | undefined {
+  const starts = text.split(MEMORY_MARKER_START).length - 1;
+  const ends = text.split(MEMORY_MARKER_END).length - 1;
+  if (starts > 1 || ends > 1) return `has ${starts} ${MEMORY_MARKER_START} and ${ends} ${MEMORY_MARKER_END} markers, not one block`;
+  if (starts > ends) return `has ${MEMORY_MARKER_START} with no ${MEMORY_MARKER_END}`;
+  if (ends > starts) return `has ${MEMORY_MARKER_END} with no ${MEMORY_MARKER_START}`;
+  if (text.indexOf(MEMORY_MARKER_END) < text.indexOf(MEMORY_MARKER_START)) return `has ${MEMORY_MARKER_END} before ${MEMORY_MARKER_START}`;
+  return undefined;
+}
 
-  if (updated !== original) {
-    if (!dryRun) writeFileSync(filePath, updated, "utf8");
-    return true;
+/** `original` with its memory block replaced, or with one appended when it has no markers.
+ * Nothing outside the markers is rewritten. Markers must already pass `memoryMarkerProblem`. */
+function withMemoryBlock(original: string, block: string): string {
+  const startIdx = original.indexOf(MEMORY_MARKER_START);
+  if (startIdx === -1) {
+    const head = original.trimEnd();
+    return head ? `${head}\n\n${block}\n` : `${block}\n`;
   }
-  return false;
+  const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
+  return original.slice(0, startIdx) + block + original.slice(endIdx);
 }
 
 export function syncHarnessMemory(
@@ -358,11 +362,30 @@ export function syncHarnessMemory(
     );
   }
 
+  // Check every file before writing any: one malformed file leaves all of them untouched.
+  const documents = present.map((name) => {
+    const original = readFileSync(join(root, name), "utf8");
+    return { name, original, problem: memoryMarkerProblem(original) };
+  });
+  const malformed = documents.filter((doc) => doc.problem !== undefined);
+  if (malformed.length > 0) {
+    throw new Error(
+      `${malformed.map((doc) => `${doc.name} ${doc.problem}`).join("; ")}; wrote no file. `
+        + `Keep exactly one ${MEMORY_MARKER_START} followed by one ${MEMORY_MARKER_END} in each file, or delete both so sync appends a fresh block`,
+    );
+  }
+
   const block = formatHarnessMemoryBlock(loadAuthoredMemory(root));
   const updated: string[] = [];
   const unchanged: string[] = [];
-  for (const name of present) {
-    (updateHarnessDocument(join(root, name), block, options.dryRun) ? updated : unchanged).push(name);
+  for (const { name, original } of documents) {
+    const next = withMemoryBlock(original, block);
+    if (next === original) {
+      unchanged.push(name);
+    } else {
+      if (!options.dryRun) writeFileSync(join(root, name), next, "utf8");
+      updated.push(name);
+    }
   }
   return { updated, unchanged, missing };
 }
