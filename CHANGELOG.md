@@ -307,6 +307,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **A local `kxm workflow add` writes only what the project loader accepts, where it reads
+  it.** Local scope needs a KXM project (`project_not_found` outside one, creating nothing)
+  and writes to the project root's `.kxm/workflows/` from any subdirectory. Before writing,
+  also under `--dry-run`, the project loader checks the project with the new document; if
+  it would not load, the command exits 2 with `workflow_invalid`, lists the issues and
+  writes nothing. A `--file` in the shape written through 0.7.92 is refused, and
+  `--overwrite` repairs a file left in that shape. See
+  `docs/reference/cli-reference.md#kxm-workflow-add`.
+- **`kxm workflow add --pick <global-id>` copies the global definition.** In local scope,
+  picking a global definition wrote the one-step scaffold under its id and reported
+  success. It now writes the global definition's content, with `--description` replacing
+  its description, and the loader check refuses one the project cannot load.
 - **Signed webhooks cannot be replayed.** KXM's own webhook senders now sign the
   timestamp, delivery ID, definition, run and signal key along with the body
   (`x-kxm-signature`, `x-kxm-timestamp`, `x-kxm-delivery-id`; see
