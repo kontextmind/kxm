@@ -245,10 +245,10 @@ export function createMemoryNote(
     body?: string | undefined;
     sourceRef?: string | undefined;
     runId?: string | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { record: MemoryRecord; path: string } {
   const { candidatesDir } = memoryDirectories(repoRoot);
-  mkdirSync(candidatesDir, { recursive: true });
 
   const scope: MemoryScope = options.scope ?? "project";
   if (!VALID_SCOPES.has(scope)) {
@@ -277,6 +277,8 @@ export function createMemoryNote(
   };
 
   const targetPath = join(candidatesDir, `${id}.md`);
+  if (options.dryRun) return { record, path: targetPath };
+  mkdirSync(candidatesDir, { recursive: true });
   writeFileSync(targetPath, formatMemoryRecord(record), "utf8");
   return { record, path: targetPath };
 }
@@ -322,8 +324,9 @@ export function formatHarnessMemoryBlock(records: MemoryRecord[]): string {
 const HARNESS_INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] as const;
 
 /** Replace the marker-delimited block, or append one when the file has none. Nothing
- * outside the markers is rewritten. */
-export function updateHarnessDocument(filePath: string, block: string): boolean {
+ * outside the markers is rewritten. Returns whether the block changed the file; `dryRun`
+ * answers without writing. */
+export function updateHarnessDocument(filePath: string, block: string, dryRun = false): boolean {
   const original = readFileSync(filePath, "utf8");
   let updated: string;
   if (original.includes(MEMORY_MARKER_START) && original.includes(MEMORY_MARKER_END)) {
@@ -336,13 +339,16 @@ export function updateHarnessDocument(filePath: string, block: string): boolean 
   }
 
   if (updated !== original) {
-    writeFileSync(filePath, updated, "utf8");
+    if (!dryRun) writeFileSync(filePath, updated, "utf8");
     return true;
   }
   return false;
 }
 
-export function syncHarnessMemory(repoRoot: string): { updated: string[]; unchanged: string[]; missing: string[] } {
+export function syncHarnessMemory(
+  repoRoot: string,
+  options: { dryRun?: boolean } = {},
+): { updated: string[]; unchanged: string[]; missing: string[] } {
   const root = resolve(repoRoot);
   const present = HARNESS_INSTRUCTION_FILES.filter((name) => existsSync(join(root, name)));
   const missing = HARNESS_INSTRUCTION_FILES.filter((name) => !present.includes(name));
@@ -356,7 +362,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; unchan
   const updated: string[] = [];
   const unchanged: string[] = [];
   for (const name of present) {
-    (updateHarnessDocument(join(root, name), block) ? updated : unchanged).push(name);
+    (updateHarnessDocument(join(root, name), block, options.dryRun) ? updated : unchanged).push(name);
   }
   return { updated, unchanged, missing };
 }

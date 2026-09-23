@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { DatabaseSync } from "../sqlite.ts";
+import { DatabaseSync, openReadOnlyDatabase } from "../sqlite.ts";
 import {
   DEFAULT_ROLES,
   DEFAULT_ROLE_SEATS,
@@ -20,7 +20,7 @@ import {
 import { discoverKxmProjectRoot } from "../project-config.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { resumeWorkflowFromRuling, type WorkflowRun } from "../workflow.ts";
-import { print, type CliIo, type Runtime } from "./types.ts";
+import { print, printPlan, type CliIo, type Runtime } from "./types.ts";
 
 export interface PickCandidate {
   id: string;
@@ -192,7 +192,12 @@ export async function cmdRoleAdd(
             repoRoot: runtime.cwd,
             userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
             overwrite: options.overwrite,
+            dryRun: runtime.dryRun,
           });
+          if (runtime.dryRun) {
+            printPlan(runtime, { command: "role add", roleId, ...res }, [{ action: "write", target: res.filePath }], `add role '${roleId}' to ${res.scope}`);
+            return 0;
+          }
           print(
             runtime.io,
             runtime.json,
@@ -232,7 +237,12 @@ export async function cmdRoleAdd(
       repoRoot: runtime.cwd,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
       overwrite: options.overwrite,
+      dryRun: runtime.dryRun,
     });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "role add", roleId, ...res }, [{ action: "write", target: res.filePath }], `add role '${roleId}' to ${res.scope}`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -283,7 +293,12 @@ export async function cmdRoleRemove(
       scope,
       repoRoot: runtime.cwd,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+      dryRun: runtime.dryRun,
     });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "role remove", roleId, ...res }, [{ action: "delete", target: res.filePath }], `remove role '${roleId}' from ${res.scope}`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -377,7 +392,12 @@ export async function cmdRoleModify(
       scope: options.scope,
       repoRoot: runtime.cwd,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+      dryRun: runtime.dryRun,
     });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "role modify", roleId, ...res }, [{ action: "write", target: res.filePath }], `modify role '${roleId}' in ${res.scope}`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -482,7 +502,17 @@ export async function cmdRoleSetHost(
       scope: options.scope ?? "local",
       repoRoot: runtime.cwd,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+      dryRun: runtime.dryRun,
     });
+    if (runtime.dryRun) {
+      printPlan(
+        runtime,
+        { command: "role set-host", seatId, host, binding: result.binding, filePath: result.filePath, scope: result.scope },
+        [{ action: "write", target: result.filePath }],
+        `bind seat '${seatId}' to host '${host}'`,
+      );
+      return 0;
+    }
 
     print(
       runtime.io,
@@ -521,7 +551,12 @@ export async function cmdRoleResume(
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
   if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
     if (runtime.dryRun) {
-      print(runtime.io, runtime.json, { ok: true, command: "role resume", runId, ruling: effectiveRuling }, `would resume KXM run ${runId}`);
+      printPlan(
+        runtime,
+        { command: "role resume", runId, ruling: effectiveRuling },
+        [{ action: "request", target: `POST kxm-runtime /v1/runs/${runId}/signal (audit_escalation unblock)` }],
+        `resume KXM run ${runId}`,
+      );
       return 0;
     }
     try {
@@ -555,7 +590,7 @@ export async function cmdRoleResume(
   const dbPath = join(runtime.cwd, ".kxm", "state", "kxm.db");
   if (existsSync(dbPath)) {
     try {
-      const database = new DatabaseSync(dbPath);
+      const database = runtime.dryRun ? openReadOnlyDatabase(dbPath) : new DatabaseSync(dbPath);
       try {
         const row = database.prepare("SELECT record FROM workflow_runs WHERE id = ?").get(runId) as { record: string } | undefined;
         if (!row) {
@@ -565,6 +600,15 @@ export async function cmdRoleResume(
         const run = JSON.parse(row.record) as WorkflowRun;
         const now = new Date().toISOString();
         const resumeResult = resumeWorkflowFromRuling(run, effectiveRuling, now);
+        if (runtime.dryRun) {
+          printPlan(
+            runtime,
+            { command: "role resume", runId, stageId: resumeResult.stageId, ruling: effectiveRuling, status: resumeResult.run.status },
+            [{ action: "write", target: `${dbPath} (workflow_runs ${runId}, one workflow_journal decision)` }],
+            `resume workflow run ${runId} (stage: ${resumeResult.stageId})`,
+          );
+          return 0;
+        }
 
         database.prepare("UPDATE workflow_runs SET record = ? WHERE id = ?").run(
           JSON.stringify(resumeResult.run),

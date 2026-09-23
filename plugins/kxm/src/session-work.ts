@@ -398,6 +398,8 @@ export function loadSessionBrief(
     cost?: string;
     sessionToken?: string;
     ship?: SessionShipStatus;
+    /** false answers from disk and the hub without refreshing session-brief.json. */
+    writeCache?: boolean;
   } = {},
 ): SessionBrief {
   const paths = resolveKxmSnapshotPaths(cwd, env);
@@ -464,7 +466,7 @@ export function loadSessionBrief(
     );
   }
 
-  writeCachedSessionBrief(paths.stateDir, brief);
+  if (options.writeCache !== false) writeCachedSessionBrief(paths.stateDir, brief);
   return brief;
 }
 
@@ -479,6 +481,7 @@ export async function loadSessionBriefAsync(
     cost?: string;
     sessionToken?: string;
     ship?: SessionShipStatus;
+    writeCache?: boolean;
   } = {},
 ): Promise<SessionBrief> {
   const paths = resolveKxmSnapshotPaths(cwd, env);

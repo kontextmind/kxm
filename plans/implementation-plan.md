@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-20"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -492,6 +492,51 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   Restoring conversion needs a written decision first (see the doc's closing section).
 
 ### Landed in this tree (unreleased)
+
+- **`--dry-run` changes nothing, and a command that forgets the flag is refused
+  (2026-09-23):** the global `--dry-run` ("Plan without making changes") was checked by
+  some commands and ignored by the rest. Observed against `ac08d95` in a sandbox with every
+  state root redirected: `backup`, `restore` (it overwrote the live store), `config set`,
+  `role add|remove|modify|set-host`, `workflow add|remove|modify`, `goal create`,
+  `task create|sync|run`, `memory note|sync`, `skills evaluate|promote|reject`,
+  `context promote` (it POSTed to the hub), `session brief` (it minted and persisted a
+  token and refreshed its cache), `auth token`, and `ssh run|file|close` all acted.
+  `task run` is the instructive one: `run` honoured the flag, exited 0 with its plan, and
+  `task run` took the 0 as success and marked the task `in_progress`. The audit found four
+  more: `role resume` on a local workflow run wrote `kxm.db`, `context wiki-compile --out`
+  wrote its pages, `update --dry-run` refreshed the update cache, and
+  `runs status|list|receipt` would start the Runtime supervisor to answer.
+  **Fixed:** each writer takes `dryRun` and returns what it would have done without
+  writing, and each command answers with `printPlan` — its normal `--json` envelope plus
+  `dryRun: true` and `planned: [{ action, target }]` (`write|delete|move|request|ssh`).
+  `backup` and `restore` split into `planBackup`/`planRestore` (paths and digests only; no
+  SQLite open, because opening a source checkpoints its WAL) and the execution that
+  consumes them. The restore plan checks each store's recorded schema version against this
+  build's ceiling, so a real restore now refuses a too-new store **before** overwriting the
+  first one rather than part-way through. Reads that would have to start the Runtime only
+  attach under `--dry-run`, and refuse with `dry_run_unsupported` (exit 2) when no
+  supervisor is up. One write hid below the commands: a plain read-only open of a WAL
+  store creates `-wal`/`-shm` sidecars and leaves them, so `session brief` and a
+  `role resume` preview dirtied `.kxm/state` by reading it. The local snapshot, the
+  workflow-run reader and that preview now open through `openReadOnlyDatabase`, which
+  opens `immutable` when no `-wal` exists (the main file then holds every committed page)
+  and reads through the sidecars when one does.
+  **Brake:** `DRY_RUN_COMMANDS` in `cli.ts` is the one list of commands that answer
+  `--dry-run`; a `preAction` hook refuses every other command with `dry_run_unsupported`
+  before its action runs, so a new command that forgets the flag fails closed instead of
+  mutating. Today it refuses only the interactive `kxm models` screen.
+  **Gate:** `every mutating command under --dry-run leaves the workspace, state root, and
+  hub untouched` in `test/core/cli-experience.test.ts` seeds a committed project, a role, a
+  global workflow, a tracked task, a skill with passing evaluations, a WAL hub store holding
+  a waiting workflow run, and a verified backup; digests every path under the sandbox
+  (project, `KXM_STATE_HOME`, `KXM_USER_CONFIG_DIR`, telemetry and XDG roots); runs 30
+  mutating invocations with `--dry-run` against a recording stub hub plus the two
+  refusals; and asserts no path changed, the hub saw only reads, and no supervisor is
+  running. Mutation-checked: it fails on `main` at the first command, and with the fix in
+  place, reverting only the `config set` write guard, only the session-brief cache guard,
+  or only `openReadOnlyDatabase`'s immutable open fails it on the exact paths written. Found in passing, not fixed here: `kxm workflow add`'s default template is not a
+  valid project workflow (`id` and `role` are rejected), so one local `workflow add` makes
+  the project loader refuse every `kxm run` until the file is removed.
 
 - **S0: plan authority reconciled, and the queue replaced the two competing
   “first product” sequences (2026-09-20; design record

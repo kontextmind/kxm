@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { redactSecrets } from "../redact.ts";
 import {
   createMemoryNote,
@@ -10,7 +10,7 @@ import {
 } from "../memory.ts";
 import { SkillLifecycle, type SkillEvaluationKind, type SkillState } from "../skills.ts";
 import { writeCompiledWiki } from "../wiki.ts";
-import { print, type Runtime } from "./types.ts";
+import { print, printPlan, type Runtime } from "./types.ts";
 
 /** Authenticated hub POST for context operations. The CLI operates as the
  * control plane: the administrative token scopes one project per request. */
@@ -122,6 +122,15 @@ export async function cmdContextPromote(runtime: Runtime, project: string, propo
     runtime.io.stderr("context promote --evidence must contain at least one durable evidence reference\n");
     return 2;
   }
+  if (runtime.dryRun) {
+    printPlan(
+      runtime,
+      { command: "context promote", project, proposalId, evidence },
+      [{ action: "request", target: `POST ${runtime.serverUrl.replace(/\/$/, "")}/v1/context/state/promote` }],
+      `promote proposal ${proposalId} in ${project}`,
+    );
+    return 0;
+  }
   const response = await hubContextPost({
     serverUrl: runtime.serverUrl,
     path: "/v1/context/state/promote",
@@ -158,6 +167,16 @@ export async function cmdContextWikiCompile(runtime: Runtime, project: string, o
     return 1;
   }
   const compiled = response.body as { audit: { pages: string[]; contradictions: number }; pages: { path: string; content: string }[] };
+  if (options.out && runtime.dryRun) {
+    const outDir = options.out;
+    printPlan(
+      runtime,
+      { command: "context wiki-compile", project, pages: compiled.audit.pages, openContradictions: compiled.audit.contradictions, outDir },
+      compiled.pages.map((page) => ({ action: "write", target: resolve(outDir, page.path) })),
+      `write ${compiled.pages.length} compiled wiki page(s) to ${outDir}`,
+    );
+    return 0;
+  }
   let written: string[] = [];
   if (options.out) {
     const pages = new Map(compiled.pages.map((page) => [page.path, page.content]));
@@ -233,7 +252,7 @@ export async function cmdSkillsCreate(runtime: Runtime, options: { file: string;
 }
 
 export async function cmdSkillsEvaluate(runtime: Runtime, skillId: string, options: { kind: string; evaluator: string; fail?: boolean | undefined; score?: string | undefined; details?: string | undefined }): Promise<number> {
-  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime), { dryRun: runtime.dryRun });
   try {
     const outcome = lifecycle.evaluate(skillId, {
       kind: options.kind as SkillEvaluationKind,
@@ -242,6 +261,10 @@ export async function cmdSkillsEvaluate(runtime: Runtime, skillId: string, optio
       ...(options.score !== undefined ? { score: Number(options.score) } : {}),
       ...(options.details ? { details: options.details } : {}),
     });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "skills evaluate", skillId, quarantined: outcome.quarantined, evaluation: outcome.evaluation }, lifecycle.planned, `record ${options.kind} evaluation${outcome.quarantined ? " (candidate quarantined)" : ""}`);
+      return 0;
+    }
     print(runtime.io, runtime.json, { ok: true, command: "skills evaluate", skillId, quarantined: outcome.quarantined, evaluation: outcome.evaluation }, `recorded ${options.kind} evaluation${outcome.quarantined ? " (candidate quarantined)" : ""}`);
     return 0;
   } catch (error) {
@@ -252,13 +275,17 @@ export async function cmdSkillsEvaluate(runtime: Runtime, skillId: string, optio
 }
 
 export async function cmdSkillsPromote(runtime: Runtime, skillId: string, options: { decidedBy: string; evidence: string; reason?: string | undefined }): Promise<number> {
-  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime), { dryRun: runtime.dryRun });
   try {
     const promoted = lifecycle.promote(skillId, {
       decidedBy: options.decidedBy,
       reason: options.reason ?? "passed protected evaluation",
       evidenceRefs: csv(options.evidence) ?? [],
     });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "skills promote", skillId, metadata: promoted, patchPath: promoted.patchPath }, lifecycle.planned, `promote skill ${skillId}`);
+      return 0;
+    }
     print(runtime.io, runtime.json, { ok: true, command: "skills promote", skillId, metadata: promoted, patchPath: promoted.patchPath }, `promoted skill ${skillId} (patch: ${promoted.patchPath})`);
     return 0;
   } catch (error) {
@@ -269,9 +296,13 @@ export async function cmdSkillsPromote(runtime: Runtime, skillId: string, option
 }
 
 export async function cmdSkillsReject(runtime: Runtime, skillId: string, options: { decidedBy: string; reason?: string | undefined }): Promise<number> {
-  const lifecycle = new SkillLifecycle(skillsRoot(runtime));
+  const lifecycle = new SkillLifecycle(skillsRoot(runtime), { dryRun: runtime.dryRun });
   try {
     const metadata = lifecycle.reject(skillId, { decidedBy: options.decidedBy, reason: options.reason ?? "rejected" });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "skills reject", skillId, metadata }, lifecycle.planned, `reject skill ${skillId} (history retained)`);
+      return 0;
+    }
     print(runtime.io, runtime.json, { ok: true, command: "skills reject", skillId, metadata }, `rejected skill ${skillId} (history retained)`);
     return 0;
   } catch (error) {
@@ -339,8 +370,13 @@ export async function cmdMemoryNote(
       scope: (options.scope ?? "project") as MemoryScope,
       ...(options.kind !== undefined ? { kind: options.kind } : {}),
       ...(options.body !== undefined ? { body: options.body } : {}),
+      dryRun: runtime.dryRun,
     });
     const relPath = relative(runtime.cwd, path);
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "memory note", candidate: record, path: relPath }, [{ action: "write", target: path }], `record memory candidate in ${relPath} (the id is assigned when it is recorded)`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -357,7 +393,16 @@ export async function cmdMemoryNote(
 
 export async function cmdMemorySync(runtime: Runtime): Promise<number> {
   try {
-    const result = syncHarnessMemory(runtime.cwd);
+    const result = syncHarnessMemory(runtime.cwd, { dryRun: runtime.dryRun });
+    if (runtime.dryRun) {
+      printPlan(
+        runtime,
+        { command: "memory sync", ...result },
+        result.updated.map((file) => ({ action: "write", target: join(runtime.cwd, file) })),
+        "regenerate the project memory block in the instruction files this project already has",
+      );
+      return 0;
+    }
     const lines = [
       ...(result.updated.length > 0 ? [`updated: ${result.updated.join(", ")}`] : []),
       ...(result.unchanged.length > 0 ? [`unchanged: ${result.unchanged.join(", ")}`] : []),
