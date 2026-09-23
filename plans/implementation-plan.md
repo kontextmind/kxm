@@ -497,6 +497,41 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **`kxm backup` and `kxm restore` are scoped to one project, and restore refuses while
+  the Runtime or a hub is live (2026-09-23; follow-up to #296).** The operator asked Claude
+  to implement this directly, so the runner path (`just assign`, `just witness`, two critic
+  PASS records, `just accept`) was not used and there is no assignment manifest, witness
+  receipt or acceptance record. #296 made discovery copy `$S/runtime/registry.db` and the
+  `run-events.db` and prompt sidecar of **every** directory under `$S/runtime/projects/`,
+  and restore wrote each back to its recorded absolute path without checking for a live
+  writer: a restore run from project A rolled back project B's runs, receipts and sync
+  outbox and the shared registry, and could replace a store under the running supervisor.
+  Backup now copies only the checkout's own event store and sidecar, keyed by
+  `projectRuntimeKey` of the checkout the Runtime would use (`discoverKxmProjectRoot`, else
+  the current directory); the key derivation moved to the leaf module `runtime-paths.ts`
+  (re-exported by `runtime-store.ts`) so `database.ts` can use it without an import cycle.
+  The registry is machine-wide and identity-bearing (supervisor runtime id, each project's
+  immutable home runtime id, which every run records), so it and the other projects' stores
+  are copied only with `--all-projects`. The manifest records `scope`, `stateRoot` and
+  `runtimeProjectKey`; restore rebases project paths onto the checkout, sends the own event
+  store to the path the Runtime derives for it under the current state root, and refuses
+  anything else under the state root, or any non-hub absolute path from a pre-scope
+  manifest, with `restore_requires_all_projects` unless `--all-projects` is given. Before
+  any write, dry run included, restore refuses with `restore_runtime_running` using the
+  `kxm runtime status` liveness test (`kxmSupervisorStatus` gained a `readOnly` mode that
+  reads the registry through `openReadOnlyDatabase`), with `restore_runtime_unverified` when
+  the registry cannot be read, and with `restore_hub_running` on a live `hub.pid` claim beside
+  a hub-store target (`readLiveHubClaim`). Manifest schema gained the three optional fields.
+  Gate: `npm run verify`, green (1295 tests, 1289 pass, 0 fail, 6 skipped), with HOME, `KXM_STATE_HOME`,
+  `KXM_USER_CONFIG_DIR`, `KXM_USER_TELEMETRY_DIR`, `XDG_CONFIG_HOME` and `XDG_STATE_HOME`
+  isolated; no new npm script or CI job. Named tests (`test/core/e6-backup-restore-migrations.test.ts`):
+  `a project backup holds only its own Runtime event store, and its restore leaves other
+  projects alone`, `an --all-projects backup holds every project and the registry, and only
+  --all-projects restores it`, `kxm restore refuses while the Runtime supervisor is running,
+  before any write and under --dry-run` (a fresh registry record naming the test's own PID
+  stands in for a live supervisor), and `kxm restore refuses while a hub holds the hub store
+  it would overwrite`.
+
 - **A restarted Claude Code session keeps the requests it acknowledged but never answered
   (2026-09-23; found by reading the code, builds on the `kxm peer inbox` entry below).** The operator asked
   Claude to implement this directly, so the runner path (`just assign`, `just witness`, two

@@ -361,14 +361,33 @@ All notable user-facing changes are documented here. The project follows [Semant
   and admits those two routes. One-shot production no longer falls through to an
   unadmitted `claude-3-7-sonnet`.
 
-- **`kxm backup` includes the Runtime stores under the user-state root.** Discovery
-  copies `$S/runtime/registry.db` and `$S/runtime/projects/<projectKey>/run-events.db`,
-  plus each `run-events.db.run-prompts.json` sidecar. A copy that misses a discovered
-  store is `complete: false`: `kxm backup` exits 1 with `ok: false`, and restore
-  refuses that manifest. Cross-box remap of absolute `$S` paths is still the file recipe.
-  The Runtime stores are machine-wide, so a backup holds every project's run store and a
-  restore rolls all of them back. `kxm backup --help` no longer says Runtime stores are
-  left out.
+- **`kxm backup` includes this project's Runtime event store, and never another
+  project's unless asked.** Discovery copies the checkout's own
+  `$S/runtime/projects/<projectKey>/run-events.db`, with the key derived from the
+  canonical checkout path as the Runtime derives it, plus its
+  `run-events.db.run-prompts.json` sidecar. `kxm backup` and `kxm restore` act for the
+  checkout the Runtime would use (the Git root holding `.kxm/project.yaml`), so running
+  them from a subdirectory finds the same stores. The shared `$S/runtime/registry.db` and
+  every other project's event store are copied only with `kxm backup --all-projects`, and
+  a restore of a backup that holds them is refused with `restore_requires_all_projects`
+  unless `kxm restore --all-projects` is given; a project restore therefore never rolls
+  back another project's runs, receipts or sync outbox, or the registry. A project
+  restore writes the event store where the Runtime looks for the checkout being
+  restored, under the current `KXM_STATE_HOME`; `--all-projects` rebases the shared
+  stores onto the current user state root. The manifest records `scope`, `stateRoot`
+  and `runtimeProjectKey`. A copy that misses a discovered store is `complete: false`:
+  `kxm backup` exits 1 with `ok: false`, and restore refuses that manifest.
+  `kxm backup --help` no longer says Runtime stores are left out.
+
+- **`kxm restore` refuses while the Runtime supervisor or a hub is running.** Before any
+  write, and under `--dry-run` too, it fails with `restore_runtime_running` when the
+  supervisor is live by the same test `kxm runtime status` uses (running state, fresh
+  heartbeat, live PID), read through a read-only open of the registry, and with
+  `restore_hub_running` when a live `hub.pid` claim sits beside a hub store it would
+  overwrite. A registry too broken to read fails closed with
+  `restore_runtime_unverified`, which says to stop the Runtime and move the registry
+  aside. Replacing a SQLite file under an open writer could lose commits or corrupt the
+  store.
 
 - **Signed webhooks cannot be replayed.** KXM's own webhook senders now sign the
   timestamp, delivery ID, definition, run and signal key along with the body

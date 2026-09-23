@@ -10,10 +10,10 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
-import { kxmUserStateRoot } from "./bindings.ts";
 import { KxmConfigError, type KxmConfigIssue } from "./project-config.ts";
+import { kxmProjectRunEventsPath, kxmRuntimePaths, projectRuntimeKey, type KxmRuntimePaths } from "./runtime-paths.ts";
 
 export interface DatabaseSchemaSpec {
   schema: string;
@@ -40,11 +40,25 @@ export interface BackupFileRecord {
   bytes: number;
 }
 
+/**
+ * What a backup holds from the user state root. `project` (the default): the
+ * checkout's own Runtime event store and its prompt sidecar. `all-projects`: the
+ * shared Runtime registry and every project's event store, so restoring it rolls
+ * back every project on the machine.
+ */
+export type KxmBackupScope = "project" | "all-projects";
+
 export interface BackupManifest {
   schema: "kxm.backup-manifest.v1";
   backupId: string;
   createdAt: string;
   projectRoot?: string;
+  /** Absent on manifests written before backups were scoped. */
+  scope?: KxmBackupScope;
+  /** The user state root the Runtime stores were copied from; restore rebases them onto the current one. */
+  stateRoot?: string;
+  /** The Runtime store key of the checkout the backup ran from, derived as the Runtime derives it. */
+  runtimeProjectKey?: string;
   stores: BackupStoreRecord[];
   files?: BackupFileRecord[];
   /** False when a discovered store or prompt sidecar was left out. Absent on legacy manifests. */
@@ -642,49 +656,75 @@ function pushStore(stores: DiscoveredStore[], storeId: string, sourcePath: strin
   stores.push({ storeId, sourcePath, maxSupportedVersion: kxmBackupCeiling(storeId) });
 }
 
-function discoverUserRuntime(env: NodeJS.ProcessEnv | undefined, stores: DiscoveredStore[], files: DiscoveredFile[]): void {
-  let stateRoot: string;
-  try {
-    stateRoot = kxmUserStateRoot(env ? { env } : {});
-  } catch {
-    return;
-  }
-  const runtimeDir = join(stateRoot, "runtime");
-  const registryPath = join(runtimeDir, "registry.db");
-  if (existsSync(registryPath)) {
-    const storeId = stores.some((store) => store.storeId === "registry") ? "runtime-registry" : "registry";
-    pushStore(stores, storeId, registryPath);
-  }
-  const projectsDir = join(runtimeDir, "projects");
-  if (!existsSync(projectsDir)) return;
-  let entries;
-  try {
-    entries = readdirSync(projectsDir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const dbPath = join(projectsDir, entry.name, "run-events.db");
-    if (!existsSync(dbPath)) continue;
-    const safe = entry.name.replace(/[^a-zA-Z0-9_.-]/g, "_");
-    let storeId = `events:${safe}`;
-    if (stores.some((store) => store.storeId === storeId)) storeId = `events:runtime:${safe}`;
-    pushStore(stores, storeId, dbPath);
-    const sidecar = `${dbPath}.run-prompts.json`;
-    if (existsSync(sidecar)) {
-      const id = `${storeId}:run-prompts`;
-      if (!files.some((file) => file.id === id || file.sourcePath === sidecar)) {
-        files.push({ id, sourcePath: sidecar });
-      }
+interface DiscoveredSources {
+  stores: DiscoveredStore[];
+  files: DiscoveredFile[];
+  stateRoot?: string;
+  runtimeProjectKey: string;
+}
+
+interface BackupDiscoverOptions {
+  hubDataPath?: string;
+  env?: NodeJS.ProcessEnv;
+  allProjects?: boolean;
+}
+
+function pushEventStore(stores: DiscoveredStore[], files: DiscoveredFile[], paths: KxmRuntimePaths, key: string): void {
+  const dbPath = join(paths.projectsDir, key, "run-events.db");
+  if (!existsSync(dbPath)) return;
+  const safe = key.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  let storeId = `events:${safe}`;
+  if (stores.some((store) => store.storeId === storeId)) storeId = `events:runtime:${safe}`;
+  pushStore(stores, storeId, dbPath);
+  const sidecar = `${dbPath}.run-prompts.json`;
+  if (existsSync(sidecar)) {
+    const id = `${storeId}:run-prompts`;
+    if (!files.some((file) => file.id === id || file.sourcePath === sidecar)) {
+      files.push({ id, sourcePath: sidecar });
     }
   }
 }
 
-function discoverBackupSources(
-  projectRoot: string,
-  options: { hubDataPath?: string; env?: NodeJS.ProcessEnv } = {},
-): { stores: DiscoveredStore[]; files: DiscoveredFile[] } {
+/**
+ * The Runtime stores under the user state root. By default only this checkout's
+ * event store: the registry and the other projects' event stores are shared by every
+ * project on the machine, and a restore of them rolls all of those projects back, so
+ * only an explicit `allProjects` backup holds them.
+ */
+function discoverUserRuntime(
+  runtimeProjectKey: string,
+  options: BackupDiscoverOptions,
+  stores: DiscoveredStore[],
+  files: DiscoveredFile[],
+): string | undefined {
+  let paths: KxmRuntimePaths;
+  try {
+    paths = kxmRuntimePaths(options.env ? { env: options.env } : {});
+  } catch {
+    return undefined;
+  }
+  if (!options.allProjects) {
+    pushEventStore(stores, files, paths, runtimeProjectKey);
+    return paths.stateRoot;
+  }
+  if (existsSync(paths.registryDb)) {
+    const storeId = stores.some((store) => store.storeId === "registry") ? "runtime-registry" : "registry";
+    pushStore(stores, storeId, paths.registryDb);
+  }
+  if (!existsSync(paths.projectsDir)) return paths.stateRoot;
+  let entries;
+  try {
+    entries = readdirSync(paths.projectsDir, { withFileTypes: true });
+  } catch {
+    return paths.stateRoot;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) pushEventStore(stores, files, paths, entry.name);
+  }
+  return paths.stateRoot;
+}
+
+function discoverBackupSources(projectRoot: string, options: BackupDiscoverOptions = {}): DiscoveredSources {
   const root = resolve(projectRoot);
   const stores: DiscoveredStore[] = [];
   const files: DiscoveredFile[] = [];
@@ -709,8 +749,9 @@ function discoverBackupSources(
     }
   }
 
-  discoverUserRuntime(options.env, stores, files);
-  return { stores, files };
+  const runtimeProjectKey = projectRuntimeKey(root);
+  const stateRoot = discoverUserRuntime(runtimeProjectKey, options, stores, files);
+  return { stores, files, runtimeProjectKey, ...(stateRoot !== undefined ? { stateRoot } : {}) };
 }
 
 function backupPlainFile(sourcePath: string, targetPath: string, id: string): BackupFileRecord {
@@ -748,7 +789,7 @@ function restorePlainFile(backupFilePath: string, targetPath: string): void {
   try { chmodSync(targetPath, 0o600); } catch { /* Windows */ }
 }
 
-export function discoverProjectStores(projectRoot: string, options: { hubDataPath?: string; env?: NodeJS.ProcessEnv } = {}): Array<{ storeId: string; sourcePath: string; maxSupportedVersion: number }> {
+export function discoverProjectStores(projectRoot: string, options: BackupDiscoverOptions = {}): Array<{ storeId: string; sourcePath: string; maxSupportedVersion: number }> {
   return discoverBackupSources(projectRoot, options).stores;
 }
 
@@ -756,24 +797,26 @@ export interface BackupPlan {
   projectRoot: string;
   outDir: string;
   createdAt: string;
+  scope: KxmBackupScope;
+  stateRoot?: string;
+  runtimeProjectKey: string;
   stores: Array<{ storeId: string; sourcePath: string; backupFile: string }>;
   files: Array<{ id: string; sourcePath: string; backupFile: string }>;
 }
 
-function backupDiscoverOptions(options: { hubDataPath?: string; env?: NodeJS.ProcessEnv }): { hubDataPath?: string; env?: NodeJS.ProcessEnv } {
+function backupDiscoverOptions(options: BackupDiscoverOptions): BackupDiscoverOptions {
   return {
     ...(options.hubDataPath !== undefined ? { hubDataPath: options.hubDataPath } : {}),
     ...(options.env !== undefined ? { env: options.env } : {}),
+    ...(options.allProjects === true ? { allProjects: true } : {}),
   };
 }
 
 /** Which stores and files a backup would copy and where, without opening any of them.
  * Opening a source for backup checkpoints its WAL, so the plan stays at paths. */
-export function planBackup(options: {
+export function planBackup(options: BackupDiscoverOptions & {
   projectRoot?: string;
   outDir?: string;
-  hubDataPath?: string;
-  env?: NodeJS.ProcessEnv;
 } = {}): BackupPlan {
   const projectRoot = options.projectRoot ? resolve(options.projectRoot) : process.cwd();
   const discovered = discoverBackupSources(projectRoot, backupDiscoverOptions(options));
@@ -796,16 +839,23 @@ export function planBackup(options: {
     sourcePath: file.sourcePath,
     backupFile: backupFilename(file.sourcePath, file.id, usedFilenames),
   }));
-  return { projectRoot, outDir, createdAt, stores, files };
+  return {
+    projectRoot,
+    outDir,
+    createdAt,
+    scope: options.allProjects === true ? "all-projects" : "project",
+    ...(discovered.stateRoot !== undefined ? { stateRoot: discovered.stateRoot } : {}),
+    runtimeProjectKey: discovered.runtimeProjectKey,
+    stores,
+    files,
+  };
 }
 
-export function createBackup(options: {
+export function createBackup(options: BackupDiscoverOptions & {
   projectRoot?: string;
   outDir?: string;
-  hubDataPath?: string;
-  env?: NodeJS.ProcessEnv;
 } = {}): { manifest: BackupManifest; outDir: string } {
-  const { projectRoot, outDir, createdAt, stores, files } = planBackup(options);
+  const { projectRoot, outDir, createdAt, scope, stateRoot, runtimeProjectKey, stores, files } = planBackup(options);
   const backupId = `bk_${randomBytes(8).toString("hex")}`;
 
   if (!existsSync(outDir)) {
@@ -852,6 +902,9 @@ export function createBackup(options: {
     backupId,
     createdAt,
     projectRoot,
+    scope,
+    ...(stateRoot !== undefined ? { stateRoot } : {}),
+    runtimeProjectKey,
     stores: backedUpStores,
     ...(backedUpFiles.length > 0 ? { files: backedUpFiles } : {}),
     complete: omitted.length === 0,
@@ -872,16 +925,74 @@ export function createBackup(options: {
 export interface RestorePlan {
   manifestPath: string;
   backupId: string;
+  /** The manifest's scope; absent on manifests written before backups were scoped. */
+  scope?: KxmBackupScope;
   stores: Array<{ storeId: string; backupFilePath: string; targetPath: string; schemaVersion: number; maxSupportedVersion: number }>;
   files: Array<{ id: string; backupFilePath: string; targetPath: string }>;
 }
 
+export interface RestoreOptions {
+  /** The checkout to restore into. Its stores are rebased onto it, and its own Runtime
+   * event store is the one the Runtime derives for it. */
+  projectRoot?: string;
+  env?: NodeJS.ProcessEnv;
+  /** Also restore the shared Runtime registry and other projects' event stores. */
+  allProjects?: boolean;
+}
+
+function pathUnder(root: string | undefined, path: string): string | undefined {
+  if (!root) return undefined;
+  const rel = relative(root, path);
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return undefined;
+  return rel;
+}
+
+/**
+ * Where one backed-up store or file goes, and whether it belongs to this checkout.
+ *
+ * A path under the manifest's project root is rebased onto the checkout being restored.
+ * The checkout's own Runtime event store (and its prompt sidecar) goes to the store the
+ * Runtime derives for that checkout, under the current user state root. Anything else
+ * under the user state root is machine-wide — the registry, another project's event
+ * store — and so is anything outside both recorded roots except a relocated hub store,
+ * which is how a manifest written before scopes records Runtime stores. Those restore
+ * only with `allProjects`, rebased onto the current user state root when the manifest
+ * recorded one.
+ */
+function restoreTarget(
+  manifest: BackupManifest,
+  sourcePath: string,
+  id: string,
+  options: RestoreOptions,
+  currentStateRoot: () => string,
+): { targetPath: string; machineWide: boolean } {
+  const stateRel = pathUnder(manifest.stateRoot, sourcePath);
+  const projectRel = pathUnder(manifest.projectRoot, sourcePath);
+  // KXM_STATE_HOME may sit inside the checkout; the deeper root owns the path.
+  if (stateRel !== undefined && (projectRel === undefined || stateRel.length <= projectRel.length)) {
+    const ownEvents = manifest.runtimeProjectKey !== undefined
+      ? join("runtime", "projects", manifest.runtimeProjectKey, "run-events.db")
+      : undefined;
+    const own = ownEvents !== undefined && (stateRel === ownEvents || stateRel === `${ownEvents}.run-prompts.json`);
+    if (own && !options.allProjects && options.projectRoot !== undefined) {
+      const eventsPath = kxmProjectRunEventsPath(resolve(options.projectRoot), options.env ?? process.env);
+      return { targetPath: stateRel === ownEvents ? eventsPath : `${eventsPath}.run-prompts.json`, machineWide: false };
+    }
+    return { targetPath: join(currentStateRoot(), stateRel), machineWide: !own };
+  }
+  if (projectRel !== undefined) {
+    return { targetPath: options.projectRoot ? join(resolve(options.projectRoot), projectRel) : sourcePath, machineWide: false };
+  }
+  return { targetPath: sourcePath, machineWide: id !== "hub-store" };
+}
+
 /** Everything restore checks before it overwrites anything: the manifest, each
- * backup file's digest, and each store's schema against this build's ceiling
- * (from the manifest). Reads files; opens no database. */
+ * backup file's digest, each store's schema against this build's ceiling (from
+ * the manifest), and that nothing outside this checkout would be overwritten
+ * without `allProjects`. Reads files; opens no database. */
 export function planRestore(
   manifestPathOrDir: string,
-  options: { projectRoot?: string } = {},
+  options: RestoreOptions = {},
 ): RestorePlan {
   let manifestPath = resolve(manifestPathOrDir);
   const stat = lstatSync(manifestPath, { throwIfNoEntry: false });
@@ -912,6 +1023,10 @@ export function planRestore(
     throw databaseError("restore_incomplete", manifestPath, "backup manifest is incomplete; refusing to restore a partial copy");
   }
 
+  let stateRoot: string | undefined;
+  const currentStateRoot = (): string => (stateRoot ??= kxmRuntimePaths({ env: options.env ?? process.env }).stateRoot);
+  const machineWide: string[] = [];
+
   const stores: RestorePlan["stores"] = [];
   for (const store of manifest.stores) {
     const backupFilePath = join(manifestDir, store.backupFile);
@@ -937,12 +1052,9 @@ export function planRestore(
       );
     }
 
-    let targetPath = store.sourcePath;
-    if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
-      const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
-      targetPath = join(resolve(options.projectRoot), rel);
-    }
-    stores.push({ storeId: store.storeId, backupFilePath, targetPath, schemaVersion: store.schemaVersion, maxSupportedVersion });
+    const target = restoreTarget(manifest, store.sourcePath, store.storeId, options, currentStateRoot);
+    if (target.machineWide) machineWide.push(store.storeId);
+    stores.push({ storeId: store.storeId, backupFilePath, targetPath: target.targetPath, schemaVersion: store.schemaVersion, maxSupportedVersion });
   }
 
   const files: RestorePlan["files"] = [];
@@ -959,22 +1071,31 @@ export function planRestore(
         `backup file ${file.backupFile} sha256 ${actualSha256} does not match manifest hash ${file.sha256}`,
       );
     }
-    let targetPath = file.sourcePath;
-    if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
-      const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
-      targetPath = join(resolve(options.projectRoot), rel);
-    }
-    files.push({ id: file.id, backupFilePath, targetPath });
+    const target = restoreTarget(manifest, file.sourcePath, file.id, options, currentStateRoot);
+    if (target.machineWide) machineWide.push(file.id);
+    files.push({ id: file.id, backupFilePath, targetPath: target.targetPath });
   }
 
-  return { manifestPath, backupId: manifest.backupId, stores, files };
+  if (machineWide.length > 0 && !options.allProjects) {
+    throw databaseError(
+      "restore_requires_all_projects",
+      manifestPath,
+      `backup ${manifest.backupId} holds Runtime state shared by every project on this machine (${machineWide.join(", ")}); `
+        + "restoring it rolls back the registry or other projects' runs. Pass --all-projects to restore all of it, or restore a backup taken without --all-projects",
+    );
+  }
+
+  return {
+    manifestPath,
+    backupId: manifest.backupId,
+    ...(manifest.scope !== undefined ? { scope: manifest.scope } : {}),
+    stores,
+    files,
+  };
 }
 
-export function restoreBackup(
-  manifestPathOrDir: string,
-  options: { projectRoot?: string } = {},
-): RestoreResult {
-  const plan = planRestore(manifestPathOrDir, options);
+/** Overwrite each target in a checked plan: the stores, then their prompt sidecars. */
+export function applyRestorePlan(plan: RestorePlan): RestoreResult {
   const restoredStores = plan.stores.map((store) => restoreDatabaseFile(
     store.backupFilePath,
     store.targetPath,
@@ -990,4 +1111,11 @@ export function restoreBackup(
     backupId: plan.backupId,
     restoredStores,
   };
+}
+
+export function restoreBackup(
+  manifestPathOrDir: string,
+  options: RestoreOptions = {},
+): RestoreResult {
+  return applyRestorePlan(planRestore(manifestPathOrDir, options));
 }

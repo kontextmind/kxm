@@ -1,34 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, openReadOnlyDatabase } from "./sqlite.ts";
 import { KxmConfigError, validateCoordinator, validateDriveReceipt, validateIntakeMessage, validateRunEvent, kxmCanonicalJson, type JsonValue, type KxmConfigIssue, type KxmConfigOptions } from "./project-config.ts";
-import { kxmUserStateRoot } from "./bindings.ts";
+import { kxmProjectRunEventsPath, projectRuntimeKey } from "./runtime-paths.ts";
 import { deriveKxmSyncEvent, kxmSyncEventBytes, KxmSyncRedactor } from "./sync-transform.ts";
 
 /* ------------------------------------------------------------------ *
  * Runtime registry (per-user, platform state root)
  * ------------------------------------------------------------------ */
 
-export interface KxmRuntimePaths {
-  stateRoot: string;
-  runtimeDir: string;
-  registryDb: string;
-  projectsDir: string;
-}
-
-export function kxmRuntimePaths(options: { stateRoot?: string; env?: NodeJS.ProcessEnv; homeDir?: string } = {}): KxmRuntimePaths {
-  const stateRoot = options.stateRoot
-    ? resolve(options.stateRoot)
-    : kxmUserStateRoot({ ...(options.env ? { env: options.env } : {}), ...(options.homeDir ? { homeDir: options.homeDir } : {}) });
-  const runtimeDir = join(stateRoot, "runtime");
-  return {
-    stateRoot,
-    runtimeDir,
-    registryDb: join(runtimeDir, "registry.db"),
-    projectsDir: join(runtimeDir, "projects"),
-  };
-}
+export { kxmRuntimePaths, projectRuntimeKey, kxmProjectRunEventsPath, type KxmRuntimePaths } from "./runtime-paths.ts";
 
 function runtimeIssue(phase: KxmConfigIssue["phase"], code: string, file: string, message: string): KxmConfigIssue {
   return { phase, code, file, message };
@@ -36,24 +18,6 @@ function runtimeIssue(phase: KxmConfigIssue["phase"], code: string, file: string
 
 export function runtimeError(code: string, file: string, message: string): KxmConfigError {
   return new KxmConfigError([runtimeIssue("semantic", code, file, message)]);
-}
-
-export function projectRuntimeKey(projectRoot: string): string {
-  // Canonicalize through the filesystem like the repository binding store so
-  // reaching a project through a link cannot mint a second key for it.
-  let canonical: string;
-  try {
-    canonical = realpathSync.native(resolve(projectRoot));
-  } catch {
-    canonical = resolve(projectRoot);
-  }
-  const folded = process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
-  return createHash("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
-}
-
-/** The project's Runtime event store, derived exactly as the Runtime derives it. */
-export function kxmProjectRunEventsPath(projectRoot: string, env: NodeJS.ProcessEnv): string {
-  return join(kxmRuntimePaths({ env }).projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
 }
 
 /**
@@ -140,6 +104,24 @@ CREATE TABLE projects (
   registered_at TEXT NOT NULL
 ) STRICT;
 `;
+
+/** The supervisor singleton row, from any connection to a registry, including a read-only one. */
+export function readKxmSupervisorRecord(database: DatabaseSync): KxmSupervisorRecord | undefined {
+  const row = database.prepare("SELECT runtime_id, pid, port, token_hash, started_at, heartbeat_at, state FROM supervisor WHERE singleton_id = 1").get() as
+    | { runtime_id: string; pid: number; port: number; token_hash: string; started_at: string; heartbeat_at: string; state: KxmSupervisorRecord["state"] }
+    | undefined;
+  return row
+    ? {
+      runtimeId: row.runtime_id,
+      pid: row.pid,
+      port: row.port,
+      tokenHash: row.token_hash,
+      startedAt: row.started_at,
+      heartbeatAt: row.heartbeat_at,
+      state: row.state,
+    }
+    : undefined;
+}
 
 export class KxmRuntimeRegistry {
   readonly path: string;
@@ -228,20 +210,7 @@ export class KxmRuntimeRegistry {
   }
 
   private readSupervisorRow(): KxmSupervisorRecord | undefined {
-    const row = this.database.prepare("SELECT runtime_id, pid, port, token_hash, started_at, heartbeat_at, state FROM supervisor WHERE singleton_id = 1").get() as
-      | { runtime_id: string; pid: number; port: number; token_hash: string; started_at: string; heartbeat_at: string; state: KxmSupervisorRecord["state"] }
-      | undefined;
-    return row
-      ? {
-        runtimeId: row.runtime_id,
-        pid: row.pid,
-        port: row.port,
-        tokenHash: row.token_hash,
-        startedAt: row.started_at,
-        heartbeatAt: row.heartbeat_at,
-        state: row.state,
-      }
-      : undefined;
+    return readKxmSupervisorRecord(this.database);
   }
 
   supervisor(): KxmSupervisorRecord | undefined {

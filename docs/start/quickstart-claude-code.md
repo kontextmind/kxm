@@ -341,7 +341,7 @@ kxm runtime stop
 `kxm backup` writes a verified copy and a hashed manifest to `.kxm/backups/backup-<timestamp>/`.
 
 > [!WARNING]
-> `kxm backup` copies the hub store and the Runtime's registry and run event stores, and those Runtime stores belong to every project on this machine. A later `kxm restore` rolls all of them back. It does not copy bindings, `update.yaml` or the other state roots; [Back up everything else](../operations/backup-and-restore.md#back-up-everything-else) covers those.
+> `kxm backup` copies this project's hub store and its Runtime run event store. The Runtime registry and other projects' run stores are shared by every project on this machine, so they are copied only with `--all-projects`, and a later `kxm restore` refuses to roll them back without the same flag. It does not copy bindings, `update.yaml` or the other state roots; [Back up everything else](../operations/backup-and-restore.md#back-up-everything-else) covers those.
 
 [Back up and restore KXM](../operations/backup-and-restore.md) and [Upgrade KXM](../operations/upgrade.md) cover restores and rollback.
 
