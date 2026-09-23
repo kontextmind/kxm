@@ -18176,6 +18176,13 @@ function readInstalledKxmVersion(root) {
   }
   return pkg.version;
 }
+function installedKxmVersion(root) {
+  try {
+    return readInstalledKxmVersion(root);
+  } catch {
+    return void 0;
+  }
+}
 function parseSemver(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
   if (!match) return void 0;
@@ -44610,6 +44617,13 @@ function installProbeFrom(runtime) {
     env: partial.env ?? runtime.env
   };
 }
+function moduleInstallRoot() {
+  try {
+    return findKxmRepoRoot(import.meta.url);
+  } catch {
+    return dirname20(fileURLToPath3(import.meta.url));
+  }
+}
 function warnIgnoredProjectUpdateYaml(runtime) {
   const projectFile = join41(runtime.dirs.workspace, "update.yaml");
   if (!existsSync31(projectFile)) return;
@@ -44617,11 +44631,20 @@ function warnIgnoredProjectUpdateYaml(runtime) {
   runtime.io.stderr(`kxm: ignoring .kxm/update.yaml in ${runtime.dirs.workdir}; update settings are read only from ${userFile}
 `);
 }
-async function refreshKxmUpdateNotice(runtime, config) {
+async function refreshKxmUpdateNotice(runtime, config, current) {
   const resolved = config ?? loadKxmUpdateConfig(runtime.env);
-  const current = readInstalledKxmVersion(resolve24("."));
+  const installed = current ?? installedKxmVersion(findKxmRepoRoot(import.meta.url)) ?? installedKxmVersion(moduleInstallRoot());
+  if (installed === void 0) {
+    return {
+      current: "unknown",
+      available: false,
+      auto: false,
+      source: resolved.source,
+      message: `kxm update check skipped: the installed version is unreadable at ${moduleInstallRoot()}`
+    };
+  }
   const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
-  const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error, fetched.asset);
+  const notice = noticeFromVersions(installed, fetched.latest, resolved, fetched.error, fetched.asset);
   writeUpdateCache(runtime.dirs.state, notice);
   return notice;
 }
@@ -47142,16 +47165,16 @@ async function cmdUpdate(runtime, harness, options) {
   warnIgnoredProjectUpdateYaml(runtime);
   const probe = installProbeFrom(runtime);
   const classified = classifyInstallRoot(probe);
-  const current = readInstalledKxmVersion(findKxmRepoRoot(import.meta.url));
+  const current = installedKxmVersion(classified.root) ?? installedKxmVersion(findKxmRepoRoot(import.meta.url));
   let notice;
   let kindReport = classified;
   if (classified.kind === "source") {
     if (options.check) {
-      const message = `kxm ${current} (running from source at ${classified.root})`;
+      const message = `kxm ${current ?? "unknown"} (running from source at ${classified.root})`;
       print(runtime.io, runtime.json, {
         ok: true,
         command: "update check",
-        current,
+        current: current ?? "unknown",
         available: false,
         auto: false,
         source: "github",
@@ -47173,15 +47196,15 @@ async function cmdUpdate(runtime, harness, options) {
       return 2;
     }
     notice = {
-      current,
+      current: current ?? "unknown",
       available: false,
       auto: false,
       source: "github",
-      message: `kxm ${current} (running from source)`
+      message: `kxm ${current ?? "unknown"} (running from source)`
     };
   } else {
     try {
-      notice = await refreshKxmUpdateNotice(runtime);
+      notice = await refreshKxmUpdateNotice(runtime, void 0, current);
     } catch (error) {
       if (error instanceof KxmUpdateConfigError) {
         print(runtime.io, runtime.json, { ok: false, command: "update", error: error.code, ...installKindPayload(classified) }, error.message);
