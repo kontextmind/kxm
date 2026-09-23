@@ -1400,8 +1400,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `KXM_SMOKE_RUNNER == 'kontextmind-doks'` and stays disabled until Pi
   credentials are provisioned into ephemeral pods and pass `pi auth check`.
   Release/npm remain `if: false` and the Windows pause is unchanged.
-  Ruleset `22251971` required contexts are unchanged. This is not a
-  capacity or speed promise.
+  Ruleset `22251971` required contexts are unchanged.
+
+  **Live ARC routing and capacity (2026-09-23):** the scale set is isolated in
+  the selected-repository runner group `KontextMind DOKS ARC`, with public
+  repository access enabled only for `kontextmind/kxm`. The legacy
+  `km-gh-rn01` repository runner intentionally does not carry the
+  `kontextmind-doks` label. DOKS keeps one warm ephemeral runner and bursts to
+  eight; each runner requests two CPUs so the autoscaling node pool (two to
+  three 8-vCPU nodes) adds capacity under load. Live workflow jobs were
+  verified on `kontextmind-doks-*` ephemeral runners in that runner group.
 
   The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
 
