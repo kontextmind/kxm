@@ -372,7 +372,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
 
   const program = new Command(CLI_NAME);
   program
-    .description("KontextMind local-first orchestration CLI")
+    .description("KXM local-first orchestration CLI")
     .version(readInstalledKxmVersion(findKxmRepoRoot(import.meta.url)), "-V, --version", "Print the installed kxm version")
     .exitOverride()
     .configureOutput({
@@ -413,7 +413,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
     });
 
-  addGlobalOptions(program.command("run").description("Create a KXM run (offline-first; no steps execute until the run engine lands)")
+  addGlobalOptions(program.command("run").description("Create a KXM run (offline-first; kxm runs drive <runId> --simulated executes it model-free)")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (hashed, never stored raw)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
@@ -781,7 +781,8 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
     .option("--overwrite", "Overwrite existing workflow definition if present")
     .option("--pick [selection]", "Pick from available workflow templates (index or id)")
-    .action(async function workflowAddAction(this: Command, workflowId?: string, options?: { file?: string; description?: string; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean }) {
+    .option("--template <name>", "Start from a built-in template: implement-and-verify, dual-critic-review, or spec-and-plan")
+    .action(async function workflowAddAction(this: Command, workflowId?: string, options?: { file?: string; description?: string; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean; template?: string }) {
       result.code = await cmdWorkflowAdd(runtimeFrom(ctx, this), workflowId, options ?? {});
     });
   addGlobalOptions(workflow.command("remove [workflowId]").description("Remove a workflow definition"))

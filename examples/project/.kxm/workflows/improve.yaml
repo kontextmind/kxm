@@ -34,7 +34,7 @@ steps:
     timeoutMs: 1800000
     on:
       passed: ready
-      failed:
+      implementation-failure:
         target: $terminal
         terminalStatus: failed
 

@@ -159,7 +159,9 @@ export async function cmdKxmInit(
       : initialized.repairPlan?.issues.length
         ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved"
         : "partial or provenance-free KXM state requires explicit repair; no files were overwritten";
-    return finishInit(1, next);
+    // Name each validation issue, so a definition error reads as one instead of
+    // only as a repair refusal.
+    return finishInit(1, [next, ...initialized.plan.issues.map((issue) => `${issue.file}: ${issue.code}: ${issue.message}`)].join("\n"));
   } catch (error) {
     if (error instanceof KxmConfigError) {
       print(runtime.io, runtime.json, {
@@ -324,7 +326,11 @@ async function readSupervisor(runtime: Runtime, command: string): Promise<Awaite
 }
 
 export const RUN_ENGINE_PHASE = "pre-3a";
-export const RUN_ENGINE_NOTICE = "runs remain created until the run engine lands; no steps execute yet";
+
+/** The next step `kxm run` prints for the run it just created. */
+export function runEngineNotice(runId: string): string {
+  return `drive it model-free: kxm runs drive ${runId} --simulated --wait (or cancel: kxm runs cancel ${runId})`;
+}
 
 /** Where `kxm run <workflow>` would create its run, or the exit code of the
  * refusal it already printed. Reads only; shared with `task run --dry-run`. */
@@ -371,9 +377,9 @@ export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, 
       }, `run plan: workflow ${target.workflowId} at ${target.configRevision.slice(0, 19)}… (no run created)`);
       return 0;
     }
-    const supervisor = await ensureKxmSupervisor({ env: runtime.env });
+    const supervisor = await (kxmDriveCliSeams.ensureSupervisor ?? ensureKxmSupervisor)({ env: runtime.env });
     const prompt = promptParts.join(" ").trim();
-    const acceptance = await kxmRuntimeRequest(supervisor, "POST", "/v1/runs", {
+    const acceptance = await (kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest)(supervisor, "POST", "/v1/runs", {
       projectRoot,
       workflowId: target.workflowId,
       prompt,
@@ -386,7 +392,7 @@ export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, 
       idempotent: acceptance.idempotent === true,
       run,
       supervisor: { runtimeId: supervisor.runtimeId, port: supervisor.port, started: supervisor.started },
-    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)\n${RUN_ENGINE_NOTICE}`);
+    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)\n${runEngineNotice(run.runId)}`);
     return 0;
   } catch (error) {
     if (error instanceof KxmConfigError) {
