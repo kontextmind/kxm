@@ -546,7 +546,7 @@ test("two runtimes synchronize independent offline runs and a conflicting shared
   assert.equal(!lateCommit.ok && lateCommit.code, "effect_lease_superseded");
   assert.equal(!lateCommit.ok && lateCommit.attemptState, "blocked_uncertain");
   const parked = ledgerA.getReceipt(claimA.effectKey)!;
-  assert.equal(parked.status, "in-flight");
+  assert.equal(parked.status, "uncertain", "blocked_uncertain is persisted in the ledger, not just returned");
   assert.equal(parked.completedAt, undefined);
   assert.equal(parked.fencingToken, 1, "nothing re-acquired on the loser's behalf");
   assert.deepEqual(parked.receiptPayload, {});
@@ -565,5 +565,17 @@ test("two runtimes synchronize independent offline runs and a conflicting shared
   assert.equal(winner.receipt.status, "committed");
   assert.equal(winner.receipt.runId, runB);
   assert.equal(winner.receipt.fencingToken, 2);
-  assert.equal(ledgerA.getReceipt(claimA.effectKey)?.status, "in-flight", "the loser never commits");
+  // A timeout-based reclaim cannot unblock a parked effect even when the lease
+  // is free: only explicit recovery can. This is the gate's no-retry invariant.
+  hubClockMs += 60_000;
+  const reclaimAttempt = await claimSharedEffect({
+    ledger: ledgerA, lease: agentA,
+    runId: runA, stepId: "delivery", attemptId: "att-retry",
+    actionKind: "git-push", targetRef: "refs/heads/main",
+  });
+  assert.equal(reclaimAttempt.ok, false);
+  assert.equal(!reclaimAttempt.ok && reclaimAttempt.code, "effect_uncertain",
+    "a parked effect rejects reclaims even when the lease is free — no retry, ever");
+
+  assert.equal(ledgerA.getReceipt(claimA.effectKey)?.status, "uncertain", "the loser never commits; its effect stays parked as uncertain");
 });
