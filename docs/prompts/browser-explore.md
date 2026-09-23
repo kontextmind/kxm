@@ -2,32 +2,32 @@
 schema: "kxm.doc.v1"
 id: "PROMPT-BROWSER-002"
 type: "prompt"
-title: "Exploring an Application with an Authenticated Session"
+title: "Explore an application with an authenticated session"
 project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
 summary: "Exploratory discovery, DOM mapping, and journey inspection via agent-browser attached to a remote Steel session."
 tags: ["browser", "explore", "agent-browser", "prompt"]
-related: ["docs/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
 ---
 
-# Task Template: Exploring an Application with an Authenticated Session
+# Task template: explore an application with an authenticated session
 
 ## Purpose
 
 Use this prompt to perform exploratory discovery, DOM mapping, flow analysis, or user-journey inspection using `agent-browser` connected to a remote Steel session.
 
-## Canonical Skill References
+## Canonical skill references
 
 - `kxm-browser-explore`
 - `kxm-browser-session`
 - `kxm-browser-takeover`
 
-## Parameters & Placeholders
+## Parameters and placeholders
 
 - **PROJECT_ID**: `{{PROJECT_ID}}`
 - **TASK_ID**: `{{TASK_ID}}`
@@ -39,7 +39,7 @@ Use this prompt to perform exploratory discovery, DOM mapping, flow analysis, or
 
 ---
 
-## Instructions for Agent
+## Instructions for the agent
 
 1. **Attach to Active Session**:
    - Verify `sessionId` and connect `agent-browser` via the remote CDP endpoint.

@@ -1,11 +1,11 @@
 ---
 name: kxm-browser-session
-description: Start, attach to, inspect, and release self-hosted Steel browser sessions on DOKS with lifecycle safety and timeout controls.
+description: Start, attach to, inspect, and release self-hosted Steel browser sessions with lifecycle safety and timeout controls.
 ---
 
 # KXM Browser Session Management
 
-Use this skill to create, inspect, attach automation tools to, and release isolated browser sessions running on self-hosted Steel infrastructure on DOKS (`https://steel.kontextmind.com`).
+Use this skill to create, inspect, attach automation tools to, and release isolated browser sessions running on your self-hosted Steel deployment. Set `STEEL_API_URL` (and optionally `STEEL_UI_URL`) to your deployment; KXM does not provide one.
 
 ## Purpose & Scope
 
@@ -16,8 +16,8 @@ Use this skill to create, inspect, attach automation tools to, and release isola
 
 ## Prerequisites
 
-1. Access to DOKS Steel deployment (`https://steel.kontextmind.com` or alternate `https://steel.theneuro.me`).
-2. `pass-cli` credential access for `STEEL_API_KEY` (stored under `AI Provider Keys` -> `Steel Browser (KontextMind DOKS)`).
+1. Your own Steel deployment, with `STEEL_API_URL` set to its base URL (for example `https://steel.example.com`) and `STEEL_UI_URL` set if the viewer lives elsewhere (default `$STEEL_API_URL/ui`).
+2. `STEEL_API_KEY` exported in the environment, for example from your password manager: `export STEEL_API_KEY="$(pass-cli item view --vault-name '<vault>' --item-title '<item>' --field STEEL_API_KEY)"`. Never paste the key into a prompt.
 3. Network access to remote CDP endpoints on port 443 / 9223.
 
 ## Session Lifecycle States
@@ -46,8 +46,8 @@ Use this skill to create, inspect, attach automation tools to, and release isola
 - **Inputs**: Task ID, target URL, session timeout (default 300s, max 1800s), optional proxy or viewport dimensions.
 - **Outputs**:
   - `sessionId`: Unique session UUID.
-  - `cdpUrl`: Remote CDP WebSocket URL (`wss://steel.kontextmind.com/v1/devtools?sessionId=<id>&apiKey=<key>`).
-  - `sessionViewerUrl`: Interactive web session viewer URL (`https://steel.kontextmind.com/ui?sessionId=<id>`).
+  - `cdpUrl`: Remote CDP WebSocket URL (`wss://<steel-host>/v1/devtools?sessionId=<id>&apiKey=<key>`).
+  - `sessionViewerUrl`: Interactive web session viewer URL (`$STEEL_UI_URL?sessionId=<id>`).
   - `status`: `live` | `idle` | `released`.
 
 ## Workflow
@@ -57,9 +57,8 @@ Use this skill to create, inspect, attach automation tools to, and release isola
 Query the Steel API to create a new isolated browser session:
 
 ```bash
-curl -s -X POST https://steel.kontextmind.com/v1/sessions \
-  -H "Content-Type: application/json" \
-  -H "x-steel-api-key: $(pass-cli item view --vault-name 'AI Provider Keys' --item-title 'Steel Browser (KontextMind DOKS)' --field STEEL_API_KEY)" \
+printf 'x-steel-api-key: %s\n' "$STEEL_API_KEY" | curl -sS -X POST "$STEEL_API_URL/v1/sessions" \
+  -H @- -H "Content-Type: application/json" \
   -d '{"timeout": 300000}'
 ```
 
@@ -73,8 +72,7 @@ curl -s -X POST https://steel.kontextmind.com/v1/sessions \
 Check session activity, duration, and status:
 
 ```bash
-curl -s https://steel.kontextmind.com/v1/sessions/<sessionId> \
-  -H "x-steel-api-key: $(pass-cli item view --vault-name 'AI Provider Keys' --item-title 'Steel Browser (KontextMind DOKS)' --field STEEL_API_KEY)"
+printf 'x-steel-api-key: %s\n' "$STEEL_API_KEY" | curl -sS -H @- "$STEEL_API_URL/v1/sessions/<sessionId>"
 ```
 
 ### 4. Releasing the Session
@@ -82,8 +80,7 @@ curl -s https://steel.kontextmind.com/v1/sessions/<sessionId> \
 Always release the session at task completion:
 
 ```bash
-curl -s -X POST https://steel.kontextmind.com/v1/sessions/<sessionId>/release \
-  -H "x-steel-api-key: $(pass-cli item view --vault-name 'AI Provider Keys' --item-title 'Steel Browser (KontextMind DOKS)' --field STEEL_API_KEY)"
+printf 'x-steel-api-key: %s\n' "$STEEL_API_KEY" | curl -sS -X POST -H @- "$STEEL_API_URL/v1/sessions/<sessionId>/release"
 ```
 
 ## Safety & Governance Invariants

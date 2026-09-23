@@ -24,7 +24,7 @@ A project is a mind repo (`repos` row). Pages bind to the caller namespace. Ther
 | `km_projects` | any authorized caller | `{projects[], active, count}` + freshness |
 | `km_project_add` | steward/owner | `name`, optional `path` (local git, indexed now), optional `github_full` |
 | `km_reindex` | authorized | `project` as id or `github_full`. Idempotent reconcile vs HEAD. Returns `{head_sha, indexed_sha, drifted, repaired}` |
-| `km_invite` | steward/owner | `email`, `role` member/steward/owner. Link-only delivery (`accept_url`, expiry). No SMTP in v0.1 |
+| `km_invite` | steward/owner | `email`, `role` member/steward/owner. Link-only delivery (`accept_url`, expiry). No SMTP |
 
 If the tool returns a role error, stop and tell the user they need steward/owner. Do not retry as a different identity.
 

@@ -99,7 +99,7 @@ export const DEFAULT_MODES_CONFIG: ModesConfig = Object.freeze({
     browser: {
       description: "Web application exploration, screenshotting, and UI testing",
       baseTools: ["read", "bash"],
-      contextFiles: ["docs/browser-automation.md"],
+      contextFiles: ["docs/guides/browser-automation.md"],
       thinkingLevel: "medium" as const,
       model: "grok/grok-4.6",
     },

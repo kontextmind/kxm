@@ -19,8 +19,8 @@ related:
   - plan-usage-cost-quota-tracking.md
   - research-a2a-cross-host.md
   - ../docs/contracts/routing.md
-  - ../docs/continuous-improvement.md
-  - ../docs/provenance-gates.md
+  - ../docs/guides/continuous-improvement.md
+  - ../docs/guides/provenance-gates.md
 depends_on: []
 blocked_by: []
 details:

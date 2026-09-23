@@ -1,13 +1,14 @@
 ---
 name: kxm-tasks
-description: Recommend workflows and manage goals and tasks with explicit SCM and tracker boundaries. Use when asked what workflow fits, to plan work as goals and tasks, or to sync with GitHub or Jira. Run a kxm suggest workflow ID only after kxm workflow definitions lists it.
+description: Recommend workflows and manage goals and tasks, recording a GitHub issue or Jira key on a task without contacting either tracker. Use when asked what workflow fits, to plan work as goals and tasks, or to link a task to a GitHub or Jira issue. Run a kxm suggest workflow ID only after kxm workflow definitions lists it.
 ---
 
 # KXM suggest, goals, and tasks
 
-Bind SCM and issue trackers from this repo's conventions. Implemented today:
-GitHub and Jira. An unimplemented tracker fails closed. Do not invent
-`suggest workflows` or extra task verbs.
+A task can record a GitHub issue or Jira key, but no command contacts either
+tracker: `kxm task sync` marks only the local task record synced, and
+`--tracker` is not validated. Do not invent `suggest workflows` or extra task
+verbs.
 
 ## Commands
 
@@ -20,7 +21,7 @@ GitHub and Jira. An unimplemented tracker fails closed. Do not invent
 | `kxm task list` | List project tasks | `--goal`, `--status todo\|in_progress\|blocked\|in_review\|done` |
 | `kxm task get <taskId>` | Task details and linked workflow status | `--json` |
 | `kxm task run <taskId>` | Launch a workflow run driven by this task | `--json` |
-| `kxm task sync <taskId>` | Sync status and evidence with the linked issue board | `--json` |
+| `kxm task sync <taskId>` | Mark the local task record synced; contacts no tracker | `--json` |
 
 ```bash
 kxm suggest "implement trusted roster policy brakes" --json
@@ -41,5 +42,6 @@ one with the user (`kxm-project-setup`).
 
 `--issue` on `kxm task create` is a tracker issue number or Jira key, not a
 credential. In this build `kxm task sync` marks only the local task record
-synced; it does not contact GitHub or Jira. Do not silently use GitHub when
-the operator picked an unimplemented tracker.
+synced; it does not contact GitHub or Jira. `kxm task create` accepts any
+`--tracker` value and records it unchecked, so pass only `github` or `jira`,
+and never report a task as synced with a tracker.

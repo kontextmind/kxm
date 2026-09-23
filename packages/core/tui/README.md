@@ -5,7 +5,7 @@ one input decoder, one contribution registry, and thin host adapters.
 
 `kxm dash` and every configuration surface draw from here so a field looks,
 keys, and fails the same way across the product. Guide:
-[`docs/tui-components.md`](../../../docs/tui-components.md).
+[`docs/tui-components.md`](../../../docs/contributing/tui-components.md).
 
 ## Layout
 

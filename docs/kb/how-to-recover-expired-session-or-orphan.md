@@ -7,48 +7,58 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-14"
+updated: "2026-09-23"
 authority: "instruction"
 confidence: "verified"
-summary: "Procedures for detecting and releasing stale or orphaned browser sessions on Steel."
+summary: "Find and release stale or orphaned browser sessions on Steel."
 tags: ["browser", "cleanup", "orphans", "troubleshooting"]
-related: ["docs/browser-automation.md", "docs/kb/why-authentication-disappeared.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/why-authentication-disappeared.md"]
 ---
 
 # How do I recover an expired session or remove an orphaned browser?
 
-If an automation run crashed or disconnected without calling `/release`, a browser container may remain idling on DOKS.
+If an automation run crashed or disconnected without releasing its session, the
+browser can keep running on your Steel deployment until its timeout.
 
-## 1. List Active Remote Sessions
+## 1. List active sessions
 
-```bash
-STEEL_KEY=$(pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --field STEEL_API_KEY)
-
-curl -s https://steel.kontextmind.com/v1/sessions \
-  -H "x-steel-api-key: $STEEL_KEY" | jq .
-```
-
-## 2. Release Orphaned Sessions
-
-To terminate a specific stale session:
+Load `STEEL_API_URL` and `STEEL_API_KEY` from your secret manager first. With
+`pass-cli`, for example:
 
 ```bash
-curl -s -X POST https://steel.kontextmind.com/v1/sessions/<SESSION_ID>/release \
-  -H "x-steel-api-key: $STEEL_KEY"
+export STEEL_API_URL="https://<steel-host>"
+STEEL_API_KEY=$(pass-cli item view --vault-name "<vault>" --item-title "<item>" --field STEEL_API_KEY)
+export STEEL_API_KEY
+
+curl -s "$STEEL_API_URL/v1/sessions" \
+  -H "x-steel-api-key: $STEEL_API_KEY" | jq .
 ```
 
-## 3. Automatic Orphan Sweeping via KXM Client
+## 2. Release an orphaned session
 
-The KXM client provides `checkOrphanedSessions(maxIdleMs)` to automate this:
+```bash
+curl -s -X POST "$STEEL_API_URL/v1/sessions/<session-id>/release" \
+  -H "x-steel-api-key: $STEEL_API_KEY"
+```
+
+## 3. Sweep orphans with the KXM client
+
+`checkOrphanedSessions(maxIdleMs)` returns two kinds of session: live or idle
+sessions this client does not track that have run longer than the limit, and
+tracked sessions idle longer than the limit, unless a person has taken over.
+`releaseSession()` releases one:
 
 ```typescript
 import { SteelClient } from "@kontextmind/kxm/runtime";
 
 const client = new SteelClient();
-const orphans = await client.checkOrphanedSessions(600000); // > 10 min idle
+const orphans = await client.checkOrphanedSessions(600000); // idle over 10 minutes
 
 for (const sessionId of orphans) {
   console.log(`Releasing orphaned session: ${sessionId}`);
   await client.releaseSession(sessionId);
 }
 ```
+
+It returns an empty list when the Steel API request fails, so an empty result
+does not prove there are no orphans. Check with the `curl` call above.

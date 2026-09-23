@@ -2,7 +2,7 @@
 schema: "kxm.doc.v1"
 id: "REP-0001"
 type: "test_report"
-title: "Test Execution Witness Report"
+title: "Test execution witness report"
 project: "kxm"
 status: "approved" # draft | approved | archived
 owner: "@verifier"
@@ -20,52 +20,49 @@ details:
   branch: "kxm/run-<id>-<description>"
 ---
 
-# Test Execution Witness Report
+# Test execution witness report
 
-## Metadata & Execution Environment
+## Metadata and execution environment
 
 - **Tested Commit:** `<git-sha>`
 
 - **Active Branch:** `kxm/run-<id>-<description>`
 
-- **Test Plan:** [`TEST-0001`](../testing/plans/TEST-0001.md)
+- **Test Plan:** `TEST-0001` (`<path to the test plan>`)
 
 - **Executed At:** `2026-09-08T15:45:00Z`
 
 - **Verifier:** `npm run verify` witness gate runner
 
-- **OS & Runtime:** macOS / Node v24.15.0
+- **OS & Runtime:** `<operating system>` / Node `<version>`
 
-## Summary of Results
+## Summary of results
+
+Replace the example values below with the run's actual counts.
 
 | Suite | Total Tests | Passed | Failed | Skipped | Duration | Status |
-
 |---|---|---|---|---|---|---|
 | `test:core` | 1008 | 1003 | 0 | 5 (Windows) | 271s | PASS |
-
 | `typecheck` | N/A | N/A | 0 | 0 | 3s | PASS |
 | `lint:docs` | 57 files | 57 | 0 | 0 | 2s | PASS |
-
 | `check:generated` | 14 files | 14 | 0 | 0 | 4s | PASS |
 
-## Test Case Execution Details
+## Test case execution details
 
 | Case ID | Suite File | Result | Duration | Artifact Reference |
-
 |---|---|---|---|---|
 | TC-01 | `test/core/external-effects.test.ts` | PASS | 1.8ms | `artifact:.kxm/assets/witness.log@sha256:...` |
-
 | TC-02 | `test/core/context-packet.test.ts` | PASS | 0.9ms | `artifact:.kxm/assets/witness.log@sha256:...` |
 
-## Test Coverage Metrics
+## Test coverage metrics
 
-- **Line Coverage:** 92.4% (Threshold: >= 92%)
+- **Line Coverage:** 92.4% (floor: 91%)
 
-- **Branch Coverage:** 81.2% (Threshold: >= 80%)
+- **Branch Coverage:** 81.2% (floor: 80%)
 
-- **Function Coverage:** 93.5% (Threshold: >= 93%)
+- **Function Coverage:** 93.5% (floor: 92%)
 
-## Verdict & Recommendation
+## Verdict and recommendation
 
 - **Witness Verdict:** **VERIFIED PASS**
 

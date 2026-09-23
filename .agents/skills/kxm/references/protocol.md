@@ -112,7 +112,9 @@ token before committing anything shared — a refusal means stop, not retry.
 - `replied`: contains the recipient's final reply.
 - `cancelled`: sender cancelled queued or delivered work.
 - `expired`: the request exceeded its TTL before a reply.
-- `error`: terminal failure.
+- `error`: reserved. The protocol declares it, but the hub never sets it, so
+  it is not a failure path to wait for. A `kxm_fanout` entry with
+  `status: "error"` reports a local send or wait failure, not this state.
 
 Messages use a 24-hour default TTL and terminal records are retained for seven days by default. TTL begins when the message is sent and includes queued time; normally omit it for model work. A fanout's local wait ending does not change message state and returns a recoverable pending handle. Inspect it with `kxm_get` or repeat the exact request using the same correlation and idempotency prefix. Never create a replacement key while the original is pending, and never count a pending peer as workflow evidence. A stable `idempotencyKey` deduplicates an exact retry from the same sender. Durable `kxm_fanout` calls should use the workflow run ID as `correlationId` and a stage-specific `idempotencyKeyPrefix`; the client scopes the resulting key by correlation and normalized target. State is persisted in SQLite by the standard hub executable.
 

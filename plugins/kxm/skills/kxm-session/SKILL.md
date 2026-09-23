@@ -65,7 +65,7 @@ paste it into a conversation.
 
 | Command | Purpose | Options |
 |---|---|---|
-| `kxm session brief` | Recent hub tasks (workflow runs) and plans (journal `plan` rows) from the local hub store; every form saves the session token | `--status` (status line only), `--json` |
+| `kxm session brief` | Recent tasks (hub workflow runs from the local hub store and Runtime runs under the user state root) and plans (journal `plan` rows); every form saves the session token | `--status` (status line only), `--json` |
 | `kxm session token --status` | Report the active session token | `--json` |
 | `kxm session token --clear` | Delete the session token file | `--json` |
 | `kxm session stop` | Request managed hub and worker shutdown | `--wait-ms <ms>` |

@@ -71,9 +71,9 @@ try {
   Remove-Item Env:PI_MESH_WORKFLOW_SECRET -ErrorAction SilentlyContinue
   Remove-Item Env:PI_MESH_WORKFLOW_SIGNAL_SECRET -ErrorAction SilentlyContinue
   $workers = @(
-    @{ Name = "coordinator"; Model = "antigravity/gemini-3.1-pro"; FallbackModels = "xai/grok-4.6"; Tools = "read,grep,find,ls,mesh_list,mesh_fanout,mesh_get,mesh_await,mesh_workflow_get,mesh_workflow_checkpoint,mesh_workflow_record" },
-    @{ Name = "reviewer-claude"; Model = "antigravity/claude-sonnet-4-6"; FallbackModels = "antigravity/gemini-3.1-pro"; Tools = "read,grep,find,ls" },
-    @{ Name = "reviewer-grok"; Model = "xai/grok-4.6"; FallbackModels = "antigravity/gemini-3.1-pro"; Tools = "read,grep,find,ls" }
+    @{ Name = "coordinator"; Model = "antigravity/gemini-3.1-pro"; FallbackModels = "openrouter/qwen/qwen3-coder-plus"; Tools = "read,grep,find,ls,kxm_list,kxm_fanout,kxm_get,kxm_await,kxm_workflow_get,kxm_workflow_checkpoint,kxm_workflow_record" },
+    @{ Name = "reviewer-claude"; Model = "openrouter/qwen/qwen3-coder-plus"; FallbackModels = "antigravity/gemini-3.1-pro"; Tools = "read,grep,find,ls" },
+    @{ Name = "reviewer-grok"; Model = "openrouter/z-ai/glm-5.3-flash"; FallbackModels = "antigravity/gemini-3.1-pro"; Tools = "read,grep,find,ls" }
   ) | ForEach-Object {
     $workerArguments = @(
       $kxmScript,
