@@ -38,6 +38,7 @@ import { PROMOTION_REQUIRED_EVALUATIONS } from "../../plugins/kxm/src/skills.ts"
 import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
 import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
 import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
+import { WORKFLOW_TEMPLATES } from "../../plugins/kxm/src/workflow-manager.ts";
 
 function createSandbox(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "kxm-cli-exp-"));
@@ -99,6 +100,15 @@ test("config: loads defaults and resolves user/repo overrides", () => {
     assert.equal(reloaded2.routing.shadowExecution.sampleRate, 0.15);
     assert.equal(reloaded2.routing.circuitBreaker?.mode, "quarantine");
     assert.equal(reloaded2.telemetry.federated, false);
+
+    // improvement.* fails closed: an unknown policy is manual_pr and an out-of-range half-life is 14 days.
+    setKxmConfigValue(sandbox.dir, "improvement.promotionPolicy", "auto_merge", { scope: "project" });
+    setKxmConfigValue(sandbox.dir, "improvement.telemetryHalfLifeDays", 0, { scope: "project" });
+    const normalized = loadKxmConfig(sandbox.dir, {
+      userConfigDir: join(sandbox.dir, "user-config"),
+    });
+    assert.equal(normalized.improvement.promotionPolicy, "manual_pr");
+    assert.equal(normalized.improvement.telemetryHalfLifeDays, 14);
 
     // Getter works for deep keys
     assert.equal(getKxmConfigValue(reloaded, "user.preferredModel"), "grok-4.6");
@@ -326,6 +336,29 @@ test("suggest: recommends workflow, area, roles, and skills based on prompt keyw
     availableHarnesses: [{ harness: "codex", auth: "active" }],
   });
   assert.equal(dbSuggestion.workflowId, "data-analytics/pipeline-migration");
+});
+
+test("suggest recommends only KXM command skills shipped in plugins/kxm/skills", () => {
+  const knowledgePlane = new Set(["kxm-mind", "kxm-query", "kxm-harvest", "kxm-triage", "kxm-work", "kxm-insights", "kxm-projects", "kxm-protocol", "kxm-setup", "kxm-mind-setup"]);
+  const expected: Array<[string, string, string[]]> = [
+    ["Fix flaky playwright gate timeout", "software-engineering/bug-fix", ["kxm-workflow", "kxm-runs", "kxm-context-memory"]],
+    ["Add a new endpoint for the settings page", "software-engineering/feature-implementation", ["kxm-workflow", "kxm-peer", "kxm-context-memory"]],
+    ["Refactor and simplify the module, deduplicate helpers", "software-engineering/refactoring", ["kxm-workflow", "kxm-runs"]],
+    ["Remediate CVE vulnerability and sanitize prompt injection", "security-reliability/vulnerability-remediation", ["kxm-workflow", "kxm-definitions"]],
+    ["Harden idempotency with retry, lock and race handling for concurrency", "security-reliability/reliability-hardening", ["kxm-workflow", "kxm-peer"]],
+    ["Migrate SQLite tables to support foreign key cascading and WAL mode", "data-analytics/pipeline-migration", ["kxm-runs", "kxm-context-memory"]],
+    ["Spike to investigate a prototype and benchmark it", "research-strategy/architecture-spike", ["kxm-session", "kxm-context-memory", "kxm-routing-improve"]],
+  ];
+  const skillsRoot = join(process.cwd(), "plugins", "kxm", "skills");
+  for (const [prompt, workflowId, skills] of expected) {
+    const suggestion = suggestWorkflowAndRoles(prompt);
+    assert.equal(suggestion.workflowId, workflowId, prompt);
+    assert.deepEqual(suggestion.suggestedSkills, skills, workflowId);
+    for (const skill of suggestion.suggestedSkills) {
+      assert.ok(existsSync(join(skillsRoot, skill, "SKILL.md")), `${skill} ships in plugins/kxm/skills`);
+      assert.ok(!knowledgePlane.has(skill), `${skill} is a KXM command skill, not a knowledge-plane skill`);
+    }
+  }
 });
 
 test("task-manager: creates goals, tasks, updates lifecycle, and syncs with trackers", () => {
@@ -708,6 +741,101 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
   } finally {
     const supervisor = kxmSupervisorStatus(kxmRuntimePaths({ env }));
     if (supervisor.running && supervisor.pid) process.kill(supervisor.pid);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-workflow-add-"));
+  const project = join(root, "project");
+  mkdirSync(project, { recursive: true });
+  const env: NodeJS.ProcessEnv = {
+    HOME: join(root, "home"),
+    KXM_STATE_HOME: join(root, "state"),
+    KXM_USER_CONFIG_DIR: join(root, "user-config"),
+    KXM_USER_TELEMETRY_DIR: join(root, "telemetry"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const kxm = async (argv: string[]): Promise<{ code: number; out: string; err: string }> => {
+    let out = "";
+    let err = "";
+    const code = await runCliImplementation([...argv, "--json"], env, { stdout: (text) => { out += text; }, stderr: (text) => { err += text; } }, project);
+    return { code, out, err };
+  };
+  const workflowFile = (id: string) => join(project, ".kxm", "workflows", `${id}.yaml`);
+  try {
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
+    assert.equal((await kxm(["init", "--project-id", "prj_01JWORKFLOWADD00000000000", "--name", "Workflow add"])).code, 0);
+
+    const ids = ["demo"];
+    assert.equal((await kxm(["workflow", "add", "demo"])).code, 0, "the one-step scaffold");
+    for (const template of Object.keys(WORKFLOW_TEMPLATES)) {
+      const id = `demo-${template}`;
+      const planned = await kxm(["workflow", "add", id, "--template", template, "--dry-run"]);
+      assert.equal(planned.code, 0, planned.err);
+      assert.equal((JSON.parse(planned.out) as { dryRun: boolean }).dryRun, true);
+      assert.equal(existsSync(workflowFile(id)), false, `--dry-run writes no ${id}.yaml`);
+      const added = await kxm(["workflow", "add", id, "--template", template]);
+      assert.equal(added.code, 0, added.err);
+      assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, workflowFile(id));
+      ids.push(id);
+    }
+    for (const id of ids) {
+      const text = readFileSync(workflowFile(id), "utf8");
+      assert.doesNotMatch(text, /^id:/m, `${id}: the file name is the workflow id`);
+      assert.doesNotMatch(text, /\brole:/, `${id}: steps name an agent, not a role`);
+    }
+    const unknown = await kxm(["workflow", "add", "other", "--template", "nope"]);
+    assert.equal(unknown.code, 2);
+    assert.equal((JSON.parse(unknown.err) as { error: string }).error, "workflow_template_unknown");
+
+    // The built-in default declares failed beside implementation-failure on its
+    // gate step: a dead key next to every outcome the gate produces still settles.
+    const validated = await kxm(["init"]);
+    assert.equal(validated.code, 0, validated.err);
+    assert.equal((JSON.parse(validated.out) as { action: string }).action, "validated");
+    for (const id of ids) {
+      const plan = await kxm(["run", id, "x", "--dry-run"]);
+      assert.equal(plan.code, 0, `${id}: ${plan.err}`);
+      assert.equal((JSON.parse(plan.out) as { workflowId: string; dryRun: boolean }).workflowId, id);
+    }
+
+    writeFileSync(workflowFile("stuck"), [
+      "schema: kxm.workflow.v1",
+      "coordinator: coordinator",
+      "steps:",
+      "  - id: verify",
+      "    kind: gate",
+      "    gate: test",
+      "    repositories:",
+      "      control: write",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "      failed:",
+      "        target: $terminal",
+      "        terminalStatus: failed",
+      "",
+    ].join("\n"));
+    const expectedIssue = {
+      phase: "semantic",
+      code: "gate_outcome_impossible",
+      file: ".kxm/workflows/stuck.yaml",
+      message: "verify declares failed, which a gate step with expect pass never produces; it settles on passed or implementation-failure, so declare implementation-failure",
+    };
+    const refusedInit = await kxm(["init", "--dry-run"]);
+    assert.deepEqual((JSON.parse(refusedInit.out) as { issues: unknown[] }).issues, [expectedIssue]);
+    const refusedRun = await kxm(["run", "demo", "x", "--dry-run"]);
+    assert.equal(refusedRun.code, 1);
+    const runError = JSON.parse(refusedRun.err) as { error: string; issues: unknown[] };
+    assert.equal(runError.error, "run_failed");
+    assert.deepEqual(runError.issues, [expectedIssue]);
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });

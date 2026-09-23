@@ -206,7 +206,10 @@ export function redactCliValue(value: unknown, field = ""): unknown {
         || field === "baseRevision"
         || field === "candidateRevision"
         || field === "baseValueSha256"
-        || field === "candidateValueSha256")
+        || field === "candidateValueSha256"
+        || field === "workflowHash"
+        || field === "promptHash"
+        || field === "askSha256")
       && /^(?:sha256:)?[a-f0-9]{64}$/.test(value)
     ) return value;
     return redactSecrets(value);

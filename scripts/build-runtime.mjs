@@ -3,7 +3,12 @@ import { build } from "esbuild";
 
 
 await build({
-  entryPoints: ["plugins/kxm/src/cli.ts", "plugins/kxm/src/server.ts", "plugins/kxm/src/runtime-supervisor.ts"],
+  entryPoints: [
+    "plugins/kxm/src/cli.ts",
+    "plugins/kxm/src/server.ts",
+    "plugins/kxm/src/runtime-supervisor.ts",
+    "plugins/kxm/src/claude-hook.ts",
+  ],
   bundle: true,
   platform: "node",
   format: "esm",
@@ -41,6 +46,7 @@ for (const bundlePath of [
   "plugins/kxm/dist/cli.js",
   "plugins/kxm/dist/server.js",
   "plugins/kxm/dist/runtime-supervisor.js",
+  "plugins/kxm/dist/claude-hook.js",
 ]) {
   const bundled = readFileSync(bundlePath, "utf8");
   if (!bundled.startsWith(shebang)) throw new Error(`runtime bundle is missing its executable shebang: ${bundlePath}`);

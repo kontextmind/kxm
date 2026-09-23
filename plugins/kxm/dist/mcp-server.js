@@ -7187,6 +7187,10 @@ var require_dist = __commonJS({
   }
 });
 
+// plugins/kxm/src/mcp-server.ts
+import { statSync } from "node:fs";
+import { join as join4 } from "node:path";
+
 // node_modules/zod/v4/core/core.js
 var _a;
 // @__NO_SIDE_EFFECTS__
@@ -15765,8 +15769,93 @@ var MAX_BODY_BYTES = 256 * 1024;
 var MAX_AGENT_HOST_CHARS = 64;
 var MAX_LEASE_TTL_MS = 10 * 6e4;
 var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
+var IMPROVEMENT_AREAS = [
+  "harness",
+  "gates",
+  "implementation",
+  "workflow",
+  "documentation",
+  "security",
+  "other"
+];
+
+// plugins/kxm/src/relevance.ts
+var RELEVANCE_STOPWORDS = Object.freeze(/* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "how",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "our",
+  "should",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your"
+]));
 
 // plugins/kxm/src/workflow.ts
+var JOURNAL_CATEGORIES = [
+  "plan",
+  "decision",
+  "contradiction",
+  "error",
+  "lesson",
+  "observation",
+  "hypothesis",
+  "experiment",
+  "state-change",
+  "skill-candidate"
+];
 function canonicalWorkflowEvidenceKey(value) {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
 }
@@ -16283,11 +16372,12 @@ function readHubEnvRecord(env = process.env) {
     ...record2.projectTokens !== void 0 ? { projectTokens: record2.projectTokens } : {}
   };
 }
-function resolveClientHubAuthToken(env, project) {
+function resolveAgentHubAuthToken(env, project) {
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
-  const record2 = readHubEnvRecord(env);
-  return record2?.projectTokens?.[project]?.trim() || record2?.authToken?.trim() || void 0;
+  const tokens = readHubEnvRecord(env)?.projectTokens;
+  if (!tokens || !Object.hasOwn(tokens, project)) return void 0;
+  return tokens[project]?.trim() || void 0;
 }
 
 // plugins/kxm/src/project-name.ts
@@ -16655,7 +16745,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "run",
     label: "Get workflow run",
-    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    description: "Get a workflow's stages and its learning journal (plans, decisions, contradictions, errors, lessons, and the other journal categories).",
     parameters: {
       type: "object",
       properties: {
@@ -16729,20 +16819,24 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "record",
     label: "Record workflow journal entry",
-    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    description: "Record a plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, or skill-candidate for continuous improvement. Pass stageId to bind the entry to that stage: the hub derives the attempt, and area defaults to the stage's declared area. Lessons and skill-candidates require evidence.",
     parameters: {
       type: "object",
       properties: {
         runId: { type: "string", description: "Active durable workflow run ID" },
         category: {
           type: "string",
-          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          enum: [...JOURNAL_CATEGORIES],
           description: "Category of journal entry"
         },
         area: {
           type: "string",
-          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
-          description: "System area"
+          enum: [...IMPROVEMENT_AREAS],
+          description: "System area; required unless stageId names a stage that declares an area"
+        },
+        stageId: {
+          type: "string",
+          description: "Stage the entry belongs to; the hub binds the attempt from the stage's state"
         },
         severity: {
           type: "string",
@@ -16765,13 +16859,14 @@ var AGENT_COMMANDS = [
           description: "Related previous journal entry IDs"
         }
       },
-      required: ["runId", "category", "area", "summary"],
+      required: ["runId", "category", "summary"],
       additionalProperties: false
     },
     async execute(client, args) {
       return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
         category: requiredString(args.category, "category"),
-        area: requiredString(args.area, "area"),
+        ...optionalString(args.area) ? { area: optionalString(args.area) } : {},
+        ...optionalString(args.stageId) ? { stageId: optionalString(args.stageId) } : {},
         ...optionalString(args.severity) ? { severity: optionalString(args.severity) } : {},
         summary: requiredString(args.summary, "summary"),
         ...optionalString(args.details) ? { details: optionalString(args.details) } : {},
@@ -16848,7 +16943,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "improve-report",
     label: "Summarize improvement report",
-    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    description: "Summarize workflow errors, contradictions, lessons, and skill candidates by improvement area, plus ranked cross-run signals: duplicates merged across runs and scored by frequency x severity x run-attempt cost x evidence confidence, security first, with redacted text.",
     parameters: {
       type: "object",
       properties: {},
@@ -16902,7 +16997,7 @@ var AGENT_COMMANDS = [
     group: "context",
     verb: "recall",
     label: "Recall context metadata",
-    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    description: "Search durable context records for a project by query. Ranks exact-phrase matches first, then token relevance, then id; returns bounded metadata with a numeric relevance per item, never summaries.",
     parameters: {
       type: "object",
       properties: {
@@ -17181,8 +17276,17 @@ async function deliverInboxNotification(messageId, delivered, notify) {
   return true;
 }
 
+// plugins/kxm/src/session-token-hint.ts
+var ENV_TEXT = "KXM_SESSION_TOKEN in the environment Claude Code was launched from is malformed or expired, so every kxm_* tool fails with tool_policy_denied. Ask the user to unset or replace KXM_SESSION_TOKEN in the environment Claude Code was launched from, then restart Claude Code.";
+var DISK_TEXT = "The KXM session token file on this machine is expired, malformed or unreadable, so every kxm_* tool fails with tool_policy_denied. Ask the user to run `kxm session token --clear` in their own terminal. `kxm session token --status` reports No active session token found for an expired file even though the file still blocks tools. The kxm plugin no longer refreshes that 24-hour token.";
+function sessionTokenFixHint(policy) {
+  if (policy.error !== "session_token_invalid") return void 0;
+  return policy.detail?.startsWith("KXM_SESSION_TOKEN") ? ENV_TEXT : DISK_TEXT;
+}
+
 // plugins/kxm/src/mcp-server.ts
 var VERSION = "0.7.1";
+var CONFIGURE_PLUGIN = "/plugin configure kxm@kxm";
 var inbox = /* @__PURE__ */ new Map();
 var notifiedInbox = /* @__PURE__ */ new Set();
 var meshClient;
@@ -17195,11 +17299,11 @@ var mcp = new Server(
       tools: {}
     },
     instructions: [
-      'KXM peer requests can arrive as <channel source="kxm" message_id="..."> events.',
-      "Handle the request using normal safety rules, then call kxm_reply with message_id and the final response.",
-      "Use kxm_inbox as a fallback when channel delivery is not enabled.",
-      "For durable workflow requests, call kxm_workflow_get, record material plans/decisions/contradictions/errors/lessons, and pass every checkpoint before replying.",
-      "If work is running in an external system, call kxm_workflow_wait and then kxm_reply so a signed callback can resume the workflow later."
+      'Peer requests arrive as <channel source="kxm" message_id="..."> events, or in kxm_inbox; handle each under normal safety rules, then call kxm_reply with message_id and the final response.',
+      "For workflow requests, call kxm_workflow_get, record material knowledge with kxm_workflow_record in its ten categories (plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate), pass the stageId each entry belongs to, and pass every checkpoint before replying.",
+      "For external work, call kxm_workflow_wait, then kxm_reply; a signed callback resumes the run.",
+      "In a KXM project, call kxm_context with your role and task before planning.",
+      "If a KXM tool reports a problem with the hub or token, continue without KXM and tell the user the next step it names."
     ].join(" ")
   }
 );
@@ -17208,6 +17312,14 @@ function textResult(value) {
 }
 function asRecord2(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function sessionIdentity() {
+  const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  return {
+    projectDir,
+    project: defaultProjectName(projectDir, process.env),
+    serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331"
+  };
 }
 async function onHubEvent(event) {
   if (event.type === "cancelled" || event.type === "expired") {
@@ -17242,28 +17354,44 @@ async function onHubEvent(event) {
     });
   });
 }
+async function startClient(project, serverUrl, name, authToken) {
+  const candidate = new HubClient({
+    serverUrl,
+    name,
+    purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
+    project,
+    model: "claude-code",
+    authToken
+  });
+  try {
+    await candidate.start(onHubEvent);
+    meshClient = candidate;
+    return candidate;
+  } catch (error2) {
+    await candidate.stop();
+    throw error2;
+  }
+}
 async function ensureClient() {
   if (meshClient?.agent) return meshClient;
   if (starting) return starting;
   starting = (async () => {
-    const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    const project = defaultProjectName(projectDir, process.env);
-    const authToken = resolveClientHubAuthToken(process.env, project);
-    const candidate = new HubClient({
-      serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
-      name: process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`,
-      purpose: process.env.KXM_AGENT_PURPOSE?.trim() || "Claude Code implementation and review agent",
-      project,
-      model: "claude-code",
-      ...authToken ? { authToken } : {}
-    });
+    const { project, serverUrl } = sessionIdentity();
+    const authToken = resolveAgentHubAuthToken(process.env, project);
+    if (!authToken) {
+      throw new Error(
+        `KXM has no project token for project ${project} on this machine. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) or to add ${project} to the hub KXM_PROJECT_TOKENS, listing every existing project too because that variable replaces the saved map.`
+      );
+    }
+    const name = process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`;
     try {
-      await candidate.start(onHubEvent);
-      meshClient = candidate;
-      return candidate;
+      return await startClient(project, serverUrl, name, authToken);
     } catch (error2) {
-      await candidate.stop();
-      throw error2;
+      if (!(error2 instanceof HubHttpError && error2.code === "duplicate_agent_name")) throw error2;
+      const substitute = `${name}-${process.pid}`;
+      process.stderr.write(`kxm: agent name ${name} is already active in project ${project}; this session registers as ${substitute}
+`);
+      return await startClient(project, serverUrl, substitute, authToken);
     }
   })();
   try {
@@ -17272,15 +17400,45 @@ async function ensureClient() {
     starting = void 0;
   }
 }
+function unreachableCause(error2) {
+  if (!(error2 instanceof Error)) return void 0;
+  if (error2.message.startsWith("request timed out after")) return error2.message;
+  const cause = error2.cause;
+  const causeCode = cause && typeof cause === "object" ? cause.code : void 0;
+  if (error2.message === "fetch failed") {
+    if (typeof causeCode === "string") return causeCode;
+    return cause instanceof Error && cause.message ? cause.message : error2.message;
+  }
+  if (error2.code === "ECONNREFUSED" || error2.message.includes("ECONNREFUSED")) return "ECONNREFUSED";
+  return void 0;
+}
+async function connectedClient() {
+  try {
+    return await ensureClient();
+  } catch (error2) {
+    const cause = unreachableCause(error2);
+    if (!cause) throw error2;
+    throw new Error(
+      `KXM hub unreachable at ${sessionIdentity().serverUrl} (${cause}). Ask the user to start the hub (\`kxm hub start\`) or to correct the kxm plugin server_url with ${CONFIGURE_PLUGIN}.`
+    );
+  }
+}
+function toolErrorText(error2) {
+  if (error2 instanceof HubHttpError && error2.code === "invalid_auth") {
+    return `KXM hub rejected the project token for project ${sessionIdentity().project}. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) to that project's token from the hub KXM_PROJECT_TOKENS.`;
+  }
+  return error2 instanceof Error ? error2.message : String(error2);
+}
 var tools = getMcpTools();
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   try {
     const policy = enforceToolPolicy(request.params.name);
     if (!policy.allowed) {
-      throw new Error(`tool_policy_denied: ${policy.detail ?? policy.error}`);
+      const hint = sessionTokenFixHint(policy);
+      throw new Error(hint ? `tool_policy_denied: ${policy.detail}. ${hint}` : `tool_policy_denied: ${policy.detail ?? policy.error}`);
     }
-    const client = await ensureClient();
+    const client = await connectedClient();
     const cmd = AGENT_COMMANDS_MAP.get(request.params.name);
     if (!cmd) throw new Error(`unknown tool: ${request.params.name}`);
     const args = asRecord2(request.params.arguments);
@@ -17288,15 +17446,34 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     return textResult(result);
   } catch (error2) {
     return {
-      content: [{ type: "text", text: error2 instanceof Error ? error2.message : String(error2) }],
+      content: [{ type: "text", text: toolErrorText(error2) }],
       isError: true
     };
   }
 });
+function registersAtStartup() {
+  const { projectDir, project } = sessionIdentity();
+  try {
+    if (!statSync(join4(projectDir, ".kxm")).isDirectory()) return false;
+    if (!resolveAgentHubAuthToken(process.env, project)) return false;
+  } catch {
+    return false;
+  }
+  return enforceToolPolicy("kxm_inbox").allowed && enforceToolPolicy("kxm_reply").allowed;
+}
+mcp.oninitialized = () => {
+  if (registersAtStartup()) void ensureClient().catch(() => void 0);
+};
 await mcp.connect(new StdioServerTransport());
-async function shutdown() {
-  await meshClient?.stop();
-  await mcp.close();
+var shuttingDown;
+function shutdown() {
+  shuttingDown ??= (async () => {
+    const client = meshClient ?? await starting?.catch(() => void 0);
+    await client?.stop();
+    await mcp.close();
+  })();
+  return shuttingDown;
 }
 process.once("SIGINT", () => void shutdown());
 process.once("SIGTERM", () => void shutdown());
+process.stdin.once("end", () => void shutdown());

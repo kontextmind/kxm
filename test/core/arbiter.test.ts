@@ -10,6 +10,7 @@ import {
   type RoleContextPolicy,
 } from "../../plugins/kxm/src/arbiter.ts";
 import { parseContextItem, type ContextItem } from "../../plugins/kxm/src/context.ts";
+import { rankRecall, relevanceTokens, scoreRelevance } from "../../plugins/kxm/src/relevance.ts";
 import type { WorkflowJournalEntry } from "../../plugins/kxm/src/workflow.ts";
 
 function poolItem(overrides: Record<string, unknown> = {}): ContextItem {
@@ -59,6 +60,24 @@ test("role policies cover the five default roles with fixed budgets", () => {
   const custom: RoleContextPolicy = rolePolicy("triage");
   assert.equal(custom.role, "triage");
   assert.equal(custom.budgetTokens, 32_000);
+
+  // Every journal category a role recalls reaches a delivered section of that
+  // role's packet (contradictions route to their own section).
+  for (const policy of ROLE_POLICIES) {
+    for (const category of policy.journalCategories) {
+      if (category === "contradiction") continue;
+      const item = journalEntryToContextItem(journalEntry({ id: `journal_${category}`, category }), "kxm");
+      const { packet } = arbitrate({ project: "kxm", role: policy.role, task: "x" }, [item]);
+      const delivered = [
+        ...packet.currentState,
+        ...packet.knowledge,
+        ...packet.evidence,
+        ...packet.episodes,
+        ...packet.skills,
+      ].map((candidate) => candidate.id);
+      assert.equal(delivered.includes(item.id), true, `${policy.role} must receive its ${category} entries`);
+    }
+  }
 });
 
 test("arbitrate assembles role-aware packets deterministically", () => {
@@ -103,6 +122,109 @@ test("arbitrate enforces token budgets and records unresolved gaps", () => {
   assert.equal(outcome.packet.knowledge.some((item) => item.id === "ctx_big"), false);
   assert.equal(outcome.audit.unresolvedGaps.some((gap) => gap.includes("budget")), true);
   assert.equal(outcome.packet.estimatedTokens <= 512, true);
+  assert.deepEqual(outcome.audit.selectedIds, ["ctx_small"]);
+  assert.deepEqual(outcome.packet.evidence.map((item) => item.id), ["ctx_small"]);
+  assert.deepEqual(outcome.audit.unresolvedGaps, ["budget of 512 tokens reached; 1 candidates deferred"]);
+
+  // First-fit: the top-ranked oversized item is skipped and reported while a
+  // smaller eligible item still fills the budget; the skill is not eligible
+  // for the verifier, so it is not counted as deferred.
+  const oversized = poolItem({ id: "ctx_1", kind: "evidence", summary: "flaky ".repeat(500) });
+  const fits = poolItem({ id: "ctx_2", kind: "evidence", summary: "small" });
+  const ineligible = poolItem({ id: "ctx_3", kind: "skill", summary: "x" });
+  const firstFit = arbitrate(
+    { project: "kxm", role: "verifier", task: "flaky", budgetTokens: 512 },
+    [oversized, fits, ineligible],
+  );
+  assert.deepEqual(firstFit.audit.selectedIds, ["ctx_2"]);
+  assert.deepEqual(firstFit.audit.unresolvedGaps, ["budget of 512 tokens reached; 1 candidates deferred"]);
+
+  const nothingFits = arbitrate(
+    { project: "kxm", role: "verifier", task: "flaky", budgetTokens: 512 },
+    [oversized],
+  );
+  assert.deepEqual(nothingFits.audit.unresolvedGaps, ["budget of 512 tokens cannot fit any selected context"]);
+});
+
+test("arbitrate ranks task-relevant candidates first, delivers every selected item in a packet section, orders ties newest first, and reports relevance", () => {
+  // Deterministic lexical primitives: no model, no clock, no randomness.
+  assert.deepEqual(
+    relevanceTokens("The flaky Playwright gates timed-out on CI; retries: 2"),
+    ["flaky", "playwright", "gate", "timed", "out", "ci", "retry"],
+  );
+  const scores = scoreRelevance("reproduce the flaky playwright gate", [
+    "flaky playwright gate timed out",
+    "gate slow",
+    "retry flaky gates",
+    "docs typo fixed",
+  ]);
+  assert.equal(scores[0]! > scores[2]!, true);
+  assert.equal(scores[2]! > scores[1]!, true);
+  assert.equal(scores[1]! > scores[3]!, true);
+  assert.equal(scores[3], 0);
+  assert.deepEqual(scoreRelevance("the of", ["the flaky gate", "one of the gates"]), [0, 0]);
+
+  // Recall ranking: exact-phrase hits, then any-token BM25 hits, then id.
+  const recallPool = [
+    poolItem({ id: "ctx_a", summary: "docs typo fixed" }),
+    poolItem({ id: "ctx_b", summary: "gate slow on CI" }),
+    poolItem({ id: "ctx_c", summary: "flaky playwright gate needs bounded retries" }),
+  ];
+  const tokenHits = rankRecall("flaky gate", recallPool, 25);
+  assert.deepEqual(tokenHits.map((hit) => hit.item.id), ["ctx_c", "ctx_b"]);
+  assert.equal(tokenHits[1]!.relevance > 0, true);
+  assert.equal(tokenHits[0]!.relevance > tokenHits[1]!.relevance, true);
+  assert.deepEqual(rankRecall("flak", recallPool, 25).map((hit) => hit.item.id), ["ctx_c"]);
+  assert.deepEqual(rankRecall("", recallPool, 2).map((hit) => hit.item.id), ["ctx_a", "ctx_b"]);
+
+  // Task-matched candidates outrank role kind priority; the rest keep it.
+  const pool = [
+    poolItem({ id: "ctx_e_aaa", kind: "evidence", summary: "docs build is slow" }),
+    poolItem({ id: "ctx_e_zzz", kind: "evidence", summary: "flaky playwright gate fails on first run" }),
+    poolItem({ id: "ctx_k_mmm", kind: "knowledge", summary: "playwright gate owner is QA" }),
+  ];
+  const outcome = arbitrate({ project: "kxm", role: "verifier", task: "verify the flaky playwright gate fix" }, pool);
+  assert.deepEqual(outcome.audit.selectedIds, ["ctx_e_zzz", "ctx_k_mmm", "ctx_e_aaa"]);
+  assert.deepEqual(outcome.packet.evidence.map((item) => item.id), ["ctx_e_zzz", "ctx_e_aaa"]);
+  // Every selected item is delivered in exactly one packet section.
+  const delivered = [
+    ...outcome.packet.currentState,
+    ...outcome.packet.knowledge,
+    ...outcome.packet.evidence,
+    ...outcome.packet.episodes,
+    ...outcome.packet.skills,
+    ...outcome.packet.contradictions,
+  ].map((item) => item.id).sort();
+  assert.deepEqual(delivered, [...outcome.audit.selectedIds].sort());
+  // Relevance audit is numbers only.
+  assert.equal(outcome.audit.relevance.taskTokens, 5);
+  assert.equal(outcome.audit.relevance.matchedCandidates, 2);
+  const selectedRelevance = outcome.audit.relevance.selected;
+  assert.equal(selectedRelevance.length, outcome.audit.selectedIds.length);
+  for (let index = 1; index < selectedRelevance.length; index += 1) {
+    assert.equal(selectedRelevance[index - 1]! > selectedRelevance[index]!, true);
+  }
+  assert.equal(selectedRelevance.at(-1), 0);
+  for (const value of selectedRelevance) assert.equal(Math.round(value * 1000) / 1000, value);
+
+  // No task match: role kind priority, then id (no recency on these items).
+  assert.deepEqual(
+    arbitrate({ project: "kxm", role: "verifier", task: "verify" }, pool).audit.selectedIds,
+    ["ctx_e_aaa", "ctx_e_zzz", "ctx_k_mmm"],
+  );
+
+  // Recency: equally relevant journal evidence orders newest first, not by id.
+  const older = journalEntryToContextItem(
+    journalEntry({ id: "journal_0000", summary: "gate timed out", createdAt: "2026-01-01T00:00:00.000Z" }),
+    "kxm",
+  );
+  const newer = journalEntryToContextItem(
+    journalEntry({ id: "journal_ffff", summary: "gate timed out", createdAt: "2026-01-02T00:00:00.000Z" }),
+    "kxm",
+  );
+  const recency = arbitrate({ project: "kxm", role: "verifier", task: "gate" }, [older, newer]);
+  assert.deepEqual(recency.audit.selectedIds, ["journal_journal_ffff", "journal_journal_0000"]);
+  assert.deepEqual(recency.packet.evidence.map((item) => item.id), ["journal_journal_ffff", "journal_journal_0000"]);
 });
 
 test("arbitrate routes contradictions and reports empty pools", () => {

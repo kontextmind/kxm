@@ -192,7 +192,7 @@ export function resolveHubCredentials(options: ResolveHubCredentialsOptions = {}
   };
 }
 
-/** Read-only token for one-shot hub clients (CLI, MCP server, dashboards).
+/** Read-only token for one-shot operator hub clients (CLI, runtime supervisor, dashboards).
  *
  * Precedence: explicit KXM_AUTH_TOKEN, then the persisted project token for
  * the resolved project, then the persisted admin token. Never generates or
@@ -233,6 +233,22 @@ export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: strin
   if (envToken) return envToken;
   const record = readHubEnvRecord(env);
   return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || undefined;
+}
+
+/**
+ * Token an agent session (the Claude MCP server) registers with: explicit `KXM_AUTH_TOKEN`,
+ * else the persisted project token for `project`, else nothing. It never returns the
+ * persisted admin token. The hub accepts the admin token for any project missing from its
+ * project-token map, so an agent falling back to it would join a project nobody issued it a
+ * token for. Operator tools keep `resolveClientHubAuthToken`. Throws HubEnvError on a
+ * malformed persisted record, same as `resolveClientHubAuthToken`.
+ */
+export function resolveAgentHubAuthToken(env: NodeJS.ProcessEnv, project: string): string | undefined {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  const tokens = readHubEnvRecord(env)?.projectTokens;
+  if (!tokens || !Object.hasOwn(tokens, project)) return undefined;
+  return tokens[project]?.trim() || undefined;
 }
 
 /**

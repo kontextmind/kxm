@@ -7,16 +7,20 @@
 > (`kxm.prices.v1`) is implemented, dated, and hashed. `kxm routing report`
 > is implemented (`plugins/kxm/src/routing.ts`) and ranks routes quality-first,
 > then cost per accepted attempt, never ranking unknown cost cheapest and
-> reporting metered, unmetered, and unknown populations separately. Dev-helper
-> telemetry (`scripts/harness-run.mjs`) and the issue 127 assignment runner
+> reporting metered, unmetered, and unknown populations separately. By default
+> `kxm routing report` and `kxm improve` read two sources: the current project's
+> Runtime event store (read-only) and then `.kxm/logs/telemetry.jsonl`; `--file`
+> reads only the named file (see [Readers](#readers-kxm-routing-report-and-kxm-improve)).
+> Dev-helper telemetry (`scripts/harness-run.mjs`) and the issue 127 assignment runner
 > (`scripts/assignment-run.mjs`, `just assign`) are implemented developer tools.
 
 This document describes what the tree does today versus what Tracking still
 plans. It does not invent prices or close product enums.
 
-## Implemented: v1 record
+## Implemented: v1 record (parse-only)
 
-Schema id: `kxm.routing-record.v1` (`plugins/kxm/src/routing.ts`).
+Schema id: `kxm.routing-record.v1` (`plugins/kxm/src/routing.ts`). v1 is parsed, never
+written by the product: the Runtime writes v2.
 
 Always present or defaulted by `parseRoutingRecord`: `schema`,
 `behavioralHashVersion`, `behavioralSha256`, `skills` (default `[]`),
@@ -36,17 +40,23 @@ retries, outcomes) is outside the hash.
 
 **No built-in product producer.** The worker envelope validates a `routing`
 field when present. Nothing in `plugins/kxm/src` or `scripts/kxm-worker.mjs`
-writes a record. Repo records are test-built. External JSONL can be ingested.
+writes a v1 record. The developer assignment runner (`scripts/assignment-run.mjs`)
+writes v1 records with `finalOutcome: "pending"` and a per-assignment
+`rolePromptSha256`, so the improvement report counts them as undecided and never
+groups two assignments as one ask. Other repo records are test-built. External
+JSONL can be ingested.
 
 v1 has **no dedicated fields** for harness, provider, latency, cost basis,
 cache-write tokens, or context occupancy. Bounded `providerMetadata` may
 carry extra keys (at most 32; values are strings, numbers, or booleans;
-`prompt`/`body`/`content`/`message` keys are rejected), but those keys are
-**not standardized** and `kxm routing report` does not read them.
+a key containing `prompt`, `body`, `content` or `message`, in any case, is
+rejected), but those keys are **not standardized**. The ranked report reads only
+`providerMetadata.harness` from a v1 record, to label its harness column.
 
-`kxm routing report` reads `telemetry.jsonl`, groups by behavioral hash, sorts
-by run count (then hash), and sums missing `costUsd` as **zero**. That silent
-underquote is why the report is **not** a ranking source.
+The `configurations` block of `kxm routing report` groups v1 records by
+behavioral hash, sorts by run count (then hash), and sums missing `costUsd` as
+**zero**. That silent underquote is why the block is **not** a ranking source;
+the ranked table described under [report and price catalog](#implemented-report-and-price-catalog) is.
 
 ## Implemented: dev helper telemetry
 
@@ -166,6 +176,51 @@ Fields carried on `RoutingRecordV2`:
 
 The KXM engine settle transaction appends a `routing.attempt.recorded` event carrying the v2 record and refuses to settle without a valid `costBasis`. Attempt dispatch enforces `limits.maxModelCost` against metered cost before invocation (`budget_model_cost`).
 
+What the engine writes on every settled attempt (`producerRoutingRecord` and the
+failure path in `settleMember`, `plugins/kxm/src/engine.ts`):
+
+- **Engine-reserved `providerMetadata` keys.** Four keys are written after the
+  producer's keys, so a producer key with the same name is dropped and cannot spoof
+  them. A producer keeps at most 28 keys of its own, so the record stays within the
+  32-field limit.
+
+  | Key | Value |
+  |---|---|
+  | `workflowId` | The compiled workflow's id |
+  | `askSha256` | `kxmStepAskSha256`: a digest of the workflow id, step id, step kind, agent id, instructions, declared outcomes and required evidence keys. It is equal across runs for one step and agent, and excludes the run, assignment and attempt ids, the run objective, repositories, model and context packet |
+  | `objectiveSha256` | The run's accepted prompt digest (`sha256:<hex>`); the prompt text is never read here |
+  | `stepWrites` | `true` when the step has any repository with `write` access |
+
+  The key names avoid the parser's refusal (`/prompt|body|content|message/i`), which
+  is why the ask digest is not called a prompt hash.
+- **`agentRole`** is the producer's value when it supplies one, otherwise the
+  dispatched agent id.
+- **Record-time `finalOutcome`** is only ever `blocked` (the declared outcome takes a
+  back edge) or `failed` (a producer error, an outcome the step does not declare, or a
+  terminal that is not `completed`). A forward edge or a completed terminal leaves it
+  unset: acceptance is not known when the attempt settles. The engine never writes
+  `accepted` or `pending`.
+- `retries` is the step attempt minus one. Every record from one step attempt shares
+  it, including panel members and any assignment retried inside that step attempt, so
+  the improvement report's rule that a later retry supersedes an earlier attempt never
+  separates them.
+
+**Read-time resolution.** Readers of the event store resolve each Runtime attempt's
+outcome in memory and never write it back (`readEngineRoutingRecords`,
+`plugins/kxm/src/improve-sources.ts`). The first rule that applies wins:
+
+1. a record-time `blocked` or `failed` stands;
+2. a later `step.entered` for the same step makes it `reworked`;
+3. a `completed` run makes it `accepted`;
+4. a `failed` run makes it `failed`;
+5. anything else (a cancelled or still-running run) is undecided and has no
+   `finalOutcome`.
+
+`reworked` is a read-time value only; it is outside the stored v2 vocabulary.
+Attempts whose `harness` is `driver-simulated` are dropped and counted as
+`excludedSimulated`. Records written before the engine carried these keys are not
+backfilled: they still resolve an outcome, but they group per run.
+
 ## Implemented: report and price catalog
 
 - **Price catalog:** `.kxm/prices.yaml` (`kxm.prices.v1`, dated and hashed) defines input, output, cache-read, cache-write rates, and context tiers for active models. Missing rows or uncataloged models evaluate to `costBasis: "unknown"`.
@@ -174,7 +229,36 @@ The KXM engine settle transaction appends a `routing.attempt.recorded` event car
 - **Underquote prevention:** Routes with unknown cost are flagged (`*`) and **never ranked cheapest**, eliminating silent underquoting.
 - **Population separation:** Reports metered cost, unmetered attempt counts, unknown-cost attempt counts, and quota-exhausted attempt counts as separate metrics rather than a single misleading total.
 - **List prices flag:** Supports `--equivalent-list-cost` / `--list-prices` to display estimated list rates for comparison alongside actual recorded spend.
-- **Post-MVP:** Dynamic catalog price feeds (`kxm update --models`), budget roll-over, and automated promotion of repeat successes into workflow gates.
+- **Rework column:** reads `transitions`, which Runtime records never set, so Runtime rework shows up only as a resolved `reworked` outcome, which the report does not count as a pass.
+- **Post-MVP:** Dynamic catalog price feeds (`kxm update --models`) and budget roll-over. Coded-repeat candidates from `kxm improve` only propose; activation is a reviewed Git change.
+
+## Readers: `kxm routing report` and `kxm improve`
+
+Both commands load routing records the same way (`loadRoutingSources`,
+`plugins/kxm/src/improve-sources.ts`):
+
+1. With `--file <path>`, only that JSONL file is read. It may hold bare v1 or v2
+   records, records nested under `routing` or `envelope.routing`, or
+   `routing.attempt.recorded` events.
+2. Otherwise, when the current directory is inside a KXM project, the project's
+   Runtime event store is read first:
+   `<state root>/runtime/projects/<key>/run-events.db`, where the key is derived from
+   the checkout's real path exactly as the Runtime derives it. It is opened read-only
+   for one `SELECT` over the `events` table (routing, `step.entered` and
+   `run.status_changed` events only); the runs table, run plans and the prompt sidecar
+   are never read, and nothing is created, written or migrated. Outcomes are resolved
+   as described above.
+3. Then `telemetry.jsonl` in the workspace logs directory.
+
+A v2 record whose `attemptId` an earlier source already supplied is dropped and
+counted as `duplicatesDropped` on the later source. Every source is reported in a
+`sources` array with `kind` (`engine`, `telemetry` or `file`), `path`, `exists`,
+`records` and, for the store, `skippedInvalid`, `excludedSimulated` and `undecided`.
+`kxm improve` prints the sources in text and JSON and adds `projectRoot`;
+`kxm routing report` adds `sources` to its JSON only, and keeps `file` set to the
+telemetry path. A store that exists but cannot be read stops either command with exit
+1 and `improve_source_unreadable`, naming the path. Each checkout reads only its own
+store: there is no cross-worktree aggregation.
 
 ## Precedence
 

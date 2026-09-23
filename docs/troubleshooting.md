@@ -24,7 +24,7 @@ KXM waits until Pi has exhausted its own automatic retries. It then keeps the in
 
 ### A worker heartbeat is healthy but one tool never finishes
 
-Set `KXM_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its 31-minute default intentionally gives a 30-minute `kxm_await` or `kxm_fanout` time to return durable pending handles before supervision intervenes. When that bound is exceeded, the structured worker log records `worker_tool_timeout` with only the allowlisted tool name and diagnostic class, the delivered hub request stays recoverable, and the RPC process is restarted. If the stuck worker was supposed to be read-only, also set `KXM_WORKER_TOOLS=read,grep,find,ls`; prompt wording alone does not remove shell or write capabilities.
+Set `KXM_WORKER_TOOL_TIMEOUT_MS` above the longest legitimate tool call. Its 31-minute default intentionally gives a 30-minute `kxm_fanout` wait time to return durable pending handles before supervision intervenes. When that bound is exceeded, the structured worker log records `worker_tool_timeout` with only the allowlisted tool name and diagnostic class, the delivered hub request stays recoverable, and the RPC process is restarted. If the stuck worker was supposed to be read-only, also set `KXM_WORKER_TOOLS=read,grep,find,ls`; prompt wording alone does not remove shell or write capabilities.
 
 ### A hub or worker PID claim is stale
 
@@ -177,7 +177,7 @@ If the work is obsolete, the sender can call `kxm_cancel`. This changes hub stat
 
 ### `kxm_await` times out
 
-The default timeout is 30 minutes. Use `kxm_get` to inspect the state. `cancelled`, `expired`, and `error` are terminal outcomes. Resend only when the task is safe to repeat, and use an idempotency key when retrying after an uncertain network result.
+`kxm_await` waits at most 60 seconds; that is both its default and its maximum. A timeout does not end the request. Use `kxm_get` to inspect the state, or `kxm_workflow_wait` for long external work. `cancelled`, `expired`, and `error` are terminal outcomes. Resend only when the task is safe to repeat, and use an idempotency key when retrying after an uncertain network result.
 
 ### A message disappears after completion
 

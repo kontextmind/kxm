@@ -1,4 +1,4 @@
-# Pi Mesh protocol reference
+# KXM hub protocol reference
 
 The hub exposes a project-scoped HTTP API and an SSE event stream.
 
@@ -23,8 +23,8 @@ Operational routes are `GET /health`, `GET /ready`, and authenticated `GET /metr
 - `POST /v1/workflows/:runId/waits` pauses the active stage for a named external signal and bounded deadline, optionally accumulating verified local keyed evidence.
 - `POST /v1/workflows/:runId/degradations` uses administrative authentication to approve a configured lower peer quorum for the exact current stage, requirement, and attempt.
 - `POST /v1/webhooks/:definitionId/runs/:runId/signals/:signalKey` accepts a signed, retry-deduplicated external checkpoint result.
-- `POST /v1/workflows/:runId/journal` records a plan, decision, contradiction, error, or lesson.
-- `GET /v1/improvements` groups project journal evidence by improvement area.
+- `POST /v1/workflows/:runId/journal` records an entry in one of ten journal categories. An optional `stageId` binds it to that stage: the hub derives the attempt, and `area` defaults to the stage's declared area.
+- `GET /v1/improvements` groups project journal evidence by improvement area and returns ranked, redacted `signals` merged across runs.
 
 Webhook and signal bodies require SHA-256 HMAC validation and a stable provider delivery ID. Workflow routes require both project authentication and the assigned coordinator identity. Signal routes use `signalSecretEnv` when configured and otherwise use the workflow-start secret.
 

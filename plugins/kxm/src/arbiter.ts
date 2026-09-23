@@ -1,6 +1,7 @@
 import {
   DEFAULT_CONTEXT_BUDGET_TOKENS,
   MAX_CONTEXT_ITEMS,
+  contextItemCharacters,
   estimateContextTokens,
   parseContextItem,
   parseContextRequest,
@@ -15,6 +16,13 @@ import {
   type ContextSourceType,
 } from "./context.ts";
 import { ProtocolError } from "./protocol.ts";
+import {
+  compareCodeUnitIds,
+  contextItemRelevanceText,
+  relevanceTokens,
+  roundRelevance,
+  scoreRelevance,
+} from "./relevance.ts";
 import type { SkillLifecycle } from "./skills.ts";
 import type { JournalCategory, WorkflowJournalEntry } from "./workflow.ts";
 import type { MemoryRecord } from "./memory.ts";
@@ -44,7 +52,7 @@ export const ROLE_POLICIES: readonly RoleContextPolicy[] = [
   {
     role: "repro",
     label: "Reproduction specialist",
-    kinds: ["episode", "knowledge"],
+    kinds: ["episode", "knowledge", "evidence"],
     journalCategories: ["error", "lesson", "observation", "contradiction"],
     budgetTokens: 8_000,
   },
@@ -65,7 +73,7 @@ export const ROLE_POLICIES: readonly RoleContextPolicy[] = [
   {
     role: "implementer",
     label: "Implementer",
-    kinds: ["knowledge", "state", "skill", "episode"],
+    kinds: ["knowledge", "state", "skill", "episode", "evidence"],
     journalCategories: ["plan", "decision", "lesson", "state-change"],
     budgetTokens: 16_000,
   },
@@ -97,8 +105,9 @@ export interface ArbiterOptions {
   /** Pool item IDs that represent open contradictions; they are routed to the
    * packet's contradictions section instead of their kind's section. */
   contradictionIds?: string[];
-  /** Governed skill lifecycle to read and verify promoted skills by hash. */
-  skillLifecycle?: SkillLifecycle;
+  /** Governed skill lifecycle (or a pre-verified snapshot of one) to read and
+   * verify promoted skills by hash. */
+  skillLifecycle?: Pick<SkillLifecycle, "list" | "verify">;
 }
 
 export interface ArbiterOutcome {
@@ -114,12 +123,19 @@ export interface ArbiterOutcome {
     candidateCount: number;
     excludedSuperseded: number;
     unresolvedGaps: string[];
+    /** Numbers only: distinct task tokens, eligible candidates sharing a task
+     * token, and each selected item's rounded BM25 score (index-aligned with
+     * selectedIds). */
+    relevance: { taskTokens: number; matchedCandidates: number; selected: number[] };
   };
 }
 
 /** Deterministically assemble a role-aware context packet. Superseded and
  * rejected records are excluded by default; cross-project content fails
- * closed; the token budget is enforced on the serialized selection. */
+ * closed; eligible candidates are ranked by contradiction, project-first,
+ * task match, role kind priority, BM25 task relevance, confidence,
+ * authority, recency (newest first), then id by code unit; the token budget
+ * is filled first-fit on the serialized selection. */
 export function arbitrate(
   requestInput: unknown,
   pool: ContextItem[],
@@ -180,37 +196,61 @@ export function arbitrate(
     return rank === undefined ? requestedKinds.length : rank;
   };
 
-  const ordered = [...candidates].sort((left, right) =>
+  // Eligibility: open contradictions always compete; everything else must be
+  // a requested kind and not an inert proposal (a non-current state or a
+  // proposed skill), so proposals never consume budget.
+  const allowedKinds = new Set<ContextItemKind>(requestedKinds);
+  const inertProposal = (item: ContextItem): boolean =>
+    (item.kind === "state" && item.status !== undefined && item.status !== "current")
+    || (item.kind === "skill" && item.status === "proposed");
+  const eligible = candidates.filter((item) =>
+    contradictions.has(item.id) || (allowedKinds.has(item.kind) && !inertProposal(item)));
+
+  const scoreList = scoreRelevance(request.task, eligible.map(contextItemRelevanceText));
+  const scores = new Map<ContextItem, number>();
+  eligible.forEach((item, index) => scores.set(item, scoreList[index] ?? 0));
+  const scoreOf = (item: ContextItem): number => scores.get(item) ?? 0;
+  // Recency from the item's own timestamps; never reads the clock.
+  const when = (item: ContextItem): number => {
+    const parsed = Date.parse(item.observedAt ?? item.validFrom ?? "");
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const ordered = [...eligible].sort((left, right) =>
     (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0)
     || (left.project === request.project ? 0 : 1) - (right.project === request.project ? 0 : 1)
+    || (scoreOf(right) > 0 ? 1 : 0) - (scoreOf(left) > 0 ? 1 : 0)
     || kindPreference(left) - kindPreference(right)
+    || scoreOf(right) - scoreOf(left)
     || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence]
     || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority]
-    || left.id.localeCompare(right.id),
+    || when(right) - when(left)
+    || compareCodeUnitIds(left.id, right.id),
   );
 
-  const kindAllowed = (item: ContextItem): boolean =>
-    (request.includeKinds ?? policy.kinds).includes(item.kind)
-    || contradictions.has(item.id);
-
+  // First-fit: an item that does not fit is deferred and smaller items keep
+  // filling the budget.
   const selected: ContextItem[] = [];
   const unresolvedGaps: string[] = [];
+  let characters = 0;
+  let deferredForBudget = 0;
   for (const item of ordered) {
     if (selected.length >= MAX_CONTEXT_ITEMS) {
       unresolvedGaps.push("context item limit reached; refine the task or kinds");
       break;
     }
-    if (!kindAllowed(item)) continue;
-    const nextTokens = estimateContextTokens([...selected, item]);
-    if (nextTokens > budget) {
-      if (selected.length === 0) {
-        unresolvedGaps.push(`budget of ${budget} tokens cannot fit any selected context`);
-        break;
-      }
-      unresolvedGaps.push(`budget of ${budget} tokens reached; ${ordered.length - selected.length} candidates deferred`);
-      break;
+    const itemCharacters = contextItemCharacters(item);
+    if (Math.ceil((characters + itemCharacters) / 4) > budget) {
+      deferredForBudget += 1;
+      continue;
     }
+    characters += itemCharacters;
     selected.push(item);
+  }
+  if (deferredForBudget > 0) {
+    unresolvedGaps.push(selected.length === 0
+      ? `budget of ${budget} tokens cannot fit any selected context`
+      : `budget of ${budget} tokens reached; ${deferredForBudget} candidates deferred`);
   }
   if (candidates.length === 0) {
     unresolvedGaps.push("no context records exist for this project yet");
@@ -223,6 +263,7 @@ export function arbitrate(
     workingState: options.workingState ?? {},
     currentState: bySection("state").filter((item) => item.status === "current" || item.status === undefined),
     knowledge: bySection("knowledge"),
+    evidence: bySection("evidence"),
     episodes: bySection("episode"),
     skills: bySection("skill").filter((item) => item.status !== "proposed"),
     contradictions: selected.filter((item) => contradictions.has(item.id)),
@@ -249,6 +290,11 @@ export function arbitrate(
       candidateCount: candidates.length,
       excludedSuperseded,
       unresolvedGaps,
+      relevance: {
+        taskTokens: new Set(relevanceTokens(request.task)).size,
+        matchedCandidates: scoreList.filter((score) => score > 0).length,
+        selected: selected.map((item) => roundRelevance(scoreOf(item))),
+      },
     },
   };
 }
@@ -273,12 +319,11 @@ export function journalEntryToContextItem(entry: WorkflowJournalEntry, project: 
     },
     authority: entry.category === "decision" || entry.category === "plan" ? "evidence" : "evidence",
     confidence: entry.severity === "error" ? "probable" : "probable",
-    ...(entry.stageId !== undefined ? { observedAt: entry.createdAt } : {}),
+    observedAt: entry.createdAt,
     evidenceRefs: entry.evidence
       .filter((ref) => ref.length > 0 && ref.length <= 200)
       .slice(0, 16),
   };
-  if (entry.stageId !== undefined) item.observedAt = entry.createdAt;
   if (kind === "skill") item.status = "proposed";
   return parseContextItem(item);
 }

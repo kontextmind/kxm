@@ -7,6 +7,9 @@ This documentation is organized by task. Start with the guide that matches what 
 | [KXM Handbook](kxm-handbook.md) | Operators, Pi users, and Claude Code users | Wiki-ready installation, configuration, and complete feature guide |
 | [Getting started](getting-started.md) | Pi and Claude Code users | Complete the first successful multi-agent exchange |
 | [Configuration](configuration.md) | Users and operators | Understand every supported setting and default |
+| [CLI reference](cli-reference.md) | Operators and agent authors | Every `kxm` command and subcommand with options, JSON output, and examples |
+| [Configuration file reference](config-reference.md) | Project and workflow authors | Every `.kxm` file schema field by field, with validated examples and a worked two-step project |
+| [Native harness or OpenRouter](harness-routing.md) | Operators choosing models | Decide which route runs a model reachable both natively and through an aggregator, and confirm which route a config line uses |
 | [Architecture](architecture.md) | Maintainers and integrators | Learn the component boundaries and message lifecycle |
 | [Terminal components](tui-components.md) | Maintainers and integrators | The reusable panel kit behind `kxm dash` and every configuration surface |
 | [Packages and workspaces](packages.md) | Maintainers | Workspace layout, Nx targets, Bun task running, and the layer gate |

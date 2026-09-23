@@ -10,6 +10,7 @@ import {
   generateHubAuthToken,
   hubEnvFile,
   readHubEnvRecord,
+  resolveAgentHubAuthToken,
   resolveClientHubAuthToken,
   resolveHubCredentials,
   writeHubEnvRecord,
@@ -132,6 +133,35 @@ test("resolveClientHubAuthToken fails closed on a malformed persisted record", (
   try {
     writeFileSync(hubEnvFile(env), "{not json");
     assert.throws(() => resolveClientHubAuthToken(env, "demo"), HubEnvError);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resolveAgentHubAuthToken never returns the persisted admin token", () => {
+  const { env, root } = stateEnv();
+  try {
+    writeHubEnvRecord({
+      schema: HUB_ENV_SCHEMA,
+      createdAt: "2026-09-23T00:00:00.000Z",
+      authToken: "admin-token",
+      projectTokens: { demo: " demo-token " },
+    }, env);
+
+    assert.equal(resolveAgentHubAuthToken(env, "demo"), "demo-token");
+    // The operator resolver falls back to the admin token here; the agent resolver does not.
+    assert.equal(resolveClientHubAuthToken(env, "unknown"), "admin-token");
+    assert.equal(resolveAgentHubAuthToken(env, "unknown"), undefined);
+    // Inherited object keys are not project tokens.
+    assert.equal(resolveAgentHubAuthToken(env, "constructor"), undefined);
+    assert.equal(resolveAgentHubAuthToken({ ...env, KXM_AUTH_TOKEN: " env-token " }, "unknown"), "env-token");
+    assert.equal(resolveAgentHubAuthToken({ ...env, KXM_AUTH_TOKEN: "  " }, "unknown"), undefined);
+
+    writeHubEnvRecord({ schema: HUB_ENV_SCHEMA, createdAt: "2026-09-23T00:00:00.000Z", authToken: "admin-token" }, env);
+    assert.equal(resolveAgentHubAuthToken(env, "demo"), undefined);
+
+    writeFileSync(hubEnvFile(env), "{not json");
+    assert.throws(() => resolveAgentHubAuthToken(env, "demo"), HubEnvError);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -10,7 +10,7 @@ This directory contains standardized Markdown documentation templates adapted fo
 
 3. **Immutable Evidence Chains:** Every test or review report must reference an exact commit pin (`git rev-parse HEAD`), deterministic branch (`kxm/run-<id>-<description>`), and content-addressed artifact reference (`artifact:<path>@sha256:<digest>`).
 
-4. **Context Arbiter Integration:** Frontmatter fields (`authority`, `confidence`, `summary`, `tags`) directly inform token budgeting and relevance pruning in `kxm.context-packet.v2`.
+4. **Context Arbiter Integration:** Frontmatter fields (`authority`, `confidence`, `summary`, `tags`) inform token budgeting in `kxm.context-packet.v2`: layer pruning plus lexical task-relevance ordering in the arbiter.
 
 ---
 

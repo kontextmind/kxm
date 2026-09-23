@@ -1,6 +1,6 @@
 ---
 name: kxm-harvest
-description: Extract durable KontextMind learnings at session end. Use when asked to harvest, close session, file a learning, km_append, save a checkpoint, or write a handoff. Redacts secrets first, dedupes against the mind, then drafts to local/project/org.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Drafts redacted session learnings into a KontextMind mind with km_append. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:

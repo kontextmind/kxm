@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  IMPROVEMENT_AREAS,
   MAX_MESSAGE_TTL_MS,
   MIN_MESSAGE_TTL_MS,
   ProtocolError,
@@ -20,6 +21,8 @@ import {
   type WorkflowEvidenceReferenceInput,
   type WorkflowMessageContext,
 } from "./protocol.ts";
+import { redactSecrets } from "./redact.ts";
+import { compareCodeUnitIds } from "./relevance.ts";
 
 export type {
   ImprovementArea,
@@ -350,7 +353,7 @@ export interface WorkflowJournalEntry {
   relatedEntryIds: string[];
   createdAt: string;
   /** Stage the entry was recorded against. Optional: v0.4 entries and
-n   * run-level entries have no stage binding. */
+   * run-level entries have no stage binding. */
   stageId?: string;
   /** Attempt the entry was recorded against, when stage-bound. */
   attempt?: number;
@@ -436,17 +439,8 @@ export interface ImprovementAreaReport {
 }
 
 export function improvementReport(entries: WorkflowJournalEntry[]): ImprovementAreaReport[] {
-  const areas: ImprovementArea[] = [
-    "harness",
-    "gates",
-    "implementation",
-    "workflow",
-    "documentation",
-    "security",
-    "other",
-  ];
   const severityWeight = { error: 3, warning: 2, info: 1 } as const;
-  return areas.map((area) => {
+  return IMPROVEMENT_AREAS.map((area) => {
     const matching = entries.filter((entry) => entry.area === area);
     const priorities = [...matching]
       .filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson" || entry.category === "skill-candidate")
@@ -461,6 +455,184 @@ export function improvementReport(entries: WorkflowJournalEntry[]): ImprovementA
       priorities,
     };
   }).filter((report) => report.total > 0);
+}
+
+/** Diagnostic classes that put a signal in the security tier regardless of
+ * its priority (diagnostics.ts). */
+export const SECURITY_SIGNAL_CLASSES: readonly string[] = ["invalid_auth", "invalid_identity", "signal_mismatch"];
+
+const SIGNAL_CATEGORIES: readonly JournalCategory[] = ["error", "contradiction", "lesson", "skill-candidate"];
+const SIGNAL_SEVERITY_WEIGHT = { error: 3, warning: 2, info: 1 } as const;
+const SIGNAL_CLASS = /^[a-z0-9_]{1,64}$/;
+const MAX_SIGNAL_IDS = 16;
+const MAX_SIGNAL_SUMMARY_KEY_CHARS = 160;
+
+/** Collapse volatile tokens so the same failure in two runs keys the same.
+ * Callers redact first: lowercasing and digit folding would otherwise defeat
+ * the secret patterns. */
+export function normalizeSignalSummary(summary: string): string {
+  return summary
+    .toLowerCase()
+    .replace(/\b[a-z]+_[0-9a-f]{8,}\b/g, "<id>")
+    .replace(/\b\d{4}-\d{2}-\d{2}t\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:z|[+-]\d{2}:?\d{2})?/g, "<ts>")
+    .replace(/\b[0-9a-f]{7,}\b/g, "<hex>")
+    .replace(/\d+/g, "#")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_SIGNAL_SUMMARY_KEY_CHARS);
+}
+
+/** One improvement signal: journal entries from one or more runs that share
+ * a key, scored by frequency x severity x run-attempt cost x evidence
+ * confidence. Text is redacted; the key never carries raw summary text. */
+export interface ImprovementSignal {
+  key: string;
+  /** Which rule produced the key: an evidence class, an error's stage, or the
+   * normalized summary. */
+  basis: "class" | "stage" | "summary";
+  category: JournalCategory;
+  /** Modal area of the grouped entries; ties follow IMPROVEMENT_AREAS order. */
+  area: ImprovementArea;
+  /** Security signals rank ahead of every priority. */
+  overrideTier?: "security";
+  /** Distinct runs that recorded this signal. */
+  frequency: number;
+  runIds: string[];
+  entryIds: string[];
+  severity: WorkflowJournalEntry["severity"];
+  severityWeight: number;
+  /** Mean run attempts (stage attempts plus transitions) over the known runs;
+   * null when none of the runs is known. */
+  workflowCost: number | null;
+  costBasis: "run-attempts" | "unknown";
+  /** 0.5 plus half the fraction of entries that cite evidence. */
+  confidence: number;
+  priority: number;
+  /** Redacted summary of the latest entry. */
+  summary: string;
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function signalKeyOf(
+  entry: WorkflowJournalEntry,
+  runs: ReadonlyMap<string, WorkflowRun>,
+): { key: string; basis: ImprovementSignal["basis"]; signalClass?: string } {
+  const classRef = entry.evidence.find((ref) => ref.startsWith("class:"));
+  const signalClass = classRef?.slice("class:".length);
+  if (signalClass !== undefined && SIGNAL_CLASS.test(signalClass) && signalClass !== "unknown") {
+    return { key: `${entry.category}|class:${signalClass}`, basis: "class", signalClass };
+  }
+  const run = runs.get(entry.runId);
+  if (entry.category === "error" && entry.stageId !== undefined && run) {
+    return { key: `error|stage:${run.definitionId}/${entry.stageId}`, basis: "stage" };
+  }
+  return {
+    key: `${entry.category}|summary:${normalizeSignalSummary(redactSecrets(entry.summary))}`,
+    basis: "summary",
+  };
+}
+
+function runAttemptCost(run: WorkflowRun): number {
+  let attempts = 0;
+  for (const stage of run.stages) attempts += stage.attempts;
+  return Math.max(1, attempts + (run.transitions?.length ?? 0));
+}
+
+/** Merge journal learning across runs into ranked, redacted signals. Only
+ * errors, open contradictions, lessons and still-proposed skill candidates
+ * count. Security signals come first, then priority, frequency and key; no
+ * id or insertion order decides a tie. */
+export function rankImprovementSignals(
+  entries: readonly WorkflowJournalEntry[],
+  runs: ReadonlyMap<string, WorkflowRun>,
+  limit = 20,
+): ImprovementSignal[] {
+  const resolvedContradictions = new Set<string>();
+  for (const entry of entries) {
+    if (entry.category !== "decision" && entry.category !== "lesson") continue;
+    for (const related of entry.relatedEntryIds) resolvedContradictions.add(`${entry.runId}\u0000${related}`);
+  }
+
+  const groups = new Map<string, {
+    basis: ImprovementSignal["basis"];
+    category: JournalCategory;
+    signalClass?: string;
+    entries: WorkflowJournalEntry[];
+  }>();
+  for (const entry of entries) {
+    if (!SIGNAL_CATEGORIES.includes(entry.category)) continue;
+    if (entry.category === "contradiction" && resolvedContradictions.has(`${entry.runId}\u0000${entry.id}`)) continue;
+    const promotionState = journalPromotionState(entry);
+    if (promotionState !== undefined && promotionState !== "proposed") continue;
+    const { key, basis, signalClass } = signalKeyOf(entry, runs);
+    const group = groups.get(key);
+    if (group) group.entries.push(entry);
+    else groups.set(key, { basis, category: entry.category, ...(signalClass !== undefined ? { signalClass } : {}), entries: [entry] });
+  }
+
+  const areaRank = (area: string): number => {
+    const index = IMPROVEMENT_AREAS.indexOf(area as ImprovementArea);
+    return index === -1 ? IMPROVEMENT_AREAS.length : index;
+  };
+
+  const signals: ImprovementSignal[] = [];
+  for (const [key, group] of groups) {
+    const runIds = [...new Set(group.entries.map((entry) => entry.runId))].sort(compareCodeUnitIds);
+    const entryIds = group.entries.map((entry) => entry.id).sort(compareCodeUnitIds);
+
+    let severity: WorkflowJournalEntry["severity"] = "info";
+    for (const entry of group.entries) {
+      if ((SIGNAL_SEVERITY_WEIGHT[entry.severity] ?? 0) > SIGNAL_SEVERITY_WEIGHT[severity]) severity = entry.severity;
+    }
+    const severityWeight = SIGNAL_SEVERITY_WEIGHT[severity];
+
+    const knownRuns = runIds.map((runId) => runs.get(runId)).filter((run): run is WorkflowRun => run !== undefined);
+    const workflowCost = knownRuns.length > 0
+      ? knownRuns.reduce((total, run) => total + runAttemptCost(run), 0) / knownRuns.length
+      : null;
+
+    const withEvidence = group.entries.filter((entry) => entry.evidence.length > 0).length;
+    const confidence = 0.5 + 0.5 * (withEvidence / group.entries.length);
+
+    const areaCounts = new Map<ImprovementArea, number>();
+    for (const entry of group.entries) areaCounts.set(entry.area, (areaCounts.get(entry.area) ?? 0) + 1);
+    const area = [...areaCounts].sort((left, right) => right[1] - left[1] || areaRank(left[0]) - areaRank(right[0]))[0]![0];
+
+    const latest = [...group.entries].sort((left, right) =>
+      compareCodeUnitIds(left.createdAt, right.createdAt) || compareCodeUnitIds(left.id, right.id)).at(-1)!;
+
+    const security = area === "security"
+      || (group.signalClass !== undefined && SECURITY_SIGNAL_CLASSES.includes(group.signalClass));
+
+    signals.push({
+      key,
+      basis: group.basis,
+      category: group.category,
+      area,
+      ...(security ? { overrideTier: "security" as const } : {}),
+      frequency: runIds.length,
+      runIds: runIds.slice(0, MAX_SIGNAL_IDS),
+      entryIds: entryIds.slice(0, MAX_SIGNAL_IDS),
+      severity,
+      severityWeight,
+      workflowCost,
+      costBasis: workflowCost === null ? "unknown" : "run-attempts",
+      confidence,
+      priority: round3(runIds.length * severityWeight * (workflowCost ?? 1) * confidence),
+      summary: redactSecrets(latest.summary),
+    });
+  }
+
+  return signals
+    .sort((left, right) =>
+      (right.overrideTier === "security" ? 1 : 0) - (left.overrideTier === "security" ? 1 : 0)
+      || right.priority - left.priority
+      || right.frequency - left.frequency
+      || compareCodeUnitIds(left.key, right.key))
+    .slice(0, limit);
 }
 
 function object(value: unknown, name: string): Record<string, unknown> {
@@ -583,6 +755,24 @@ export function workflowEvidenceStrings(evidence: WorkflowEvidenceInput | Workfl
 
 export function activeWorkflowAttempt(stage: Pick<WorkflowStageState, "attempts">): number {
   return stage.attempts + 1;
+}
+
+/** The attempt a stage-bound journal entry belongs to. An active or waiting
+ * stage is on its next attempt; a finished stage is on the last attempt it
+ * consumed; a pending stage that never ran has no attempt yet. The caller
+ * never supplies it. */
+export function journalAttemptFor(stage: Pick<WorkflowStageState, "status" | "attempts">): number | undefined {
+  switch (stage.status) {
+    case "in_progress":
+    case "waiting":
+      return stage.attempts + 1;
+    case "pending":
+      return stage.attempts > 0 ? stage.attempts : undefined;
+    case "passed":
+    case "warning":
+    case "failed":
+      return Math.max(1, stage.attempts);
+  }
 }
 
 export interface EvidenceLookup {
@@ -998,7 +1188,7 @@ export function parseWorkflowDefinitions(
       const area = stage.area
         ? requireString(stage.area, "stage.area", { max: 24 }) as ImprovementArea
         : undefined;
-      if (area && !["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
+      if (area && !IMPROVEMENT_AREAS.includes(area)) {
         throw new Error(`stage ${stageId} area is invalid`);
       }
       const requiredEvidence = stringArray(stage.requiredEvidence ?? [], "stage.requiredEvidence")

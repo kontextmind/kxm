@@ -145,7 +145,7 @@ _kxm() {
     'peer:Peer agent messaging and coordination'
     'workflow:Start and inspect workflow runs'
     'gate:Validate definitions and operate evidence gates'
-    'improve:Propose CLI or project improvements'
+    'improve:Propose coded-repeat candidates from routing records'
     'context:KXM context operating-system queries'
     'skills:Governed skill candidate lifecycle'
     'memory:Harness-agnostic Git memory operations'

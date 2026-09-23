@@ -683,7 +683,7 @@ async function startKxmRuntimeSupervisorInner(
     const key = projectRuntimeKey(projectRoot);
     const existing = contexts.get(key);
     if (existing) return existing;
-    const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot });
+    const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot, logger });
     registerSyncCredentials(context);
     contexts.set(key, context);
     return context;
@@ -1315,7 +1315,21 @@ export async function kxmRuntimeRequest(
   if (!response.ok) {
     const code = typeof payload.error === "string" ? payload.error : "runtime_request_failed";
     const message = typeof payload.message === "string" ? payload.message : `runtime request failed with HTTP ${response.status}`;
-    throw runtimeError(code, path, message);
+    throw runtimeError(code, path, `${message}${handoffSuffix(payload.handoff)}`);
   }
   return payload;
+}
+
+const HANDOFF_TEXT_MAX = 200;
+
+/** Why the Runtime handed a run off, from a `run_handoff_required` body: the
+ * reason, field and detail, each capped so a refusal stays one readable line. */
+function handoffSuffix(handoff: unknown): string {
+  if (!handoff || typeof handoff !== "object" || Array.isArray(handoff)) return "";
+  const parts: string[] = [];
+  for (const key of ["reason", "field", "detail"] as const) {
+    const value = (handoff as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.length > 0) parts.push(`${key} ${value.slice(0, HANDOFF_TEXT_MAX)}`);
+  }
+  return parts.length > 0 ? ` (handoff ${parts.join("; ")})` : "";
 }
