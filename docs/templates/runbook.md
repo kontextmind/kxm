@@ -35,7 +35,7 @@ flowchart TD
     Hub -->|No| Start[Restart the hub]
     Hub -->|Yes| Runtime{kxm runtime status running?}
     Runtime -->|No| RtStart[kxm runtime start]
-    Runtime -->|Yes| Procs[Inspect workers in kxm dash --screen procs]
+    Runtime -->|Yes| Procs["Inspect workers in kxm dash --screen procs"]
     Procs --> Logs[Read .kxm/logs/ for the failing component]
 ```
 
@@ -68,7 +68,7 @@ flowchart TD
 
 | Issue | Command | Expected outcome |
 |---|---|---|
-| Hub unhealthy or wedged | `kxm hub stop`, then `kxm hub start` | Hub restarts; queued and delivered messages replay |
+| Hub unhealthy or wedged | `kxm hub stop`, then `kxm hub start` | Hub restarts; queued messages are pushed again until acknowledged, and delivered messages are not replayed |
 | Runtime run stuck | `kxm runs cancel <run-id>` | A durable cancellation request is recorded for the run |
 | Model route misbehaving | `kxm routes disable --model <provider/model>` | The route moves to the disabled list in `.kxm/routes.yaml`; commit it |
 | Sync rows refused by the hub | Fix the hub-side cause, then `kxm runtime sync-retry` | Refused outbox rows are queued again |

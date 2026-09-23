@@ -133,7 +133,7 @@ A run moves through five phases:
 4. When a drive stops, it writes a drive receipt: terminal, handoff, or unsettled. `kxm runs status` and `kxm runs receipt` show it and whether it verifies.
 5. The supervisor pushes outbox rows to the bound hub. Without a hub, rows wait locally until one is bound.
 
-Steps are `agent`, `moa`, `approval`, `wait`, or `gate`. The first four go to a producer through an assignment and an attempt; each attempt gets a capability secret that is stored only as a hash. `approval` and `wait` steps are answered by the workflow's `coordinator` agent. Gate steps run entries from `.kxm/gates.yaml` as an argument list without a shell, and keep only hashes and sizes of their output.
+Steps are `agent`, `moa`, `approval`, `wait`, or `gate`. The first four go to a producer through an assignment and an attempt; each attempt gets a capability secret that is stored only as a hash. `approval` and `wait` steps go to the first agent in the step's `assignments.allowedAgents`, else to the agent whose ID is literally `coordinator`, not to the workflow's `coordinator:` value. Gate steps run entries from `.kxm/gates.yaml` as an argument list without a shell, and keep only hashes and sizes of their output.
 
 A live drive runs each agent's harness as a one-shot, read-only process. When a step needs something this build does not execute, such as write access in a live drive, the drive stops with a handoff (`run_handoff_required`) instead of guessing. The [configuration reference](../reference/config-reference.md#steps-the-runtime-does-not-execute-yet) lists every such case.
 
@@ -141,11 +141,10 @@ A dispatched agent also receives the project's committed memory and hash-verifie
 
 ### Runtime run lifecycle
 
-The diagram shows the run states the event fold accepts in this build; the dashed state is specified but not yet reachable.
+The diagram shows the run states the event fold accepts in this build.
 
 ```mermaid
 stateDiagram-v2
-  state "waiting (planned)" as waiting
   [*] --> created: kxm run
   created --> preparing: first drive pins the plan
   preparing --> running: steps start
@@ -161,11 +160,9 @@ stateDiagram-v2
   completed --> [*]
   failed --> [*]
   cancelled --> [*]
-  classDef planned stroke-dasharray:5 5
-  class waiting planned
 ```
 
-A run can also be cancelled or fail before it reaches `running`, and the fold permits `cancelling → failed`. You resolve `blocked_uncertain` with `kxm gate signal <runId> … --recovery-action retry|unblock|fail|cancel`.
+A run can also be cancelled or fail before it reaches `running`, and the fold permits `cancelling → failed`. There is no `waiting` state: the contracts specify one, but the fold refuses it, so a Runtime run never parks the way a hub workflow run does. You resolve `blocked_uncertain` with `kxm gate signal <runId> … --recovery-action retry|unblock|fail|cancel`.
 
 Inside a run, each object has its own linear lifecycle:
 
@@ -205,13 +202,13 @@ The package ships a directory of `SKILL.md` suites that Pi and Claude Code both 
 
 ### Dash and Studio
 
-`kxm dash` draws live terminal screens (agents, tasks, workflows, plans, inbox, processes, and spend) from the admin-only operations stream, a presence-only fallback, and a read-only snapshot of `kxm.db`. Treat it as an observer: its action keys `a`, `r`, `s` and `c` post to hub routes that do not exist, so they change nothing even though the status line reports success, and `d` creates a git branch and worktree.
+`kxm dash` draws live terminal screens (agents, tasks, workflows, plans, inbox, processes, and spend, which is always empty today) from the admin-only operations stream, a presence-only fallback, and a read-only snapshot of `kxm.db`. Treat it as an observer: its action keys `a`, `r`, `s` and `c` post to hub routes that do not exist, so they change nothing even though the status line reports success, and `d` creates a git branch and worktree.
 
 `kxm studio layout` renders a workflow as DAG, stepper, and swimlane JSON, and `kxm studio serve` hosts a local viewer on `127.0.0.1:4242`. The Studio mutation endpoint is not wired to commands: it acknowledges requests without running them.
 
 ## Configuration is reviewed Git YAML
 
-Project behavior lives in Git under `.kxm/`: `project.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `roles/`, `routes.yaml`, `memory/`, and `skills/`. Every file is restricted YAML checked against a JSON Schema. Git review is the activation boundary:
+Project behavior lives in Git under `.kxm/`: `project.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `roles/`, `routes.yaml`, `memory/`, and `skills/`. The project bundle (`project.yaml`, `agents/`, `models/`, `workflows/`, and `gates.yaml`) is restricted YAML checked against a JSON Schema. `routes.yaml`, `roles/`, and the front matter in `memory/` and `skills/` are parsed as ordinary YAML with their own checks, and a live drive re-reads an agent file the same way to resolve its route. Git review is the activation boundary:
 
 - Every run pins revision hashes of the project bundle, memory, executor policy, and tool policy. An edit affects only later runs, and a run whose pinned revisions drift is refused.
 - `kxm trust diff` prints a structured permission diff against a base revision (default `HEAD`). `kxm trust check` exits non-zero when the change expands permissions. Neither covers `routes.yaml`, `roles/`, `roster.yaml`, or `prices.yaml`, so admitting a route is not flagged.
@@ -223,7 +220,7 @@ Webhook workflow definitions are separate JSON that the hub loads at start, with
 
 A route is a harness plus a model. In a live drive, the Runtime resolves each agent's harness (its `harness`, else the project's `defaultHarness`) and model, refuses any `provider/model` that `.kxm/routes.yaml` does not admit, and checks the role roster when one exists. It then probes the harness's login and starts a one-shot process. A refusal never falls back to another route.
 
-KXM prefers a model's native harness and never bills one vendor through another vendor's harness. Long-lived Pi workers are a separate path, and you pass their model explicitly. [Harness routing](../reference/harness-routing.md) explains how to choose a route and confirm which one ran.
+The rule is to run a vendor's model in that vendor's native harness, never through Pi. The code enforces it only partly: the Pi check reads only the first segment of a model selector, and long-lived Pi workers, whose model you pass explicitly, have no check at all. Admission is the backstop; see [where the code is looser than the rules](../reference/harness-routing.md#where-the-code-is-looser-than-the-rules). [Harness routing](../reference/harness-routing.md) explains how to choose a route and confirm which one ran.
 
 ## Packaging
 
@@ -249,9 +246,9 @@ One npm package, `@kontextmind/kxm`, carries every surface. It needs Node.js 22.
 - **At-least-once.** A crash after a side effect but before the reply or settlement can repeat work. Use idempotency keys and delivery IDs, and design every handler to be safe to repeat.
 - **Not a sandbox.** Tool allowlists, roles, session isolation, and project tokens prevent mistakes, not a hostile process under the same OS user. See the [trust model](trust-model.md#kxm-is-not-a-sandbox).
 - **Quorum proves routing, not truth.** A verified peer reply proves which registered identity answered in which run, stage, and attempt. It does not prove the answer is correct, independent, or approved by a person.
-- **The Runtime is a slice.** Live drives are read-only, runs have no `waiting` state, and unsupported steps hand off. A drive receipt's `logHash` covers event IDs and sequence numbers, not payloads, and receipts are not signed.
+- **The Runtime does not run everything yet.** Live drives are read-only, runs have no `waiting` state, and unsupported steps hand off. A drive receipt's `logHash` covers event IDs and sequence numbers, not payloads, and receipts are not signed.
 - **Retention is short on the hub.** Finished hub runs and their journal are purged after 7 days, which also ends webhook deduplication for them. Runtime event stores keep everything.
-- **Some reads are local.** `kxm workflow list` and `get`, `kxm session brief`, the SessionStart hook, and part of `kxm dash` read `kxm.db` directly, so they see hub runs only on the hub's machine.
+- **Some reads are local.** `kxm workflow list` and `get`, `kxm session brief`, the SessionStart hook, and part of `kxm dash` read `kxm.db` directly, so they see hub runs only on the hub's machine. The session brief and the hook also read this machine's Runtime runs, and report what they found as `source`: `legacy`, `runtime`, or `both`.
 
 ## Related
 

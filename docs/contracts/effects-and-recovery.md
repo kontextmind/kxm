@@ -1,5 +1,8 @@
 # Effects, idempotency, and recovery
 
+> [!IMPORTANT]
+> Planned: this contract is the target design. Today only Runtime gate steps record effect intents, observations and settlements, and a gate outcome that cannot be proven blocks the run as `blocked_uncertain`; the effect registry, adapters, receipt queries and leases around external effects are not wired.
+
 KXM provides at-least-once command delivery with effect-aware recovery. It does
 not claim exactly-once external execution.
 

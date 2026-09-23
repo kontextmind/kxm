@@ -237,7 +237,7 @@ flowchart LR
 Hold these invariants on every tenant box:
 
 1. **A service account, not root.** Session isolation routes model context; it is not a sandbox against a hostile process under the same account. Give untrusted workers separate accounts or containers.
-2. **Explicit, stable paths.** Set `KXM_WORKSPACE_DIR`, `KXM_STATE_DIR`, `KXM_DATA_PATH`, `KXM_LOG_PATH` and `KXM_STATE_HOME` instead of inheriting a home directory, and pin `KXM_HOST=127.0.0.1`.
+2. **Explicit, stable paths.** Set `KXM_WORKSPACE_DIR`, `KXM_STATE_DIR`, `KXM_DATA_PATH`, `KXM_LOG_PATH` and `KXM_STATE_HOME` instead of inheriting a home directory, and pin `KXM_HOST=127.0.0.1`. `kxm backup` ignores `KXM_STATE_DIR` and `KXM_DATA_PATH`, so on such a box it finds no hub store and fails with `backup_no_stores`; use the [stopped-state backup](backup-and-restore.md#back-up-everything-else) instead.
 3. **Loopback listeners only.** Neither the hub nor the supervisor has a public port, and nothing is load-balanced across hubs.
 4. **Edge authentication.** The proxy authenticates browsers (for example with Authentik forward auth) on the portal's routes only. The hub never interprets browser identity; see [ADR-0004](../adr/ADR-0004-edge-identity-authentik.md).
 5. **Server-side machine credentials.** The portal backend keeps the hub credentials and calls the hub itself. `kxm tenant status`, which uses the admin token, gives it one labelled view of hub metadata and Runtime runs.

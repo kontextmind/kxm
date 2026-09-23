@@ -67,6 +67,20 @@ requires the job names `Validate (linux, Node 22.19.0)` and
 the ruleset in the same change. A newer push cancels an older pull request run;
 runs on `main` are never cancelled.
 
+### CI jobs stay queued while a runner is online
+
+When every job stays queued although a runner is online, the self-hosted runner
+has usually lost the custom label that `runs-on` in `.github/workflows/ci.yml`
+requests, for example after re-registration. The default labels alone never
+match. List the runners' labels and re-add the missing one:
+
+```bash
+gh api repos/kontextmind/kxm/actions/runners --jq '.runners[] | {id, name, labels: [.labels[].name]}'
+gh api repos/kontextmind/kxm/actions/runners/<runner-id>/labels -X POST -f 'labels[]=<label>'
+```
+
+If the queued run still does not start, push an empty commit.
+
 > [!NOTE]
 > Windows legs are paused, not removed. Windows stays a supported target, and
 > Windows-specific fixtures (for example the `pi.cmd` worker launch in
@@ -139,6 +153,11 @@ back.
 Add user-visible changes to `CHANGELOG.md` under `## Unreleased`, in the same
 pull request. Keep an entry to a few lines and link the doc page that explains
 the behavior. Add an `### Upgrade note` when an operator must act.
+
+No release step moves those entries into a dated section. Auto-Release tags a
+patch for each merged pull request, but nothing cuts the changelog, so
+everything released since its newest dated section is still listed under
+`## Unreleased`.
 
 ## Smoke tests
 

@@ -138,6 +138,7 @@ Each `on` key is an outcome key, and each value is a stage ID, `$terminal`, or `
 - **Back-edges.** A target at or before the current stage is a back-edge. Any back-edge requires the definition's `maxTransitions`.
 - **Budgets.** The per-edge `maxTransitions`, the stage's `maxTransitions` and the definition's `maxTransitions` all count transitions already taken. Exhausting any of them fails the run and journals a `transition_budget_exhausted` error.
 - **Entering a stage.** A transition resets the target stage's attempts and evidence. A stage left on a failure transition returns to `pending`.
+- **After a back-edge.** The default `passed` edge enters the first `pending` stage in definition order. Stages between the back-edge target and the stage that took it are still `passed` from before, so they are skipped, not re-run. To re-run them, declare `on.passed` on each stage explicitly, naming the next stage.
 - **Last attempt.** A failure transition is taken only while attempts remain; a stage's last failing attempt fails the run.
 - **`$terminal`.** Completes the run, whichever outcome led there. It takes no terminal status.
 

@@ -19,7 +19,7 @@ to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 | SQLite persistence, restart recovery and schema compatibility | `hub-api.test.ts`, `store.test.ts` |
 | Delivery modes, message fields, hop limits and validation | `hub-api.test.ts`, `protocol.test.ts` |
 | Queue, acknowledgement, visibility, reply and authorization | `hub-api.test.ts`, `hub.test.ts` |
-| A queued or delivered message replays after a recipient restart as the same record | `hub.test.ts`, `extension.test.ts`, `mcp.test.ts` |
+| An unacknowledged (queued) message replays after a recipient restart as the same record | `hub.test.ts`, `extension.test.ts`, `mcp.test.ts` |
 | An `allowOffline` send queues, delivers once on resumption, and expires unread by TTL | `hub-api.test.ts` |
 | TTL expiry, sender cancellation and terminal retention | `hub-api.test.ts` |
 | Exact-retry idempotency, and rejection of a reused key with different content | `hub-api.test.ts` |
@@ -133,11 +133,16 @@ The context suites in detail:
 | Metadata-only dashboard: ops mode, presence-only fallback, observer filtering, keys, body-free local projection | `tui.test.ts`, `hub-api.test.ts` |
 | Restricted loader, deterministic bundle hash, init classification, atomic creation, three-way repair, crash resumption | `project-config.test.ts`, `cli.test.ts`, `package-install.test.ts` |
 | Legacy `.kxm/config` JSON is refused with `legacy_state_unsupported`; `kxm migrate` is unknown; older stores are refused | `project-config.test.ts`, `cli.test.ts`, `e6-backup-restore-migrations.test.ts` |
-| `kxm backup` and `kxm restore` round-trip every store; tampered or newer backups are refused | `e6-backup-restore-migrations.test.ts` |
+| `kxm backup` and `kxm restore` round-trip the hub store and Runtime stores seeded under `.kxm/runtime/`; tampered or newer backups are refused | `e6-backup-restore-migrations.test.ts` |
 | Permission-diff trust: authority lattice, prose neutrality, Git base shadowing, CLI diff and check | `permission.test.ts`, `cli.test.ts`, `contracts.test.ts`, `package-install.test.ts` |
 | KXM schemas, restricted YAML fixtures, cross-resource semantics and sync-safe rejection | `contracts.test.ts`, `restricted-yaml.test.ts` |
 | Harness detection, auth and dispatch for the built-in catalog, including Windows launch rules | `harness.test.ts` |
 | `kxm update`: `update.yaml` validation, GitHub or npm version checks, install-kind detection, `kxm-<v>.tgz` asset selection | `kxm-update.test.ts`, `kxm-update-cli.test.ts`, `kxm-install-kind.test.ts` |
+
+The backup round trip seeds its Runtime stores in a project-local
+`.kxm/runtime/` layout that the Runtime never writes. Production Runtime stores
+live under the user state root, which `kxm backup` does not discover, so no test
+backs up the real Runtime stores.
 
 ## Packaging, release and repository gates
 

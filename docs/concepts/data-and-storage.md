@@ -47,7 +47,7 @@ The hub writes its database under the workspace of the directory it starts in. S
 
 ## The hub store
 
-The hub store is `.kxm/state/kxm.db` (or `KXM_DATA_PATH`), schema version 5 (`HUB_STORE_SCHEMA_VERSION`). It has ten `STRICT` tables:
+The hub store is `.kxm/state/kxm.db` (or `KXM_DATA_PATH`). Like every KXM store, it records its schema version and refuses any other; see [Schema versions: refuse, do not migrate](#schema-versions-refuse-do-not-migrate). It has ten `STRICT` tables:
 
 | Table | What it holds | Sensitive content |
 |---|---|---|
@@ -63,15 +63,15 @@ The hub store is `.kxm/state/kxm.db` (or `KXM_DATA_PATH`), schema version 5 (`HU
 
 A coordinator message holds the rendered workflow prompt, which can include fields from the webhook payload. The raw webhook body is not stored; the run keeps only its SHA-256.
 
-Some readers open `kxm.db` directly and read-only: `kxm workflow list` and `get`, `kxm session brief`, the Claude Code SessionStart hook, and parts of `kxm dash`. They see hub runs only on the hub's machine.
+Some readers open `kxm.db` directly and read-only: `kxm workflow list` and `get`, `kxm session brief`, the Claude Code SessionStart hook, and parts of `kxm dash`. They see hub runs only on the hub's machine. The session brief and the hook also open this machine's Runtime stores read-only, and report what they found as `source`: `runtime` or `both` when a Runtime store exists, otherwise `legacy`.
 
 ## The Runtime stores
 
 The Runtime keeps a registry for the machine and one event store for each project, all under `runtime/` in the user state root.
 
-The **registry**, `runtime/registry.db`, is schema version 1 (`KXM_REGISTRY_SCHEMA_VERSION`). Its `supervisor` table holds one row: the Runtime ID, process ID, port, a hash of the supervisor token, heartbeat, and state. Its `projects` table records each project's ID, canonical root path, project key, and home Runtime.
+The **registry** is `runtime/registry.db`. Its `supervisor` table holds one row: the Runtime ID, process ID, port, a hash of the supervisor token, heartbeat, and state. Its `projects` table records each project's ID, canonical root path, project key, and home Runtime.
 
-Each **event store**, `runtime/projects/<key>/run-events.db`, is schema version 7 (`KXM_EVENT_STORE_SCHEMA_VERSION`). The key is the first 24 hex characters of the SHA-256 of the canonical project root. The store has 14 `STRICT` tables:
+Each **event store** is `runtime/projects/<key>/run-events.db`. The key is the first 24 hex characters of the SHA-256 of the canonical project root. The store has 14 `STRICT` tables:
 
 | Tables | What they hold |
 |---|---|
@@ -82,6 +82,8 @@ Each **event store**, `runtime/projects/<key>/run-events.db`, is schema version 
 | `drive_receipts` | The final receipt of each drive |
 | `coordinators`, `intake_messages`, `project_controls` | Intake bindings, idempotent intake, and the project pause switch |
 | `outbox` | One sync row per event, with its acknowledgement or refusal |
+
+Gate rows are checked again every time the Runtime folds a run: their content hashes must recompute and match the events that name them, or the run is refused with a `gate_evidence_*` code such as `gate_evidence_hash_mismatch` or `gate_evidence_orphan`. A gate command that never starts fails its run with the reason `gate_start_failed`.
 
 Next to each event store, `run-events.db.run-prompts.json` (`0600`) holds the **full prompt text** of every run. The `runs` table keeps only its hash, so the sidecar is the one place a prompt survives. Event payloads, command results, and run plans can also contain instructions, summaries, and evidence.
 

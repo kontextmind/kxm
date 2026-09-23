@@ -114,10 +114,10 @@ Use `node scripts/kxm.mjs` wherever the docs show `kxm`. It runs the CLI bundle 
 | Part | Command |
 |---|---|
 | `kxm` CLI | `npm install --global --omit=peer @kontextmind/kxm@latest` (check first with `kxm update --check`) |
-| Claude Code plugin | `claude plugin marketplace update kxm`, then `claude plugin update kxm@kxm` |
+| Claude Code plugin | `claude plugin marketplace update kxm`, then uninstall and reinstall the plugin; `claude plugin update` never refreshes it |
 | Pi package | `pi update --extensions` |
 
-Back up and stop the hub before you update the CLI. [Update KXM and the plugin](quickstart-claude-code.md#update-kxm-and-the-plugin) covers the plugin's scopes and version pin, and [Upgrade KXM](../operations/upgrade.md) covers the full procedure and rollback.
+Back up and stop the hub before you update the CLI. [Update the plugin](quickstart-claude-code.md#update-the-plugin) gives the reinstall commands and explains why an update is not enough, and [Upgrade KXM](../operations/upgrade.md) covers the full procedure and rollback.
 
 ## Uninstall
 

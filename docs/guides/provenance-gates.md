@@ -285,7 +285,7 @@ Use a distinct administrative token, distinct project tokens per trust domain, l
 
 ## Compatibility and retention
 
-Workflow context, policies, verified snapshots, and approvals are fields inside the hub's existing JSON records for messages and workflow runs; they need no destructive migration, and older workflow histories stay readable.
+Workflow context, policies, verified snapshots, and approvals are fields inside the hub's JSON records for messages and workflow runs, so they add no tables. Older workflow histories stay readable only while the hub store keeps the same schema version: a release that changes that version refuses the old store, and KXM never migrates it (see [Upgrade KXM](../operations/upgrade.md#understand-schema-changes)).
 
 Legacy string or keyed evidence stays valid for requirements without a peer policy. It deliberately cannot satisfy a declared peer policy. Before every upgrade, back up the hub with `kxm backup` ([Back up and restore KXM](../operations/backup-and-restore.md)), finish or inspect active runs, and validate workflow definitions before restarting the hub. A finished run, with its snapshots, is deleted 7 days after it ends, so export retrospectives you need to keep.
 

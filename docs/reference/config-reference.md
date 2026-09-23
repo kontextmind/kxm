@@ -143,7 +143,7 @@ makes a directory a KXM project. Parser: `loadKxmProject` in
 | Field | Type and allowed values | Required, default | What reads it |
 |---|---|---|---|
 | `schema` | `kxm.project.v1` | Required | Loader |
-| `id` | Opaque ID matching `^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$` | Required | Loader, Runtime. `kxm init` generates `prj_` plus 32 hex characters; `--project-id` must start with `prj_`. The Runtime binds one ID to one control root per state root, so a second checkout with the same ID is refused with `project_home_conflict`. |
+| `id` | Opaque ID matching `^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$` | Required | Loader, Runtime. `kxm init` generates `prj_` plus 32 hex characters; `--project-id` must start with `prj_`. See the note below |
 | `name` | String, 1 to 120 characters | Required | Display only |
 | `description` | String, at most 2,000 characters | Optional | Display only |
 | `defaultWorkflow` | Identifier | Optional, `default` | Loader only: the named workflow must exist (`default_workflow_unknown`). `kxm run` always takes an explicit workflow. |
@@ -165,6 +165,9 @@ makes a directory a KXM project. Parser: `loadKxmProject` in
 | `limits.maxConcurrentRuns` | Integer, 1 to 128 | Optional, `1` | Runtime admission. A changed bound is refused (`scheduler_policy_conflict`) while admitted or queued runs still use the previous one. |
 | `limits.maxRunDurationMs` | Integer, 0 to 31,536,000,000 | Optional | Runtime. Combined with the workflow's own value; the smaller one wins. |
 | `limits.maxAgentTimeMs` | Integer, 0 to 31,536,000,000 | Optional | Runtime refuses to drive any run while it is set (`limit_unsupported`); leave it out |
+
+The Runtime binds one project `id` to one control root per state root, so a
+second checkout with the same ID is refused with `project_home_conflict`.
 
 Example (validated with `kxm init --json`, including a nested member checkout
 at `repositories/api`):
@@ -502,7 +505,9 @@ ID used by `kxm run <workflow>`. Three layers check it:
 1. The loader (`schemas/workflow.schema.json` plus `validateWorkflow` in
    `plugins/kxm/src/project-config.ts`) on every project load.
 2. The compiler (`compileKxmWorkflow` in `plugins/kxm/src/engine-compile.ts`)
-   when `kxm run` creates a run. It pins the compiled plan on the run.
+   when the first `kxm runs drive` starts the run. It pins the compiled plan
+   on the run then, not when `kxm run` creates it, and it refuses the run
+   (`run_revision_drift`) if the configuration changed in between.
 3. Runtime acceptance (`plugins/kxm/src/engine.ts`) before each step executes.
    A step the current Runtime cannot execute hands the run off instead of
    running it.
@@ -513,16 +518,20 @@ ID used by `kxm run <workflow>`. Three layers check it:
 |---|---|---|---|
 | `schema` | `kxm.workflow.v1` | Required | |
 | `description` | String, at most 4,000 characters | Optional | Prose; neutral in `kxm trust` |
-| `coordinator` | Agent ID | Optional, `coordinator` | Must exist (`coordinator_unknown`); pinned on the compiled plan. Approval and wait steps without `assignments.allowedAgents` are dispatched to the agent whose ID is literally `coordinator`, not to this field's value. |
+| `coordinator` | Agent ID | Optional, `coordinator` | Must exist (`coordinator_unknown`); pinned on the compiled plan. See the note on approval and wait steps below. |
 | `limits.maxTransitions` | Integer, 1 to 1,000 | Required once any back-edge exists (`workflow_cycle_unbounded`) | Run-wide transition budget; defaults to the number of steps. Exceeding it fails the run with `budget_transitions`. |
-| `limits.maxRunDurationMs` | Integer, 0 to 31,536,000,000 | Optional | The Runtime cancels the run with `budget_run_duration`; the smaller of this and the project limit applies |
-| `limits.maxAgentTimeMs` | Integer, 0 to 31,536,000,000 | Optional | The Runtime refuses to drive a run that declares it (`limit_unsupported`; the CLI reports `run_handoff_required`). The built-in template sets it, so the template's `default` workflow cannot be driven as generated. |
+| `limits.maxRunDurationMs` | Integer, 0 to 31,536,000,000 | Optional | The Runtime cancels the run with `budget_run_duration`; the smaller of this and the project limit applies. Measured on the wall clock |
+| `limits.maxAgentTimeMs` | Integer, 0 to 31,536,000,000 | Optional | The Runtime refuses to drive a run that declares it (`limit_unsupported`); see below |
 | `limits.maxModelCost` | Number greater than 0 | Optional | Fails the run with `budget_model_cost` once attempts recorded with cost basis `metered` reach it. See [Cost basis](#cost-basis-and-staleness). |
 | `limits.currency` | Three uppercase letters | Optional | Pinned on the plan; not otherwise read |
-| `planHash` | `{stageId, evidenceKey}` | Optional | When `stageId` passes, the hash of that evidence is captured. The step must declare that evidence key (`oracle_evidence_unknown`, `oracle_stage_unknown`). |
-| `reproOracle` | `{stageId, evidenceKey}` | Optional | Same shape as `planHash`, for an immutable reproduction |
-| `requirePlanHash` | Unique step IDs, at most 128 | Optional | Requires `planHash` (`plan_hash_missing`); every step that writes a repository after the `planHash` stage must be listed (`mutation_missing_plan_hash`) |
+| `planHash` | `{stageId, evidenceKey}` | Optional | Validated and pinned, not enforced yet (see below). The step must declare that evidence key (`oracle_evidence_unknown`, `oracle_stage_unknown`). |
+| `reproOracle` | `{stageId, evidenceKey}` | Optional | Same shape as `planHash`, for an immutable reproduction; validated and pinned, not enforced yet |
+| `requirePlanHash` | Unique step IDs, at most 128 | Optional | Requires `planHash` (`plan_hash_missing`); every repository-writing step after the `planHash` stage must be listed (`mutation_missing_plan_hash`) |
 | `steps` | 1 to 128 steps | Required | The first step is the entry point |
+
+Approval and wait steps without `assignments.allowedAgents` are dispatched to the agent whose ID is literally `coordinator`, not to the `coordinator` field's value.
+
+Duration budgets use the wall clock. `maxRunDurationMs` counts from the time the run first entered `running` (its first drive) to the current system time, so a change to the system clock moves it.
 
 ### Step fields
 
@@ -538,7 +547,7 @@ ID used by `kxm run <workflow>`. Three layers check it:
 | `signal` | Identifier | Required for `wait` | Compiled and diffed; the Runtime does not match signals to wait steps yet |
 | `model` | Model selector | Optional | Intersected with each allowed agent's own model ceiling; an empty intersection is `model_selector_incompatible`. Live route resolution ignores it. The Runtime refuses it on gate steps. |
 | `maxAttempts` | Integer, 1 to 20 | Optional, `1` | Entering the step again after this many attempts fails the run (`budget_step_attempts`) |
-| `timeoutMs` | Integer, 0 to 31,536,000,000 | Optional | Gate steps: refused on `artifacts-exist` gates and when shorter than the command gate's own `timeoutMs`. Other kinds: pinned but not passed to the producer yet (the live one-shot producer uses its own 120-second process timeout). `0` is refused. |
+| `timeoutMs` | Integer, 0 to 31,536,000,000 | Optional | Not `0`. Gate steps: refused for `artifacts-exist` gates or below the gate's `timeoutMs`. Other kinds: unused; the producer times out at 120 s |
 | `repositories` | Map of repository ID to `none`, `read`, or `write` | Optional | IDs must be declared (`repository_unknown`); may not exceed the agent's ceiling (`repository_scope_expansion`) |
 | `tools` | `{preset, allow, deny}` | Optional | Must keep the agent's preset and denials and allow only tools the agent allows (`tool_scope_expansion`). The Runtime refuses steps that declare `tools`. |
 | `secrets` | `[{ref, as, required}]` | Optional | Only refs the agent grants (`secret_scope_expansion`). The Runtime refuses steps that declare `secrets`. |
@@ -562,12 +571,23 @@ derives its outcome list from the keys of `on`.
 | `assignments.target` | Integer, 1 to 64 | `minimum` | |
 | `assignments.maximum` | Integer, 1 to 64 | `target` | For `moa`, at most the number of allowed agents (`assignment_pool_too_small`) |
 | `assignments.maxParallel` | Integer, 1 to 64 | `maximum` | At most `maximum` (`assignment_parallelism_invalid`) |
-| `assignments.maxAttemptsPerAssignment` | Integer, 1 to 20 | `1` | The Runtime executes at most 2 |
+| `assignments.maxAttemptsPerAssignment` | Integer, 1 to 20 | `1` | The Runtime accepts at most 2, but runs one attempt per assignment; a retry is a new assignment |
 | `assignments.maxWriteRepositories` | Integer, 1 to 64 | none | At most the number of `write` repositories on the step (`write_repository_bound_invalid`); the Runtime executes at most 1 |
-| `assignments.distinctBy` | Any of `provider`, `model`, `profile` | `[]` | The resolved candidates must offer `target` distinct values (`model_diversity_impossible`); the Runtime executes only `provider` |
-| `join.strategy` | `all`, `all-settled`, `quorum`, or `first-success` | `all` | The Runtime executes `all` and `all-settled` |
+| `assignments.distinctBy` | Any of `provider`, `model`, `profile` | `[]` | Checked at load only: the candidates must offer `target` distinct values (`model_diversity_impossible`). The Runtime refuses values other than `provider` |
+| `join.strategy` | `all`, `all-settled`, `quorum`, or `first-success` | `all` | The Runtime executes `all` and `all-settled` (see [How a panel joins](#how-a-panel-joins)) |
 | `join.minimumPassed` | Integer, 1 to 64 | none | Required for `quorum`; at most `maximum` (`join_impossible`); the Runtime accepts it only with `all-settled` |
 | `join.cancelRemaining` | Boolean | none | The Runtime refuses it |
+
+At run time, members bind to agents in `allowedAgents` order: the first member runs the first listed agent, the second the second, and so on. The Runtime does not re-check providers, so `distinctBy: [provider]` holds at run time only if the first `target` agents in `allowedAgents` use different providers. List them that way.
+
+#### How a panel joins
+
+A panel joins once at least `assignments.minimum` members exist and every member's attempt has settled:
+
+- If any member's result is unknown or rejected by its producer, the run fails with `outcome_unknown`.
+- `all`: when every member produced the same outcome, the step takes it; otherwise the run fails with `join_conflict`.
+- `all-settled`: when at least `join.minimumPassed` members (default `assignments.minimum`) passed, the outcome is `passed`. Otherwise, a non-passed outcome shared by that many members wins, and failing that the outcome is `quorum-not-met`.
+- A joined outcome with no transition in `on` fails the run with `outcome_unknown`, so declare `quorum-not-met` on an `all-settled` step.
 
 ### Evidence requirements
 
@@ -583,6 +603,8 @@ derives its outcome list from the keys of `on`.
 | `producerPolicy.degradation.minimumProducers` | Integer, 1 to 15 | Optional | Must be lower than `minimumProducers` (`producer_degradation_invalid`) |
 
 A `producerPolicy` is allowed only on `kind: assignment-result`.
+
+The Runtime enforces less of this than the loader checks. `producerPolicy` (producer counts, eligible agents, degradation) is checked at load only. On agent and `moa` steps, each requirement only becomes an acceptance criterion in the prompt; nothing checks that the evidence arrived. Only gate steps record evidence at run time: one gate evidence reference for each settled gate attempt.
 
 ### Transitions and outcomes
 
@@ -647,9 +669,12 @@ falls back to it.
 
 Validation accepts more than the Runtime executes. When a drive reaches one of
 these, the run is handed off (`step_unsupported`, `gate_unsupported`, or
-`limit_unsupported`) instead of executing:
+`limit_unsupported`) instead of executing, and `kxm runs drive` reports
+`run_handoff_required`:
 
-- `limits.maxAgentTimeMs` in the workflow or project.
+- `limits.maxAgentTimeMs` in the workflow or project. The built-in template
+  sets it, so the `default` workflow that `kxm init` writes cannot be driven
+  as generated.
 - `tools`, `secrets`, or `safeSpeculation: true` on any step.
 - `join.strategy` other than `all` or `all-settled`, `join.minimumPassed` with
   `all`, and `join.cancelRemaining`.
@@ -665,8 +690,34 @@ these, the run is handed off (`step_unsupported`, `gate_unsupported`, or
   `write` access to `control` or with access to any other repository; a
   `reserved` gate.
 
+Some fields are validated and pinned on the plan but not enforced, and a
+drive does not hand off on them:
+
+- `planHash`, `reproOracle`, and `requirePlanHash`. The Runtime captures no
+  hash and does not check one before a listed step runs. (Hub
+  [webhook workflows](workflow-definitions.md#plan-hash-and-reproduction-oracle)
+  do enforce their own `planHash` and `reproOracle`.)
+- `distinctBy: [provider]` and `producerPolicy`, which are checked at load only
+  (see [Assignments and join](#assignments-and-join) and
+  [Evidence requirements](#evidence-requirements)).
+
 The Runtime also caps each run at 100 attempts whose cost basis is `unmetered`
 or `unknown` (`budget_unmetered_attempts`).
+
+#### Handoff reasons
+
+A handoff stops the drive without failing the run; `kxm runs drive` prints
+the reason, field, and detail. The Runtime uses these reasons:
+
+| Reason | Meaning |
+|---|---|
+| `step_unsupported`, `gate_unsupported`, `limit_unsupported` | The step, gate, or limit is one the Runtime does not execute yet (the list above) |
+| `gate_outcome_undeclared` | The drive-time gate pre-flight check failed (see [Transitions and outcomes](#transitions-and-outcomes)) |
+| `attempt_unsettled` | A gate attempt could not settle: its effect is uncertain, or its outcome has no transition |
+| `gate_recovery_pending` | Unfinished gate attempts elsewhere in the project hold later gate steps |
+| `attempt_unreconciled` | An issued attempt is not held by this process, for example after a supervisor restart |
+| `cancel_pending_foreign` | Cancellation is pending in another process |
+| `gate_uncertain_blocked` | The run is `blocked_uncertain` and waits for an external signal or an operator |
 
 Example (validated with `kxm init --json` and compiled with
 `compileKxmWorkflow`). Besides the `implementer` and `critic-arch` agents and
@@ -816,9 +867,10 @@ This example validates, but a live drive would be handed off at `implement`
 it as a field reference; the
 [worked example](#worked-example-a-minimal-two-step-project) is one that runs.
 
-Commands: `kxm init` validates; `kxm run <id> [prompt]` compiles and creates a
-run (`--dry-run` only loads the bundle); `kxm runs drive <runId> --simulated`
-drives without models; `kxm runs status|list|cancel`; `kxm trust` diffs.
+Commands: `kxm init` validates; `kxm run <id> [prompt]` creates a run
+(`--dry-run` only loads the bundle); the first `kxm runs drive <runId>`
+compiles and pins the plan, then drives it live, or without models with
+`--simulated`; `kxm runs status|list|cancel`; `kxm trust` diffs.
 `kxm workflow add <id> --template <name>` writes a built-in template
 (`implement-and-verify`, `dual-critic-review`, or `spec-and-plan`), and
 `kxm workflow add <id>` a one-step scaffold, under `.kxm/workflows/` (or
@@ -851,6 +903,15 @@ A command gate runs `argv` with the Runtime supervisor's environment. Its exit
 code decides the outcome (see
 [Transitions and outcomes](#transitions-and-outcomes)); the Runtime records
 hashes and byte counts of stdout and stderr, not their text.
+
+Before it starts the process, the Runtime checks the joined `argv` against the
+destructive-command seatbelt (`rm` with recursive and force flags,
+`git reset --hard`, `git clean -f`, `git checkout --` with paths, and
+`git restore .` or `*`); a match starts nothing and fails the run with
+`gate_start_failed`. The command runs in its own
+process group. On timeout or cancellation the Runtime sends `SIGTERM` to the
+group, then `SIGKILL` after 2 seconds. A process that escapes the group can
+outlive the gate, so the seatbelt and the group are cleanup, not a sandbox.
 
 ```yaml
 # .kxm/gates.yaml — the only place a gate id becomes executable.
@@ -887,9 +948,14 @@ read different fields:
 
 | Reader | File | Fields it reads | Effect |
 |---|---|---|---|
-| Project loader (`validateBundle`) | `.kxm/roles/writer.yaml` only | `roster[].model`, `roster[].enabled` | If the agent `implementer` (or else `writer`) declares a model and the roster has at least one enabled entry, one enabled entry must equal `provider/model`, equal the bare model, or end with `/<model>`; otherwise `role_roster_conflicts_with_agent`. Parsed as restricted YAML. |
+| Project loader (`validateBundle`) | `.kxm/roles/writer.yaml` only | `roster[].model`, `roster[].enabled` | Cross-checks the writer roster against the `implementer` agent's model (see below). Parsed as restricted YAML. |
 | Runtime route check (`listRoleBindings` in `plugins/kxm/src/routes.ts`) | `.kxm/roles/<role>.yaml`, role = agent ID, `writer` for `implementer` | `roster[].model` | The agent's `provider/model` must appear exactly. `enabled` is ignored, so a disabled entry still admits. The role name comes from the filename. |
 | `kxm role` commands (`plugins/kxm/src/role.ts`) | `.kxm/roles/*.yaml` and `~/.config/kxm/roles/*.yaml` | Everything below | Listing and editing only. A file without `schema: kxm.role.v1` is silently skipped. A local file overrides a global one with the same ID. |
+
+The loader check applies when the agent `implementer` (or else `writer`)
+declares a model and the roster has at least one enabled entry. One enabled
+entry must then equal `provider/model`, equal the bare model, or end with
+`/<model>`; otherwise the load fails with `role_roster_conflicts_with_agent`.
 
 Write roster models as the full `provider/model` string. `kxm role add --model
 grok-4.6` writes a bare model ID, which satisfies the loader check but not the
@@ -979,7 +1045,7 @@ unknown keys are ignored).
 | `schema` | `kxm.routes.v2` | Required | Anything else fails with `invalid .kxm/routes.yaml` |
 | `admitted` | Array of route strings | Required | Runtime route check; `kxm routes list`, `kxm routes count`; `kxm models` |
 | `disabled` | Array of route strings | Optional, `[]` | Runtime: a disabled route is refused even if admitted |
-| `roles` | Map of name to route strings | Optional, `{}` | Not read by any code path yet; shown by `kxm routes list` and preserved on rewrite. Role rosters live in `.kxm/roles/`. |
+| `roles` | Map of name to route strings | Optional, `{}` | Not read by any code path yet; shown only by `kxm routes list --json`, and preserved on rewrite. Role rosters live in `.kxm/roles/` |
 | `updatedAt` | ISO timestamp string | Optional | Rewritten by every CLI change |
 
 A route string is exactly the agent's `model.provider`, a slash, and
@@ -1214,11 +1280,14 @@ models:
         cacheReadPerMillion: 0.25
 ```
 
-Commands: the Pi and one-shot producers read it on every attempt;
-`kxm explain` reports `catalogStatus` (`verified`, `stale`, `corrupt`, or
-`missing`); `kxm routing report --list-prices [--prices <file>]` reads it
-(default `<workspace>/prices.yaml`, normally `.kxm/prices.yaml`) and ignores a
-bad file.
+Commands: the one-shot producer, which the Runtime uses for every harness,
+reads it on every attempt and ignores a catalog not dated today (the package's
+long-lived Pi producer also reads it, but nothing in the Runtime calls that
+producer today); `kxm explain` reports `catalogStatus` (`verified`, `stale`,
+`corrupt`, or `missing`); `kxm routing report --list-prices [--prices <file>]`
+reads it (default `<workspace>/prices.yaml`, normally `.kxm/prices.yaml`) and
+ignores a bad file. The report skips the freshness check, so it prices with a
+catalog of any date, including one the producers treat as stale.
 
 ## `.kxm/models/inventory.yaml` (`kxm.model-inventory.v1`)
 
@@ -1289,7 +1358,7 @@ commands themselves are not counted.
 | `sync.jira.host`, `.projectKey`, `.issueType`, `.autoTransition` | String or boolean | none | Not read by any code path yet |
 | `improvement.promotionPolicy` | `manual_pr`, `critic_quorum`, or `auto_threshold`; any other value falls back to `manual_pr` | `manual_pr` | `kxm improve` (`cmdImprove` in `plugins/kxm/src/cli/system.ts`, then `evaluatePromotionPolicy` in `improve.ts`): selects the review-readiness rule reported per candidate. No value authorizes or activates anything |
 | `improvement.telemetryHalfLifeDays` | Number greater than 0 and at most 3650; otherwise `14` | `14` | `kxm improve`: the half-life of each record's weight in `weightedRecurrence`, which orders report rows and never decides candidacy |
-| `improvement.autoThreshold.minRuns`, `.minPassRate`, `.minCostSavings` | `minRuns` an integer from 1 to 1,000,000, `minPassRate` from 0 to 1, `minCostSavings` at least 0; otherwise the default | `10`, `0.95`, `0.5` | `kxm improve`, only under `auto_threshold`: distinct runs, accepted share, and mean recorded cost per attempt a candidate needs to report ready for review. A group with no recorded cost is never ready |
+| `improvement.autoThreshold.minRuns`, `.minPassRate`, `.minCostSavings` | `minRuns` an integer from 1 to 1,000,000, `minPassRate` from 0 to 1, `minCostSavings` at least 0; otherwise the default | `10`, `0.95`, `0.5` | `kxm improve`, only under `auto_threshold` (see below) |
 | `routing.shadowExecution.enabled` | Boolean | `false` | Not read by any code path yet |
 | `routing.shadowExecution.sampleRate` | Number | `0.05` | Not read by any code path yet |
 | `routing.shadowExecution.candidateModels` | Array of strings | `[]` | Not read by any code path yet |
@@ -1298,6 +1367,11 @@ commands themselves are not counted.
 | `telemetry.federated` | Boolean | `true` | Not read by any code path yet (`exportFederatedTelemetry` has no production caller) |
 | `telemetry.anonymize` | Boolean | `true` | Not read by any code path yet |
 | `telemetry.userTelemetryDir` | Path | none | Not read by any code path yet |
+
+Under `auto_threshold`, `minRuns`, `minPassRate` and `minCostSavings` are the
+distinct runs, the accepted share, and the mean recorded cost per attempt a
+candidate needs before `kxm improve` reports it ready for review. A group with
+no recorded cost is never ready.
 
 ```yaml
 # .kxm/config.yaml (project scope) or ~/.config/kxm/config.yaml (user scope).
@@ -1587,11 +1661,16 @@ declares `userConfig` fields that Claude Code asks each user for. The plugin's
 | `userConfig` field | Environment variable | Required, default | Notes |
 |---|---|---|---|
 | `server_url` | `KXM_SERVER_URL` | Required, `http://127.0.0.1:7331` | The MCP server also falls back to that URL when empty |
-| `auth_token` | `KXM_AUTH_TOKEN` | Optional; marked sensitive | Use the project token, never the admin token. When empty, the MCP server uses only this project's saved project token from the hub credential file (`hub-env.json`) and never falls back to the admin token; with neither, tool calls fail with a message naming the fix |
+| `auth_token` | `KXM_AUTH_TOKEN` | Optional; marked sensitive | Use the project token, never the admin token. See below for the fallback |
 | `agent_name` | `KXM_AGENT_NAME` | Required, `claude` | When empty, `claude-<pid>`. If another live session already holds the name, the server registers once more as `<name>-<pid>` |
 | `agent_purpose` | `KXM_AGENT_PURPOSE` | Required, `Claude Code implementation and review agent` | |
 | `project` | `KXM_PROJECT` | Optional | When empty, the `name` in `package.json` at the project directory, else the directory name |
 | (not a user field) | `KXM_PROJECT_DIR` | Set from `${CLAUDE_PROJECT_DIR}` | Used to derive the default project |
+
+When `auth_token` is empty, the MCP server uses only this project's saved
+project token from the hub credential file (`hub-env.json`) and never falls
+back to the admin token. With neither, tool calls fail with a message naming
+the fix.
 
 The manifest also registers one `SessionStart` hook,
 `node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start`, with a 5-second
@@ -1636,7 +1715,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | `logs/` | Ignored runtime logs | The hub and workers |
 | `state/` | Ignored restart state: the hub database `kxm.db`, Pi sessions, worker manifests | The hub and workers |
 | `run/` | Ignored sockets (`run/ssh-sockets/`) | `kxm ssh` |
-| `backups/` | Ignored; each `backup-<time>/` holds copies of the hub database and other stores | `kxm backup` (without `--out`) |
+| `backups/` | Ignored; each `backup-<time>/` holds a copy of the hub database and `manifest.json` | `kxm backup` (without `--out`) |
 | `config/` | Legacy: its JSON files make the project unloadable | Nothing current |
 | `.kxm-init-transaction/` (sibling of `.kxm/` at the Git root) | Ignored; interrupted `kxm init` state | `kxm init` |
 

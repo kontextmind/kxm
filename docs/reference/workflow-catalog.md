@@ -128,7 +128,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 *Domain:* Decomposes requirements into an executable, dependency-ordered DAG of modules, tasks, and verification gates.
 
-1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Sovereign systems planner; strict boundary isolation and non-overlapping DAG synthesis.
+1. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Systems planning; strict boundary isolation and non-overlapping DAG synthesis.
 2. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Exceptional price-to-reasoning ratio; detects race conditions and circular dependencies.
 3. **`openai/gpt-6-astra-pro`** (1.05M ctx | $10.00 / $50.00) — Enterprise task decomposition and critical-path scheduling across massive PRDs.
 4. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Pragmatic engineering focus; rapid modular task decomposition.
@@ -475,7 +475,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Pragmatic terminal systems code writer; adheres to strict TUI layout constraints.
 2. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Complex ANSI rendering engines and terminal buffer diffing.
-3. **`poolside/laguna-s-2.1`** (1.05M ctx | $0.09 / $0.18) — **Terminal-Bench 2.1 Specialist (70.2% score)**; 1M context at $0.09/M.
+3. **`poolside/laguna-s-2.1`** (1.05M ctx | $0.09 / $0.18) — Low-cost candidate; 1M context at $0.09/M.
 4. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Clean Go (Bubbletea) and Rust (Ratatui) view/update implementations.
 5. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — High-ergonomic terminal UX and keyboard navigation design.
 

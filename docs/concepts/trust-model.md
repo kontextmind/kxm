@@ -108,7 +108,7 @@ See [Context and memory](../guides/context-and-memory.md).
 
 Every call to one of the 19 KXM agent tools checks a tool policy first, whether it comes from Claude Code, Pi, or a matching CLI command such as `kxm peer send`. The check reads `KXM_ATTEMPT_TOKEN`, then `KXM_SESSION_TOKEN`, then the session token on disk. `kxm session brief` and `kxm auth token --issue` write that disk token with an operator preset and a 24-hour lifetime.
 
-These tokens are unsigned JSON, so any local process can write one. Tool policy keeps a well-behaved agent inside its role; it does not stop a hostile one. An expired disk token denies every KXM agent tool until you run `kxm auth token --issue`.
+These tokens are unsigned JSON, so any local process can write one. Tool policy keeps a well-behaved agent inside its role; it does not stop a hostile one. An expired or malformed disk token denies every KXM agent tool until you remove it with `kxm session token --clear`. `kxm session token --status` reports no active token even while that expired file still blocks the tools.
 
 ## Redaction and what stays local
 

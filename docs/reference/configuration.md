@@ -34,7 +34,8 @@ Names that start with `KXM_` are not all operator settings. This map covers ever
 | Nous model providers | `KXM_NOUS_PROVIDERS`, `KXM_NOUS_PROXY_URL`, `KXM_NOUS_DISCOVERY_TIMEOUT_MS`, `KXM_NOUS_CATALOG_FILE`, `NOUS_API_KEY` | [Nous providers](../guides/nous-providers.md) |
 | Browser automation | `STEEL_API_URL`, `STEEL_API_KEY`, `STEEL_UI_URL`, `USE_PASS_CLI` | [Browser automation](../guides/browser-automation.md) |
 | Set by a harness, not by you | `KXM_PROJECT_DIR` (Claude Code plugin), `KXM_ATTEMPT_TOKEN` (Runtime attempts), `KXM_WORKER_IDENTITY_KEY`, `KXM_WORKER_GENERATION`, `KXM_WORKER_CHILD_INCARCATION`, `KXM_WORKER_SESSION_SCOPE` (worker supervisor to its Pi child) | [Internal variables](#internal-variables) |
-| Maintainer and test only | `KXM_SMOKE*`, `KXM_ASSET*`, `KXM_RELEASE_TAG`, `KXM_PUBLISH_WAIT_MS`, `KXM_DETERMINISTIC_TEST_CLOCK`, `KXM_WORKER_STOP_AFTER_MS`, `KXM_STUDIO_ONCE`, `KXM_CRITIC_DIR`, `KXM_REVIEW_TARGET` | [Development](../contributing/development.md) |
+| Maintainer and test only | `KXM_SMOKE*`, `KXM_ASSET*`, `KXM_RELEASE_TAG`, `KXM_PUBLISH_WAIT_MS`, `KXM_DETERMINISTIC_TEST_CLOCK`, `KXM_WORKER_STOP_AFTER_MS`, `KXM_STUDIO_ONCE` | [Development](../contributing/development.md) |
+| Maintainer critic script | `KXM_CRITIC_DIR`, `KXM_REVIEW_TARGET` | [Maintainer critic script](#maintainer-critic-script) |
 | Not environment variables | `KXM_SLASH_SUBCOMMANDS`, `KXM_UPDATE_CACHE`, `KXM_UPDATE_SCHEMA`, and other `KXM_*_SCHEMA` constants | Source constants; do not set them |
 
 ## Hub settings
@@ -113,7 +114,7 @@ Every agent client (the Pi extension, the Claude Code MCP server, and the `kxm p
 
 | Harness | Default name | Default purpose | Token when `KXM_AUTH_TOKEN` is unset |
 |---|---|---|---|
-| Pi extension | The Pi session name, else `pi-<pid>` | `General-purpose coding agent` | The token from hub auto-start, else the saved admin token |
+| Pi extension | The Pi session name, else `pi-<pid>` | `General-purpose coding agent` | The admin token of a hub it auto-started, else the saved admin token |
 | Claude Code MCP server | `claude` from the plugin settings, else `claude-<pid>` | `Claude Code implementation and review agent` | This project's saved project token only; never the admin token |
 | `kxm peer` commands | `cli-<pid>` | `CLI agent client` | The saved project token for the project, else the saved admin token |
 
@@ -208,6 +209,17 @@ KXM sets these for its own child processes. Do not set them yourself.
 | `KXM_WORKER_IDENTITY_KEY`, `KXM_WORKER_GENERATION`, `KXM_WORKER_CHILD_INCARCATION` | Worker supervisor | Binds the Pi child to its supervisor generation and incarnation |
 | `KXM_WORKER_SESSION_SCOPE` | Worker supervisor | `default`, `legacy` or `workflow:<run-id>`: the session scope the child may serve |
 | `KXM_USER_STATE_DIR`, `KXM_STATE_ROOT` | None (legacy aliases) | Read only by the local snapshot reader when `KXM_STATE_HOME` is unset; use `KXM_STATE_HOME` |
+
+## Maintainer critic script
+
+`scripts/native-critic.mjs`, a maintainer tool in the KXM repository, runs a read-only Claude or Codex review, saves the result as a JSON artifact, and posts a notice through the hub. It reads two variables of its own. Neither is part of the shipped CLI.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `KXM_CRITIC_DIR` | `.kxm/assets/critic-reviews` in the current directory | Where the review artifact is written, with `0600` permissions |
+| `KXM_REVIEW_TARGET` | The critic's own agent ID | Online agent, by name or ID, that receives the `review completed` notice |
+
+The notice is transport only: it is not approval or hub peer-reply evidence.
 
 ## Protocol limits
 

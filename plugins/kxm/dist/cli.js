@@ -48894,13 +48894,13 @@ function createProgram(ctx, result) {
       maybeOfferGuideSetup
     });
   });
-  addGlobalOptions(program2.command("backup").description("Create a verified SQLite backup of all stores with a hashed manifest")).option("--out <dir>", "Directory to write backup and manifest").action(async function backupAction(options) {
+  addGlobalOptions(program2.command("backup").description("Create a verified SQLite backup of the project hub store with a hashed manifest (Runtime stores under the user state root are not included)")).option("--out <dir>", "Directory to write backup and manifest").action(async function backupAction(options) {
     result.code = await cmdBackup(runtimeFrom(ctx, this), options);
   });
   addGlobalOptions(program2.command("restore <manifest>").description("Restore SQLite stores from a verified backup manifest")).action(async function restoreAction(manifest) {
     result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
   });
-  addGlobalOptions(program2.command("run").description("Create a KXM run (offline-first; kxm runs drive <runId> --simulated executes it model-free)").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (hashed, never stored raw)").action(async function runAction(workflow2, promptParts) {
+  addGlobalOptions(program2.command("run").description("Create a KXM run (offline-first; kxm runs drive <runId> --simulated executes it model-free)").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file)").action(async function runAction(workflow2, promptParts) {
     result.code = await cmdKxmRun(runtimeFrom(ctx, this), workflow2, promptParts);
   }));
   const runCmd = addGlobalOptions(program2.command("runs").description("Inspect KXM runs"));
@@ -48908,7 +48908,7 @@ function createProgram(ctx, result) {
   addGlobalOptions(runCmd.command("status").description("Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned)")).argument("<runId>", "Run id").action(async function runStatusAction(runId) {
     result.code = await cmdKxmRunStatus(runtimeFrom(ctx, this), runId);
   });
-  addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation")).argument("<runId>", "Run id").option("--simulated", "Use the model-free simulation producer").option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement").option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)").action(async function runDriveAction(runId, options) {
+  addGlobalOptions(runCmd.command("drive").description("Drive a run with live harness calls, or with the model-free simulation when --simulated is passed")).argument("<runId>", "Run id").option("--simulated", "Use the model-free simulation producer").option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement").option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)").action(async function runDriveAction(runId, options) {
     result.code = await cmdKxmRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true, {
       wait: options.wait === true,
       ...options.timeoutMs !== void 0 ? { timeoutMs: options.timeoutMs } : {}

@@ -80,14 +80,16 @@ sequenceDiagram
 | `POST` | `/v1/messages/<id>/ack` | Agent | Recipient marks a queued message `delivered` |
 | `POST` | `/v1/messages/<id>/reply` | Agent | Recipient replies with `content`; the sender gets a `reply` event |
 | `DELETE` | `/v1/messages/<id>` | Agent | Sender cancels a queued or delivered message |
-| `GET` | `/v1/events?agentId=<id>` | Agent | Server-sent events for that agent: `ready`, then `message`, `reply`, `cancelled`, `expired` and `presence`. Replays pending messages on connect |
+| `GET` | `/v1/events?agentId=<id>` | Agent | Server-sent events for that agent: `ready`, then `message`, `reply`, `cancelled`, `expired` and `presence`. Pushes unacknowledged messages again on connect |
 
 `GET /v1/events` with `presenceOnly=true` sends only `presence` events and is reserved for dashboard observers (`presence_stream_forbidden` otherwise).
 
-Key errors: `target_not_found` (404), `self_target`, `hop_limit_reached`, `idempotency_conflict` (409), `message_not_found`, `message_forbidden` (403, not your message), `duplicate_reply` and `invalid_message_state` (409). A request with `workflowContext` adds the `workflow_context_*` and `workflow_evidence_*` codes listed under [`kxm_send`](tools.md#kxm_send).
+Key errors: `target_not_found` (404), `self_target` and `hop_limit_reached` (400), `idempotency_conflict` (409), `message_not_found` (404), `message_forbidden` (403, not your message), `duplicate_reply` and `invalid_message_state` (409). A request with `workflowContext` adds the `workflow_context_*` and `workflow_evidence_*` codes listed under [`kxm_send`](tools.md#kxm_send).
 
 > [!IMPORTANT]
-> Delivery is at least once. A message stays `queued` or `delivered` until it is replied to, cancelled or expires, and it is replayed after a hub or agent restart. Make side effects idempotent.
+> Delivery is at least once. A message stays `queued` or `delivered` until it is replied to, cancelled or expires. Whenever the recipient connects, including after a hub or agent restart, the hub pushes its `queued` messages again with the same message ID until the recipient acknowledges them. A `delivered` (acknowledged) message is not pushed again. Make side effects idempotent.
+
+The hub tracks acknowledgement with a per-recipient cursor that moves to the highest acknowledged message, so a queued message older than one the recipient already acknowledged is not pushed again either.
 
 ## Workflows, journal and improvements
 
@@ -110,8 +112,10 @@ Key errors: `workflow_not_found` (404), `workflow_stage_out_of_order`, `workflow
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/v1/webhooks/<definitionId>` | Signed with the definition's start secret | Start a run and prompt the coordinator. 202 new; 200 `duplicate: true` for a known delivery ID; 204 when the event or filter does not match |
+| `POST` | `/v1/webhooks/<definitionId>` | Signed with the definition's start secret | Start a run and prompt the coordinator (status codes below) |
 | `POST` | `/v1/webhooks/<definitionId>/runs/<runId>/signals/<signalKey>` | Signed with the signal secret, else the start secret | Report an external result for a waiting stage: `status` (`passed`, `warning`, `failed`), `summary`, `evidence`. 202 when the coordinator is resumed, 200 otherwise |
+
+A start answers 202 for a new run, 200 with `duplicate: true` for a known delivery ID, and 204 when the event or filter does not match.
 
 The delivery ID comes from `x-atlassian-webhook-identifier`, `x-github-delivery` or `x-kxm-delivery-id`, in that order, and is required. The event comes from `x-github-event`, else the payload's `webhookEvent` or `event` field.
 
@@ -183,11 +187,11 @@ Every route except `/healthz` requires `Authorization: Bearer` with the supervis
 | `GET` | `/v1/drives/<driveId>` | One drive receipt, re-verified against the run's events |
 | `GET` | `/v1/projects/<projectId>/runs` | Up to 50 runs of the bound project, each folded from its events |
 
-A bad token is `runtime_auth_failed`; a missing parameter is `runtime_request_invalid`. The CLI exposes simulated drives only (`kxm runs drive --simulated`).
+A bad token is `runtime_auth_failed`; a missing parameter is `runtime_request_invalid`. The drive route accepts both modes. `kxm runs drive` drives live, with real harness calls, unless you pass `--simulated`.
 
 ## Web Studio server
 
-`kxm studio serve` runs a separate local server, on `127.0.0.1:4242` by default, with `/`, `/health`, `GET /api/layout` and `POST /api/mutate`. The mutate route checks the session token when one resolves and accepts an allowlisted command name, but `kxm studio serve` does not execute it. See [`kxm studio serve`](cli-reference.md#kxm-studio-serve).
+`kxm studio serve` runs a separate local server, on `127.0.0.1:4242` by default, with `/`, `/health`, `GET /api/layout` and `POST /api/mutate`. It answers every route with `Access-Control-Allow-Origin: *`, so any web page in a local browser can read the layout. The mutate route requires a bearer session token only when one resolves; with none it accepts any caller. It accepts an allowlisted command name but executes nothing. See [`kxm studio serve`](cli-reference.md#kxm-studio-serve).
 
 ## Related
 

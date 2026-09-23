@@ -13,7 +13,7 @@ with a small role-aware packet rather than an unbounded history dump.
 
 | Command | Purpose | Options |
 |---|---|---|
-| `kxm context get <project>` | Assemble a role-aware packet | Required `--role`, `--task`; optional `--run`, `--stage`, `--budget`, `--kinds` |
+| `kxm context get <project>` | Assemble a role-aware packet | Required `--role`, `--task`; optional `--budget`, `--kinds`, and audit-only `--run`, `--stage` |
 | `kxm context recall <project>` | Search durable context records (metadata only) | `--query`, `--kinds`, `--limit` (1-100) |
 | `kxm context state <project> <key>` | Current or historical value of one state key | `--as-of <iso>` |
 | `kxm context episode <project>` | Episodic learning from workflow journals | `--run` |
@@ -27,11 +27,15 @@ with a stack trace and no JSON when the hub is down.
 
 | CLI | MCP tool | MCP arguments |
 |---|---|---|
-| `kxm context get` | `kxm_context` | `role`, `task`, `workflowRunId`, `stageId`, `budgetTokens`, `includeKinds` (`evidence`, `state`, `episode`, `knowledge`, `skill`) |
+| `kxm context get` | `kxm_context` | `role`, `task`, `budgetTokens`, `includeKinds` (`evidence`, `state`, `episode`, `knowledge`, `skill`), and audit-only `workflowRunId`, `stageId` |
 | `kxm context recall` | `kxm_recall` | `query`, `kinds`, `limit` (1-100) |
 | `kxm context state` | `kxm_state` | `key`, `asOf` |
 | `kxm context episode` | `kxm_episode` | `workflowRunId` |
 | none | `kxm_promote` | Proposes a state change only (`key`, `summary`, `authority`, `confidence`, `evidenceRefs`) |
+
+`--run` and `--stage` (MCP `workflowRunId` and `stageId`) are recorded in the
+packet's audit and the hub log only. They do not filter or rank the packet, so
+a packet can hold items from other runs of the project.
 
 Packets and recall are ranked deterministically, without a model. `context get`
 orders eligible items by contradiction, project before shared defaults, task
@@ -108,8 +112,13 @@ corrections, respecting provenance and historical records.
   scope) and hash-verified promoted skills. Uncommitted or changed memory is
   withheld with a `dispatch_context_*` gap until it is committed and a new run
   pins it; a successful `memory note` does not reach a dispatched agent.
-- Wiki compile/ingest is deferred by this project's release policy. Do not
-  activate it merely because a CLI entry exists.
+- The knowledge wiki (`kxm context wiki-compile`, `kxm context wiki-lint`)
+  ships and works, but it is not a selected feature: compile it only when the
+  user asks. Without `--out` it writes no files; `--out .` writes pages under
+  `.kxm/knowledge/wiki/`. It is a view, never the authoritative store, and it
+  compiles every retained record, so pending proposals appear on pages that
+  say "Claims below are compiled from reviewed records". Never treat a wiki
+  page as reviewed.
 
 ## Operator steps
 

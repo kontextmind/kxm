@@ -315,6 +315,36 @@ It writes `recording-resolved.json` in the record directory. It never changes
 `kxm.harness-result.v2` envelope. They are harness transport only. They mint no
 assignment, witness or acceptance proof, so their output cannot be accepted.
 
+### Preflight refusals
+
+Before any auth probe or model call, the helper checks the request. A refusal
+prints a result with `stage: "preflight"` and `errorCode: "preflight_failed"`,
+and exits with status 2. It refuses when:
+
+- the envelope is not `kxm.harness-request.v1`, carries an unknown field, or
+  omits `harness`, `role`, `model`, `permission` or `prompt_file`; it never
+  falls back to CLI defaults;
+- the harness is `kimi`, `gemini` or `deepseek` (unverified) or unknown, or the
+  role, permission or model is not in that harness's route table; `grok`
+  refuses `read-only`;
+- a Pi model is not `provider/id`, names a braked native vendor (`anthropic`,
+  `openai`, `xai`, `moonshot`, `google` or `deepseek`), or uses a provider
+  other than `openrouter`, `nous-portal` or `antigravity`; an `antigravity`
+  model must be a two-segment Gemini ID;
+- a Pi `edit` request comes from a role other than `experiment` or `writer`, or
+  a Pi writer asks for anything but `openrouter/qwen/qwen3-coder-plus` with
+  `edit`;
+- the request asks for hooks or skills, sets `max_cost_usd` for a harness other
+  than Claude, or sets `max_turns` for a harness other than Grok;
+- the harness binary is missing, or, on Windows, the launcher is a `.cmd`,
+  `.bat`, `.ps1` or extensionless shim rather than an absolute `.exe`
+  (`unsupported-launcher`).
+
+A failed login probe also exits with status 2, with `stage: "auth"` and
+`errorCode: "auth_failed"`. Failures after the harness starts, such as
+`spawn_failed` or `timed_out`, come back as an ordinary failed result with exit
+status 1.
+
 ## Failure codes
 
 The runner fails closed with a bounded code from `RUNNER_CODES`. The common

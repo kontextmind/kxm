@@ -49,10 +49,11 @@ flowchart TB
         Check["Credential check (admin, project or session)"]
     end
 
+    %% Replace these labels with your own components and store.
     subgraph Internal ["Subsystem"]
-        Engine["<Core component>"]
-        Context["<Supporting component>"]
-        Store[("<Durable store, for example .kxm/state/kxm.db>")]
+        Engine["Core component"]
+        Context["Supporting component"]
+        Store[("Durable store, for example .kxm/state/kxm.db")]
     end
 
     Caller -->|request and credential| Check

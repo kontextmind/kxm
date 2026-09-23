@@ -17,7 +17,8 @@ Beacon after the server is up — `km_status` with `skill: "kxm-mind-setup"`.
 
 ## Zero-install server
 
-Node ≥ 18.17. One data dir (`~/.kontextmind`).
+Needs the Node.js version the KontextMind server requires (a separate product
+from KXM). One data dir (`~/.kontextmind`).
 
 ```bash
 npx kontextmind serve

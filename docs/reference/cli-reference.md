@@ -128,10 +128,14 @@ For this page, 63 `--dry-run` invocations (every command in the first list, the 
 | Code | Meaning |
 |---|---|
 | 0 | Success, including `--help`, `--version`, and dry-run plans. |
-| 1 | The command ran and failed or found a problem: an `ok: false` result, an unreachable hub for `hub view`, permission expansions for `trust check`, a stopped supervisor for `runtime status`, missing local state, or a planning-only `init`. |
-| 2 | Usage error: unknown command or option, a missing argument or required option, a value KXM rejects before acting, `--workspace` where unsupported, conflicting flags, a group run without a subcommand, a removed command (`removed_command`), or `--dry-run` on a command that cannot plan (`dry_run_unsupported`). |
+| 1 | The command ran and failed or found a problem (see below). |
+| 2 | Usage error: the command refused before acting (see below). |
 | 4 | `gate github watch` timed out and posted (or, under `--dry-run`, would have posted) a signed `failed` signal. |
 | other | `hub start` and `agent worker` return the exit code of the foreground process; `ssh run` returns the remote command's exit code. |
+
+Exit 1 covers an `ok: false` result, an unreachable hub for `hub view`, permission expansions for `trust check`, a stopped supervisor for `runtime status`, missing local state, and a planning-only `init`.
+
+Exit 2 covers an unknown command or option, a missing argument or required option, a value KXM rejects before acting, `--workspace` where unsupported, conflicting flags, a group run without a subcommand, a removed command (`removed_command`), and `--dry-run` on a command that cannot plan (`dry_run_unsupported`).
 
 ## Where commands read and write
 
@@ -382,6 +386,8 @@ kxm completion install --shell zsh --dry-run
 ## `kxm trust`
 
 Compares the authority-bearing fields of the project configuration against a base Git revision. The base is materialized into a temporary shadow with a sanitized environment; nothing in the project is written. Both subcommands refuse `--workspace` (exit 2) and need no hub.
+
+The comparison covers the loaded bundle only: `project.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `project/env.yaml`, and each member repository's `repo.yaml` and `env.yaml`. It does not read `routes.yaml`, `roles/`, `roster.yaml`, or `prices.yaml`, so a new route admission, roster entry, developer-roster route, or price change never counts as an expansion. Review those files by hand.
 
 ### `kxm trust diff`
 
@@ -837,7 +843,10 @@ kxm studio layout --json
 kxm studio serve [-p <port>] [--host <host>] [--token <token>]
 ```
 
-Serves the Web Studio on `http://127.0.0.1:4242` until interrupted. It serves `/`, `/health`, `GET /api/layout`, and `POST /api/mutate`. The mutate route checks the session token when one resolves and accepts an allowlisted command name, but this server does not execute it. The plan comes from `.kxm/workflows/default.yaml` in the current directory, or the first YAML file in `.kxm/workflows/`.
+Serves the Web Studio on `http://127.0.0.1:4242` until interrupted. It serves `/`, `/health`, `GET /api/layout`, and `POST /api/mutate`. The plan comes from `.kxm/workflows/default.yaml` in the current directory, or the first YAML file in `.kxm/workflows/`.
+
+> [!WARNING]
+> Every response carries `Access-Control-Allow-Origin: *`, so any web page open in a browser on this machine can read `/api/layout` (your workflow plan). `POST /api/mutate` requires `Authorization: Bearer <session token>` only when a session token resolves (`--token`, `KXM_SESSION_TOKEN`, or the on-disk token); with none, it accepts any caller. It accepts an allowlisted command name and answers `ok: true`, but executes nothing. Keep the default loopback `--host`.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -875,6 +884,7 @@ No command-specific options.
 
 - Reads only. No hub needed. Always exits 0.
 - JSON keys: `defaultHarness`, `harnesses` (each with `id`, `label`, `default`, `mode`, `detected`, `authenticated`, `dispatch` (`status`, `supported`, `reason`), `canUpdate` (`self`, `extensions`, `models`), `issues`).
+- `dispatch` is `yes` only when the harness is detected, has an audited read-only one-shot profile, and is authenticated. Otherwise the first failing check gives the reason: `not_detected`, `no_headless_mode`, `permission_profile_unaudited` (a detected `deepseek`), `not_authenticated`, or the auth issue when login state is unknown (`auth_context_required` for Pi, `auth_unknown`, `auth_unparsed`, or another `auth_*` code).
 
 Captured with no harness CLIs on `PATH`:
 
@@ -1005,6 +1015,8 @@ kxm models
 Opens an interactive screen over `.kxm/models/inventory.yaml` that shows each model's route state and role bindings. Keys: `a` admit, `d` disable, `r` add a role binding, `x` remove a role binding, `q` quit. Changes are written to `.kxm/routes.yaml` and `.kxm/roles/<role>.yaml` in `KXM_WORKDIR` or the current directory.
 
 - Needs an interactive terminal. With `--json` or without a TTY it exits 2 with `interactive_tty_required`.
+- `r` and `x` also mark the model `admitted` in `.kxm/routes.yaml`. So `x` re-admits a disabled route while it removes the role binding, and `r` admits the route as well as binding it.
+- `r` writes a roster entry `{model: <inventory id>, enabled: true}` with no harness, creating the role file if needed. The inventory id is often a bare model (`grok-4.6`), which the Runtime's roster check does not match against an agent's `provider/model`; edit the entry to the full selector.
 
 ```bash
 kxm models --json
@@ -1198,6 +1210,9 @@ Adds a role definition. Without a role ID, or with `--pick`, you choose from the
 - Writes `<scope dir>/roles/<id>.yaml`. `--dry-run` plans the write and writes nothing.
 - JSON keys: `roleId`, `id`, `filePath`, `scope`.
 
+> [!WARNING]
+> Most built-in template entries, and `--model` as you type it, are bare model IDs such as `grok-4.6`, `fable`, and `gemini-2.5-pro`. The Runtime's roster check needs the agent's full `provider/model` selector, so a live attempt under a local `writer.yaml` copied from the template is refused (`producer_route_unsupported: … not in role 'writer' roster`). Write `--model xai/grok-4.6`, or edit the entries to full selectors, before you drive live runs.
+
 ```bash
 kxm role add demo-role --description "Demo role" --dry-run --json
 ```
@@ -1281,7 +1296,7 @@ kxm role modify reviewer --add-model claude:fable --add-skill kxm-peer
 kxm role hosts [--scope all|global|local]
 ```
 
-Lists role seats (`critic-arch`, `critic-cli`, `planner`, `verifier`, `writer`, plus any configured seat) and the host, model, and effort each resolves to, with the source of the decision (`override`, `role-hosts`, `seat-default`, `role-roster`, or `fallback`).
+Lists role seats (`critic-arch`, `critic-cli`, `planner`, `verifier`, `writer`, plus any configured seat) and the host, model, and effort each resolves to, with the source of the decision (`override`, `role-hosts`, `seat-default`, `role-roster`, or `fallback`). The listing is display-only: no dispatch path reads seats or `role-hosts.yaml`, so a run's harness and model still come from the agent file.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1308,7 +1323,7 @@ ROLE SEATS (default):
 kxm role set-host <seatId> <host> [--model <model>] [--effort low|medium|high|xhigh] [--scope global|local]
 ```
 
-Binds a role seat to a host in `role-hosts.yaml`.
+Binds a role seat to a host in `role-hosts.yaml`. The binding changes what `kxm role hosts` shows, not what runs.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1338,6 +1353,7 @@ Resumes an audit-escalated run with an operator directive. The default ruling is
 - Arguments: `<runId>`; `[ruling]`, free text recorded with the decision.
 - For a KXM run ID (`run_` followed by 32 hex digits) inside a project, posts an `audit_escalation` signal with action `unblock` to the Runtime, starting the supervisor if needed. `--dry-run` plans the request without starting the supervisor. JSON keys: `runId`, `ruling`, `unblocked`.
 - For any other ID, updates the hub store at `.kxm/state/kxm.db` in the current directory directly (ignoring `--workspace` and `KXM_DATA_PATH`) and adds a `decision` journal entry. `--dry-run` reads the store read-only, reports the stage it would resume and the resulting `status`, and plans the write. JSON keys: `runId`, `stageId`, `ruling`, `status`.
+- The hub-run path bypasses the hub even while one is running: it writes SQLite directly, without authentication, in two statements outside one transaction. A running hub keeps runs in memory, so it does not see the change until it restarts, and its next write to that run overwrites it; it also pushes no event and sends the coordinator no resume message. Stop the hub first, or resume a live hub's run with a signed `audit_escalation` signal (see [Waits, signals and escalation](workflow-definitions.md#waits-signals-and-escalation)).
 - Errors: `resume_failed` (exit 1), or a plain `not found` line (exit 1).
 
 ```bash
@@ -1365,9 +1381,9 @@ dry run: resume workflow run wf_dry_run (stage: review)
 kxm run <workflow> [prompt...]
 ```
 
-Create a KXM run (offline-first; `kxm runs drive <runId> --simulated` executes it model-free). The run is immutable and pins the project's `homeRuntimeId`, config revision, and executor and tool policy revisions, and it stores only a hash of the prompt. The Runtime supervisor is started first if it is not running. No steps execute until the run is driven (see [`kxm runs drive`](#kxm-runs-drive)); the text output's second line prints the command that drives the new run model-free and the one that cancels it.
+Create a KXM run (offline-first; `kxm runs drive <runId> --simulated` executes it model-free). The run is immutable and pins the project's `homeRuntimeId`, config revision, and executor and tool policy revisions. Run events record only the SHA-256 of the prompt; the full prompt text is kept in a local sidecar file, `run-events.db.run-prompts.json`, next to the project's Runtime event store and written with mode 0600, and a dispatch refuses the run (`run_prompt_mismatch`) if that text no longer matches the hash. The Runtime supervisor is started first if it is not running. No steps execute until the run is driven (see [`kxm runs drive`](#kxm-runs-drive)); the text output's second line prints the command that drives the new run model-free and the one that cancels it.
 
-- Arguments: `<workflow>`, Workflow id to run (a file under `.kxm/workflows/`); `[prompt...]`, Run prompt (hashed, never stored raw).
+- Arguments: `<workflow>`, Workflow id to run (a file under `.kxm/workflows/`); `[prompt...]`, Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file).
 - No command-specific options. Refuses `--workspace` (exit 2).
 - Needs a KXM project. Starts and uses the Runtime; no hub needed. Honors `--dry-run`, which validates the project and prints the plan without starting the supervisor.
 - JSON keys: `phase`, `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`). Dry run: `projectRoot`, `workflowId`, `configRevision`. The JSON result does not carry the drive command.
@@ -1810,7 +1826,7 @@ kxm workflow record wf_123 lesson "Flaky test hid a race" --stage-id verify --ev
 kxm workflow wait [runId] [stageId] [signalKey] [summary] [--evidence <json>] [--evidence-refs <json>] [--timeout-ms <ms>]
 ```
 
-Wait for a workflow signal callback: pauses the active stage until a signed external callback checkpoints it. For a KXM run ID (`run_` followed by 32 hex digits) inside a project, the wait is registered with the Runtime instead of the hub (the supervisor starts if needed).
+Wait for a workflow signal callback: pauses the active stage until a signed external callback checkpoints it. For a KXM run ID (`run_` followed by 32 hex digits) inside a project, the command posts to the Runtime instead of the hub (the supervisor starts if needed). The Runtime has no wait state yet: it checks that the run exists, answers `waiting: true`, and records nothing, so the command prints `waiting for signal on KXM run <id>` although the run is unchanged.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1824,7 +1840,7 @@ Wait for a workflow signal callback: pauses the active stage until a signed exte
 | `--payload` | `<json>` | none | JSON payload |
 
 - `--timeout-ms` accepts 1000 through 2592000000 (30 days).
-- Needs a hub (or the Runtime for KXM runs). Mutates the run. Honors `--dry-run`.
+- Needs a hub (or the Runtime for KXM runs). Mutates a hub run; changes nothing for a Runtime run. Honors `--dry-run`.
 
 ```bash
 kxm workflow wait wf_123 verify github-pr-42-checks "Waiting on CI" --timeout-ms 3600000 --dry-run --json
@@ -2690,6 +2706,7 @@ Assemble a role-aware context packet within a token budget.
 | `--kinds` | `<kinds>` | all | Comma-separated item kinds to include |
 
 - `--budget` must be an integer from 512 to 200000 (exit 2).
+- `--run` and `--stage` do not filter the packet: selection draws on the whole project either way. The hub only echoes them in `audit.request` and its log.
 - Reads only. Output keys: `status`, `packet` (`workingState`, `currentState`, `knowledge`, `evidence`, `episodes`, `skills`, `contradictions`, `unresolvedGaps`, `provenanceSummary`, `estimatedTokens`), `audit`.
 - Selection is deterministic. Eligible items are ordered by open contradiction, project before `_shared`, task-matched before unmatched, role kind priority, lexical BM25 relevance to `--task`, confidence, authority, recency (newest first), then id. The budget is filled first-fit: an item that does not fit is skipped and smaller ones still fill it.
 - `audit.relevance` holds numbers only: `taskTokens` (distinct task words after stopword removal), `matchedCandidates` (eligible items sharing a task word) and `selected` (each selected item's rounded score, in `selectedIds` order).
@@ -3208,13 +3225,16 @@ Without `--file` it reads the same sources as [`kxm improve report`](#kxm-improv
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
-| `-f`, `--file` | `<path>` | the Runtime store, then workspace telemetry | Telemetry or event log JSONL file (default: workspace telemetry) |
+| `-f`, `--file` | `<path>` | the Runtime store, then workspace telemetry | Read only this telemetry or event log JSONL file (default: this project's Runtime event store plus workspace telemetry) |
 | `-l`, `--equivalent-list-cost` | none | off | Include equivalent list price column using price catalog |
 | `--list-prices` | none | off | Alias for --equivalent-list-cost |
 | `--prices` | `<path>` | `.kxm/prices.yaml` | Path to price catalog (default: .kxm/prices.yaml) |
 
 - Reads only. A price catalog that cannot be loaded is skipped silently.
-- The `--file` help text still says `(default: workspace telemetry)`; without `--file` the Runtime store is read first, as described above. A Runtime store that exists but cannot be read exits 1 with `improve_source_unreadable`.
+- `--equivalent-list-cost` loads the catalog without the freshness check the producers apply, so it prices with a catalog of any date, including one the producers treat as stale. Check the catalog `date` before you rely on `ListEquiv($)`.
+- A Runtime store that exists but cannot be read exits 1 with `improve_source_unreadable`.
+- Ranking: quality first (Pass%, then Rwk%), then cost per accepted attempt. Only a route whose attempts are all unknown-cost ranks last among equals; a route mixing unmetered and unknown-cost attempts shows `$0` in `$/Acc` and can rank first.
+- The `Quota` column counts attempts whose metadata looks quota-exhausted (a quota failure class, a `quota` flag, or text such as `rate limit` or `HTTP 429`). It is a count only: nothing fails over to another route.
 - The text output does not list the sources, and prints `no routing records in telemetry` when no source holds a record. The Rwk% column counts records with `transitions` greater than 0, which Runtime records never set.
 - JSON keys: `file` (the telemetry path, also when the Runtime store was read), `sources` (without `--file`; the same shape as in `kxm improve`), `configurations` (per behavioral hash for v1 records), `report` (`schema`, `generatedAt`, `totalAttempts`, `rows`).
 
@@ -3280,7 +3300,7 @@ pi         qwen3-coder-plus                  560       1200        450      $0.1
 kxm backup [--out <dir>]
 ```
 
-Creates a verified SQLite backup with a hashed `kxm.backup-manifest.v1` manifest. It discovers stores relative to the current directory: the hub store `.kxm/state/kxm.db`, and `registry.db`, `bindings.db`, and `events/*.db` under `.kxm/runtime/`. It ignores `--workspace` and `KXM_DATA_PATH`, and it does not include the Runtime supervisor's stores under the user state root.
+Creates a verified SQLite backup of the project hub store, with a hashed `kxm.backup-manifest.v1` manifest (Runtime stores under the user state root are not included). It discovers stores relative to the current directory: the hub store `.kxm/state/kxm.db`, and any `registry.db`, `bindings.db`, and `events/*.db` it finds under `.kxm/runtime/`. The Runtime writes its stores under the user state root instead, so a backup normally holds only the hub store and `manifest.json`. It ignores `--workspace` and `KXM_DATA_PATH`. To back up the Runtime, see [Backup and restore](../operations/backup-and-restore.md).
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -3336,6 +3356,7 @@ Restores SQLite stores from a verified backup manifest. It checks the manifest s
 - Before overwriting anything, a restore checks every store's recorded schema version against the ceiling for that store, so a store newer than this build is refused (`runtime_schema_newer`) before the first file is replaced. `--dry-run` runs the same manifest, file, digest, and schema checks and plans each target it would overwrite (and any `-wal` or `-shm` sidecar it would delete) without touching them. Dry-run JSON keys: `backupId`, `manifestPath`, `stores` (`storeId`, `targetPath`, `schemaVersion`), `dryRun`, `planned`.
 - JSON keys: `backupId`, `manifestPath`, `restoredStores` (`storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `integrity`).
 - Exit 1 with `restore_failed`; `issues` carry codes such as `runtime_path_invalid`, `restore_manifest_invalid`, `restore_file_missing`, `restore_manifest_digest_mismatch`, and `runtime_schema_newer`.
+- Two more checks run per store while restoring, after the plan checks: a backup file whose schema version differs from the version the manifest records is refused with `runtime_schema_mismatch`, and one that fails its SQLite integrity check with `database_corrupted`. In a multi-store restore, stores restored before the refused one stay restored.
 
 ```bash
 kxm restore ../bk/manifest.json --dry-run
@@ -3394,7 +3415,9 @@ kxm tenant status --json
 
 ## `kxm ssh`
 
-Multiplexed remote SSH execution. Commands reuse an OpenSSH ControlMaster socket in `.kxm/run/ssh-sockets/` in the current directory (`ControlPersist=10m`, `BatchMode=yes`, `StrictHostKeyChecking=yes`, 120 second timeout). JSON results carry `ok`, `action`, `host`, and the fields below, but no `command` field except `ssh close`. Under `--dry-run`, `ssh run`, `ssh file`, and `ssh close` connect to nothing: they print a plan (`command`, `host`, the remote command or path, `dryRun`, and `planned` with action `ssh`) instead. `ssh info` reads only, with or without the flag.
+Multiplexed remote SSH execution. Commands reuse an OpenSSH ControlMaster socket in `.kxm/run/ssh-sockets/` in the current directory (`ControlPersist=10m`, `BatchMode=yes`, `StrictHostKeyChecking=yes`; 120 second timeout, 60 seconds for `ssh file` writes).
+
+Host keys must already be pinned: with those options, OpenSSH refuses a host whose key is not in your `known_hosts` instead of prompting, so add the key yourself (for example with `ssh <host>` once) before the first `kxm ssh` call. KXM also refuses any option that would weaken the check (`StrictHostKeyChecking=accept-new`, `no` or `off`, or `UserKnownHostsFile=/dev/null`). JSON results carry `ok`, `action`, `host`, and the fields below, but no `command` field except `ssh close`. Under `--dry-run`, `ssh run`, `ssh file`, and `ssh close` connect to nothing: they print a plan (`command`, `host`, the remote command or path, `dryRun`, and `planned` with action `ssh`) instead. `ssh info` reads only, with or without the flag.
 
 ### `kxm ssh info`
 
@@ -3429,7 +3452,7 @@ kxm ssh info --json
 kxm ssh run <host> <command...> [--sudo]
 ```
 
-Execute a command on a remote SSH host via multiplexed ControlMaster socket. Commands that match KXM's destructive-command patterns are refused before connecting.
+Execute a command on a remote SSH host via multiplexed ControlMaster socket. Commands that match KXM's destructive-command patterns (`rm` with recursive and force flags, `git reset --hard`, `git clean -f`, `git checkout --` with paths, and `git restore .` or `*`) are refused before connecting.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -3437,6 +3460,7 @@ Execute a command on a remote SSH host via multiplexed ControlMaster socket. Com
 
 - Connects to the remote host and runs the command. `--dry-run` connects to nothing and prints the command it would run.
 - JSON keys: `exitCode`, `stdout`, `stderr`, `truncated`, `socketReused`, `durationMs`, `error`. The exit code is the remote command's.
+- stdout and stderr are each capped at 50 KB and 2,000 lines. Longer output is cut, ends with `[kxm: ssh output truncated to 50KB / 2000 lines]`, and sets `truncated: true`. Output over 10 MB fails the command. `ssh file --read` uses the same caps.
 
 ```bash
 kxm ssh run build-01 uptime --dry-run
@@ -3520,11 +3544,10 @@ These are behaviors of the current build that differ from what the help text or 
 - `kxm memory sync` creates `CLAUDE.md` and `GEMINI.md` with headers taken from the KXM repository's own instructions.
 - `kxm routing benchmark` prints constant placeholder figures.
 - `kxm task sync` does not contact GitHub or Jira.
-- `kxm runs drive` without `--simulated` runs live harness calls, although its description says "model-free simulation".
 - `kxm peer inbox` always returns an empty list from the CLI.
 - `kxm context` subcommands crash with a stack trace when the hub is unreachable, and they ignore the persisted hub credential.
 - `kxm completion <shell>` generates a command list that includes a nonexistent `plan` command, omits `models`, `routes`, `explain`, and `ssh`, lists a nonexistent `goal get`, and omits `runs drive`, `runs receipt`, `runtime sync-retry`, and `improve report`.
-- `kxm backup` does not include the Runtime supervisor's stores under the user state root, and its JSON shows `manifestSha256` redacted.
+- `kxm backup` JSON shows `manifestSha256` redacted.
 - `--help` after an unknown subcommand (for example `kxm hub nope --help`) prints the parent group's help and exits 0, so `--help` cannot be used to test whether a subcommand exists; compare the `Usage:` line instead.
 
 ## Related

@@ -6,8 +6,8 @@ What sets this apart:
 
 - **Deterministic.** No model, clock or randomness takes part in selection, so the same records and request always give the same packet.
 - **Provenance-bound.** Every item records where it came from, and its origin caps its authority. Summarizing an item never raises that authority.
-- **Isolated.** A packet never mixes projects. A foreign item in the pool is refused, not filtered.
-- **Auditable without leaking.** Audits and logs carry ids, counts and scores, never task text or item bodies.
+- **Isolated.** A packet never mixes projects' stored records. A foreign item in the pool is refused, not filtered. One exception: a hub that serves several projects attaches its own checkout's authored memory and promoted skills to every project that asks; see [Limits and known issues](#limits-and-known-issues).
+- **Logged without leaking.** The hub log records ids, counts, scores and the size of the task, never task text or item bodies. The `audit` returned to the caller echoes the caller's own request, task included.
 - **Git is the authority for memory.** Agents propose memory and state; people promote them.
 
 ## Before you begin
@@ -90,10 +90,10 @@ The flowchart shows how the hub turns the pool into a packet.
 
 ```mermaid
 flowchart TD
-  POOL[(Pool: state, journal items,<br/>authored memory, hash-verified skills)] --> ISO{Every item in this<br/>project or _shared?}
-  ISO -- no --> REFUSE[Refuse:<br/>context_isolation_violation]
-  ISO -- yes --> LIVE[Drop superseded<br/>and rejected items]
-  LIVE --> ELIG[Keep open contradictions and<br/>requested kinds; drop inert proposals]
+  POOL[("Pool: state, journal items,<br/>authored memory, hash-verified skills")] --> ISO{"Every item in this<br/>project or _shared?"}
+  ISO -- no --> REFUSE["Refuse:<br/>context_isolation_violation"]
+  ISO -- yes --> LIVE["Drop superseded<br/>and rejected items"]
+  LIVE --> ELIG["Keep open contradictions and<br/>requested kinds; drop inert proposals"]
   ELIG --> RANK[Rank by nine keys]
   RANK --> FIT[Fill the budget first-fit]
   FIT --> PACKET[Packet sections]
@@ -130,7 +130,7 @@ The budget is filled first-fit: an item that does not fit is skipped, and smalle
 
 Every selected item lands in exactly one section: `currentState`, `knowledge`, `evidence`, `episodes`, `skills` or `contradictions`. The `evidence` section holds journal errors, observations, hypotheses, experiments and state changes. The packet also carries `workingState`, `provenanceSummary` (counts by origin) and `estimatedTokens`.
 
-The `audit` object lists `selectedIds`, `candidateCount`, `excludedSuperseded`, the budget and the gaps. `audit.relevance` holds numbers only: `taskTokens` (distinct task words), `matchedCandidates` (eligible items sharing a task word) and `selected` (each selected item's rounded score, in `selectedIds` order). The hub log records the size of the task, never its text.
+The `audit` object lists `selectedIds`, `candidateCount`, `excludedSuperseded`, the budget and the gaps. `audit.relevance` holds numbers only: `taskTokens` (distinct task words), `matchedCandidates` (eligible items sharing a task word) and `selected` (each selected item's rounded score, in `selectedIds` order). `audit.request` echoes your request, including the task text; the hub log records only the task's size.
 
 ## Recall records
 
@@ -218,6 +218,9 @@ The rules the hub enforces:
 
 The wiki is a reviewable Markdown view of the pool, never the authoritative store.
 
+> [!IMPORTANT]
+> The wiki commands ship, but the wiki is not a selected feature: the project's release policy defers it, so do not build a process on it. Its section pages also list pending state proposals and unreviewed journal entries under the heading "compiled from reviewed records".
+
 ```bash
 # Preview the pages, then write them under the repository root.
 kxm context wiki-compile demo
@@ -304,13 +307,26 @@ When something is withheld, the step still runs without it and a gap is recorded
 
 A project with no memory and no promoted skill dispatches exactly as before.
 
+### Prompt layout and pruning
+
+The agent's prompt is the step's `instructions`, then a Markdown context packet. Its header names the project, the agent ID as the role, the step, the attempt, the permission ceiling and the allowed outcomes. Numbered sections follow: **1. Objective** (the run prompt), **2. Acceptance Criteria** (one line per required evidence key), **3. Plan Pointer** (step N of M), and **5. Environment & Memory**. Section 4, predecessor outputs, is not filled by Runtime dispatch today.
+
+Before rendering, the packet is pruned to a budget of 16,000 tokens, estimated at four characters per token over the rendered text. When it is over budget, pruning removes items in a fixed order until it fits:
+
+1. Shared defaults (L1).
+2. Episode items, then project knowledge items (L2).
+3. Predecessor artifact snippets, then the artifact lists (L5).
+
+The objective, the plan pointer and the acceptance criteria are never removed. If the packet still does not fit, its `budget.unresolvedGaps` records `context_budget_exceeded_task_inviolable`. Removed items are not recorded as gaps.
+
 ## Limits and known issues
 
-- **Hub packets miss authored memory with the default layout.** The hub looks for `.kxm/memory` two directories above its database file. With the default `.kxm/state/kxm.db` that resolves inside `.kxm/`, so `kxm context get` returns no memory facts. Runtime dispatch context reads memory correctly.
+- **The hub misses authored memory with the default layout.** The hub looks for `.kxm/memory` two directories above its database file. With the default `.kxm/state/kxm.db` that resolves inside `.kxm/`, so `kxm context get`, `recall`, `explain` and `wiki-compile` see no memory facts. Runtime dispatch context reads memory correctly.
+- **A multi-project hub shares one checkout's memory and skills.** The hub reads authored memory from its own checkout and promoted skills from `.kxm/skills` in the directory it started in, and attaches both to every project that asks, labeled as that project's. Do not rely on a shared hub to keep memory or skills apart between projects.
 - **The `episodes` section is usually empty.** No record in the hub pool has the `episode` kind today. Use `kxm context episode` for episodic records.
 - **`--run` and `--stage` do not filter.** They are recorded in the audit only.
 - **History is short.** The hub purges superseded state and closed proposals 7 days after they end, so `--as-of` only reaches back that far. Terminal runs and their journal are purged on the same schedule.
-- **The wiki compiles every retained journal entry**, not only reviewed ones. Its index links the temporal-state page at the wrong path, and `wiki-lint` can report a false `stale_state_link` on that page when a superseded value sits close to the Current heading.
+- **The wiki compiles every retained journal entry and pending proposal**, not only reviewed ones. Its index links the temporal-state page at the wrong path, and `wiki-lint` can report a false `stale_state_link` on that page when a superseded value sits close to the Current heading.
 
 ## Troubleshooting
 

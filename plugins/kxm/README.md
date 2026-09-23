@@ -55,10 +55,10 @@ Claude Code asks for these options when you install the plugin. Change them late
 | Option | Variable | Default | What to enter |
 |---|---|---|---|
 | `server_url` | `KXM_SERVER_URL` | `http://127.0.0.1:7331` | URL of the KXM hub. The SessionStart hook probes the same URL. |
-| `auth_token` | `KXM_AUTH_TOKEN` | Blank | The project token for this project, from the hub's `KXM_PROJECT_TOKENS`. Leave it blank on the machine that runs the hub. Never the hub admin token. Marked sensitive. |
+| `auth_token` | `KXM_AUTH_TOKEN` | Blank | This project's token from the hub's `KXM_PROJECT_TOKENS`. Leave it blank on the machine that runs the hub. Never the hub admin token. Marked sensitive. |
 | `agent_name` | `KXM_AGENT_NAME` | `claude` | Name other agents see. The first active session in a project keeps it; a later concurrent session registers as `<name>-<pid>`. |
 | `agent_purpose` | `KXM_AGENT_PURPOSE` | `Claude Code implementation and review agent` | One line that peers use to decide what to send this agent. |
-| `project` | `KXM_PROJECT` | Blank | Hub project key. It must match a key in the hub's `KXM_PROJECT_TOKENS`. Blank uses the `name` in `package.json` in the project directory, then the directory name. |
+| `project` | `KXM_PROJECT` | Blank | Hub project key; must match a key in the hub's `KXM_PROJECT_TOKENS`. Blank uses `name` from the project's `package.json`, then the directory name. |
 
 The MCP server also receives `KXM_PROJECT_DIR`, set to the directory Claude Code was started in (`CLAUDE_PROJECT_DIR`). It decides the default project key and whether this is a KXM project (one with a `.kxm/` directory).
 
@@ -121,7 +121,7 @@ Every tool acts as this session's agent (`agent_name`) in the hub project.
 | Tool | What it does |
 |---|---|
 | `kxm_list` | Lists peers in this project with their names, purposes, host labels and presence (online, stale, offline). `includeOffline` adds registered peers whose lease expired. |
-| `kxm_send` | Sends one focused request to a peer and returns a message ID for `kxm_get` or `kxm_await`. Pass `workflowContext` when the reply must count as peer evidence for a workflow gate. |
+| `kxm_send` | Sends one request to a peer and returns a message ID for `kxm_get` or `kxm_await`. Pass `workflowContext` so the reply counts as peer evidence. |
 | `kxm_get` | Checks a sent request's status and reply without waiting. |
 | `kxm_fanout` | Asks one to three peers the same question independently, for comparison. A local timeout returns pending entries with durable message IDs to check later. |
 | `kxm_await` | Waits for the reply to a sent request, for at most 60 seconds. For longer external work, use `kxm_workflow_wait`. |
@@ -137,7 +137,7 @@ These tools work on durable hub workflows, the ones started by signed webhooks o
 |---|---|
 | `kxm_workflow_list` | Lists durable workflows assigned to this agent. |
 | `kxm_workflow_get` | Reads a run's stages and its journal. |
-| `kxm_workflow_checkpoint` | Records a stage result (passed, warning or failed) with evidence keyed by the stage's required evidence. Cite peer replies through `evidenceRefs` so the hub can verify provenance and quorum. Warnings and failures need another attempt. |
+| `kxm_workflow_checkpoint` | Records a stage result (passed, warning or failed) with evidence per required key. Cite peer replies in `evidenceRefs`. Warnings and failures need another attempt. |
 | `kxm_workflow_record` | Adds a journal entry: plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change or skill-candidate. Lessons and skill candidates need evidence. |
 | `kxm_workflow_wait` | Parks the active stage until a signed external callback (CI, review, merge, Jira) checkpoints it and resumes the coordinator. |
 | `kxm_improvement_report` | Summarizes errors, contradictions, lessons and skill candidates by improvement area, with ranked cross-run signals. |
@@ -148,11 +148,13 @@ Workflow authors can require replies from a snapshotted set of eligible peers. T
 
 | Tool | What it does |
 |---|---|
-| `kxm_context` | The starting point for KXM context. Builds a token-budgeted, role-aware packet of evidence, temporal state, episodes, knowledge and skills for a role and task, optionally scoped to a workflow run and stage. Superseded and rejected records are left out. |
+| `kxm_context` | Start here. Builds a token-budgeted, role-aware packet of evidence, state, episodes, knowledge and skills for a role and task; run and stage are audit-only. |
 | `kxm_recall` | Searches durable context records by query and returns bounded metadata with a relevance score, never summaries. |
 | `kxm_state` | Reads the current value of one temporal state key, or its value as of an ISO-8601 timestamp. |
 | `kxm_episode` | Reads episodic learning (errors, lessons, observations, experiments) from workflow journals, optionally for one run. |
-| `kxm_promote` | Proposes a change to one authoritative state key, backed by evidence references. It only proposes: the hub returns a proposal ID, and an operator applies it with [`kxm context promote`](../../docs/reference/cli-reference.md#kxm-context-promote). |
+| `kxm_promote` | Proposes an evidence-backed change to one authoritative state key and returns a proposal ID. Only an operator applies it, with [`kxm context promote`](../../docs/reference/cli-reference.md#kxm-context-promote). |
+
+`kxm_context` leaves out superseded and rejected records. Its `workflowRunId` and `stageId` arguments are recorded in the packet's audit only: they do not filter the packet, which can hold items from any run in the project.
 
 ## Pushed channel mode and pull mode
 
@@ -162,7 +164,7 @@ Peer requests reach Claude in one of two ways. Everything else, including `kxm_s
 
 **Pushed channel mode** uses Claude Code channels to inject each peer request into the running session as a `<channel source="kxm" message_id="...">` event, which Claude handles and answers with `kxm_reply`. During the channels research preview, start Claude Code with the community channel explicitly and review the trust prompt:
 
-```text
+```bash
 claude --dangerously-load-development-channels plugin:kxm@kxm
 ```
 
@@ -170,13 +172,9 @@ If your organization has approved the plugin through `allowedChannelPlugins`, us
 
 ## Update
 
-[Update KXM and the plugin](../../docs/start/quickstart-claude-code.md#update-kxm-and-the-plugin) covers the CLI and the plugin together. For the plugin alone:
+[Update KXM and the plugin](../../docs/start/quickstart-claude-code.md#update-kxm-and-the-plugin) covers the CLI and the plugin together.
 
-- User scope: `claude plugin marketplace update kxm`, then `claude plugin update kxm@kxm`.
-- Project scope: `claude plugin marketplace update kxm`, then `claude plugin update kxm@kxm --scope project`. Without `--scope project` the update fails with `Plugin "kxm" is not installed at scope user`.
-- Then restart Claude Code.
-
-**The version pin.** Claude Code installs new plugin code only when the plugin version changes. This plugin is pinned at `0.7.1` in `plugin.json` and `marketplace.json`, so `claude plugin update` prints `kxm is already at the latest version (0.7.1).` and keeps the cached copy. Existing installs therefore do not receive plugin changes, including the SessionStart hook and MCP server behaviour described on this page, until the next version bump. To refresh the cached copy now, reinstall:
+**Reinstall to upgrade the plugin.** Claude Code installs new plugin code only when the version in `plugin.json` and `marketplace.json` changes. The release job sets that version only inside its own build and never commits the bump to the repository, so the version the marketplace reads does not change between releases. `claude plugin update kxm@kxm` therefore prints `kxm is already at the latest version (<version>).` and keeps the cached copy, which can hold an older SessionStart hook and MCP server than this page describes. Reinstall instead:
 
 ```bash
 claude plugin marketplace update kxm
@@ -190,7 +188,7 @@ claude plugin install kxm@kxm --scope project \
 
 Drop `--scope project` for a user-scope install. Reinstalling discards the plugin options: without `--config`, Claude Code prints `5 userConfig options not yet set (3 required)`. Pass them again as above, re-enter `auth_token` at `/plugin configure kxm@kxm` if you use one, and restart Claude Code.
 
-Once an install has the new plugin code, after a version bump or the reinstall above:
+If the cached copy you replaced was older than the behavior described on this page:
 
 - A blank `auth_token` no longer falls back to the hub admin token. Each project needs its own project token; see [Which token to use](#which-token-to-use).
 - The previous SessionStart hooks ran `kxm session brief --status` and `kxm memory brief`. They needed `kxm` on `PATH`, and the first one saved a 24-hour session token. The new hook does neither, and nothing in the plugin refreshes that token, so once it expires it blocks every `kxm_*` tool until you clear it; see [Troubleshooting](#troubleshooting).
@@ -234,9 +232,9 @@ Another active session in the same project already uses `agent_name`, so this on
 
 The hook runs only when the directory Claude Code was started in contains `.kxm/`. Start Claude Code from the project root, or run `kxm init` there. A SessionStart hook error that mentions `node` means `node` is not on the `PATH` Claude Code uses.
 
-### `kxm is already at the latest version (0.7.1)` but the plugin is out of date
+### `claude plugin update` reports the latest version, but the plugin is out of date
 
-That is the version pin. Use the reinstall in [Update](#update).
+The release job never commits a version bump, so `claude plugin update` never installs new plugin code. Use the reinstall in [Update](#update).
 
 ### `kxm_await` reports `timed out waiting for <messageId>`
 
@@ -267,7 +265,7 @@ npm run verify
 
 The bundles include their dependencies, so marketplace installs need no post-install step. Commit the rebuilt `dist/` files with the source change; `npm run check:generated` fails when they are stale. CI validates both plugin manifests with `claude plugin validate` (`npm run validate:claude`). `test/core/claude-plugin-docs.test.ts` fails when the [MCP tools](#mcp-tools) tables and the tools `dist/mcp-server.js` publishes disagree, so add or remove a row in the same change as the tool.
 
-## More documentation
+## Related
 
 - [KXM documentation](../../docs/README.md): install, quick starts, guides, reference, concepts and operations.
 - [MCP and Pi tools](../../docs/reference/tools.md): every tool with its parameters, limits and errors.

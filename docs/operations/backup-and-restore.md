@@ -62,7 +62,7 @@ Record every override with the backup. A restore that lands where the running se
 `kxm backup` protects SQLite stores it can find from the current directory. Everything else needs the stopped-state copy described below.
 
 > [!WARNING]
-> `kxm backup` does not back up the Runtime. It looks for Runtime stores under `.kxm/runtime/` in the checkout, but the Runtime writes them under the user state root (`$S/runtime/registry.db` and `$S/runtime/projects/<key>/run-events.db`). In practice a backup holds only the hub store, although its help says "all stores". Back up the Runtime stores and their prompt sidecars by hand, stopped, as shown in [Back up everything else](#back-up-everything-else).
+> `kxm backup` does not back up the Runtime. It looks for Runtime stores under `.kxm/runtime/` in the checkout, but the Runtime writes them under the user state root (`$S/runtime/registry.db` and `$S/runtime/projects/<key>/run-events.db`). In practice a backup holds only the hub store. Back up the Runtime stores and their prompt sidecars by hand, stopped, as shown in [Back up everything else](#back-up-everything-else).
 
 | Path | Holds | In `kxm backup` |
 |---|---|---|
@@ -147,6 +147,8 @@ Copy the remaining state with both services stopped. SQLite runs in write-ahead-
    ```
 
    The archive holds `registry.db`, every project's `run-events.db` with any `-wal` and `-shm` files and its `.run-prompts.json` sidecar, the repository bindings, the hub binding and `update.yaml`. It leaves out the credential file; keep tokens in your secret store, or include `hub-env.json` and protect the archive as a secret.
+
+   If `KXM_STATE_DIR` or `KXM_DATA_PATH` moved the hub database, `kxm backup` fails with `backup_no_stores`. With both services stopped, copy that database file and any `-wal` and `-shm` files instead.
 4. Copy the other roots your recovery needs: the checkout's untracked `.kxm/` records, `$D/assets/`, `$W/worker-*.json` (and `$W/pi-sessions/` only if your policy keeps model history), and `$C`.
 5. Record the KXM version (`kxm --version`), the configuration commit, the schema versions from `manifest.json`, and every override variable, next to the copy.
 6. Start the hub, then the Runtime with `kxm runtime start`, and resume the paused restart policies.
@@ -234,6 +236,7 @@ Test a full restore on a spare machine before you rely on it, and repeat the tes
 | Runs are missing after a restore | `kxm backup` never contained the Runtime stores | Restore `$S/runtime/` from the stopped-state archive |
 | `restore_manifest_digest_mismatch` | A backup file changed after the manifest was written | Use another backup; do not edit files in a backup set |
 | `restore_file_missing` | A file listed in the manifest is not beside it | Copy the whole backup directory, not only `manifest.json` |
+| `runtime_schema_mismatch` | A backup file's schema version differs from the one its manifest records | Use another backup set; never mix files between sets |
 | `runtime_schema_newer` | The backup came from a newer release | Upgrade KXM first, then restore |
 | The hub refuses to start with `runtime_schema_outdated` | The restored store is older than this build | Run the release that wrote it, or start fresh |
 

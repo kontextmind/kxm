@@ -22,7 +22,7 @@ The `kxm@kxm` plugin for Claude Code. It adds an MCP server with the `kxm_*` too
 
 ### Dashboard
 
-`kxm dash`: live terminal screens for agents, tasks, workflows, plans, inbox, processes and spend. Its operations stream carries metadata only, never message bodies.
+`kxm dash`: live terminal screens for agents, tasks, workflows, plans, inbox, processes and spend. Its operations stream carries metadata only, never message bodies. The spend screen is always empty today; `kxm routing report` shows route costs.
 
 ### Harness
 
@@ -54,7 +54,7 @@ The `127.0.0.1` interface. The hub and the Runtime supervisor listen there by de
 
 ### Native harness
 
-A model vendor's own [harness](#harness), such as `claude` for Anthropic models or `codex` for OpenAI models. Project validation and live dispatch both refuse a vendor's model routed through Pi when that vendor has a native harness. See [Harness routing](reference/harness-routing.md).
+A model vendor's own [harness](#harness), such as `claude` for Anthropic models or `codex` for OpenAI models. The rule is to run a vendor's model in its native harness, not through Pi. The code enforces it only partly: its Pi check reads only the first segment of a model selector, the long-lived [worker](#worker) has no check, and [admission](#admission) is the backstop. See [where the code is looser than the rules](reference/harness-routing.md#where-the-code-is-looser-than-the-rules).
 
 ### Pi extension
 
@@ -242,7 +242,7 @@ The record that closes each [drive](#drive) (`kxm.drive-receipt.v1`): how the ru
 
 ### Handoff
 
-A drive that stops without settling the run, because the run needs something this Runtime cannot do yet, such as an unsupported step kind or limit. The [drive receipt](#drive-receipt) records the reason, and the run stays open.
+A drive that stops without settling the run, because the run needs something this Runtime cannot do yet, such as an unsupported step kind or limit. The run stays open. A handoff found during the drive is recorded in the [drive receipt](#drive-receipt); one found when the drive opens, such as an unsupported limit, is refused with HTTP 409 `run_handoff_required` and writes no receipt.
 
 ### Outbox
 
@@ -335,7 +335,7 @@ A proposed change, such as a memory note, a [governed skill](#governed-skill) or
 
 ### Coded-repeat candidate
 
-A step that `kxm improve` found repeating: the same ask decided in at least two runs, accepted at least 75% of the time, and writing no repository. The candidate proposes replacing the model turn with a coded gate step or a governed skill, and is written to `.kxm/candidates/` for review. It changes nothing by itself.
+A step that `kxm improve` found repeating: the same workflow step, role and prompt, with the same objective decided in at least two runs, accepted in at least 75% of its decided attempts, and writing no repository. The candidate proposes replacing the model turn with a coded gate step or a governed skill, and is written to `.kxm/candidates/` for review. It changes nothing by itself.
 
 ### Context item
 
@@ -436,7 +436,7 @@ Always qualify this word:
 - **session manifest**: the plan `kxm session start` writes; it launches nothing;
 - **Pi session**: one Pi model conversation, stored on disk;
 - **Claude session**: one running Claude Code conversation;
-- **session brief**: the summary of recent hub work that `kxm session brief` prints;
+- **session brief**: the summary of recent work that `kxm session brief` prints, read from the hub's `kxm.db` and this machine's Runtime stores, with a `source` of `legacy`, `runtime` or `both`;
 - **session token**: see [session token](#session-token);
 - **session isolation**: see [session isolation](#session-isolation).
 

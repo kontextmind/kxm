@@ -108,6 +108,14 @@ The same changes appear once each in the Runtime log, `runtime/logs/kxm-runtime.
 {"level":"warn","component":"runtime","event":"runtime_sync_stalled","projectId":"prj_a17d607765e144cd95b93a8715d360b6","state":"blocked","pending":0,"acked":1,"refused":0,"reason":"fetch failed","nextAttemptAt":"2026-09-23T18:41:31.675Z"}
 ```
 
+## Restart or replace the supervisor
+
+The Runtime ID survives restarts. The registry holds one supervisor record. A new supervisor that finds it stopped, or finds its heartbeat older than 15 seconds or its process gone, takes the record over and keeps its `rtm_` ID, so every run's home Runtime stays valid. A supervisor whose record was taken over exits.
+
+A live supervisor (running, with a fresh heartbeat and a live process) keeps the record: a second supervisor refuses to start with `runtime_supervisor_conflict`, and `kxm runtime start` reuses the running one and prints `already running`.
+
+On start, and again on every tick, the supervisor reopens every project registered to its Runtime ID, so pending rows resume syncing without a new `kxm run`. A project that cannot reopen, such as a moved checkout or a store this build refuses, shows `blocked` with `storeReadable: false`, and the Runtime log records `runtime_sync_context_unavailable` once per change.
+
 ## Clear a refused sync
 
 A refused row leaves the pending queue with the hub's code, so it can neither block the rows behind it nor re-alert the hub on every tick. Refused rows are never deleted, and the Runtime never decides on its own that a refusal has become retryable.
@@ -176,9 +184,9 @@ The `HubClient` class in `@kontextmind/kxm/client` wraps the three routes as `ac
 | `runtime_not_running` from `kxm runtime sync-retry` | The supervisor is stopped | Run `kxm runtime start` first |
 | Runs appear as `orphaned` on the hub | That Runtime stopped sending presence | Start it, or accept that its runs are no longer live |
 
-## Related
+## Next steps
 
 - Watch sync alongside the rest of the service: [Monitor KXM](monitoring.md)
-- Where the outbox and run stores live: [Back up and restore KXM](backup-and-restore.md)
-- The designed sync contract: [Synchronization](../contracts/synchronization.md)
+- Protect the outbox and run stores: [Back up and restore KXM](backup-and-restore.md)
+- The designed sync contract: [Hub synchronization contract](../contracts/synchronization.md)
 - Hub routes for sync and leases: [Hub HTTP API reference](../reference/http-api.md)

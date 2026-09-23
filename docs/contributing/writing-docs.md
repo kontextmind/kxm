@@ -23,7 +23,7 @@ request.
 | `docs/guides/` | Task-focused guides for one feature | How-to |
 | `docs/reference/` | Commands, tools, endpoints, configuration | Reference |
 | `docs/concepts/` | How KXM works and why | Explanation |
-| `docs/operations/` | Deploy, monitor, back up, upgrade, troubleshoot | How-to |
+| `docs/operations/` | Deploy, monitor, back up, upgrade, troubleshoot | How-to; the troubleshooting page is reference |
 | `docs/contributing/` | Development, CI, tests, this guide | How-to or reference |
 | `docs/contracts/` | Normative target contracts | Reference |
 | `docs/adr/` | Architecture decision records | Explanation |

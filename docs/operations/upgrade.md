@@ -50,7 +50,7 @@ Use the path that matches how KXM was installed. `kxm update --kxm` applies an u
 |---|---|
 | Global npm install | `kxm update --kxm` (release tarball, or npm with `source: npm`), or `npm install --global --omit=peer @kontextmind/kxm@latest` |
 | Pi package | `pi update` |
-| Claude Code marketplace plugin | `claude plugin update kxm@kxm` (see the plugin note below) |
+| Claude Code marketplace plugin | Reinstall the plugin; see the plugin note below |
 | Project dependency | `npm install @kontextmind/kxm@latest` in that project |
 | Source checkout | `git pull`, then `npm ci` |
 
@@ -67,11 +67,12 @@ Without `--check` or a lone `--kxm`, `kxm update` also runs the native updaters 
 ```bash
 kxm update --dry-run               # plan every detected harness
 kxm update pi --extensions         # pi update --extensions
-kxm update claude --extensions     # claude plugin update kxm -y (user scope)
+kxm update claude --extensions     # claude plugin update kxm -y (user scope); see the note below
 kxm update pi --models             # refresh Pi model catalogs
 ```
 
-For the Claude Code plugin, follow [Update KXM and the plugin](../start/quickstart-claude-code.md#update-kxm-and-the-plugin) or the [plugin update notes](../../plugins/kxm/README.md#update). The plugin version is pinned, so an ordinary `claude plugin update` can report "already at the latest version" while the cached copy is old; the notes give the reinstall that refreshes it.
+> [!IMPORTANT]
+> The release job sets the plugin's version only inside its build and never commits it, so the plugin's version never changes. Claude Code installs new plugin code only when that version changes, so `claude plugin update` (and `kxm update claude --extensions`, which runs it) reports "already at the latest version" and keeps the old copy. Reinstalling is the upgrade path: follow [Update the plugin](../start/quickstart-claude-code.md#update-the-plugin).
 
 ## Start and verify
 
@@ -114,7 +115,7 @@ When a release changes a schema, either stay on the old release, or accept a fre
 | `release_digest_missing` or `release_digest_mismatch` | The GitHub release has no or a different digest | Wait for a published release, or install from npm |
 | `kxm_update_config_invalid` | `update.yaml` has an unknown field or a wrong type | Fix it; only `schema`, `auto` and `source` are allowed |
 | The hub refuses to start with `runtime_schema_outdated`, or a Runtime project reports that its store is not readable | The store predates this release | Roll back, or move the store aside and start fresh |
-| Claude still runs the old plugin | The plugin version pin kept the cached copy | Reinstall as the plugin update notes describe |
+| Claude still runs the old plugin | Releases never change the plugin's version, so an update keeps the cached copy | Reinstall as [Update the plugin](../start/quickstart-claude-code.md#update-the-plugin) describes |
 
 ## Next steps
 

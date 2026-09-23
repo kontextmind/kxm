@@ -44,7 +44,7 @@ The workflow tools act on hub [webhook workflow runs](workflow-definitions.md#we
 
 ### Identity and credentials
 
-Each tool call acts as the calling session's registered agent in one hub project. The Claude Code MCP server authenticates with a project token only: `auth_token` from the plugin settings, else this project's token saved in `hub-env.json`, and never the admin token. The Pi extension uses `KXM_AUTH_TOKEN`, then the token from hub auto-start, then the saved admin token. See [Agent settings](configuration.md#agent-settings).
+Each tool call acts as the calling session's registered agent in one hub project. The Claude Code MCP server authenticates with a project token only: `auth_token` from the plugin settings, else this project's token saved in `hub-env.json`, and never the admin token. The Pi extension uses `KXM_AUTH_TOKEN`, then the admin token that hub auto-start resolved or generated for the hub it started, then the saved admin token. See [Agent settings](configuration.md#agent-settings).
 
 ### Tool policy
 
@@ -270,11 +270,11 @@ Builds a token-budgeted context packet for a role and task. Call it before plann
 |---|---|---|---|
 | `role` | String, required | 64 characters | `repro`, `planner`, `critic`, `implementer`, `verifier`, or a custom role |
 | `task` | String, required | 2,000 characters | What the role is trying to do; drives relevance ranking |
-| `workflowRunId`, `stageId` | String | None | Scope to a run and stage |
+| `workflowRunId`, `stageId` | String | None | Recorded in the audit and hub log only; they do not filter the packet |
 | `budgetTokens` | Integer | 512 to 200,000 | Defaults: `repro` and `verifier` 8,000, `critic` 12,000, `planner` and `implementer` 16,000, custom roles 32,000 |
 | `includeKinds` | Array | All kinds | Any of `evidence`, `state`, `episode`, `knowledge`, `skill` |
 
-Returns `{ "packet", "audit" }`. Superseded and rejected records are excluded. The audit is metadata only: selected IDs, provenance counts, token estimate and relevance numbers.
+Returns `{ "packet", "audit" }`. Superseded and rejected records are excluded. Selection draws on the whole project whether or not you pass `workflowRunId` and `stageId`. The audit echoes your request, including the `task` text, under `audit.request`, then selected IDs, provenance counts, token estimate and relevance numbers. Only the hub's log records sizes instead of the task text.
 
 ### `kxm_recall`
 
@@ -337,14 +337,14 @@ In Pi:
 
 | Command | Effect |
 |---|---|
-| `/kxm`, `/kxm brief` | Refreshes the status line and work widget. In the Pi TUI, offers a `Continue KXM work?` picker of recent tasks and plans, and puts the chosen prompt in the editor |
+| `/kxm`, `/kxm brief` | Refreshes the status line and work widget; in the Pi TUI, also opens the task picker described below |
 | `/kxm status` | Recomputes the session brief and shows its status line |
 | `/kxm progress`, `/kxm workflow`, `/workflow` | Shows the active workflow run's stage progress, roles and model metrics from local state, or `kxm: no active workflow run found in state.` |
 | `/kxm hub` | Probes the hub's `/health` at `KXM_SERVER_URL` and shows this agent's name and the online agent count |
 | `/kxm memory` | Shows the project memory brief by running `kxm memory brief` (or `$KXM_BIN`) |
 | `/kxm help` | Lists the subcommands. Any unknown subcommand shows the same help |
 
-The same picker appears when a Pi TUI session starts, begins a new session or forks, unless `KXM_SESSION_BRIEF=off`.
+The task picker, `Continue KXM work?`, lists recent tasks and plans and puts the chosen prompt in the editor. It also appears when a Pi TUI session starts, begins a new session or forks, unless `KXM_SESSION_BRIEF=off`.
 
 Inbound requests arrive as a displayed message that starts a model turn: `steer` at the next decision boundary, `followUp` (and `nextTurn`, which an unattended worker cannot wait on) after the current work. The final response is returned as the reply. If the model provider fails, the request stays `delivered` so a supervised worker can recover it. The extension also registers model providers; see [Harness routing](harness-routing.md) and [Nous providers](../guides/nous-providers.md).
 

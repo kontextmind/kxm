@@ -78,7 +78,7 @@ Without a terminal, for example in a pipe, it prints one plain snapshot and exit
 | `4` | Plans | Plan entries from workflow journals: age, run, stage and summary |
 | `5` | Inbox | Open messages: state, sender, recipient, delivery mode and age |
 | `6` | Procs | PID claims in the workspace state directory (hub and workers), live or dead |
-| `7` | Spend | Routing records from `telemetry.jsonl` in the workspace state directory: harness and model, cost, tokens, outcome |
+| `7` | Spend | Always empty: it reads `telemetry.jsonl` from the workspace state directory, but KXM writes it under `.kxm/logs/`. Use `kxm routing report` |
 
 ### Where the data comes from
 
@@ -198,7 +198,7 @@ Alert on these conditions:
 | `/metrics` returns 401 on loopback | The hub has an admin token, so loopback is no longer open | Send the admin token |
 | The dashboard header shows `presence/local` instead of `live ops` | It found a project token before the admin token | Export the admin token as `KXM_AUTH_TOKEN` in that terminal |
 | Tasks and Workflows are empty while Runtime runs exist | Admin mode lists hub workflow runs only | Use `kxm runs list` or `kxm tenant status` |
-| Spend is always empty | No routing records in the workspace state directory's `telemetry.jsonl` | Use `kxm routing report` for Runtime attempt costs |
+| Spend is always empty | The screen reads `telemetry.jsonl` from the workspace state directory, but KXM writes it under `.kxm/logs/` | Use `kxm routing report` for Runtime attempt costs |
 | No Runtime log file | The supervisor writes its log on the first sync state change | Wait one sync tick (10 seconds), then check again |
 
 ## Next steps

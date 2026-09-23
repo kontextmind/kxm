@@ -1,6 +1,6 @@
 ---
 name: kxm-workflow
-description: Work inside a durable KXM workflow run. Read it, record plan, decision, contradiction, error and lesson journal entries, pass stage checkpoints with keyed evidence and peer evidence refs, wait for signed CI or review callbacks, start webhook workflows, and export retrospectives (kxm_workflow_get, kxm_workflow_record, kxm_workflow_checkpoint, kxm_workflow_wait). Use when a workflow run ID is involved or the user asks to checkpoint, gate, or wait on CI.
+description: Work inside a durable KXM workflow run. Read it, record journal entries in any of the ten categories (plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate) bound to a stageId, pass stage checkpoints with keyed evidence and peer evidence refs, wait for signed CI or review callbacks, start webhook workflows, and export retrospectives (kxm_workflow_get, kxm_workflow_record, kxm_workflow_checkpoint, kxm_workflow_wait). Use when a workflow run ID is involved or the user asks to checkpoint, gate, or wait on CI.
 ---
 
 # KXM workflow and gates
@@ -31,9 +31,17 @@ with `kxm run` are Runtime runs; inspect them with `kxm runs list`
 | `kxm workflow start [definitionId]` | POST a signed workflow-start webhook | `--payload <json\|@file>`, `--delivery-id`, `--event` |
 | `kxm workflow export <runId>` | Export a proposed retrospective | `--input`, `--out-dir` |
 | `kxm workflow definitions` | List project and global workflow definitions | `--scope all\|global\|local` |
-| `kxm workflow add [workflowId]` | Add a definition | `--file`, `--description`, `--scope`, `--overwrite`, `--pick` |
+| `kxm workflow add [workflowId]` | Add a definition | `--template spec-and-plan\|implement-and-verify\|dual-critic-review`, `--file`, `--description`, `--scope`, `--overwrite`, `--pick` |
 | `kxm workflow remove [workflowId]` | Remove a definition | `--scope`, `--pick` |
 | `kxm workflow modify [workflowId]` | Modify a definition | `--description`, `--scope`, `--pick` |
+
+`kxm workflow add <id> --template <spec-and-plan|implement-and-verify|dual-critic-review>`
+writes a complete definition to `.kxm/workflows/<id>.yaml` (the default local
+scope); the file name is the workflow ID. `spec-and-plan` only reads (`plan`,
+then `review-arch`). `implement-and-verify` and `dual-critic-review` add an
+`implement` step with write access and the `test` gate. Validate with
+`kxm init`, then have the user review the `kxm trust diff` expansion and
+commit it (`kxm-project-setup`).
 
 ```bash
 kxm workflow get run_12345 --json

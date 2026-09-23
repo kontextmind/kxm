@@ -24,6 +24,9 @@ details:
 
 # Handoff: <source-role> to <target-role>
 
+> [!IMPORTANT]
+> Planned: the `kxm.handoff-manifest.v1` schema exists, but no KXM command or Runtime step writes handoff manifests yet, so record each handoff by hand.
+
 This page is the readable view of one `kxm.handoff-manifest.v1` record, defined
 in `schemas/handoff-manifest.schema.json`. Keep its field names so the two stay
 aligned.

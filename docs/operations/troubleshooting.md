@@ -1,6 +1,6 @@
 # Troubleshoot KXM
 
-Find the symptom you see, read its cause, and apply the fix. Start with the quick check, then go to the area that matches: install, hub and authentication, Claude Code, peer messaging, Pi workers, workflows, Runtime runs, context and memory, or operations.
+This page is a reference of symptoms, causes and fixes, grouped by area. Start with the quick check, then go to the area that matches: install, hub and authentication, Claude Code, peer messaging, Pi workers, workflows, Runtime runs, context and memory, or operations.
 
 ## Start with a quick check
 
@@ -100,7 +100,7 @@ The [plugin troubleshooting guide](../../plugins/kxm/README.md#troubleshooting) 
 | `KXM hub rejected the project token for project <p>` | Enter the token the hub holds for `<p>` |
 | `tool_policy_denied: Session token on disk is malformed or expired` | Run `kxm session token --clear` |
 | Pushed requests never arrive | Start Claude Code with `claude --dangerously-load-development-channels plugin:kxm@kxm` and accept the trust prompt, or use `kxm_inbox` and `kxm_reply` |
-| `kxm is already at the latest version` but the plugin is old | The plugin version is pinned; reinstall as the [plugin update notes](../../plugins/kxm/README.md#update) describe |
+| `kxm is already at the latest version` but the plugin is old | The release job sets the version only inside its build and never commits it, so updates never refresh the plugin. [Reinstall it](../start/quickstart-claude-code.md#update-the-plugin) |
 | No KXM brief at session start | Start Claude Code from the directory that contains `.kxm/` |
 
 ## Peer messaging
@@ -226,10 +226,11 @@ See [Context and memory](../guides/context-and-memory.md).
 |---|---|---|
 | An agent exits | It is marked offline after the stale window | Restart it with the same name to resume its ID |
 | The event stream drops | The client reconnects while heartbeats continue | If it repeats, check the network and proxy buffering |
-| The hub or a worker exits | SQLite keeps agents and messages, and binding manifests keep the Pi scope | Restart; queued and delivered work replays by the same message ID |
+| The hub or a worker exits | SQLite keeps agents and messages, and binding manifests keep the Pi scope | Restart. Queued messages are pushed again, by the same ID, until acknowledged; delivered messages are not replayed |
 | The disk fails or fills | Readiness or writes fail | Restore storage, then check database integrity and `/ready` |
 | An external callback is lost | The run stays `waiting` until its deadline, then fails and notifies the coordinator | Retry with the same delivery ID, or review side effects before a new delivery |
 | Requests return 429 `rate_limited` | The per-agent or per-address window is full | Honor `Retry-After`; raise `KXM_RATE_LIMIT_MAX` if the load is expected |
+| `kxm restore` refuses with `runtime_schema_mismatch` | A backup file's schema version differs from the one its manifest records | Use another backup set; never mix files between sets |
 
 For backup and restore errors such as `backup_no_stores`, see [Back up and restore KXM](backup-and-restore.md#troubleshooting). The dashboard's action keys do not act on runs; see [Monitor KXM](monitoring.md#keys).
 
@@ -249,13 +250,7 @@ Never attach tokens, private prompts, credentials, raw `pi-agent-*.log` files, o
 ## For maintainers
 
 - **`kxm --help` prints an old flat command list.** The committed `plugins/kxm/dist/cli.js` is stale. Run `npm run build` and commit the generated `dist`.
-- **Every CI job stays queued while a runner is online.** The self-hosted runner lost the custom label that `runs-on` in `.github/workflows/ci.yml` requests, for example after re-registration; the default labels alone never match. List the runners' labels, re-add the missing one, and push an empty commit if the queued run does not start. See [CI and release](../contributing/ci-and-release.md).
-
-  ```bash
-  gh api repos/kontextmind/kxm/actions/runners --jq '.runners[] | {id, name, labels: [.labels[].name]}'
-  gh api repos/kontextmind/kxm/actions/runners/<runner-id>/labels -X POST -f 'labels[]=<label>'
-  ```
-
+- **Every CI job stays queued while a runner is online.** See [CI and release](../contributing/ci-and-release.md#ci-jobs-stay-queued-while-a-runner-is-online).
 - **Loading an exact extension in Pi during development.** Use `pi --no-extensions -e ./plugins/kxm/src/extension.ts`, adding every required provider extension with another `-e`; see [Develop KXM](../contributing/development.md).
 
 ## Related

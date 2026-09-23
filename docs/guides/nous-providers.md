@@ -161,7 +161,7 @@ A route that Pi can reach is not a route KXM will dispatch. Admission decides th
 
 - **No Nous route is a writer.** `nous-portal/tencent/hy4-preview` is a reviewed read-only experiment example, not a writer. Any other `nous-portal` writer route needs its own reviewed admission.
 - **`nous/` and `nous-proxy/` carry no admission.** Registering them adds models to Pi's list; it grants no writer or router role, and the developer assignment helper does not allowlist them.
-- **Native vendors are refused.** The Portal also hosts `anthropic/…`, `openai/…`, `x-ai/…` and `google/…` models. Those vendors have native harnesses, so KXM uses the native harness and refuses the aggregator copy.
+- **Native vendors stay in their own harness.** The Portal also hosts `anthropic/…`, `openai/…`, `x-ai/…` and `google/…` models. Those vendors have native harnesses, so use those instead of the aggregator copy. The product checks only a selector's first segment and does not refuse `nous-portal/<vendor>/…` by itself, so never admit one; [admission is the backstop](../reference/harness-routing.md#where-the-code-is-looser-than-the-rules).
 - **Auth fails closed.** When `pi auth check` does not report `ready`, KXM refuses the route rather than billing another provider.
 - **The product Runtime dispatches only admitted selectors**, listed under `admitted` in `.kxm/routes.yaml` and, when a role file exists, in that role's roster.
 

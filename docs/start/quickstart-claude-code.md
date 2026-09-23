@@ -347,16 +347,9 @@ In a source checkout, `kxm update --check` prints `kxm <version> (running from s
 
 ### Update the plugin
 
-For a user-scope install:
+Reinstall the plugin to update it. Claude Code installs new plugin code only when the plugin's version number changes, and the KXM release job sets that version only inside its build and never commits it. So `claude plugin update kxm@kxm` prints `kxm is already at the latest version (<version>).` and keeps the cached copy, and so does `kxm update claude --extensions`, which runs it.
 
-```bash
-claude plugin marketplace update kxm
-claude plugin update kxm@kxm
-```
-
-For a project-scope install, add `--scope project` to the update. Without it, the update fails with `Plugin "kxm" is not installed at scope user`. `kxm update claude --extensions` runs the user-scope update for you. Restart Claude Code or run `/reload-plugins` afterwards.
-
-Claude Code installs new plugin code only when the plugin's version number changes. When the version has not changed, the update prints `kxm is already at the latest version (<version>).` and keeps the cached copy. To load newer plugin code at the same version, reinstall:
+Refresh the marketplace, then reinstall:
 
 ```bash
 claude plugin marketplace update kxm
