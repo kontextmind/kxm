@@ -15,7 +15,7 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# CI jobs run on the ARC scale set kontextmind-doks (1..5 ephemeral pods).
+# CI jobs run on the ARC scale set kontextmind-doks (1..4 ephemeral pods).
 jobs:
   changes:
     name: Classify changes
