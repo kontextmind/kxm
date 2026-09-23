@@ -8462,8 +8462,7 @@ __export(memory_exports, {
   loadCandidateMemory: () => loadCandidateMemory,
   memoryDirectories: () => memoryDirectories,
   parseMemoryRecord: () => parseMemoryRecord,
-  syncHarnessMemory: () => syncHarnessMemory,
-  updateHarnessDocument: () => updateHarnessDocument
+  syncHarnessMemory: () => syncHarnessMemory
 });
 import { randomUUID as randomUUID2 } from "node:crypto";
 import { existsSync as existsSync6, mkdirSync as mkdirSync5, readdirSync as readdirSync2, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
@@ -8678,91 +8677,62 @@ function formatHarnessMemoryBlock(records) {
   contentLines.push(MEMORY_MARKER_END);
   return contentLines.join("\n");
 }
-function updateHarnessDocument(filePath, block, defaultHeader, dryRun = false) {
-  let original = "";
-  if (existsSync6(filePath)) {
-    original = readFileSync6(filePath, "utf8");
-  }
-  let updated = "";
-  if (original.includes(MEMORY_MARKER_START) && original.includes(MEMORY_MARKER_END)) {
-    const startIdx = original.indexOf(MEMORY_MARKER_START);
-    const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
-    updated = original.slice(0, startIdx) + block + original.slice(endIdx);
-  } else if (original.length > 0) {
-    const doNotIdx = original.indexOf("## Do not");
-    if (doNotIdx !== -1) {
-      updated = `${original.slice(0, doNotIdx).trimEnd()}
+function memoryMarkerProblem(text) {
+  const starts = text.split(MEMORY_MARKER_START).length - 1;
+  const ends = text.split(MEMORY_MARKER_END).length - 1;
+  if (starts > 1 || ends > 1) return `has ${starts} ${MEMORY_MARKER_START} and ${ends} ${MEMORY_MARKER_END} markers, not one block`;
+  if (starts > ends) return `has ${MEMORY_MARKER_START} with no ${MEMORY_MARKER_END}`;
+  if (ends > starts) return `has ${MEMORY_MARKER_END} with no ${MEMORY_MARKER_START}`;
+  if (text.indexOf(MEMORY_MARKER_END) < text.indexOf(MEMORY_MARKER_START)) return `has ${MEMORY_MARKER_END} before ${MEMORY_MARKER_START}`;
+  return void 0;
+}
+function withMemoryBlock(original, block) {
+  const startIdx = original.indexOf(MEMORY_MARKER_START);
+  if (startIdx === -1) {
+    const head = original.trimEnd();
+    return head ? `${head}
 
 ${block}
-
-${original.slice(doNotIdx)}`;
-    } else {
-      updated = `${original.trimEnd()}
-
-${block}
-`;
-    }
-  } else {
-    updated = `${defaultHeader.trimEnd()}
-
-${block}
+` : `${block}
 `;
   }
-  if (updated !== original) {
-    if (!dryRun) writeFileSync4(filePath, updated, "utf8");
-    return true;
-  }
-  return false;
+  const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
+  return original.slice(0, startIdx) + block + original.slice(endIdx);
 }
 function syncHarnessMemory(repoRoot, options = {}) {
   const root = resolve4(repoRoot);
-  const records = loadAuthoredMemory(root);
-  const block = formatHarnessMemoryBlock(records);
+  const present = HARNESS_INSTRUCTION_FILES.filter((name) => existsSync6(join5(root, name)));
+  const missing = HARNESS_INSTRUCTION_FILES.filter((name) => !present.includes(name));
+  if (present.length === 0) {
+    throw new Error(
+      `none of ${HARNESS_INSTRUCTION_FILES.join(", ")} exists in ${root}; sync updates the instruction files a project already has and does not create them`
+    );
+  }
+  const documents = present.map((name) => {
+    const original = readFileSync6(join5(root, name), "utf8");
+    return { name, original, problem: memoryMarkerProblem(original) };
+  });
+  const malformed = documents.filter((doc) => doc.problem !== void 0);
+  if (malformed.length > 0) {
+    throw new Error(
+      `${malformed.map((doc) => `${doc.name} ${doc.problem}`).join("; ")}; wrote no file. Keep exactly one ${MEMORY_MARKER_START} followed by one ${MEMORY_MARKER_END} in each file, or delete both so sync appends a fresh block`
+    );
+  }
+  const block = formatHarnessMemoryBlock(loadAuthoredMemory(root));
   const updated = [];
-  const created = [];
-  const agentsPath = join5(root, "AGENTS.md");
-  const agentsHeader = "# AGENTS\n\nFollow project instructions.\n";
-  const agentsExisted = existsSync6(agentsPath);
-  if (updateHarnessDocument(agentsPath, block, agentsHeader, options.dryRun)) {
-    if (agentsExisted) updated.push("AGENTS.md");
-    else created.push("AGENTS.md");
+  const unchanged = [];
+  for (const { name, original } of documents) {
+    const next = withMemoryBlock(original, block);
+    if (next === original) {
+      unchanged.push(name);
+    } else {
+      if (!options.dryRun) writeFileSync4(join5(root, name), next, "utf8");
+      updated.push(name);
+    }
   }
-  const claudePath = join5(root, "CLAUDE.md");
-  const claudeHeader = `# KXM (Claude)
-
-Follow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:
-[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).
-
-You are the **planner / architecture critic** unless the human explicitly asks
-you to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) \u2014 a starting
-rotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;
-use a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are
-artifacts, not hub \`peer-reply\` evidence.
-`;
-  const claudeExisted = existsSync6(claudePath);
-  if (updateHarnessDocument(claudePath, block, claudeHeader, options.dryRun)) {
-    if (claudeExisted) updated.push("CLAUDE.md");
-    else created.push("CLAUDE.md");
-  }
-  const geminiPath = join5(root, "GEMINI.md");
-  const geminiHeader = `# KXM (Gemini / Antigravity)
-
-Follow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:
-[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).
-
-Google goes through the \`antigravity\` **Pi provider** (Tracking \u2192 Decided,
-2026-09-15); \`agy\` stays a harness catalog/helper entry, not the admission path.
-Current admissions come from Tracking and \`kxm harness list\`. Starting rotation
-remains Grok.
-`;
-  const geminiExisted = existsSync6(geminiPath);
-  if (updateHarnessDocument(geminiPath, block, geminiHeader, options.dryRun)) {
-    if (geminiExisted) updated.push("GEMINI.md");
-    else created.push("GEMINI.md");
-  }
-  return { updated, created };
+  return { updated, unchanged, missing };
 }
-var import_yaml, MEMORY_SCHEMA, MEMORY_BRIEF_SCHEMA, MEMORY_MARKER_START, MEMORY_MARKER_END, VALID_SCOPES, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_LIFECYCLES, BANNED_CONTROL_PLANE_FIELDS;
+var import_yaml, MEMORY_SCHEMA, MEMORY_BRIEF_SCHEMA, MEMORY_MARKER_START, MEMORY_MARKER_END, VALID_SCOPES, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_LIFECYCLES, BANNED_CONTROL_PLANE_FIELDS, HARNESS_INSTRUCTION_FILES;
 var init_memory = __esm({
   "plugins/kxm/src/memory.ts"() {
     "use strict";
@@ -8791,6 +8761,7 @@ var init_memory = __esm({
       "apiKey",
       "password"
     ]);
+    HARNESS_INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];
   }
 });
 

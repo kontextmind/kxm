@@ -389,6 +389,14 @@ All notable user-facing changes are documented here. The project follows [Semant
   none exist. The block is placed at the end of a file that has no markers yet, rather
   than before a `## Do not` heading that only this repository uses.
 
+- **`kxm memory sync` refuses malformed memory markers instead of eating text.** Sync
+  used to replace from the first `<!-- kxm:memory:start -->` to the first
+  `<!-- kxm:memory:end -->` wherever they appeared, so an orphan start marker got a new
+  block appended and the following sync deleted everything between the orphan and that
+  block; an end before its start duplicated text; a second block went stale. A file
+  must now hold exactly one start marker followed by one end marker, or neither.
+  Otherwise sync exits non-zero naming the file and the problem, and writes no file.
+
 - **Release version surfaces cover workspace packages:** a merged PR no longer
   breaks the release pipeline. `scripts/kxm-bump-version.mjs` now writes the
   version into every package manifest under `packages/`, using the same package
