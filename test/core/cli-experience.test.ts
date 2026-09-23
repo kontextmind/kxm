@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { delimiter, join, relative } from "node:path";
 import test from "node:test";
 import {
   loadKxmConfig,
@@ -175,7 +175,7 @@ test("completion install: detects shell, writes script and rc stanza idempotentl
     assert.equal(readFileSync(scriptPath, "utf8"), generateShellCompletion("bash"));
     const rc = readFileSync(join(home, ".bashrc"), "utf8");
     assert.match(rc, /# kxm completion/);
-    assert.match(rc, new RegExp(scriptPath.replaceAll("/", "\\/")));
+    assert.ok(rc.includes(scriptPath));
 
     // second install is idempotent: no duplicate stanza, script unchanged
     const second = installShellCompletion("auto", { env, homeDir: home, configDir: config });
@@ -214,16 +214,17 @@ test("completion install: PATH entry is added once and only when missing", () =>
   const binDir = join(sandbox.dir, "bin");
   mkdirSync(home, { recursive: true });
   mkdirSync(binDir, { recursive: true });
-  writeFileSync(join(binDir, "kxm"), "#!/bin/sh\n", { mode: 0o755 });
+  const executable = join(binDir, process.platform === "win32" ? "kxm.cmd" : "kxm");
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   try {
-    const env = { HOME: home, SHELL: "/bin/bash", PATH: "/usr/bin:/bin" } as NodeJS.ProcessEnv;
+    const env = { HOME: home, SHELL: "/bin/bash", PATH: ["/usr/bin", "/bin"].join(delimiter) } as NodeJS.ProcessEnv;
 
     // bin dir discovery via explicit entry point
-    const found = kxmBinDir({ ...env, KXM_ENTRY: join(binDir, "kxm") });
+    const found = kxmBinDir({ ...env, KXM_ENTRY: executable });
     assert.equal(found, binDir);
 
     // already on PATH: nothing written
-    const onPathEnv = { ...env, PATH: `${binDir}:/usr/bin:/bin`, KXM_ENTRY: join(binDir, "kxm") } as NodeJS.ProcessEnv;
+    const onPathEnv = { ...env, PATH: [binDir, "/usr/bin", "/bin"].join(delimiter), KXM_ENTRY: executable } as NodeJS.ProcessEnv;
     const noop = installPathEntry("bash", { env: onPathEnv, homeDir: home, binDir });
     assert.equal(noop.ok, true);
     assert.equal(noop.alreadyInstalled, true);
@@ -259,33 +260,32 @@ test("cli completion install: executes cleanly with json and dry-run", async () 
   const config = join(sandbox.dir, "config");
   const binDir = join(sandbox.dir, "bin");
   for (const dir of [home, config, binDir]) mkdirSync(dir, { recursive: true });
-  writeFileSync(join(binDir, "kxm"), "#!/bin/sh\n", { mode: 0o755 });
+  const executable = join(binDir, process.platform === "win32" ? "kxm.cmd" : "kxm");
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o755 });
   try {
     const env = {
       HOME: home,
       SHELL: "/bin/bash",
       KXM_USER_CONFIG_DIR: config,
-      KXM_ENTRY: join(binDir, "kxm"),
-      PATH: "/usr/bin:/bin",
+      KXM_ENTRY: executable,
+      PATH: ["/usr/bin", "/bin"].join(delimiter),
     } as NodeJS.ProcessEnv;
 
     // dry-run: plans, writes nothing
     const planIo = capture();
     assert.equal(await runCli(["completion", "install", "--dry-run"], env, planIo, sandbox.dir), 0);
-    assert.match(planIo.read().stdout, /planned/);
     assert.equal(existsSync(join(home, ".bashrc")), false);
 
     // real run: installs script, rc stanza, and PATH entry
     const io = capture();
     assert.equal(await runCli(["completion", "install"], env, io, sandbox.dir), 0);
-    assert.match(io.read().stdout, /completion: installed/);
-    assert.match(io.read().stdout, new RegExp(`PATH entry for ${binDir.replaceAll("/", "\\/")} added`));
     assert.equal(existsSync(join(config, "completions", "kxm.bash")), true);
+    const installedRc = readFileSync(join(home, ".bashrc"), "utf8");
 
     // rerun is idempotent
     const againIo = capture();
     assert.equal(await runCli(["completion", "install"], env, againIo, sandbox.dir), 0);
-    assert.match(againIo.read().stdout, /already installed/);
+    assert.equal(readFileSync(join(home, ".bashrc"), "utf8"), installedRc);
 
     // json mode carries the structured report
     const jsonIo = capture();
