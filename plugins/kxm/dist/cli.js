@@ -24677,7 +24677,7 @@ function kxmProjectRunEventsPath(projectRoot, env) {
 function projectRuntimeOwnsRun(projectRoot, runId, env) {
   const path4 = kxmProjectRunEventsPath(projectRoot, env);
   if (!existsSync10(path4)) return false;
-  const database = new DatabaseSync(path4, { readOnly: true });
+  const database = openReadOnlyDatabase(path4);
   try {
     database.exec("PRAGMA busy_timeout = 5000");
     return database.prepare("SELECT 1 FROM runs WHERE run_id = ?").get(runId) !== void 0;
@@ -28834,7 +28834,7 @@ async function cmdRoleResume(runtime, runId, ruling) {
   }
   const effectiveRuling = ruling?.trim() || "operator_ruling: waived and resumed";
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+  if (projectRoot && projectRuntimeOwnsRun(projectRoot, runId, runtime.env)) {
     if (runtime.dryRun) {
       printPlan(
         runtime,

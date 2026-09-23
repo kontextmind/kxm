@@ -19,6 +19,7 @@ import {
 } from "../role.ts";
 import { discoverKxmProjectRoot } from "../project-config.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
+import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import { resumeWorkflowFromRuling, type WorkflowRun } from "../workflow.ts";
 import { print, printPlan, type CliIo, type Runtime } from "./types.ts";
 
@@ -547,9 +548,9 @@ export async function cmdRoleResume(
 
   const effectiveRuling = ruling?.trim() || "operator_ruling: waived and resumed";
 
-  // Check if it's a KXM run
+  // A run this project's Runtime owns; a hub workflow run of the same id shape falls through.
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+  if (projectRoot && projectRuntimeOwnsRun(projectRoot, runId, runtime.env)) {
     if (runtime.dryRun) {
       printPlan(
         runtime,
