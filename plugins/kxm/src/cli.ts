@@ -1048,7 +1048,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function memoryNoteAction(this: Command, fact: string, options: { scope?: string; kind?: string; body?: string }) {
       result.code = await cmdMemoryNote(runtimeFrom(ctx, this), fact, options);
     });
-  addGlobalOptions(memory.command("sync").description("Regenerate memory projection blocks across AGENTS.md, CLAUDE.md, and GEMINI.md"))
+  addGlobalOptions(memory.command("sync").description("Regenerate the memory block in whichever of AGENTS.md, CLAUDE.md, and GEMINI.md exist; never creates them"))
     .action(async function memorySyncAction(this: Command) {
       result.code = await cmdMemorySync(runtimeFrom(ctx, this));
     });

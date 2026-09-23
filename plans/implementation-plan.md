@@ -23,6 +23,8 @@ related:
   - plan-additional-providers-agy-kimi.md
   - plan-agent-communication-steering.md
   - plan-ssh-remote-execution.md
+  - plan-per-tenant-hosting.md
+  - plan-cross-host-phase.md
   - research-a2a-cross-host.md
   - plan-token-reduction-rtk-ai.md
   - plan-usage-cost-quota-tracking.md
@@ -1262,6 +1264,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   check-generated fails on harness block drift; candidates are excluded from authored set
   and memoryRevision until promoted; control plane fields are rejected; secrets in summary
   and provenance are redacted.
+  **Corrected 2026-09-23:** sync also *created* a missing `CLAUDE.md`/`GEMINI.md` from
+  headers copied out of this repository's own instruction files, so any project that ran
+  `kxm memory sync` inherited KXM's planner role, Grok writer rotation and Tracking
+  admission rules (observed on main `ac08d95` in an isolated sandbox). Sync now updates
+  only the instruction files a project already has, rewrites nothing outside the memory
+  markers, appends the block at the end rather than before this repo's `## Do not`
+  heading, and refuses when none of the three exist — creating a harness file is the
+  project's decision, not a side effect. This repository's own `CLAUDE.md`/`GEMINI.md`
+  prose is now hand-maintained; only their marked blocks are generated. Named test:
+  `E5b: memory sync into a fresh project creates no harness file and rewrites only its own block`.
 - **E5 memory floor fixes (issue #100):** Turned three prose memory rules into
   enforceable code per Decision D12. Rule 1: state promotion requires a configured
   admin token with no loopback bypass and records the real caller, rejecting
