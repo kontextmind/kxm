@@ -18335,7 +18335,7 @@ import { dirname, join as join2 } from "node:path";
 import { fileURLToPath } from "node:url";
 var ROOT_MARKERS = ["scripts/kxm-hub.mjs", "scripts/kxm.mjs"];
 var MAX_WALK_DEPTH = 10;
-function findKxmRepoRoot(fromUrl = import.meta.url) {
+function tryFindKxmRepoRoot(fromUrl = import.meta.url) {
   let dir = dirname(fileURLToPath(fromUrl));
   for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
     if (ROOT_MARKERS.some((marker) => existsSync2(join2(dir, marker)))) return dir;
@@ -18343,6 +18343,11 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
     if (parent === dir) break;
     dir = parent;
   }
+  return void 0;
+}
+function findKxmRepoRoot(fromUrl = import.meta.url) {
+  const found = tryFindKxmRepoRoot(fromUrl);
+  if (found !== void 0) return found;
   throw new Error(
     `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
   );
@@ -44588,9 +44593,18 @@ async function hubGet(url, fetchImpl) {
 }
 function installProbeFrom(runtime) {
   const partial = runtime.io.installProbe ?? {};
+  const moduleDir = partial.moduleDir ?? dirname20(fileURLToPath3(import.meta.url));
   return {
-    moduleDir: partial.moduleDir ?? dirname20(fileURLToPath3(import.meta.url)),
-    repoRoot: partial.repoRoot ?? resolve24("."),
+    moduleDir,
+    // Classify the install that is **running**, never the directory the caller
+    // happens to be standing in. Deriving this from cwd made `kxm update --kxm`
+    // answer "kxm is running from source at <cwd>; update it with git pull there"
+    // on an npm-global install whenever the operator ran it inside a kxm
+    // checkout — and a git pull there deploys nothing, because the services exec
+    // the installed copy. An unrecognisable layout falls back to the module
+    // directory, which classifies as `unknown` ("update it the way it was
+    // installed") rather than inventing a source install.
+    repoRoot: partial.repoRoot ?? tryFindKxmRepoRoot(import.meta.url) ?? moduleDir,
     homeDir: partial.homeDir ?? homedir7(),
     platform: partial.platform ?? process.platform,
     env: partial.env ?? runtime.env

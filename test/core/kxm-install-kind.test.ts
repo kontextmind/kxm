@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import {
   classifyInstallRoot,
   resolveInstallKind,
   type InstallProbe,
 } from "../../plugins/kxm/src/kxm-install-kind.ts";
+import { installProbeFrom } from "../../plugins/kxm/src/cli/hub.ts";
+import { tryFindKxmRepoRoot } from "../../plugins/kxm/src/repo-root.ts";
 
 function writeKxmPackage(root: string): void {
   mkdirSync(root, { recursive: true });
@@ -115,5 +118,35 @@ test("resolveInstallKind refines npm-package and fails closed when spawn is empt
     assert.equal(missing.kind, "unknown");
   } finally {
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("install classification follows the running module, not the caller's working directory", () => {
+  const decoy = mkdtempSync(join(tmpdir(), "kxm-decoy-install-"));
+  const previousCwd = process.cwd();
+  try {
+    // A directory that looks exactly like a source install from the old probe's
+    // point of view: our package name plus a .git.
+    writeKxmPackage(decoy);
+    mkdirSync(join(decoy, ".git"), { recursive: true });
+    assert.equal(classifyInstallRoot(probeAt(decoy)).kind, "source", "the decoy really does look like a source install");
+
+    process.chdir(decoy);
+    const probe = installProbeFrom({ io: {}, env: {} } as never);
+    assert.notEqual(probe.repoRoot, resolve(decoy), "cwd is not how kxm was installed");
+    assert.equal(classifyInstallRoot(probe).root, probe.repoRoot, "the report names the root it classified");
+    // In a test run the loaded module is this checkout, so the honest answer is
+    // the repo root — and it must be the repo root, not whatever directory the
+    // operator happened to type `kxm update` in.
+    assert.equal(tryFindKxmRepoRoot(pathToFileURL(join(probe.moduleDir, "x.ts")).href), probe.repoRoot
+      ?? tryFindKxmRepoRoot(), "the probe root is the module's own install root");
+
+    // The injection seam still wins, so tests and adapters can classify a layout
+    // that is not the one under test.
+    const injected = installProbeFrom({ io: { installProbe: { repoRoot: decoy } }, env: {} } as never);
+    assert.equal(injected.repoRoot, resolve(decoy));
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(decoy, { recursive: true, force: true });
   }
 });

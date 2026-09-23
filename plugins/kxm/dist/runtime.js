@@ -15119,7 +15119,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 var ROOT_MARKERS = ["scripts/kxm-hub.mjs", "scripts/kxm.mjs"];
 var MAX_WALK_DEPTH = 10;
-function findKxmRepoRoot(fromUrl = import.meta.url) {
+function tryFindKxmRepoRoot(fromUrl = import.meta.url) {
   let dir = dirname(fileURLToPath(fromUrl));
   for (let depth = 0; depth < MAX_WALK_DEPTH; depth += 1) {
     if (ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)))) return dir;
@@ -15127,6 +15127,11 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
     if (parent === dir) break;
     dir = parent;
   }
+  return void 0;
+}
+function findKxmRepoRoot(fromUrl = import.meta.url) {
+  const found = tryFindKxmRepoRoot(fromUrl);
+  if (found !== void 0) return found;
   throw new Error(
     `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
   );

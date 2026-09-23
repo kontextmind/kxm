@@ -73,9 +73,18 @@ export async function hubGet(url: string, fetchImpl: typeof fetch): Promise<{ ok
 
 export function installProbeFrom(runtime: Runtime): InstallProbe {
   const partial = runtime.io.installProbe ?? {};
+  const moduleDir = partial.moduleDir ?? dirname(fileURLToPath(import.meta.url));
   return {
-    moduleDir: partial.moduleDir ?? dirname(fileURLToPath(import.meta.url)),
-    repoRoot: partial.repoRoot ?? resolve("."),
+    moduleDir,
+    // Classify the install that is **running**, never the directory the caller
+    // happens to be standing in. Deriving this from cwd made `kxm update --kxm`
+    // answer "kxm is running from source at <cwd>; update it with git pull there"
+    // on an npm-global install whenever the operator ran it inside a kxm
+    // checkout — and a git pull there deploys nothing, because the services exec
+    // the installed copy. An unrecognisable layout falls back to the module
+    // directory, which classifies as `unknown` ("update it the way it was
+    // installed") rather than inventing a source install.
+    repoRoot: partial.repoRoot ?? tryFindKxmRepoRoot(import.meta.url) ?? moduleDir,
     homeDir: partial.homeDir ?? homedir(),
     platform: partial.platform ?? process.platform,
     env: partial.env ?? runtime.env,
@@ -84,6 +93,7 @@ export function installProbeFrom(runtime: Runtime): InstallProbe {
 
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
+import { tryFindKxmRepoRoot } from "../repo-root.ts";
 import { homedir } from "node:os";
 
 export function warnIgnoredProjectUpdateYaml(runtime: Runtime): void {
