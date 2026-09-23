@@ -163,6 +163,14 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
   for (const step of validateSteps.slice(1)) {
     assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
   }
+  const generatedStep = validateSteps.find(
+    (step) => step.name === "Verify generated runtime bundles are current",
+  );
+  assert.equal(
+    generatedStep?.if,
+    "needs.changes.outputs.code == 'true' && github.event_name != 'pull_request'",
+  );
+  assert.equal(validateSteps.some((step) => step.name === "Inspect package (main only)"), false);
 
   const pluginSteps = doc.jobs?.plugin?.steps ?? [];
   assert.equal(pluginSteps[0]?.name, "Skip plugin validation for documentation-only changes");
@@ -184,6 +192,13 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
 });
 
 test("coverage floors stay 91/80/92 for core and 93/80/93 for complete with no third npm gate script", () => {
+  const validatePr = pkg.scripts?.["validate:pr"] ?? "";
+  assert.match(validatePr, /^npm run build && node /);
+  assert.match(validatePr, /--test-concurrency=4 test\/core\/\*\.test\.ts/);
+  assert.match(validatePr, /npm run check/);
+  assert.match(validatePr, /node scripts\/check-generated\.mjs$/);
+  assert.doesNotMatch(validatePr, /npm run (?:test:core|check:generated)/);
+
   const coverageCore = pkg.scripts?.["test:coverage:core"] ?? "";
   const coverageComplete = pkg.scripts?.["test:coverage:complete"] ?? "";
   assert.match(coverageCore, /--test-coverage-lines=91/);
