@@ -73,11 +73,14 @@ Never apply a candidate diff yourself or treat `readyForReview` as approval.
 |---|---|---|
 | `kxm routing report` | Compare verified completion, cost, and rework per behavioral configuration | `-f/--file`, `-l/--equivalent-list-cost`, `--list-prices`, `--prices <path>` |
 | `kxm routing benchmark` | Placeholder side-by-side comparison | `--task`, `--arms`, `--runs` |
+| `kxm prices acknowledge` | Stamp the existing `.kxm/prices.yaml` list as today's estimate without fetching vendor rates | `--json` |
 
 `kxm routing report` reads the same sources as `kxm improve`, and
 `routing report --json` includes the `sources`. `kxm routing benchmark` prints
 fixed placeholder figures in this build; never cite them as measured cost or
 quality. Use `kxm routing report` for recorded spend.
+Estimates stay unknown until the catalog carries today's stamp, and a routing
+total is null when any attempt has no cost.
 
 `--equivalent-list-cost` loads the price catalog (`.kxm/prices.yaml`, or
 `--prices <path>`) without a freshness check, so an old catalog quotes old

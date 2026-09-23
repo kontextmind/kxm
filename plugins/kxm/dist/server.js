@@ -15271,6 +15271,10 @@ var READ_ONLY_ONESHOT_ARGS = Object.freeze({
 function oneShotReadOnlyArgs(harness) {
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
 }
+var WRITER_ONESHOT_ARGS = Object.freeze({
+  pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"])
+});
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -19417,6 +19421,9 @@ var DatabaseSync = class {
     this.inner.close();
   }
 };
+
+// plugins/kxm/src/bindings.ts
+var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 
 // plugins/kxm/src/database.ts
 function databaseError(code, file, message) {

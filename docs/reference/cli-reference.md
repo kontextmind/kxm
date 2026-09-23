@@ -15,7 +15,7 @@ Output shown under examples was captured from a source checkout, inside a throwa
 - Hub and sessions: [`hub`](#kxm-hub-view), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
 - Harnesses, models, and roles: [`harness`](#kxm-harness), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
 - Running work: [`run`](#kxm-run), [`runs`](#kxm-runs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
-- Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing)
+- Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing), [`prices`](#kxm-prices)
 - Operations: [`backup`](#kxm-backup), [`restore`](#kxm-restore), [`tenant`](#kxm-tenant), [`ssh`](#kxm-ssh), [`help`](#kxm-help)
 - [Known behavior gaps](#known-behavior-gaps)
 
@@ -102,7 +102,7 @@ kxm -V
 - Plan with `planned`: `backup`, `restore`, `config set`, `role add|remove|modify|set-host|resume`, `workflow add|remove|modify`, `goal create`, `task create|run|sync`, `memory note|sync`, `skills evaluate|promote|reject`, `context promote`, `context wiki-compile --out`, `auth token`, `session token`, `session brief`, and `ssh run|file|close`. Each prints its normal result plus `dryRun: true` and `planned`, a list of `{action, target}` entries whose `action` is `write`, `delete`, `move`, `request`, or `ssh`. Text mode prints `dry run: <summary>` and one indented `would <action> <target>` line per entry (`session brief` appends `dry run: would write <file>` lines to the brief instead).
 - Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, and `improve report`. `gate github watch --dry-run` still polls GitHub but does not post the signal.
 - Read-only commands run as usual, without leaving a trace: a local SQLite store is opened without creating `-wal` or `-shm` files, and `runs status|list|receipt` only attach to a running Runtime supervisor. With no supervisor running they exit 2 with `dry_run_unsupported` instead of starting one. `context wiki-compile --dry-run` still asks the hub to compile, which is a read.
-- Refused: `kxm models` (the interactive screen) exits 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
+- Refused: `kxm models` (the interactive screen) and `kxm prices acknowledge` exit 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
 
 ```bash
 kxm config set user.theme light --dry-run
@@ -161,7 +161,7 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 | Message peers | [`kxm peer list`](#kxm-peer-list), [`kxm peer send`](#kxm-peer-send), [`kxm peer await`](#kxm-peer-await), [`kxm peer fanout`](#kxm-peer-fanout) |
 | Operate gates and evidence | [`kxm gate validate`](#kxm-gate-validate), [`kxm gate artifacts-exist`](#kxm-gate-artifacts-exist), [`kxm gate signal`](#kxm-gate-signal), [`kxm workflow checkpoint`](#kxm-workflow-checkpoint) |
 | Query context and memory | [`kxm context get`](#kxm-context-get), [`kxm context recall`](#kxm-context-recall), [`kxm memory brief`](#kxm-memory-brief), [`kxm memory note`](#kxm-memory-note) |
-| Read improvement and routing reports | [`kxm improve report`](#kxm-improve-report), [`kxm routing report`](#kxm-routing-report) |
+| Read improvement and routing reports | [`kxm improve report`](#kxm-improve-report), [`kxm routing report`](#kxm-routing-report), [`kxm prices acknowledge`](#kxm-prices-acknowledge) |
 | Back up and restore | [`kxm backup`](#kxm-backup), [`kxm restore`](#kxm-restore) |
 | Update KXM and harnesses | [`kxm update --check`](#kxm-update), [`kxm update --kxm`](#kxm-update) |
 
@@ -183,7 +183,7 @@ Creates, validates, repairs, resumes, or joins a KXM project at the Git root tha
 - `--project-id` must match `prj_` followed by 6 to 128 letters, digits, `_`, or `-`. `--repository` is repeatable; each value must be `<id>=<absolute path>`, and a repeated ID fails with `repository_binding_argument_duplicate`.
 - Needs a Git repository. Does not need a hub or the Runtime.
 - Writes `.kxm/project.yaml`, `.kxm/agents/coordinator.yaml`, `.kxm/agents/implementer.yaml`, `.kxm/gates.yaml`, `.kxm/repo/repo.yaml`, `.kxm/workflows/default.yaml`, and `.kxm/template-provenance.yaml`, using a `.kxm-init-transaction` directory at the Git root while a create or repair is in flight. Repository bindings are written under the user state root, never into Git. `--dry-run` writes nothing.
-- On an interactive terminal without `--json` or `--dry-run`, a successful create or join offers to install shell completion (suppress with `KXM_SKIP_COMPLETION_PROMPT=1`) and to write workflow-guide agents for authenticated harnesses (suppress with `KXM_SKIP_GUIDE_SETUP_PROMPT=1`).
+- On an interactive terminal without `--json` or `--dry-run`, a successful create or join offers to install shell completion (suppress with `KXM_SKIP_COMPLETION_PROMPT=1`) and to write workflow-guide agents (suppress with `KXM_SKIP_GUIDE_SETUP_PROMPT=1`). Guided setup keeps a role only when one of its guide candidates is on a fixed map of reviewed harness/model pairs and that harness is authenticated; it writes the agent and workflow files, appends those selectors to `.kxm/routes.yaml`, and skips every other candidate. Google candidates map to the Pi `antigravity` provider, which the Runtime's Pi one-shot cannot reach yet (see [Harness routing](harness-routing.md#google-through-the-antigravity-pi-provider)).
 - JSON keys: `action` (`planned`, `created`, `joined`, `repaired`, `resumed`, or `validated`), `mode`, `inspectedFrom`, `projectRoot`, `changesRequired`, `legacyInputs`, `issues`, `configRevision`, `files`, `plannedOnly`, and, when relevant, `localBindingFile`, `bindingsChanged`, `repairPlan`, `resumePending`, `transactionKind`.
 - Exit 0 for every completed action and every dry-run plan. Exit 1 when the result is planning-only (legacy state, blocked repair, partial state without provenance) or for `initialization_failed` (with `issues`) and `initialization_io_failed`. A planning-only text result prints the reason and then one `<file>: <code>: <message>` line per validation issue, for example `.kxm/workflows/first.yaml: gate_outcome_impossible: ...`.
 
@@ -846,7 +846,7 @@ kxm studio serve [-p <port>] [--host <host>] [--token <token>]
 Serves the Web Studio on `http://127.0.0.1:4242` until interrupted. It serves `/`, `/health`, `GET /api/layout`, and `POST /api/mutate`. The plan comes from `.kxm/workflows/default.yaml` in the current directory, or the first YAML file in `.kxm/workflows/`.
 
 > [!WARNING]
-> Every response carries `Access-Control-Allow-Origin: *`, so any web page open in a browser on this machine can read `/api/layout` (your workflow plan). `POST /api/mutate` requires `Authorization: Bearer <session token>` only when a session token resolves (`--token`, `KXM_SESSION_TOKEN`, or the on-disk token); with none, it accepts any caller. It accepts an allowlisted command name and answers `ok: true`, but executes nothing. Keep the default loopback `--host`.
+> Every response carries `Access-Control-Allow-Origin: *`, so any web page open in a browser on this machine can read `/api/layout` (your workflow plan). `POST /api/mutate` requires `Authorization: Bearer <session token>` only when a session token resolves (`--token`, `KXM_SESSION_TOKEN`, or the on-disk token); with none, it accepts any caller. An allowlisted command name gets HTTP 501 with `ok: false`, `executed: false`, `mappedToCli: false` and `error: "mutation_handler_missing"`, because `kxm studio serve` wires no mutation handler; it executes nothing. Keep the default loopback `--host`.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1388,7 +1388,7 @@ Create a KXM run (offline-first; `kxm runs drive <runId> --simulated` executes i
 - Needs a KXM project. Starts and uses the Runtime; no hub needed. Honors `--dry-run`, which validates the project and prints the plan without starting the supervisor.
 - JSON keys: `phase`, `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`). Dry run: `projectRoot`, `workflowId`, `configRevision`. The JSON result does not carry the drive command.
 - Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `run_failed` with `issues` (any invalid file in the project fails the load, for example `gate_outcome_impossible`), `run_io_failed` (exit 1).
-- The `default` workflow that `kxm init` writes sets `limits.maxAgentTimeMs`, which the Runtime does not enforce yet, so a run of it is created but `kxm runs drive` refuses it with `run_handoff_required`. A workflow written by `kxm workflow add <id> --template implement-and-verify` omits that limit.
+- The `default` workflow that `kxm init` writes does not set `limits.maxAgentTimeMs`, so it can be driven. A workflow that sets that limit is created, but `kxm runs drive` refuses it with `run_handoff_required` (`limit_unsupported`); projects from older `kxm init` templates carry it on `default`.
 
 ```bash
 kxm run default "Fix the flaky login test" --dry-run
@@ -1458,7 +1458,7 @@ kxm runs status --dry-run refused: the Runtime supervisor is not running and --d
 kxm runs drive <runId> [--simulated] [--wait] [--timeout-ms <n>]
 ```
 
-Opens a drive of the run. With `--simulated`, a model-free producer reports every agent step as passed. Without `--simulated` the drive runs in live mode: each agent step invokes its harness through a one-shot producer, and the agent's model must be an admitted route (otherwise `producer_route_not_admitted`).
+Opens a drive of the run. With `--simulated`, a model-free producer reports every agent step as passed. Without `--simulated` the drive runs in live mode: each agent step invokes its harness through a one-shot producer, and the agent's model must be an admitted route (otherwise `producer_route_not_admitted`; there is no fallback model). A read-only step runs with the harness's read-only flags. A step with `write` access runs with an audited writer profile, which only `pi` and `grok` have; it must be a single assignment in a project whose `limits.maxConcurrentRuns` is 1, and, when `.kxm/roster.yaml` exists, its route must be on the roster's writer lineup. Otherwise the drive hands the run off with `step_unsupported`. Around each live attempt the Runtime fingerprints the checkout with `git status` and `git diff`: a write step settles `passed` only when the checkout changed (routing metadata `authored: true`), and a read-only step that changed it settles `failed` (`authoringWitness: readonly_mutated`).
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1480,7 +1480,7 @@ kxm runs drive run_0123456789abcdef0123456789abcdef --simulated --dry-run
 drive plan: run run_0123456789abcdef0123456789abcdef in simulated mode (no events written)
 ```
 
-The `default` workflow from `kxm init` is handed off (see [`kxm run`](#kxm-run)):
+A workflow that declares `limits.maxAgentTimeMs`, such as `default` in a project from an older `kxm init` template, is handed off (see [`kxm run`](#kxm-run)):
 
 ```bash
 kxm runs drive run_a80e84c98f514299b82f0157f4537ea3 --simulated
@@ -3245,10 +3245,10 @@ Without `--file` it reads the same sources as [`kxm improve report`](#kxm-improv
 - Reads only. A price catalog that cannot be loaded is skipped silently.
 - `--equivalent-list-cost` loads the catalog without the freshness check the producers apply, so it prices with a catalog of any date, including one the producers treat as stale. Check the catalog `date` before you rely on `ListEquiv($)`.
 - A Runtime store that exists but cannot be read exits 1 with `improve_source_unreadable`.
-- Ranking: quality first (Pass%, then Rwk%), then cost per accepted attempt. Among routes of equal quality, any route with an unknown-cost attempt ranks after every route without one. `$/Acc` still shows only the priced part, so a route mixing unmetered and unknown-cost attempts can read `$0.0000`; the `*` in `Unk` marks it.
+- Ranking: quality first (Pass%, then Rwk%), then cost per accepted attempt. Among routes of equal quality, any route with an unknown-cost attempt ranks after every route without one. Such a route's cost is unknown, not a partial sum: `$/Acc` prints `-` (JSON `costPerAcceptedUsd: null`) and the `*` in `Unk` marks it.
 - The `Quota` column counts attempts whose metadata looks quota-exhausted (a quota failure class, a `quota` flag, or text such as `rate limit` or `HTTP 429`). It is a count only: nothing fails over to another route.
 - The text output does not list the sources, and prints `no routing records in telemetry` when no source holds a record. The Rwk% column counts records with `transitions` greater than 0, which Runtime records never set.
-- JSON keys: `file` (the telemetry path, also when the Runtime store was read), `sources` (without `--file`; the same shape as in `kxm improve`), `configurations` (per behavioral hash for v1 records), `report` (`schema`, `generatedAt`, `totalAttempts`, `rows`).
+- JSON keys: `file` (the telemetry path, also when the Runtime store was read), `sources` (without `--file`; the same shape as in `kxm improve`), `configurations` (per behavioral hash for v1 records; `totalCostUsd` is `null` when any record lacks a cost, and `missingCostRuns` counts those records), `report` (`schema`, `generatedAt`, `totalAttempts`, `rows`).
 
 With no routing records yet:
 
@@ -3306,45 +3306,78 @@ claude     fable                             680       1200        450      $0.4
 pi         qwen3-coder-plus                  560       1200        450      $0.12     passed
 ```
 
+## `kxm prices`
+
+### `kxm prices acknowledge`
+
+```text
+kxm prices acknowledge
+```
+
+Stamps the existing `.kxm/prices.yaml` list as today's estimate. It rewrites the file with today's date and a new `sha256` over the same `models` rows, then reads it back and checks both. It does not fetch vendor rates or change any price. Cost estimates treat a catalog whose date is not today as stale and stay unknown, so run this only after you have checked the list against the vendors' current rates.
+
+No command-specific options.
+
+- Reads and rewrites `.kxm/prices.yaml` in the current directory. Needs no hub and no Runtime.
+- Refuses `--dry-run` with `dry_run_unsupported` (exit 2).
+- JSON keys: `date`, `sha256`, `note`.
+- Exit 1 with `prices_acknowledge_failed` and a `message`, for example `price catalog missing` when there is no `.kxm/prices.yaml`.
+
+```bash
+kxm prices acknowledge
+```
+
+```text
+price catalog stamped 2026-09-23 (list estimate only; vendor rates were not fetched)
+```
+
 ## `kxm backup`
 
 ```text
 kxm backup [--out <dir>]
 ```
 
-Creates a verified SQLite backup of the project hub store, with a hashed `kxm.backup-manifest.v1` manifest (Runtime stores under the user state root are not included). It discovers stores relative to the current directory: the hub store `.kxm/state/kxm.db`, and any `registry.db`, `bindings.db`, and `events/*.db` it finds under `.kxm/runtime/`. The Runtime writes its stores under the user state root instead, so a backup normally holds only the hub store and `manifest.json`. It ignores `--workspace` and `KXM_DATA_PATH`. To back up the Runtime, see [Backup and restore](../operations/backup-and-restore.md).
+Creates a verified SQLite backup of the project hub store and the Runtime stores under the user state root, with a hashed `kxm.backup-manifest.v1` manifest. Relative to the current directory it discovers the hub store `.kxm/state/kxm.db`, and any `registry.db`, `bindings.db`, and `events/*.db` under `.kxm/runtime/`. Under the user state root (`KXM_STATE_HOME` or the platform default) it discovers `runtime/registry.db`, the `run-events.db` of every project under `runtime/projects/`, and each store's `run-events.db.run-prompts.json` prompt sidecar, which it copies as a plain file. Those Runtime stores belong to every project on the machine, not only this one. It ignores `--workspace` and `KXM_DATA_PATH`. Bindings, `update.yaml` and the other state roots are not included; see [Backup and restore](../operations/backup-and-restore.md).
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--out` | `<dir>` | `.kxm/backups/backup-<timestamp>` | Directory to write backup and manifest |
 
-- Writes a copy of each store and `manifest.json`. `--dry-run` lists the stores it found and the files it would write without opening any store, so no WAL is checkpointed (JSON: `outDir`, `stores` with `storeId`, `sourcePath`, `backupFile`, plus `dryRun` and `planned`).
-- JSON keys: `backupId`, `outDir`, `manifest` (`schema`, `backupId`, `createdAt`, `projectRoot`, `stores` with `storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `sha256`, `bytes`, `integrity`; `manifestSha256`).
-- Exit 1 with `backup_failed`; `issues` carry codes such as `backup_no_stores` and `database_corrupted`.
+- Writes a copy of each store and sidecar and `manifest.json`. `--dry-run` lists the stores and files it found and the files it would write without opening any store, so no WAL is checkpointed (JSON: `outDir`, `stores` with `storeId`, `sourcePath`, `backupFile`, `files` with `id`, `sourcePath`, `backupFile`, plus `dryRun` and `planned`).
+- JSON keys: `ok`, `backupId`, `outDir`, `manifest` (`schema`, `backupId`, `createdAt`, `projectRoot`, `stores` with `storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `sha256`, `bytes`, `integrity`; `files` with `id`, `sourcePath`, `backupFile`, `sha256`, `bytes`; `complete`; `omitted`; `manifestSha256`).
+- A store or sidecar that cannot be copied, or that appears while the backup runs, is listed in `omitted` and the manifest records `complete: false`. The command then prints `Backup is incomplete (<n> omitted); not ok:`, sets `ok: false`, and exits 1; `kxm restore` refuses that manifest.
+- Exit 1 with `backup_failed`; `issues` carry codes such as `backup_no_stores` (no store found, or none could be copied) and `database_corrupted`.
 
 ```bash
 kxm backup --out ../bk
 ```
 
 ```text
-Created SQLite backup with 1 store(s):
+Created SQLite backup with 3 store(s):
   - hub-store: /work/proj/.kxm/state/kxm.db -> kxm.db (schema v5, 110592 bytes, sha256 sha256:56c6d...)
+  - registry: /home/me/.local/state/kxm/runtime/registry.db -> registry.db (schema v1, 20480 bytes, sha256 sha256:a5bde...)
+  - events:38ed26cb8eeaa297f3b0b452: /home/me/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db -> run-events.db (schema v7, 348160 bytes, sha256 sha256:27c13...)
 Manifest: /work/bk/manifest.json
 ```
 
-In a project with a hub store:
+The summary lists stores; the prompt sidecar appears under `files` in the manifest.
+
+In a project with a hub store and one Runtime project:
 
 ```bash
 kxm backup --dry-run
 ```
 
 ```text
-dry run: back up 1 store(s) to /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z (sources are not opened, so their WAL is not checkpointed)
+dry run: back up 3 store(s) and 1 file(s) to /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z (sources are not opened, so their WAL is not checkpointed)
   would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/kxm.db
+  would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/registry.db
+  would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/run-events.db
+  would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/run-events.db.run-prompts.json
   would write /work/proj/.kxm/backups/backup-2026-09-23T17-44-51-277Z/manifest.json
 ```
 
-In a project without a hub store yet:
+On a machine with no hub store and no Runtime stores yet:
 
 ```bash
 kxm backup --json
@@ -3360,14 +3393,14 @@ kxm backup --json
 kxm restore <manifest>
 ```
 
-Restores SQLite stores from a verified backup manifest. It checks the manifest schema, that every backup file is present, and each file's digest, then restores each store to its recorded source path (rebased onto the current directory when the manifest came from another project root).
+Restores SQLite stores and prompt sidecars from a verified backup manifest. It checks the manifest schema, refuses a manifest that records `complete: false` (`restore_incomplete`), checks that every backup file is present and each file's digest, then restores each store to its recorded source path, then each sidecar. A path under the manifest's project root is rebased onto the current directory when the manifest came from another project root; Runtime stores under the user state root go back to their recorded absolute paths. A manifest without a `complete` field, from an older build, still restores.
 
 - Arguments: `<manifest>`, path to `manifest.json`.
 - No command-specific options.
-- Overwrites live stores. Stop the hub and the Runtime before restoring.
-- Before overwriting anything, a restore checks every store's recorded schema version against the ceiling for that store, so a store newer than this build is refused (`runtime_schema_newer`) before the first file is replaced. `--dry-run` runs the same manifest, file, digest, and schema checks and plans each target it would overwrite (and any `-wal` or `-shm` sidecar it would delete) without touching them. Dry-run JSON keys: `backupId`, `manifestPath`, `stores` (`storeId`, `targetPath`, `schemaVersion`), `dryRun`, `planned`.
+- Overwrites live stores, including the Runtime stores of every project the backup holds; it does not check whether the hub or the Runtime is running. Stop both before restoring.
+- Before overwriting anything, a restore checks every store's recorded schema version against the ceiling for that store, so a store newer than this build is refused (`runtime_schema_newer`) before the first file is replaced. `--dry-run` runs the same manifest, file, digest, and schema checks and plans each target it would overwrite (and any `-wal` or `-shm` sidecar it would delete) without touching them. Dry-run JSON keys: `backupId`, `manifestPath`, `stores` (`storeId`, `targetPath`, `schemaVersion`), `files` (`id`, `targetPath`), `dryRun`, `planned`.
 - JSON keys: `backupId`, `manifestPath`, `restoredStores` (`storeId`, `sourcePath`, `backupFile`, `schemaVersion`, `integrity`).
-- Exit 1 with `restore_failed`; `issues` carry codes such as `runtime_path_invalid`, `restore_manifest_invalid`, `restore_file_missing`, `restore_manifest_digest_mismatch`, and `runtime_schema_newer`.
+- Exit 1 with `restore_failed`; `issues` carry codes such as `runtime_path_invalid`, `restore_manifest_invalid`, `restore_incomplete`, `restore_file_missing`, `restore_manifest_digest_mismatch`, and `runtime_schema_newer`.
 - Two more checks run per store while restoring, after the plan checks: a backup file whose schema version differs from the version the manifest records is refused with `runtime_schema_mismatch`, and one that fails its SQLite integrity check with `database_corrupted`. In a multi-store restore, stores restored before the refused one stay restored.
 
 ```bash
@@ -3375,8 +3408,11 @@ kxm restore ../bk/manifest.json --dry-run
 ```
 
 ```text
-dry run: restore 1 store(s) from /work/bk/manifest.json; digests verified against the manifest
+dry run: restore 3 store(s) and 1 file(s) from /work/bk/manifest.json; digests verified against the manifest
   would write /work/proj/.kxm/state/kxm.db
+  would write /home/me/.local/state/kxm/runtime/registry.db
+  would write /home/me/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db
+  would write /home/me/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db.run-prompts.json
 ```
 
 A missing manifest:
@@ -3552,7 +3588,6 @@ Inspect KXM runs
 
 These are behaviors of the current build that differ from what the help text or the flag names suggest. Each is also noted in the command's section.
 
-- The `default` workflow that `kxm init` writes sets `limits.maxAgentTimeMs`, so `kxm runs drive` hands every run of it off with `run_handoff_required` (`limit_unsupported`). Use a `kxm workflow add --template` workflow, or remove the limit, to drive a first run.
 - `kxm routing benchmark` prints constant placeholder figures.
 - `kxm task sync` does not contact GitHub or Jira.
 - `kxm peer inbox` always returns an empty list from the CLI.

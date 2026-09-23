@@ -7,8 +7,9 @@ description: Create, drive, and inspect local KXM runs. kxm runs drive with --si
 
 `kxm run` creates a run of a project workflow in the local Runtime and starts
 the Runtime supervisor. A created run stays `created` until
-`kxm runs drive` executes it. Do not invent get, create, or logs verbs under
-`runs`.
+`kxm runs drive` executes the pinned plan. Live drive is the default and spends
+an admitted model; `--simulated` is the model-free producer. Do not invent get,
+create, or logs verbs under `runs`.
 
 ## Commands
 
@@ -58,11 +59,11 @@ the receipt's settlement is terminal `completed`.
 - `run_workflow_unknown`: the workflow ID is not a project workflow. Run only
   IDs that `kxm workflow definitions` lists.
 - `run_handoff_required`: the Runtime does not execute a field the workflow
-  uses, so drive fails with `runtime request failed with HTTP 409` and the run
-  stays `preparing`. The template `default` workflow declares
-  `limits.maxAgentTimeMs`, which is one such field. Cancel the run with
-  `kxm runs cancel <runId>` and drive a workflow without the field, such as
-  `first`.
+  uses (such as `limits.maxAgentTimeMs`, which a fresh `kxm init` no longer
+  writes), so drive fails with `runtime request failed with HTTP 409` and the
+  run stays `preparing`. Cancel the run with `kxm runs cancel <runId>` and drive
+  a workflow without the field, such as `first`.
 
 Listing or status alone is not proof that steps ran; a verified receipt is.
+A read-only step that settles `passed` did not author a checkout change.
 `kxm workflow list` shows hub webhook runs, not these runs.

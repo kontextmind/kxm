@@ -133,16 +133,17 @@ The context suites in detail:
 | Metadata-only dashboard: ops mode, presence-only fallback, observer filtering, keys, body-free local projection | `tui.test.ts`, `hub-api.test.ts` |
 | Restricted loader, deterministic bundle hash, init classification, atomic creation, three-way repair, crash resumption | `project-config.test.ts`, `cli.test.ts`, `package-install.test.ts` |
 | Legacy `.kxm/config` JSON is refused with `legacy_state_unsupported`; `kxm migrate` is unknown; older stores are refused | `project-config.test.ts`, `cli.test.ts`, `e6-backup-restore-migrations.test.ts` |
-| `kxm backup` and `kxm restore` round-trip the hub store and Runtime stores seeded under `.kxm/runtime/`; tampered or newer backups are refused | `e6-backup-restore-migrations.test.ts` |
+| `kxm backup` and `kxm restore` round-trip the hub store and Runtime stores seeded under `.kxm/runtime/`; Runtime stores and prompt sidecars under `KXM_STATE_HOME` are discovered; tampered, newer or incomplete (`complete: false`) backups are refused | `e6-backup-restore-migrations.test.ts` |
 | Permission-diff trust: authority lattice, prose neutrality, Git base shadowing, CLI diff and check | `permission.test.ts`, `cli.test.ts`, `contracts.test.ts`, `package-install.test.ts` |
 | KXM schemas, restricted YAML fixtures, cross-resource semantics and sync-safe rejection | `contracts.test.ts`, `restricted-yaml.test.ts` |
 | Harness detection, auth and dispatch for the built-in catalog, including Windows launch rules | `harness.test.ts` |
 | `kxm update`: `update.yaml` validation, GitHub or npm version checks, install-kind detection, `kxm-<v>.tgz` asset selection | `kxm-update.test.ts`, `kxm-update-cli.test.ts`, `kxm-install-kind.test.ts` |
 
-The backup round trip seeds its Runtime stores in a project-local
-`.kxm/runtime/` layout that the Runtime never writes. Production Runtime stores
-live under the user state root, which `kxm backup` does not discover, so no test
-backs up the real Runtime stores.
+The round trip seeds its Runtime stores in a project-local `.kxm/runtime/`
+layout that the Runtime never writes. A separate test seeds a registry, an event
+store and its prompt sidecar under a temporary `KXM_STATE_HOME` and checks that
+`kxm backup` finds them and that a partial manifest is refused. No test backs up
+stores a running supervisor wrote.
 
 ## Packaging, release and repository gates
 

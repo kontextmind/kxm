@@ -422,7 +422,8 @@ export interface RoutingComparison {
   blocked: number;
   failed: number;
   reworkRate: number;
-  totalCostUsd: number;
+  totalCostUsd: number | null;
+  missingCostRuns: number;
   totalTokensIn: number;
   totalTokensOut: number;
   totalHumanInterventions: number;
@@ -445,6 +446,8 @@ export function compareRoutingRecords(records: RoutingRecord[]): RoutingComparis
   const blocked = settled.filter((record) => record.finalOutcome === "blocked").length;
   const failed = settled.filter((record) => record.finalOutcome === "failed").length;
   const reworked = records.filter((record) => record.retries > 0 || record.transitions > 0).length;
+  const missingCostRuns = records.filter((record) => typeof record.costUsd !== "number" || !Number.isFinite(record.costUsd)).length;
+  const summedCost = records.reduce((sum, record) => sum + (typeof record.costUsd === "number" && Number.isFinite(record.costUsd) ? record.costUsd : 0), 0);
   return {
     behavioralSha256,
     runs: records.length,
@@ -452,7 +455,8 @@ export function compareRoutingRecords(records: RoutingRecord[]): RoutingComparis
     blocked,
     failed,
     reworkRate: records.length === 0 ? 0 : Math.round((reworked / records.length) * 100) / 100,
-    totalCostUsd: Math.round(records.reduce((sum, record) => sum + (record.costUsd ?? 0), 0) * 10_000) / 10_000,
+    totalCostUsd: missingCostRuns > 0 ? null : Math.round(summedCost * 10_000) / 10_000,
+    missingCostRuns,
     totalTokensIn: records.reduce((sum, record) => sum + (record.tokensIn ?? 0), 0),
     totalTokensOut: records.reduce((sum, record) => sum + (record.tokensOut ?? 0), 0),
     totalHumanInterventions: records.reduce((sum, record) => sum + record.humanInterventions, 0),
@@ -748,9 +752,11 @@ export function generateRoutingReport(
 
     const meteredCostUsd = Math.round(meteredCostTotal * 10_000) / 10_000;
     const costPerAcceptedUsd = acceptedCount > 0
-      ? (meteredCostUsd > 0 || unmeteredAttempts > 0
-          ? Math.round((meteredCostUsd / acceptedCount) * 10_000) / 10_000
-          : (unknownCostAttempts === attempts ? null : 0))
+      ? (unknownCostAttempts > 0
+          ? null
+          : (meteredCostUsd > 0 || unmeteredAttempts > 0
+              ? Math.round((meteredCostUsd / acceptedCount) * 10_000) / 10_000
+              : 0))
       : null;
 
     const flagged = unknownCostAttempts > 0;
@@ -817,8 +823,8 @@ export function generateRoutingReport(
       return a.reworkRate - b.reworkRate;
     }
 
-    // 2. Cost: unknown is never ranked cheapest. Any unknown-cost attempt makes the
-    // route's cost a lower bound (unmetered or metered attempts beside it do not price it).
+    // 2. Cost: unknown is never ranked cheapest. Any unknown-cost attempt leaves the
+    // route's cost unknown (unmetered or metered attempts beside it do not price it).
     const aCostUnknown = a.unknownCostAttempts > 0;
     const bCostUnknown = b.unknownCostAttempts > 0;
     if (aCostUnknown && !bCostUnknown) return 1;

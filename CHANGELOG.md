@@ -69,6 +69,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **The rotation surface drive uses is the one setup writes.** Guide setup appends only
+  reviewed selectors to `.kxm/routes.yaml` and routes Google through Pi `antigravity`.
+
+- **CLI and Studio stop reporting work they did not do.** Drive help no longer
+  describes the default as a model-free simulation. A Studio mutation with no handler returns 501 and `mappedToCli: false`.
+
+- **Missing cost stays unknown.** `kxm prices acknowledge` restamps the local catalog
+  as today without fetching vendor rates, which is what an estimate will accept.
+  Routing totals are null when any attempt has no cost, and those rows sort after
+  complete-cost rows. `kxm improve` stays proposal-only. Wiki compile writes a file
+  only with `--out` and does not ingest.
+
 - **The workflow loader refuses a gate step that can never settle
   (`gate_outcome_impossible`).** A gate step settles only on `passed` or
   `implementation-failure` when `expect` is `pass`, and only on `passed` or `repro-missing`
@@ -90,8 +102,8 @@ All notable user-facing changes are documented here. The project follows [Semant
   execute until the run engine lands. The JSON result and its
   `phase` are unchanged. A `run_handoff_required` refusal from `kxm runs drive` now ends
   with `(handoff reason …; field …; detail …)`, each part capped at 200 characters; a run of
-  the `default` workflow that `kxm init` writes, for example, reports `limit_unsupported`
-  on `limits.maxAgentTimeMs`. Top-level help names the product KXM instead of KontextMind,
+  a workflow that declares `limits.maxAgentTimeMs`, for example, reports `limit_unsupported`
+  on that field. Top-level help names the product KXM instead of KontextMind,
   and `kxm init` text output lists each validation issue as `file: code: message`.
 - **`kxm suggest` recommends only KXM command skills.** Suggested skills come from the
   command skills shipped in `plugins/kxm/skills` (such as `kxm-workflow`, `kxm-runs`,
@@ -306,6 +318,31 @@ All notable user-facing changes are documented here. The project follows [Semant
   false `run_projection_divergent`.
 
 ### Fixed
+
+- **Live `kxm runs drive` can author on an audited writer profile.** A write-repository
+  step on pi (`-a`, with extensions, skills, and the session off) or grok
+  (`--always-approve`, with subagents and web search off) runs against the checkout.
+  A live write that leaves the tree unchanged settles `failed` with `authored: false`.
+  A read-only step that changes the tree cannot settle `passed`. Harnesses without a
+  writer profile still hand off. Simulated drive does not require a diff. The witness
+  fingerprints the one checkout, so a live write step must be a single assignment
+  (`assignments.maximum: 1`) in a project whose `limits.maxConcurrentRuns` is 1; a
+  panel of writers or a project that admits concurrent runs hands off with
+  `step_unsupported` instead of crediting one writer's change to another.
+
+- **Fresh `kxm init` can be driven.** The current template drops `limits.maxAgentTimeMs`,
+  names coordinator `claude` / `anthropic/fable` and implementer `grok` / `xai/grok-4.6`,
+  and admits those two routes. One-shot production no longer falls through to an
+  unadmitted `claude-3-7-sonnet`.
+
+- **`kxm backup` includes the Runtime stores under the user-state root.** Discovery
+  copies `$S/runtime/registry.db` and `$S/runtime/projects/<projectKey>/run-events.db`,
+  plus each `run-events.db.run-prompts.json` sidecar. A copy that misses a discovered
+  store is `complete: false`: `kxm backup` exits 1 with `ok: false`, and restore
+  refuses that manifest. Cross-box remap of absolute `$S` paths is still the file recipe.
+  The Runtime stores are machine-wide, so a backup holds every project's run store and a
+  restore rolls all of them back. `kxm backup --help` no longer says Runtime stores are
+  left out.
 
 - **Signed webhooks cannot be replayed.** KXM's own webhook senders now sign the
   timestamp, delivery ID, definition, run and signal key along with the body

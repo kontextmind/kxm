@@ -204,7 +204,7 @@ The package ships a directory of `SKILL.md` suites that Pi and Claude Code both 
 
 `kxm dash` draws live terminal screens (agents, tasks, workflows, plans, inbox, processes, and spend, which is always empty today) from the admin-only operations stream, a presence-only fallback, and a read-only snapshot of `kxm.db`. Treat it as an observer: its action keys `a`, `r`, `s` and `c` post to hub routes that do not exist, so they change nothing even though the status line reports success, and `d` creates a git branch and worktree.
 
-`kxm studio layout` renders a workflow as DAG, stepper, and swimlane JSON, and `kxm studio serve` hosts a local viewer on `127.0.0.1:4242`. The Studio mutation endpoint is not wired to commands: it acknowledges requests without running them.
+`kxm studio layout` renders a workflow as DAG, stepper, and swimlane JSON, and `kxm studio serve` hosts a local viewer on `127.0.0.1:4242`. The Studio mutation endpoint is not wired to commands: it answers every allowed request with HTTP 501 `mutation_handler_missing` and runs nothing.
 
 ## Configuration is reviewed Git YAML
 

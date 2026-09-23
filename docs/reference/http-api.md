@@ -191,7 +191,7 @@ A bad token is `runtime_auth_failed`; a missing parameter is `runtime_request_in
 
 ## Web Studio server
 
-`kxm studio serve` runs a separate local server, on `127.0.0.1:4242` by default, with `/`, `/health`, `GET /api/layout` and `POST /api/mutate`. It answers every route with `Access-Control-Allow-Origin: *`, so any web page in a local browser can read the layout. The mutate route requires a bearer session token only when one resolves; with none it accepts any caller. It accepts an allowlisted command name but executes nothing. See [`kxm studio serve`](cli-reference.md#kxm-studio-serve).
+`kxm studio serve` runs a separate local server, on `127.0.0.1:4242` by default, with `/`, `/health`, `GET /api/layout` and `POST /api/mutate`. It answers every route with `Access-Control-Allow-Origin: *`, so any web page in a local browser can read the layout. The mutate route requires a bearer session token only when one resolves; with none it accepts any caller. It answers an allowlisted command name with HTTP 501 and `error: "mutation_handler_missing"`, and executes nothing. See [`kxm studio serve`](cli-reference.md#kxm-studio-serve).
 
 ## Related
 

@@ -122,8 +122,9 @@ or store the admin or project token in the conversation. The user enters
   in a workflow step, then run `kxm init` again. Only when
   `.kxm/project.yaml` does not exist yet, ask the user to follow the README's
   move-aside workaround; never do that in a committed project.
-- The template `default` workflow declares `limits.maxAgentTimeMs`, so
-  `kxm runs drive` on it fails with `run_handoff_required`. Use `first`.
+- The template `default` workflow can be driven, but even a simulated drive
+  runs its `npm test` gate, and a live drive spends Claude and Grok and lets
+  Grok edit the checkout. Use `first` for the first run.
 - `kxm run` starts the Runtime supervisor. Stop it with `kxm runtime stop`.
 - Only run workflow IDs that `kxm workflow definitions` lists; any other ID
   fails with `run_workflow_unknown`.
