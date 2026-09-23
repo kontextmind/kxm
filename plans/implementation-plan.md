@@ -497,6 +497,52 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **`kxm role add --pick <global-id>` copies the global role, and a local `role add` writes
+  only a role the project loader accepts, at the project root (2026-09-23).** In local scope
+  global candidates carried the `listRoles` summary as their payload, but the pick used a
+  payload only for a `DEFAULT_ROLES` id, so a global role fell through to the empty-role
+  construction and was written as `Role <id>` with `skills: []` and `roster: []`, reporting
+  success. Reproduced in an isolated sandbox: a global `qa-lead` with a description, two
+  skills and a grok roster arrived in `.kxm/roles/qa-lead.yaml` empty. The same sandbox
+  showed a local `role add` could leave a project that refuses every run, the three ways the
+  `workflow add` entry below found for workflows: the loader reads `.kxm/roles/writer.yaml` and refuses the
+  project with `role_roster_conflicts_with_agent` when its enabled roster leaves out the
+  `implementer` agent's model, and `role add --pick writer` wrote the built-in template for
+  an implementer on `anthropic/claude-fable-5-1` and exited 0; an add from a subdirectory
+  wrote `sub/.kxm/roles/`, which nothing reads; an add before `kxm init` left a partial
+  `.kxm/` that made `init` refuse with `project_definition_missing`. **Changed:**
+  `cmdRoleAdd` (`cli/roles.ts`) gives each global candidate the definition read from its
+  listed file with `parseRoleFile(gr.filePath)` (a `.yml` global is missed by `getRole(id)`,
+  which only tries `<id>.yaml`), and writes a picked template or global role through one
+  path with `--description`, `--skills` and `--model`/`--harness` replacing those fields.
+  Local scope resolves the KXM project root, refuses with `project_not_found` outside one,
+  and before writing, also under `--dry-run`, runs the new `kxmRoleWriteIssues`
+  (`project-config.ts`): the project loader with the role's document standing in for
+  `.kxm/roles/writer.yaml` when the id is `writer` (case-folded, since a case-insensitive
+  filesystem serves `Writer.yaml` to that lookup). Any issue refuses with `role_invalid`,
+  lists the issues and writes nothing; the stand-in replaces the file on disk, so
+  `--overwrite` repairs a conflicting `writer.yaml`. `kxmWorkflowWriteIssues` and it share
+  one candidate path through `loadProjectBundle`. Global scope stays unchecked because no
+  loader reads it. **Gate:** existing `npm run verify`, green (1302 tests, 1296 pass, 0 fail, 6 skipped), no
+  new npm script or CI job. New named tests in `test/core/role-and-workflow-manager.test.ts`:
+  `role add --pick <global-id> copies that global role into the project, with --description,
+  --skills and --model applied over it` fails without the global payload, with the summary as
+  payload, and with a `getRole(id)` lookup (the `.yml` global is not offered); `role add
+  writes a local role only at the project root, and only if the project loader accepts it`
+  fails with any one of the loader check, the project requirement, the project-root write
+  or the `writer.yaml` stand-in reverted. The combined `Role & Workflow CLI` test now runs in
+  an initialised project, since its local role adds would otherwise be refused.
+  `docs/reference/cli-reference.md` (`kxm role add`), the roles table in
+  `docs/reference/config-reference.md`, `docs/contributing/test-matrix.md` and
+  `CHANGELOG.md` are updated. **Not done:** `kxm role modify` still writes without the check,
+  so `--remove-model` can drop the implementer's model from `writer.yaml`. The Runtime route
+  check (`listRoleBindings`, which reads `.kxm/roles/<agent-id>.yaml`) is not run by
+  `role add`, so the bare-model roster the built-in templates and `--model grok-4.6` write
+  still passes the loader and fails a live attempt (the `kxm role add` warning). A global
+  role with a template's id is still not offered, so `--pick` of that id writes the template.
+  `parseRoleFile` derives the id of a `.yml` file without an `id` field as `<name>.yml`, so
+  such a global is listed and picked under that id.
+
 - **`kxm backup` and `kxm restore` are scoped to one project, and restore refuses while
   the Runtime or a hub is live (2026-09-23; follow-up to #296).** The operator asked Claude
   to implement this directly, so the runner path (`just assign`, `just witness`, two critic
@@ -606,10 +652,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   one the project loader rejects` in `test/core/role-and-workflow-manager.test.ts`: without the
   payload it fails on the scaffold, and with a `<id>.yaml` lookup it fails because the `.yml`
   global is not offered. `docs/reference/cli-reference.md` now says what a pick writes.
-  **Not done:** `kxm role add --pick <global-role>` in local scope has the same bug: the pick
-  uses its payload only for a `DEFAULT_ROLES` id, so a global role is written as an empty
-  `Role <id>` with no skills or roster (reproduced the same way). A global definition with a
-  template's id is still not offered, so `--pick` of that id writes the built-in template.
+  **Not done:** A global definition with a template's id is still not offered, so `--pick`
+  of that id writes the built-in template. `kxm role add --pick <global-role>` in local scope
+  had the same bug, writing a global role as an empty `Role <id>`; fixed in the entry above.
 
 - **`kxm workflow add` writes a local workflow only if the project loader accepts it, and
   only where that loader reads (2026-09-23).** A report that one `workflow add demo` left the

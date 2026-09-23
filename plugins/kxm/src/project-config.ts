@@ -1124,6 +1124,7 @@ function validateBundle(
   options: KxmConfigOptions,
   gateRegistry?: KxmResource,
   projectRoot?: string,
+  writerRole?: string,
 ): KxmConfigIssue[] {
   const issues: KxmConfigIssue[] = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate): candidate is JsonObject => Boolean(candidate));
@@ -1200,9 +1201,9 @@ function validateBundle(
   if (projectRoot) {
     const writerRolePath = join(projectRoot, ".kxm", "roles", "writer.yaml");
     const implementerAgent = agents.get("implementer") ?? agents.get("writer");
-    if (existsSync(writerRolePath) && implementerAgent) {
+    if ((writerRole !== undefined || existsSync(writerRolePath)) && implementerAgent) {
       try {
-        const rawRole = parseRestrictedYaml(readFileSync(writerRolePath, "utf8"));
+        const rawRole = parseRestrictedYaml(writerRole ?? readFileSync(writerRolePath, "utf8"));
         const roleObj = objectValue(rawRole);
         const rosterEntries = valuesOf(roleObj ?? {}, "roster")
           .map((candidate) => objectValue(candidate))
@@ -1304,8 +1305,32 @@ export function kxmWorkflowWriteIssues(
   document: string,
   options: KxmConfigOptions = {},
 ): readonly KxmConfigIssue[] {
+  return candidateIssues(projectRoot, options, { kind: "workflow", id: workflowId, document });
+}
+
+/**
+ * What `loadKxmProject` would refuse once `.kxm/roles/<roleId>.yaml` held `document`,
+ * found without writing it. The loader reads only the writer role, so for any other
+ * id this is the project's load as it stands.
+ */
+export function kxmRoleWriteIssues(
+  projectRoot: string,
+  roleId: string,
+  document: string,
+  options: KxmConfigOptions = {},
+): readonly KxmConfigIssue[] {
+  return candidateIssues(projectRoot, options, { kind: "role", id: roleId, document });
+}
+
+interface WriteCandidate {
+  kind: "workflow" | "role";
+  id: string;
+  document: string;
+}
+
+function candidateIssues(projectRoot: string, options: KxmConfigOptions, candidate: WriteCandidate): readonly KxmConfigIssue[] {
   try {
-    loadProjectBundle(projectRoot, options, { id: workflowId, document });
+    loadProjectBundle(projectRoot, options, candidate);
     return [];
   } catch (error) {
     if (error instanceof KxmConfigError) return error.issues;
@@ -1316,8 +1341,11 @@ export function kxmWorkflowWriteIssues(
 function loadProjectBundle(
   projectRoot: string,
   options: KxmConfigOptions,
-  workflowCandidate?: { id: string; document: string },
+  candidate?: WriteCandidate,
 ): KxmProjectBundle {
+  const workflowCandidate = candidate?.kind === "workflow" ? candidate : undefined;
+  // A case-insensitive filesystem serves `Writer.yaml` to the loader's `writer.yaml` lookup.
+  const writerRole = candidate?.kind === "role" && candidate.id.toLocaleLowerCase("en-US") === "writer" ? candidate.document : undefined;
   assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
   const legacyPresent = legacyConfigFilesAt(root);
@@ -1484,7 +1512,7 @@ function loadProjectBundle(
   }
   if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
 
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
   if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...(gateRegistry ? [gateRegistry] : [])]
     .sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath));
