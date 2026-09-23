@@ -88,6 +88,7 @@ import {
 import { kxmUserStateRoot } from "../bindings.ts";
 import {
   print,
+  printPlan,
   printWorker,
   gateOf,
   type CliIo,
@@ -224,6 +225,10 @@ export async function cmdSshRun(
   options: { sudo?: boolean | undefined },
 ): Promise<number> {
   const command = commandParts.join(" ");
+  if (runtime.dryRun) {
+    printPlan(runtime, { command: "ssh run", host, remoteCommand: command, sudo: options.sudo === true }, [{ action: "ssh", target: `${host}: ${options.sudo ? "sudo " : ""}${command}` }], `run a command on ${host}`);
+    return 0;
+  }
   const receipt = executeSshRun({
     action: "command",
     host,
@@ -247,6 +252,10 @@ export async function cmdSshFile(
   options: { content?: string | undefined; read?: boolean | undefined; append?: boolean | undefined; sudo?: boolean | undefined },
 ): Promise<number> {
   const op = options.read ? "read" : (options.append ? "append" : "write");
+  if (runtime.dryRun) {
+    printPlan(runtime, { command: "ssh file", host, path: filePath, op, sudo: options.sudo === true }, [{ action: "ssh", target: `${host}: ${op} ${filePath}` }], `${op} ${filePath} on ${host}`);
+    return 0;
+  }
   const receipt = executeSshRun({
     action: "file",
     host,
@@ -269,6 +278,10 @@ export async function cmdSshFile(
 }
 
 export async function cmdSshClose(runtime: Runtime, host: string): Promise<number> {
+  if (runtime.dryRun) {
+    printPlan(runtime, { command: "ssh close", host }, [{ action: "ssh", target: `${host}: close the ControlMaster socket` }], `close the ControlMaster socket for ${host}`);
+    return 0;
+  }
   const closed = closeControlSocket(host);
   if (runtime.json) {
     print(runtime.io, runtime.json, { ok: true, closed, command: "ssh close", host }, "");
@@ -568,7 +581,11 @@ export async function cmdConfigSet(
     } catch {
       // keep string
     }
-    setKxmConfigValue(runtime.cwd, key, parsedVal, { scope });
+    const { file } = setKxmConfigValue(runtime.cwd, key, parsedVal, { scope, dryRun: runtime.dryRun });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "config set", key, value: parsedVal, scope }, [{ action: "write", target: file }], `set ${key} = ${value} in ${scope} config`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
