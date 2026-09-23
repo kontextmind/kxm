@@ -12,7 +12,7 @@ import {
   resolveCandidate,
   writeGuideSetupFiles,
 } from "../../plugins/kxm/src/init-guide-setup.ts";
-import type { HarnessInventory, HarnessStatus } from "../../plugins/kxm/src/harness.ts";
+import { validateHarnessModelPair, type HarnessInventory, type HarnessStatus } from "../../plugins/kxm/src/harness.ts";
 import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import { isRouteAdmitted } from "../../plugins/kxm/src/routes.ts";
 import { parse } from "yaml";
@@ -61,16 +61,45 @@ test("resolveCandidate routes non-native vendors through pi/openrouter", () => {
   assert.deepEqual(binding, { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" });
 });
 
-test("resolveCandidate fails closed for unadmitted ids and does not map Google to agy", () => {
+test("resolveCandidate fails closed for unadmitted ids", () => {
   assert.equal(resolveCandidate([{ vendor: "deepseek", model: "deepseek-v4-pro-0813" }], new Set(["pi"])), undefined);
   assert.equal(resolveCandidate([{ vendor: "x-ai", model: "grok-4.6" }], new Set(["pi"])), undefined);
   assert.equal(resolveCandidate([{ vendor: "qwen", model: "qwen3-coder-plus" }], new Set()), undefined);
   assert.equal(resolveCandidate([{ vendor: "anthropic", model: "claude-opus-5" }], new Set(["claude"])), undefined);
-  assert.equal(resolveCandidate([{ vendor: "google", model: "gemini-3.8-flash" }], new Set(["agy"])), undefined);
+});
+
+test("resolveCandidate skips Google: drive cannot reach antigravity and agy is not the decided route", () => {
+  const all = new Set(["pi", "claude", "codex", "grok", "agy", "kimi", "deepseek"]);
+  for (const model of ["gemini-3.8-flash", "gemini-3.8-flash-high"]) {
+    assert.equal(resolveCandidate([{ vendor: "google", model }], all), undefined, model);
+  }
+  // A Google candidate ahead of an admitted one falls through to it.
   assert.deepEqual(
-    resolveCandidate([{ vendor: "google", model: "gemini-3.8-flash" }], new Set(["pi"])),
-    { harness: "pi", provider: "antigravity", model: "gemini-3.8-flash-high" },
+    resolveCandidate([{ vendor: "google", model: "gemini-3.8-flash" }, { vendor: "qwen", model: "qwen3-coder-plus" }], new Set(["pi"])),
+    { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" },
   );
+});
+
+test("guided setup writes and admits no Google route, and every binding passes the harness/model check", () => {
+  const plan = planGuideSetup({
+    inventory: inventory(["pi", "claude", "codex", "grok", "agy", "kimi", "deepseek"]),
+    selected: GUIDE_WORKFLOWS.map((workflow) => workflow.slug),
+  });
+  assert.ok(plan.agents.size > 0);
+  for (const [role, binding] of plan.agents) {
+    assert.notEqual(binding.provider, "antigravity", role);
+    assert.notEqual(binding.harness, "agy", role);
+    assert.deepEqual(validateHarnessModelPair(binding.harness, { provider: binding.provider, model: binding.model }), { valid: true }, role);
+  }
+  const root = mkdtempSync(join(tmpdir(), "kxm-guide-routes-"));
+  try {
+    const added = mergeGuideRouteAdmission(root, plan);
+    assert.ok(added.length > 0);
+    assert.deepEqual(added.filter((selector) => /^(antigravity|google)\//.test(selector)), []);
+    assert.equal(isRouteAdmitted(root, "antigravity/gemini-3.8-flash-high"), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("planGuideSetup skips workflows with uncovered stages and reports reasons", () => {

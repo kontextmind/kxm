@@ -2554,8 +2554,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   the checkout settles `failed` (`authored: false`); a read-only step that changes the
   checkout cannot settle `passed`. The v4 init template drops `limits.maxAgentTimeMs`, names
   admitted harness/model pairs, and writes `.kxm/routes.yaml` for those two models. Guide
-  setup admits only reviewed selectors and routes Google through Pi `antigravity`. `kxm run`
-  and drive help match that behavior. Studio mutate without a handler returns 501.
+  setup admits only reviewed selectors and skips Google until drive can reach Pi
+  `antigravity`. `kxm run` and drive help match that behavior. Studio mutate without a
+  handler returns 501.
   `kxm prices acknowledge` stamps the local list as today without fetching rates; routing
   totals stay null when any cost is missing. `kxm improve` stays proposal-only. Wiki compile
   stays a dry run unless `--out`. Wiki ingest stays unselected. The S4 cell above remains
