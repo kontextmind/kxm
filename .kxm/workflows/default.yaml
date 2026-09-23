@@ -7,6 +7,8 @@ steps:
   - id: implement
     kind: agent
     agent: implementer
+    repositories:
+      control: write
     maxAttempts: 3
     on:
       passed: review-arch

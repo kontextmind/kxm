@@ -7,7 +7,7 @@ import {
   BUILTIN_HARNESSES,
   NATIVE_HARNESS_PROVIDERS,
   probeHarnessAssignmentAsync,
-  oneShotReadOnlyArgs,
+  oneShotPermissionArgs,
   type HarnessAssignmentProbeOptions,
   type HarnessStatus,
   type HarnessCatalogEntry,
@@ -128,11 +128,11 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
         };
       }
     }
-    const defaultModel = options.defaultModel ?? (
-      harness === "codex" ? "gpt-5.6-sol" : harness === "kimi" ? "kimi-for-coding" : harness === "agy" ? "gemini-3.8-flash-high" : "claude-3-7-sonnet"
-    );
-    const parsed = parseModelString(defaultModel, harness);
-    return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+    if (options.defaultModel) {
+      const parsed = parseModelString(options.defaultModel, harness);
+      return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+    }
+    throw new Error("producer_route_not_admitted");
   }
 
   async function checkAuth(harness: string, provider: string, model: string, env: NodeJS.ProcessEnv, signal: AbortSignal): Promise<HarnessStatus> {
@@ -167,8 +167,13 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
       if (request.signal.aborted) return cancelled();
       const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
       if (!catalogEntry?.oneShot) throw new Error(`oneshot_harness_unsupported: ${harness}`);
-      const permissionArgs = oneShotReadOnlyArgs(harness);
-      if (!permissionArgs) throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
+      const permission = request.permission === "edit" || request.contextPacket?.task.permissionCeiling === "edit"
+        ? "edit"
+        : "read-only";
+      const permissionArgs = oneShotPermissionArgs(harness, permission);
+      if (!permissionArgs) {
+        throw new Error(`oneshot_harness_unsupported: ${harness} ${permission === "edit" ? "writer_profile_unaudited" : "permission_profile_unaudited"}`);
+      }
       // Pin the environment for auth and execution; don't observe subscription
       // auth under one environment and then spawn under changed API-key settings.
       const env = { ...(options.env ?? process.env) };
@@ -287,6 +292,9 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
       const providerMetadata: Record<string, string | number | boolean> = {
         processStatus: aborted ? "aborted" : transportFailed ? "failed" : "completed",
         executionEvidenceId: evidence.id,
+        permission,
+        permissionProfile: permission === "edit" ? "writer" : "read-only",
+        authored: false,
       };
       if (procResult.code !== null && Number.isFinite(procResult.code)) providerMetadata.processExitCode = procResult.code;
       if (procResult.signal) providerMetadata.processSignal = procResult.signal;

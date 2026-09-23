@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 
 export * from "./price-calc.ts";
 import type { PriceCatalog, ModelPriceRow, PriceTier } from "./price-calc.ts";
@@ -165,5 +165,36 @@ export function loadPriceCatalogForEstimate(options?: {
     return { catalog: undefined, unavailable: false, stale: true };
   }
   return { catalog, unavailable: false, stale: false };
+}
+
+/**
+ * Stamp the existing project list-price file as today's estimate.
+ * This does not fetch vendor rates. Until a catalog's date is today,
+ * `loadPriceCatalogForEstimate` keeps the estimate unknown.
+ */
+export function acknowledgePriceCatalog(projectRoot: string, now = new Date()): PriceCatalog {
+  const path = join(projectRoot, ".kxm", "prices.yaml");
+  const loaded = loadPriceCatalog(projectRoot);
+  if (!loaded) throw new Error("price catalog missing");
+  const date = now.toISOString().slice(0, 10);
+  const body = {
+    schema: loaded.schema,
+    date,
+    currency: loaded.currency ?? "USD",
+    models: loaded.models,
+  };
+  const stamped: PriceCatalog = { ...body, sha256: hashPriceCatalog(body) };
+  writeFileSync(path, stringify({
+    schema: stamped.schema,
+    date: stamped.date,
+    sha256: stamped.sha256,
+    currency: stamped.currency ?? "USD",
+    models: stamped.models,
+  }), "utf8");
+  const again = loadPriceCatalog(projectRoot);
+  if (!again || again.date !== date || again.sha256 !== stamped.sha256) {
+    throw new Error("price catalog acknowledge failed verification");
+  }
+  return again;
 }
 

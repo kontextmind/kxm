@@ -59,17 +59,17 @@ Record every override with the backup. A restore that lands where the running se
 
 ## Know what each backup covers
 
-`kxm backup` protects SQLite stores it can find from the current directory. Everything else needs the stopped-state copy described below.
+`kxm backup` copies the SQLite stores it can find: the hub store under the current directory, and the Runtime stores and their prompt sidecars under the user state root. Everything else needs the stopped-state copy described below.
 
 > [!WARNING]
-> `kxm backup` does not back up the Runtime. It looks for Runtime stores under `.kxm/runtime/` in the checkout, but the Runtime writes them under the user state root (`$S/runtime/registry.db` and `$S/runtime/projects/<key>/run-events.db`). In practice a backup holds only the hub store. Back up the Runtime stores and their prompt sidecars by hand, stopped, as shown in [Back up everything else](#back-up-everything-else).
+> The Runtime stores are shared by every project on the machine. `kxm backup` copies `$S/runtime/registry.db` and the `run-events.db` of every project under `$S/runtime/projects/`, not only the project you run it from, and `kxm restore` writes all of them back. Restoring one project's backup returns every project's runs to the moment of that backup.
 
 | Path | Holds | In `kxm backup` |
 |---|---|---|
 | `$W/kxm.db` | Hub store: agents, messages, workflow runs, journals, context items, leases, synced run facts | Yes, at `<current directory>/.kxm/state/kxm.db` only |
-| `$S/runtime/registry.db` | Runtime registry: projects, their roots, the supervisor identity and claim | No |
-| `$S/runtime/projects/<key>/run-events.db` | Event-sourced runs, drive receipts, gate evidence, the sync outbox | No |
-| `$S/runtime/projects/<key>/run-events.db.run-prompts.json` | Run prompt text; restoring a store without it loses every prompt | No |
+| `$S/runtime/registry.db` | Runtime registry: projects, their roots, the supervisor identity and claim | Yes (`registry`) |
+| `$S/runtime/projects/<key>/run-events.db` | Event-sourced runs, drive receipts, gate evidence, the sync outbox | Yes, for every project (`events:<key>`) |
+| `$S/runtime/projects/<key>/run-events.db.run-prompts.json` | Run prompt text; restoring a store without it loses every prompt | Yes, as a plain file (`events:<key>:run-prompts`) |
 | `$S/projects/<hash>/repository-bindings.json`, `$S/update.yaml` | Member repository paths; updater settings | No |
 | `$S/hub-env.json`, `$S/hub-binding.json`, `$C/session.token` | Credentials and the machine's hub binding | No; prefer regenerating secrets to copying them |
 | `$R/.kxm/` definition files and durable records | Project, roles, routes, prices, roster, memory, skills, goals, tasks, candidates | No; commit them to Git or copy the checkout |
@@ -82,9 +82,9 @@ A restore without `roster.yaml`, `routes.yaml` or `prices.yaml` comes back healt
 
 These files are disposable and need no backup: `hub.pid`, `hub.stop`, `worker-*.pid`, `session-brief.json`, `update-check.json`, `runtime/supervisor.token`, `runtime/supervisor.error`.
 
-## Back up the hub store with `kxm backup`
+## Back up the SQLite stores with `kxm backup`
 
-Run it from the checkout root. It resolves stores from the current directory and ignores `--workspace`, `KXM_WORKDIR`, `KXM_STATE_DIR` and `KXM_DATA_PATH`, so a relocated hub database is not found.
+Run it from the checkout root. It finds the hub store from the current directory and ignores `--workspace`, `KXM_WORKDIR`, `KXM_STATE_DIR` and `KXM_DATA_PATH`, so a relocated hub database is not found. It finds the Runtime stores under the user state root, including one moved with `KXM_STATE_HOME`.
 
 Preview first. A dry run lists what it would write, opens no store and writes nothing:
 
@@ -96,31 +96,40 @@ kxm backup --dry-run
 Expected output:
 
 ```text
-dry run: back up 1 store(s) to /srv/kxm/product/.kxm/backups/backup-2026-09-23T18-29-09-107Z (sources are not opened, so their WAL is not checkpointed)
+dry run: back up 3 store(s) and 1 file(s) to /srv/kxm/product/.kxm/backups/backup-2026-09-23T18-29-09-107Z (sources are not opened, so their WAL is not checkpointed)
   would write /srv/kxm/product/.kxm/backups/backup-2026-09-23T18-29-09-107Z/kxm.db
+  would write /srv/kxm/product/.kxm/backups/backup-2026-09-23T18-29-09-107Z/registry.db
+  would write /srv/kxm/product/.kxm/backups/backup-2026-09-23T18-29-09-107Z/run-events.db
+  would write /srv/kxm/product/.kxm/backups/backup-2026-09-23T18-29-09-107Z/run-events.db.run-prompts.json
   would write /srv/kxm/product/.kxm/backups/backup-2026-09-23T18-29-09-107Z/manifest.json
 ```
 
 Then write the backup outside the checkout:
 
 ```bash
-kxm backup --out /backups/kxm/2026-09-23/hub
+kxm backup --out /backups/kxm/2026-09-23/sqlite
 ```
 
 Expected output:
 
 ```text
-Created SQLite backup with 1 store(s):
+Created SQLite backup with 3 store(s):
   - hub-store: /srv/kxm/product/.kxm/state/kxm.db -> kxm.db (schema v5, 110592 bytes, sha256 sha256:86549...)
-Manifest: /backups/kxm/2026-09-23/hub/manifest.json
+  - registry: /home/kxm/.local/state/kxm/runtime/registry.db -> registry.db (schema v1, 20480 bytes, sha256 sha256:a5bde...)
+  - events:38ed26cb8eeaa297f3b0b452: /home/kxm/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db -> run-events.db (schema v7, 348160 bytes, sha256 sha256:27c13...)
+Manifest: /backups/kxm/2026-09-23/sqlite/manifest.json
 ```
 
-For each store, `kxm backup` checkpoints the write-ahead log, runs `PRAGMA integrity_check`, copies the database with `VACUUM INTO`, checks the copy's integrity, sets mode `0600`, and records its schema version and SHA-256 in `manifest.json` (`kxm.backup-manifest.v1`). `VACUUM INTO` reads one consistent snapshot, so the hub can keep running during this step.
+The summary lists stores only; the prompt sidecar is in the manifest's `files`. When two projects' event stores share a file name, the second copy is prefixed with its store id.
+
+For each store, `kxm backup` checkpoints the write-ahead log, runs `PRAGMA integrity_check`, copies the database with `VACUUM INTO`, checks the copy's integrity, sets mode `0600`, and records its schema version and SHA-256 in `manifest.json` (`kxm.backup-manifest.v1`). `VACUUM INTO` reads one consistent snapshot, so the hub and the Runtime can keep running during this step. Each prompt sidecar is copied as a regular file with mode `0600` and its SHA-256 recorded.
+
+A backup is complete only when it copied everything it found. If a store or sidecar cannot be copied, or one appears while the backup runs, the manifest lists it under `omitted` and records `complete: false`, the command prints `Backup is incomplete (<n> omitted); not ok:` and exits 1, and `kxm restore` refuses that manifest.
 
 > [!NOTE]
 > Without `--out`, backups go to `.kxm/backups/` inside the checkout. Keep that directory out of Git, or always pass `--out`.
 
-It fails with `backup_no_stores` when `.kxm/state/kxm.db` does not exist under the current directory, and with `database_corrupted` when an integrity check fails.
+It fails with `backup_no_stores` when it finds no store at all, neither `.kxm/state/kxm.db` under the current directory nor a Runtime store under the user state root, and with `database_corrupted` when an integrity check fails.
 
 ## Back up everything else
 
@@ -142,11 +151,11 @@ Copy the remaining state with both services stopped. SQLite runs in write-ahead-
    S="${KXM_STATE_HOME:-$HOME/.local/state/kxm}"   # macOS: "$HOME/Library/Application Support/KXM"
    B=/backups/kxm/2026-09-23
    mkdir -p "$B"
-   kxm backup --out "$B/hub"
+   kxm backup --out "$B/sqlite"
    tar -C "$S" --exclude 'supervisor.token' --exclude 'hub-env.json' -czf "$B/user-state.tgz" .
    ```
 
-   The archive holds `registry.db`, every project's `run-events.db` with any `-wal` and `-shm` files and its `.run-prompts.json` sidecar, the repository bindings, the hub binding and `update.yaml`. It leaves out the credential file; keep tokens in your secret store, or include `hub-env.json` and protect the archive as a secret.
+   `kxm backup` already holds the Runtime stores and sidecars. The archive holds them again, as files, together with what `kxm backup` does not copy: the repository bindings, the hub binding and `update.yaml`. It leaves out the credential file; keep tokens in your secret store, or include `hub-env.json` and protect the archive as a secret.
 
    If `KXM_STATE_DIR` or `KXM_DATA_PATH` moved the hub database, `kxm backup` fails with `backup_no_stores`. With both services stopped, copy that database file and any `-wal` and `-shm` files instead.
 4. Copy the other roots your recovery needs: the checkout's untracked `.kxm/` records, `$D/assets/`, `$W/worker-*.json` (and `$W/pi-sessions/` only if your policy keeps model history), and `$C`.
@@ -157,40 +166,45 @@ Keep at least one previous backup, and bound retention: run events and prompt si
 
 ## Restore with `kxm restore`
 
-`kxm restore` overwrites the live database and deletes its `-wal` and `-shm` files, and it does not check whether the hub is running. Stop the hub and the Runtime first, and move the current state aside rather than deleting it.
+`kxm restore` overwrites every live database in the manifest, including the Runtime stores of every project on the machine, and deletes their `-wal` and `-shm` files. It does not check whether the hub or the Runtime is running. Stop the hub and the Runtime first, and move the current state aside rather than deleting it.
 
 Preview the restore. The dry run performs every check below and lists what it would overwrite:
 
 ```bash
 cd /srv/kxm/product
-kxm restore /backups/kxm/2026-09-23/hub/manifest.json --dry-run
+kxm restore /backups/kxm/2026-09-23/sqlite/manifest.json --dry-run
 ```
 
 Expected output:
 
 ```text
-dry run: restore 1 store(s) from /backups/kxm/2026-09-23/hub/manifest.json; digests verified against the manifest
+dry run: restore 3 store(s) and 1 file(s) from /backups/kxm/2026-09-23/sqlite/manifest.json; digests verified against the manifest
   would write /srv/kxm/product/.kxm/state/kxm.db
   would delete /srv/kxm/product/.kxm/state/kxm.db-wal
   would delete /srv/kxm/product/.kxm/state/kxm.db-shm
+  would write /home/kxm/.local/state/kxm/runtime/registry.db
+  would write /home/kxm/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db
+  would write /home/kxm/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db.run-prompts.json
 ```
 
 Then run it without `--dry-run`:
 
 ```bash
-kxm restore /backups/kxm/2026-09-23/hub/manifest.json
+kxm restore /backups/kxm/2026-09-23/sqlite/manifest.json
 ```
 
 Expected output:
 
 ```text
-Restored 1 SQLite store(s) from /backups/kxm/2026-09-23/hub/manifest.json:
+Restored 3 SQLite store(s) from /backups/kxm/2026-09-23/sqlite/manifest.json:
   - hub-store: -> /srv/kxm/product/.kxm/state/kxm.db (schema v5, integrity ok)
+  - registry: -> /home/kxm/.local/state/kxm/runtime/registry.db (schema v1, integrity ok)
+  - events:38ed26cb8eeaa297f3b0b452: -> /home/kxm/.local/state/kxm/runtime/projects/38ed26cb8eeaa297f3b0b452/run-events.db (schema v7, integrity ok)
 ```
 
-Before it overwrites anything, `kxm restore` checks that the manifest is a `kxm.backup-manifest.v1` document, that every listed file exists, that each file's SHA-256 matches the manifest, and that no store is newer than this build supports. The manifest's own `manifestSha256` is not checked.
+Before it overwrites anything, `kxm restore` checks that the manifest is a `kxm.backup-manifest.v1` document that does not record `complete: false` (`restore_incomplete`), that every listed file exists, that each file's SHA-256 matches the manifest, and that no store is newer than this build supports. The manifest's own `manifestSha256` is not checked. A manifest from an older build that has no `complete` field still restores.
 
-It then checks each backup's integrity and schema version again, copies it into place with mode `0600`, and checks the result. Each store returns to its recorded path, rebased onto the current directory when the manifest came from another checkout.
+It then checks each backup's integrity and schema version again, copies it into place with mode `0600`, checks the result, and then copies the prompt sidecars back. A store under the checkout is rebased onto the current directory when the manifest came from another checkout. The Runtime stores and sidecars return to their recorded absolute paths under the user state root; restore does not move them to a different machine's or a different `KXM_STATE_HOME`.
 
 ### Restore ceilings
 
@@ -206,6 +220,8 @@ The ceilings come from `KXM_BACKUP_CEILINGS` in `plugins/kxm/src/database.ts` an
 | `binding-store` | 1 (no current store uses it) |
 
 ### Restore the Runtime stores by hand
+
+`kxm restore` puts the Runtime stores back at the paths they came from. Use the archive instead when the user state root moved, or when you also need the bindings and `update.yaml`.
 
 1. Stop the Runtime and the hub, as in the backup procedure.
 2. Move `$S/runtime/registry.db` and `$S/runtime/projects/` aside.
@@ -232,8 +248,11 @@ Test a full restore on a spare machine before you rely on it, and repeat the tes
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `backup_no_stores` | No `.kxm/state/kxm.db` under the current directory, or it was moved with `KXM_STATE_DIR` or `KXM_DATA_PATH` | Run from the checkout root; copy a relocated database with the stopped-state procedure |
-| Runs are missing after a restore | `kxm backup` never contained the Runtime stores | Restore `$S/runtime/` from the stopped-state archive |
+| `backup_no_stores` | No `.kxm/state/kxm.db` under the current directory (or it was moved with `KXM_STATE_DIR` or `KXM_DATA_PATH`) and no Runtime store under the user state root | Run from the checkout root; copy a relocated database with the stopped-state procedure |
+| `Backup is incomplete (<n> omitted); not ok:`, exit 1 | A store or sidecar could not be copied, or appeared while the backup ran | Fix the source named after `omitted`, then run `kxm backup` again |
+| `restore_incomplete` | The manifest records `complete: false` | Restore a complete backup; the partial one is not restorable |
+| Runs are missing after a restore | The checkout moved to another absolute path, so the Runtime derives a different store key, or the user state root changed | Keep the checkout at its original path and restore under the same `KXM_STATE_HOME` |
+| Another project's recent runs disappeared after a restore | `kxm restore` rolled back every project's Runtime store to the backup's moment | Restore that project's store from a newer backup or from the moved-aside copy |
 | `restore_manifest_digest_mismatch` | A backup file changed after the manifest was written | Use another backup; do not edit files in a backup set |
 | `restore_file_missing` | A file listed in the manifest is not beside it | Copy the whole backup directory, not only `manifest.json` |
 | `runtime_schema_mismatch` | A backup file's schema version differs from the one its manifest records | Use another backup set; never mix files between sets |

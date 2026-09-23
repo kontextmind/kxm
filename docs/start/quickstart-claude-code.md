@@ -320,7 +320,7 @@ Continue with [step 4](#4-bind-this-machine-and-check-the-hub) through [step 7](
 
 ### Before you update
 
-From the directory the hub runs in, back up its database, then stop the hub and the Runtime:
+From the directory the hub runs in, back up its database and the Runtime stores, then stop the hub and the Runtime:
 
 ```bash
 kxm backup
@@ -331,7 +331,7 @@ kxm runtime stop
 `kxm backup` writes a verified copy and a hashed manifest to `.kxm/backups/backup-<timestamp>/`.
 
 > [!WARNING]
-> `kxm backup` copies the hub store only. It does not find the Runtime's registry and run event stores under the user state root. Copy those while the Runtime is stopped, as [Back up everything else](../operations/backup-and-restore.md#back-up-everything-else) describes.
+> `kxm backup` copies the hub store and the Runtime's registry and run event stores, and those Runtime stores belong to every project on this machine. A later `kxm restore` rolls all of them back. It does not copy bindings, `update.yaml` or the other state roots; [Back up everything else](../operations/backup-and-restore.md#back-up-everything-else) covers those.
 
 [Back up and restore KXM](../operations/backup-and-restore.md) and [Upgrade KXM](../operations/upgrade.md) cover restores and rollback.
 

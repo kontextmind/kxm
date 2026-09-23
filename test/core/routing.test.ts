@@ -159,6 +159,12 @@ test("comparisons compute verified completion, cost, and rework without raw bodi
   assert.equal(comparison.failed, 1);
   assert.equal(comparison.reworkRate, 0.75);
   assert.equal(comparison.totalCostUsd, 0.36);
+  assert.equal(comparison.missingCostRuns, 0);
+  const missing = routingRecord({ ...shared, workflowRunId: "run_missing", finalOutcome: "accepted" });
+  delete (missing as { costUsd?: number }).costUsd;
+  const unknown = compareRoutingRecords([...records, missing]);
+  assert.equal(unknown.totalCostUsd, null);
+  assert.equal(unknown.missingCostRuns, 1);
   assert.equal(comparison.totalTokensIn, 48_000);
   // Mixed behavioral hashes are rejected: comparisons are per configuration.
   const challenger = routingRecord({ behavioralSha256: behavioralConfigHash(config({ requestedModel: "claude/sonnet-4" })) });
