@@ -17,6 +17,7 @@ import {
   MAX_LEASE_RESOURCE_CHARS,
   MAX_LEASE_TTL_MS,
   MAX_MESSAGE_TTL_MS,
+  MAX_SYNC_BATCH_EVENTS,
   MIN_LEASE_TTL_MS,
   MIN_MESSAGE_TTL_MS,
   MIN_MESSAGE_RETENTION_MS,
@@ -33,8 +34,12 @@ import {
   type HubEvent,
   type LeaseRecord,
   type MessageRecord,
+  type RuntimePresenceRecord,
+  type StoredSyncEvent,
   type WorkflowMessageContext,
 } from "./protocol.ts";
+import { kxmCanonicalJson, syncEventSchemaErrors, type JsonValue } from "./project-config.ts";
+import { kxmSyncEventHash } from "./sync-transform.ts";
 import { workflowScopeExtras } from "./diagnostics.ts";
 import { timingSafeStringCompare } from "./commands.ts";
 import { arbitrate, explainContextItem, journalEntryToContextItem, memoryRecordToContextItem, rolePolicy } from "./arbiter.ts";
@@ -135,6 +140,32 @@ function isLoopback(host: string): boolean {
 function publicAgent(agent: StoredAgent, staleAfterMs: number, now = Date.now()): AgentRecord {
   const { key: _key, ...identity } = agent;
   return toAgentRecord(identity, staleAfterMs, now);
+}
+
+/** Runtime ids share the contract's opaque-id shape (`rtm_…`). */
+const RUNTIME_ID_PATTERN = /^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
+
+function requireRuntimeId(value: unknown): string {
+  const runtimeId = requireString(value, "runtimeId", { max: 144 });
+  if (!RUNTIME_ID_PATTERN.test(runtimeId)) {
+    throw new ProtocolError(400, "runtimeId must be an opaque runtime id", "invalid_runtime_id");
+  }
+  return runtimeId;
+}
+
+/** A Runtime's presence as readers see it. The lease is the same hub-clocked
+ * window agents get: `heartbeatAt + staleAfterMs`. */
+function runtimePresenceView(record: RuntimePresenceRecord, staleAfterMs: number, nowMs: number) {
+  const heartbeatMs = Date.parse(record.heartbeatAt);
+  const leaseExpiresMs = Number.isFinite(heartbeatMs) ? heartbeatMs + staleAfterMs : 0;
+  return {
+    runtimeId: record.runtimeId,
+    ...(record.host ? { host: record.host } : {}),
+    registeredAt: record.registeredAt,
+    heartbeatAt: record.heartbeatAt,
+    leaseExpiresAt: new Date(leaseExpiresMs).toISOString(),
+    presence: leaseExpiresMs > nowMs ? "online" as const : "expired" as const,
+  };
 }
 
 function safeTokenEqual(actual: string | undefined, expected: string): boolean {
@@ -506,6 +537,11 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     leasesGranted: 0,
     leasesRefused: 0,
     leasesReleased: 0,
+    syncEventsAccepted: 0,
+    syncEventsDuplicate: 0,
+    syncEventsRefused: 0,
+    syncConflicts: 0,
+    runtimeHeartbeats: 0,
   };
   let cleanupTimer: NodeJS.Timeout | undefined;
   let closed = false;
@@ -672,6 +708,74 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
     }
   }
 
+  /**
+   * Synchronized runs grouped by their home Runtime. Built from the gapless
+   * prefix of each run only, so a missing sequence is shown as pending and
+   * never papered over. `orphaned` is view state: the home Runtime's presence
+   * lease has expired (or it never registered). Nothing is migrated.
+   */
+  function homeRuntimesView(project: string, nowMs: number) {
+    const presence = new Map(store.listRuntimePresence(project).map((record) => [record.runtimeId, record]));
+    const runs = new Map<string, StoredSyncEvent[]>();
+    for (const event of store.listSyncEvents(project)) {
+      const key = `${event.projectId}\u0000${event.runId}`;
+      const bucket = runs.get(key);
+      if (bucket) bucket.push(event);
+      else runs.set(key, [event]);
+    }
+    const homes = new Map<string, Array<Record<string, unknown>>>();
+    for (const events of runs.values()) {
+      const first = events[0]!;
+      let cursor = 0;
+      let status: string | undefined;
+      let workflowId: string | undefined;
+      let displayTitle: string | undefined;
+      let updatedAt: string | undefined;
+      for (const event of events) {
+        if (event.sequence !== cursor + 1) break;
+        cursor = event.sequence;
+        const parsed = JSON.parse(event.bytes) as { occurredAt?: string; payload?: Record<string, unknown> };
+        const payload = parsed.payload ?? {};
+        if (event.eventType.startsWith("run.") && typeof payload.status === "string") status = payload.status;
+        if (typeof payload.workflowId === "string") workflowId = payload.workflowId;
+        if (typeof payload.displayTitle === "string") displayTitle = payload.displayTitle;
+        if (typeof parsed.occurredAt === "string") updatedAt = parsed.occurredAt;
+      }
+      const home = presence.get(first.homeRuntimeId);
+      const orphaned = !home || runtimePresenceView(home, staleAfterMs, nowMs).presence === "expired";
+      const list = homes.get(first.homeRuntimeId) ?? [];
+      list.push({
+        projectId: first.projectId,
+        runId: first.runId,
+        ...(workflowId ? { workflowId } : {}),
+        ...(displayTitle ? { displayTitle } : {}),
+        ...(status ? { status } : {}),
+        lastSequence: cursor,
+        pendingGap: events.length > cursor,
+        ...(updatedAt ? { updatedAt } : {}),
+        orphaned,
+      });
+      homes.set(first.homeRuntimeId, list);
+    }
+    for (const runtimeId of presence.keys()) if (!homes.has(runtimeId)) homes.set(runtimeId, []);
+    return [...homes.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([runtimeId, homeRuns]) => {
+        const record = presence.get(runtimeId);
+        const view = record ? runtimePresenceView(record, staleAfterMs, nowMs) : undefined;
+        return {
+          runtimeId,
+          ...(view ? { host: view.host, heartbeatAt: view.heartbeatAt, leaseExpiresAt: view.leaseExpiresAt } : {}),
+          presence: view?.presence ?? "unknown",
+          orphaned: !view || view.presence === "expired",
+          runs: homeRuns
+            .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")))
+            .slice(0, 16),
+          runTotal: homeRuns.length,
+        };
+      });
+  }
+
   function opsSnapshot(project: string) {
     const snapshotAt = Date.now();
     const projectAgents = [...agents.values()]
@@ -716,6 +820,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         };
       }),
       runTotal: projectRuns.length,
+      homeRuntimes: homeRuntimesView(project, hubNow()),
       plans: [...journal.values()]
         .filter((entry) => entry.category === "plan" && projectRuns.some((run) => run.id === entry.runId))
         .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
@@ -1173,6 +1278,16 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       `kxm_leases_refused_total ${counters.leasesRefused}`,
       "# TYPE kxm_leases_released_total counter",
       `kxm_leases_released_total ${counters.leasesReleased}`,
+      "# TYPE kxm_sync_events_accepted_total counter",
+      `kxm_sync_events_accepted_total ${counters.syncEventsAccepted}`,
+      "# TYPE kxm_sync_events_duplicate_total counter",
+      `kxm_sync_events_duplicate_total ${counters.syncEventsDuplicate}`,
+      "# TYPE kxm_sync_events_refused_total counter",
+      `kxm_sync_events_refused_total ${counters.syncEventsRefused}`,
+      "# TYPE kxm_sync_conflicts_total counter",
+      `kxm_sync_conflicts_total ${counters.syncConflicts}`,
+      "# TYPE kxm_runtime_heartbeats_total counter",
+      `kxm_runtime_heartbeats_total ${counters.runtimeHeartbeats}`,
       "",
     ].join("\n");
   }
@@ -2256,6 +2371,112 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         broadcastPresence(current);
         logger({ event: "agent_unregistered", agentId: current.id, project: current.project });
         response.writeHead(204, { "cache-control": "no-store" }).end();
+        return;
+      }
+
+      // Runtime presence (P5). A Runtime is a machine client, not an agent: it
+      // is admitted by the project token and declares its id and host label.
+      // The hub stamps the heartbeat with its own clock; that stamp plus
+      // staleAfterMs is the presence lease the ops snapshot reads.
+      if (method === "POST" && url.pathname === "/v1/runtime/presence") {
+        const body = await readJson(request);
+        const project = requireString(body.project, "project", { max: 128 });
+        requireProjectAuth(request, project);
+        const runtimeId = requireRuntimeId(body.runtimeId);
+        const hostLabel = optionalString(body.host, "host", MAX_AGENT_HOST_CHARS);
+        const heartbeatAt = new Date(hubNow()).toISOString();
+        const existing = store.getRuntimePresence(project, runtimeId);
+        const record: RuntimePresenceRecord = {
+          runtimeId,
+          project,
+          ...(hostLabel ? { host: hostLabel } : {}),
+          registeredAt: existing?.registeredAt ?? heartbeatAt,
+          heartbeatAt,
+        };
+        store.saveRuntimePresence(record);
+        counters.runtimeHeartbeats += 1;
+        if (!existing) logger({ event: "runtime_registered", project, runtimeId, ...(hostLabel ? { host: hostLabel } : {}) });
+        json(response, existing ? 200 : 201, { presence: runtimePresenceView(record, staleAfterMs, hubNow()) });
+        return;
+      }
+
+      // Run-fact sync (P5), not a peer transport. Each event is accepted once by
+      // {projectId, runId, sequence}: identical bytes are an idempotent
+      // duplicate, different bytes under a used sequence are refused and raised
+      // as a security alert. Out-of-order events are held; the per-run cursor is
+      // the gapless prefix, so a gap stays pending until it is filled.
+      if (method === "POST" && url.pathname === "/v1/sync/events") {
+        const body = await readJson(request);
+        const project = requireString(body.project, "project", { max: 128 });
+        requireProjectAuth(request, project);
+        const runtimeId = requireRuntimeId(body.runtimeId);
+        if (!Array.isArray(body.events)) {
+          throw new ProtocolError(400, "events must be an array", "invalid_sync_batch");
+        }
+        if (body.events.length > MAX_SYNC_BATCH_EVENTS) {
+          throw new ProtocolError(413, `a sync batch holds at most ${MAX_SYNC_BATCH_EVENTS} events`, "sync_batch_too_large");
+        }
+        const receivedAt = new Date(hubNow()).toISOString();
+        const results: Array<Record<string, unknown>> = [];
+        const touched = new Map<string, { projectId: string; runId: string }>();
+        for (const candidate of body.events as unknown[]) {
+          const identity = candidate && typeof candidate === "object" && !Array.isArray(candidate)
+            ? candidate as Record<string, unknown>
+            : {};
+          const echo = {
+            ...(typeof identity.projectId === "string" ? { projectId: identity.projectId.slice(0, 144) } : {}),
+            ...(typeof identity.runId === "string" ? { runId: identity.runId.slice(0, 144) } : {}),
+            ...(Number.isInteger(identity.sequence) ? { sequence: identity.sequence } : {}),
+          };
+          if (syncEventSchemaErrors(candidate) !== undefined) {
+            counters.syncEventsRefused += 1;
+            results.push({ ...echo, outcome: "rejected", code: "sync_event_invalid" });
+            continue;
+          }
+          const event = identity as { projectId: string; runId: string; sequence: number; homeRuntimeId: string; eventType: string };
+          if (event.homeRuntimeId !== runtimeId) {
+            counters.syncEventsRefused += 1;
+            logger({ event: "security_alert", alert: "sync_runtime_mismatch", project, runtimeId, ...echo, homeRuntimeId: event.homeRuntimeId });
+            results.push({ ...echo, outcome: "rejected", code: "sync_runtime_mismatch" });
+            continue;
+          }
+          const bytes = kxmCanonicalJson(candidate as JsonValue);
+          const contentHash = kxmSyncEventHash(bytes);
+          const outcome = store.ingestSyncEvent({
+            projectId: event.projectId,
+            runId: event.runId,
+            sequence: event.sequence,
+            hubProject: project,
+            homeRuntimeId: event.homeRuntimeId,
+            eventType: event.eventType,
+            contentHash,
+            receivedAt,
+            bytes,
+          });
+          if (outcome.outcome === "conflict") {
+            counters.syncConflicts += 1;
+            counters.syncEventsRefused += 1;
+            logger({
+              event: "security_alert",
+              alert: "sync_sequence_conflict",
+              reason: outcome.reason,
+              project,
+              runtimeId,
+              ...echo,
+              presentedHash: contentHash,
+              ...(outcome.existingHash ? { existingHash: outcome.existingHash } : {}),
+            });
+            results.push({ ...echo, outcome: "conflict", code: `sync_${outcome.reason}` });
+            continue;
+          }
+          if (outcome.outcome === "accepted") counters.syncEventsAccepted += 1;
+          else counters.syncEventsDuplicate += 1;
+          touched.set(`${event.projectId}\u0000${event.runId}`, { projectId: event.projectId, runId: event.runId });
+          results.push({ ...echo, outcome: outcome.outcome });
+        }
+        const cursors = [...touched.values()].map((run) => ({ ...run, cursor: store.syncCursor(run.projectId, run.runId) }));
+        if (results.some((result) => result.outcome === "accepted")) publishOps(project, "workflows");
+        json(response, 200, { results, cursors });
         return;
       }
 

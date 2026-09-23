@@ -632,15 +632,27 @@ export class HubClient {
   }
 
   private async request<T = unknown>(path: string, init: RequestInit = {}, includeIdentity = true): Promise<T> {
-    const requestTimeoutMs = this.options.requestTimeoutMs ?? 15_000;
+    return await hubJsonRequest<T>(this.options, path, init, this.headers(includeIdentity));
+  }
+}
+
+/** One JSON request to the hub with a bounded timeout. A non-2xx answer
+ * becomes a `HubHttpError` carrying the hub's code and next-action hints. */
+async function hubJsonRequest<T>(
+  options: { serverUrl: string; requestTimeoutMs?: number; fetchImpl?: typeof fetch },
+  path: string,
+  init: RequestInit,
+  headers: Record<string, string>,
+): Promise<T> {
+    const requestTimeoutMs = options.requestTimeoutMs ?? 15_000;
     const timeoutSignal = AbortSignal.timeout(requestTimeoutMs);
     const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
     let response: Response;
     try {
-      response = await (this.options.fetchImpl ?? fetch)(`${this.options.serverUrl.replace(/\/$/, "")}${path}`, {
+      response = await (options.fetchImpl ?? fetch)(`${options.serverUrl.replace(/\/$/, "")}${path}`, {
         ...init,
         signal,
-        headers: { ...this.headers(includeIdentity), ...(init.headers ?? {}) },
+        headers: { ...headers, ...(init.headers ?? {}) },
       });
     } catch (error) {
       if (timeoutSignal.aborted) throw new Error(`request timed out after ${requestTimeoutMs}ms`);
@@ -672,5 +684,75 @@ export class HubClient {
       );
     }
     return body as T;
+}
+
+export interface RuntimeHubClientOptions {
+  serverUrl: string;
+  /** The hub project this Runtime reports into; its token is the admission. */
+  project: string;
+  authToken?: string;
+  runtimeId: string;
+  /** Box label; defaults to the hostname. Never used for authorization. */
+  host?: string;
+  requestTimeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+export interface RuntimePresenceView {
+  runtimeId: string;
+  host?: string;
+  registeredAt: string;
+  heartbeatAt: string;
+  leaseExpiresAt: string;
+  presence: "online" | "expired";
+}
+
+export interface SyncPushResult {
+  projectId?: string;
+  runId?: string;
+  sequence?: number;
+  outcome: "accepted" | "duplicate" | "conflict" | "rejected";
+  code?: string;
+}
+
+export interface SyncPushResponse {
+  results: SyncPushResult[];
+  cursors: Array<{ projectId: string; runId: string; cursor: number }>;
+}
+
+/**
+ * The Runtime's machine client for one hub project (P5). It registers
+ * presence and pushes derived sync events outbound; the hub never calls the
+ * Runtime back. No agent identity, no message verbs.
+ */
+export class RuntimeHubClient {
+  readonly options: RuntimeHubClientOptions;
+
+  constructor(options: RuntimeHubClientOptions) {
+    this.options = options;
+  }
+
+  async heartbeat(): Promise<RuntimePresenceView> {
+    const result = await this.request<{ presence: RuntimePresenceView }>("/v1/runtime/presence", {
+      project: this.options.project,
+      runtimeId: this.options.runtimeId,
+      host: this.options.host ?? defaultHostLabel(),
+    });
+    return result.presence;
+  }
+
+  /** Push already-derived `kxm.sync-event.v1` objects, in outbox order. */
+  async pushSyncEvents(events: readonly unknown[]): Promise<SyncPushResponse> {
+    return await this.request<SyncPushResponse>("/v1/sync/events", {
+      project: this.options.project,
+      runtimeId: this.options.runtimeId,
+      events,
+    });
+  }
+
+  private async request<T>(path: string, body: unknown): Promise<T> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (this.options.authToken) headers.authorization = `Bearer ${this.options.authToken}`;
+    return await hubJsonRequest<T>(this.options, path, { method: "POST", body: JSON.stringify(body) }, headers);
   }
 }

@@ -93,6 +93,33 @@ export interface LeaseRecord {
   expiresAt: string;
 }
 
+/** A Runtime's machine-client presence in one hub project (P5). Not an agent:
+ * it holds no agent key, sends no messages, and is admitted by the project
+ * token alone. `heartbeatAt` is the hub's clock. */
+export interface RuntimePresenceRecord {
+  runtimeId: string;
+  project: string;
+  host?: string;
+  registeredAt: string;
+  heartbeatAt: string;
+}
+
+/** One accepted sync event as the hub holds it (P5). `bytes` is the canonical
+ * `kxm.sync-event.v1` text; `contentHash` is its sha256, the conflict test. */
+export interface StoredSyncEvent {
+  projectId: string;
+  runId: string;
+  sequence: number;
+  hubProject: string;
+  homeRuntimeId: string;
+  eventType: string;
+  contentHash: string;
+  receivedAt: string;
+  bytes: string;
+}
+
+export const MAX_SYNC_BATCH_EVENTS = 100;
+
 export interface MessageReply {
   content: string;
   createdAt: string;

@@ -458,13 +458,12 @@ test("store sweeps retention and deletes runs, journal entries, and context item
 });
 
 test("the hub store pins the leases table and refuses the v3 file that predates it", () => {
-  assert.equal(HUB_STORE_SCHEMA_VERSION, 4);
   assert.deepEqual(
     [...HUB_STORE_TABLES["leases"]!],
     ["resource", "holder_agent_id", "fencing_token", "expires_at", "record"],
   );
 
-  // A v3 file is the shape this build no longer carries: it has every other hub
+  // A v3 file is a shape this build no longer carries: it has every other hub
   // table and no `leases`. There is no migration lane, so it is refused outright
   // rather than reshaped underneath a running hub.
   const directory = mkdtempSync(join(tmpdir(), "kxm-hub-v3-"));
@@ -492,6 +491,53 @@ test("the hub store pins the leases table and refuses the v3 file that predates 
       const tables = (inspection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>)
         .map((row) => row.name);
       assert.equal(tables.includes("leases"), false, "a refusal must not create the table it refused over");
+    } finally {
+      inspection.close();
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the hub store pins the P5 sync tables and refuses the v4 file that predates them", () => {
+  assert.equal(HUB_STORE_SCHEMA_VERSION, 5);
+  assert.deepEqual(
+    [...HUB_STORE_TABLES["sync_events"]!],
+    ["project_id", "run_id", "sequence", "hub_project", "home_runtime_id", "event_type", "content_hash", "received_at", "record"],
+  );
+  assert.deepEqual(
+    [...HUB_STORE_TABLES["runtime_presence"]!],
+    ["runtime_id", "hub_project", "host", "heartbeat", "record"],
+  );
+
+  // v4 has leases but neither sync table. No migration lane: refused as-is.
+  const directory = mkdtempSync(join(tmpdir(), "kxm-hub-v4-"));
+  const path = join(directory, "kxm.db");
+  try {
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      CREATE TABLE agents (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;
+      CREATE TABLE messages (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT;
+      CREATE TABLE consumer_cursors (agent_id TEXT PRIMARY KEY, cursor INTEGER NOT NULL) STRICT;
+      CREATE TABLE agent_sequences (agent_id TEXT PRIMARY KEY, next_seq INTEGER NOT NULL) STRICT;
+      CREATE TABLE workflow_runs (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, delivery_id TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      CREATE TABLE workflow_journal (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, category TEXT NOT NULL, area TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      CREATE TABLE context_items (id TEXT PRIMARY KEY, project TEXT NOT NULL, kind TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      CREATE TABLE leases (resource TEXT PRIMARY KEY, holder_agent_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, expires_at TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      PRAGMA user_version = 4;
+    `);
+    legacy.close();
+
+    assert.throws(() => new MeshStore(path), /runtime_schema_outdated[\s\S]*is schema version 4; this build requires 5/);
+
+    const inspection = new DatabaseSync(path);
+    try {
+      const version = inspection.prepare("PRAGMA user_version").get() as { user_version: number };
+      assert.equal(version.user_version, 4, "a refusal must leave the rejected file at its own version");
+      const tables = (inspection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>)
+        .map((row) => row.name);
+      assert.equal(tables.includes("sync_events"), false, "a refusal must not create the tables it refused over");
+      assert.equal(tables.includes("runtime_presence"), false, "a refusal must not create the tables it refused over");
     } finally {
       inspection.close();
     }

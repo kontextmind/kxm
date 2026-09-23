@@ -316,8 +316,9 @@ restore lands somewhere the running service will not look.
    routing manifests and update configuration are not databases, so a snapshot-only backup
    reproduces exactly the failure this section exists to remove. The hub's own backup path already writes a hashed manifest and records
    a schema version ceiling; keep that manifest with the files. That ceiling is
-   **hub store v4** as of the fenced-lease release: a backup taken by an earlier
-   build records v3 and is refused by this one, because there is no migration lane.
+   **hub store v5 and event store v6** as of the sync-outbox release: a backup taken by
+   an earlier build records hub v4 or event store v5 and is refused by this one, because
+   there is no migration lane.
    Restore such a backup with the release that produced it, or start fresh.
 3. Record the package version, configuration revision and schema versions beside the copy.
    A restore that cannot state which release produced it is not a restore path.
@@ -395,8 +396,9 @@ Broader deployments need shared state and coordination, external identity and fi
 
 ## v0.5 context/state storage
 
-The hub database (schema version 4) carries `context_items` and `leases`
-alongside agents, messages, workflow runs, and the journal. Temporal state,
+The hub database (schema version 5) carries `context_items`, `leases`,
+`sync_events` and `runtime_presence` alongside agents, messages, workflow runs,
+and the journal. Temporal state,
 knowledge records, and their audit trails live in the same SQLite file and
 upgrade in place from v0.4 databases.
 
@@ -443,6 +445,35 @@ holder. `kxm_leases_granted_total`, `kxm_leases_refused_total` and
 `kxm_leases_released_total` in `/metrics` report contention;
 `lease_acquired`, `lease_renewed`, `lease_released`, `lease_denied` and
 `lease_purged` are the structured log events.
+
+### Runtime → hub run-fact sync
+
+Every event the Runtime commits also writes one row to the event store's
+`outbox` (event store v6), in the same transaction. The row holds only a derived
+`kxm.sync-event.v1` object — allowlisted fields, registered secret values and
+credential shapes replaced, absolute paths removed, text bounded, the default
+sync policy revision recorded — never the local event. A field the allowlist
+does not name is listed by name in `redaction.fieldsOmitted` and its value is
+dropped.
+
+The supervisor pushes outbound only: every `KXM_RUNTIME_SYNC_INTERVAL_MS` (10 s
+by default) it posts `POST /v1/runtime/presence` for each open project, then
+`POST /v1/sync/events` in outbox order, to `KXM_SERVER_URL` or the `kxm hub bind`
+URL with that project's token. No bound hub means nothing is sent and rows stay
+pending; local execution never waits on sync. The hub accepts each event once by
+`{projectId, runId, sequence}`: the same bytes again are an idempotent
+`duplicate`; different bytes under a used sequence, a run claimed by another
+project, or a push for another Runtime's events are refused and logged as
+`security_alert`. Out-of-order events are held, and the per-run cursor is the
+gapless prefix, so a gap stays pending until it is filled.
+
+`GET /v1/ops/snapshot` adds `homeRuntimes`: synchronized runs grouped by home
+Runtime, each with its bounded title/status, `lastSequence`, `pendingGap`, and
+`orphaned` once the Runtime's presence lease (`heartbeatAt + staleAfterMs`, hub
+clock) has lapsed. Orphaned is view state; nothing is migrated.
+`kxm_sync_events_accepted_total`, `kxm_sync_events_duplicate_total`,
+`kxm_sync_events_refused_total`, `kxm_sync_conflicts_total` and
+`kxm_runtime_heartbeats_total` are in `/metrics`.
 
 ## Hub Q&A / knowledge base
 

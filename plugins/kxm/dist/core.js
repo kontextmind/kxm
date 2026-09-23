@@ -27,6 +27,7 @@ function agentPresenceView(agent, staleAfterMs = DEFAULT_STALE_AFTER_MS, now = D
 function toAgentRecord(agent, staleAfterMs, now) {
   return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
 }
+var MAX_SYNC_BATCH_EVENTS = 100;
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -2041,6 +2042,7 @@ export {
   MAX_MESSAGE_TTL_MS,
   MAX_PROVIDER_METADATA_FIELDS,
   MAX_SKILL_REFS,
+  MAX_SYNC_BATCH_EVENTS,
   MIN_LEASE_TTL_MS,
   MIN_MESSAGE_RETENTION_MS,
   MIN_MESSAGE_TTL_MS,
