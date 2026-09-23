@@ -29612,8 +29612,9 @@ async function cmdWorkflowAdd(runtime, workflowId, options) {
     if (scope === "local") {
       const globalDefs = listWorkflowDefinitions({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
       for (const gd of globalDefs) {
-        if (!candidates.some((c) => c.id === gd.id)) {
-          candidates.push({ id: gd.id, description: gd.description, label: "global" });
+        const definition = parseWorkflowFile(gd.filePath);
+        if (definition && !candidates.some((c) => c.id === gd.id)) {
+          candidates.push({ id: gd.id, description: gd.description, label: "global", payload: definition });
         }
       }
     }

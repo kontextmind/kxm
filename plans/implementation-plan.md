@@ -497,6 +497,31 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **`kxm workflow add --pick <global-id>` copies the global definition into the project
+  (2026-09-23).** In local scope the pick list offers the built-in templates and the global
+  definitions, but only the templates carried their content as the pick's payload. Picking a
+  global definition therefore skipped the copy and wrote the one-step `implementer` scaffold
+  under the global's id, reporting success. Reproduced in an isolated sandbox: a global
+  `gdemo` from `--template spec-and-plan` arrived in `.kxm/workflows/gdemo.yaml` as the
+  scaffold. **Changed:** `cmdWorkflowAdd` (`cli/workflows.ts`) reads each listed global file
+  with `parseWorkflowFile(gd.filePath)` and gives the pick that definition as its payload, so
+  it is written the way a template is, with `--description` replacing its description. It
+  reads the listed file rather than calling `getWorkflowDefinition(id)`, which only looks up
+  `<id>.yaml` and would have left a `.yml` global with no payload, the same silent scaffold.
+  A global file that no longer parses is not offered. The copy goes through the
+  `kxmWorkflowWriteIssues` loader check from the entry below, so a global in a shape the
+  project refuses exits 2 with `workflow_invalid` and writes nothing. **Gate:** existing
+  `npm run verify`, green (1274 tests, 1268 pass, 0 fail, 6
+  skipped), no new npm script or CI job. New named test
+  `workflow add --pick <global-id> copies that global definition into the project, and refuses
+  one the project loader rejects` in `test/core/role-and-workflow-manager.test.ts`: without the
+  payload it fails on the scaffold, and with a `<id>.yaml` lookup it fails because the `.yml`
+  global is not offered. `docs/reference/cli-reference.md` now says what a pick writes.
+  **Not done:** `kxm role add --pick <global-role>` in local scope has the same bug: the pick
+  uses its payload only for a `DEFAULT_ROLES` id, so a global role is written as an empty
+  `Role <id>` with no skills or roster (reproduced the same way). A global definition with a
+  template's id is still not offered, so `--pick` of that id writes the built-in template.
+
 - **`kxm workflow add` writes a local workflow only if the project loader accepts it, and
   only where that loader reads (2026-09-23).** A report that one `workflow add demo` left the
   project refusing every `kxm run` (`/ must NOT have additional properties (id)`, `/steps/0
@@ -526,8 +551,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   test compares realpaths, because the file path is now the Git root. **Not done:** `workflow
   modify` still writes without the check (it merges only `description`, which the schema
   caps at 4000 characters). Picking a global definition into local scope (`workflow add
-  --pick <global-id>`) writes the one-step scaffold under that id instead of the global
-  content, because global candidates carry no payload.
+  --pick <global-id>`) wrote the one-step scaffold under that id instead of the global
+  content, because global candidates carried no payload; fixed in the entry above.
 
 - **Docs-audit fixes: webhook replay, agent admin-token fallback, agent hop propagation,
   three small items (2026-09-23; audit against main after #287, #293, #294 and in-flight

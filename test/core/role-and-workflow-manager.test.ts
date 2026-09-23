@@ -492,3 +492,62 @@ test("workflow add writes only what the project loader accepts, at the project r
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("workflow add --pick <global-id> copies that global definition into the project, and refuses one the project loader rejects", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-workflow-pick-global-")));
+  const project = join(root, "project");
+  const workflows = join(project, ".kxm", "workflows");
+  const globalWorkflows = join(root, "user-config", "workflows");
+  const env: NodeJS.ProcessEnv = {
+    HOME: join(root, "home"),
+    KXM_STATE_HOME: join(root, "state"),
+    KXM_USER_CONFIG_DIR: join(root, "user-config"),
+    KXM_USER_TELEMETRY_DIR: join(root, "telemetry"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const kxm = async (argv: string[]): Promise<{ code: number; out: string; err: string }> => {
+    let out = "";
+    let err = "";
+    const code = await runCliImpl([...argv, "--json"], env, { stdout: (text) => { out += text; }, stderr: (text) => { err += text; } }, project);
+    return { code, out, err };
+  };
+  try {
+    mkdirSync(project, { recursive: true });
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
+    assert.equal((await kxm(["init", "--project-id", "prj_01JWORKFLOWPICKGLOBAL0000", "--name", "Workflow pick"])).code, 0);
+
+    // The two-step template, kept globally, arrives in the project as written, not as the one-step scaffold.
+    const kept = await kxm(["workflow", "add", "gdemo", "--scope", "global", "--template", "spec-and-plan"]);
+    assert.equal(kept.code, 0, kept.err);
+    const picked = await kxm(["workflow", "add", "--pick", "gdemo"]);
+    assert.equal(picked.code, 0, picked.err);
+    assert.equal((JSON.parse(picked.out) as { filePath: string }).filePath, join(workflows, "gdemo.yaml"));
+    assert.deepEqual(loadKxmProject(project).workflows.get("gdemo")?.value, parseWorkflowFile(join(globalWorkflows, "gdemo.yaml")));
+
+    // A `.yml` global in the shape written through v0.7.92 is listed for the pick, and the project loader refuses it.
+    writeFileSync(join(globalWorkflows, "gold.yml"), [
+      "schema: kxm.workflow.v1",
+      "coordinator: coordinator",
+      "steps:",
+      "  - id: step-1",
+      "    kind: agent",
+      "    role: writer",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "",
+    ].join("\n"));
+    const refused = await kxm(["workflow", "add", "--pick", "gold"]);
+    assert.equal(refused.code, 2, refused.out);
+    assert.equal((JSON.parse(refused.err) as { error: string }).error, "workflow_invalid");
+    assert.equal(existsSync(join(workflows, "gold.yaml")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

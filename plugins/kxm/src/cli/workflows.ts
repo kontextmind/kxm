@@ -11,6 +11,7 @@ import {
   addWorkflowDefinition,
   removeWorkflowDefinition,
   modifyWorkflowDefinition,
+  parseWorkflowFile,
   scaffoldWorkflowDefinition,
   WORKFLOW_TEMPLATES,
 } from "../workflow-manager.ts";
@@ -239,8 +240,10 @@ export async function cmdWorkflowAdd(
     if (scope === "local") {
       const globalDefs = listWorkflowDefinitions({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
       for (const gd of globalDefs) {
-        if (!candidates.some((c) => c.id === gd.id)) {
-          candidates.push({ id: gd.id, description: gd.description, label: "global" });
+        // Read the listed file itself: it may be `.yml`, which a lookup by `<id>.yaml` misses.
+        const definition = parseWorkflowFile(gd.filePath);
+        if (definition && !candidates.some((c) => c.id === gd.id)) {
+          candidates.push({ id: gd.id, description: gd.description, label: "global", payload: definition });
         }
       }
     }
