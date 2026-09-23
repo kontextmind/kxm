@@ -601,9 +601,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
 
   /** Context callers authenticate either as a registered agent (project-
    * scoped to their own project) or with the administrative token (single
-   * explicit project scope per request). Returns the validated project and
-   * a stable caller identity for provenance. */
-  function contextCallerProject(request: IncomingMessage, requested: unknown): { project: string; caller: string } {
+   * explicit project scope per request). Returns the validated project, a
+   * stable caller identity for provenance, and which credential proved it. */
+  function contextCallerProject(
+    request: IncomingMessage,
+    requested: unknown,
+  ): { project: string; caller: string; credential: "agent" | "admin" } {
     const project = requireString(requested, "project", { max: 200 });
     const agentHeader = request.headers["x-kxm-agent-id"];
     if (typeof agentHeader === "string" && agentHeader.trim()) {
@@ -612,14 +615,14 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (agent.project !== project) {
         throw new ProtocolError(403, "context requests are limited to the agent's project", "context_isolation_violation");
       }
-      return { project, caller: agent.id };
+      return { project, caller: agent.id, credential: "agent" };
     }
     requireAdminAuth(request);
     const callerHeader = request.headers["x-kxm-caller-id"];
     const caller = typeof callerHeader === "string" && callerHeader.trim()
       ? callerHeader.trim()
       : "kxm-admin";
-    return { project, caller };
+    return { project, caller, credential: "admin" };
   }
 
   function requireAdminAuth(request: IncomingMessage): void {
@@ -1829,7 +1832,21 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       const contextStateProposeMatch = url.pathname.match(/^\/v1\/context\/state\/propose$/);
       if (method === "POST" && contextStateProposeMatch) {
         const body = await readJson(request);
-        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const { project: callerProject, caller: callerId, credential } = contextCallerProject(request, body.project);
+        // Origin follows the credential, never a name: an agent key proposes as
+        // a peer, capped at evidence by the grant floor. Human origin can claim
+        // policy, so it takes the configured administrative token with no
+        // loopback bypass, as promotion does.
+        if (credential === "admin") requireConfiguredAdminAuth(request, "human-origin state proposals");
+        if (body.proposedBy !== undefined && body.proposedBy !== callerId) {
+          logger({ event: "security_alert", alert: "state_proposer_mismatch", project: callerProject, callerId, credential });
+          throw new ProtocolError(
+            403,
+            "proposedBy must name the authenticated caller",
+            "state_proposer_mismatch",
+          );
+        }
+        const origin = credential === "agent" ? "peer" : "human";
         const proposalId = await stateProvider.propose({
           schema: "kxm.state-change-proposal.v1",
           project: callerProject,
@@ -1838,11 +1855,12 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           authority: parseContextAuthority(body.authority),
           confidence: parseContextConfidence(body.confidence),
           evidenceRefs: boundedStringList(body.evidenceRefs, "evidenceRefs", 32),
-          proposedBy: (typeof body.proposedBy === "string" && body.proposedBy.trim()) ? body.proposedBy.trim() : callerId,
+          proposedBy: callerId,
+          origin,
         });
         counters.contextRequests += 1;
         publishOps(callerProject, "workflows");
-        logger({ event: "context_state_proposed", project: callerProject, proposalId, proposedBy: callerId });
+        logger({ event: "context_state_proposed", project: callerProject, proposalId, proposedBy: callerId, origin });
         json(response, 201, { proposalId });
         return;
       }
