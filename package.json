@@ -48,7 +48,7 @@
     "verify": "npm test && npm run check && npm run check:generated",
     "validate:claude": "claude plugin validate . --strict && claude plugin validate plugins/kxm --strict",
     "validate:ci": "npm run test:coverage && npm run check && npm pack --dry-run",
-    "validate:pr": "npm run test:core && npm run check && npm run check:generated",
+    "validate:pr": "npm run build && node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=4 test/core/*.test.ts && npm run check && node scripts/check-generated.mjs",
     "validate": "npm run validate:ci && npm run validate:claude",
     "test:packages": "npx nx run-many -t test --output-style=static",
     "check:packages": "npx nx run-many -t build,test:coverage,typecheck --output-style=static",
