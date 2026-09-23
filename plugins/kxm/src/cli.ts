@@ -459,6 +459,10 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function runtimeStatusAction(this: Command) {
       result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "status");
     });
+  addGlobalOptions(runtimeCmd.command("sync-retry").description("Re-queue outbox rows the hub durably refused, after the hub-side state is corrected"))
+    .action(async function runtimeSyncRetryAction(this: Command) {
+      result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "sync-retry");
+    });
   addGlobalOptions(runtimeCmd.command("stop").description("Gracefully stop the Runtime supervisor"))
     .action(async function runtimeStopAction(this: Command) {
       result.code = await cmdKxmRuntime(runtimeFrom(ctx, this), "stop");

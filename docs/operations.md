@@ -264,6 +264,7 @@ a backup goes missing while looking complete:
 | `$S/runtime/registry.db` | Runtime registry, including the **supervisor identity and claim row** | which projects this Runtime knows; the claim is a registry row — there is no `supervisor.json` |
 | `$S/runtime/projects/<projectKey>/run-events.db` (+ `-wal`/`-shm`) | event-sourced run state, commands, drives, receipts, gate evidence, intake, coordinators, pause control | run history and every receipt that proves it |
 | `$S/runtime/projects/<projectKey>/run-events.db.run-prompts.json` | prompt text; the sidecar name appends to the **full** database filename | the prompts that explain the runs — restoring databases without sidecars is a partial restore |
+| `$S/runtime/logs/kxm-runtime.jsonl` (+ rotated `.1`…) | the Runtime supervisor's own structured log, including every outbound-sync state change | the supervisor runs detached with no stdio: this file and `GET /v1/sync/status` are its only voice |
 | `$S/projects/<control-root-hash>/repository-bindings.json` | host-local member repository paths | member bindings are host state, outside the project tree |
 | `$S/update.yaml` | release/update configuration consumed by the updater | the box reverts to defaults on the next update path |
 | `$W/pi-sessions/<workerKey>/{default,runs/<runId>}/` | Pi model histories | **optional by existing policy** (see *Workflow-specific Pi sessions*): never a system of record — decide and record, do not silently widen scope |
@@ -449,7 +450,7 @@ holder. `kxm_leases_granted_total`, `kxm_leases_refused_total` and
 ### Runtime → hub run-fact sync
 
 Every event the Runtime commits also writes one row to the event store's
-`outbox` (event store v6), in the same transaction. The row holds only a derived
+`outbox` (event store v7), in the same transaction. The row holds only a derived
 `kxm.sync-event.v1` object — allowlisted fields, registered secret values and
 credential shapes replaced, absolute paths removed, text bounded, the default
 sync policy revision recorded — never the local event. A field the allowlist
@@ -466,6 +467,31 @@ pending; local execution never waits on sync. The hub accepts each event once by
 project, or a push for another Runtime's events are refused and logged as
 `security_alert`. Out-of-order events are held, and the per-run cursor is the
 gapless prefix, so a gap stays pending until it is filled.
+
+The project on the wire is the project the sync events carry — the `prj_*` id in
+`.kxm/project.yaml`, not the package name. The hub pins a project id to the first
+hub project that claims it, so a Runtime that ever pushed under a second label
+leaves its own later pushes refused; the supervisor's sync status names that
+refusal instead of hiding it.
+
+Two kinds of hub answer come back, and they are not the same thing. A
+**transient** failure (unreachable hub, refused credential) leaves every row
+pending, records the reason and backs the next attempt off exponentially. A
+**durable** refusal (`sync_sequence_reused`, `sync_project_mismatch`,
+`sync_home_runtime_mismatch`, `sync_event_invalid`, a row too large to carry)
+takes *that row* out of the pending queue with the hub's code, so one row the hub
+will never accept can neither block the rows behind it nor re-alert the hub every
+ten seconds. Refused rows are not deleted: `kxm runtime sync-retry` re-queues them
+once the hub-side state is corrected, and only an operator decides that a refusal
+has become retryable.
+
+`kxm runtime status` prints what the tick last saw per project — `ok`, `no_hub`,
+`blocked` or `refusing`, with pending/acked/refused counts, the refusal codes, the
+last failure and the next attempt — read from the supervisor's
+`GET /v1/sync/status`. The same transitions are logged to
+`$S/runtime/logs/kxm-runtime.jsonl` (`runtime_sync_state`,
+`runtime_sync_stalled`), one line per change: the supervisor runs detached with no
+stdio, so that file and that endpoint are its only voice.
 
 `GET /v1/ops/snapshot` adds `homeRuntimes`: synchronized runs grouped by home
 Runtime, each with its bounded title/status, `lastSequence`, `pendingGap`, and
