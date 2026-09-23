@@ -29019,17 +29019,38 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
     }
   }, 1e3);
   heartbeat.unref();
-  for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
-    try {
-      contextFor(reg.projectRoot);
-    } catch {
-      logger.warn({
-        event: "runtime_sync_context_unavailable",
-        projectId: reg.projectId,
-        message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`
-      });
+  const reopenRegisteredProjects = () => {
+    for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
+      const key = projectRuntimeKey(reg.projectRoot);
+      if (contexts.has(key)) continue;
+      try {
+        contextFor(reg.projectRoot);
+        syncStatuses.delete(key);
+      } catch (error) {
+        const reason = syncFailureText(error);
+        const prior = syncStatuses.get(key);
+        if (prior === void 0 || prior.lastError !== reason) {
+          logger.warn({
+            event: "runtime_sync_context_unavailable",
+            projectId: reg.projectId,
+            message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`,
+            reason
+          });
+        }
+        syncStatuses.set(key, {
+          projectId: reg.projectId,
+          projectRoot: reg.projectRoot,
+          homeRuntimeId: activeRuntimeId,
+          state: "blocked",
+          outbox: { pending: 0, acked: 0, refused: 0, refusals: [] },
+          storeReadable: false,
+          consecutiveFailures: 1,
+          lastError: reason
+        });
+      }
     }
-  }
+  };
+  reopenRegisteredProjects();
   const recordSyncStatus = (context, next) => {
     const key = projectRuntimeKey(context.projectRoot);
     const previous = syncStatuses.get(key);
@@ -29058,6 +29079,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
     if (syncing || stopping) return;
     syncing = true;
     void (async () => {
+      reopenRegisteredProjects();
       for (const context of [...contexts.values()]) {
         const key = projectRuntimeKey(context.projectRoot);
         const prior = syncStatuses.get(key);

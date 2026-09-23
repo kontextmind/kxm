@@ -882,6 +882,12 @@ function formatKxmSyncStatus(sync: KxmProjectSyncStatus[] | undefined, running: 
   if (sync.length === 0) return ["sync: no project registered with this Runtime yet"];
   return sync.map((project) => {
     const codes = project.outbox.refusals.map((refusal) => `${refusal.code} x${refusal.count}`).join(", ");
+    // A store this build refuses to open reports zeros it cannot read, not an
+    // empty outbox. Saying "pending 0" there would send the operator looking
+    // somewhere else while every row in the project sits unreachable.
+    if (project.storeReadable === false) {
+      return `sync ${project.projectId}: blocked (its store is not readable by this build) — ${project.lastError ?? "unknown reason"}`;
+    }
     const counts = `pending ${project.outbox.pending}, acked ${project.outbox.acked}, refused ${project.outbox.refused}`;
     const tail = project.state === "refusing"
       ? ` (${codes || "see log"}) — fix the hub, then: kxm runtime sync-retry`
