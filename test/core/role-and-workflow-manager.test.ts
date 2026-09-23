@@ -1,8 +1,10 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import {
   addRole,
   ensureDefaultRoles,
@@ -361,7 +363,7 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
     // 19. workflow definitions text mode and empty
     const wfListTextIo = createIo();
     // Add a workflow so list is not empty
-    await runCliImpl(["workflow", "add", "--scope", "local", "--pick", "1"], env, createIo().io, tempRepoDir);
+    await runCliImpl(["workflow", "add", "--scope", "global", "--pick", "1"], env, createIo().io, tempRepoDir);
     assert.equal(await runCliImpl(["workflow", "definitions"], env, wfListTextIo.io, tempRepoDir), 0);
     assert.match(wfListTextIo.out(), /WORKFLOW DEFINITIONS:/);
 
@@ -369,17 +371,17 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
     assert.equal(await runCliImpl(["workflow", "definitions", "--scope", "local"], env, wfEmptyListIo.io, isolatedRepo), 0);
     assert.match(wfEmptyListIo.out(), /No workflow definitions found/);
 
-    // 20. workflow add with file, named pick, and env pick
+    // 20. workflow add with file, named pick, and env pick (global: this directory is no KXM project)
     const wfFilePath = join(tempRepoDir, "sample-wf.yaml");
     writeFileSync(wfFilePath, "schema: kxm.workflow.v1\nid: file-wf\ndescription: File WF\nsteps: []\n", "utf8");
     const wfFileIo = createIo();
-    assert.equal(await runCliImpl(["workflow", "add", "file-wf", "--file", wfFilePath], env, wfFileIo.io, tempRepoDir), 0);
+    assert.equal(await runCliImpl(["workflow", "add", "file-wf", "--file", wfFilePath, "--scope", "global"], env, wfFileIo.io, tempRepoDir), 0);
 
     const wfNamedPickIo = createIo();
-    assert.equal(await runCliImpl(["workflow", "add", "--pick", "dual-critic-review", "--scope", "local"], env, wfNamedPickIo.io, tempRepoDir), 0);
+    assert.equal(await runCliImpl(["workflow", "add", "--pick", "dual-critic-review", "--scope", "global"], env, wfNamedPickIo.io, tempRepoDir), 0);
 
     const wfEnvPickIo = createIo();
-    assert.equal(await runCliImpl(["workflow", "add", "--scope", "local"], { ...env, KXM_PICK_SELECT: "spec-and-plan" }, wfEnvPickIo.io, tempRepoDir), 0);
+    assert.equal(await runCliImpl(["workflow", "add", "--scope", "global"], { ...env, KXM_PICK_SELECT: "spec-and-plan" }, wfEnvPickIo.io, tempRepoDir), 0);
 
     // 21. workflow add missing workflowId
     const wfMissingIo = createIo();
@@ -391,7 +393,7 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
     assert.match(wfEmptyRemoveIo.out(), /No workflow definitions found in local scope to remove/);
 
     const wfMissingRemoveIo = createIo();
-    assert.equal(await runCliImpl(["workflow", "remove"], env, wfMissingRemoveIo.io, tempRepoDir), 1);
+    assert.equal(await runCliImpl(["workflow", "remove", "--scope", "global"], env, wfMissingRemoveIo.io, tempRepoDir), 1);
 
     // 23. workflow modify empty, pick, and missing workflowId
     const wfEmptyModIo = createIo();
@@ -408,5 +410,144 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
   } finally {
     rmSync(tempUserDir, { recursive: true, force: true });
     rmSync(tempRepoDir, { recursive: true, force: true });
+  }
+});
+
+test("workflow add writes only what the project loader accepts, at the project root, and loadKxmProject still loads", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-workflow-add-load-")));
+  const project = join(root, "project");
+  const workflows = join(project, ".kxm", "workflows");
+  const env: NodeJS.ProcessEnv = {
+    HOME: join(root, "home"),
+    KXM_STATE_HOME: join(root, "state"),
+    KXM_USER_CONFIG_DIR: join(root, "user-config"),
+    KXM_USER_TELEMETRY_DIR: join(root, "telemetry"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const kxm = async (argv: string[], cwd = project): Promise<{ code: number; out: string; err: string }> => {
+    let out = "";
+    let err = "";
+    const code = await runCliImpl([...argv, "--json"], env, { stdout: (text) => { out += text; }, stderr: (text) => { err += text; } }, cwd);
+    return { code, out, err };
+  };
+  try {
+    mkdirSync(join(project, "sub"), { recursive: true });
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
+
+    // No project to hold it yet, and a stray .kxm/ would make `kxm init` refuse.
+    const early = await kxm(["workflow", "add", "demo"]);
+    assert.equal(early.code, 2, early.err);
+    assert.equal((JSON.parse(early.err) as { error: string }).error, "project_not_found");
+    assert.equal(existsSync(join(project, ".kxm")), false);
+
+    assert.equal((await kxm(["init", "--project-id", "prj_01JWORKFLOWLOAD0000000000", "--name", "Workflow load"])).code, 0);
+
+    // The document `workflow add` wrote through v0.7.92: a top-level id and a role-keyed step.
+    const legacy = join(root, "legacy.yaml");
+    writeFileSync(legacy, [
+      "schema: kxm.workflow.v1",
+      "id: legacy",
+      "coordinator: coordinator",
+      "steps:",
+      "  - id: step-1",
+      "    kind: agent",
+      "    role: writer",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "",
+    ].join("\n"));
+    for (const dryRun of [["--dry-run"], []]) {
+      const refused = await kxm(["workflow", "add", "legacy", "--file", legacy, ...dryRun]);
+      assert.equal(refused.code, 2, refused.err);
+      const refusal = JSON.parse(refused.err) as { error: string; issues: Array<{ file: string; message: string }> };
+      assert.equal(refusal.error, "workflow_invalid");
+      assert.ok(refusal.issues.every((entry) => entry.file === ".kxm/workflows/legacy.yaml"), refused.err);
+      for (const message of ["/ must NOT have additional properties (id)", "/steps/0 must NOT have additional properties (role)", "/steps/0 must have required property 'agent'"]) {
+        assert.ok(refusal.issues.some((entry) => entry.message === message), `${message}: ${refused.err}`);
+      }
+      assert.equal(existsSync(join(workflows, "legacy.yaml")), false);
+    }
+
+    // From a subdirectory the scaffold still lands where the loader reads it.
+    const added = await kxm(["workflow", "add", "demo"], join(project, "sub"));
+    assert.equal(added.code, 0, added.err);
+    assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, join(workflows, "demo.yaml"));
+    assert.equal(existsSync(join(project, "sub", ".kxm")), false);
+    assert.ok(loadKxmProject(project).workflows.has("demo"));
+
+    // A file an older release left behind is judged by what replaces it, so --overwrite repairs it.
+    writeFileSync(join(workflows, "demo.yaml"), readFileSync(legacy));
+    assert.throws(() => loadKxmProject(project), /schema_additionalProperties/);
+    const repaired = await kxm(["workflow", "add", "demo", "--overwrite"]);
+    assert.equal(repaired.code, 0, repaired.err);
+    assert.ok(loadKxmProject(project).workflows.has("demo"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("workflow add --pick <global-id> copies that global definition into the project, and refuses one the project loader rejects", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-workflow-pick-global-")));
+  const project = join(root, "project");
+  const workflows = join(project, ".kxm", "workflows");
+  const globalWorkflows = join(root, "user-config", "workflows");
+  const env: NodeJS.ProcessEnv = {
+    HOME: join(root, "home"),
+    KXM_STATE_HOME: join(root, "state"),
+    KXM_USER_CONFIG_DIR: join(root, "user-config"),
+    KXM_USER_TELEMETRY_DIR: join(root, "telemetry"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const kxm = async (argv: string[]): Promise<{ code: number; out: string; err: string }> => {
+    let out = "";
+    let err = "";
+    const code = await runCliImpl([...argv, "--json"], env, { stdout: (text) => { out += text; }, stderr: (text) => { err += text; } }, project);
+    return { code, out, err };
+  };
+  try {
+    mkdirSync(project, { recursive: true });
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
+    assert.equal((await kxm(["init", "--project-id", "prj_01JWORKFLOWPICKGLOBAL0000", "--name", "Workflow pick"])).code, 0);
+
+    // The two-step template, kept globally, arrives in the project as written, not as the one-step scaffold.
+    const kept = await kxm(["workflow", "add", "gdemo", "--scope", "global", "--template", "spec-and-plan"]);
+    assert.equal(kept.code, 0, kept.err);
+    const picked = await kxm(["workflow", "add", "--pick", "gdemo"]);
+    assert.equal(picked.code, 0, picked.err);
+    assert.equal((JSON.parse(picked.out) as { filePath: string }).filePath, join(workflows, "gdemo.yaml"));
+    assert.deepEqual(loadKxmProject(project).workflows.get("gdemo")?.value, parseWorkflowFile(join(globalWorkflows, "gdemo.yaml")));
+
+    // A `.yml` global in the shape written through v0.7.92 is listed for the pick, and the project loader refuses it.
+    writeFileSync(join(globalWorkflows, "gold.yml"), [
+      "schema: kxm.workflow.v1",
+      "coordinator: coordinator",
+      "steps:",
+      "  - id: step-1",
+      "    kind: agent",
+      "    role: writer",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "",
+    ].join("\n"));
+    const refused = await kxm(["workflow", "add", "--pick", "gold"]);
+    assert.equal(refused.code, 2, refused.out);
+    assert.equal((JSON.parse(refused.err) as { error: string }).error, "workflow_invalid");
+    assert.equal(existsSync(join(workflows, "gold.yaml")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

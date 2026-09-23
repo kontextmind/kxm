@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { stringify } from "yaml";
 import { openReadOnlyDatabase } from "../sqlite.ts";
 import { buildRetrospective, writeRetrospective } from "../retrospective.ts";
 import { redactSecrets } from "../redact.ts";
@@ -10,6 +11,7 @@ import {
   addWorkflowDefinition,
   removeWorkflowDefinition,
   modifyWorkflowDefinition,
+  parseWorkflowFile,
   scaffoldWorkflowDefinition,
   WORKFLOW_TEMPLATES,
 } from "../workflow-manager.ts";
@@ -21,7 +23,7 @@ import {
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "../workflow.ts";
-import { discoverKxmProjectRoot } from "../project-config.ts";
+import { discoverKxmProjectRoot, kxmWorkflowWriteIssues } from "../project-config.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import type { WorkerOutcome } from "../envelope.ts";
@@ -213,12 +215,12 @@ export async function cmdWorkflowAdd(
   },
 ): Promise<number> {
   const scope = options.scope ?? "local";
+  const refuse = (error: string, text: string): number => {
+    print(runtime.io, runtime.json, { ok: false, command: "workflow add", error }, `workflow add failed: ${text}`);
+    return 2;
+  };
   let content: Record<string, unknown> | string | undefined;
   if (options.template !== undefined) {
-    const refuse = (error: string, text: string): number => {
-      print(runtime.io, runtime.json, { ok: false, command: "workflow add", error }, `workflow add failed: ${text}`);
-      return 2;
-    };
     if (options.file !== undefined || options.pick !== undefined) {
       return refuse("workflow_add_conflict", "--template cannot be combined with --file or --pick");
     }
@@ -238,8 +240,10 @@ export async function cmdWorkflowAdd(
     if (scope === "local") {
       const globalDefs = listWorkflowDefinitions({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
       for (const gd of globalDefs) {
-        if (!candidates.some((c) => c.id === gd.id)) {
-          candidates.push({ id: gd.id, description: gd.description, label: "global" });
+        // Read the listed file itself: it may be `.yml`, which a lookup by `<id>.yaml` misses.
+        const definition = parseWorkflowFile(gd.filePath);
+        if (definition && !candidates.some((c) => c.id === gd.id)) {
+          candidates.push({ id: gd.id, description: gd.description, label: "global", payload: definition });
         }
       }
     }
@@ -268,9 +272,30 @@ export async function cmdWorkflowAdd(
   }
 
   try {
-    const res = addWorkflowDefinition(workflowId!, content, {
+    const document = typeof content === "string" ? content : stringify(content);
+    // A local workflow is read by the project loader, which refuses the whole
+    // project over one bad file, so it is checked by that loader before it lands.
+    let repoRoot = runtime.cwd;
+    if (scope === "local") {
+      const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+      if (!projectRoot) {
+        return refuse("project_not_found", "local workflows belong to a KXM project; run kxm init at the repository root, or pass --scope global");
+      }
+      const issues = kxmWorkflowWriteIssues(projectRoot, workflowId!, document);
+      if (issues.length > 0) {
+        print(
+          runtime.io,
+          runtime.json,
+          { ok: false, command: "workflow add", error: "workflow_invalid", issues },
+          `workflow add failed: with this workflow the project would not load, so nothing was written\n${issues.map((entry) => `  ${entry.file}: ${entry.code}: ${entry.message}`).join("\n")}`,
+        );
+        return 2;
+      }
+      repoRoot = projectRoot;
+    }
+    const res = addWorkflowDefinition(workflowId!, document, {
       scope,
-      repoRoot: runtime.cwd,
+      repoRoot,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
       overwrite: options.overwrite,
       dryRun: runtime.dryRun,
