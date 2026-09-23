@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, createWriteStream, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { validateHarnessModelPair } from "../plugins/kxm/dist/runtime.js";
 
 const name = process.env.KXM_AGENT_NAME?.trim();
 const project = process.env.KXM_PROJECT?.trim();
@@ -36,6 +37,12 @@ const modelCandidates = [...new Set([
   ...(primaryModel ? [validateModelSelector(primaryModel, "KXM_WORKER_MODEL")] : []),
   ...fallbackModels,
 ])];
+// The worker is Pi-only, so every candidate — fallbacks included — passes the native-vendor
+// brake before Pi can bill a vendor whose own harness must run it.
+for (const selector of modelCandidates) {
+  const brake = validateHarnessModelPair("pi", selector);
+  if (!brake.valid) throw new Error(`${brake.issue}: ${brake.message}`);
+}
 let modelIndex = 0;
 
 function resolveToolAllowlist() {

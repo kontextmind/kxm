@@ -21409,6 +21409,23 @@ var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
   "google",
   "deepseek"
 ]);
+var PI_VENDOR_OWNED_PROVIDERS = Object.freeze({
+  "openai-codex": "openai",
+  moonshotai: "moonshot",
+  "moonshotai-cn": "moonshot",
+  "kimi-coding": "moonshot",
+  "google-vertex": "google",
+  // Claude subscription via the Agent SDK: experiment-only, never a product route.
+  "claude-bridge": "anthropic",
+  // The decided Google route, for Gemini ids only (see PI_ANTIGRAVITY_MODEL_ID).
+  antigravity: "google"
+});
+var PI_VENDOR_SEGMENT_ALIASES = Object.freeze({
+  "x-ai": "xai",
+  moonshotai: "moonshot",
+  "google-ai": "google"
+});
+var PI_ANTIGRAVITY_MODEL_ID = /^gemini-[a-z0-9.-]+$/;
 function reportedModelId(value) {
   return typeof value === "string" && /^[a-z0-9][a-z0-9._:/-]{0,199}$/i.test(value) ? value : void 0;
 }
@@ -22151,19 +22168,25 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     return { valid: true };
   }
   if (harnessId === "pi") {
-    if (provider && PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
-      return {
-        valid: false,
-        issue: "pi_native_impersonation_blocked",
-        message: `pi must not impersonate native provider ${provider}; use the native harness`
-      };
+    if (!provider && model?.includes("/")) {
+      const idx = model.indexOf("/");
+      provider = model.slice(0, idx).toLowerCase();
+      model = model.slice(idx + 1);
     }
-    if (!provider && model && PI_NATIVE_BRAKE_PROVIDERS.some((p) => model.toLowerCase().startsWith(`${p}/`))) {
-      return {
-        valid: false,
-        issue: "pi_native_impersonation_blocked",
-        message: `pi must not impersonate native model ${model}; use the native harness`
-      };
+    if (!provider) return { valid: true };
+    const blocked = (message) => ({ valid: false, issue: "pi_native_impersonation_blocked", message });
+    if (PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
+      return blocked(`pi must not impersonate native provider ${provider}; use the native harness`);
+    }
+    if (provider === "antigravity" && model && PI_ANTIGRAVITY_MODEL_ID.test(model)) return { valid: true };
+    const owned = Object.hasOwn(PI_VENDOR_OWNED_PROVIDERS, provider) ? PI_VENDOR_OWNED_PROVIDERS[provider] : void 0;
+    if (owned) {
+      return blocked(`pi provider ${provider} bills native vendor ${owned} for ${model ?? "this model"}; use the native harness`);
+    }
+    const segment = model?.includes("/") ? model.slice(0, model.indexOf("/")).toLowerCase() : void 0;
+    const vendor = segment && Object.hasOwn(PI_VENDOR_SEGMENT_ALIASES, segment) ? PI_VENDOR_SEGMENT_ALIASES[segment] : segment;
+    if (vendor && PI_NATIVE_BRAKE_PROVIDERS.includes(vendor)) {
+      return blocked(`pi must not bill native vendor ${vendor} through ${provider}; use the native harness`);
     }
     return { valid: true };
   }
@@ -26678,8 +26701,8 @@ function generateRoutingReport(records, options = {}) {
     if (a.reworkRate !== b2.reworkRate) {
       return a.reworkRate - b2.reworkRate;
     }
-    const aCostUnknown = a.costPerAcceptedUsd === null && a.unknownCostAttempts > 0 && a.meteredCostUsd === 0;
-    const bCostUnknown = b2.costPerAcceptedUsd === null && b2.unknownCostAttempts > 0 && b2.meteredCostUsd === 0;
+    const aCostUnknown = a.unknownCostAttempts > 0;
+    const bCostUnknown = b2.unknownCostAttempts > 0;
     if (aCostUnknown && !bCostUnknown) return 1;
     if (!aCostUnknown && bCostUnknown) return -1;
     if (a.costPerAcceptedUsd !== null && b2.costPerAcceptedUsd !== null) {

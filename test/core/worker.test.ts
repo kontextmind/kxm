@@ -1232,6 +1232,31 @@ test("long-lived worker rejects invalid explicit resource paths before supervisi
   }
 });
 
+test("long-lived worker refuses a native-vendor model or fallback before supervising Pi", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "kxm-worker-native-brake-"));
+  try {
+    for (const models of [
+      { KXM_WORKER_MODEL: "openrouter/qwen/qwen3-coder-plus", KXM_WORKER_FALLBACK_MODELS: "xai/grok-4.6" },
+      { KXM_WORKER_MODEL: "antigravity/claude-sonnet-4-6" },
+    ]) {
+      const refused = await runWorker({
+        KXM_AGENT_NAME: "coordinator",
+        KXM_PROJECT: "product",
+        ...models,
+        // A regressed brake must fail this test, never reach a real Pi.
+        KXM_PI_COMMAND: join(workdir, "pi-must-not-start"),
+        KXM_WORKER_MAX_RESTARTS: "0",
+        KXM_WORKDIR: workdir,
+      });
+      assert.notEqual(refused.code, 0);
+      assert.match(refused.stderr, /pi_native_impersonation_blocked/);
+      assert.doesNotMatch(refused.stdout, /worker_starting/);
+    }
+  } finally {
+    removeTempDir(workdir);
+  }
+});
+
 test("long-lived worker launches command scripts through ComSpec on Windows", {
   skip: process.platform !== "win32",
 }, async () => {
