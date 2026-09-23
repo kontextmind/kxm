@@ -100,7 +100,7 @@ type CiJobs = Record<
     name?: string;
     if?: unknown;
     "runs-on"?: unknown;
-    steps?: Array<{ run?: string }>;
+    steps?: Array<{ name?: string; if?: unknown; run?: string }>;
     strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
   }
 >;
