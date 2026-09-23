@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Seven additional fork reviews supply memory, Studio and coordinator-inbox evidence for the unified M0–M9 plan."
@@ -17,6 +17,7 @@ related:
   - plan-unified-kxm-milestones.md
   - research-kxm-harness-strategy.md
   - research-runtime-language-choices.md
+  - research-a2a-cross-host.md
 depends_on: []
 blocked_by: []
 details:
