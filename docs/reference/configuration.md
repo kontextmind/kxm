@@ -132,8 +132,8 @@ The plugin asks for `server_url`, `auth_token`, `agent_name`, `agent_purpose` an
 |---|---|---|
 | `KXM_AGENT_NAME`, `KXM_PROJECT` | None; required | The worker's identity in the hub |
 | `KXM_PI_COMMAND` | `pi`, or `pi.cmd` on Windows | Pi executable when it is not on `PATH` |
-| `KXM_WORKER_MODEL` | Pi's default | Primary model selector |
-| `KXM_WORKER_FALLBACK_MODELS` | None | Up to eight comma-separated selectors, tried in order after a final provider failure. Requires `KXM_WORKER_MODEL` |
+| `KXM_WORKER_MODEL` | Pi's default | Primary model selector. Must pass the Pi native-vendor brake, or the worker exits with `pi_native_impersonation_blocked` before Pi starts |
+| `KXM_WORKER_FALLBACK_MODELS` | None | Up to eight comma-separated selectors, tried in order after a final provider failure. Requires `KXM_WORKER_MODEL`. Each must pass the same brake |
 | `KXM_WORKER_PROVIDER_RETRY_MS` | `60000` | Retry delay after a final provider failure with no unused fallback, `1000` to `3600000` |
 | `KXM_WORKER_TOOLS` | Pi's defaults | Allowlist of 1 to 64 comma-separated Pi tool names |
 | `KXM_WORKER_EXTENSION_PATHS` | Discovery | 1 to 16 extension files, separated by `:` (`;` on Windows); relative paths resolve inside `KXM_WORKDIR` |

@@ -54,7 +54,7 @@ The `127.0.0.1` interface. The hub and the Runtime supervisor listen there by de
 
 ### Native harness
 
-A model vendor's own [harness](#harness), such as `claude` for Anthropic models or `codex` for OpenAI models. The rule is to run a vendor's model in its native harness, not through Pi. The code enforces it only partly: its Pi check reads only the first segment of a model selector, the long-lived [worker](#worker) has no check, and [admission](#admission) is the backstop. See [where the code is looser than the rules](reference/harness-routing.md#where-the-code-is-looser-than-the-rules).
+A model vendor's own [harness](#harness), such as `claude` for Anthropic models or `codex` for OpenAI models. The rule is to run a vendor's model in its native harness, not through Pi. The Pi native-vendor brake enforces it at dispatch and when a long-lived [worker](#worker) starts, and [admission](#admission) is a second layer. A few cases are still operator policy; see [where the code is looser than the rules](reference/harness-routing.md#where-the-code-is-looser-than-the-rules).
 
 ### Pi extension
 
@@ -363,7 +363,7 @@ Two reports share this name. `kxm_improvement_report` summarizes a project's wor
 
 ### Memory
 
-Git-authored project facts in `.kxm/memory/`. `kxm memory brief` prints them, `kxm memory note` records a candidate that a pull request promotes, and `kxm memory sync` projects them into `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. Reserve the word for this; other context records are [context items](#context-item).
+Git-authored project facts in `.kxm/memory/`. `kxm memory brief` prints them, `kxm memory note` records a candidate that a pull request promotes, and `kxm memory sync` projects them into whichever of `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` the project already has. Reserve the word for this; other context records are [context items](#context-item).
 
 ### Memory revision
 

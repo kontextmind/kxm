@@ -272,7 +272,9 @@ The workflow:
    kxm memory sync
    ```
 
-`kxm memory sync` rewrites the block between `<!-- kxm:memory:start -->` and `<!-- kxm:memory:end -->` in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. A missing file is created with a default header copied from the KXM repository's own instructions; replace that header before you commit.
+`kxm memory sync` writes only the project's memory block, the active facts from `.kxm/memory/`, between `<!-- kxm:memory:start -->` and `<!-- kxm:memory:end -->`. It updates whichever of `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` already exist, appends the block to a file that has no markers, and changes nothing outside them. It never creates one of these files or copies KXM's own instructions into it, and it exits 1 when none of the three exists. Create the file your harness reads yourself.
+
+Sync also refuses malformed markers rather than guess which text is yours. Each file must hold exactly one start marker followed by one end marker, or neither. For an orphan marker, an end before its start or a second block, sync names the file and the problem, exits 1 and writes no file at all. Keep one pair, or delete both so sync appends a fresh block.
 
 | Where memory reaches agents | How |
 |---|---|
@@ -339,6 +341,8 @@ The objective, the plan pointer and the acceptance criteria are never removed. I
 | An agent request answers `context_isolation_violation` | It named a project other than its own | Use the agent's own project |
 | `kxm context state` answers 409 `state_contradiction` | Two current values exist for one key | Promote one value with evidence |
 | A Runtime step lacks expected memory | A dispatch gap withheld it | Commit the memory files and start a new run |
+| `memory sync failed: none of AGENTS.md, CLAUDE.md, GEMINI.md exists` | Sync never creates an instruction file | Create the file your harness reads, then sync again |
+| `memory sync failed: <file> has …; wrote no file` | The file has an orphan marker, an end before its start, or a second block | Keep one marker pair, or delete both, then sync again |
 
 ## Next steps
 

@@ -6,10 +6,9 @@
 > enforced with fail-closed `costBasis` requirement. Price catalog `.kxm/prices.yaml`
 > (`kxm.prices.v1`) is implemented, dated, and hashed. `kxm routing report`
 > is implemented (`plugins/kxm/src/routing.ts`) and ranks routes quality-first,
-> then cost per accepted attempt, ranking routes whose attempts are all
-> unknown-cost last and reporting metered, unmetered, and unknown populations
-> separately. A route that mixes unmetered and unknown-cost attempts can show
-> $0 per accepted attempt and rank ahead of metered routes; that is a known gap. By default
+> then cost per accepted attempt, ranking any route with an unknown-cost attempt
+> after every route of equal quality that has none, and reporting metered,
+> unmetered, and unknown populations separately. By default
 > `kxm routing report` and `kxm improve` read two sources: the current project's
 > Runtime event store (read-only) and then `.kxm/logs/telemetry.jsonl`; `--file`
 > reads only the named file (see [Readers](#readers-kxm-routing-report-and-kxm-improve)).
@@ -176,7 +175,7 @@ Fields carried on `RoutingRecordV2`:
 - Outcomes: `verifierOutcome` (`passed` | `warning` | `failed`), `finalOutcome` (`accepted` | `blocked` | `failed` | `pending`), `retries`, optional `transitions`, optional `humanInterventions`, optional `providerMetadata`.
 - Cost accounting: `costBasis` (`"metered" | "unmetered" | "unknown"`), `costUsd` (required when metered), optional `priceRef`.
 
-The KXM engine settle transaction appends a `routing.attempt.recorded` event carrying the v2 record and refuses to settle without a valid `costBasis`. Attempt dispatch enforces `limits.maxModelCost` against metered cost before invocation (`budget_model_cost`).
+The KXM engine settle transaction appends a `routing.attempt.recorded` event carrying the v2 record and refuses to settle without a valid `costBasis`. Attempt dispatch enforces `limits.maxModelCost` against metered cost before invocation (`budget_model_cost`). No producer records `metered` cost today, so the cap cannot trip on a live run; the separate limit of 100 unmetered or unknown attempts per run (`budget_unmetered_attempts`) is the only cost-side limit that can stop one.
 
 What the engine writes on every settled attempt (`producerRoutingRecord` and the
 failure path in `settleMember`, `plugins/kxm/src/engine.ts`):
@@ -228,7 +227,7 @@ backfilled: they still resolve an outcome, but they group per run.
 - **Price catalog:** `.kxm/prices.yaml` (`kxm.prices.v1`, dated and hashed) defines input, output, cache-read, cache-write rates, and context tiers for active models. Missing rows or uncataloged models evaluate to `costBasis: "unknown"`.
 - **Ranked report:** `kxm routing report` (`plugins/kxm/src/routing.ts`, CLI command `kxm routing report`) groups records by `(harness, model, thinking, role)`.
 - **Ranking order:** Quality first (`verifyPassRate` descending, then `reworkRate` ascending where rework measures back-edge re-entries `transitions > 0`), followed by `costPerAcceptedUsd` ascending.
-- **Underquote prevention:** Routes with unknown cost are flagged (`*`). A route whose attempts are all unknown-cost ranks last; a route that mixes unmetered and unknown-cost attempts can still show $0 per accepted attempt and rank first, so read the flag and the population counts before comparing cost.
+- **Underquote prevention:** Routes with unknown cost are flagged (`*`). Any unknown-cost attempt makes a route's cost a lower bound, so the route ranks after every route of equal quality that has no unknown-cost attempt. Displayed values are unchanged: a route that mixes unmetered and unknown-cost attempts still shows `$0` per accepted attempt, so read the flag and the population counts before comparing cost.
 - **Population separation:** Reports metered cost, unmetered attempt counts, unknown-cost attempt counts, and quota-exhausted attempt counts as separate metrics rather than a single misleading total.
 - **List prices flag:** Supports `--equivalent-list-cost` / `--list-prices` to display estimated list rates for comparison alongside actual recorded spend.
 - **Rework column:** reads `transitions`, which Runtime records never set, so Runtime rework shows up only as a resolved `reworked` outcome, which the report does not count as a pass.

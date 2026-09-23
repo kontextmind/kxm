@@ -130,6 +130,7 @@ The [plugin troubleshooting guide](../../plugins/kxm/README.md#troubleshooting) 
 | The heartbeat is healthy but one tool never finishes | A tool exceeded `KXM_WORKER_TOOL_TIMEOUT_MS` (31 minutes by default, above the 30-minute fanout wait) | The worker logs `worker_tool_timeout` and restarts the child; raise the limit only above the longest legitimate call |
 | A long-lived worker keeps restarting | Pi is missing from the service `PATH`, the working directory is gone, or model credentials are missing | Read `worker_process_error` and `worker_exited`; set `KXM_PI_COMMAND` to an explicit path |
 | A read-only reviewer edits files | Prompt wording does not remove tools | Set `KXM_WORKER_TOOLS=read,grep,find,ls` |
+| The worker exits at once with `pi_native_impersonation_blocked` | `--model` or a `--fallback-models` entry is a model whose vendor has its own harness, such as `xai/…`, `openai-codex/…` or `openrouter/x-ai/…` | Run that model in its native harness, or pick an admitted Pi route such as `openrouter/qwen/qwen3-coder-plus`; see [Harness routing](../reference/harness-routing.md#what-the-brake-refuses) |
 
 Use `--fresh-start`, not `--no-continue`, when only the first launch must avoid old session state.
 
@@ -205,6 +206,7 @@ A gate step declares an outcome its `expect` value never produces. The message n
 | `runtime_supervisor_unreachable` | A live supervisor process does not answer its token probe | Check the PID from `kxm runtime status`, stop a hung process with your OS tools, then `kxm runtime start` |
 | `project_required` | The command ran outside a KXM project | Run it from the checkout, or run `kxm init` |
 | `producer_route_not_admitted` | A live drive uses a model route that is not admitted | `kxm routes admit --model <provider/model>`, or drive with `--simulated` |
+| `pi_not_authenticated: pi harness not detected (pi_native_impersonation_blocked)` | A Pi agent's model belongs to a vendor with its own harness | Set the agent's native `harness:`, or choose an admitted Pi route whose vendor has none |
 | `run_busy` (HTTP 409) | The run is already admitted or queued for a drive | Wait, and check `kxm runs status <run-id>` |
 | A run store is refused with `runtime_schema_outdated` | The store predates this release | See [Upgrade KXM](upgrade.md#understand-schema-changes) |
 | Runs do not reach the hub | Sync is `no_hub`, `blocked` or `refusing` | See [Operate Runtime sync and leases](runtime-sync.md#check-sync-status) |
@@ -217,6 +219,8 @@ A gate step declares an outcome its `expect` value never produces. The message n
 | State promotion returns 401 or 503 | Promotion needs the configured admin token; agents can only propose | Promote with `kxm context promote <project> <proposal-id>` from the operator terminal |
 | `kxm context recall` returns nothing | No live record matches; superseded and rejected records are excluded | Broaden the query, or check `unresolvedGaps` |
 | A new memory fact does not appear in `kxm memory brief` | `kxm memory note` records a candidate, which becomes active only when promoted through a pull request | Review and merge the candidate, then run `kxm memory sync` |
+| `memory sync failed: none of AGENTS.md, CLAUDE.md, GEMINI.md exists` | Sync updates only the instruction files a project already has | Create the file your harness reads, then sync again |
+| `memory sync failed: <file> has …; wrote no file` | An orphan memory marker, an end marker before its start, or a second block | Keep exactly one `kxm:memory` marker pair in the file, or delete both, then sync again |
 
 See [Context and memory](../guides/context-and-memory.md).
 

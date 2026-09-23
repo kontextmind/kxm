@@ -1679,7 +1679,7 @@ Starts a long-lived, supervised Pi RPC worker in the foreground through `scripts
 - Needs Pi and a reachable hub. Runs until stopped (`kxm hub stop` stops managed workers too). The exit code is the worker's.
 - A name and project are required (exit 2 otherwise); an invalid isolation mode exits 2.
 - `--dry-run` prints a `kxm.worker-result.v1` envelope with `workspace`, `name`, `project`, `model`, `fallbackModels`, `tools`, `sessionIsolation`, `continue`, `freshStart`.
-- `--model` and `--fallback-models` pass straight to Pi, so a native vendor's selector (for example `xai/…` or `antigravity/claude-…`) would bill through Pi instead of the vendor's own harness; see [Harness routing](harness-routing.md).
+- Before Pi starts, the worker runs `--model` and every `--fallback-models` entry through the Pi native-vendor brake. A model whose vendor has its own harness (for example `xai/…`, `openai-codex/…`, `openrouter/x-ai/…` or `antigravity/claude-…`) exits 1 with `pi_native_impersonation_blocked: <message>` on stderr; use the native harness, or an admitted Pi route such as `openrouter/qwen/qwen3-coder-plus`. `--dry-run` does not run this check. See [Harness routing](harness-routing.md#what-the-brake-refuses).
 - The remaining worker variables are described in [Long-lived worker settings](configuration.md#long-lived-worker-settings).
 
 ```bash
@@ -2966,22 +2966,34 @@ kxm memory note "Use pnpm, not npm" --kind convention --dry-run --json
 kxm memory sync
 ```
 
-Regenerate memory projection blocks across AGENTS.md, CLAUDE.md, and GEMINI.md: rewrites the section between `<!-- kxm:memory:start -->` and `<!-- kxm:memory:end -->` in each file from the active facts.
+Regenerate the memory block in whichever of `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` exist in the current directory; never creates them.
 
 No command-specific options.
 
-- Writes up to three files in the current directory. `--dry-run` reports which files it would update or create and plans the writes without making them.
-- Warning: a missing `CLAUDE.md` or `GEMINI.md` is created with a header copied from the KXM repository's own agent instructions (planner role, Grok as default writer, links to `plans/implementation-plan.md`). Review or replace the header before committing in another project.
-- JSON keys: `updated`, `created`.
+- Writes only the project's memory block, the active authored facts from `.kxm/memory/`, between `<!-- kxm:memory:start -->` and `<!-- kxm:memory:end -->`. A file without markers gets the block appended at its end. Nothing outside the markers changes, and KXM adds no instructions of its own.
+- Updates only the files that already exist. When none of the three exists, it writes nothing and exits 1 with `memory sync failed: none of AGENTS.md, CLAUDE.md, GEMINI.md exists in <dir>; …`.
+- Refuses malformed markers. Each file must hold exactly one start marker followed by one end marker, or neither. An orphan marker, an end before its start, or a second block exits 1 with `memory sync failed: <file> has <problem>; wrote no file. …`, and no file is written. Keep one pair, or delete both so sync appends a fresh block.
+- `--dry-run` runs the same checks, lists the files it would change, and writes nothing.
+- Refusals are plain text on stderr, also under `--json`. JSON keys: `updated`, `unchanged`, `missing` (files that do not exist and were not created).
 
-In a project without these files:
+In a project that has only `AGENTS.md`, with no memory block yet:
 
 ```bash
 kxm memory sync --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"memory sync","updated":[],"created":["AGENTS.md","CLAUDE.md","GEMINI.md"],"dryRun":true,"planned":[{"action":"write","target":"/work/proj/AGENTS.md"},{"action":"write","target":"/work/proj/CLAUDE.md"},{"action":"write","target":"/work/proj/GEMINI.md"}]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"memory sync","updated":["AGENTS.md"],"unchanged":[],"missing":["CLAUDE.md","GEMINI.md"],"dryRun":true,"planned":[{"action":"write","target":"/work/proj/AGENTS.md"}]}
+```
+
+With a stray start marker in `CLAUDE.md`:
+
+```bash
+kxm memory sync
+```
+
+```text
+memory sync failed: CLAUDE.md has <!-- kxm:memory:start --> with no <!-- kxm:memory:end -->; wrote no file. Keep exactly one <!-- kxm:memory:start --> followed by one <!-- kxm:memory:end --> in each file, or delete both so sync appends a fresh block
 ```
 
 ## `kxm skills`
@@ -3012,7 +3024,7 @@ Submit a skill candidate from verified episodes.
 - Writes a candidate. Honors `--dry-run`. JSON keys: `metadata` (or `name` for a dry run).
 
 ```bash
-kxm skills create --file SKILL.md --name retry-backoff --created-by alice --harness pi --models xai/grok-4.6 --run wf_123 --dry-run --json
+kxm skills create --file SKILL.md --name retry-backoff --created-by alice --harness pi --models openrouter/qwen/qwen3-coder-plus --run wf_123 --dry-run --json
 ```
 
 ```text
@@ -3233,7 +3245,7 @@ Without `--file` it reads the same sources as [`kxm improve report`](#kxm-improv
 - Reads only. A price catalog that cannot be loaded is skipped silently.
 - `--equivalent-list-cost` loads the catalog without the freshness check the producers apply, so it prices with a catalog of any date, including one the producers treat as stale. Check the catalog `date` before you rely on `ListEquiv($)`.
 - A Runtime store that exists but cannot be read exits 1 with `improve_source_unreadable`.
-- Ranking: quality first (Pass%, then Rwk%), then cost per accepted attempt. Only a route whose attempts are all unknown-cost ranks last among equals; a route mixing unmetered and unknown-cost attempts shows `$0` in `$/Acc` and can rank first.
+- Ranking: quality first (Pass%, then Rwk%), then cost per accepted attempt. Among routes of equal quality, any route with an unknown-cost attempt ranks after every route without one. `$/Acc` still shows only the priced part, so a route mixing unmetered and unknown-cost attempts can read `$0.0000`; the `*` in `Unk` marks it.
 - The `Quota` column counts attempts whose metadata looks quota-exhausted (a quota failure class, a `quota` flag, or text such as `rate limit` or `HTTP 429`). It is a count only: nothing fails over to another route.
 - The text output does not list the sources, and prints `no routing records in telemetry` when no source holds a record. The Rwk% column counts records with `transitions` greater than 0, which Runtime records never set.
 - JSON keys: `file` (the telemetry path, also when the Runtime store was read), `sources` (without `--file`; the same shape as in `kxm improve`), `configurations` (per behavioral hash for v1 records), `report` (`schema`, `generatedAt`, `totalAttempts`, `rows`).
@@ -3541,7 +3553,6 @@ Inspect KXM runs
 These are behaviors of the current build that differ from what the help text or the flag names suggest. Each is also noted in the command's section.
 
 - The `default` workflow that `kxm init` writes sets `limits.maxAgentTimeMs`, so `kxm runs drive` hands every run of it off with `run_handoff_required` (`limit_unsupported`). Use a `kxm workflow add --template` workflow, or remove the limit, to drive a first run.
-- `kxm memory sync` creates `CLAUDE.md` and `GEMINI.md` with headers taken from the KXM repository's own instructions.
 - `kxm routing benchmark` prints constant placeholder figures.
 - `kxm task sync` does not contact GitHub or Jira.
 - `kxm peer inbox` always returns an empty list from the CLI.

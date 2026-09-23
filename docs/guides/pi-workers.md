@@ -79,8 +79,10 @@ would start worker
 
 When no unused fallback remains, the worker waits `KXM_WORKER_PROVIDER_RETRY_MS` (60 seconds by default) and tries the last model again. It does not return to the primary model until you restart the worker.
 
-> [!WARNING]
-> Never run a vendor that has its own native harness through Pi. Selectors such as `anthropic/…`, `openai/…`, `xai/…`, `google/…`, and `moonshot/…` belong in their native harness (Claude Code, Codex, Grok CLI, and so on), not in a Pi worker. `kxm agent worker` does not check this for you. Pick every `--model` and `--fallback-models` entry with [Harness routing](../reference/harness-routing.md).
+> [!IMPORTANT]
+> A worker refuses to start on a model whose vendor has its own native harness. Before Pi starts, the worker runs `--model` and every `--fallback-models` entry through the Pi native-vendor brake, and exits 1 with `pi_native_impersonation_blocked` on the first one it refuses: a native provider (`xai/…`), that vendor's own Pi provider (`openai-codex/…`, `kimi-coding/…`), or an aggregator path to it (`openrouter/x-ai/…`). `--dry-run` does not run this check.
+
+Pick every model with [Harness routing](../reference/harness-routing.md), for example `openrouter/qwen/qwen3-coder-plus` with the fallback `openrouter/z-ai/glm-5.3-flash`. The brake cannot check a worker started without `--model`, which runs Pi's default model, or a bare model id that lets Pi choose the provider, so name the provider.
 
 An agent name is only a label. To use a native-harness model as a peer, connect that harness to the hub under the agent name instead, for example the Claude Code plugin with the name `reviewer-claude`.
 
@@ -201,6 +203,7 @@ kxm hub stop
 | `KXM worker <project>/<name> is already managed by PID <pid>` | A supervisor for this agent is already running. | Use the running worker, or stop it first. |
 | The worker exits with `worker requires --name and --project` | Name or project missing. | Pass `--name` and `--project`, or set `KXM_AGENT_NAME` and `KXM_PROJECT`. |
 | `KXM_WORKER_FALLBACK_MODELS requires KXM_WORKER_MODEL` | Fallbacks without a primary model. | Add `--model`. |
+| The worker exits 1 with `pi_native_impersonation_blocked: …` | `--model` or a fallback is a model whose vendor has its own harness. | Run that model in its native harness, or use an admitted Pi route such as `openrouter/qwen/qwen3-coder-plus`. |
 | `kxm connection failed` in the Pi log, or Pi shows `hub:off` | Wrong URL, token, or project, or the name is live elsewhere (`duplicate_agent_name`). | Compare `KXM_SERVER_URL`, `KXM_AUTH_TOKEN`, and `KXM_PROJECT` with the hub; check `kxm peer list`. |
 | Workflow runs share one conversation | Isolation is `off`, the default. | Restart with `--session-isolation workflow`. |
 | A request stays `delivered` | A turn, tool, or provider call is still running, or the watchdogs are recovering it. | Read the lifecycle log. Do not send a duplicate. |

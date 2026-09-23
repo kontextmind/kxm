@@ -173,7 +173,7 @@ kxm agent worker --name reviewer-grok --project provenance-demo --model <reviewe
 </details>
 
 > [!IMPORTANT]
-> The reviewer names are labels. Choose every Pi model with [Harness routing](../reference/harness-routing.md): a vendor with its own native harness, such as Anthropic or xAI, must not run through a Pi worker. To use such a model as a reviewer, connect its native harness under the same agent name instead, for example the Claude Code plugin as `reviewer-claude`.
+> The reviewer names are labels. Choose every Pi model with [Harness routing](../reference/harness-routing.md), for example `openrouter/qwen/qwen3-coder-plus` and `openrouter/z-ai/glm-5.3-flash` for two reviewers from different vendors. A worker refuses a model whose vendor has its own native harness, such as Anthropic or xAI, with `pi_native_impersonation_blocked`. To use such a model as a reviewer, connect its native harness under the same agent name instead, for example the Claude Code plugin as `reviewer-claude`.
 
 In an operator terminal, supply the workflow-start secret, validate the definition, and create a run:
 

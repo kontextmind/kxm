@@ -379,7 +379,7 @@ checks it when it probes the harness before dispatch.
 | `agy` | Provider `google` and `gemini-` models |
 | `kimi` | Provider `moonshot` and `kimi`, `moonshot`, or `kimi-for-coding` models |
 | `deepseek` | Provider `deepseek` and `deepseek-` models |
-| `pi` | Any provider except `anthropic`, `openai`, `xai`, `moonshot`, `google`, and `deepseek` (`pi_native_impersonation_blocked`); use the native harness for those |
+| `pi` | Refuses a native vendor's model named directly, through the vendor's Pi provider or behind an aggregator, except `antigravity/gemini-…` (`pi_native_impersonation_blocked`); see [the brake](harness-routing.md#what-the-brake-refuses) |
 
 A mismatch is reported as `harness_unhosted_model`. Which route to choose for a
 model that more than one harness can reach is covered in
@@ -1560,7 +1560,8 @@ Parser: `parseMemoryRecord` in `plugins/kxm/src/memory.ts`.
 
 - `.kxm/memory/*.md` (top level only) are authored facts. Only
   `lifecycle: active` facts appear in `kxm memory brief` and in the projection
-  that `kxm memory sync` writes into `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`.
+  that `kxm memory sync` writes into whichever of `AGENTS.md`, `CLAUDE.md`, and
+  `GEMINI.md` already exist; it never creates them.
 - `.kxm/memory/candidates/*.md` are candidates written by `kxm memory note`.
   Promote one by moving it into `.kxm/memory/` in a reviewed change.
 - Every file under `.kxm/memory/` except `candidates/` is hashed into the

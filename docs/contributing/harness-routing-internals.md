@@ -91,12 +91,12 @@ The product layers are in [What the brake refuses](../reference/harness-routing.
 
 | Layer | Where | What it refuses | What you see |
 |---|---|---|---|
-| Dev helper | `scripts/harness-run.mjs` | A braked Pi provider, a Pi provider outside the allowlist, or a Pi writer other than `openrouter/qwen/qwen3-coder-plus` | `pi brake: xai has a native harness; refusing Pi impersonation` |
+| Dev helper | `scripts/harness-run.mjs` | A braked Pi provider, a Pi provider outside the allowlist, a Pi writer other than `openrouter/qwen/qwen3-coder-plus`, or an aggregator id whose vendor segment is a native vendor | `pi brake: xai has a native harness; refusing Pi impersonation`, or `… refusing to bill it through openrouter` |
 | Developer roster | `scripts/roster-policy.mjs` | An aggregator route whose vendor segment is a native vendor | `Roster policy refused: native vendor cannot use Pi` |
 
-The dev helper's allowlist (`openrouter`, `nous-portal`, `antigravity`) is a different list from `PI_ALLOWED_PROVIDERS` in `plugins/kxm/src/harness.ts`, which gates nothing. Edit permission exists only in the dev helper, and only for admitted writer or experiment routes. The helper accepts only a ChatGPT login for codex, not an API key.
+The dev helper's allowlist (`openrouter`, `nous-portal`, `antigravity`) is a different list from `PI_ALLOWED_PROVIDERS` in `plugins/kxm/src/harness.ts`, which gates nothing. Which of the two should govern is an open decision (Tracking → Still open). Edit permission exists only in the dev helper, and only for admitted writer or experiment routes. The helper accepts only a ChatGPT login for codex, not an API key.
 
-The product brake accepts every id in the list on the reference page. Given the same ids, `validateRosterDocument` answered `native vendor cannot use Pi` for `openrouter/x-ai/…` and `openrouter/anthropic/…`. It answered `unsupported Pi provider/model` for `qwen-token-plan/…`, `xai/…` and `antigravity/claude-…`.
+The product brake, the dev helper and the roster policy now agree on the vendor segment: all three refuse `openrouter/x-ai/…` and `openrouter/anthropic/…`. They refuse the other native-vendor ids for different reasons. The product brake names `openai-codex/…`, `kimi-coding/…`, `claude-bridge/…` and `antigravity/claude-…` as a native vendor's own Pi provider; the helper and `validateRosterDocument` refuse them as unsupported Pi routes, because the provider is off the helper allowlist or `antigravity` is given a non-Gemini id (`unsupported Pi provider/model` in the roster policy). The product brake accepts `qwen-token-plan/…` and `zai-coding-cn/…`, which the developer tools do not allowlist.
 
 ## Worked examples on this checkout
 
@@ -162,7 +162,7 @@ The code differs from that decision: `.kxm/routes.yaml` admits `google/gemini-3.
 | Qwen3.8 Flash | `qwen-token-plan/qwen3.8-flash`: admitted, in the writer roster; `ready` (`api_key`) | `openrouter/qwen/qwen3.8-flash`: admitted; $0.15 input, $0.47 output | `prices.yaml` gives both routes the same rates. Prefer the plan when it is authenticated. |
 | Qwen3 Coder Plus | none | `openrouter/qwen/qwen3-coder-plus`: $0.65 input, $3.25 output | The only admitted Pi writer: exact model, `edit` permission. |
 | GLM 5.3 and 5.3 Flash | `zai-coding-cn/glm-5.3` and `…/glm-5.3-flash`: admitted as failover critics and writer | `openrouter/z-ai/glm-5.3-flash`: admitted; $0.09 input, $0.30 output | Z.ai has no native harness. |
-| DeepSeek V4.1 Flash | `qwen-token-plan/deepseek-v4.1-flash`: admitted | `deepseek/deepseek-v4.1-flash` in the OpenRouter feed: $0.15 input, $0.60 output | Bills a DeepSeek model through Alibaba's plan. Treat it as an admission question, not a precedent. |
+| DeepSeek V4.1 Flash | `qwen-token-plan/deepseek-v4.1-flash`: admitted | `deepseek/deepseek-v4.1-flash` in the OpenRouter feed: $0.15 input, $0.60 output | Bills a DeepSeek model through Alibaba's plan, and passes the product brake because it names no vendor segment. An open admission question, not a precedent. |
 
 The developer runner is stricter. Its only Pi writer is `openrouter/qwen/qwen3-coder-plus`, and it does not allowlist `qwen-token-plan` or `zai-coding-cn`. Today OpenRouter is the right answer here for Qwen3 Coder Plus, Qwen3.8 Flash and GLM 5.3 Flash.
 

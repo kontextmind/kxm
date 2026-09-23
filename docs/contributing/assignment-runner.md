@@ -330,7 +330,9 @@ and exits with status 2. It refuses when:
 - a Pi model is not `provider/id`, names a braked native vendor (`anthropic`,
   `openai`, `xai`, `moonshot`, `google` or `deepseek`), or uses a provider
   other than `openrouter`, `nous-portal` or `antigravity`; an `antigravity`
-  model must be a two-segment Gemini ID;
+  model must be a two-segment Gemini ID, and an aggregator model's vendor
+  segment must not be a braked native vendor (`x-ai`, `moonshotai` and
+  `google-ai` count as `xai`, `moonshot` and `google`);
 - a Pi `edit` request comes from a role other than `experiment` or `writer`, or
   a Pi writer asks for anything but `openrouter/qwen/qwen3-coder-plus` with
   `edit`;

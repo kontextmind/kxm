@@ -220,7 +220,9 @@ Webhook workflow definitions are separate JSON that the hub loads at start, with
 
 A route is a harness plus a model. In a live drive, the Runtime resolves each agent's harness (its `harness`, else the project's `defaultHarness`) and model, refuses any `provider/model` that `.kxm/routes.yaml` does not admit, and checks the role roster when one exists. It then probes the harness's login and starts a one-shot process. A refusal never falls back to another route.
 
-The rule is to run a vendor's model in that vendor's native harness, never through Pi. The code enforces it only partly: the Pi check reads only the first segment of a model selector, and long-lived Pi workers, whose model you pass explicitly, have no check at all. Admission is the backstop; see [where the code is looser than the rules](../reference/harness-routing.md#where-the-code-is-looser-than-the-rules). [Harness routing](../reference/harness-routing.md) explains how to choose a route and confirm which one ran.
+The rule is to run a vendor's model in that vendor's native harness, never through Pi. The Pi native-vendor brake enforces it in two places: the probe each producer runs before it starts a harness, and `kxm agent worker`, which checks the primary model and every fallback before Pi starts. It refuses a native vendor's model whether the id names the vendor directly, through that vendor's own Pi provider, or behind an aggregator.
+
+Admission is the second layer. Some cases are still operator policy, among them reseller ids that name no vendor and whether Google work runs through `agy` or the `antigravity` Pi provider; see [where the code is looser than the rules](../reference/harness-routing.md#where-the-code-is-looser-than-the-rules). [Harness routing](../reference/harness-routing.md) explains how to choose a route and confirm which one ran.
 
 ## Packaging
 
