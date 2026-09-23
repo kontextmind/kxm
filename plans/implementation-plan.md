@@ -1416,7 +1416,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   repository access enabled only for `kontextmind/kxm`. The legacy
   `km-gh-rn01` repository runner intentionally does not carry the
   `kontextmind-doks` label. DOKS keeps one warm ephemeral runner and bursts to
-  five; each runner requests three CPUs so the autoscaling node pool (two to
+  four; each runner requests three CPUs so the autoscaling node pool (two to
   three 8-vCPU nodes) adds capacity under load. Live workflow jobs were
   verified on `kontextmind-doks-*` ephemeral runners in that runner group.
 
