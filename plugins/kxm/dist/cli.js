@@ -19626,6 +19626,15 @@ var HubClient = class {
       }
     }));
   }
+  /** This agent's open inbound requests (queued or delivered), oldest first. A read: nothing
+   * is acknowledged. */
+  async listInbox() {
+    if (!this.agent) throw new Error("hub client is not registered");
+    const result = await this.request(
+      `/v1/agents/${encodeURIComponent(this.agent.id)}/inbox`
+    );
+    return result.messages;
+  }
   async getMessage(messageId) {
     const result = await this.request(`/v1/messages/${encodeURIComponent(messageId)}`);
     return result.message;
@@ -20322,7 +20331,10 @@ var AGENT_COMMANDS = [
         await reconcileInbox(client, context.inbox, context.notifiedInbox);
         return { messages: [...context.inbox.values()] };
       }
-      return { messages: [] };
+      if (context?.hubInbox) return { messages: await client.listInbox() };
+      throw new Error(
+        "kxm_inbox is not available in this session: it activates each inbound request as a turn, and that turn's final response is the reply"
+      );
     }
   },
   {
@@ -49207,7 +49219,7 @@ async function dispatchAgentCliCommand(runtime, toolName, rawArgs) {
   let client;
   try {
     client = await ensureCliClient(runtime);
-    const output = await cmd.execute(client, args);
+    const output = await cmd.execute(client, args, { hubInbox: true });
     const payload = output && typeof output === "object" ? output : { result: output };
     print(runtime.io, runtime.json, payload, JSON.stringify(output, null, 2));
     return 0;

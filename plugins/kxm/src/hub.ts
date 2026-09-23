@@ -2520,6 +2520,18 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         return;
       }
 
+      // An agent's open inbound requests, queued or delivered, in delivery order. A read
+      // for a caller that holds no event-fed inbox of its own (a one-shot CLI call): it
+      // acknowledges nothing and moves no cursor, so push delivery is unchanged.
+      const inboxMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)\/inbox$/);
+      if (method === "GET" && inboxMatch) {
+        const current = requireAgent(request, decodeURIComponent(inboxMatch[1]!));
+        requireProjectAuth(request, current.project);
+        expireMessages();
+        json(response, 200, { messages: store.getPendingMessages(current.id) });
+        return;
+      }
+
       const agentMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)$/);
       if (method === "DELETE" && agentMatch) {
         const current = requireAgent(request, decodeURIComponent(agentMatch[1]!));

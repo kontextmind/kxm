@@ -554,6 +554,30 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   --pick <global-id>`) wrote the one-step scaffold under that id instead of the global
   content, because global candidates carried no payload; fixed in the entry above.
 
+- **`kxm peer inbox` reads the agent's open requests from the hub (2026-09-23; Still open
+  item (a) of the docs-audit follow-ups, after the #304 entry below).** The operator asked
+  Claude to implement this directly, so the runner path (`just assign`, `just witness`, two
+  critic PASS records, `just accept`) was not used and there is no assignment manifest,
+  witness receipt or acceptance record. `kxm_inbox` listed only a map its caller passed; the
+  CLI and the Pi extension passed none, so both answered `[]`, and the hub had no read route
+  for an agent's open inbound requests. The hub now serves `GET /v1/agents/:id/inbox`
+  (`requireAgent` on that id, `requireProjectAuth`, `expireMessages` first): the agent's
+  queued and delivered messages in `seq` order from the store, acknowledging nothing and
+  moving no consumer cursor. `HubClient.listInbox()` reads it. Each surface now names its
+  inbox source in the command context: the MCP server its event-fed map (`inbox`,
+  reconciled as before), the CLI the hub (`hubInbox`), and the Pi extension neither, so
+  `kxm_inbox` refuses there rather than list requests Pi's `pending` queue will activate as
+  turns, or report an empty inbox. A durable CLI name (`KXM_AGENT_NAME=codex`) resumes its
+  agent id on registration, so `kxm peer inbox` lists what peers queued for it while it was
+  offline; the default `cli-<pid>` name is new on every call and its inbox is empty
+  (documented, not refused). The CLI, tools, HTTP API and peer-messaging docs say so. No
+  store schema change. Gate: `npm run verify`, green (1278 tests, 1272 pass, 0 fail, 6
+  skipped), no new npm script or CI job. Named test, failing with the fix reverted (it read `[]`):
+  `kxm peer inbox lists a request queued for a durable CLI agent name`
+  (`test/core/cli.test.ts`). `inbox reconciliation and reply handle terminal statuses and
+  error branches` (`test/core/commands-policy.test.ts`) now pins the hub read and the
+  no-source refusal instead of the empty result.
+
 - **Docs-audit fixes: webhook replay, agent admin-token fallback, agent hop propagation,
   three small items (2026-09-23; audit against main after #287, #293, #294 and in-flight
   #298/#299, reproduced on a real hub in an isolated state root).** The operator asked
@@ -595,8 +619,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   refuses (`legacy_state_unsupported`). `kxm gate signal` and `kxm workflow wait` inside a
   KXM project now route to the Runtime only when the project's Runtime store holds the run
   id (`projectRuntimeOwnsRun`); hub and Runtime ids share the `run_` + 32-hex shape, so a
-  hub run id used to go to the Runtime and fail `run_unknown`. `kxm peer inbox` is not
-  fixed (Still open). Gate: `npm run verify`, green (1277 tests, 1271 pass, 0 fail, 6
+  hub run id used to go to the Runtime and fail `run_unknown`. `kxm peer inbox` was left
+  open here; the entry above fixes it. Gate: `npm run verify`, green (1277 tests, 1271 pass, 0 fail, 6
   skipped), no new npm script or CI job. Named tests,
   each failing with its fix reverted: `a captured workflow-start webhook cannot start a
   second run under a new delivery ID or a different body` and `a captured signal callback
@@ -2946,12 +2970,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - Persisted Nous catalog via Pi `publish` is deferred.
 - **Claude experiment outcome (2026-09-07):** installed CLI 2.1.261 local mocked Messages streaming and model passthrough, dummy API-key and bearer auth, and unknown-tool rejection passed; no real tools executed. Official Nous implementation provides native Messages only for `anthropic/*`; Qwen is chat/completions, so direct Claude→Nous→Qwen is unsupported by the documented route ([hermes_cli/providers.py](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/providers.py), observed 2026-09-07). Anthropic via Nous was not live-tested because the authenticated native subscription is preferred. No adapter/translation layer or role admission was built. Mocked env bearer support does not prove OAuth credential interchangeability.
 
-- **Left open by the 2026-09-23 docs-audit fixes.** (a) `kxm peer inbox` from the CLI
-  always returns `[]`, and so does the Pi extension's `kxm_inbox` tool: `kxm_inbox`
-  reads only an in-memory map the caller passes, and the hub has no read route for an
-  agent's open inbound messages (delivery is push-only over `/v1/events`). A fix needs
-  that route, which is an API addition, not a trivial fix, and must not let Pi's tool
-  race its own activation queue. (b) `kxm role resume` still routes by run-id shape;
+- **Left open by the 2026-09-23 docs-audit fixes.** (b) `kxm role resume` still routes by run-id shape;
   it should use `projectRuntimeOwnsRun` like `gate signal` and `workflow wait`. (c) A
   CLI-based agent (`kxm peer send` from Codex) has no active inbound request in
   process, so its forwards still start a new hop chain. (d) Jira and GitHub deliveries

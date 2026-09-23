@@ -24,7 +24,7 @@ flowchart LR
 | `kxm_fanout` | Peers | Yes | `kxm peer fanout` |
 | `kxm_await` | Peers | No | `kxm peer await` |
 | `kxm_cancel` | Peers | Yes | `kxm peer cancel` |
-| `kxm_inbox` | Peers | No | `kxm peer inbox` (always empty from the CLI) |
+| `kxm_inbox` | Peers | No | `kxm peer inbox` (lists a named CLI agent's open requests; refused in Pi) |
 | `kxm_reply` | Peers | Yes | `kxm peer reply` |
 | `kxm_workflow_list` | Workflows | No | None; `kxm workflow list` reads the local database instead |
 | `kxm_workflow_get` | Workflows | No | None; `kxm workflow get` reads the local database instead |
@@ -162,8 +162,8 @@ Returns the message record with `status: "cancelled"`. Cancelling an already can
 Lists inbound requests that still need a reply. It takes no parameters.
 
 - **Claude Code:** returns `{ "messages": [...] }` from the session's inbox, which fills from the hub's event stream while the session is registered. Before returning, it re-reads each request and drops those already answered, cancelled or expired. This is pull mode; see [Pushed channel mode and pull mode](../../plugins/kxm/README.md#pushed-channel-mode-and-pull-mode).
-- **Pi:** always returns an empty list. The extension turns each inbound request into a model turn instead.
-- **CLI:** always returns an empty list, because a one-shot command holds no inbox.
+- **Pi:** refuses. The extension turns each inbound request into a model turn itself, and that turn's final response is the reply, so listing would offer requests its own queue is about to activate.
+- **CLI:** `kxm peer inbox` reads the agent's open requests from the hub (`GET /v1/agents/<agentId>/inbox`), acknowledging nothing. Run it with a stable `KXM_AGENT_NAME` to see requests queued for that name while it was offline; the default `cli-<pid>` is a new agent on every call, so its list is empty.
 
 ### `kxm_reply`
 

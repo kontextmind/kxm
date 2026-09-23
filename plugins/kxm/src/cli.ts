@@ -349,7 +349,9 @@ async function dispatchAgentCliCommand(
   let client: HubClient | undefined;
   try {
     client = await ensureCliClient(runtime);
-    const output = await cmd.execute(client, args);
+    // A one-shot call keeps no inbox, so `peer inbox` reads this agent's open requests from
+    // the hub; with a stable KXM_AGENT_NAME those include ones queued while it was offline.
+    const output = await cmd.execute(client, args, { hubInbox: true });
     const payload = (output && typeof output === "object" ? output : { result: output }) as object;
     print(runtime.io, runtime.json, payload, JSON.stringify(output, null, 2));
     return 0;

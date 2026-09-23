@@ -210,7 +210,7 @@ CLI (run with the recipient's `KXM_AGENT_NAME`):
 kxm peer reply msg_779f5e0f22e04ac1af6078589a874971 "The plan is sound. Add a test for a zero discount."
 ```
 
-Only the recipient can reply, and only once. From the CLI, `kxm peer inbox` always returns an empty list, because a one-shot command has no long-running inbox. Use `kxm dash --screen inbox` to see pending requests.
+Only the recipient can reply, and only once. From the CLI, `kxm peer inbox` lists the requests still waiting for the agent named by `KXM_AGENT_NAME`, including ones queued while it was offline, without acknowledging them. The default `cli-<pid>` name is a new agent on every call, so its list is empty.
 
 ## Choose a delivery mode
 
@@ -291,7 +291,7 @@ Errors about `workflowContext` are covered in [Peer provenance and quorum gates]
 | A request stays `delivered` | The recipient's turn, tool, or provider call is still running, or a Claude Code session restarted after acknowledging it. | Wait, or cancel and send it again with a new idempotency key. |
 | `kxm_fanout` returns `pending` | The local wait ended before a reply. | Use the returned message IDs with `kxm_get`, or repeat the exact call. |
 | Claude Code never sees requests | Channel mode is off or blocked by policy. | Use `kxm_inbox` and `kxm_reply`. |
-| `kxm peer inbox` is always empty | The CLI has no long-running inbox. | Use `kxm dash --screen inbox`. |
+| `kxm peer inbox` is always empty | `KXM_AGENT_NAME` is unset, so each call registers a new `cli-<pid>` agent that nobody has addressed. | Set `KXM_AGENT_NAME` to the name peers send to. |
 
 For hub-level problems, see [Troubleshoot KXM](../operations/troubleshooting.md).
 

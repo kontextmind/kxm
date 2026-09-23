@@ -325,6 +325,16 @@ export class HubClient {
     }));
   }
 
+  /** This agent's open inbound requests (queued or delivered), oldest first. A read: nothing
+   * is acknowledged. */
+  async listInbox(): Promise<MessageRecord[]> {
+    if (!this.agent) throw new Error("hub client is not registered");
+    const result = await this.request<{ messages: MessageRecord[] }>(
+      `/v1/agents/${encodeURIComponent(this.agent.id)}/inbox`,
+    );
+    return result.messages;
+  }
+
   async getMessage(messageId: string): Promise<MessageRecord> {
     const result = await this.request<{ message: MessageRecord }>(`/v1/messages/${encodeURIComponent(messageId)}`);
     return result.message;
