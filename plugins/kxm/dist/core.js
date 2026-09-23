@@ -984,6 +984,13 @@ var HubHttpError = class extends Error {
 };
 
 // plugins/kxm/src/commands.ts
+function forwardedHops(handling) {
+  if (!handling?.length) return void 0;
+  return {
+    hops: Math.max(...handling.map((message) => message.hops)) + 1,
+    maxHops: Math.min(...handling.map((message) => message.maxHops))
+  };
+}
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -1113,12 +1120,13 @@ var AGENT_COMMANDS = [
       required: ["target", "content"],
       additionalProperties: false
     },
-    async execute(client, args) {
+    async execute(client, args, context) {
       const delivery = optionalString2(args.delivery);
       const correlationId = optionalString2(args.correlationId);
       const idempotencyKey = optionalString2(args.idempotencyKey);
       const workflowContext = optionalWorkflowContext(args.workflowContext);
       const message = await client.send({
+        ...forwardedHops(context?.handling),
         target: requiredString(args.target, "target"),
         content: requiredString(args.content, "content"),
         ...delivery ? { delivery } : {},
@@ -1196,6 +1204,7 @@ var AGENT_COMMANDS = [
       const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
       return {
         responses: await client.fanout({
+          ...forwardedHops(context?.handling),
           targets,
           content: requiredString(args.content, "content"),
           ...optionalString2(args.correlationId) ? { correlationId: optionalString2(args.correlationId) } : {},
@@ -2159,6 +2168,7 @@ export {
   enforceToolPolicy,
   evaluateCircuitBreaker,
   formatRoutingReport,
+  forwardedHops,
   gateWorker,
   generateRoutingReport,
   getCliAgentCommands,

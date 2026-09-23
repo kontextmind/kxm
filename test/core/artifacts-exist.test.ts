@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -13,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
+import { workflowWebhookSignature, type WorkflowWebhookScope } from "../../plugins/kxm/src/workflow.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedState = mkdtempSync(join(tmpdir(), "kxm-artifacts-state-"));
@@ -21,6 +21,13 @@ async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = p
   } finally {
     rmSync(isolatedState, { recursive: true, force: true });
   }
+}
+
+function assertKxmSigned(headers: Headers | undefined, secret: string, scope: WorkflowWebhookScope, body: string): void {
+  assert.ok(headers, "no signed request was sent");
+  const timestamp = headers.get("x-kxm-timestamp") ?? "";
+  const deliveryId = headers.get("x-kxm-delivery-id") ?? "";
+  assert.equal(headers.get("x-kxm-signature"), workflowWebhookSignature(secret, scope, timestamp, deliveryId, body));
 }
 
 function capture() {
@@ -70,7 +77,7 @@ test("workflow start, signal, and github watch resolve credentials from the acti
     };
 
     let startBody = "";
-    let startSignature = "";
+    let startHeaders: Headers | undefined;
     const startIo = capture();
     const startCode = await runCli(
       ["workflow", "--json", "start", "configured-workflow", "--payload", "{\"task\":\"T-1\"}"],
@@ -79,20 +86,17 @@ test("workflow start, signal, and github watch resolve credentials from the acti
         ...startIo,
         fetchImpl: async (_input, init) => {
           startBody = String(init?.body ?? "");
-          startSignature = new Headers(init?.headers).get("x-hub-signature-256") ?? "";
+          startHeaders = new Headers(init?.headers);
           return new Response(JSON.stringify({ run: { id: "run_1" } }), { status: 202 });
         },
       },
       cwd,
     );
     assert.equal(startCode, 0, startIo.read().stderr);
-    assert.equal(
-      startSignature,
-      `sha256=${createHmac("sha256", startSecret).update(startBody).digest("hex")}`,
-    );
+    assertKxmSigned(startHeaders, startSecret, { definitionId: "configured-workflow" }, startBody);
 
     let signalBody = "";
-    let signalSignature = "";
+    let signalHeaders: Headers | undefined;
     const signalIo = capture();
     const signalCode = await runCli(
       ["gate", "--json", "signal", "run_1", "ready", "passed", "done"],
@@ -101,20 +105,22 @@ test("workflow start, signal, and github watch resolve credentials from the acti
         ...signalIo,
         fetchImpl: async (_input, init) => {
           signalBody = String(init?.body ?? "");
-          signalSignature = new Headers(init?.headers).get("x-hub-signature-256") ?? "";
+          signalHeaders = new Headers(init?.headers);
           return new Response(JSON.stringify({ duplicate: false }), { status: 202 });
         },
       },
       cwd,
     );
     assert.equal(signalCode, 0, signalIo.read().stderr);
-    assert.equal(
-      signalSignature,
-      `sha256=${createHmac("sha256", signalSecret).update(signalBody).digest("hex")}`,
+    assertKxmSigned(
+      signalHeaders,
+      signalSecret,
+      { definitionId: "configured-workflow", runId: "run_1", signalKey: "ready" },
+      signalBody,
     );
 
     let watchBody = "";
-    let watchSignature = "";
+    let watchHeaders: Headers | undefined;
     const watchIo = capture();
     const watchCode = await runCli(
       [
@@ -143,16 +149,18 @@ test("workflow start, signal, and github watch resolve credentials from the acti
             }), { status: 200 });
           }
           watchBody = String(init?.body ?? "");
-          watchSignature = new Headers(init?.headers).get("x-hub-signature-256") ?? "";
+          watchHeaders = new Headers(init?.headers);
           return new Response(JSON.stringify({ duplicate: false }), { status: 202 });
         },
       },
       cwd,
     );
     assert.equal(watchCode, 0, `${watchIo.read().stdout}\n${watchIo.read().stderr}`);
-    assert.equal(
-      watchSignature,
-      `sha256=${createHmac("sha256", signalSecret).update(watchBody).digest("hex")}`,
+    assertKxmSigned(
+      watchHeaders,
+      signalSecret,
+      { definitionId: "configured-workflow", runId: "run_1", signalKey: "checks" },
+      watchBody,
     );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -166,7 +174,7 @@ test("an active workflow signal falls back to its start secret, never a generic 
     writeFileSync(definitionFile, JSON.stringify(workflowDefinition({ signal: false })));
     const startSecret = "definition-start-secret-123";
     let body = "";
-    let signature = "";
+    let headers: Headers | undefined;
     const io = capture();
     const code = await runCli(
       ["gate", "--json", "signal", "run_1", "ready", "passed", "done"],
@@ -180,14 +188,14 @@ test("an active workflow signal falls back to its start secret, never a generic 
         ...io,
         fetchImpl: async (_input, init) => {
           body = String(init?.body ?? "");
-          signature = new Headers(init?.headers).get("x-hub-signature-256") ?? "";
+          headers = new Headers(init?.headers);
           return new Response(JSON.stringify({ duplicate: false }), { status: 202 });
         },
       },
       cwd,
     );
     assert.equal(code, 0, io.read().stderr);
-    assert.equal(signature, `sha256=${createHmac("sha256", startSecret).update(body).digest("hex")}`);
+    assertKxmSigned(headers, startSecret, { definitionId: "configured-workflow", runId: "run_1", signalKey: "ready" }, body);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

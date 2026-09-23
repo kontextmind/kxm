@@ -15999,7 +15999,9 @@ var HubClient = class {
               options.workflowContext
             )
           } : {},
-          ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
+          ...options.ttlMs ? { ttlMs: options.ttlMs } : {},
+          ...options.hops !== void 0 ? { hops: options.hops } : {},
+          ...options.maxHops !== void 0 ? { maxHops: options.maxHops } : {}
         });
         const completed = await this.awaitResponse(
           message.id,
@@ -16398,6 +16400,13 @@ function defaultProjectName(cwd, env = process.env) {
 import { chmodSync, existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync3, unlinkSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname2, join as join3, resolve as resolve2 } from "node:path";
+function forwardedHops(handling) {
+  if (!handling?.length) return void 0;
+  return {
+    hops: Math.max(...handling.map((message) => message.hops)) + 1,
+    maxHops: Math.min(...handling.map((message) => message.maxHops))
+  };
+}
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -16527,12 +16536,13 @@ var AGENT_COMMANDS = [
       required: ["target", "content"],
       additionalProperties: false
     },
-    async execute(client, args) {
+    async execute(client, args, context) {
       const delivery = optionalString(args.delivery);
       const correlationId = optionalString(args.correlationId);
       const idempotencyKey = optionalString(args.idempotencyKey);
       const workflowContext = optionalWorkflowContext(args.workflowContext);
       const message = await client.send({
+        ...forwardedHops(context?.handling),
         target: requiredString(args.target, "target"),
         content: requiredString(args.content, "content"),
         ...delivery ? { delivery } : {},
@@ -16610,6 +16620,7 @@ var AGENT_COMMANDS = [
       const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
       return {
         responses: await client.fanout({
+          ...forwardedHops(context?.handling),
           targets,
           content: requiredString(args.content, "content"),
           ...optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId) } : {},
@@ -17442,7 +17453,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const cmd = AGENT_COMMANDS_MAP.get(request.params.name);
     if (!cmd) throw new Error(`unknown tool: ${request.params.name}`);
     const args = asRecord2(request.params.arguments);
-    const result = await cmd.execute(client, args, { signal: extra.signal, inbox, notifiedInbox });
+    const result = await cmd.execute(client, args, {
+      signal: extra.signal,
+      inbox,
+      notifiedInbox,
+      handling: [...inbox.values()]
+    });
     return textResult(result);
   } catch (error2) {
     return {

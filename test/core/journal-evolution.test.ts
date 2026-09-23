@@ -11,6 +11,7 @@ import {
   journalPromotionState,
   parseJournalCategory,
   type JournalCategory,
+  workflowWebhookHeaders,
   type WorkflowJournalEntry,
 } from "../../plugins/kxm/src/workflow.ts";
 import { buildRetrospective } from "../../plugins/kxm/src/retrospective.ts";
@@ -197,7 +198,6 @@ function legacyEntry(runId: string): WorkflowJournalEntry {
 
 test("hub enforces journal evidence, new categories, and governed promotion", async (context) => {
   const { createTestMesh } = await import("../helpers.ts");
-  const { createHmac } = await import("node:crypto");
   const secret = "journal-hub-secret-with-entropy";
   const mesh = await createTestMesh(context, {
     webhookWorkflows: [{
@@ -220,8 +220,7 @@ test("hub enforces journal evidence, new categories, and governed promotion", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "journal-hub-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "journal-hub" }, deliveryId: "journal-hub-1", body: payload }),
     },
     body: payload,
   });
@@ -290,7 +289,6 @@ test("hub enforces journal evidence, new categories, and governed promotion", as
 
 test("kxm_workflow_record binds stage provenance and the stage's area end to end, and hub-authored entries carry it too", async (context) => {
   const { createTestMesh } = await import("../helpers.ts");
-  const { createHmac } = await import("node:crypto");
   const { AGENT_COMMANDS_MAP } = await import("../../plugins/kxm/src/commands.ts");
   const { HubHttpError } = await import("../../plugins/kxm/src/client.ts");
   const { IMPROVEMENT_AREAS } = await import("../../plugins/kxm/src/protocol.ts");
@@ -324,8 +322,7 @@ test("kxm_workflow_record binds stage provenance and the stage's area end to end
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "journal-stage-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "journal-stage" }, deliveryId: "journal-stage-1", body: payload }),
     },
     body: payload,
   });

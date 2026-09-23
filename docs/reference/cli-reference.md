@@ -1826,7 +1826,7 @@ kxm workflow record wf_123 lesson "Flaky test hid a race" --stage-id verify --ev
 kxm workflow wait [runId] [stageId] [signalKey] [summary] [--evidence <json>] [--evidence-refs <json>] [--timeout-ms <ms>]
 ```
 
-Wait for a workflow signal callback: pauses the active stage until a signed external callback checkpoints it. For a KXM run ID (`run_` followed by 32 hex digits) inside a project, the command posts to the Runtime instead of the hub (the supervisor starts if needed). The Runtime has no wait state yet: it checks that the run exists, answers `waiting: true`, and records nothing, so the command prints `waiting for signal on KXM run <id>` although the run is unchanged.
+Wait for a workflow signal callback: pauses the active stage until a signed external callback checkpoints it. Inside a project, a run that this project's Runtime store holds goes to the Runtime instead of the hub (the supervisor starts if needed); any other run ID, including a hub workflow run of the same `run_` + 32-hex shape, goes to the hub. The Runtime has no wait state yet: it checks that the run exists, answers `waiting: true`, and records nothing, so the command prints `waiting for signal on KXM run <id>` although the run is unchanged.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1878,7 +1878,7 @@ KXM_WORKFLOW_ID=provenance-review KXM_WORKFLOW_SIGNAL_SECRET="$SIGNAL_SECRET" kx
 kxm workflow start [definitionId] [--payload <json|@file>] [--delivery-id <id>] [--event <name>]
 ```
 
-POST a signed workflow-start webhook to `<hub>/v1/webhooks/<definitionId>`. The body is HMAC-SHA256 signed (`x-hub-signature-256`) and carries a delivery ID (`x-kxm-delivery-id`) so the hub deduplicates retries.
+POST a signed workflow-start webhook to `<hub>/v1/webhooks/<definitionId>` under the [KXM sender contract](../guides/webhook-workflows.md#kxm-sender-contract): `x-kxm-signature` is an HMAC-SHA256 over the timestamp (`x-kxm-timestamp`), the delivery ID (`x-kxm-delivery-id`), the definition ID and the body, so a captured request cannot start a second run under another delivery ID. Repeating a delivery ID with the same body returns the existing run ID as a duplicate; with a different body the hub answers 409 `webhook_delivery_conflict`.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -2166,9 +2166,9 @@ Post a signed workflow callback that checkpoints a waiting stage.
 | `--recovery-action` | `<action>` | none | KXM recovery action: retry, fail, cancel, unblock |
 
 - Arguments: `<runId>` Workflow run ID; `<signalKey>` Wait signal key; `<status>` passed, warning, or failed; `<summary>` Callback summary; `[evidence...]` required-key=evidence pairs.
-- For a KXM run ID (`run_` followed by 32 hex digits) inside a project, the signal goes to the Runtime (the supervisor starts if needed) and `--recovery-action` is passed through. JSON keys: `runId`, `signalKey`, `status`, `unblocked`, `deliveryId`.
-- Otherwise it is a hub webhook callback: `KXM_WORKFLOW_ID` names the definition, and the secret is the definition's `signalSecretEnv` (falling back to `secretEnv`) when a definition source is configured, else `KXM_WORKFLOW_SIGNAL_SECRET`. JSON keys: `duplicate`, `deliveryId`.
-- Reuse `--delivery-id` to retry one unchanged callback without a duplicate.
+- Inside a project, a run that this project's Runtime store holds is signaled in the Runtime (the supervisor starts if needed) and `--recovery-action` is passed through. JSON keys: `runId`, `signalKey`, `status`, `unblocked`, `deliveryId`. Hub workflow runs share the `run_` + 32-hex shape, so the store, not the ID, decides.
+- Otherwise it is a hub webhook callback: `KXM_WORKFLOW_ID` names the definition, and the secret is the definition's `signalSecretEnv` (falling back to `secretEnv`) when a definition source is configured, else `KXM_WORKFLOW_SIGNAL_SECRET`. The callback is signed under the [KXM sender contract](../guides/webhook-workflows.md#kxm-sender-contract), bound to its timestamp, delivery ID, definition, run and signal key. JSON keys: `duplicate`, `deliveryId`.
+- Reuse `--delivery-id` to retry one unchanged callback without a duplicate; each send re-signs with a fresh timestamp.
 - Honors `--dry-run`. Exit 2 for a missing argument, an invalid status, malformed or duplicate evidence keys, or missing `KXM_WORKFLOW_ID` or secret; exit 1 for `signal_failed`.
 
 ```bash
@@ -2227,7 +2227,7 @@ Captured without a GitHub token. With `GITHUB_TOKEN` set, the same command polls
 
 ## `kxm peer`
 
-Peer agent messaging through the hub. Each invocation connects to the hub as a short-lived agent named `KXM_AGENT_NAME` (default `cli-<pid>`) in project `KXM_PROJECT` (default: the `package.json` name, else the directory name), using `KXM_AUTH_TOKEN`, a project token, or the persisted `hub-env.json` credential. That agent appears in `peer list` and the dashboard. Every subcommand accepts `--payload <json>` with the tool's fields as one object; explicit flags override it. Tool policy from `KXM_ATTEMPT_TOKEN`, `KXM_SESSION_TOKEN`, or the on-disk session token is enforced first (`tool_policy_denied`, `session_token_invalid`, `attempt_token_invalid`).
+Peer agent messaging through the hub. Each invocation connects to the hub as a short-lived agent named `KXM_AGENT_NAME` (default `cli-<pid>`) in project `KXM_PROJECT` (default: the `package.json` name, else the directory name), using `KXM_AUTH_TOKEN`, else this project's saved project token from `hub-env.json`. It never uses the persisted admin token: with neither, the command exits 2 with `project_token_missing` (`nextAction: "export_kxm_auth_token"`) before contacting the hub. The `kxm workflow` agent verbs (`checkpoint`, `record`, `wait`, `get`, `list`) connect the same way. That agent appears in `peer list` and the dashboard. Every subcommand accepts `--payload <json>` with the tool's fields as one object; explicit flags override it. Tool policy from `KXM_ATTEMPT_TOKEN`, `KXM_SESSION_TOKEN`, or the on-disk session token is enforced first (`tool_policy_denied`, `session_token_invalid`, `attempt_token_invalid`).
 
 All subcommands need a hub, honor `--dry-run` (printing the parsed `args` without connecting), print the hub's result object on success, and print `{"ok":false,"error":"command_failed","detail":"..."}` with exit 1 on failure. Malformed `--payload` exits 2 with `invalid_payload`.
 

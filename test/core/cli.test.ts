@@ -1549,8 +1549,8 @@ test("live workflow start is signed and smoke skips without opt-in", async () =>
   }, {
     ...start,
     fetchImpl: async (_input, init) => {
-      signature = new Headers(init?.headers).get("x-hub-signature-256") ?? "";
-      return new Response(JSON.stringify({ run: { id: "run_cli" }, duplicate: false }), { status: 202 });
+      signature = new Headers(init?.headers).get("x-kxm-signature") ?? "";
+      return new Response(JSON.stringify({ run: { id: "run_cli" }, runId: "run_cli", duplicate: false }), { status: 202 });
     },
   }), 0);
   assert.match(start.read().stdout, /"runId":"run_cli"/);
@@ -1613,34 +1613,37 @@ test("cli hub commands fall back to the persisted hub env project token", async 
   }
 });
 
-test("cli hub commands fall back to the persisted hub env admin token", async () => {
+test("cli agent commands never register with the persisted admin token", async () => {
   const stateHome = mkdtempSync(join(tmpdir(), "kxm-cli-auth-admin-"));
   try {
     writeFileSync(join(stateHome, "hub-env.json"), JSON.stringify({
       schema: "kxm.hub-env.v1",
       createdAt: "2026-09-16T00:00:00.000Z",
       authToken: "persisted-admin-token",
+      projectTokens: { "other-project": "other-project-token" },
     }));
     const io = capture();
-    const authorizations: string[] = [];
-    const code = await runCli(["peer", "inbox", "--json"], {
+    const requests: string[] = [];
+    const code = await runCli(["peer", "list", "--json"], {
+      KXM_PROJECT: "kxm",
       KXM_STATE_HOME: stateHome,
       KXM_SERVER_URL: "http://127.0.0.1:7331",
     }, {
       ...io,
-      fetchImpl: async (input, init) => {
-        authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
-        if (String(input).endsWith("/v1/agents/register")) {
-          return new Response(JSON.stringify({ agent: { id: "agent_1" }, agentKey: "key_1" }), { status: 201 });
-        }
+      fetchImpl: async (input) => {
+        requests.push(String(input));
         return new Response("{}", { status: 200 });
       },
     });
     const out = io.read();
-    assert.equal(code, 0, `${out.stderr}\n${out.stdout}`);
-    const seen = authorizations.filter(Boolean);
-    assert.ok(seen.length > 0, "expected at least one authenticated request");
-    assert.ok(seen.every((a) => a === "Bearer persisted-admin-token"), seen.join(","));
+    assert.equal(code, 2, `${out.stderr}\n${out.stdout}`);
+    const refusal = JSON.parse(out.stderr) as Record<string, unknown>;
+    assert.equal(refusal.error, "project_token_missing");
+    assert.equal(refusal.project, "kxm");
+    assert.equal(refusal.nextAction, "export_kxm_auth_token");
+    assert.match(String(refusal.detail), /no project token for project kxm/);
+    assert.doesNotMatch(`${out.stdout}${out.stderr}`, /persisted-admin-token|other-project-token/);
+    assert.deepEqual(requests, [], "no hub request may carry a borrowed credential");
   } finally {
     rmSync(stateHome, { recursive: true, force: true });
   }

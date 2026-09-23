@@ -26,7 +26,7 @@ Each route requires one of these credential classes. Send tokens as `Authorizati
 | Project | The project's token, or the admin token for a project with no token of its own | Admission for agent registration and Runtime sync |
 | Agent | The project token plus `x-kxm-agent-id` and `x-kxm-agent-key` from registration | The agent key rotates on every registration (401 `invalid_agent_identity` when stale) |
 | Agent or admin | Agent headers for your own project, or the admin token with an explicit `project` | Admin calls may name a caller in `x-kxm-caller-id` |
-| Signed | HMAC-SHA256 of the raw body in `x-hub-signature-256` (or `x-hub-signature`) as `sha256=<hex>`, plus a delivery ID | No bearer token; the secret is the workflow definition's |
+| Signed | The [KXM sender contract](../guides/webhook-workflows.md#kxm-sender-contract): `x-kxm-signature` over the timestamp, delivery ID, route and body, within 300 seconds. A `jira` or `github` start may instead carry its provider's body HMAC | No bearer token; the secret is the workflow definition's |
 
 A wrong or missing token is 401 `invalid_auth`. The [trust model](../concepts/trust-model.md) explains which person or process holds each credential.
 
@@ -75,7 +75,7 @@ sequenceDiagram
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/v1/messages` | Agent | Send a request: `target`, `content`, optional `delivery`, `correlationId`, `idempotencyKey`, `workflowContext`, `ttlMs`, `maxHops`, `allowOffline`. 202 new; 200 with `idempotent: true` for an exact retry |
+| `POST` | `/v1/messages` | Agent | Send a request: `target`, `content`, optional `delivery`, `correlationId`, `idempotencyKey`, `workflowContext`, `ttlMs`, `hops`, `maxHops`, `allowOffline`. `kxm_send` and `kxm_fanout` set `hops` one past the inbound request being handled. 202 new; 200 with `idempotent: true` for an exact retry |
 | `GET` | `/v1/messages/<id>` | Agent | Read a message you sent or received |
 | `POST` | `/v1/messages/<id>/ack` | Agent | Recipient marks a queued message `delivered` |
 | `POST` | `/v1/messages/<id>/reply` | Agent | Recipient replies with `content`; the sender gets a `reply` event |
@@ -115,13 +115,13 @@ Key errors: `workflow_not_found` (404), `workflow_stage_out_of_order`, `workflow
 | `POST` | `/v1/webhooks/<definitionId>` | Signed with the definition's start secret | Start a run and prompt the coordinator (status codes below) |
 | `POST` | `/v1/webhooks/<definitionId>/runs/<runId>/signals/<signalKey>` | Signed with the signal secret, else the start secret | Report an external result for a waiting stage: `status` (`passed`, `warning`, `failed`), `summary`, `evidence`. 202 when the coordinator is resumed, 200 otherwise |
 
-A start answers 202 for a new run, 200 with `duplicate: true` for a known delivery ID, and 204 when the event or filter does not match.
+A start answers 202 for a new run, 200 with `duplicate: true`, `runId` and `status` for a known delivery ID and body, and 204 when the event or filter does not match.
 
-The delivery ID comes from `x-atlassian-webhook-identifier`, `x-github-delivery` or `x-kxm-delivery-id`, in that order, and is required. The event comes from `x-github-event`, else the payload's `webhookEvent` or `event` field.
+Every signal, and every start of a `generic` definition, is signed under the KXM sender contract, and its delivery ID is the signed `x-kxm-delivery-id`. A `jira` or `github` start may instead carry the provider's body HMAC in `x-hub-signature-256` (or `x-hub-signature`); its delivery ID is then that provider's own header, `x-atlassian-webhook-identifier` or `x-github-delivery`, and the signed body starts at most one run. The event comes from `x-github-event`, else the payload's `webhookEvent` or `event` field.
 
-A start with a known delivery ID returns the existing run even if the body differs. A signal with a known delivery ID returns the original receipt when the body matches and 409 `workflow_signal_delivery_conflict` when it does not. Deduplication lasts as long as the run is retained.
+A start with a known delivery ID and a different body is refused with 409 `webhook_delivery_conflict`. A signal with a known delivery ID returns the original receipt when the body matches and 409 `workflow_signal_delivery_conflict` when it does not. Deduplication lasts as long as the run is retained.
 
-Key errors: `webhook_not_found` (404), `webhook_signature_missing`, `webhook_signature_unsupported`, `webhook_signature_invalid` (401), `workflow_target_unavailable` (409, the coordinator never registered), `workflow_not_waiting`, `workflow_signal_mismatch` (409, the run waits for another key) and `workflow_signal_context_mismatch` (409, evidence names another run, stage or signal). See [Webhook workflows](../guides/webhook-workflows.md).
+Key errors: `webhook_not_found` (404), `webhook_signature_missing`, `webhook_signature_unsupported`, `webhook_signature_invalid`, `webhook_timestamp_invalid`, `webhook_timestamp_expired` (401), `webhook_delivery_conflict`, `webhook_payload_replayed` (409, a provider body already started a run under another delivery ID), `workflow_target_unavailable` (409, the coordinator never registered), `workflow_not_waiting`, `workflow_signal_mismatch` (409, the run waits for another key) and `workflow_signal_context_mismatch` (409, evidence names another run, stage or signal). See [Webhook workflows](../guides/webhook-workflows.md).
 
 ## Context and state
 

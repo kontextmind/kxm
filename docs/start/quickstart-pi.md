@@ -155,7 +155,7 @@ kxm hub view: health=ok; planner; 1 online agent(s)
 ```
 
 > [!NOTE]
-> Without `KXM_AUTH_TOKEN`, the extension signs in with this machine's saved admin token, which the hub accepts only for projects that have no token of their own. Set the project token so that each agent holds only its own project's credential.
+> Without `KXM_AUTH_TOKEN`, the extension signs in with the project token saved for this project on this machine, and never with the saved admin token. With neither, it reports the fix and stays offline. Set the project token so that each agent holds only its own project's credential.
 
 ## 7. Start the reviewer and send a request
 

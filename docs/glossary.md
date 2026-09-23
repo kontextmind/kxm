@@ -184,7 +184,7 @@ The coordinator's recorded result for the active [stage](#stage): `passed`, `war
 
 ### Delivery ID
 
-The identifier a webhook sender puts in `X-GitHub-Delivery`, `X-Atlassian-Webhook-Identifier` or `x-kxm-delivery-id`. The hub requires one and deduplicates on it: a repeated start delivery returns the existing run.
+The identifier a webhook sender puts in `x-kxm-delivery-id`, which the KXM sender contract signs, or for a Jira or GitHub delivery in `X-Atlassian-Webhook-Identifier` or `X-GitHub-Delivery`. The hub requires one and deduplicates on it: a repeated start with the same body returns the existing run ID, and the same ID with a different body is refused.
 
 ### Journal
 

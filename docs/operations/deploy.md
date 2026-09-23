@@ -68,7 +68,7 @@ Expected output on first start:
 kxm hub: using newly generated KXM_AUTH_TOKEN from /home/kxm/.local/state/kxm/hub-env.json
 ```
 
-One-shot clients on the same machine (`kxm dash`, `kxm peer`, the Runtime) read the same file. They use `KXM_AUTH_TOKEN` from their environment first, then the saved project token for their project, then the saved admin token. The Claude Code MCP server never falls back to the admin token.
+Operator clients on the same machine (`kxm dash`, the Runtime) read the same file. They use `KXM_AUTH_TOKEN` from their environment first, then the saved project token for their project, then the saved admin token. Agent clients (the Pi extension, the Claude Code MCP server, and the `kxm peer` and `kxm workflow` agent commands) never fall back to the admin token.
 
 To rotate the admin token, restart the hub with a new `KXM_AUTH_TOKEN`; the hub saves it in place of the old one and keeps the saved project tokens. Rotate a project token by restarting with an updated full `KXM_PROJECT_TOKENS` map. Then restart every client that held the old value. Deleting `hub-env.json` also works, but it drops the saved project tokens too.
 

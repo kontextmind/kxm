@@ -1,6 +1,6 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { redactSecrets } from "./redact.ts";
-import type { WorkflowEvidenceInput } from "./workflow.ts";
+import { workflowWebhookHeaders, type WorkflowEvidenceInput } from "./workflow.ts";
 
 export type WatchStatus = "passed" | "failed" | "warning";
 
@@ -109,7 +109,6 @@ export async function postWorkflowSignal(input: {
   fetchImpl?: typeof fetch;
 }): Promise<{ httpStatus: number; duplicate: boolean }> {
   const body = JSON.stringify({ status: input.status, summary: input.summary, evidence: input.evidence });
-  const signature = `sha256=${createHmac("sha256", input.signalSecret).update(body).digest("hex")}`;
   const endpoint = [
     input.serverUrl.replace(/\/$/, ""),
     "v1/webhooks",
@@ -123,8 +122,12 @@ export async function postWorkflowSignal(input: {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-hub-signature-256": signature,
-      "x-kxm-delivery-id": input.deliveryId,
+      ...workflowWebhookHeaders({
+        secret: input.signalSecret,
+        scope: { definitionId: input.definitionId, runId: input.runId, signalKey: input.signalKey },
+        deliveryId: input.deliveryId,
+        body,
+      }),
     },
     body,
   }, input.timeoutMs ?? 15_000);

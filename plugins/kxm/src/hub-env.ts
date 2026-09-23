@@ -236,7 +236,8 @@ export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: strin
 }
 
 /**
- * Token an agent session (the Claude MCP server) registers with: explicit `KXM_AUTH_TOKEN`,
+ * Token an agent session (the Claude MCP server, the Pi extension, the `kxm peer` and
+ * `kxm workflow` agent commands) registers with: explicit `KXM_AUTH_TOKEN`,
  * else the persisted project token for `project`, else nothing. It never returns the
  * persisted admin token. The hub accepts the admin token for any project missing from its
  * project-token map, so an agent falling back to it would join a project nobody issued it a
@@ -249,6 +250,23 @@ export function resolveAgentHubAuthToken(env: NodeJS.ProcessEnv, project: string
   const tokens = readHubEnvRecord(env)?.projectTokens;
   if (!tokens || !Object.hasOwn(tokens, project)) return undefined;
   return tokens[project]?.trim() || undefined;
+}
+
+/**
+ * Refusal for an agent session that has neither `KXM_AUTH_TOKEN` nor a saved project
+ * token for its project. The fix is the operator's, so the message names it.
+ */
+export class AgentProjectTokenMissingError extends Error {
+  readonly code = "project_token_missing";
+  readonly project: string;
+
+  constructor(project: string) {
+    super(
+      `kxm has no project token for project ${project} on this machine. Set KXM_AUTH_TOKEN to that project's token, or add ${project} to the hub KXM_PROJECT_TOKENS (list every existing project too, because that variable replaces the saved map). An agent never uses the hub admin token.`,
+    );
+    this.name = "AgentProjectTokenMissingError";
+    this.project = project;
+  }
 }
 
 /**

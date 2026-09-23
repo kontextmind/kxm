@@ -259,6 +259,8 @@ export class HubClient {
     ttlMs?: number;
     timeoutMs?: number;
     signal?: AbortSignal;
+    hops?: number;
+    maxHops?: number;
   }): Promise<FanoutResult[]> {
     const targets = [...new Set(options.targets.map((target) => target.trim().toLowerCase()).filter(Boolean))];
     if (targets.length < 1 || targets.length > 3) throw new Error("fanout requires between one and three unique targets");
@@ -280,6 +282,8 @@ export class HubClient {
             ),
           } : {}),
           ...(options.ttlMs ? { ttlMs: options.ttlMs } : {}),
+          ...(options.hops !== undefined ? { hops: options.hops } : {}),
+          ...(options.maxHops !== undefined ? { maxHops: options.maxHops } : {}),
         });
         const completed = await this.awaitResponse(
           message.id,

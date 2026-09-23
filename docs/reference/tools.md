@@ -44,7 +44,7 @@ The workflow tools act on hub [webhook workflow runs](workflow-definitions.md#we
 
 ### Identity and credentials
 
-Each tool call acts as the calling session's registered agent in one hub project. The Claude Code MCP server authenticates with a project token only: `auth_token` from the plugin settings, else this project's token saved in `hub-env.json`, and never the admin token. The Pi extension uses `KXM_AUTH_TOKEN`, then the admin token that hub auto-start resolved or generated for the hub it started, then the saved admin token. See [Agent settings](configuration.md#agent-settings).
+Each tool call acts as the calling session's registered agent in one hub project. The Claude Code MCP server authenticates with a project token only: `auth_token` from the plugin settings, else this project's token saved in `hub-env.json`, and never the admin token. The Pi extension uses `KXM_AUTH_TOKEN`, else this project's saved project token, and never the admin token, including one that hub auto-start generated. `kxm_send` and `kxm_fanout` send one hop past the inbound request the session is handling, so the hub's hop limit stops a chain of forwarding agents. See [Agent settings](configuration.md#agent-settings).
 
 ### Tool policy
 

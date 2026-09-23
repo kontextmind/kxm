@@ -14779,7 +14779,7 @@ var require_dist = __commonJS({
 });
 
 // plugins/kxm/src/hub.ts
-import { createHash as createHash5, createHmac } from "node:crypto";
+import { createHash as createHash5, createHmac as createHmac2 } from "node:crypto";
 import { existsSync as existsSync6 } from "node:fs";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
@@ -15654,7 +15654,7 @@ function workflowScopeExtras(operation, assignedCoordinatorName) {
 import { createHash as createHash3, randomUUID as randomUUID2, timingSafeEqual } from "node:crypto";
 
 // plugins/kxm/src/workflow.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash2, createHmac } from "node:crypto";
 
 // plugins/kxm/src/relevance.ts
 var RELEVANCE_STOPWORDS = Object.freeze(/* @__PURE__ */ new Set([
@@ -16576,6 +16576,30 @@ function canonicalWorkflowDefinitionJson(definition) {
 function workflowDefinitionHash(definition) {
   return createHash2("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
 }
+var WORKFLOW_WEBHOOK_SIGNATURE_VERSION = "kxm-webhook-v1";
+var WORKFLOW_WEBHOOK_MAX_SKEW_SECONDS = 300;
+function workflowWebhookSignedMaterial(scope, timestamp, deliveryId, body) {
+  const fields = [
+    WORKFLOW_WEBHOOK_SIGNATURE_VERSION,
+    scope.runId === void 0 ? "start" : "signal",
+    timestamp,
+    deliveryId,
+    scope.definitionId,
+    scope.runId ?? "",
+    scope.signalKey ?? ""
+  ];
+  if (fields.some((field) => /[\r\n]/.test(field))) {
+    throw new ProtocolError(400, "webhook signature fields must not contain line breaks", "webhook_signature_field_invalid");
+  }
+  return Buffer.concat([
+    Buffer.from(`${fields.join("\n")}
+`, "utf8"),
+    typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body)
+  ]);
+}
+function workflowWebhookSignature(secret, scope, timestamp, deliveryId, body) {
+  return `sha256=${createHmac("sha256", secret).update(workflowWebhookSignedMaterial(scope, timestamp, deliveryId, body)).digest("hex")}`;
+}
 function resolveOutcomeRule(stage, outcomeKey) {
   const raw = stage.on?.[outcomeKey];
   return raw === void 0 ? void 0 : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
@@ -16899,6 +16923,13 @@ var HubHttpError = class extends Error {
 };
 
 // plugins/kxm/src/commands.ts
+function forwardedHops(handling) {
+  if (!handling?.length) return void 0;
+  return {
+    hops: Math.max(...handling.map((message) => message.hops)) + 1,
+    maxHops: Math.min(...handling.map((message) => message.maxHops))
+  };
+}
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -17028,12 +17059,13 @@ var AGENT_COMMANDS = [
       required: ["target", "content"],
       additionalProperties: false
     },
-    async execute(client, args) {
+    async execute(client, args, context) {
       const delivery = optionalString2(args.delivery);
       const correlationId = optionalString2(args.correlationId);
       const idempotencyKey = optionalString2(args.idempotencyKey);
       const workflowContext = optionalWorkflowContext(args.workflowContext);
       const message = await client.send({
+        ...forwardedHops(context?.handling),
         target: requiredString(args.target, "target"),
         content: requiredString(args.content, "content"),
         ...delivery ? { delivery } : {},
@@ -17111,6 +17143,7 @@ var AGENT_COMMANDS = [
       const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
       return {
         responses: await client.fanout({
+          ...forwardedHops(context?.handling),
           targets,
           content: requiredString(args.content, "content"),
           ...optionalString2(args.correlationId) ? { correlationId: optionalString2(args.correlationId) } : {},
@@ -21096,20 +21129,59 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
     const candidate = payload.webhookEvent ?? payload.event;
     return typeof candidate === "string" && candidate.trim() ? candidate.trim() : void 0;
   }
-  function verifyWebhookSignature(request, body, secret) {
-    const signature = request.headers["x-hub-signature-256"] ?? request.headers["x-hub-signature"];
-    if (typeof signature !== "string") {
-      throw new ProtocolError(401, "webhook signature is required", "webhook_signature_missing");
-    }
+  function requireSha256Signature(signature) {
     const separator = signature.indexOf("=");
     const algorithm = separator > 0 ? signature.slice(0, separator).toLowerCase() : "";
     if (algorithm !== "sha256") {
       throw new ProtocolError(401, "webhook signature must use sha256", "webhook_signature_unsupported");
     }
-    const expected = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+  }
+  function verifyProviderWebhookSignature(request, body, definition) {
+    if (definition.source === "generic") {
+      throw new ProtocolError(
+        401,
+        "generic workflow webhooks require x-kxm-signature over the timestamp, delivery ID, definition, and body",
+        "webhook_signature_missing"
+      );
+    }
+    const signature = request.headers["x-hub-signature-256"] ?? request.headers["x-hub-signature"];
+    if (typeof signature !== "string") {
+      throw new ProtocolError(401, "webhook signature is required", "webhook_signature_missing");
+    }
+    requireSha256Signature(signature);
+    const expected = `sha256=${createHmac2("sha256", definition.secret).update(body).digest("hex")}`;
     if (!safeTokenEqual(signature, expected)) {
       throw new ProtocolError(401, "webhook signature is invalid", "webhook_signature_invalid");
     }
+    const deliveryHeader = definition.source === "jira" ? request.headers["x-atlassian-webhook-identifier"] : request.headers["x-github-delivery"];
+    return requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
+  }
+  function verifyKxmWebhookSignature(request, body, secret, scope) {
+    const signature = request.headers["x-kxm-signature"];
+    if (typeof signature !== "string") {
+      throw new ProtocolError(
+        401,
+        "KXM webhooks require x-kxm-signature over the timestamp, delivery ID, route, and body",
+        "webhook_signature_missing"
+      );
+    }
+    requireSha256Signature(signature);
+    const timestamp = request.headers["x-kxm-timestamp"];
+    if (typeof timestamp !== "string" || !/^[0-9]{1,12}$/.test(timestamp)) {
+      throw new ProtocolError(401, "x-kxm-timestamp must be Unix seconds", "webhook_timestamp_invalid");
+    }
+    const deliveryId = requireString(request.headers["x-kxm-delivery-id"], "webhook delivery identifier", { max: 128 });
+    if (!safeTokenEqual(signature, workflowWebhookSignature(secret, scope, timestamp, deliveryId, body))) {
+      throw new ProtocolError(401, "webhook signature is invalid", "webhook_signature_invalid");
+    }
+    if (Math.abs(Date.now() / 1e3 - Number(timestamp)) > WORKFLOW_WEBHOOK_MAX_SKEW_SECONDS) {
+      throw new ProtocolError(
+        401,
+        `webhook timestamp is outside the ${WORKFLOW_WEBHOOK_MAX_SKEW_SECONDS}-second window; re-sign at send time`,
+        "webhook_timestamp_expired"
+      );
+    }
+    return deliveryId;
   }
   function workflowPrompt(definition, runId, payload) {
     const rendered = renderWorkflowPrompt(definition.promptTemplate, payload);
@@ -21132,7 +21204,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       stageList,
       "",
       `At every stage, record material knowledge with kxm_workflow_record in one of these categories: ${JOURNAL_CATEGORIES.join(", ")}. Pass the stageId the entry belongs to; the hub binds the attempt and, when you omit area, uses the stage's declared area.`,
-      "Keep repository-local configuration in .kxm/config, logs in .kxm/logs, and durable workflow artifacts in .kxm/assets; never commit runtime logs, state, or secrets.",
+      "Keep reviewed configuration as YAML directly under .kxm/ (such as .kxm/project.yaml and .kxm/workflows/), logs in .kxm/logs, and durable workflow artifacts in .kxm/assets. Never create .kxm/config, which KXM refuses, and never commit runtime logs, .kxm/state, or secrets.",
       "Complete each stage with kxm_workflow_checkpoint. Supply evidence as an object whose keys exactly match the stage's required evidence keys. Unrelated keys never satisfy a requirement. A warning or failure must be corrected and checkpointed again until it passes or the attempt limit is reached.",
       "For a peer-evidence requirement, send or fan out with workflowContext containing this run ID, the exact stage ID, requirement key, and current 1-based attempt. At checkpoint, cite only the returned message IDs under evidenceRefs; the hub derives producer and reply provenance.",
       "When an external system must finish asynchronously, call kxm_workflow_wait with a stable signal key and any already-verified keyed evidence. That evidence is accumulated with the signed callback before the stage can pass; then settle the turn.",
@@ -21470,14 +21542,17 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         const definition = webhookWorkflows2.get(definitionId);
         if (!definition) throw new ProtocolError(404, "webhook workflow not found", "webhook_not_found");
         const rawBody = await readBody(request);
-        verifyWebhookSignature(request, rawBody, definition.signalSecret ?? definition.secret);
+        const deliveryId = verifyKxmWebhookSignature(
+          request,
+          rawBody,
+          definition.signalSecret ?? definition.secret,
+          { definitionId: definition.id, runId, signalKey }
+        );
         const body = parseJsonBody(rawBody);
         const run = workflowRuns.get(runId);
         if (!run || run.definitionId !== definition.id) {
           throw new ProtocolError(404, "workflow run not found", "workflow_not_found");
         }
-        const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-kxm-delivery-id"];
-        const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
         const payloadHash = createHash5("sha256").update(rawBody).digest("hex");
         const existingReceipt = run.signalReceipts?.find((receipt2) => receipt2.deliveryId === deliveryId);
         if (existingReceipt) {
@@ -21623,7 +21698,8 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         const definition = webhookWorkflows2.get(definitionId);
         if (!definition) throw new ProtocolError(404, "webhook workflow not found", "webhook_not_found");
         const rawBody = await readBody(request);
-        verifyWebhookSignature(request, rawBody, definition.secret);
+        const bodyOnlySignature = request.headers["x-kxm-signature"] === void 0;
+        const deliveryId = bodyOnlySignature ? verifyProviderWebhookSignature(request, rawBody, definition) : verifyKxmWebhookSignature(request, rawBody, definition.secret, { definitionId: definition.id });
         const payload = parseJsonBody(rawBody);
         const event = webhookEvent(request, payload);
         if (definition.event && event !== definition.event) {
@@ -21634,14 +21710,29 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           response.writeHead(204, { "cache-control": "no-store" }).end();
           return;
         }
-        const deliveryHeader = request.headers["x-atlassian-webhook-identifier"] ?? request.headers["x-github-delivery"] ?? request.headers["x-kxm-delivery-id"];
-        const deliveryId = requireString(deliveryHeader, "webhook delivery identifier", { max: 128 });
+        const payloadHash = createHash5("sha256").update(rawBody).digest("hex");
         const existing = [...workflowRuns.values()].find(
           (run2) => run2.definitionId === definition.id && run2.deliveryId === deliveryId
         );
         if (existing) {
-          json(response, 200, { run: existing, duplicate: true });
+          if (existing.payloadHash !== payloadHash) {
+            throw new ProtocolError(
+              409,
+              "webhook delivery identifier was already used for a different body",
+              "webhook_delivery_conflict"
+            );
+          }
+          json(response, 200, { duplicate: true, runId: existing.id, status: existing.status });
           return;
+        }
+        if (bodyOnlySignature && [...workflowRuns.values()].some(
+          (run2) => run2.definitionId === definition.id && run2.payloadHash === payloadHash
+        )) {
+          throw new ProtocolError(
+            409,
+            "this signed body already started a run under another delivery identifier",
+            "webhook_payload_replayed"
+          );
         }
         const target = findKnownTarget(definition.project, definition.target);
         const createdAt = nowIso();
@@ -21692,7 +21783,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           definitionId: definition.id,
           source: definition.source,
           deliveryId,
-          payloadHash: createHash5("sha256").update(rawBody).digest("hex"),
+          payloadHash,
           definitionHash: workflowDefinitionHash(definition),
           ...event ? { event } : {},
           project: definition.project,
@@ -21723,7 +21814,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           project: definition.project,
           target: target.id
         });
-        json(response, 202, { run, duplicate: false });
+        json(response, 202, { run, runId: run.id, duplicate: false });
         return;
       }
       if (method === "GET" && url.pathname === "/metrics") {
@@ -22663,7 +22754,11 @@ data: ${JSON.stringify({ agent: publicAgent(current, staleAfterMs) })}
         const hops = parseBoundedInteger(body.hops, "hops", 0, 0, 100);
         const maxHops = parseBoundedInteger(body.maxHops, "maxHops", DEFAULT_MAX_HOPS, 1, 20);
         if (hops >= maxHops) {
-          throw new ProtocolError(400, `hop limit reached (${hops}/${maxHops})`, "hop_limit_reached");
+          throw new ProtocolError(
+            400,
+            `hop limit reached (${hops}/${maxHops}): this request would extend a chain of forwarded requests past its limit; answer the inbound request directly`,
+            "hop_limit_reached"
+          );
         }
         const ttlMs = parseBoundedInteger(
           body.ttlMs,

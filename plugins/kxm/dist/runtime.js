@@ -17649,9 +17649,6 @@ import { createHash as createHash5, randomUUID } from "node:crypto";
 import { existsSync as existsSync5, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname5, join as join5, resolve as resolve4 } from "node:path";
 
-// plugins/kxm/src/bindings.ts
-import { homedir } from "node:os";
-
 // plugins/kxm/src/sqlite.ts
 import { createRequire } from "node:module";
 var requireFromHere = createRequire(import.meta.url);
@@ -17692,6 +17689,7 @@ var DatabaseSync = class {
 };
 
 // plugins/kxm/src/bindings.ts
+import { homedir } from "node:os";
 import { dirname as dirname3, isAbsolute as isAbsolute2, join as join3, parse, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
@@ -18731,6 +18729,20 @@ function projectRuntimeKey(projectRoot) {
   }
   const folded = process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
   return createHash5("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
+}
+function kxmProjectRunEventsPath(projectRoot, env) {
+  return join5(kxmRuntimePaths({ env }).projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
+}
+function projectRuntimeOwnsRun(projectRoot, runId, env) {
+  const path = kxmProjectRunEventsPath(projectRoot, env);
+  if (!existsSync5(path)) return false;
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    database.exec("PRAGMA busy_timeout = 5000");
+    return database.prepare("SELECT 1 FROM runs WHERE run_id = ?").get(runId) !== void 0;
+  } finally {
+    database.close();
+  }
 }
 var KXM_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {
@@ -33344,6 +33356,7 @@ export {
   kxmMonotonicNs,
   kxmPolicyRevisions,
   kxmProjectAdmissionLimits,
+  kxmProjectRunEventsPath,
   kxmRunRevisionDrift,
   kxmRuntimePaths,
   kxmRuntimeRequest,
@@ -33385,6 +33398,7 @@ export {
   probeHarnessesForModelAsync,
   projectKxmRunReadOnly,
   projectRuntimeKey,
+  projectRuntimeOwnsRun,
   pruneSocketDir,
   readKxmRunStatus,
   readKxmSupervisorToken,

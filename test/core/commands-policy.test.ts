@@ -24,6 +24,7 @@ import {
 } from "../../plugins/kxm/src/commands.ts";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
+import { KxmRunEventStore, kxmProjectRunEventsPath } from "../../plugins/kxm/src/runtime-store.ts";
 
 function capture() {
   let stdout = "";
@@ -340,37 +341,65 @@ test("kxm router skill scopes tool_policy_denied to agent-command and MCP/extens
   );
 });
 
-test("kxm workflow wait and signal support dry-run binding for KXM runs", async () => {
+test("kxm workflow wait and signal bind to the Runtime only for a run its store owns", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-test-"));
+  const stateHome = mkdtempSync(join(tmpdir(), "kxm-test-state-"));
   try {
     spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", dir], { encoding: "utf8", windowsHide: true });
     initializeKxmProject(dir, { projectId: "prj_01JRUNTEST000000000000", projectName: "Test KXM" });
-    const fakeRunId = "run_0123456789abcdef0123456789abcdef";
-    const waitRes = await runCli([
-      "workflow", "wait",
-      fakeRunId,
-      "stage-1",
-      "test-signal",
-      "waiting for signal",
-      "--dry-run",
-      "--json",
-    ], {}, undefined, dir);
-    assert.equal(waitRes.exit, 0);
-    assert.match(waitRes.stdout, /"dryRun":true/);
+    const env = { KXM_STATE_HOME: stateHome, KXM_WORKFLOW_ID: "hub-workflow", KXM_WORKFLOW_SIGNAL_SECRET: "hub-signal-secret-123" };
+    const runtimeRunId = "run_0123456789abcdef0123456789abcdef";
+    const hubRunId = "run_fedcba9876543210fedcba9876543210";
+    const store = new KxmRunEventStore(kxmProjectRunEventsPath(dir, env));
+    try {
+      const at = "2026-09-23T00:00:00.000Z";
+      store.insertRun({
+        runId: runtimeRunId,
+        projectId: "prj_01JRUNTEST000000000000",
+        homeRuntimeId: "rt_test",
+        workflowId: "default",
+        promptSha256: "0".repeat(64),
+        status: "waiting",
+        configRevision: "c",
+        memoryRevision: "m",
+        executorPolicyRevision: "e",
+        toolPolicyRevision: "t",
+        createdAt: at,
+        updatedAt: at,
+      });
+    } finally {
+      store.close();
+    }
+    const wait = (runId: string) => runCli(
+      ["workflow", "wait", runId, "stage-1", "test-signal", "waiting for signal", "--dry-run", "--json"],
+      env,
+      undefined,
+      dir,
+    );
+    const signal = (runId: string) => runCli(
+      ["gate", "signal", runId, "test-signal", "passed", "signal summary", "--dry-run", "--json"],
+      env,
+      undefined,
+      dir,
+    );
 
-    const signalRes = await runCli([
-      "workflow", "signal",
-      fakeRunId,
-      "test-signal",
-      "passed",
-      "signal summary",
-      "--dry-run",
-      "--json",
-    ], {}, undefined, dir);
-    assert.equal(signalRes.exit, 0);
-    assert.match(signalRes.stdout, /would post signal to KXM run/);
+    const runtimeWait = await wait(runtimeRunId);
+    assert.equal(runtimeWait.exit, 0);
+    assert.match(runtimeWait.stdout, /"command":"workflow wait","runId":"run_0123/);
+    const runtimeSignal = await signal(runtimeRunId);
+    assert.equal(runtimeSignal.exit, 0);
+    assert.match(runtimeSignal.stdout, /would post signal to KXM run/);
+
+    // A hub workflow run has the same id shape; inside the project it still goes to the hub.
+    const hubWait = await wait(hubRunId);
+    assert.equal(hubWait.exit, 0);
+    assert.match(hubWait.stdout, /"command":"workflow wait","dryRun":true,"args"/);
+    const hubSignal = await signal(hubRunId);
+    assert.equal(hubSignal.exit, 0, hubSignal.stderr);
+    assert.match(hubSignal.stdout, /would post signed signal/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    rmSync(stateHome, { recursive: true, force: true });
   }
 });
 

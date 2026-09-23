@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHmac } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -8,6 +7,7 @@ import { createInterface } from "node:readline";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { mintSessionToken, persistSessionTokenToDisk } from "../../plugins/kxm/src/commands.ts";
+import { workflowWebhookHeaders } from "../../plugins/kxm/src/workflow.ts";
 import { HUB_ENV_SCHEMA, writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
 import { createTestMesh, waitFor } from "../helpers.ts";
 import { isolatedMcpEnv, type IsolatedMcpEnvOptions } from "../helpers/mcp-spawn.ts";
@@ -289,8 +289,7 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "mcp-delivery-9",
-      "x-hub-signature": `sha256=${createHmac("sha256", webhookSecret).update(workflowPayload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: webhookSecret, scope: { definitionId: "mcp-workflow" }, deliveryId: "mcp-delivery-9", body: workflowPayload }),
     },
     body: workflowPayload,
   });
@@ -489,6 +488,50 @@ test("MCP server never registers with the persisted admin token", async (context
   assert.doesNotMatch(text, new RegExp(adminToken));
   assert.doesNotMatch(text, /other-project-token/);
   assert.equal([...mesh.hub.state.agents.values()].some((agent) => agent.name === "claude-admin-fallback"), false);
+});
+
+test("MCP tools send one hop past the open inbound requests, so the hub hop limit bounds a forwarding chain", async (context) => {
+  const mesh = await createTestMesh(context);
+  const upstream = mesh.makeClient("hop-upstream");
+  const downstream = mesh.makeClient("hop-downstream");
+  const forwarded: Array<{ hops: number; maxHops: number }> = [];
+  await upstream.start(() => undefined);
+  await downstream.start((event) => {
+    if (event.type === "message") forwarded.push(event.message);
+  });
+  const server = await startMcpServer(context, spawnEnvFor(context, {
+    hubUrl: mesh.address.url,
+    authToken: mesh.token,
+    agentName: "claude-hop-relay",
+    project: "test-project",
+  }));
+  const forward = (content: string) => server.tool("kxm_send", { target: "hop-downstream", content });
+  const receive = async (hops: number) => {
+    const inbound = await upstream.send({ target: "claude-hop-relay", content: `relay at ${hops}`, hops, maxHops: 5 });
+    await waitFor(async () => JSON.stringify(server.value(await server.tool("kxm_inbox"))).includes(inbound.id));
+    return inbound.id;
+  };
+
+  // Handling nothing, a request starts a new chain.
+  assert.notEqual((await forward("fresh")).result?.isError, true);
+  await waitFor(() => forwarded.length === 1);
+  assert.deepEqual([forwarded[0]!.hops, forwarded[0]!.maxHops], [0, 5]);
+
+  // Handling a request three hops into a five-hop chain, the next request is hop four.
+  await receive(3);
+  assert.notEqual((await forward("forwarded")).result?.isError, true);
+  await waitFor(() => forwarded.length === 2);
+  assert.deepEqual([forwarded[1]!.hops, forwarded[1]!.maxHops], [4, 5]);
+
+  // With a request at hop four also open, the furthest counts and one more forward is refused.
+  const deeper = await receive(4);
+  const refused = await forward("one too many");
+  assert.equal(refused.result?.isError, true);
+  assert.match(server.text(refused), /hop limit reached \(5\/5\)/);
+  await server.tool("kxm_reply", { messageId: deeper, content: "answered directly" });
+  assert.notEqual((await forward("after reply")).result?.isError, true);
+  await waitFor(() => forwarded.length === 3);
+  assert.equal(forwarded[2]!.hops, 4);
 });
 
 test("MCP tool call asks the user to start the hub when it is unreachable", async (context) => {

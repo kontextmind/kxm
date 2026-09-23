@@ -183,14 +183,15 @@ The hub does not poll GitHub. Run `kxm gate github watch` with the run's `--run-
 
 | Response | Meaning |
 |---|---|
-| 401 | The HMAC-SHA256 signature is missing or does not match the raw body; a callback must use `signalSecretEnv` when the definition sets it |
+| 401 | The signature is missing, does not match, or is older than 300 seconds (`webhook_timestamp_expired`: check the sender's clock). Signals and `generic` starts need the [KXM sender contract](../guides/webhook-workflows.md#kxm-sender-contract); a callback must use `signalSecretEnv` when the definition sets it |
 | 400 | The delivery ID or JSON body is missing; `workflow_evidence_incomplete` names `missingRequirements`; `invalid_workflow_evidence` means non-string or duplicate keys |
 | 404 | The definition or run ID does not match this hub |
 | 409 `workflow_target_unavailable` | The configured coordinator has never registered; start it once with the matching project and name |
 | 409 `workflow_not_waiting` | No wait is active: `kxm_workflow_wait` was not called, the deadline failed the run, or a prior signal advanced it |
 | 409 `workflow_signal_mismatch`, `workflow_signal_context_mismatch` | Use the run's exact `waiting.signalKey`; fix or omit `workflow.run`, `workflow.stage` and `workflow.signal` evidence |
 | 204 | The event or filter did not match, so no run was intended |
-| 200 with `duplicate: true` | A retry of the same delivery ID was deduplicated |
+| 409 `webhook_delivery_conflict`, `webhook_payload_replayed` | The delivery ID was reused with a different body, or a Jira or GitHub body already started a run under another delivery ID |
+| 200 with `duplicate: true` | A retry of the same delivery ID and body was deduplicated |
 
 A failed or timed-out callback consumes that wait. Re-enter the wait and start a new `github watch` or `kxm gate signal`; keep an explicit `--delivery-id` only for retries of one unchanged body. See [Run webhook workflows](../guides/webhook-workflows.md).
 

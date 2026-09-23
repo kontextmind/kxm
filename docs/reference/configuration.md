@@ -114,9 +114,9 @@ Every agent client (the Pi extension, the Claude Code MCP server, and the `kxm p
 
 | Harness | Default name | Default purpose | Token when `KXM_AUTH_TOKEN` is unset |
 |---|---|---|---|
-| Pi extension | The Pi session name, else `pi-<pid>` | `General-purpose coding agent` | The admin token of a hub it auto-started, else the saved admin token |
+| Pi extension | The Pi session name, else `pi-<pid>` | `General-purpose coding agent` | This project's saved project token only; never the admin token |
 | Claude Code MCP server | `claude` from the plugin settings, else `claude-<pid>` | `Claude Code implementation and review agent` | This project's saved project token only; never the admin token |
-| `kxm peer` commands | `cli-<pid>` | `CLI agent client` | The saved project token for the project, else the saved admin token |
+| `kxm peer` and `kxm workflow` agent commands | `cli-<pid>` | `CLI agent client` | This project's saved project token only; never the admin token (`project_token_missing`, exit 2) |
 
 A clean shutdown marks an identity offline. Reconnecting with the same project and name resumes its durable agent ID and rotates its agent key. If the Claude Code name is already online in the project, the MCP server registers once more as `<name>-<pid>`.
 

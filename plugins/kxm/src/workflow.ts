@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import {
   IMPROVEMENT_AREAS,
   MAX_MESSAGE_TTL_MS,
@@ -1384,6 +1384,75 @@ export function canonicalWorkflowDefinitionJson(definition: WebhookWorkflowDefin
  * underneath the run. */
 export function workflowDefinitionHash(definition: WebhookWorkflowDefinition): string {
   return createHash("sha256").update(canonicalWorkflowDefinitionJson(definition), "utf8").digest("hex");
+}
+
+/** The KXM-owned webhook sender contract: every signal callback, and any
+ * workflow start that is not a Jira or GitHub provider delivery. The HMAC
+ * covers a fixed-arity header block and the exact body bytes, so a captured
+ * request cannot be replayed under another delivery ID, against another run
+ * or signal key, or outside the timestamp window. */
+export const WORKFLOW_WEBHOOK_SIGNATURE_VERSION = "kxm-webhook-v1";
+export const WORKFLOW_WEBHOOK_MAX_SKEW_SECONDS = 300;
+
+/** What a signature is bound to. A start names only the definition; a signal
+ * callback also names the run and signal key from its route. */
+export type WorkflowWebhookScope =
+  | { definitionId: string; runId?: undefined; signalKey?: undefined }
+  | { definitionId: string; runId: string; signalKey: string };
+
+/** The exact bytes a KXM webhook signature covers: seven newline-terminated
+ * fields (version, kind, timestamp, delivery ID, definition ID, run ID, signal
+ * key; the last two empty for a start) followed by the raw body. No field may
+ * contain a line break, so the encoding is unambiguous. */
+export function workflowWebhookSignedMaterial(
+  scope: WorkflowWebhookScope,
+  timestamp: string,
+  deliveryId: string,
+  body: string | Uint8Array,
+): Buffer {
+  const fields = [
+    WORKFLOW_WEBHOOK_SIGNATURE_VERSION,
+    scope.runId === undefined ? "start" : "signal",
+    timestamp,
+    deliveryId,
+    scope.definitionId,
+    scope.runId ?? "",
+    scope.signalKey ?? "",
+  ];
+  if (fields.some((field) => /[\r\n]/.test(field))) {
+    throw new ProtocolError(400, "webhook signature fields must not contain line breaks", "webhook_signature_field_invalid");
+  }
+  return Buffer.concat([
+    Buffer.from(`${fields.join("\n")}\n`, "utf8"),
+    typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body),
+  ]);
+}
+
+export function workflowWebhookSignature(
+  secret: string,
+  scope: WorkflowWebhookScope,
+  timestamp: string,
+  deliveryId: string,
+  body: string | Uint8Array,
+): string {
+  return `sha256=${createHmac("sha256", secret).update(workflowWebhookSignedMaterial(scope, timestamp, deliveryId, body)).digest("hex")}`;
+}
+
+/** Headers for one KXM webhook send. Sign at send time: a transport retry
+ * re-signs with a fresh timestamp and keeps the same delivery ID and body. */
+export function workflowWebhookHeaders(input: {
+  secret: string;
+  scope: WorkflowWebhookScope;
+  deliveryId: string;
+  body: string;
+  nowMs?: number;
+}): Record<string, string> {
+  const timestamp = String(Math.floor((input.nowMs ?? Date.now()) / 1_000));
+  return {
+    "x-kxm-delivery-id": input.deliveryId,
+    "x-kxm-timestamp": timestamp,
+    "x-kxm-signature": workflowWebhookSignature(input.secret, input.scope, timestamp, input.deliveryId, input.body),
+  };
 }
 
 /** Resolve a declared transition rule for a stage outcome, or undefined when
