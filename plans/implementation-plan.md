@@ -23,6 +23,8 @@ related:
   - plan-additional-providers-agy-kimi.md
   - plan-agent-communication-steering.md
   - plan-ssh-remote-execution.md
+  - plan-per-tenant-hosting.md
+  - plan-cross-host-phase.md
   - research-a2a-cross-host.md
   - plan-token-reduction-rtk-ai.md
   - plan-usage-cost-quota-tracking.md
