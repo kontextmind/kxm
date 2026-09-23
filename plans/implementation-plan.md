@@ -496,7 +496,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 ### Landed in this tree (unreleased)
 
 - **Claude plugin hooks, MCP auth, skills and first-workflow path (2026-09-23;
-  PR (plugin/skills, stacked on #298), `e1b26f1`..`7b82b79`; operator decisions pending,
+  PR #299 (stacked on #298), `e1b26f1`..`7b82b79`; operator decisions pending,
   see Still open):** the plugin's two shell-form SessionStart hooks (`kxm session brief
   --status`, `kxm memory brief`) exited 127 without `kxm` on `PATH`, ran whichever `kxm` was
   on `PATH`, minted a 24-hour operator token and wrote `.kxm/state/session-brief.json` at
@@ -2214,7 +2214,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   Decided with the date they were given.
 
 - **Operator decisions on the plugin/skills PR, pending (2026-09-23;
-  PR (plugin/skills, stacked on #298)).** Each is implemented with the default named here
+  PR #299 (stacked on #298)).** Each is implemented with the default named here
   and stays pending until the operator confirms or changes it; none is a Decided entry.
   - **D-1, KontextMind knowledge-plane skills:** delete them, or keep and rescope them.
     Implemented default: the nine skills are kept, their descriptions trigger only when
