@@ -15,6 +15,7 @@ or permission to execute an assignment.
 ```bash
 kxm role list --scope all --json
 kxm role get writer --scope local --json
+kxm role hosts --json
 kxm role --help
 ```
 
@@ -31,10 +32,18 @@ changes every project or the trusted developer runner.
 | `kxm role add [roleId]` | Add a YAML definition or construct a role | `--file`, `--description`, `--skills`, `--harness`, `--model`, `--scope`, `--overwrite`, `--pick` |
 | `kxm role modify [roleId]` | Change description, skill references, or model roster | `--description`, `--add-skill`, `--remove-skill`, `--add-model <harness:model>`, `--remove-model`, `--scope`, `--pick` |
 | `kxm role remove [roleId]` | Remove a definition | `--scope`, `--pick` |
+| `kxm role hosts` | List role seats and the host, model, and effort each resolves to, with the source of that decision | `--scope all\|global\|local` |
+| `kxm role set-host <seatId> <host>` | Bind a role seat to a host in `.kxm/role-hosts.yaml` | `--model`, `--effort low\|medium\|high\|xhigh`, `--scope global\|local` |
+| `kxm role resume <runId> [ruling]` | Resume an audit-escalated run with an operator directive | `[ruling]` free text |
 
 Use `--json` for structured output. Inspect command-specific `--help` before
 constructing a mutation; do not invent `create`, `update`, `delete`, `validate`,
 or `apply` subcommands under `kxm role`.
+
+`kxm role hosts` reads only. `kxm role set-host` writes `.kxm/role-hosts.yaml`
+(or the global file); show the user the resulting diff. `kxm role resume`
+records the operator's ruling on an audit escalation: run it only with the
+ruling the user gave you, and preview a KXM run with `--dry-run` first.
 
 ## Make an Authorized Change
 

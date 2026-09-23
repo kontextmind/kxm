@@ -36642,6 +36642,8 @@ function readRoutingRecords(path) {
 }
 
 // plugins/kxm/src/local-snapshot.ts
+var DEFAULT_BUSY_TIMEOUT_MS = 5e3;
+var RUNTIME_PROJECT_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 function processExists(pid) {
   try {
     process.kill(pid, 0);
@@ -36650,8 +36652,8 @@ function processExists(pid) {
     return error2.code === "EPERM";
   }
 }
-function readJsonRows(database, sql) {
-  const rows = database.prepare(sql).all();
+function readJsonRows(database, sql, params = []) {
+  const rows = database.prepare(sql).all(...params);
   const out = [];
   for (const row of rows) {
     try {
@@ -36726,11 +36728,15 @@ function readPlanMetadata(database) {
     return [];
   }
 }
-function countRows(database, table, where = "") {
-  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get();
+function countRows(database, table, where = "", params = []) {
+  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get(...params);
   return Number(row?.count ?? 0);
 }
-function readOpenMessageMetadata(database) {
+var OPEN_MESSAGE_WHERE = " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')";
+var SCOPED_MESSAGE_WHERE = `${OPEN_MESSAGE_WHERE}
+      AND json_extract(record, '$.project') = ?
+      AND COALESCE(json_extract(record, '$.toName'), json_extract(record, '$.to')) = ?`;
+function readOpenMessageMetadata(database, where = OPEN_MESSAGE_WHERE, params = []) {
   const rows = database.prepare(`
     SELECT
       json_extract(record, '$.id') AS id,
@@ -36740,11 +36746,10 @@ function readOpenMessageMetadata(database) {
       json_extract(record, '$.delivery') AS delivery,
       json_extract(record, '$.createdAt') AS createdAt,
       json_extract(record, '$.correlationId') AS correlationId
-    FROM messages
-    WHERE json_extract(record, '$.status') IN ('queued', 'delivered')
+    FROM messages${where}
     ORDER BY json_extract(record, '$.createdAt') DESC
     LIMIT 16
-  `).all();
+  `).all(...params);
   const messages = [];
   for (const row of rows) {
     if (typeof row.id !== "string" || row.status !== "queued" && row.status !== "delivered" || typeof row.fromName !== "string" || typeof row.toName !== "string" || row.delivery !== "steer" && row.delivery !== "followUp" && row.delivery !== "nextTurn" || typeof row.createdAt !== "string") continue;
@@ -36793,7 +36798,29 @@ function resolveKxmStateRoot(stateDir, options) {
   if (existsSync8(base)) return base;
   return void 0;
 }
+function readRuntimeRuns(eventDb, projectId) {
+  const where = projectId === void 0 ? "" : " WHERE project_id = ?";
+  const params = projectId === void 0 ? [] : [projectId];
+  const runRows = eventDb.prepare(`
+    SELECT run_id, project_id, workflow_id, status, created_at, updated_at
+    FROM runs${where} ORDER BY created_at DESC, run_id DESC LIMIT 8
+  `).all(...params);
+  const countRow = eventDb.prepare(`SELECT COUNT(*) AS total FROM runs${where}`).get(...params);
+  return {
+    total: Number(countRow?.total ?? runRows.length),
+    runs: runRows.map((r) => ({
+      id: r.run_id,
+      status: r.status,
+      definitionId: r.workflow_id,
+      project: r.project_id,
+      updatedAt: r.updated_at || r.created_at
+    }))
+  };
+}
 function loadLocalMeshSnapshot(dataPath, stateDir, options) {
+  const busyTimeoutMs = Math.max(0, Math.trunc(Number(options?.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS)) || 0);
+  const busyTimeout = `PRAGMA busy_timeout = ${busyTimeoutMs}`;
+  const scope = options?.scope;
   let hasLegacy = false;
   let agents = [];
   let openMessages = [];
@@ -36805,13 +36832,24 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     hasLegacy = true;
     const database = openReadOnlyDatabase(dataPath);
     try {
-      database.exec("PRAGMA busy_timeout = 5000");
+      database.exec(busyTimeout);
       agents = readJsonRows(database, "SELECT record FROM agents");
-      openMessages = readOpenMessageMetadata(database);
-      openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
-      legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
-      legacyRunTotal = countRows(database, "workflow_runs");
-      plans = readPlanMetadata(database);
+      if (!scope) {
+        openMessages = readOpenMessageMetadata(database);
+        openMessageTotal = countRows(database, "messages", OPEN_MESSAGE_WHERE);
+        legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+        legacyRunTotal = countRows(database, "workflow_runs");
+        plans = readPlanMetadata(database);
+      } else {
+        if (scope.recipientName) {
+          const messageParams = [scope.hubProject, scope.recipientName];
+          openMessages = readOpenMessageMetadata(database, SCOPED_MESSAGE_WHERE, messageParams);
+          openMessageTotal = countRows(database, "messages", SCOPED_MESSAGE_WHERE, messageParams);
+        }
+        const runWhere = " WHERE json_extract(record, '$.project') = ?";
+        legacyRuns = readJsonRows(database, `SELECT record FROM workflow_runs${runWhere} ORDER BY rowid DESC LIMIT 8`, [scope.hubProject]);
+        legacyRunTotal = countRows(database, "workflow_runs", runWhere, [scope.hubProject]);
+      }
     } finally {
       database.close();
     }
@@ -36819,7 +36857,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   let hasKxm = false;
   const kxmRuns = [];
   let kxmRunTotal = 0;
-  const kxmStateRoot = resolveKxmStateRoot(stateDir, options);
+  const kxmStateRoot = scope && !scope.runtimeProjectId ? void 0 : resolveKxmStateRoot(stateDir, options);
   if (kxmStateRoot) {
     const runtimeDir = join11(kxmStateRoot, "runtime");
     const registryDbPath = join11(runtimeDir, "registry.db");
@@ -36830,8 +36868,8 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       try {
         const regDb = openReadOnlyDatabase(registryDbPath);
         try {
-          regDb.exec("PRAGMA busy_timeout = 5000");
-          const pRows = regDb.prepare("SELECT project_key FROM projects").all();
+          regDb.exec(busyTimeout);
+          const pRows = scope ? regDb.prepare("SELECT project_key FROM projects WHERE project_id = ?").all(scope.runtimeProjectId) : regDb.prepare("SELECT project_key FROM projects").all();
           for (const row of pRows) {
             if (row.project_key) projectKeys.add(row.project_key);
           }
@@ -36841,7 +36879,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       } catch {
       }
     }
-    if (existsSync8(projectsDir)) {
+    if (!scope && existsSync8(projectsDir)) {
       try {
         for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
           if (entry.isDirectory()) {
@@ -36852,28 +36890,17 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       }
     }
     for (const key of projectKeys) {
+      if (scope && !RUNTIME_PROJECT_KEY.test(key)) continue;
       const eventDbPath = join11(projectsDir, key, "run-events.db");
       if (existsSync8(eventDbPath)) {
         hasKxm = true;
         try {
           const eventDb = openReadOnlyDatabase(eventDbPath);
           try {
-            eventDb.exec("PRAGMA busy_timeout = 5000");
-            const runRows = eventDb.prepare(`
-              SELECT run_id, project_id, workflow_id, status, created_at, updated_at
-              FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
-            `).all();
-            const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get();
-            kxmRunTotal += Number(countRow?.total ?? runRows.length);
-            for (const r of runRows) {
-              kxmRuns.push({
-                id: r.run_id,
-                status: r.status,
-                definitionId: r.workflow_id,
-                project: r.project_id,
-                updatedAt: r.updated_at || r.created_at
-              });
-            }
+            eventDb.exec(busyTimeout);
+            const { runs: runs2, total } = readRuntimeRuns(eventDb, scope?.runtimeProjectId);
+            kxmRunTotal += total;
+            kxmRuns.push(...runs2);
           } finally {
             eventDb.close();
           }

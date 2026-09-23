@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { mintSessionToken, persistSessionTokenToDisk } from "../../plugins/kxm/src/commands.ts";
 import { removeTempDir } from "../helpers.ts";
+import { isolatedMcpEnv } from "../helpers/mcp-spawn.ts";
 
 const PLUGIN_DIR = resolve("plugins/kxm");
 const MANIFEST_PATH = join(PLUGIN_DIR, ".claude-plugin", "plugin.json");
@@ -199,10 +200,10 @@ function message(id: string, project: string, toName: string, status = "queued")
 }
 
 function listMcpTools(): Promise<string[]> {
-  const box = sandbox("kxm-hook-mcp-", false);
+  const isolated = isolatedMcpEnv();
   const child = spawn(process.execPath, [join(PLUGIN_DIR, "dist", "mcp-server.js")], {
-    cwd: box.project,
-    env: hookEnv(box, { KXM_SERVER_URL: "http://127.0.0.1:1", KXM_PROJECT_DIR: box.project }),
+    cwd: isolated.cwd,
+    env: isolated.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
   const lines = createInterface({ input: child.stdout });
@@ -222,7 +223,7 @@ function listMcpTools(): Promise<string[]> {
   }).finally(() => {
     lines.close();
     child.kill();
-    removeTempDir(box.root);
+    isolated.cleanup();
   });
 }
 

@@ -1,6 +1,6 @@
 ---
 name: kxm-work
-description: KontextMind work context — tracker read-through, checkpoints, and claimable handoffs. Use when asked what is in flight, what to pick up, checkpoints, handoffs, km_work_current, km_work_update, km_handoff_save, or km_handoff_load.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Reads and updates KontextMind tracker work state with the km_work and km_handoff tools. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:

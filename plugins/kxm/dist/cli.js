@@ -19554,12 +19554,12 @@ var HubClient = class {
           } : {},
           ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
         });
-        const completed = await this.awaitResponse(
+        const completed2 = await this.awaitResponse(
           message.id,
           options.timeoutMs ?? 30 * 6e4,
           options.signal
         );
-        return completedFanoutResult(target, completed);
+        return completedFanoutResult(target, completed2);
       } catch (error) {
         if (message && error instanceof MeshWaitError) {
           try {
@@ -22844,6 +22844,19 @@ function validateAgentScope(agent, step, repositories, file, stepId, issues) {
     }
   }
 }
+var GATE_STEP_OUTCOMES = {
+  pass: ["passed", "implementation-failure"],
+  fail: ["passed", "repro-missing"]
+};
+function gateOutcomeImpossible(step, stepId, file) {
+  const expect = step.expect === "fail" ? "fail" : "pass";
+  const produced = GATE_STEP_OUTCOMES[expect];
+  const declared = Object.keys(objectValue(step.on) ?? {});
+  const impossible = declared.filter((outcome) => !produced.includes(outcome) && outcome !== "implementation_failure" && outcome !== "repro_missing");
+  const missing = produced.filter((outcome) => !declared.includes(outcome));
+  if (impossible.length === 0 || missing.length === 0) return void 0;
+  return issue2("semantic", "gate_outcome_impossible", file, `${stepId} declares ${impossible.join(", ")}, which a gate step with expect ${expect} never produces; it settles on ${produced.join(" or ")}, so declare ${missing.join(" and ")}`);
+}
 function transition(value) {
   if (typeof value === "string") return { target: value };
   const object2 = objectValue(value);
@@ -22908,6 +22921,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
       issues.push(issue2("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
     }
+    const impossibleOutcome = kind === "gate" ? gateOutcomeImpossible(step, stepId, file) : void 0;
+    if (impossibleOutcome) issues.push(impossibleOutcome);
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
@@ -26490,14 +26505,14 @@ function compareRoutingRecords(records) {
   const settled = records.filter((record) => record.finalOutcome !== void 0 && record.finalOutcome !== "pending");
   const accepted = settled.filter((record) => record.finalOutcome === "accepted").length;
   const blocked = settled.filter((record) => record.finalOutcome === "blocked").length;
-  const failed = settled.filter((record) => record.finalOutcome === "failed").length;
+  const failed2 = settled.filter((record) => record.finalOutcome === "failed").length;
   const reworked = records.filter((record) => record.retries > 0 || record.transitions > 0).length;
   return {
     behavioralSha256,
     runs: records.length,
     verifiedCompletions: accepted,
     blocked,
-    failed,
+    failed: failed2,
     reworkRate: records.length === 0 ? 0 : Math.round(reworked / records.length * 100) / 100,
     totalCostUsd: Math.round(records.reduce((sum, record) => sum + (record.costUsd ?? 0), 0) * 1e4) / 1e4,
     totalTokensIn: records.reduce((sum, record) => sum + (record.tokensIn ?? 0), 0),
@@ -27088,9 +27103,19 @@ async function kxmRuntimeRequest(handle, method, path4, body) {
   if (!response.ok) {
     const code = typeof payload.error === "string" ? payload.error : "runtime_request_failed";
     const message = typeof payload.message === "string" ? payload.message : `runtime request failed with HTTP ${response.status}`;
-    throw runtimeError(code, path4, message);
+    throw runtimeError(code, path4, `${message}${handoffSuffix(payload.handoff)}`);
   }
   return payload;
+}
+var HANDOFF_TEXT_MAX = 200;
+function handoffSuffix(handoff) {
+  if (!handoff || typeof handoff !== "object" || Array.isArray(handoff)) return "";
+  const parts = [];
+  for (const key of ["reason", "field", "detail"]) {
+    const value = handoff[key];
+    if (typeof value === "string" && value.length > 0) parts.push(`${key} ${value.slice(0, HANDOFF_TEXT_MAX)}`);
+  }
+  return parts.length > 0 ? ` (handoff ${parts.join("; ")})` : "";
 }
 
 // plugins/kxm/src/cli/types.ts
@@ -28892,8 +28917,8 @@ function mapCheckConclusion(runs, required = []) {
     const name = names3[index] ?? "unknown";
     const conclusion = run?.conclusion ?? run?.status ?? "missing";
     const url = run?.html_url ? ` url:${run.html_url}` : "";
-    const completed = run?.completed_at ? ` at:${run.completed_at}` : "";
-    return [`github.check:${name}`, redactSecrets(`conclusion:${conclusion}${url}${completed}`).slice(0, 500)];
+    const completed2 = run?.completed_at ? ` at:${run.completed_at}` : "";
+    return [`github.check:${name}`, redactSecrets(`conclusion:${conclusion}${url}${completed2}`).slice(0, 500)];
   }));
   if (names3.length === 0 || interesting.some((run) => !run || run.status !== "completed")) {
     return { status: "pending", evidence };
@@ -29047,10 +29072,26 @@ async function watchGithubChecks(input) {
 var import_yaml11 = __toESM(require_dist(), 1);
 import { existsSync as existsSync20, mkdirSync as mkdirSync16, readdirSync as readdirSync7, readFileSync as readFileSync19, rmSync as rmSync7, writeFileSync as writeFileSync15 } from "node:fs";
 import { join as join21 } from "node:path";
+var completed = () => ({ target: "$terminal", terminalStatus: "completed" });
+var failed = () => ({ target: "$terminal", terminalStatus: "failed" });
+function verifyStep(retryStep) {
+  return {
+    id: "verify",
+    kind: "gate",
+    gate: "test",
+    expect: "pass",
+    maxAttempts: 3,
+    repositories: { control: "write" },
+    on: {
+      passed: completed(),
+      "implementation-failure": { target: retryStep, maxTransitions: 2 }
+    }
+  };
+}
 var WORKFLOW_TEMPLATES = {
   "implement-and-verify": {
     schema: "kxm.workflow.v1",
-    description: "Standard implement and verify workflow",
+    description: "Implement a change, then run the project's test gate; a failing gate sends the work back to implement.",
     coordinator: "coordinator",
     limits: {
       maxTransitions: 8
@@ -29059,38 +29100,20 @@ var WORKFLOW_TEMPLATES = {
       {
         id: "implement",
         kind: "agent",
-        role: "writer",
-        maxAttempts: 2,
+        agent: "implementer",
+        maxAttempts: 3,
+        repositories: { control: "write" },
         on: {
           passed: "verify",
-          failed: {
-            target: "$terminal",
-            terminalStatus: "failed"
-          }
+          failed: failed()
         }
       },
-      {
-        id: "verify",
-        kind: "gate",
-        gate: "verify-gate",
-        expect: "pass",
-        maxAttempts: 1,
-        on: {
-          passed: {
-            target: "$terminal",
-            terminalStatus: "completed"
-          },
-          failed: {
-            target: "implement",
-            maxTransitions: 2
-          }
-        }
-      }
+      verifyStep("implement")
     ]
   },
   "dual-critic-review": {
     schema: "kxm.workflow.v1",
-    description: "Dual-critic review workflow with independent Fable architecture and Sol CLI critics",
+    description: "Implement, review twice, then run the project's test gate. Both reviews run as the coordinator agent; for independent critics, add agents under .kxm/agents and point review-arch and review-cli at them.",
     coordinator: "coordinator",
     limits: {
       maxTransitions: 12
@@ -29099,101 +29122,89 @@ var WORKFLOW_TEMPLATES = {
       {
         id: "implement",
         kind: "agent",
-        role: "writer",
-        maxAttempts: 2,
+        agent: "implementer",
+        maxAttempts: 3,
+        repositories: { control: "write" },
         on: {
           passed: "review-arch",
-          failed: {
-            target: "$terminal",
-            terminalStatus: "failed"
-          }
+          failed: failed()
         }
       },
       {
         id: "review-arch",
         kind: "agent",
-        role: "critic-arch",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
           passed: "review-cli",
-          failed: {
-            target: "implement",
-            maxTransitions: 2
-          }
+          failed: { target: "implement", maxTransitions: 2 }
         }
       },
       {
         id: "review-cli",
         kind: "agent",
-        role: "critic-cli",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
           passed: "verify",
-          failed: {
-            target: "implement",
-            maxTransitions: 2
-          }
+          failed: { target: "implement", maxTransitions: 2 }
         }
       },
-      {
-        id: "verify",
-        kind: "gate",
-        gate: "verify-gate",
-        expect: "pass",
-        maxAttempts: 1,
-        on: {
-          passed: {
-            target: "$terminal",
-            terminalStatus: "completed"
-          },
-          failed: {
-            target: "implement",
-            maxTransitions: 2
-          }
-        }
-      }
+      verifyStep("implement")
     ]
   },
   "spec-and-plan": {
     schema: "kxm.workflow.v1",
-    description: "Specification and architecture breakdown planning workflow",
+    description: "Plan a change, then review the plan. Both steps run as the coordinator agent and only read the repository.",
     coordinator: "coordinator",
     limits: {
-      maxTransitions: 6
+      maxTransitions: 8
     },
     steps: [
       {
         id: "plan",
         kind: "agent",
-        role: "planner",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
           passed: "review-arch",
-          failed: {
-            target: "$terminal",
-            terminalStatus: "failed"
-          }
+          failed: failed()
         }
       },
       {
         id: "review-arch",
         kind: "agent",
-        role: "critic-arch",
-        maxAttempts: 2,
+        agent: "coordinator",
+        maxAttempts: 3,
+        repositories: { control: "read" },
         on: {
-          passed: {
-            target: "$terminal",
-            terminalStatus: "completed"
-          },
-          failed: {
-            target: "plan",
-            maxTransitions: 2
-          }
+          passed: completed(),
+          failed: { target: "plan", maxTransitions: 2 }
         }
       }
     ]
   }
 };
+function scaffoldWorkflowDefinition(description) {
+  return {
+    schema: "kxm.workflow.v1",
+    description,
+    coordinator: "coordinator",
+    limits: { maxTransitions: 8 },
+    steps: [
+      {
+        id: "step-1",
+        kind: "agent",
+        agent: "implementer",
+        repositories: { control: "write" },
+        on: { passed: completed(), failed: failed() }
+      }
+    ]
+  };
+}
 var DEFAULT_WORKFLOW_TEMPLATE = WORKFLOW_TEMPLATES["implement-and-verify"];
 function workflowsDirectory(scope, repoRoot = process.cwd(), userConfigDir) {
   if (scope === "global") {
@@ -29479,7 +29490,21 @@ async function cmdWorkflowDefinitions(runtime, options) {
 async function cmdWorkflowAdd(runtime, workflowId, options) {
   const scope = options.scope ?? "local";
   let content;
-  if (!workflowId || options.pick) {
+  if (options.template !== void 0) {
+    const refuse = (error, text) => {
+      print(runtime.io, runtime.json, { ok: false, command: "workflow add", error }, `workflow add failed: ${text}`);
+      return 2;
+    };
+    if (options.file !== void 0 || options.pick !== void 0) {
+      return refuse("workflow_add_conflict", "--template cannot be combined with --file or --pick");
+    }
+    if (!workflowId) return refuse("workflow_id_required", "usage: kxm workflow add <workflowId> --template <name>");
+    const template = Object.hasOwn(WORKFLOW_TEMPLATES, options.template) ? WORKFLOW_TEMPLATES[options.template] : void 0;
+    if (!template) {
+      return refuse("workflow_template_unknown", `unknown template ${options.template}; choose ${Object.keys(WORKFLOW_TEMPLATES).join(", ")}`);
+    }
+    content = { ...template, ...options.description ? { description: options.description } : {} };
+  } else if (!workflowId || options.pick) {
     const candidates = Object.entries(WORKFLOW_TEMPLATES).map(([id, tmpl]) => ({
       id,
       description: String(tmpl.description ?? id),
@@ -29514,21 +29539,7 @@ async function cmdWorkflowAdd(runtime, workflowId, options) {
     const filePath = resolve17(runtime.cwd, options.file);
     content = readFileSync20(filePath, "utf8");
   } else if (!content) {
-    content = {
-      schema: "kxm.workflow.v1",
-      id: workflowId,
-      description: options.description || `Workflow ${workflowId}`,
-      coordinator: "coordinator",
-      limits: { maxTransitions: 8 },
-      steps: [
-        {
-          id: "step-1",
-          kind: "agent",
-          role: "writer",
-          on: { passed: { target: "$terminal", terminalStatus: "completed" } }
-        }
-      ]
-    };
+    content = scaffoldWorkflowDefinition(options.description || `Workflow ${workflowId}`);
   }
   try {
     const res = addWorkflowDefinition(workflowId, content, {
@@ -29967,49 +29978,49 @@ var WORKFLOW_PATTERNS = [
     id: "software-engineering/bug-fix",
     area: "software-engineering",
     keywords: ["fix", "bug", "flaky", "failure", "timeout", "error", "repro", "crash", "broken", "hang"],
-    skills: ["troubleshooting", "kxm", "kxm-query", "kxm-work"],
+    skills: ["kxm-workflow", "kxm-runs", "kxm-context-memory"],
     defaultCommand: (p) => `kxm run software-engineering/bug-fix "${p}"`
   },
   {
     id: "software-engineering/feature-implementation",
     area: "software-engineering",
     keywords: ["feature", "implement", "add", "build", "create", "develop", "support", "endpoint", "ui", "tui"],
-    skills: ["modern-web-guidance", "kxm", "kxm-mind", "kxm-query"],
+    skills: ["kxm-workflow", "kxm-peer", "kxm-context-memory"],
     defaultCommand: (p) => `kxm run software-engineering/feature-implementation "${p}"`
   },
   {
     id: "software-engineering/refactoring",
     area: "software-engineering",
     keywords: ["refactor", "cleanup", "reorganize", "modularize", "deduplicate", "split", "simplify", "deprecate"],
-    skills: ["kxm", "kxm-mind", "kxm-query"],
+    skills: ["kxm-workflow", "kxm-runs"],
     defaultCommand: (p) => `kxm run software-engineering/refactoring "${p}"`
   },
   {
     id: "security-reliability/vulnerability-remediation",
     area: "security-reliability",
     keywords: ["cve", "vulnerability", "security", "exploit", "sanitize", "leak", "secret", "injection", "redact", "auth"],
-    skills: ["kxm", "kxm-protocol", "kxm-triage"],
+    skills: ["kxm-workflow", "kxm-definitions"],
     defaultCommand: (p) => `kxm run security-reliability/vulnerability-remediation "${p}"`
   },
   {
     id: "security-reliability/reliability-hardening",
     area: "security-reliability",
     keywords: ["idempotency", "retry", "circuit-breaker", "cas", "lock", "concurrency", "deadlock", "race", "crash-recovery"],
-    skills: ["kxm", "kxm-protocol"],
+    skills: ["kxm-workflow", "kxm-peer"],
     defaultCommand: (p) => `kxm run security-reliability/reliability-hardening "${p}"`
   },
   {
     id: "data-analytics/pipeline-migration",
     area: "data-analytics",
     keywords: ["database", "sqlite", "migration", "pipeline", "schema", "transform", "table", "wal", "foreign", "cascading"],
-    skills: ["kxm", "kxm-query"],
+    skills: ["kxm-runs", "kxm-context-memory"],
     defaultCommand: (p) => `kxm run data-analytics/pipeline-migration "${p}"`
   },
   {
     id: "research-strategy/architecture-spike",
     area: "research-strategy",
     keywords: ["spike", "investigate", "prototype", "research", "feasibility", "benchmark", "explore", "evaluate"],
-    skills: ["kxm-session", "kxm-mind", "kxm-query", "kxm-insights"],
+    skills: ["kxm-session", "kxm-context-memory", "kxm-routing-improve"],
     defaultCommand: (p) => `kxm run research-strategy/architecture-spike "${p}"`
   }
 ];
@@ -33279,7 +33290,7 @@ async function cmdKxmInit(runtime, options, postHooks) {
       return finishInit(0, `init plan: ${initialized.plan.mode}`);
     }
     const next = initialized.plan.mode === "legacy" ? "legacy state is not migrated by this build: initialise a fresh project directory and copy the YAML definitions you want to keep" : initialized.repairPlan?.issues.length ? "managed-template repair is blocked by conflicts or authority changes; local files were preserved" : "partial or provenance-free KXM state requires explicit repair; no files were overwritten";
-    return finishInit(1, next);
+    return finishInit(1, [next, ...initialized.plan.issues.map((issue3) => `${issue3.file}: ${issue3.code}: ${issue3.message}`)].join("\n"));
   } catch (error) {
     if (error instanceof KxmConfigError) {
       print(runtime.io, runtime.json, {
@@ -33436,7 +33447,9 @@ async function readSupervisor(runtime, command) {
   return attached ?? refuseDryRun(runtime.io, runtime.json, command, "the Runtime supervisor is not running and --dry-run will not start it");
 }
 var RUN_ENGINE_PHASE = "pre-3a";
-var RUN_ENGINE_NOTICE = "runs remain created until the run engine lands; no steps execute yet";
+function runEngineNotice(runId) {
+  return `drive it model-free: kxm runs drive ${runId} --simulated --wait (or cancel: kxm runs cancel ${runId})`;
+}
 function resolveKxmRunTarget(runtime, workflow) {
   if (runtime.workspaceFlag !== void 0) {
     print(runtime.io, runtime.json, {
@@ -33476,9 +33489,9 @@ async function cmdKxmRun(runtime, workflow, promptParts) {
       }, `run plan: workflow ${target.workflowId} at ${target.configRevision.slice(0, 19)}\u2026 (no run created)`);
       return 0;
     }
-    const supervisor = await ensureKxmSupervisor({ env: runtime.env });
+    const supervisor = await (kxmDriveCliSeams.ensureSupervisor ?? ensureKxmSupervisor)({ env: runtime.env });
     const prompt = promptParts.join(" ").trim();
-    const acceptance = await kxmRuntimeRequest(supervisor, "POST", "/v1/runs", {
+    const acceptance = await (kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest)(supervisor, "POST", "/v1/runs", {
       projectRoot,
       workflowId: target.workflowId,
       prompt
@@ -33492,7 +33505,7 @@ async function cmdKxmRun(runtime, workflow, promptParts) {
       run,
       supervisor: { runtimeId: supervisor.runtimeId, port: supervisor.port, started: supervisor.started }
     }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}\u2026, config ${run.configRevision.slice(0, 19)}\u2026)
-${RUN_ENGINE_NOTICE}`);
+${runEngineNotice(run.runId)}`);
     return 0;
   } catch (error) {
     if (error instanceof KxmConfigError) {
@@ -33844,9 +33857,9 @@ async function cmdModelInventoryRefresh(runtime) {
     return 0;
   }
   const inventory = await refreshModelInventory({ outputRoot: runtime.dirs.workdir, env: runtime.env });
-  const failed = Object.values(inventory.sources).some((source) => !source.ok);
-  print(runtime.io, runtime.json, { ok: !failed, command: "models inventory refresh", output: ".kxm/models/inventory.yaml", ...inventory }, `wrote ${inventory.models.length} models to .kxm/models/inventory.yaml`);
-  return failed ? 1 : 0;
+  const failed2 = Object.values(inventory.sources).some((source) => !source.ok);
+  print(runtime.io, runtime.json, { ok: !failed2, command: "models inventory refresh", output: ".kxm/models/inventory.yaml", ...inventory }, `wrote ${inventory.models.length} models to .kxm/models/inventory.yaml`);
+  return failed2 ? 1 : 0;
 }
 async function cmdKxmRuntime(runtime, action) {
   const paths = kxmRuntimePaths({ env: runtime.env });
@@ -43272,6 +43285,8 @@ var SHARED_EFFECT_KINDS = Object.freeze([
 import { existsSync as existsSync28, readdirSync as readdirSync11, readFileSync as readFileSync27 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
 import { isAbsolute as isAbsolute8, join as join35, resolve as resolve24 } from "node:path";
+var DEFAULT_BUSY_TIMEOUT_MS = 5e3;
+var RUNTIME_PROJECT_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 function processExists2(pid) {
   try {
     process.kill(pid, 0);
@@ -43280,8 +43295,8 @@ function processExists2(pid) {
     return error.code === "EPERM";
   }
 }
-function readJsonRows(database, sql) {
-  const rows = database.prepare(sql).all();
+function readJsonRows(database, sql, params = []) {
+  const rows = database.prepare(sql).all(...params);
   const out = [];
   for (const row of rows) {
     try {
@@ -43356,11 +43371,15 @@ function readPlanMetadata(database) {
     return [];
   }
 }
-function countRows(database, table, where = "") {
-  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get();
+function countRows(database, table, where = "", params = []) {
+  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get(...params);
   return Number(row?.count ?? 0);
 }
-function readOpenMessageMetadata(database) {
+var OPEN_MESSAGE_WHERE = " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')";
+var SCOPED_MESSAGE_WHERE = `${OPEN_MESSAGE_WHERE}
+      AND json_extract(record, '$.project') = ?
+      AND COALESCE(json_extract(record, '$.toName'), json_extract(record, '$.to')) = ?`;
+function readOpenMessageMetadata(database, where = OPEN_MESSAGE_WHERE, params = []) {
   const rows = database.prepare(`
     SELECT
       json_extract(record, '$.id') AS id,
@@ -43370,11 +43389,10 @@ function readOpenMessageMetadata(database) {
       json_extract(record, '$.delivery') AS delivery,
       json_extract(record, '$.createdAt') AS createdAt,
       json_extract(record, '$.correlationId') AS correlationId
-    FROM messages
-    WHERE json_extract(record, '$.status') IN ('queued', 'delivered')
+    FROM messages${where}
     ORDER BY json_extract(record, '$.createdAt') DESC
     LIMIT 16
-  `).all();
+  `).all(...params);
   const messages = [];
   for (const row of rows) {
     if (typeof row.id !== "string" || row.status !== "queued" && row.status !== "delivered" || typeof row.fromName !== "string" || typeof row.toName !== "string" || row.delivery !== "steer" && row.delivery !== "followUp" && row.delivery !== "nextTurn" || typeof row.createdAt !== "string") continue;
@@ -43423,7 +43441,29 @@ function resolveKxmStateRoot(stateDir, options) {
   if (existsSync28(base)) return base;
   return void 0;
 }
+function readRuntimeRuns(eventDb, projectId) {
+  const where = projectId === void 0 ? "" : " WHERE project_id = ?";
+  const params = projectId === void 0 ? [] : [projectId];
+  const runRows = eventDb.prepare(`
+    SELECT run_id, project_id, workflow_id, status, created_at, updated_at
+    FROM runs${where} ORDER BY created_at DESC, run_id DESC LIMIT 8
+  `).all(...params);
+  const countRow = eventDb.prepare(`SELECT COUNT(*) AS total FROM runs${where}`).get(...params);
+  return {
+    total: Number(countRow?.total ?? runRows.length),
+    runs: runRows.map((r) => ({
+      id: r.run_id,
+      status: r.status,
+      definitionId: r.workflow_id,
+      project: r.project_id,
+      updatedAt: r.updated_at || r.created_at
+    }))
+  };
+}
 function loadLocalMeshSnapshot(dataPath, stateDir, options) {
+  const busyTimeoutMs = Math.max(0, Math.trunc(Number(options?.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS)) || 0);
+  const busyTimeout = `PRAGMA busy_timeout = ${busyTimeoutMs}`;
+  const scope = options?.scope;
   let hasLegacy = false;
   let agents = [];
   let openMessages = [];
@@ -43435,13 +43475,24 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     hasLegacy = true;
     const database = openReadOnlyDatabase(dataPath);
     try {
-      database.exec("PRAGMA busy_timeout = 5000");
+      database.exec(busyTimeout);
       agents = readJsonRows(database, "SELECT record FROM agents");
-      openMessages = readOpenMessageMetadata(database);
-      openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
-      legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
-      legacyRunTotal = countRows(database, "workflow_runs");
-      plans = readPlanMetadata(database);
+      if (!scope) {
+        openMessages = readOpenMessageMetadata(database);
+        openMessageTotal = countRows(database, "messages", OPEN_MESSAGE_WHERE);
+        legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+        legacyRunTotal = countRows(database, "workflow_runs");
+        plans = readPlanMetadata(database);
+      } else {
+        if (scope.recipientName) {
+          const messageParams = [scope.hubProject, scope.recipientName];
+          openMessages = readOpenMessageMetadata(database, SCOPED_MESSAGE_WHERE, messageParams);
+          openMessageTotal = countRows(database, "messages", SCOPED_MESSAGE_WHERE, messageParams);
+        }
+        const runWhere = " WHERE json_extract(record, '$.project') = ?";
+        legacyRuns = readJsonRows(database, `SELECT record FROM workflow_runs${runWhere} ORDER BY rowid DESC LIMIT 8`, [scope.hubProject]);
+        legacyRunTotal = countRows(database, "workflow_runs", runWhere, [scope.hubProject]);
+      }
     } finally {
       database.close();
     }
@@ -43449,7 +43500,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   let hasKxm = false;
   const kxmRuns = [];
   let kxmRunTotal = 0;
-  const kxmStateRoot = resolveKxmStateRoot(stateDir, options);
+  const kxmStateRoot = scope && !scope.runtimeProjectId ? void 0 : resolveKxmStateRoot(stateDir, options);
   if (kxmStateRoot) {
     const runtimeDir = join35(kxmStateRoot, "runtime");
     const registryDbPath = join35(runtimeDir, "registry.db");
@@ -43460,8 +43511,8 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       try {
         const regDb = openReadOnlyDatabase(registryDbPath);
         try {
-          regDb.exec("PRAGMA busy_timeout = 5000");
-          const pRows = regDb.prepare("SELECT project_key FROM projects").all();
+          regDb.exec(busyTimeout);
+          const pRows = scope ? regDb.prepare("SELECT project_key FROM projects WHERE project_id = ?").all(scope.runtimeProjectId) : regDb.prepare("SELECT project_key FROM projects").all();
           for (const row of pRows) {
             if (row.project_key) projectKeys.add(row.project_key);
           }
@@ -43471,7 +43522,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       } catch {
       }
     }
-    if (existsSync28(projectsDir)) {
+    if (!scope && existsSync28(projectsDir)) {
       try {
         for (const entry of readdirSync11(projectsDir, { withFileTypes: true })) {
           if (entry.isDirectory()) {
@@ -43482,28 +43533,17 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       }
     }
     for (const key of projectKeys) {
+      if (scope && !RUNTIME_PROJECT_KEY.test(key)) continue;
       const eventDbPath = join35(projectsDir, key, "run-events.db");
       if (existsSync28(eventDbPath)) {
         hasKxm = true;
         try {
           const eventDb = openReadOnlyDatabase(eventDbPath);
           try {
-            eventDb.exec("PRAGMA busy_timeout = 5000");
-            const runRows = eventDb.prepare(`
-              SELECT run_id, project_id, workflow_id, status, created_at, updated_at
-              FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
-            `).all();
-            const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get();
-            kxmRunTotal += Number(countRow?.total ?? runRows.length);
-            for (const r of runRows) {
-              kxmRuns.push({
-                id: r.run_id,
-                status: r.status,
-                definitionId: r.workflow_id,
-                project: r.project_id,
-                updatedAt: r.updated_at || r.created_at
-              });
-            }
+            eventDb.exec(busyTimeout);
+            const { runs: runs2, total } = readRuntimeRuns(eventDb, scope?.runtimeProjectId);
+            kxmRunTotal += total;
+            kxmRuns.push(...runs2);
           } finally {
             eventDb.close();
           }
@@ -44233,10 +44273,10 @@ async function runMeshTui(input) {
       try {
         await registerObserver();
       } catch (error) {
-        const failed = await snapshotFromHub("snapshot", {
+        const failed2 = await snapshotFromHub("snapshot", {
           error: error instanceof Error ? error.message : "observer registration failed"
         });
-        paint(failed);
+        paint(failed2);
         return 1;
       }
       snapshot = await snapshotFromHub("sse");
@@ -44446,10 +44486,10 @@ async function runMeshTui(input) {
     }
     return 0;
   } catch (error) {
-    const failed = await snapshotFromHub("snapshot", {
+    const failed2 = await snapshotFromHub("snapshot", {
       error: error instanceof Error ? error.message : "tui_failed"
     });
-    paint(failed);
+    paint(failed2);
     return 1;
   } finally {
     await unregister();
@@ -48060,11 +48100,11 @@ async function cmdUpdate(runtime, harness, options) {
   const inventory = await probeHarnessesAsync({ env: runtime.env });
   const planned = planHarnessUpdate(inventory, { ...harness ? { harness } : {}, scope });
   const steps = runHarnessUpdate(planned, { env: runtime.env, dryRun: runtime.dryRun });
-  const failed = steps.some((step) => step.outcome === "failed") || kxmApply?.ok === false;
+  const failed2 = steps.some((step) => step.outcome === "failed") || kxmApply?.ok === false;
   const skippedUnknown = steps.some((step) => step.detail === "unknown_harness");
   const text = [notice.available ? notice.message : void 0, kxmApply?.detail, formatHarnessUpdate(steps)].filter(Boolean).join("\n");
   print(runtime.io, runtime.json, {
-    ok: !failed && !skippedUnknown,
+    ok: !failed2 && !skippedUnknown,
     command: "update",
     dryRun: runtime.dryRun,
     scope,
@@ -48074,7 +48114,7 @@ async function cmdUpdate(runtime, harness, options) {
     ...installKindPayload(kindReport)
   }, text);
   if (skippedUnknown) return 2;
-  return failed ? 1 : 0;
+  return failed2 ? 1 : 0;
 }
 async function cmdValidate(runtime, fileFlag) {
   const worker = gateOf(runtime, "validate");
@@ -48835,7 +48875,7 @@ function createProgram(ctx, result) {
     };
   };
   const program2 = new Command(CLI_NAME2);
-  program2.description("KontextMind local-first orchestration CLI").version(readInstalledKxmVersion(findKxmRepoRoot(import.meta.url)), "-V, --version", "Print the installed kxm version").exitOverride().configureOutput({
+  program2.description("KXM local-first orchestration CLI").version(readInstalledKxmVersion(findKxmRepoRoot(import.meta.url)), "-V, --version", "Print the installed kxm version").exitOverride().configureOutput({
     writeOut: (text) => ctx.io.stdout(text),
     writeErr: (text) => ctx.io.stderr(text)
   }).helpCommand("help", "Show help");
@@ -48859,7 +48899,7 @@ function createProgram(ctx, result) {
   addGlobalOptions(program2.command("restore <manifest>").description("Restore SQLite stores from a verified backup manifest")).action(async function restoreAction(manifest) {
     result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
   });
-  addGlobalOptions(program2.command("run").description("Create a KXM run (offline-first; no steps execute until the run engine lands)").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (hashed, never stored raw)").action(async function runAction(workflow2, promptParts) {
+  addGlobalOptions(program2.command("run").description("Create a KXM run (offline-first; kxm runs drive <runId> --simulated executes it model-free)").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (hashed, never stored raw)").action(async function runAction(workflow2, promptParts) {
     result.code = await cmdKxmRun(runtimeFrom(ctx, this), workflow2, promptParts);
   }));
   const runCmd = addGlobalOptions(program2.command("runs").description("Inspect KXM runs"));
@@ -49043,7 +49083,7 @@ function createProgram(ctx, result) {
   addGlobalOptions(workflow.command("definitions").description("List workflow definitions across scopes")).option("--scope <scope>", "Filter by scope: all, global, or local", "all").action(async function definitionsAction(options) {
     result.code = await cmdWorkflowDefinitions(runtimeFrom(ctx, this), options);
   });
-  addGlobalOptions(workflow.command("add [workflowId]").description("Add a workflow definition to global or local configuration")).option("--file <path>", "Path to YAML workflow definition file").option("--description <text>", "Workflow description").option("--scope <scope>", "Configuration scope: global or local (default: local)", "local").option("--overwrite", "Overwrite existing workflow definition if present").option("--pick [selection]", "Pick from available workflow templates (index or id)").action(async function workflowAddAction(workflowId, options) {
+  addGlobalOptions(workflow.command("add [workflowId]").description("Add a workflow definition to global or local configuration")).option("--file <path>", "Path to YAML workflow definition file").option("--description <text>", "Workflow description").option("--scope <scope>", "Configuration scope: global or local (default: local)", "local").option("--overwrite", "Overwrite existing workflow definition if present").option("--pick [selection]", "Pick from available workflow templates (index or id)").option("--template <name>", "Start from a built-in template: implement-and-verify, dual-critic-review, or spec-and-plan").action(async function workflowAddAction(workflowId, options) {
     result.code = await cmdWorkflowAdd(runtimeFrom(ctx, this), workflowId, options ?? {});
   });
   addGlobalOptions(workflow.command("remove [workflowId]").description("Remove a workflow definition")).option("--scope <scope>", "Configuration scope: global or local (default: local)", "local").option("--pick [selection]", "Pick a workflow to remove (index or id)").action(async function workflowRemoveAction(workflowId, options) {
