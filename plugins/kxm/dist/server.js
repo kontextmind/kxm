@@ -17547,7 +17547,14 @@ function parseContextRequest(value) {
   return request;
 }
 function validateContextPacketContents(request, packet) {
-  const items = [...packet.currentState, ...packet.knowledge, ...packet.episodes, ...packet.skills, ...packet.contradictions];
+  const items = [
+    ...packet.currentState,
+    ...packet.knowledge,
+    ...packet.evidence,
+    ...packet.episodes,
+    ...packet.skills,
+    ...packet.contradictions
+  ];
   if (items.length > MAX_CONTEXT_ITEMS) {
     throw new ProtocolError(400, `context packet exceeds ${MAX_CONTEXT_ITEMS} items`, "context_limits_exceeded");
   }
@@ -17569,12 +17576,12 @@ function validateContextPacketContents(request, packet) {
     }
   }
 }
+function contextItemCharacters(item) {
+  return item.summary.length + item.id.length + item.kind.length + (item.provenance.sourceRef?.length ?? 0);
+}
 function estimateContextTokens(items) {
   let characters = 0;
-  for (const item of items) {
-    characters += item.summary.length + item.id.length + item.kind.length;
-    if (item.provenance.sourceRef) characters += item.provenance.sourceRef.length;
-  }
+  for (const item of items) characters += contextItemCharacters(item);
   return Math.ceil(characters / 4);
 }
 function authorityRank(authority) {
@@ -17614,12 +17621,141 @@ function provenanceSummaryOf(items) {
   return summary;
 }
 
+// plugins/kxm/src/relevance.ts
+var RELEVANCE_STOPWORDS = Object.freeze(/* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "how",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "our",
+  "should",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your"
+]));
+var RELEVANCE_K1 = 1.2;
+var RELEVANCE_B = 0.75;
+var MIN_TOKEN_CHARS = 2;
+var MAX_TOKEN_CHARS = 64;
+function foldPlural(token) {
+  if (new RegExp("^\\p{N}+$", "u").test(token)) return token;
+  if (token.length > 4 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
+  if (token.length > 4 && token.endsWith("sses")) return token.slice(0, -2);
+  if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us") && !token.endsWith("is")) {
+    return token.slice(0, -1);
+  }
+  return token;
+}
+function relevanceTokens(text2) {
+  const tokens = [];
+  for (const raw of text2.normalize("NFKC").toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (raw.length < MIN_TOKEN_CHARS || raw.length > MAX_TOKEN_CHARS) continue;
+    if (RELEVANCE_STOPWORDS.has(raw)) continue;
+    tokens.push(foldPlural(raw));
+  }
+  return tokens;
+}
+function scoreRelevance(query, documents) {
+  const scores = documents.map(() => 0);
+  const terms = [...new Set(relevanceTokens(query))];
+  if (terms.length === 0 || documents.length === 0) return scores;
+  const indexed = documents.map((document) => {
+    const tokens = relevanceTokens(document);
+    const frequencies = /* @__PURE__ */ new Map();
+    for (const token of tokens) frequencies.set(token, (frequencies.get(token) ?? 0) + 1);
+    return { length: tokens.length, frequencies };
+  });
+  const count = indexed.length;
+  let totalLength = 0;
+  for (const document of indexed) totalLength += document.length;
+  const averageLength = totalLength > 0 ? totalLength / count : 1;
+  const inverseFrequency = /* @__PURE__ */ new Map();
+  for (const term of terms) {
+    let documentFrequency = 0;
+    for (const document of indexed) {
+      if (document.frequencies.has(term)) documentFrequency += 1;
+    }
+    inverseFrequency.set(term, Math.log(1 + (count - documentFrequency + 0.5) / (documentFrequency + 0.5)));
+  }
+  indexed.forEach((document, index) => {
+    let score = 0;
+    for (const term of terms) {
+      const frequency = document.frequencies.get(term) ?? 0;
+      if (frequency === 0) continue;
+      const lengthNorm = 1 - RELEVANCE_B + RELEVANCE_B * (document.length / averageLength);
+      score += inverseFrequency.get(term) * (frequency * (RELEVANCE_K1 + 1) / (frequency + RELEVANCE_K1 * lengthNorm));
+    }
+    scores[index] = score;
+  });
+  return scores;
+}
+function roundRelevance(score) {
+  return Math.round(score * 1e3) / 1e3;
+}
+function contextItemRelevanceText(item) {
+  return item.stateKey !== void 0 ? `${item.summary} ${item.stateKey}` : item.summary;
+}
+function compareCodeUnitIds(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 // plugins/kxm/src/arbiter.ts
 var ROLE_POLICIES = [
   {
     role: "repro",
     label: "Reproduction specialist",
-    kinds: ["episode", "knowledge"],
+    kinds: ["episode", "knowledge", "evidence"],
     journalCategories: ["error", "lesson", "observation", "contradiction"],
     budgetTokens: 8e3
   },
@@ -17640,7 +17776,7 @@ var ROLE_POLICIES = [
   {
     role: "implementer",
     label: "Implementer",
-    kinds: ["knowledge", "state", "skill", "episode"],
+    kinds: ["knowledge", "state", "skill", "episode", "evidence"],
     journalCategories: ["plan", "decision", "lesson", "state-change"],
     budgetTokens: 16e3
   },
@@ -17712,28 +17848,39 @@ function arbitrate(requestInput, pool, options = {}) {
     const rank = kindRank.get(item.kind);
     return rank === void 0 ? requestedKinds.length : rank;
   };
-  const ordered = [...candidates].sort(
-    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || (left.project === request.project ? 0 : 1) - (right.project === request.project ? 0 : 1) || kindPreference(left) - kindPreference(right) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || left.id.localeCompare(right.id)
+  const allowedKinds = new Set(requestedKinds);
+  const inertProposal = (item) => item.kind === "state" && item.status !== void 0 && item.status !== "current" || item.kind === "skill" && item.status === "proposed";
+  const eligible = candidates.filter((item) => contradictions.has(item.id) || allowedKinds.has(item.kind) && !inertProposal(item));
+  const scoreList = scoreRelevance(request.task, eligible.map(contextItemRelevanceText));
+  const scores = /* @__PURE__ */ new Map();
+  eligible.forEach((item, index) => scores.set(item, scoreList[index] ?? 0));
+  const scoreOf = (item) => scores.get(item) ?? 0;
+  const when = (item) => {
+    const parsed = Date.parse(item.observedAt ?? item.validFrom ?? "");
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const ordered = [...eligible].sort(
+    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || (left.project === request.project ? 0 : 1) - (right.project === request.project ? 0 : 1) || (scoreOf(right) > 0 ? 1 : 0) - (scoreOf(left) > 0 ? 1 : 0) || kindPreference(left) - kindPreference(right) || scoreOf(right) - scoreOf(left) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || when(right) - when(left) || compareCodeUnitIds(left.id, right.id)
   );
-  const kindAllowed = (item) => (request.includeKinds ?? policy.kinds).includes(item.kind) || contradictions.has(item.id);
   const selected = [];
   const unresolvedGaps = [];
+  let characters = 0;
+  let deferredForBudget = 0;
   for (const item of ordered) {
     if (selected.length >= MAX_CONTEXT_ITEMS) {
       unresolvedGaps.push("context item limit reached; refine the task or kinds");
       break;
     }
-    if (!kindAllowed(item)) continue;
-    const nextTokens = estimateContextTokens([...selected, item]);
-    if (nextTokens > budget) {
-      if (selected.length === 0) {
-        unresolvedGaps.push(`budget of ${budget} tokens cannot fit any selected context`);
-        break;
-      }
-      unresolvedGaps.push(`budget of ${budget} tokens reached; ${ordered.length - selected.length} candidates deferred`);
-      break;
+    const itemCharacters = contextItemCharacters(item);
+    if (Math.ceil((characters + itemCharacters) / 4) > budget) {
+      deferredForBudget += 1;
+      continue;
     }
+    characters += itemCharacters;
     selected.push(item);
+  }
+  if (deferredForBudget > 0) {
+    unresolvedGaps.push(selected.length === 0 ? `budget of ${budget} tokens cannot fit any selected context` : `budget of ${budget} tokens reached; ${deferredForBudget} candidates deferred`);
   }
   if (candidates.length === 0) {
     unresolvedGaps.push("no context records exist for this project yet");
@@ -17743,6 +17890,7 @@ function arbitrate(requestInput, pool, options = {}) {
     workingState: options.workingState ?? {},
     currentState: bySection("state").filter((item) => item.status === "current" || item.status === void 0),
     knowledge: bySection("knowledge"),
+    evidence: bySection("evidence"),
     episodes: bySection("episode"),
     skills: bySection("skill").filter((item) => item.status !== "proposed"),
     contradictions: selected.filter((item) => contradictions.has(item.id)),
@@ -17767,7 +17915,12 @@ function arbitrate(requestInput, pool, options = {}) {
       budgetTokens: budget,
       candidateCount: candidates.length,
       excludedSuperseded,
-      unresolvedGaps
+      unresolvedGaps,
+      relevance: {
+        taskTokens: new Set(relevanceTokens(request.task)).size,
+        matchedCandidates: scoreList.filter((score) => score > 0).length,
+        selected: selected.map((item) => roundRelevance(scoreOf(item)))
+      }
     }
   };
 }
@@ -17784,10 +17937,9 @@ function journalEntryToContextItem(entry, project) {
     },
     authority: entry.category === "decision" || entry.category === "plan" ? "evidence" : "evidence",
     confidence: entry.severity === "error" ? "probable" : "probable",
-    ...entry.stageId !== void 0 ? { observedAt: entry.createdAt } : {},
+    observedAt: entry.createdAt,
     evidenceRefs: entry.evidence.filter((ref) => ref.length > 0 && ref.length <= 200).slice(0, 16)
   };
-  if (entry.stageId !== void 0) item.observedAt = entry.createdAt;
   if (kind === "skill") item.status = "proposed";
   return parseContextItem(item);
 }

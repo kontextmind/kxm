@@ -176,6 +176,7 @@ test("context items cannot smuggle control-plane fields", () => {
     workingState: {},
     currentState: [],
     knowledge: [summarizeContextItems("kxm", "guidance", [item()])],
+    evidence: [],
     episodes: [item({ id: "ctx_ep1", kind: "episode" })],
     skills: [item({ id: "ctx_sk1", kind: "skill", evidenceRefs: ["receipt:run_1"] })],
     contradictions: [],
