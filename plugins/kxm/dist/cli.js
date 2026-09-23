@@ -24263,6 +24263,15 @@ var KxmRuntimeRegistry = class {
     return this.readSupervisorRow();
   }
   /** Register or revalidate a project's home binding. Home Runtime is immutable. */
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId) {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at"
+    ).all(homeRuntimeId);
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
+  }
   registerProject(registration) {
     const projectRoot = resolve6(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);

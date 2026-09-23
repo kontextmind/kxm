@@ -131,12 +131,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Copy only the named keys whose values have the expected JS type. */
-function pickScalars(source: unknown, keys: readonly string[]): Picked | undefined {
+function pickScalars(source: unknown, keys: readonly string[], redactor?: KxmSyncRedactor): Picked | undefined {
   if (!isRecord(source)) return undefined;
   const result: Picked = {};
   for (const key of keys) {
     const value = source[key];
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") result[key] = value;
+    if (typeof value === "number" || typeof value === "boolean") {
+      result[key] = value;
+    } else if (typeof value === "string") {
+      // Strings are scrubbed even in "scalar" positions: a secret echoed into
+      // a lease operation or receipt query must not survive to the hub.
+      if (redactor) {
+        const scrubbed = redactor.scrub(value);
+        if (scrubbed.text.length > 0) result[key] = scrubbed.text.slice(0, 200);
+      } else {
+        result[key] = value;
+      }
+    }
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
@@ -145,7 +156,7 @@ class SyncPayloadBuilder {
   readonly payload: Picked = {};
   readonly omitted = new Set<string>();
   replaced = 0;
-  private readonly redactor: KxmSyncRedactor;
+  readonly redactor: KxmSyncRedactor;
 
   constructor(redactor: KxmSyncRedactor) {
     this.redactor = redactor;
@@ -233,12 +244,12 @@ function buildPayload(source: Record<string, unknown>, builder: SyncPayloadBuild
   }
   builder.set("error", builder.record(source.error, ["class", "retryable"], { component: 128 }));
   if (isRecord(source.effect)) {
-    const effect = pickScalars(source.effect, ["id", "idempotencyKeyHash"]) ?? {};
-    const policy = pickScalars(source.effect.policy, ["class", "sharedMutable", "idempotencyKey", "receiptQuery"]);
+    const effect = pickScalars(source.effect, ["id", "idempotencyKeyHash"], builder.redactor) ?? {};
+    const policy = pickScalars(source.effect.policy, ["class", "sharedMutable", "idempotencyKey", "receiptQuery"], builder.redactor);
     if (policy) effect.policy = policy;
     builder.set("effect", effect);
   }
-  builder.set("lease", pickScalars(source.lease, LEASE_KEYS));
+  builder.set("lease", pickScalars(source.lease, LEASE_KEYS, builder.redactor));
   builder.set("actor", builder.record(source.actor, ["kind"], { id: 200 }));
   builder.set("resolvedBy", builder.record(source.resolvedBy, ["kind"], { id: 200 }));
   if (isRecord(source.counts)) {
@@ -308,7 +319,27 @@ export function deriveKxmSyncEvent(event: KxmRunEvent, options: KxmSyncTransform
   if (syncEventSchemaErrors(full) === undefined) return full;
 
   const degradedPayload: Picked = { degraded: true };
-  for (const key of CONTROL_FIELDS) if (builder.payload[key] !== undefined) degradedPayload[key] = builder.payload[key];
+  for (const key of CONTROL_FIELDS) {
+    if (builder.payload[key] === undefined) continue;
+    const value = builder.payload[key];
+    // A scrubbed-required field that is now empty or whitespace-only must carry
+    // a valid placeholder, not an invalid empty string that fails schema
+    // validation and aborts the caller's transaction. The placeholder is
+    // clearly marked as redacted.
+    if (typeof value === "string" && value.trim().length === 0) {
+      degradedPayload[key] = "[redacted]";
+    } else if (isRecord(value)) {
+      // Scrub any empty string fields inside nested objects (actor.id etc.)
+      const patched: Picked = {};
+      for (const [k, v] of Object.entries(value)) {
+        if (typeof v === "string" && v.trim().length === 0) patched[k] = "[redacted]";
+        else patched[k] = v;
+      }
+      degradedPayload[key] = patched;
+    } else {
+      degradedPayload[key] = value;
+    }
+  }
   const degradedOmitted = new Set(omitted);
   for (const key of Object.keys(builder.payload)) if (!(key in degradedPayload)) degradedOmitted.add(key);
   const degraded = envelope(event, policyRevision, degradedPayload, degradedOmitted, builder.replaced);

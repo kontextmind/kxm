@@ -226,6 +226,16 @@ export class KxmRuntimeRegistry {
   }
 
   /** Register or revalidate a project's home binding. Home Runtime is immutable. */
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId: string): Array<{ projectRoot: string; projectId: string }> {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at",
+    ).all(homeRuntimeId) as Array<{ project_root: string; project_id: string }>;
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
+  }
+
   registerProject(registration: { projectId: string; projectRoot: string; homeRuntimeId: string; configRevision?: string; now: string }): KxmProjectRegistration {
     const projectRoot = resolve(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
@@ -959,6 +969,16 @@ export class KxmRunEventStore {
       }
       | undefined;
     return row ? runFromRow(row) : undefined;
+  }
+
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId: string): Array<{ projectRoot: string; projectId: string }> {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at",
+    ).all(homeRuntimeId) as Array<{ project_root: string; project_id: string }>;
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
   }
 
   runsForProject(projectId: string, limit = 50): KxmRunRecord[] {

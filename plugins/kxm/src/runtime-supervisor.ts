@@ -24,6 +24,7 @@ import {
   type KxmRuntimeContext,
 } from "./runtime-service.ts";
 import { createKxmOneShotProducer } from "./oneshot-producer.ts";
+import { KxmSyncRedactor } from "./sync-transform.ts";
 import { isRouteAdmitted } from "./routes.ts";
 import { KxmRunScheduler, createKxmSimulatedProducer, recordDriveReceipt, recoverKxmRun, kxmDrivePollProjection } from "./engine.ts";
 import { kxmDriveSession, kxmOpenDriveSessions } from "./runtime-owner.ts";
@@ -401,13 +402,28 @@ export async function syncKxmOutbox(
   for (;;) {
     const rows = eventStore.pendingOutbox(batchSize, afterSeq);
     if (rows.length === 0) return result;
-    afterSeq = rows[rows.length - 1]!.seq;
-    eventStore.markOutboxAttempted(rows.map((row) => row.seq), now());
-    const response = await client.pushSyncEvents(rows.map((row) => JSON.parse(row.syncEvent) as unknown));
-    result.pushed += rows.length;
+    // Batch by serialized byte size, not just count: the hub rejects requests
+    // over its body ceiling (HTTP 413), and retrying the same oversized batch
+    // would permanently block the queue. Trim to the byte budget and leave the
+    // rest for the next iteration.
+    const MAX_BATCH_BYTES = 200_000; // hub ceiling is 256 KiB; leave headroom
+    let byteBudget = MAX_BATCH_BYTES;
+    let sendCount = 0;
+    for (const row of rows) {
+      const rowBytes = Buffer.byteLength(row.syncEvent, "utf8") + 64; // JSON overhead
+      if (sendCount > 0 && byteBudget - rowBytes < 0) break;
+      byteBudget -= rowBytes;
+      sendCount += 1;
+    }
+    const batch = rows.slice(0, sendCount);
+    if (batch.length === 0) batch.push(rows[0]!); // one oversized row: send alone, hub will 413
+    afterSeq = batch[batch.length - 1]!.seq;
+    eventStore.markOutboxAttempted(batch.map((row) => row.seq), now());
+    const response = await client.pushSyncEvents(batch.map((row) => JSON.parse(row.syncEvent) as unknown));
+    result.pushed += batch.length;
     const outcomes = new Map(response.results.map((entry) => [`${entry.runId}\u0000${entry.sequence}`, entry.outcome]));
     const acked: number[] = [];
-    for (const row of rows) {
+    for (const row of batch) {
       const outcome = outcomes.get(`${row.runId}\u0000${row.sequence}`);
       if (outcome === "accepted" || outcome === "duplicate") acked.push(row.seq);
       else if (outcome === "conflict") result.conflicts += 1;
@@ -857,12 +873,40 @@ async function startKxmRuntimeSupervisorInner(
   // Outbound only: the supervisor pulls nothing and exposes nothing to the hub.
   // A tick that finds no bound hub, no credential or an unreachable hub does
   // nothing; outbox rows stay pending and local execution never waits on it.
+  //
+  // Restart recovery: contexts are only populated on demand (a project request
+  // opens one), so a restarted supervisor would see an empty map and silently
+  // stop syncing every registered project's pending outbox rows. Reopen the
+  // projects this Runtime owns before the first tick.
+  for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
+    try {
+      contextFor(reg.projectRoot);
+    } catch {
+      // A project whose checkout has moved or been deleted stays skipped; its
+      // outbox rows remain pending and its presence expires, which is visible
+      // in the ops snapshot as orphaned.
+    }
+  }
+
   let syncing = false;
   const syncTimer = setInterval(() => {
     if (syncing || stopping) return;
     syncing = true;
     void (async () => {
       for (const context of [...contexts.values()]) {
+        // Production redactor registration: known credentials are registered
+        // so values matching none of the built-in credential shapes are still
+        // scrubbed from outbound sync events. The hub token and environment
+        // variables with credential-suggesting suffixes are the source.
+        const syncRedactor = new KxmSyncRedactor();
+        const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+        if (hubToken) syncRedactor.register(hubToken);
+        for (const key of Object.keys(process.env)) {
+          if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
+            const value = process.env[key]?.trim();
+            if (value) syncRedactor.register(value);
+          }
+        }
         try {
           const client = runtimeHubClientFor(context, process.env);
           if (!client) continue;

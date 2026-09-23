@@ -17743,12 +17743,21 @@ var KxmSyncRedactor = class {
 function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-function pickScalars(source, keys) {
+function pickScalars(source, keys, redactor) {
   if (!isRecord(source)) return void 0;
   const result = {};
   for (const key of keys) {
     const value = source[key];
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") result[key] = value;
+    if (typeof value === "number" || typeof value === "boolean") {
+      result[key] = value;
+    } else if (typeof value === "string") {
+      if (redactor) {
+        const scrubbed = redactor.scrub(value);
+        if (scrubbed.text.length > 0) result[key] = scrubbed.text.slice(0, 200);
+      } else {
+        result[key] = value;
+      }
+    }
   }
   return Object.keys(result).length > 0 ? result : void 0;
 }
@@ -17867,12 +17876,12 @@ function buildPayload(source, builder) {
   }
   builder.set("error", builder.record(source.error, ["class", "retryable"], { component: 128 }));
   if (isRecord(source.effect)) {
-    const effect = pickScalars(source.effect, ["id", "idempotencyKeyHash"]) ?? {};
-    const policy = pickScalars(source.effect.policy, ["class", "sharedMutable", "idempotencyKey", "receiptQuery"]);
+    const effect = pickScalars(source.effect, ["id", "idempotencyKeyHash"], builder.redactor) ?? {};
+    const policy = pickScalars(source.effect.policy, ["class", "sharedMutable", "idempotencyKey", "receiptQuery"], builder.redactor);
     if (policy) effect.policy = policy;
     builder.set("effect", effect);
   }
-  builder.set("lease", pickScalars(source.lease, LEASE_KEYS));
+  builder.set("lease", pickScalars(source.lease, LEASE_KEYS, builder.redactor));
   builder.set("actor", builder.record(source.actor, ["kind"], { id: 200 }));
   builder.set("resolvedBy", builder.record(source.resolvedBy, ["kind"], { id: 200 }));
   if (isRecord(source.counts)) {
@@ -17916,7 +17925,22 @@ function deriveKxmSyncEvent(event, options = {}) {
   const full = envelope(event, policyRevision, payload, omitted, builder.replaced);
   if (syncEventSchemaErrors(full) === void 0) return full;
   const degradedPayload = { degraded: true };
-  for (const key of CONTROL_FIELDS) if (builder.payload[key] !== void 0) degradedPayload[key] = builder.payload[key];
+  for (const key of CONTROL_FIELDS) {
+    if (builder.payload[key] === void 0) continue;
+    const value = builder.payload[key];
+    if (typeof value === "string" && value.trim().length === 0) {
+      degradedPayload[key] = "[redacted]";
+    } else if (isRecord(value)) {
+      const patched = {};
+      for (const [k, v] of Object.entries(value)) {
+        if (typeof v === "string" && v.trim().length === 0) patched[k] = "[redacted]";
+        else patched[k] = v;
+      }
+      degradedPayload[key] = patched;
+    } else {
+      degradedPayload[key] = value;
+    }
+  }
   const degradedOmitted = new Set(omitted);
   for (const key of Object.keys(builder.payload)) if (!(key in degradedPayload)) degradedOmitted.add(key);
   const degraded = envelope(event, policyRevision, degradedPayload, degradedOmitted, builder.replaced);
@@ -18572,6 +18596,15 @@ var KxmRuntimeRegistry = class {
     return this.readSupervisorRow();
   }
   /** Register or revalidate a project's home binding. Home Runtime is immutable. */
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId) {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at"
+    ).all(homeRuntimeId);
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
+  }
   registerProject(registration) {
     const projectRoot = resolve4(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
@@ -19065,6 +19098,15 @@ var KxmRunEventStore = class {
       FROM runs WHERE run_id = ?
     `).get(runId);
     return row ? runFromRow(row) : void 0;
+  }
+  /** All projects registered to this Runtime, for restart recovery: the
+   * supervisor needs to reopen their contexts so pending outbox rows resume
+   * syncing and presence keeps beating. */
+  projectsForRuntime(homeRuntimeId) {
+    const rows = this.database.prepare(
+      "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at"
+    ).all(homeRuntimeId);
+    return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
   }
   runsForProject(projectId, limit = 50) {
     const rows = this.database.prepare(`
@@ -28214,13 +28256,24 @@ async function syncKxmOutbox(eventStore, client, options = {}) {
   for (; ; ) {
     const rows = eventStore.pendingOutbox(batchSize, afterSeq);
     if (rows.length === 0) return result;
-    afterSeq = rows[rows.length - 1].seq;
-    eventStore.markOutboxAttempted(rows.map((row) => row.seq), now());
-    const response = await client.pushSyncEvents(rows.map((row) => JSON.parse(row.syncEvent)));
-    result.pushed += rows.length;
+    const MAX_BATCH_BYTES = 2e5;
+    let byteBudget = MAX_BATCH_BYTES;
+    let sendCount = 0;
+    for (const row of rows) {
+      const rowBytes = Buffer.byteLength(row.syncEvent, "utf8") + 64;
+      if (sendCount > 0 && byteBudget - rowBytes < 0) break;
+      byteBudget -= rowBytes;
+      sendCount += 1;
+    }
+    const batch = rows.slice(0, sendCount);
+    if (batch.length === 0) batch.push(rows[0]);
+    afterSeq = batch[batch.length - 1].seq;
+    eventStore.markOutboxAttempted(batch.map((row) => row.seq), now());
+    const response = await client.pushSyncEvents(batch.map((row) => JSON.parse(row.syncEvent)));
+    result.pushed += batch.length;
     const outcomes = new Map(response.results.map((entry) => [`${entry.runId}\0${entry.sequence}`, entry.outcome]));
     const acked = [];
-    for (const row of rows) {
+    for (const row of batch) {
       const outcome = outcomes.get(`${row.runId}\0${row.sequence}`);
       if (outcome === "accepted" || outcome === "duplicate") acked.push(row.seq);
       else if (outcome === "conflict") result.conflicts += 1;
@@ -28602,12 +28655,27 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
     }
   }, 1e3);
   heartbeat.unref();
+  for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
+    try {
+      contextFor(reg.projectRoot);
+    } catch {
+    }
+  }
   let syncing = false;
   const syncTimer = setInterval(() => {
     if (syncing || stopping) return;
     syncing = true;
     void (async () => {
       for (const context of [...contexts.values()]) {
+        const syncRedactor = new KxmSyncRedactor();
+        const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+        if (hubToken) syncRedactor.register(hubToken);
+        for (const key of Object.keys(process.env)) {
+          if (key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY")) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
+            const value = process.env[key]?.trim();
+            if (value) syncRedactor.register(value);
+          }
+        }
         try {
           const client = runtimeHubClientFor(context, process.env);
           if (!client) continue;
