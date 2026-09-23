@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-17"
-updated: "2026-09-20"
+updated: "2026-09-23"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Web research with options, trade-offs and recommendations for agent-to-agent communication across hosts and the surrounding control plane: context, memory, restarts, discovery, coordination, tasks, plans, steering, improvement, wiki, MCP apps, telemetry, secrets, per-account hosting and agent lifecycle. Reconciled against Tracking on 2026-09-20; schedules nothing."
@@ -15,6 +15,7 @@ tags: ["research", "a2a", "cross-host", "transport", "memory", "telemetry", "ste
 related:
   - implementation-plan.md
   - plan-per-tenant-hosting.md
+  - plan-cross-host-phase.md
   - plan-unified-kxm-milestones.md
   - plan-ssh-remote-execution.md
   - plan-agent-communication-steering.md

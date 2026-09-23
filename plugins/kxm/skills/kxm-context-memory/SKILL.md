@@ -64,7 +64,7 @@ kxm explain --mode planner --model claude/fable --json
 |---|---|---|
 | `kxm memory brief` | Read active project memory facts | `--json` |
 | `kxm memory note <fact>` | Record a candidate for reviewed promotion | `--scope`, `--kind`, `--body`, `--json` |
-| `kxm memory sync` | Regenerate harness instruction memory projections | `--json` |
+| `kxm memory sync` | Regenerate the memory block in existing `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` | `--json` |
 
 Scopes are `agent`, `project`, `run`, or `operator`. Kinds are `decision`,
 `architecture`, `convention`, `policy`, or `learning`. Scope and kind labels
@@ -76,6 +76,12 @@ never elevate the candidate's authority.
    project's review process; a successful note command is not promotion.
 4. Regenerate projections only as an authorized write, inspect their diff,
    and run the existing verification gate.
+
+`kxm memory sync` rewrites only the text between `<!-- kxm:memory:start -->`
+and `<!-- kxm:memory:end -->` (appending that block when a file has none) and
+never creates an instruction file. If the project has none of the three, sync
+refuses; create the file your harness reads yourself rather than expecting KXM
+to author it.
 
 Do not invent search, save, delete, list, or clear subcommands under memory.
 Use context retrieval for discovery and reviewed authored changes for

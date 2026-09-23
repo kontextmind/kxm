@@ -648,11 +648,13 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
     return JSON.parse(result.out) as Record<string, unknown>;
   };
   try {
-    // Real state for every command to plan against: a committed project, a role,
+    // Real state for every command to plan against: a committed project with an
+    // instruction file for `memory sync` to update (sync never creates one), a role,
     // a workflow, a tracked task, a skill candidate with passing evaluations, a
     // hub store, and a verified backup of it.
     assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
     await seed(["init", "--project-id", "prj_01JDRYRUN0000000000000000", "--name", "Dry Run"]);
+    writeFileSync(join(project, "AGENTS.md"), "# Dry Run\n");
     assert.equal(spawnSync("git", ["-C", project, "add", "-A"]).status, 0);
     assert.equal(spawnSync("git", ["-C", project, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"]).status, 0);
     await seed(["role", "add", "seed-role", "--description", "seed"]);

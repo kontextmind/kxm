@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Consolidated proposed scope and contract dependencies for 36 fork reviews; execution status and phase gates remain in implementation-plan.md."
@@ -26,6 +26,8 @@ related:
   - research-additional-forks.md
   - plan-agent-communication-steering.md
   - plan-workflow-modes-selective-loading.md
+  - plan-per-tenant-hosting.md
+  - research-a2a-cross-host.md
 depends_on: []
 blocked_by: []
 details:
