@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Technical reference for Runtime-owned delegation, capability-specific steering receipts and narrowed tool surfaces."
@@ -16,6 +16,8 @@ related:
   - implementation-plan.md
   - plan-unified-kxm-milestones.md
   - history/plan-role-configuration-governance.md
+  - research-harness-streaming-capabilities.md
+  - research-a2a-cross-host.md
 depends_on: []
 blocked_by: []
 details:
@@ -32,7 +34,11 @@ Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 archived [`plan-role-configuration-governance.md`](history/plan-role-configuration-governance.md)
-(role seats, tool allowlists, typed receipts).
+(role seats, tool allowlists, typed receipts);
+[`research-harness-streaming-capabilities.md`](research-harness-streaming-capabilities.md)
+(native harness streaming and live control);
+[`research-a2a-cross-host.md`](research-a2a-cross-host.md)
+(cross-host / A2A research).
 
 ## 1. Objective
 
