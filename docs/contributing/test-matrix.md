@@ -62,6 +62,8 @@ to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 | Dispatch context: only committed, pinned memory and hash-verified promoted skills reach an agent; the rest is a `dispatch_context_*` gap | `engine.test.ts` ("dispatch context: agents receive only committed, pinned memory and verified skills; anything else is withheld with a gap and the step still completes") |
 | `kxm run` prints the simulated drive command for the new run | `cli.test.ts` ("kxm run prints the simulated drive command for the created run") |
 | `kxm workflow add --template` writes workflows that validate and plan; an impossible gate outcome is refused | `cli-experience.test.ts` ("workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused") |
+| `kxm workflow add` writes a local workflow only where the loader reads it and only if the project still loads; outside a project it refuses | `role-and-workflow-manager.test.ts` ("workflow add writes only what the project loader accepts, at the project root, and loadKxmProject still loads") |
+| `kxm workflow add --pick <global-id>` copies the global definition into the project, not the scaffold, and the loader check refuses one that does not fit | `role-and-workflow-manager.test.ts` ("workflow add --pick <global-id> copies that global definition into the project, and refuses one the project loader rejects") |
 | `default.yaml` and the 13-step `fix.yaml` compile deterministically; back edges need budgets | `engine-compile.test.ts` |
 | Artifact gate: non-empty regular files pass; missing, empty, non-file and escaping paths fail | `artifacts-exist.test.ts` |
 | Vision gate: strict verdicts, admitted routes only, unreadable images fail closed | `vision-gate.test.ts` |

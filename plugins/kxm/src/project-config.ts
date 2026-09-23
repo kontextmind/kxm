@@ -453,10 +453,14 @@ function readResource(
     parent = dirname(parent);
   }
   if (!stat.isFile()) fail("path", "resource_not_file", label, "configuration resource must be a regular file");
-  const value = parseRestrictedYaml(readFileSync(file), label);
+  return { kind, ...(id === undefined ? {} : { id }), file, logicalPath, value: resourceValue(registry, readFileSync(file), label, kind) };
+}
+
+function resourceValue(registry: KxmSchemaRegistry, input: string | Uint8Array, label: string, kind: KxmResourceKind): JsonObject {
+  const value = parseRestrictedYaml(input, label);
   const issues = registry.validate(kind, value, label);
   if (issues.length > 0) throw new KxmConfigError(issues);
-  return { kind, ...(id === undefined ? {} : { id }), file, logicalPath, value };
+  return value;
 }
 
 function readTemplateProvenance(registry: KxmSchemaRegistry, root: string): JsonObject | undefined {
@@ -513,6 +517,7 @@ function listNamedResources(
   directory: string,
   logicalDirectory: string,
   kind: "agent" | "model" | "workflow",
+  replacedId?: string,
 ): Map<string, KxmResource> {
   const resources = new Map<string, KxmResource>();
   if (!existsSync(directory)) return resources;
@@ -534,6 +539,7 @@ function listNamedResources(
     }
     const id = basename(entry.name, ".yaml");
     if (kind === "model" && id === "inventory") continue;
+    if (id === replacedId) continue;
     if (!resourceIdentifier(id)) {
       issues.push(issue("path", "resource_id_invalid", displayPath(root, join(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
@@ -1284,6 +1290,34 @@ export function assertNoRegisteredGates(options: object): void {
 
 /** Load and semantically validate one complete, path-derived KXM configuration bundle. */
 export function loadKxmProject(projectRoot: string, options: KxmConfigOptions = {}): KxmProjectBundle {
+  return loadProjectBundle(projectRoot, options);
+}
+
+/**
+ * What `loadKxmProject` would refuse once `.kxm/workflows/<workflowId>.yaml` held
+ * `document`, found without writing it: the same parser, schema and bundle rules,
+ * with `document` standing in for any file of that name.
+ */
+export function kxmWorkflowWriteIssues(
+  projectRoot: string,
+  workflowId: string,
+  document: string,
+  options: KxmConfigOptions = {},
+): readonly KxmConfigIssue[] {
+  try {
+    loadProjectBundle(projectRoot, options, { id: workflowId, document });
+    return [];
+  } catch (error) {
+    if (error instanceof KxmConfigError) return error.issues;
+    throw error;
+  }
+}
+
+function loadProjectBundle(
+  projectRoot: string,
+  options: KxmConfigOptions,
+  workflowCandidate?: { id: string; document: string },
+): KxmProjectBundle {
   assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
   const legacyPresent = legacyConfigFilesAt(root);
@@ -1323,7 +1357,15 @@ export function loadKxmProject(projectRoot: string, options: KxmConfigOptions = 
 
   const agents = listNamedResources(registry, root, join(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join(root, ".kxm", "models"), ".kxm/models", "model");
-  const workflows = listNamedResources(registry, root, join(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
+  const workflows = listNamedResources(registry, root, join(root, ".kxm", "workflows"), ".kxm/workflows", "workflow", workflowCandidate?.id);
+  if (workflowCandidate) {
+    const { id, document } = workflowCandidate;
+    const logicalPath = `.kxm/workflows/${id}.yaml`;
+    if (!resourceIdentifier(id)) fail("path", "resource_id_invalid", logicalPath, `filename-derived identity ${id} is invalid or platform-reserved`);
+    const collision = [...workflows.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
+    if (collision) fail("path", "resource_id_collision", logicalPath, `${id} case-folds to existing ${collision}`);
+    workflows.set(id, { kind: "workflow", id, file: join(root, logicalPath), logicalPath, value: resourceValue(registry, document, logicalPath, "workflow") });
+  }
   const gatePath = join(root, ".kxm", "gates.yaml");
   const gateRegistry = existsSync(gatePath) ? readResource(registry, root, gatePath, ".kxm/gates.yaml", "gate-registry") : undefined;
   const environments: KxmResource[] = [];
