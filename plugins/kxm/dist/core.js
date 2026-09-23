@@ -713,9 +713,10 @@ function generateRoutingReport(records, options = {}) {
     if (a.reworkRate !== b.reworkRate) {
       return a.reworkRate - b.reworkRate;
     }
-    const aIncomplete = a.unknownCostAttempts > 0;
-    const bIncomplete = b.unknownCostAttempts > 0;
-    if (aIncomplete !== bIncomplete) return aIncomplete ? 1 : -1;
+    const aCostUnknown = a.unknownCostAttempts > 0;
+    const bCostUnknown = b.unknownCostAttempts > 0;
+    if (aCostUnknown && !bCostUnknown) return 1;
+    if (!aCostUnknown && bCostUnknown) return -1;
     if (a.costPerAcceptedUsd !== null && b.costPerAcceptedUsd !== null) {
       if (a.costPerAcceptedUsd !== b.costPerAcceptedUsd) {
         return a.costPerAcceptedUsd - b.costPerAcceptedUsd;

@@ -126,7 +126,7 @@ export const PI_ALLOWED_PROVIDERS: readonly string[] = Object.freeze([
   "nous-proxy",
 ]);
 
-/** Native providers Pi must not impersonate directly unless allowlisted aggregator prefix is used. */
+/** Vendors with a native harness rule. Pi must not run their models under any provider id. */
 export const PI_NATIVE_BRAKE_PROVIDERS: readonly string[] = Object.freeze([
   "anthropic",
   "openai",
@@ -135,6 +135,28 @@ export const PI_NATIVE_BRAKE_PROVIDERS: readonly string[] = Object.freeze([
   "google",
   "deepseek",
 ]);
+
+/** Pi provider ids that are a braked vendor's own API or subscription under another name. */
+const PI_VENDOR_OWNED_PROVIDERS: Readonly<Record<string, string>> = Object.freeze({
+  "openai-codex": "openai",
+  moonshotai: "moonshot",
+  "moonshotai-cn": "moonshot",
+  "kimi-coding": "moonshot",
+  "google-vertex": "google",
+  // Claude subscription via the Agent SDK: experiment-only, never a product route.
+  "claude-bridge": "anthropic",
+  // The decided Google route, for Gemini ids only (see PI_ANTIGRAVITY_MODEL_ID).
+  antigravity: "google",
+});
+
+/** Aggregator spellings of braked vendors in `provider/vendor/model` ids (roster policy aliases). */
+const PI_VENDOR_SEGMENT_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  "x-ai": "xai",
+  moonshotai: "moonshot",
+  "google-ai": "google",
+});
+
+const PI_ANTIGRAVITY_MODEL_ID = /^gemini-[a-z0-9.-]+$/;
 
 export interface HarnessModelSpec {
   provider?: string | undefined;
@@ -1096,19 +1118,25 @@ export function validateHarnessModelPair(
   }
 
   if (harnessId === "pi") {
-    if (provider && PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
-      return {
-        valid: false,
-        issue: "pi_native_impersonation_blocked",
-        message: `pi must not impersonate native provider ${provider}; use the native harness`,
-      };
+    if (!provider && model?.includes("/")) {
+      const idx = model.indexOf("/");
+      provider = model.slice(0, idx).toLowerCase();
+      model = model.slice(idx + 1);
     }
-    if (!provider && model && PI_NATIVE_BRAKE_PROVIDERS.some((p) => model!.toLowerCase().startsWith(`${p}/`))) {
-      return {
-        valid: false,
-        issue: "pi_native_impersonation_blocked",
-        message: `pi must not impersonate native model ${model}; use the native harness`,
-      };
+    if (!provider) return { valid: true };
+    const blocked = (message: string): HarnessModelValidation => ({ valid: false, issue: "pi_native_impersonation_blocked", message });
+    if (PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
+      return blocked(`pi must not impersonate native provider ${provider}; use the native harness`);
+    }
+    if (provider === "antigravity" && model && PI_ANTIGRAVITY_MODEL_ID.test(model)) return { valid: true };
+    const owned = Object.hasOwn(PI_VENDOR_OWNED_PROVIDERS, provider) ? PI_VENDOR_OWNED_PROVIDERS[provider] : undefined;
+    if (owned) {
+      return blocked(`pi provider ${provider} bills native vendor ${owned} for ${model ?? "this model"}; use the native harness`);
+    }
+    const segment = model?.includes("/") ? model.slice(0, model.indexOf("/")).toLowerCase() : undefined;
+    const vendor = segment && Object.hasOwn(PI_VENDOR_SEGMENT_ALIASES, segment) ? PI_VENDOR_SEGMENT_ALIASES[segment] : segment;
+    if (vendor && PI_NATIVE_BRAKE_PROVIDERS.includes(vendor)) {
+      return blocked(`pi must not bill native vendor ${vendor} through ${provider}; use the native harness`);
     }
     return { valid: true };
   }

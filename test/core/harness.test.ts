@@ -797,6 +797,28 @@ test("validateHarnessModelPair rejects unhosted models and native Pi impersonati
   assert.equal(validateHarnessModelPair("pi", "anthropic/claude-sonnet-4-6").valid, false);
 });
 
+test("Pi brake refuses a native vendor's model under any Pi provider id, not just the first segment", () => {
+  for (const selector of [
+    "openrouter/x-ai/grok-4.6",
+    "openrouter/anthropic/claude-fable-5",
+    "nous-portal/openai/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-sol",
+    "kimi-coding/k3",
+    "moonshotai/kimi-k3",
+    "google-vertex/gemini-2.5-pro",
+    "claude-bridge/claude-fable-5",
+    "antigravity/claude-sonnet-4-6",
+    "antigravity/google/gemini-3.8-flash",
+  ]) {
+    assert.equal(validateHarnessModelPair("pi", selector).issue, "pi_native_impersonation_blocked", selector);
+  }
+  assert.equal(validateHarnessModelPair("pi", { provider: "openrouter", model: "moonshotai/kimi-k3" }).valid, false);
+  // The decided Google route and the admitted non-native routes stay open.
+  for (const selector of ["antigravity/gemini-3.8-flash-high", "openrouter/qwen/qwen3-coder-plus", "openrouter/z-ai/glm-5.3-flash", "zai-coding-cn/glm-5.3"]) {
+    assert.equal(validateHarnessModelPair("pi", selector).valid, true, selector);
+  }
+});
+
 test("probeHarnessAssignment supplies exact provider/model context to Pi and validates hosting", () => {
   const runCommand = runner({
     "pi --version": { ok: true, code: 0, stdout: "0.85.1\n", stderr: "" },

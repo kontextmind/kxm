@@ -91,20 +91,20 @@ Use `kxm hub view --json` instead when a machine-readable result is required.
 
 ## Real multi-Pi release smoke
 
-The opt-in release smoke requires two distinct models that already pass `pi auth check`. It creates a temporary workspace, launches two real Pi RPC workers, and verifies discovery, request/reply, fanout, durable identity plus a post-restart exchange, journal persistence, checkpoint completion, and cleanup.
+The opt-in release smoke requires two distinct models that already pass `pi auth check`. Both run as long-lived Pi workers, so both must pass the native-vendor brake: a model whose vendor has its own harness (for example `xai/…` or `anthropic/…`) is refused before Pi starts. It creates a temporary workspace, launches two real Pi RPC workers, and verifies discovery, request/reply, fanout, durable identity plus a post-restart exchange, journal persistence, checkpoint completion, and cleanup.
 
 PowerShell:
 
 ```powershell
 $env:KXM_SMOKE = "1"
-$env:KXM_SMOKE_MODELS = "xai/grok-4.6,anthropic/claude-sonnet-4-5"
+$env:KXM_SMOKE_MODELS = "openrouter/qwen/qwen3-coder-plus,openrouter/z-ai/glm-5.3-flash"
 node scripts/smoke-multi-pi.mjs
 ```
 
 POSIX shell:
 
 ```bash
-KXM_SMOKE=1 KXM_SMOKE_MODELS='xai/grok-4.6,anthropic/claude-sonnet-4-5' node scripts/smoke-multi-pi.mjs
+KXM_SMOKE=1 KXM_SMOKE_MODELS='openrouter/qwen/qwen3-coder-plus,openrouter/z-ai/glm-5.3-flash' node scripts/smoke-multi-pi.mjs
 ```
 
 For GitHub Actions, smoke runs on the ARC scale set `kontextmind-doks`. Set

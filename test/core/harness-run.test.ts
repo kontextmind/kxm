@@ -365,6 +365,25 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
   }
 });
 
+test("Pi helper refuses a native vendor's model behind an aggregator prefix for every non-writer role", () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    for (const role of ["experiment", "planner", "reviewer-arch", "reviewer-cli"]) {
+      for (const model of ["openrouter/x-ai/grok-4.6", "openrouter/anthropic/claude-fable-5", "openrouter/moonshotai/kimi-k3", "nous-portal/openai/gpt-5.6-sol"]) {
+        assert.throws(
+          () => preflightRequest({ schema: REQUEST_SCHEMA, harness: "pi", role, model, permission: "read-only", prompt_file: prompt }),
+          /pi brake/,
+          `${role} ${model}`,
+        );
+      }
+      preflightRequest({ schema: REQUEST_SCHEMA, harness: "pi", role, model: "openrouter/qwen/qwen3-coder-plus", permission: "read-only", prompt_file: prompt });
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("claude argv is safe-mode read-only tools without --bare or Bash", () => {
   const argv = buildArgv({
     harness: "claude",

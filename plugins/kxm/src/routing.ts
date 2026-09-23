@@ -823,10 +823,12 @@ export function generateRoutingReport(
       return a.reworkRate - b.reworkRate;
     }
 
-    // 2. Cost: a row with any missing cost ranks after rows whose costs are all known.
-    const aIncomplete = a.unknownCostAttempts > 0;
-    const bIncomplete = b.unknownCostAttempts > 0;
-    if (aIncomplete !== bIncomplete) return aIncomplete ? 1 : -1;
+    // 2. Cost: unknown is never ranked cheapest. Any unknown-cost attempt leaves the
+    // route's cost unknown (unmetered or metered attempts beside it do not price it).
+    const aCostUnknown = a.unknownCostAttempts > 0;
+    const bCostUnknown = b.unknownCostAttempts > 0;
+    if (aCostUnknown && !bCostUnknown) return 1;
+    if (!aCostUnknown && bCostUnknown) return -1;
 
     if (a.costPerAcceptedUsd !== null && b.costPerAcceptedUsd !== null) {
       if (a.costPerAcceptedUsd !== b.costPerAcceptedUsd) {

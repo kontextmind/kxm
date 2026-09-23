@@ -154,7 +154,7 @@ $coordinatorTools = @(
   "kxm_workflow_get", "kxm_workflow_checkpoint", "kxm_workflow_wait",
   "kxm_workflow_record", "kxm_improvement_report"
 ) -join ","
-kxm agent worker --name coordinator --project product --model xai/grok-4.6 `
+kxm agent worker --name coordinator --project product --model openrouter/qwen/qwen3-coder-plus `
   --fallback-models antigravity/gemini-3.1-pro --tools $coordinatorTools `
   --session-isolation workflow --fresh-start
 ```

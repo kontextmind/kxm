@@ -497,6 +497,36 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Routing rules checked against the code; two bugs fixed, four questions left to the
+  operator (2026-09-23; memo [reviews/routing-rule-drift.md](reviews/routing-rule-drift.md)).**
+  Six findings from drafting the harness-routing doc were verified with file and line against
+  `AGENTS.md` and Decided. Fixed, because the rule is already written and the fix only refuses:
+  **(1)** the Pi native-vendor brake read only the first id segment, so
+  `openrouter/x-ai/…`, `openai-codex/…`, `kimi-coding/…`, `moonshotai/…` (Pi's real Moonshot
+  id — the brake's `moonshot` never matched one), `claude-bridge/…` and
+  `antigravity/claude-sonnet-4-6` all passed `validateHarnessModelPair("pi", …)`. It now
+  resolves the model's vendor from the provider id, from a Pi provider that *is* a braked
+  vendor under another name, or from the aggregator's vendor segment (the roster policy's
+  aliases), keeping `antigravity/gemini-*` as the decided Google route. The dev helper gets the
+  same vendor-segment check for non-writer roles, and the long-lived worker — which had no
+  brake — checks its primary and every fallback before Pi starts, for `kxm agent worker` and a
+  direct `scripts/kxm-worker.mjs` launch alike. Four doc examples that launched refused workers
+  (`docs/configuration.md`, `README.md`, the release smoke in `docs/operations.md`, the
+  provenance reviewers) now use admitted non-native routes. No admitted
+  route changes outcome: every `.kxm/routes.yaml` and roster id validates as before on every
+  harness. **(6)** `kxm routing report` ranked a route with unmetered plus unknown attempts at
+  `$0`, first; any unknown-cost attempt now keeps a route behind fully priced ones of equal
+  quality, as `docs/contracts/routing.md` already promised. Left to the operator with options
+  (Still open → *Routing and cost policy questions*): the Google route, the two Pi allowlists,
+  the cost cap that cannot trip, and DeepSeek through Alibaba's plan. Gate: existing
+  `npm run verify`, green (1237 tests, 1231 pass, 0 fail, 6 skipped), no new npm script or CI
+  job; three named tests
+  (`Pi brake refuses a native vendor's model under any Pi provider id, not just the first
+  segment`, `Pi helper refuses a native vendor's model behind an aggregator prefix for every
+  non-writer role`, `long-lived worker refuses a native-vendor model or fallback before
+  supervising Pi`) plus the existing `E3 Gate: unknown cost is never ranked cheaper than metered
+  cost`, extended — each fails with its rule reverted.
+
 - **Claude plugin hooks, MCP auth, skills and first-workflow path (2026-09-23;
   PR #299 (stacked on #298), `e1b26f1`..`7b82b79`; operator decisions pending,
   see Still open):** the plugin's two shell-form SessionStart hooks (`kxm session brief
@@ -1683,7 +1713,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `.kxm/prices.yaml` (Claude, Codex, Grok, GLM, Kimi, Qwen); engine settlement
   requires `costBasis` and records `routing.attempt.recorded` event on every member
   settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch
-  (`budget_model_cost`); fold handles routing records and terminal failure reasons.
+  (`budget_model_cost`) *(inert on live runs as of 2026-09-23: no producer records `metered`
+  cost — see Still open, routing and cost policy questions)*; fold handles routing records and
+  terminal failure reasons.
 - **Workflow guide loop & maintain-documentation (issue #145):** documented developer runner loop (`plan` → `implement` → fixed witness gate `npm run verify` → dual critics Fable + Sol → `accept` → PR with auto-merge) and repair back-edge (`rework_of`, fresh dual review, attempts-and-relief failover); reclassified `semantic-equivalence-verifier` as critic-with-gate (deterministic checks are the witness; model role reviews contracts and does not replace tests); added `maintain-documentation` workflow to Slug Registry and Software Engineering; noted `agy` native subscription harness for Gemini candidates; rebound `.kxm/roster.json` sha256 hash.
 - **agy (Antigravity CLI) helper admission:** `scripts/harness-run.mjs`
   `ROUTES.agy` is a writer/experiment **edit** route (provider `google`,
@@ -1816,7 +1848,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   assignment, rejecting models not hosted by the selected harness (Claude ≠ Grok,
   Codex ≠ Gemini, etc.) and enforcing native Pi brake rules (blocking direct
   native-provider impersonation through Pi without allowlisted aggregator prefixes
-  `openrouter/*`, `nous-portal/*`, `nous/*`, `nous-proxy/*`). `probeHarnessAssignment`
+  `openrouter/*`, `nous-portal/*`, `nous/*`, `nous-proxy/*`) *(corrected 2026-09-23: the brake
+  never read that allowlist and checked only the first id segment; it now refuses by model
+  vendor — see Landed, routing rules checked against the code)*. `probeHarnessAssignment`
   and `probeHarnessesForModel` supply exact requested provider/model context to
   Pi (`pi auth check [--provider <p>] [--model <m>] --json`) before claiming Pi
   readiness, enabling `eligibleHarnesses` to dynamically filter authenticated
@@ -2372,6 +2406,26 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `VACUUM INTO` backup need their own storage-migration plan measured in weeks, and the v6
   identity work must then be reconciled with it rather than ported twice.
 
+- **Routing and cost policy questions (owner: operator; found 2026-09-23; options and a
+  recommendation for each in [reviews/routing-rule-drift.md](reviews/routing-rule-drift.md)).**
+  Each needs an admission or budget decision, so none was changed with the two bug fixes:
+  (2) **Google route** — Decided routes Google through the `antigravity` Pi provider, but
+  `harness.ts`, guide setup, the helper's `agy` writer route and `.kxm/routes.yaml`
+  (`google/gemini-*`) all still wire `agy`, and the Runtime Pi one-shot's `--no-extensions`
+  cannot reach `antigravity`; `AGENTS.md` also claims a deprecated `gemini` catalog entry that
+  does not exist. (3) **Two Pi allowlists** — `harness.ts`'s `PI_ALLOWED_PROVIDERS` is unused;
+  the helper's is `openrouter`/`nous-portal`/`antigravity`; the product path's real admission is
+  `routes.yaml`. (4) **`limits.maxModelCost` cannot trip** — the engine counts only `metered`
+  cost and no producer writes it; unknown cost is instead bounded by the hard-coded 100
+  unmetered-or-unknown attempts per run, so a declared cap is inert on every live run.
+  (5) **`qwen-token-plan/deepseek-v4.1-flash`** is admitted although DeepSeek is a braked vendor —
+  the open-weight question, which also decides the reseller ids the fixed brake still passes
+  (`github-copilot/claude-*`, `amazon-bedrock/anthropic.*`, `azure-openai-responses/gpt-*`, …).
+  Also open: a worker with no `--model` or a bare id lets Pi choose the provider, which the
+  brake cannot check; requiring a qualified model would refuse existing launches.
+  **Trigger:** the operator's next admission change, or the first live run that declares a cost
+  cap — whichever comes first.
+
 - **Package restructure and Bun toolchain (owner: build/runtime maintainer):**
   the layout questions this bullet used to hold are now answered by the tree,
   not by preference: Bun is installer and task runner only (`bunfig.toml` states
@@ -2716,8 +2770,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - MCP factory API waits for a second consumer (D13); `./mcp` stays an
   executable path.
 - Helper allowlists in `scripts/harness-run.mjs` are script constants, not a
-  preferences overlay or catalog feed. Pi prefixes today: `openrouter` and
-  `nous-portal`. Grok is in the observational catalog
+  preferences overlay or catalog feed. Pi prefixes today: `openrouter`,
+  `nous-portal` and `antigravity` (Gemini ids only, since d998b7c7). Grok is in the observational catalog
   (`mode: either`) and is not a supervised long-lived worker.
 - Confirm GitHub repository identity (`kontextmind/kxm` vs current remote).
 - **SCM and issue trackers:** detect from repo conventions (git remote, CI
@@ -2986,10 +3040,10 @@ plus provenance on the discovery report; assignment-time provider/model
 admission remains Phase 4 work.
 
 **Harness/model assignment validation & Pi probe (implemented, unreleased):**
-Unhosted harness/model pair rejection at assignment and exact-context Pi auth probing (`validateHarnessModelPair`, `probeHarnessAssignment`, `probeHarnessesForModel` in `harness.ts`) enforce provider hosting boundaries, reject native-provider Pi impersonation, and probe exact requested provider/model credentials via `pi auth check`.
+Unhosted harness/model pair rejection at assignment and exact-context Pi auth probing (`validateHarnessModelPair`, `probeHarnessAssignment`, `probeHarnessesForModel` in `harness.ts`) enforce provider hosting boundaries, reject native-provider Pi impersonation by model vendor (provider id, vendor-owned Pi provider, or aggregator vendor segment; `antigravity/gemini-*` is the decided exception), and probe exact requested provider/model credentials via `pi auth check`.
 
 **Routing records v2 and price catalog (implemented via D5 / issue #91, unreleased):**
-`routing.attempt.recorded` events carry `kxm.routing-record.v2` (harness, provider, model, tokens, latency, cost basis, cost USD); missing `costBasis` fails closed at attempt settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch (`budget_model_cost`); dated and hashed price catalog `.kxm/prices.yaml` (`kxm.prices.v1`).
+`routing.attempt.recorded` events carry `kxm.routing-record.v2` (harness, provider, model, tokens, latency, cost basis, cost USD); missing `costBasis` fails closed at attempt settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch (`budget_model_cost`), which no live producer can trip today (Still open, routing and cost policy questions); dated and hashed price catalog `.kxm/prices.yaml` (`kxm.prices.v1`).
 
 **Still this phase (relabelled 2026-09-20: the Pi RPC adapter and the one-shot
 non-Pi adapters below already exist in tree — see Landed; what remains is exact-route
