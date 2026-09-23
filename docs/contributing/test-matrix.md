@@ -20,7 +20,7 @@ to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 | Delivery modes, message fields, hop limits and validation | `hub-api.test.ts`, `protocol.test.ts` |
 | Queue, acknowledgement, visibility, reply and authorization | `hub-api.test.ts`, `hub.test.ts` |
 | An unacknowledged (queued) message replays after a recipient restart as the same record | `hub.test.ts`, `extension.test.ts`, `mcp.test.ts` |
-| An acknowledged, unanswered request survives a Claude Code restart under the same agent name and is announced once | `mcp.test.ts`, `inbox.test.ts` |
+| An acknowledged, unanswered request survives a Claude Code restart under the same agent name and is announced once; one cancelled during the restart is not announced | `mcp.test.ts`, `inbox.test.ts` |
 | An `allowOffline` send queues, delivers once on resumption, and expires unread by TTL | `hub-api.test.ts` |
 | TTL expiry, sender cancellation and terminal retention | `hub-api.test.ts` |
 | Exact-retry idempotency, and rejection of a reused key with different content | `hub-api.test.ts` |
