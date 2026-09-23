@@ -462,8 +462,9 @@ test("KXM init creates and revalidates project configuration without legacy envi
     assert.equal(created.action, "created");
     assert.equal(created.mode, "ready");
     assert.match(created.configRevision, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(created.files.length, 7);
+    assert.equal(created.files.length, 8);
     assert(created.files.includes(".kxm/gates.yaml"));
+    assert(created.files.includes(".kxm/routes.yaml"));
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
     assert.equal(existsSync(join(cwd, "must-not-use")), false);
 

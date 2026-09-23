@@ -15,7 +15,7 @@ invent restart or status subcommands.
 |---|---|---|
 | `kxm hub view` | Check `/health` and `/ready`; exits 1 when the hub is down | `--json` |
 | `kxm tenant status` | Hub metadata and Runtime run state as one labeled view; reads only and never starts the supervisor | `--json` |
-| `kxm backup` | Verified SQLite backup of the hub stores with a hashed manifest | `--out <dir>`, `--json` |
+| `kxm backup` | Verified SQLite backup of the hub store and the Runtime stores with a hashed manifest; exits 1 when the backup is incomplete | `--out <dir>`, `--json` |
 
 ```bash
 kxm hub view --json
@@ -30,8 +30,9 @@ runs have separate ID spaces, so a comparison with no shared ID is
 `unverified`, never agreement.
 
 The durable hub store defaults to `.kxm/state/kxm.db` (`KXM_DATA_PATH`). Do not
-hand-edit it. `kxm backup` does not include the Runtime supervisor's stores
-under the user state root.
+hand-edit it. `kxm backup` also copies the Runtime registry and every
+project's run event store and prompt sidecar under the user state root, so a
+`kxm restore` rolls back every project on the machine, not only this one.
 
 ## Operator steps
 

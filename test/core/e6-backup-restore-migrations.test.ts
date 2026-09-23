@@ -270,11 +270,13 @@ test("kxm backup and restore round-trip preserves all stores and data with manif
     const { manifest, outDir } = createBackup({
       projectRoot,
       outDir: backupDir,
+      env: { KXM_STATE_HOME: join(projectRoot, "empty-user-state") },
     });
 
     assert.equal(outDir, backupDir);
     assert.equal(manifest.schema, "kxm.backup-manifest.v1");
     assert.equal(manifest.stores.length, 3);
+    assert.equal(manifest.complete, true);
     assert.ok(manifest.stores.some((s) => s.storeId === "hub-store" && s.schemaVersion === HUB_STORE_SCHEMA_VERSION));
     assert.ok(manifest.stores.some((s) => s.storeId === "registry" && s.schemaVersion === 1));
     assert.ok(manifest.stores.some((s) => s.storeId === "events:key_001" && s.schemaVersion === KXM_EVENT_STORE_SCHEMA_VERSION));
@@ -342,7 +344,7 @@ test("restoreBackup refuses tampered backup file when sha256 digest mismatches",
     hubStore.saveAgent(makeStoredAgent("a1", { name: "A" }));
     hubStore.close();
 
-    createBackup({ projectRoot, outDir: backupDir });
+    createBackup({ projectRoot, outDir: backupDir, env: { KXM_STATE_HOME: join(projectRoot, "empty-user-state") } });
 
     // Tamper with backed-up database
     const backupDbFile = join(backupDir, "kxm.db");
@@ -384,7 +386,8 @@ test("kxm backup and kxm restore CLI commands succeed end-to-end and handle erro
 
     // 1. Run in-process runCli(["backup", "--json"])
     const backupJsonIo = capture();
-    const backupCode = await runCli(["backup", "--json"], {}, backupJsonIo, projectRoot);
+    const isolated = { KXM_STATE_HOME: join(projectRoot, "empty-user-state") };
+    const backupCode = await runCli(["backup", "--json"], isolated, backupJsonIo, projectRoot);
     assert.equal(backupCode, 0, backupJsonIo.read().stderr);
     const backupJson = JSON.parse(backupJsonIo.read().stdout);
     assert.equal(backupJson.ok, true);
@@ -395,7 +398,7 @@ test("kxm backup and kxm restore CLI commands succeed end-to-end and handle erro
     // 2. Run text-mode backup with --out
     const customBackupDir = join(projectRoot, "custom-backup");
     const backupTextIo = capture();
-    const backupTextCode = await runCli(["backup", "--out", customBackupDir], {}, backupTextIo, projectRoot);
+    const backupTextCode = await runCli(["backup", "--out", customBackupDir], isolated, backupTextIo, projectRoot);
     assert.equal(backupTextCode, 0, backupTextIo.read().stderr);
     assert.match(backupTextIo.read().stdout, /Created SQLite backup with 1 store\(s\):/);
 
@@ -427,7 +430,7 @@ test("kxm backup and kxm restore CLI commands succeed end-to-end and handle erro
     const emptyDir = mkdtempSync(join(tmpdir(), "kxm-e6-empty-"));
     try {
       const errBackupIo = capture();
-      const errCode = await runCli(["backup"], {}, errBackupIo, emptyDir);
+      const errCode = await runCli(["backup"], { KXM_STATE_HOME: emptyDir }, errBackupIo, emptyDir);
       assert.equal(errCode, 1);
       assert.match(errBackupIo.read().stderr, /backup failed/);
     } finally {
@@ -562,7 +565,8 @@ test("restore ceilings track every store's own schema version", () => {
 
   // Per-project event stores are named `events:<key>`, and each one carries the
   // outbox — including rows a hub refused. They share the one events ceiling.
-  assert.equal(kxmBackupCeiling("events:6d41c43d522ab74d11f95432"), KXM_EVENT_STORE_SCHEMA_VERSION);
+    assert.equal(kxmBackupCeiling("events:6d41c43d522ab74d11f95432"), KXM_EVENT_STORE_SCHEMA_VERSION);
+    assert.equal(kxmBackupCeiling("runtime-registry"), KXM_REGISTRY_SCHEMA_VERSION);
   assert.equal(kxmBackupCeiling("binding-store"), 1);
   // An id this build does not know keeps the ceiling restore has always defaulted to.
   assert.equal(kxmBackupCeiling("something-new"), KXM_BACKUP_CEILINGS["hub-store"]);
@@ -578,13 +582,53 @@ test("restore ceilings track every store's own schema version", () => {
     new MeshStore(join(projectRoot, ".kxm", "state", "kxm.db")).close();
     new KxmRuntimeRegistry(join(projectRoot, ".kxm", "runtime", "registry.db")).close();
     new KxmRunEventStore(join(eventsDir, "key_001.db")).close();
-    const discovered = discoverProjectStores(projectRoot);
+    const discovered = discoverProjectStores(projectRoot, { env: { KXM_STATE_HOME: join(projectRoot, "empty-user-state") } });
     assert.equal(discovered.find((store) => store.storeId === "hub-store")?.maxSupportedVersion, HUB_STORE_SCHEMA_VERSION);
     assert.equal(discovered.find((store) => store.storeId === "registry")?.maxSupportedVersion, KXM_REGISTRY_SCHEMA_VERSION);
     for (const store of discovered.filter((candidate) => candidate.storeId.startsWith("events:"))) {
       assert.equal(store.maxSupportedVersion, KXM_EVENT_STORE_SCHEMA_VERSION, `${store.storeId} ceiling`);
     }
     assert.ok(discovered.length > 0, "the fixture exposes at least one store");
+  } finally {
+    env.cleanup();
+  }
+});
+
+test("backup discovers user-state runtime stores and refuses a partial manifest", () => {
+  const env = setupTestEnv();
+  const stateHome = join(env.dir, "user-state");
+  try {
+    const projectRoot = env.dir;
+    mkdirSync(join(projectRoot, ".kxm", "state"), { recursive: true });
+    new MeshStore(join(projectRoot, ".kxm", "state", "kxm.db")).close();
+    const registryPath = join(stateHome, "runtime", "registry.db");
+    mkdirSync(join(stateHome, "runtime"), { recursive: true });
+    new KxmRuntimeRegistry(registryPath).close();
+    const eventPath = join(stateHome, "runtime", "projects", "projkey", "run-events.db");
+    mkdirSync(join(stateHome, "runtime", "projects", "projkey"), { recursive: true });
+    new KxmRunEventStore(eventPath).close();
+    writeFileSync(`${eventPath}.run-prompts.json`, "{\"prompts\":[]}\n");
+    const { manifest } = createBackup({
+      projectRoot,
+      outDir: join(projectRoot, "backup-user"),
+      env: { KXM_STATE_HOME: stateHome },
+    });
+    assert.equal(manifest.complete, true);
+    assert.ok(manifest.stores.some((store) => store.storeId === "registry" && store.sourcePath === registryPath));
+    assert.ok(manifest.stores.some((store) => store.storeId === "events:projkey"));
+    assert.ok(manifest.files?.some((file) => file.id === "events:projkey:run-prompts"));
+
+    const junkHome = join(env.dir, "junk-state");
+    mkdirSync(join(junkHome, "runtime"), { recursive: true });
+    writeFileSync(join(junkHome, "runtime", "registry.db"), "not a database");
+    const partial = createBackup({
+      projectRoot,
+      outDir: join(projectRoot, "backup-partial"),
+      env: { KXM_STATE_HOME: junkHome },
+    });
+    assert.equal(partial.manifest.complete, false);
+    assert.ok(partial.manifest.omitted?.includes("registry"));
+    assert.throws(() => restoreBackup(partial.outDir, { projectRoot }), /restore_incomplete/);
   } finally {
     env.cleanup();
   }

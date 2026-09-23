@@ -278,7 +278,7 @@ No product producer writes `metered` today. Subscription runs are `unmetered` be
 - The catalog `date` is today.
 - The harness is `claude` and the token counts are complete. The Runtime runs every harness, Pi included, through the one-shot producer, which estimates only for `claude`. The package also ships a long-lived Pi producer that estimates for any provider, but nothing in the Runtime calls it today.
 
-`kxm routing report` groups records by harness, model, effort and role. It ranks routes by quality first (Pass%, then Rwk%), then by cost per accepted attempt. Among routes of equal quality, a route with any unknown-cost attempt ranks after every route without one, because its cost is only a lower bound. Its `$/Acc` still shows only what was priced, so a route that mixes unmetered and unknown-cost attempts can read `$0.0000`; the `*` in the `Unk` column marks it. Read `Unm` and `Unk` before you trust `$/Acc`.
+`kxm routing report` groups records by harness, model, effort and role. It ranks routes by quality first (Pass%, then Rwk%), then by cost per accepted attempt. Among routes of equal quality, a route with any unknown-cost attempt ranks after every route without one, because its cost is unknown. Its `$/Acc` prints `-` instead of a partial sum, and the `*` in the `Unk` column marks it. Read `Unm` and `Unk` before you trust `$/Acc`.
 
 The `Quota` column counts attempts whose metadata looks quota-exhausted. Nothing fails over on it. The report has no provider column, so the `Harness` column is what tells you native from Pi.
 
@@ -407,7 +407,7 @@ The code today limits where that route can run:
 - The KXM Pi extension registers the `antigravity` provider. The Runtime's Pi one-shot runs with `--no-extensions`, so it cannot reach `antigravity/…`.
 - Only an interactive Pi with KXM loaded, or a long-lived Pi worker, can use it.
 
-Admit an `antigravity/…` route only through a reviewed admission decision. Whether Google work should use `agy` or `antigravity` today is still an operator decision; see [Where the code is looser than the rules](#where-the-code-is-looser-than-the-rules).
+Admit an `antigravity/…` route only through a reviewed admission decision. The guided setup in `kxm init` maps Google guide candidates to `antigravity/gemini-3.8-flash-high` on Pi and admits that selector, but a Runtime drive of such an agent still cannot reach the provider. Whether Google work should use `agy` or `antigravity` today is still an operator decision; see [Where the code is looser than the rules](#where-the-code-is-looser-than-the-rules).
 
 ### Claude bridge: experiment only
 
@@ -493,7 +493,7 @@ These are places where the code decides less than the [routing rules](#routing-r
 - **Reseller ids without a vendor segment.** Pi also serves native vendors' models under a reseller's own provider id, for example `github-copilot/claude-…`, `amazon-bedrock/anthropic.…` or `azure-openai-responses/gpt-…`. The brake reads the provider and the vendor segment, not the model name, so it accepts these ids. Keep them out of `.kxm/routes.yaml`.
 - **Open-weight models on a third-party plan.** A DeepSeek model billed through Alibaba's plan, such as `qwen-token-plan/deepseek-v4.1-flash`, passes the brake although DeepSeek is a braked vendor. The reverse also happens: an open-weight model filed under a native vendor's namespace, such as `groq/openai/gpt-oss-120b`, is refused. Whether a third-party plan bill counts as billing the vendor is not decided.
 - **Selectors the brake cannot see.** A worker started without `--model` runs Pi's default model, and a bare model id lets Pi choose the provider. Neither names a vendor, so neither is checked. A model that a person selects inside an interactive Pi session is not checked either.
-- **The Google route.** The rules name the `antigravity` Pi provider as Google's route, but the code sends Google through `agy`: the guided setup in `kxm init` maps Google candidates to `agy`, and the Runtime's Pi one-shot cannot reach `antigravity/…` (section 4).
+- **The Google route.** The rules name the `antigravity` Pi provider as Google's route, and the guided setup in `kxm init` now writes Google roles on Pi with `antigravity/gemini-3.8-flash-high` and admits that selector. The Runtime's Pi one-shot runs with `--no-extensions`, so it cannot reach `antigravity/…` and a live drive of those roles fails at dispatch (section 4). A `google/gemini-…` selector still runs only through `agy`.
 - **Two Pi provider allowlists.** `PI_ALLOWED_PROVIDERS` in `plugins/kxm/src/harness.ts` is exported but gates nothing; on the product path, the brake and admission in `.kxm/routes.yaml` decide. The developer helper keeps a different list of its own.
 - **`limits.maxModelCost` cannot trip on a live run.** The engine counts only `metered` cost toward the cap, and no producer records `metered` today (section 2). The Runtime caps `unmetered` and `unknown` attempts at 100 per run instead; see [Cost basis and staleness](config-reference.md#cost-basis-and-staleness).
 - **Config load checks harness/model pairs only for agents that declare `harness:` and select their model through a profile or tag.** An agent with a direct `{provider, model}` selector, or one that omits `harness:` and names `provider: xai`, passes `kxm init --dry-run` and fails only at dispatch.

@@ -340,11 +340,15 @@ reference. Schema: `schemas/agent.schema.json`; semantic checks in
 | `session.maxIdleMs` | Integer, 0 to 31,536,000,000 | Optional | Not read by any code path yet |
 
 Tool presets are names checked against a registered list. The live one-shot
-producer launches every harness with a fixed read-only argument set
-(`READ_ONLY_ONESHOT_ARGS` in `plugins/kxm/src/harness.ts`); it does not
-translate `tools` into harness flags. The Runtime refuses live steps that
-request `write` access until the writer sandbox is in place, so a step that
-writes a repository runs today only under the simulated producer.
+producer launches each harness with a fixed argument set and does not
+translate `tools` into harness flags. A read-only step uses the read-only set
+(`READ_ONLY_ONESHOT_ARGS` in `plugins/kxm/src/harness.ts`). A step with `write`
+access uses the audited writer set (`WRITER_ONESHOT_ARGS`), which exists only
+for `pi` (`-a` with extensions, skills, prompt templates and sessions off) and
+`grok` (`--always-approve` with subagents and web search off). Both approve
+every tool call, shell commands included, and neither confines the process to
+the checkout. A live write step on any other harness is handed off; see
+[Steps the Runtime does not execute yet](#steps-the-runtime-does-not-execute-yet).
 
 ### Model selectors
 
@@ -451,9 +455,11 @@ Error codes: `executor_unknown`, `harness_unknown`, `tool_preset_unknown`,
 [Rules shared by the project bundle](#rules-shared-by-the-project-bundle), and
 `role_roster_conflicts_with_agent` (see [Roles](#kxmrolesroleyaml-kxmrolev1)).
 
-Commands: `kxm init` creates `coordinator` and `implementer`; an interactive
-`kxm init` can add workflow-guide agents for authenticated harnesses; `kxm run`
-and the Runtime read them; `kxm trust` diffs them.
+Commands: `kxm init` creates `coordinator` (`claude`, `anthropic/fable`) and
+`implementer` (`grok`, `xai/grok-4.6`) and admits both selectors in
+`.kxm/routes.yaml`; an interactive `kxm init` can add workflow-guide agents for
+reviewed harness/model pairs whose harness is authenticated, and admits their
+selectors too; `kxm run` and the Runtime read them; `kxm trust` diffs them.
 
 ## `.kxm/models/<id>.yaml` (`kxm.model.v1`)
 
@@ -672,16 +678,21 @@ these, the run is handed off (`step_unsupported`, `gate_unsupported`, or
 `limit_unsupported`) instead of executing, and `kxm runs drive` reports
 `run_handoff_required`:
 
-- `limits.maxAgentTimeMs` in the workflow or project. The built-in template
-  sets it, so the `default` workflow that `kxm init` writes cannot be driven
-  as generated.
+- `limits.maxAgentTimeMs` in the workflow or project. The current `kxm init`
+  template leaves it out; older templates set it on `default`.
 - `tools`, `secrets`, or `safeSpeculation: true` on any step.
 - `join.strategy` other than `all` or `all-settled`, `join.minimumPassed` with
   `all`, and `join.cancelRemaining`.
 - `assignments.maxAttemptsPerAssignment` above 2,
   `assignments.maxWriteRepositories` above 1, and `distinctBy` other than
   `provider`.
-- A live (non-simulated) step with `write` access to any repository.
+- A live (non-simulated) step with `write` access to any repository when its
+  agent's harness has no audited writer profile (only `pi` and `grok` have
+  one), when `assignments.maximum` is above 1, when the project's
+  `limits.maxConcurrentRuns` is above 1, or when `.kxm/roster.yaml` exists and
+  is not a `kxm.developer-roster.v1` whose writer lineup admits that harness
+  and model with `edit` permission. The checkout witness can attribute a
+  change only to one writer at a time.
 - Gate steps with `assignments.allowedAgents`, any assignment count or
   `maxAttemptsPerAssignment` other than 1, `distinctBy`,
   `maxWriteRepositories`, a join other than plain `all`, a `model`, no
@@ -1716,7 +1727,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | `logs/` | Ignored runtime logs | The hub and workers |
 | `state/` | Ignored restart state: the hub database `kxm.db`, Pi sessions, worker manifests | The hub and workers |
 | `run/` | Ignored sockets (`run/ssh-sockets/`) | `kxm ssh` |
-| `backups/` | Ignored; each `backup-<time>/` holds a copy of the hub database and `manifest.json` | `kxm backup` (without `--out`) |
+| `backups/` | Ignored; each `backup-<time>/` holds copies of the hub database, the Runtime stores and their prompt sidecars, and `manifest.json` | `kxm backup` (without `--out`) |
 | `config/` | Legacy: its JSON files make the project unloadable | Nothing current |
 | `.kxm-init-transaction/` (sibling of `.kxm/` at the Git root) | Ignored; interrupted `kxm init` state | `kxm init` |
 

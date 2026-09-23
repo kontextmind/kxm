@@ -420,13 +420,14 @@ export function createStudioServer(options: StudioServerOptions = {}): StudioSer
         return;
       }
 
-      res.writeHead(200, { "Content-Type": "application/json" });
+      res.writeHead(501, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
-        ok: true,
+        ok: false,
+        executed: false,
         mutationId,
         command,
-        mappedToCli: true,
-        executedAt: new Date().toISOString(),
+        mappedToCli: false,
+        error: "mutation_handler_missing",
       }));
       return;
     }
