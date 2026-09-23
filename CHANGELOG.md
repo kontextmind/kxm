@@ -278,6 +278,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   and the repro and implementer roles receive evidence, so the error, observation and
   state-change entries they recall reach them.
 
+- **`kxm memory sync` no longer writes this repository's agent policy into other
+  projects.** A missing `CLAUDE.md` or `GEMINI.md` used to be created from a header
+  copied from KXM's own instruction files — the planner/architecture-critic role, the
+  Grok writer rotation, and Tracking admission rules — so every project that ran sync
+  inherited another project's development policy. Sync now touches only the
+  `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` a project already has, replaces or appends
+  just the `<!-- kxm:memory:start -->`…`<!-- kxm:memory:end -->` block, reports
+  `updated`, `unchanged` and `missing` files, and exits non-zero without writing when
+  none exist. The block is placed at the end of a file that has no markers yet, rather
+  than before a `## Do not` heading that only this repository uses.
+
 - **Release version surfaces cover workspace packages:** a merged PR no longer
   breaks the release pipeline. `scripts/kxm-bump-version.mjs` now writes the
   version into every package manifest under `packages/`, using the same package

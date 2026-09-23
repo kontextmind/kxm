@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-14"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Source-grounded comparison of Pi, released OpenCode 2.0.3, DeepSeek Harness and KXM; proposed ownership boundaries and decision experiments."
@@ -18,6 +18,7 @@ related:
   - plan-unified-kxm-milestones.md
   - research-harness-streaming-capabilities.md
   - research-runtime-language-choices.md
+  - research-memory-studio-forks.md
 depends_on: []
 blocked_by: []
 details:
