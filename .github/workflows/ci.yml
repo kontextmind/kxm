@@ -15,7 +15,7 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# CI jobs run on the ARC scale set kontextmind-doks (org-wide, 0..4 pods).
+# CI jobs run on the ARC scale set kontextmind-doks (1..4 ephemeral pods).
 jobs:
   changes:
     name: Classify changes
@@ -85,7 +85,10 @@ jobs:
     name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
     needs: changes
     runs-on: kontextmind-doks
-    timeout-minutes: 30
+    # This is the merge-safety gate, not the exhaustive suite. Keep the
+    # started-job duration within the operator's three-minute budget; the
+    # complete suite and coverage floors run in nightly.yml.
+    timeout-minutes: 3
     strategy:
       fail-fast: false
       matrix:
@@ -99,16 +102,23 @@ jobs:
           - name: linux
 
     steps:
+      - name: Skip code validation for documentation-only changes
+        if: needs.changes.outputs.code != 'true'
+        run: echo "Documentation-only change; code validation is not required."
+
       - name: Check out repository
+        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@v7
 
       - name: Use Node.js ${{ matrix.node }}
+        if: needs.changes.outputs.code == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Restore node_modules
+        if: needs.changes.outputs.code == 'true'
         id: modules
         uses: actions/cache@v6
         with:
@@ -116,28 +126,15 @@ jobs:
           key: modules-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install locked dependencies
-        if: steps.modules.outputs.cache-hit != 'true'
+        if: needs.changes.outputs.code == 'true' && steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # PRs run the lean gate (core suite, no coverage instrumentation, no
-      # pack). Pushes to main run the full validate:ci; nightly.yml keeps the
-      # complete-suite coverage floors. Historical Windows coverage evidence
-      # remains in Tracking.
-      - name: Test core suite, type-check, and inspect generated artifacts
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            npm run validate:pr
-          else
-            npm run validate:ci
-          fi
-      - name: Inspect package (main only)
-        if: github.event_name == 'push'
-        run: npm pack --dry-run
-
-      - name: Verify generated runtime bundles are current
-        run: npm run check:generated
+      # Both PRs and main run the bounded merge-safety gate. The exhaustive
+      # suite, coverage instrumentation, docs lint, and package dry-run live in
+      # nightly.yml. Historical Windows coverage evidence remains in Tracking.
+      - name: Run the three-minute validation gate
+        if: needs.changes.outputs.code == 'true'
+        run: npm run validate:pr
 
   plugin:
     name: Plugin validation
@@ -147,25 +144,34 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Skip plugin validation for documentation-only changes
+        if: needs.changes.outputs.code != 'true'
+        run: echo "Documentation-only change; plugin validation is not required."
+
       - name: Check out repository
+        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@v7
 
       - name: Use Node.js 24
+        if: needs.changes.outputs.code == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
 
       - name: Install locked dependencies
+        if: needs.changes.outputs.code == 'true'
         run: npm ci --ignore-scripts
 
       - name: Install pinned Claude Code CLI
+        if: needs.changes.outputs.code == 'true'
         run: |
           set -euo pipefail
           npm install --no-save --ignore-scripts @anthropic-ai/claude-code@2.1.261
           node node_modules/@anthropic-ai/claude-code/install.cjs
 
       - name: Validate marketplace and plugin manifests
+        if: needs.changes.outputs.code == 'true'
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         run: |

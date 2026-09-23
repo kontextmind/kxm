@@ -1729,7 +1729,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   read-only agy roles and agy-hosted non-Google models remain deferred.
 - **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
 - **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Dispatch and accept load trusted roster policy from control Git; the witness verifies the bound candidate and does not itself call the policy loader today. Raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. **Unified YAML roster cutover landed (2026-09-16):** trusted developer roster policy moved `.kxm/roster.json` → `.kxm/roster.yaml` (schema `kxm.developer-roster.v1`, routes/lineup/origins content-identical); the loader parses YAML and **brakes fail-closed** on the retired `.kxm/roster.json` name; docs, skills, and policy-draft tests updated to the live format. Remaining role-configuration consolidation (role-hosts seat mapping, runner guide sweep) stays open under task_d3e634858295.
-- **Lean PR gate (2026-09-16):** CI `Validate` legs run `validate:pr` (core suite, type-check, docs/versions lint, generated-dist currency — no coverage instrumentation, no simulations, no pack) on pull requests; pushes to main run full `validate:ci` (coverage + pack dry-run) and `nightly.yml` keeps the complete-suite 93/80/93 coverage floors. Job names and two-Node matrix unchanged (protect-main ruleset pins them). AGENTS.md gate table updated in the same change.
+- **Three-minute merge gate (2026-09-23):** CI `Validate` legs run the same bounded `validate:pr` gate for pull requests and pushes to main: build, typecheck, a compact contract/smoke set, version parity, and generated-dist currency. Each Node 22.19.0/24 leg has a hard three-minute started-job budget. The exhaustive core/simulation/package suite, 93/80/93 coverage floors, full docs check, generated rebuild, and package dry-run stay in `nightly.yml`; they no longer delay merging. Documentation-only changes run Classify and Docs lint while the required Validate and Plugin jobs preserve their pinned names with explicit no-op steps. Job names and the two-Node matrix remain unchanged for ruleset `22251971`. AGENTS.md and the CI contract test enforce the split.
 
 - **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
   `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
@@ -1738,8 +1738,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `KXM_SMOKE_RUNNER == 'kontextmind-doks'` and stays disabled until Pi
   credentials are provisioned into ephemeral pods and pass `pi auth check`.
   Release/npm remain `if: false` and the Windows pause is unchanged.
-  Ruleset `22251971` required contexts are unchanged. This is not a
-  capacity or speed promise.
+  Ruleset `22251971` required contexts are unchanged.
+
+  **Live ARC routing and capacity (2026-09-23):** the scale set is isolated in
+  the selected-repository runner group `KontextMind DOKS ARC`, with public
+  repository access enabled only for `kontextmind/kxm`. The legacy
+  `km-gh-rn01` repository runner intentionally does not carry the
+  `kontextmind-doks` label. DOKS keeps one warm ephemeral runner and bursts to
+  four; each runner requests three CPUs so the autoscaling node pool (two to
+  three 8-vCPU nodes) adds capacity under load. Live workflow jobs were
+  verified on `kontextmind-doks-*` ephemeral runners in that runner group.
 
   The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
 

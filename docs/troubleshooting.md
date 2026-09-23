@@ -36,7 +36,36 @@ The hub does not poll GitHub. Run `kxm gate github watch` with the same `runId`,
 
 ### CI jobs stay queued and never start
 
-Every CI job in `.github/workflows/ci.yml` runs on the `kontextmind-doks` label. If all jobs sit in `queued` with an online, idle runner, the runner lost that custom label (for example after re-registration — the default labels are only `self-hosted`, `Linux`/`Windows`, `X64`). Confirm with `gh api repos/kontextmind/kxm/actions/runners --jq '.runners[] | {name, labels: [.labels[].name]}'`; jobs cannot match on the default `doks` label alone. Re-add the label with `gh api repos/kontextmind/kxm/actions/runners/<id>/labels -X POST --input - <<< '{"labels":["kontextmind-doks"]}'` and jobs are picked up on the next evaluation; if not, push an empty commit to retrigger the run. The Windows runner (`kxm-win-local`) is paused by policy and must not be re-labeled to satisfy Linux jobs.
+Every Linux workflow targets the ARC runner scale-set name `kontextmind-doks`.
+That name is not a custom label for repository runners. The scale set belongs to
+the selected-repository GitHub runner group `KontextMind DOKS ARC`, which must
+allow this public repository. The legacy `km-gh-rn01` runner must not carry the
+`kontextmind-doks` label; adding it bypasses ARC and serializes the build queue.
+
+Check GitHub routing first:
+
+```bash
+gh api repos/kontextmind/kxm/actions/runners \
+  --jq '.runners[] | {name, status, busy, labels: [.labels[].name]}'
+gh api orgs/kontextmind/actions/runner-groups \
+  --jq '.runner_groups[] | select(.name == "KontextMind DOKS ARC") |
+    {name, visibility, allows_public_repositories}'
+```
+
+Then check ARC in DOKS:
+
+```bash
+kubectl -n arc-runners get autoscalingrunnerset kontextmind-doks
+kubectl -n arc-runners get ephemeralrunners,pods
+```
+
+The normal capacity policy keeps one warm runner, bursts to four, and requests
+three CPUs per runner so the DOKS node-pool autoscaler can add capacity instead of
+packing CPU-bound jobs onto already busy nodes. If repository jobs remain queued
+while the listener is assigned zero jobs, verify the runner group's selected
+repository and public-repository access. If ARC has pending pods, inspect node
+capacity and the cluster autoscaler. Do not relabel `km-gh-rn01` or push an
+empty commit as a routing workaround.
 
 ### The hub refuses to start
 
