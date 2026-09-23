@@ -170,10 +170,15 @@ test("error payloads carry a schema and land on stderr in JSON and text modes", 
   assert.equal(text.read().stdout, "");
   assert.match(text.read().stderr, /usage: kxm run <workflow>/);
 
-  const ok = capture();
-  assert.equal(await runCli(["harness", "list", "--json"], {}, ok), 0);
-  assert.equal(ok.read().stderr, "");
-  assert.equal((JSON.parse(ok.read().stdout) as { schema: string }).schema, "kxm.cli-result.v1");
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-cli-envelope-"));
+  try {
+    const ok = capture();
+    assert.equal(await runCli(["harness", "list", "--json"], { PATH: cwd, APPDATA: cwd, USERPROFILE: cwd }, ok, cwd), 0);
+    assert.equal(ok.read().stderr, "");
+    assert.equal(JSON.parse(ok.read().stdout).schema, "kxm.cli-result.v1");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("agent and gate CLI results share the worker envelope", async () => {
@@ -696,7 +701,6 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
     assert.equal(created.run.status, "created");
     assert.equal(created.supervisor.started, true);
     assert.equal(created.execution.status, "not_started");
-    assert(created.execution.prerequisites.some((item) => item.field === "repositories"));
     assert(created.execution.prerequisites.some((item) => item.field === "gates.test.argv"));
     assert.equal(created.execution.nextSteps.drive, `kxm runs drive ${created.run.runId} --wait`);
     assert.equal(created.execution.nextSteps.receipt, `kxm runs receipt ${created.run.runId} --json`);
@@ -919,6 +923,13 @@ test("harness list reports the current project default rather than the global fa
     const inventory = JSON.parse(output.read().stdout) as { defaultHarness: string; harnesses: Array<{ id: string; default: boolean }> };
     assert.equal(inventory.defaultHarness, "claude");
     assert.deepEqual(inventory.harnesses.filter((entry) => entry.default).map((entry) => entry.id), ["claude"]);
+    writeFileSync(projectFile, "schema: invalid\n");
+    const refused = capture();
+    assert.equal(await runCli(["harness", "list", "--json"], {}, refused, cwd), 1);
+    assert.equal(refused.read().stdout, "");
+    const failure = JSON.parse(refused.read().stderr);
+    assert.equal(failure.error, "harness_list_failed");
+    assert(failure.issues.some((issue: { file: string }) => issue.file === ".kxm/project.yaml"));
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

@@ -34729,11 +34729,20 @@ async function cmdTenantStatus(runtime) {
   }
 }
 async function cmdHarnessList(runtime) {
-  const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-  const defaultHarness = projectRoot ? String(loadKxmProject(projectRoot).project.value.defaultHarness ?? "pi") : void 0;
-  const inventory = await probeHarnessesAsync({ env: runtime.env, defaultHarness });
-  print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
-  return 0;
+  try {
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+    const defaultHarness = projectRoot ? String(loadKxmProject(projectRoot).project.value.defaultHarness ?? "pi") : void 0;
+    const inventory = await probeHarnessesAsync({ env: runtime.env, defaultHarness });
+    print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
+    return 0;
+  } catch (error) {
+    if (error instanceof KxmConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "harness list", error: "harness_list_failed", issues: error.issues }, `harness list failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "harness list", error: "harness_list_io_failed" }, "harness list failed because a local operation did not complete");
+    return 1;
+  }
 }
 async function selectInventoryModel(runtime, requested) {
   const models = listInventoryModels(runtime.dirs.workdir);

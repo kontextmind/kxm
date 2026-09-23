@@ -886,6 +886,7 @@ No command-specific options.
 
 - Reads only. No hub needed. In a KXM project, `defaultHarness` and the inventory's default marker reflect `.kxm/project.yaml`; outside a project they default to Pi. Invalid project configuration must be repaired before the project default can be resolved.
 - JSON keys: `defaultHarness`, `harnesses` (each with `id`, `label`, `default`, `mode`, `detected`, `authenticated`, `dispatch` (`status`, `supported`, `reason`), `canUpdate` (`self`, `extensions`, `models`), `issues`).
+- Errors: `harness_list_failed` with configuration `issues`, or `harness_list_io_failed` (exit 1); both honor `--json` and write to stderr without claiming a fallback project default.
 - `dispatch` is `yes` only when the harness is detected, has an audited read-only one-shot profile, and is authenticated. Otherwise the first failing check gives the reason: `not_detected`, `no_headless_mode`, `permission_profile_unaudited` (a detected `deepseek`), `not_authenticated`, or the auth issue when login state is unknown (`auth_context_required` for Pi, `auth_unknown`, `auth_unparsed`, or another `auth_*` code).
 
 Captured with no harness CLIs on `PATH`:
