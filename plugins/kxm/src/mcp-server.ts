@@ -190,7 +190,14 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const cmd = AGENT_COMMANDS_MAP.get(request.params.name);
     if (!cmd) throw new Error(`unknown tool: ${request.params.name}`);
     const args = asRecord(request.params.arguments);
-    const result = await cmd.execute(client, args, { signal: extra.signal, inbox, notifiedInbox });
+    // Every open inbound request is work this session is handling; a request it sends
+    // meanwhile continues their hop chain.
+    const result = await cmd.execute(client, args, {
+      signal: extra.signal,
+      inbox,
+      notifiedInbox,
+      handling: [...inbox.values()],
+    });
     return textResult(result);
   } catch (error) {
     return {

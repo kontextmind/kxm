@@ -142,10 +142,12 @@ starts a detached `kxm-hub.mjs` wrapper when none of them exists, logging
 wrapper output to `.kxm/logs/hub-autostart.log`. Set
 `hub.autoStart: off` to never start a hub from an extension. Auto-start
 resolves credentials before launch, so a first run generates the admin token
-and persists it under the user state root exactly as `kxm hub start` does;
-the extension then authenticates with the environment token, the auto-start
-token, or the persisted credential, in that order. A failed start notifies in
-the TUI and never blocks the session.
+and persists it under the user state root exactly as `kxm hub start` does.
+That generated token is the operator's admin credential, not the extension's:
+the extension registers with `KXM_AUTH_TOKEN`, else this project's saved project
+token, and never with the persisted or auto-started admin token. With neither,
+it reports a `project token` error naming the fix and stays offline. A failed
+start notifies in the TUI and never blocks the session.
 
 PowerShell example:
 
@@ -163,7 +165,7 @@ The four derived directories stay together when only `KXM_WORKSPACE_DIR` is set.
 | Variable | Default | Description |
 |---|---|---|
 | `KXM_SERVER_URL` | `http://127.0.0.1:7331` | Hub base URL |
-| `KXM_AUTH_TOKEN` | None | Project token, or the shared administrative token |
+| `KXM_AUTH_TOKEN` | This project's saved project token; never the persisted admin token | Project token |
 | `KXM_PROJECT` | package.json `name`, else current directory name | Discovery and message namespace |
 | `KXM_AGENT_NAME` | Harness-derived name | Unique live identity within a project |
 | `KXM_AGENT_PURPOSE` | Harness default | Capability description shown to peers |

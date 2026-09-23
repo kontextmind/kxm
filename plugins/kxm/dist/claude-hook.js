@@ -8913,6 +8913,7 @@ __export(commands_exports, {
   AGENT_COMMANDS_MAP: () => AGENT_COMMANDS_MAP,
   clearSessionTokenFromDisk: () => clearSessionTokenFromDisk,
   enforceToolPolicy: () => enforceToolPolicy,
+  forwardedHops: () => forwardedHops,
   getCliAgentCommands: () => getCliAgentCommands,
   getMcpTools: () => getMcpTools,
   getPiToolDefinitions: () => getPiToolDefinitions,
@@ -8932,6 +8933,13 @@ import { createHash, randomUUID as randomUUID3, timingSafeEqual } from "node:cry
 import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync8, unlinkSync, writeFileSync as writeFileSync5 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { dirname as dirname3, join as join7, resolve as resolve5 } from "node:path";
+function forwardedHops(handling) {
+  if (!handling?.length) return void 0;
+  return {
+    hops: Math.max(...handling.map((message) => message.hops)) + 1,
+    maxHops: Math.min(...handling.map((message) => message.maxHops))
+  };
+}
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -9336,12 +9344,13 @@ var init_commands = __esm({
           required: ["target", "content"],
           additionalProperties: false
         },
-        async execute(client, args) {
+        async execute(client, args, context) {
           const delivery = optionalString(args.delivery);
           const correlationId = optionalString(args.correlationId);
           const idempotencyKey = optionalString(args.idempotencyKey);
           const workflowContext = optionalWorkflowContext(args.workflowContext);
           const message = await client.send({
+            ...forwardedHops(context?.handling),
             target: requiredString(args.target, "target"),
             content: requiredString(args.content, "content"),
             ...delivery ? { delivery } : {},
@@ -9419,6 +9428,7 @@ var init_commands = __esm({
           const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
           return {
             responses: await client.fanout({
+              ...forwardedHops(context?.handling),
               targets,
               content: requiredString(args.content, "content"),
               ...optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId) } : {},

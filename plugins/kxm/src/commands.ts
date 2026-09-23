@@ -74,6 +74,26 @@ export interface CommandExecutionContext {
   signal?: AbortSignal | undefined;
   inbox?: Map<string, MessageRecord> | undefined;
   notifiedInbox?: Set<string> | undefined;
+  /** Inbound requests this session is handling: the Pi extension's active request, the MCP
+   * server's open inbox. A request sent meanwhile is one more hop along their chain. */
+  handling?: readonly Pick<MessageRecord, "hops" | "maxHops">[] | undefined;
+}
+
+/**
+ * Hop fields for a request sent while handling inbound work: one hop past the furthest
+ * handled request, under the tightest limit among them, so the hub's `hop_limit_reached`
+ * refusal bounds a chain of agents forwarding to each other. Handling nothing starts a new
+ * chain with the hub defaults. When several requests are open the furthest one counts, so a
+ * forwarding loop cannot reset its count because an unrelated request arrived beside it.
+ */
+export function forwardedHops(
+  handling: CommandExecutionContext["handling"],
+): { hops: number; maxHops: number } | undefined {
+  if (!handling?.length) return undefined;
+  return {
+    hops: Math.max(...handling.map((message) => message.hops)) + 1,
+    maxHops: Math.min(...handling.map((message) => message.maxHops)),
+  };
 }
 
 export interface AgentCommand {
@@ -260,12 +280,13 @@ export const AGENT_COMMANDS: readonly AgentCommand[] = [
       required: ["target", "content"],
       additionalProperties: false,
     },
-    async execute(client, args) {
+    async execute(client, args, context) {
       const delivery = optionalString(args.delivery) as DeliveryMode | undefined;
       const correlationId = optionalString(args.correlationId);
       const idempotencyKey = optionalString(args.idempotencyKey);
       const workflowContext = optionalWorkflowContext(args.workflowContext);
       const message = await client.send({
+        ...forwardedHops(context?.handling),
         target: requiredString(args.target, "target"),
         content: requiredString(args.content, "content"),
         ...(delivery ? { delivery } : {}),
@@ -346,6 +367,7 @@ export const AGENT_COMMANDS: readonly AgentCommand[] = [
         : [];
       return {
         responses: await client.fanout({
+          ...forwardedHops(context?.handling),
           targets,
           content: requiredString(args.content, "content"),
           ...(optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId)! } : {}),

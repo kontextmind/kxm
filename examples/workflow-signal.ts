@@ -1,5 +1,5 @@
-import { createHmac, randomUUID } from "node:crypto";
-import { canonicalWorkflowEvidenceKey } from "../plugins/kxm/src/workflow.ts";
+import { randomUUID } from "node:crypto";
+import { canonicalWorkflowEvidenceKey, workflowWebhookHeaders } from "../plugins/kxm/src/workflow.ts";
 
 const [runId, signalKey, status, summary, ...evidenceArgs] = process.argv.slice(2);
 const serverUrl = process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331";
@@ -31,7 +31,6 @@ if (!runId || !signalKey || !status || !summary || !definitionId || !secret) {
   }
   const evidence = Object.fromEntries(evidenceEntries);
   const body = JSON.stringify({ status, summary, evidence });
-  const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
   const deliveryId = process.env.KXM_SIGNAL_DELIVERY_ID?.trim() || `example-${randomUUID()}`;
   const endpoint = [
     serverUrl.replace(/\/$/, ""),
@@ -46,8 +45,8 @@ if (!runId || !signalKey || !status || !summary || !definitionId || !secret) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-hub-signature-256": signature,
-      "x-kxm-delivery-id": deliveryId,
+      // Signs the timestamp, delivery ID, definition, run, signal key, and body.
+      ...workflowWebhookHeaders({ secret, scope: { definitionId, runId, signalKey }, deliveryId, body }),
     },
     body,
   });

@@ -423,10 +423,14 @@ export async function runRealSmoke(options = {}) {
         stage = "workflow-journal-checkpoint";
         const resumedOperator = values["durable-restart-resume"];
         const payload = JSON.stringify({ event: "smoke.requested" });
+        // KXM webhook contract (workflowWebhookSignedMaterial in plugins/kxm/src/workflow.ts).
+        const deliveryId = `smoke-${randomUUID()}`;
+        const timestamp = String(Math.floor(Date.now() / 1_000));
+        const signedMaterial = ["kxm-webhook-v1", "start", timestamp, deliveryId, "real-pi-smoke", "", ""].join("\n") + "\n" + payload;
         const started = await api(baseUrl, "/v1/webhooks/real-pi-smoke", {
           method: "POST",
           authToken,
-          headers: { "x-mesh-event": "smoke.requested", "x-kxm-delivery-id": `smoke-${randomUUID()}`, "x-hub-signature": `sha256=${createHmac("sha256", webhookSecret).update(payload).digest("hex")}` },
+          headers: { "x-kxm-delivery-id": deliveryId, "x-kxm-timestamp": timestamp, "x-kxm-signature": `sha256=${createHmac("sha256", webhookSecret).update(signedMaterial).digest("hex")}` },
           body: payload,
         });
         await api(baseUrl, `/v1/workflows/${encodeURIComponent(started.run.id)}/journal`, {

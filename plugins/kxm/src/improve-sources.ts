@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
 import { discoverKxmProjectRoot } from "./project-config.ts";
-import { kxmRuntimePaths, projectRuntimeKey } from "./runtime-store.ts";
+import { kxmProjectRunEventsPath } from "./runtime-store.ts";
 import { parseRoutingRecordV2, ROUTING_RECORD_V2_SCHEMA, type RoutingRecord, type RoutingRecordV2 } from "./routing.ts";
 import { readRoutingRecords, telemetryPath } from "./telemetry.ts";
 
@@ -44,11 +44,6 @@ const ENGINE_EVENTS_SQL = "SELECT run_id, sequence, event_type, payload FROM eve
 
 /** The simulated producer's harness label; its attempts measure nothing. */
 const SIMULATED_HARNESS = "driver-simulated";
-
-/** The project's Runtime event store, derived exactly as the Runtime derives it. */
-export function kxmProjectRunEventsPath(projectRoot: string, env: NodeJS.ProcessEnv): string {
-  return join(kxmRuntimePaths({ env }).projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
-}
 
 interface RunLog {
   lastStatus?: string;

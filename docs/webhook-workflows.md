@@ -1,6 +1,6 @@
 # Webhook workflows and long-lived agents
 
-KXM can turn a signed Jira, GitHub, or generic webhook into a durable prompt for a long-lived coordinator. The hub verifies the original request body, deduplicates provider retries, records the workflow before acknowledging it, and queues the prompt even when a previously registered coordinator is temporarily offline.
+KXM can turn a signed Jira, GitHub, or generic webhook into a durable prompt for a long-lived coordinator. The hub verifies each delivery's signature, refuses replays, deduplicates provider retries, records the workflow before acknowledging it, and queues the prompt even when a previously registered coordinator is temporarily offline.
 
 ## How the runtime behaves
 
@@ -51,9 +51,42 @@ Configure Jira to send `jira:issue_updated` to:
 https://your-kxm-host.example/v1/webhooks/jira-development
 ```
 
-Set the same secret when creating the Jira webhook. The endpoint requires `X-Hub-Signature` using SHA-256 and `X-Atlassian-Webhook-Identifier`. The stable delivery identifier makes Jira retries idempotent. Terminate TLS and restrict ingress before exposing the endpoint beyond a trusted network.
+Set the same secret when creating the Jira webhook. The endpoint requires `X-Hub-Signature` using SHA-256 and `X-Atlassian-Webhook-Identifier`. The stable delivery identifier makes Jira retries idempotent. Jira signs only the body, so the body is the delivery's replay identity: it starts at most one run, under one delivery identifier. The same body under another identifier is refused with HTTP 409 `webhook_payload_replayed`, and a reused identifier with a different body with HTTP 409 `webhook_delivery_conflict`. A `github` workflow applies the same rule to `X-Hub-Signature-256` and `X-GitHub-Delivery`. Terminate TLS and restrict ingress before exposing the endpoint beyond a trusted network.
+
+A duplicate delivery returns HTTP 200 with only `duplicate`, `runId`, and `status`; the run record stays behind project and agent authentication.
 
 Webhook authentication authorizes only workflow creation. The Jira-update stage requires a separate authorized Jira tool, MCP server, CLI, or automation callback in the coordinator's harness. Do not place Jira API credentials in the workflow definition or prompt.
+
+## KXM sender contract
+
+A body-only signature cannot tell a retry from a replay. So KXM's own senders sign more: `kxm workflow start`, `kxm gate signal`, `kxm gate github watch`, and [`examples/workflow-signal.ts`](../examples/workflow-signal.ts). Every start of a `generic` workflow and every signal callback must use this contract. A `jira` or `github` workflow accepts it as well as its provider's signature, so `kxm workflow start` works against any source.
+
+| Header | Value |
+|---|---|
+| `x-kxm-delivery-id` | Stable retry identifier, at most 128 characters |
+| `x-kxm-timestamp` | Unix seconds at send time |
+| `x-kxm-signature` | `sha256=` followed by the hex HMAC-SHA256 of the signed material under the workflow secret |
+
+The signed material is seven newline-terminated fields followed by the exact body bytes. No field may contain a line break. `workflowWebhookHeaders` in `plugins/kxm/src/workflow.ts` builds all three headers.
+
+```text
+kxm-webhook-v1
+start | signal
+<x-kxm-timestamp>
+<x-kxm-delivery-id>
+<definition ID>
+<run ID; empty for a start>
+<signal key; empty for a start>
+<body>
+```
+
+The hub answers HTTP 401 for:
+
+- a missing `x-kxm-signature` (`webhook_signature_missing`), including a body-only `X-Hub-Signature-256` sent to a `generic` workflow or a callback;
+- a signature over any other timestamp, delivery ID, definition, run, signal key, or body (`webhook_signature_invalid`), so a captured request cannot be replayed under a new delivery ID or against another run;
+- an authentic signature whose timestamp is more than 300 seconds from the hub clock (`webhook_timestamp_expired`).
+
+Sign at send time. A transport retry re-signs with a fresh timestamp and keeps the same delivery ID and body, which the hub treats as a duplicate. The same delivery ID with a different body is refused with HTTP 409.
 
 ## Run a long-lived Pi coordinator
 
@@ -132,9 +165,9 @@ The JSON body is:
 }
 ```
 
-Sign the exact body bytes with SHA-256 HMAC. Supply the signature in `X-Hub-Signature-256` and a stable retry identifier in `X-GitHub-Delivery`, `X-Atlassian-Webhook-Identifier`, or `X-Mesh-Delivery-ID`. Repeating the same delivery ID and body returns minimal receipt metadata instead of checkpointing twice. Reusing a delivery ID for a different signal or body returns HTTP 409.
+Sign the callback under the [KXM sender contract](#kxm-sender-contract) with kind `signal` and the route's run ID and signal key. Repeating the same delivery ID and body returns minimal receipt metadata instead of checkpointing twice. Reusing a delivery ID for a different signal or body returns HTTP 409.
 
-Use `signalSecretEnv` so CI and merge reporters do not need the secret that creates new workflows. If it is omitted, callbacks fall back to `secretEnv` for compatibility. A valid callback can checkpoint only the named run's current wait and must match its signal key.
+Use `signalSecretEnv` so CI and merge reporters do not need the secret that creates new workflows. If it is omitted, callbacks are signed with `secretEnv`; the signed kind still keeps a start signature from verifying as a callback. A valid callback can checkpoint only the named run's current wait and must match its signal key.
 
 Context evidence is optional. When a callback supplies `workflow.run`,
 `workflow.stage`, or `workflow.signal`, each value must exactly match the route
@@ -158,8 +191,9 @@ node --experimental-strip-types examples/workflow-signal.ts `
   "github.check:ci=https://github.example/org/repo/actions/runs/123"
 ```
 
-`examples/workflow-signal.ts` reads `KXM_SIGNAL_DELIVERY_ID` and sends it as
-`x-kxm-delivery-id`. The CLI equivalent is `kxm gate signal --delivery-id`.
+`examples/workflow-signal.ts` reads `KXM_SIGNAL_DELIVERY_ID`, sends it as
+`x-kxm-delivery-id`, and signs the callback under the KXM sender contract. The
+CLI equivalent is `kxm gate signal --delivery-id`.
 
 In a real integration, store the `runId` and `signalKey` in Jira, pull-request metadata, or the external job's inputs when the coordinator starts the wait. Treat them as routing identifiers rather than secrets.
 

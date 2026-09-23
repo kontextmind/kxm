@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
 import test from "node:test";
 import {
   workflowDefinitionHash,
+  workflowWebhookHeaders,
   type WebhookWorkflowDefinition,
 } from "../../plugins/kxm/src/workflow.ts";
 import { createTestMesh, responseJson } from "../helpers.ts";
@@ -32,8 +32,7 @@ test("webhook run creation stamps the canonical definition hash and keeps it dur
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": deliveryId,
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "hash-stamped" }, deliveryId: deliveryId, body: payload }),
     },
     body: payload,
   });
@@ -48,15 +47,13 @@ test("webhook run creation stamps the canonical definition hash and keeps it dur
   };
   assert.equal(acceptedBody.run.definitionHash, expected);
 
-  // Duplicate retry returns the same stamped run.
+  // A duplicate retry names the same run without re-exposing its record.
   const duplicate = await post("hash-delivery-1");
   assert.equal(duplicate.status, 200);
-  const duplicateBody = await responseJson(duplicate) as unknown as {
-    duplicate: boolean;
-    run: { definitionHash?: string };
-  };
+  const duplicateBody = await responseJson(duplicate);
   assert.equal(duplicateBody.duplicate, true);
-  assert.equal(duplicateBody.run.definitionHash, expected);
+  assert.equal(duplicateBody.runId, acceptedBody.run.id);
+  assert.equal("run" in duplicateBody, false);
 
   // The hash survives the store round trip (read path).
   const fetched = await coordinator.getWorkflow(acceptedBody.run.id);

@@ -307,6 +307,28 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **Signed webhooks cannot be replayed.** KXM's own webhook senders now sign the
+  timestamp, delivery ID, definition, run and signal key along with the body
+  (`x-kxm-signature`, `x-kxm-timestamp`, `x-kxm-delivery-id`; see
+  `docs/webhook-workflows.md#kxm-sender-contract`), and the hub refuses a signature
+  more than 300 seconds old. Every `generic` workflow start and every signal callback
+  must use this contract; a body-only `X-Hub-Signature-256` there is refused. Jira and
+  GitHub deliveries keep their provider signature, and a signed body starts at most one
+  run (`webhook_payload_replayed`). A reused delivery ID with a different body is
+  refused with 409 `webhook_delivery_conflict`, and a duplicate start returns only
+  `duplicate`, `runId` and `status`. Update any custom sender to the new contract.
+- **Agents never borrow the hub admin token.** With `KXM_AUTH_TOKEN` unset, the Pi
+  extension and the `kxm peer` / `kxm workflow` agent commands used the persisted admin
+  token. They now use only this project's saved project token, as the Claude MCP server
+  does, and otherwise stop with a message naming the fix (`project_token_missing`, exit 2,
+  on the CLI).
+- **The hop limit bounds agent forwarding chains.** `kxm_send` and `kxm_fanout` from Pi
+  or the Claude MCP server send one hop past the inbound request being handled, so a
+  chain of agents forwarding to each other stops at `hop_limit_reached`.
+- **Workflow prompts no longer point agents at `.kxm/config`**, a path KXM refuses.
+- **`kxm gate signal` and `kxm workflow wait` inside a KXM project reach the hub for hub
+  runs.** They go to the local Runtime only for a run its store holds.
+
 - **The Claude plugin's SessionStart hook is one bundled, read-only, project-scoped
   script.** The two shell hooks it replaces (`kxm session brief --status` and
   `kxm memory brief`) exited 127 without `kxm` on `PATH`, ran whichever `kxm` was on
