@@ -94,6 +94,46 @@ export function kxmSha256(input: string): string {
   return `sha256:${createHash("sha256").update(input, "utf8").digest("hex")}`;
 }
 
+/**
+ * Stable identity of what one step asks of one agent. It is equal across runs
+ * of the same compiled step and agent, and it excludes the run, assignment and
+ * attempt ids, the run objective, repositories, model and the context packet,
+ * so a repeated ask is recognisable whatever the run was asked to do.
+ */
+export function kxmStepAskSha256(plan: KxmCompiledPlan, stepId: string, agentId: string): string {
+  const step = Object.hasOwn(plan.steps, stepId) ? plan.steps[stepId] : undefined;
+  if (!step) throw runtimeError("run_plan_corrupt", plan.workflowId, `compiled plan is missing step ${stepId}`);
+  return kxmSha256(kxmCanonicalJson({
+    v: 1,
+    workflowId: plan.workflowId,
+    stepId,
+    kind: step.kind,
+    agentId,
+    instructions: step.instructions ?? null,
+    outcomes: [...step.outcomes],
+    requiredEvidence: step.requiredEvidence.map((entry) => entry.key),
+  }));
+}
+
+/**
+ * The record-time verdict of one settled attempt. Only gate-negative results
+ * are known when the attempt settles: a back edge is 'blocked', and a producer
+ * error, an unknown outcome or a terminal failure is 'failed'. A forward edge
+ * or a completed terminal is undecided here; acceptance is resolved later from
+ * the event log, so this never returns 'accepted'.
+ */
+export function kxmAttemptFinalOutcome(
+  step: Pick<KxmCompiledStep, "transitions">,
+  settled: { readonly resultClass: string; readonly outcome?: string | undefined },
+): "blocked" | "failed" | undefined {
+  if (settled.resultClass !== "outcome") return "failed";
+  const outcome = settled.outcome;
+  const transition = outcome !== undefined && Object.hasOwn(step.transitions, outcome) ? step.transitions[outcome] : undefined;
+  if (!transition) return "failed";
+  if (transition.to === "terminal") return transition.terminalStatus === "completed" ? undefined : "failed";
+  return transition.edge === "back" ? "blocked" : undefined;
+}
+
 export function hashKxmRunPlanEnvelope(envelope: KxmRunPlanEnvelope): string {
   return kxmSha256(kxmCanonicalJson(envelope as unknown as JsonValue));
 }

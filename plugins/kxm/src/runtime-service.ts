@@ -117,7 +117,7 @@ function collectMemoryFiles(dir: string, baseDir: string, ignoreSubdirs: Set<str
  * the promoted-state snapshot.
  */
 export function computeKxmMemoryRevision(
-  bundle: KxmProjectBundle,
+  bundle: Pick<KxmProjectBundle, "projectRoot">,
   options: KxmMemoryRevisionOptions = {},
 ): string {
   const hash = createHash("sha256");
@@ -248,6 +248,11 @@ export interface KxmRuntimeContext {
    * freeze a budget by supplying a stale clock.
    */
   readonly budgetClock?: () => string;
+  /**
+   * Optional structured logger (the Runtime supervisor's). The engine writes
+   * metadata-only lines here, ids and counts, never task or memory text.
+   */
+  readonly logger?: (entry: Record<string, unknown>) => void;
 }
 
 const closedRuntimeContexts = new WeakSet<KxmRuntimeContext>();
@@ -286,6 +291,7 @@ export function openKxmRuntimeContext(
     now?: string;
     homeRuntimeId: string;
     budgetClock?: () => string;
+    logger?: (entry: Record<string, unknown>) => void;
   },
 ): KxmRuntimeContext {
   const paths = kxmRuntimePaths(options.stateRoot !== undefined ? { stateRoot: options.stateRoot } : {});
@@ -310,6 +316,7 @@ export function openKxmRuntimeContext(
       eventStore,
       configRevision: bundle.configRevision,
       ...(options.budgetClock ? { budgetClock: options.budgetClock } : {}),
+      ...(options.logger ? { logger: options.logger } : {}),
     };
   } catch (error) {
     registry.close();

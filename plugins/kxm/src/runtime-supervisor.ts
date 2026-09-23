@@ -677,7 +677,7 @@ async function startKxmRuntimeSupervisorInner(
     const key = projectRuntimeKey(projectRoot);
     const existing = contexts.get(key);
     if (existing) return existing;
-    const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot });
+    const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot, logger });
     registerSyncCredentials(context);
     contexts.set(key, context);
     return context;

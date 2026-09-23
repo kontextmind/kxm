@@ -25,12 +25,22 @@ import {
   KXM_RUN_PLAN_SCHEMA,
   freezeKxmCompiledPlan,
   hashKxmRunPlanEnvelope,
+  kxmAttemptFinalOutcome,
+  kxmStepAskSha256,
   loadKxmRunPlanEnvelope,
   parseGateDefinition,
   rehydrateKxmCompiledPlanFromStore,
   type KxmPinnedGates,
   type KxmRunPlanEnvelope,
 } from "./engine-plan.ts";
+import {
+  EMPTY_DISPATCH_SOURCES,
+  NOT_LOADED_DISPATCH_SOURCES,
+  assembleDispatchContext,
+  dispatchContextPresent,
+  loadDispatchContextSources,
+  type DispatchContextSources,
+} from "./dispatch-context.ts";
 import { gateRegistryHash } from "./gate-hash.ts";
 import {
   admitKxmRun,
@@ -100,6 +110,7 @@ import {
   type KxmGateObservationInput,
 } from "./engine-gate-records.ts";
 import {
+  MAX_PROVIDER_METADATA_FIELDS,
   ROUTING_RECORD_V2_SCHEMA,
   type RoutingRecordV2,
   parseRoutingRecordV2,
@@ -916,8 +927,38 @@ export interface KxmGateDispatchSeams {
 
 export const kxmGateDispatchSeams: KxmGateDispatchSeams = {};
 
+/**
+ * Load the dispatch context for the step this drive is about to enter. Every
+ * git check, hash and file read happens here, before the IMMEDIATE transaction.
+ * A project with no authored memory and no promoted skill is detected by a
+ * directory probe alone and loads nothing. When the peek cannot see an agent
+ * step about to be entered, the sources are marked not loaded, so a birth that
+ * races the peek records a gap instead of dispatching unchecked context.
+ */
+function peekDispatchContextSources(context: KxmRuntimeContext, runId: string): DispatchContextSources {
+  if (!dispatchContextPresent(context.projectRoot)) return EMPTY_DISPATCH_SOURCES;
+  let run: KxmRunRecord;
+  try {
+    run = requireRun(context, runId);
+    const state = foldStoredKxmRun(context, run);
+    const plan = rehydrateKxmCompiledPlanFromStore(context.eventStore, run);
+    if (state.status !== "running" || state.currentStep) return NOT_LOADED_DISPATCH_SOURCES;
+    const next = plan.steps[state.pendingStepId ?? plan.entryStepId];
+    if (next?.kind !== "agent" && next?.kind !== "moa") return NOT_LOADED_DISPATCH_SOURCES;
+  } catch {
+    // prepareDispatch reads the same run and raises the authoritative error.
+    return NOT_LOADED_DISPATCH_SOURCES;
+  }
+  return loadDispatchContextSources({
+    projectRoot: context.projectRoot,
+    projectId: run.projectId,
+    pinnedMemoryRevision: run.memoryRevision,
+  });
+}
+
 async function stepLocked(context: KxmRuntimeContext, runId: string, producer: KxmProducer, token: string): Promise<KxmRunDriveResult> {
-  const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId, producer.id));
+  const dispatchSources = peekDispatchContextSources(context, runId);
+  const prepared = context.eventStore.transaction(() => prepareDispatch(context, runId, producer.id, dispatchSources));
   if (prepared.kind === "return") {
     return prepared.handoff ? { state: prepared.state, handoff: prepared.handoff } : { state: prepared.state };
   }
@@ -1263,6 +1304,8 @@ interface PreparedPanel {
   maxParallel: number;
   first: PreparedDispatch;
   state: KxmRunState;
+  /** One snapshot shared by every member born for this step attempt. */
+  dispatchSources: DispatchContextSources;
 }
 
 export interface KxmPanelMemberHook {
@@ -1397,7 +1440,8 @@ function resolveProducerRoute(
 function prepareDispatch(
   context: KxmRuntimeContext,
   runId: string,
-  producerId?: "driver-simulated" | "pi" | string,
+  producerId: "driver-simulated" | "pi" | string | undefined,
+  dispatchSources: DispatchContextSources,
 ): { kind: "panel"; panel: PreparedPanel } | { kind: "return"; state: KxmRunState; handoff?: KxmRunHandoff } | ({ kind: "gate" } & KxmPreparedGateDispatch) {
   const run = requireRun(context, runId);
   const plan = rehydrateKxmCompiledPlanFromStore(context.eventStore, run);
@@ -1584,6 +1628,7 @@ function prepareDispatch(
     enterRunning: true,
     producerId,
     resolvedRoute,
+    dispatchSources,
   });
   return {
     kind: "panel",
@@ -1597,6 +1642,7 @@ function prepareDispatch(
       maxParallel: step.assignments.maxParallel,
       first,
       state: first.state,
+      dispatchSources,
     },
   };
 }
@@ -1643,6 +1689,7 @@ function birthMember(
     enterRunning?: boolean | undefined;
     producerId?: ("driver-simulated" | "pi" | string) | undefined;
     resolvedRoute?: { provider: string; model: string; selector: string } | undefined;
+    dispatchSources: DispatchContextSources;
   },
 ): PreparedDispatch {
   const run = requireRun(context, input.run.runId);
@@ -1671,6 +1718,15 @@ function birthMember(
       resolvedRoute = routeResult;
     }
   }
+  const dispatchContext = assembleDispatchContext(input.dispatchSources, {
+    projectId: run.projectId,
+    runId: run.runId,
+    stepId: input.stepId,
+    agentId,
+    task: [input.step.instructions, promptText]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .join("\n\n"),
+  });
   const assignmentId = newKxmAssignmentId();
   const attemptId = newKxmAttemptId();
   const minted = mintCapabilitySecret();
@@ -1738,6 +1794,8 @@ function birthMember(
       totalSteps: input.plan.order.length,
       settledDecisions: [],
     },
+    ...(dispatchContext.items.length > 0 ? { arbitratedItems: dispatchContext.items } : {}),
+    ...(dispatchContext.unresolvedGaps.length > 0 ? { unresolvedGaps: dispatchContext.unresolvedGaps } : {}),
   });
   const { packet: contextPacket } = pruneContextPacket(rawContextPacket);
   const generatedPrompt = formatContextPacketForPrompt(contextPacket);
@@ -1773,6 +1831,28 @@ function birthMember(
     controller,
     state: next,
   };
+  if (input.dispatchSources.present && context.logger) {
+    // Ids and counts only: never the task, the request, or any summary.
+    try {
+      context.logger({
+        event: "dispatch_context_assembled",
+        runId: run.runId,
+        stepId: input.stepId,
+        stepAttempt: input.stepAttempt,
+        agentId,
+        role: dispatchContext.role,
+        deliveredIds: dispatchContext.deliveredIds,
+        renderDeferred: dispatchContext.renderDeferred,
+        provenanceSummary: dispatchContext.audit?.provenanceSummary ?? {},
+        estimatedTokens: dispatchContext.audit?.estimatedTokens ?? 0,
+        budgetTokens: dispatchContext.audit?.budgetTokens ?? null,
+        skippedUnboundScopes: input.dispatchSources.skippedUnboundScopes,
+        unresolvedGaps: dispatchContext.unresolvedGaps,
+      });
+    } catch {
+      // Logging is best effort and never fails a birth.
+    }
+  }
   kxmPanelDispatchSeams.afterBirth?.(member);
   return member;
 }
@@ -1941,6 +2021,7 @@ async function drivePanel(
         stepId: panel.stepId,
         stepAttempt: panel.stepAttempt,
         producerId: producer.id,
+        dispatchSources: panel.dispatchSources,
       });
     });
   };
@@ -2076,7 +2157,44 @@ async function drivePanel(
   }
 }
 
-function producerRoutingRecord(context: KxmRuntimeContext, dispatch: PreparedDispatch, result: KxmProducerResult, now: string): RoutingRecordV2 {
+/** Engine-reserved providerMetadata keys. The engine writes them last, so a
+ * producer can never spoof the ask identity of the attempt it reports on. */
+const ENGINE_ROUTING_METADATA_KEYS: ReadonlySet<string> = new Set(["workflowId", "askSha256", "objectiveSha256", "stepWrites"]);
+const MAX_PRODUCER_ROUTING_METADATA_FIELDS = MAX_PROVIDER_METADATA_FIELDS - ENGINE_ROUTING_METADATA_KEYS.size;
+
+function engineRoutingMetadata(
+  dispatch: PreparedDispatch,
+  producer?: Record<string, string | number | boolean>,
+): Record<string, string | number | boolean> {
+  const metadata: Record<string, string | number | boolean> = {};
+  // A null producer map reads as absent, as the routing parser always treated it.
+  if (producer !== undefined && producer !== null) {
+    if (typeof producer !== "object" || Array.isArray(producer)) {
+      throw new Error("routing providerMetadata must be an object");
+    }
+    let kept = 0;
+    for (const [key, value] of Object.entries(producer)) {
+      if (kept >= MAX_PRODUCER_ROUTING_METADATA_FIELDS) break;
+      if (ENGINE_ROUTING_METADATA_KEYS.has(key)) continue;
+      metadata[key] = value;
+      kept += 1;
+    }
+  }
+  metadata.workflowId = dispatch.plan.workflowId;
+  metadata.askSha256 = kxmStepAskSha256(dispatch.plan, dispatch.stepId, dispatch.agentId);
+  // Already `sha256:<hex>` from acceptance; the prompt text is never read here.
+  metadata.objectiveSha256 = dispatch.run.promptSha256;
+  metadata.stepWrites = Object.values(dispatch.step.repositories).some((access) => access === "write");
+  return metadata;
+}
+
+function producerRoutingRecord(
+  context: KxmRuntimeContext,
+  dispatch: PreparedDispatch,
+  result: KxmProducerResult,
+  now: string,
+  finalOutcome?: "blocked" | "failed",
+): RoutingRecordV2 {
   const run = requireRun(context, dispatch.run.runId);
   if (result.costBasis === undefined || result.costBasis === null) {
     throw runtimeError("settle_missing_cost_basis", run.runId, `attempt settlement rejected: missing required costBasis for attempt ${dispatch.attemptId}`);
@@ -2107,9 +2225,12 @@ function producerRoutingRecord(context: KxmRuntimeContext, dispatch: PreparedDis
     retries: Math.max(0, dispatch.stepAttempt - 1),
     thinking: result.thinking ?? dispatch.request.thinking,
   };
-  for (const field of ["agentRole", "contextTokens", "tokensIn", "tokensOut", "cacheReadTokens", "cacheWriteTokens", "priceRef", "providerMetadata"] as const) {
+  for (const field of ["contextTokens", "tokensIn", "tokensOut", "cacheReadTokens", "cacheWriteTokens", "priceRef"] as const) {
     if (result[field] !== undefined) record[field] = result[field];
   }
+  record.agentRole = result.agentRole ?? dispatch.agentId;
+  record.providerMetadata = engineRoutingMetadata(dispatch, result.providerMetadata);
+  if (finalOutcome !== undefined) record.finalOutcome = finalOutcome;
   return parseRoutingRecordV2(record);
 }
 
@@ -2185,6 +2306,9 @@ function settleMember(
       costBasis: "unknown",
       costUsd: null,
       retries: Math.max(0, dispatch.stepAttempt - 1),
+      agentRole: dispatch.agentId,
+      finalOutcome: "failed",
+      providerMetadata: engineRoutingMetadata(dispatch),
     };
     push("routing.attempt.recorded", { routing: parseRoutingRecordV2(routingRecord) });
 
@@ -2200,10 +2324,18 @@ function settleMember(
     if (!result) {
       throw runtimeError("settle_missing_cost_basis", run.runId, `attempt settlement rejected: missing required costBasis for attempt ${dispatch.attemptId}`);
     }
-    push("routing.attempt.recorded", { routing: producerRoutingRecord(context, dispatch, result, now) });
-
     const outcome = typeof result.outcome === "string" ? result.outcome : undefined;
     const known = outcome !== undefined && dispatch.step.outcomes.includes(outcome);
+    push("routing.attempt.recorded", {
+      routing: producerRoutingRecord(
+        context,
+        dispatch,
+        result,
+        now,
+        known ? kxmAttemptFinalOutcome(dispatch.step, { resultClass: "outcome", outcome }) : "failed",
+      ),
+    });
+
     if (!known) {
       push("assignment.result_recorded", {
         assignmentId: dispatch.assignmentId,

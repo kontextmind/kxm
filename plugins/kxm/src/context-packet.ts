@@ -142,6 +142,7 @@ export function buildFormalContextPacket(input: {
   environment?: Partial<ContextPacketEnvironment> | undefined;
   tokenBudget?: number | undefined;
   arbitratedItems?: ContextItem[] | undefined;
+  unresolvedGaps?: string[] | undefined;
 }): FormalContextPacketV2 {
   const packetId = `ctxpkt_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
   const now = new Date().toISOString();
@@ -208,7 +209,7 @@ export function buildFormalContextPacket(input: {
     budget: {
       allocatedTokens,
       estimatedTokens,
-      unresolvedGaps: [],
+      unresolvedGaps: [...(input.unresolvedGaps ?? [])],
       provenanceSummary,
     },
   };
@@ -265,7 +266,12 @@ export function formatContextPacketForPrompt(packet: FormalContextPacketV2): str
     sections.push("");
   }
 
-  if (packet.environment.projectKnowledge.length > 0 || packet.environment.sharedDefaults.length > 0) {
+  if (
+    packet.environment.projectKnowledge.length > 0
+    || packet.environment.sharedDefaults.length > 0
+    || packet.environment.activeSkills.length > 0
+    || packet.environment.contradictions.length > 0
+  ) {
     sections.push(`## 5. Environment & Memory`);
     if (packet.environment.sharedDefaults.length > 0) {
       sections.push(`### Shared Defaults`);
@@ -277,6 +283,12 @@ export function formatContextPacketForPrompt(packet: FormalContextPacketV2): str
       sections.push(`### Project Knowledge`);
       for (const k of packet.environment.projectKnowledge.slice(0, 5)) {
         sections.push(`- [${k.authority}] ${k.summary}`);
+      }
+    }
+    if (packet.environment.activeSkills.length > 0) {
+      sections.push(`### Active Skills`);
+      for (const skill of packet.environment.activeSkills) {
+        sections.push(`- ${skill.summary} (${skill.provenance.sourceRef ?? skill.id})`);
       }
     }
     if (packet.environment.contradictions.length > 0) {
