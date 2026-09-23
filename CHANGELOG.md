@@ -4,42 +4,6 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
-### Fixed
-
-- **Live `kxm runs drive` can author on an audited writer profile.** A write-repository
-  step on pi (`-a`, with extensions, skills, and the session off) or grok
-  (`--always-approve`, with subagents and web search off) runs against the checkout.
-  A live write that leaves the tree unchanged settles `failed` with `authored: false`.
-  A read-only step that changes the tree cannot settle `passed`. Harnesses without a
-  writer profile still hand off. Simulated drive does not require a diff.
-
-- **Fresh `kxm init` can be driven.** The current template drops `limits.maxAgentTimeMs`,
-  names coordinator `claude` / `anthropic/fable` and implementer `grok` / `xai/grok-4.6`,
-  and admits those two routes. One-shot production no longer falls through to an
-  unadmitted `claude-3-7-sonnet`.
-
-- **`kxm backup` includes the Runtime stores under the user-state root.** Discovery
-  copies `$S/runtime/registry.db` and `$S/runtime/projects/<projectKey>/run-events.db`,
-  plus each `run-events.db.run-prompts.json` sidecar. A copy that misses a discovered
-  store is `complete: false`: `kxm backup` exits 1 with `ok: false`, and restore
-  refuses that manifest. Cross-box remap of absolute `$S` paths is still the file recipe.
-
-### Changed
-
-- **The rotation surface drive uses is the one setup writes.** `kxm workflow add`
-  templates use `agent:` and the real `test` gate. Guide setup appends only reviewed
-  selectors to `.kxm/routes.yaml` and routes Google through Pi `antigravity`.
-
-- **CLI and Studio stop reporting work they did not do.** `kxm run` says drive executes
-  the pinned plan. Drive help no longer describes the default as a model-free
-  simulation. A Studio mutation with no handler returns 501 and `mappedToCli: false`.
-
-- **Missing cost stays unknown.** `kxm prices acknowledge` restamps the local catalog
-  as today without fetching vendor rates, which is what an estimate will accept.
-  Routing totals are null when any attempt has no cost, and those rows sort after
-  complete-cost rows. `kxm improve` stays proposal-only. Wiki compile writes a file
-  only with `--out` and does not ingest.
-
 ### Added
 
 - **Fenced hub leases, and shared external effects that will not run without one.**
@@ -92,6 +56,20 @@ All notable user-facing changes are documented here. The project follows [Semant
   and the bindings that make the box reproducible.
 
 ### Changed
+
+- **The rotation surface drive uses is the one setup writes.** `kxm workflow add`
+  templates use `agent:` and the real `test` gate. Guide setup appends only reviewed
+  selectors to `.kxm/routes.yaml` and routes Google through Pi `antigravity`.
+
+- **CLI and Studio stop reporting work they did not do.** `kxm run` says drive executes
+  the pinned plan. Drive help no longer describes the default as a model-free
+  simulation. A Studio mutation with no handler returns 501 and `mappedToCli: false`.
+
+- **Missing cost stays unknown.** `kxm prices acknowledge` restamps the local catalog
+  as today without fetching vendor rates, which is what an estimate will accept.
+  Routing totals are null when any attempt has no cost, and those rows sort after
+  complete-cost rows. `kxm improve` stays proposal-only. Wiki compile writes a file
+  only with `--out` and does not ingest.
 
 - **Hub store schema v3 → v4, external-effects ledger v1 → v2.** The hub store gains a
   `leases` table and the ledger gains `lease_resource`/`fencing_token` columns. Neither has
@@ -209,6 +187,24 @@ All notable user-facing changes are documented here. The project follows [Semant
   false `run_projection_divergent`.
 
 ### Fixed
+
+- **Live `kxm runs drive` can author on an audited writer profile.** A write-repository
+  step on pi (`-a`, with extensions, skills, and the session off) or grok
+  (`--always-approve`, with subagents and web search off) runs against the checkout.
+  A live write that leaves the tree unchanged settles `failed` with `authored: false`.
+  A read-only step that changes the tree cannot settle `passed`. Harnesses without a
+  writer profile still hand off. Simulated drive does not require a diff.
+
+- **Fresh `kxm init` can be driven.** The current template drops `limits.maxAgentTimeMs`,
+  names coordinator `claude` / `anthropic/fable` and implementer `grok` / `xai/grok-4.6`,
+  and admits those two routes. One-shot production no longer falls through to an
+  unadmitted `claude-3-7-sonnet`.
+
+- **`kxm backup` includes the Runtime stores under the user-state root.** Discovery
+  copies `$S/runtime/registry.db` and `$S/runtime/projects/<projectKey>/run-events.db`,
+  plus each `run-events.db.run-prompts.json` sidecar. A copy that misses a discovered
+  store is `complete: false`: `kxm backup` exits 1 with `ok: false`, and restore
+  refuses that manifest. Cross-box remap of absolute `$S` paths is still the file recipe.
 
 - **Release version surfaces cover workspace packages:** a merged PR no longer
   breaks the release pipeline. `scripts/kxm-bump-version.mjs` now writes the
