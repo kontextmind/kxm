@@ -29,7 +29,11 @@ import {
   verifyKxmAttemptCapability,
   kxmPanelDispatchSeams,
   type KxmProducer,
+  type KxmProducerRequest,
 } from "../../plugins/kxm/src/engine.ts";
+import { contextRoleForAgent } from "../../plugins/kxm/src/dispatch-context.ts";
+import { MEMORY_SCHEMA, formatMemoryRecord } from "../../plugins/kxm/src/memory.ts";
+import { SkillLifecycle } from "../../plugins/kxm/src/skills.ts";
 import {
   admitKxmRun,
   bindKxmSchedulerPolicy,
@@ -3730,6 +3734,159 @@ test("objective propagation: birth fails closed if stored prompt is tampered or 
   } finally {
     removeTempDir(root, stateRoot);
   }
+});
+
+test("dispatch context: agents receive only committed, pinned memory and verified skills; anything else is withheld with a gap and the step still completes", async () => {
+  const commitAll = (root: string, message: string): void => {
+    spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
+    const commit = spawnSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", message], { encoding: "utf8", windowsHide: true });
+    assert.equal(commit.status, 0, commit.stderr);
+  };
+  const writeMemory = (root: string, id: string, scope: "project" | "operator", summary: string): void => {
+    const dir = join(root, ".kxm", "memory");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${id}.md`), formatMemoryRecord({
+      schema: MEMORY_SCHEMA,
+      id,
+      scope,
+      kind: "convention",
+      summary,
+      provenance: { sourceType: "human" },
+      authority: "instruction",
+      confidence: "verified",
+      lifecycle: "active",
+      evidenceRefs: [],
+    }));
+  };
+  const promoteSkill = (root: string): string => {
+    const lifecycle = new SkillLifecycle(join(root, ".kxm", "skills"));
+    const candidate = lifecycle.create({
+      name: "witness-runner",
+      content: "Run the witness script and attach its exit code.",
+      description: "Runs the witness before review",
+      createdBy: "agent-1",
+      compatibility: { harness: "pi", models: ["grok-4.6"] },
+      sources: { runIds: ["run-1"], journalEntryIds: [], evidenceReceipts: [] },
+    });
+    for (const kind of ["static-review", "sandbox", "functional", "safety"] as const) {
+      lifecycle.evaluate(candidate.id, { kind, passed: true, evaluatorVersion: "1.0", evaluatedBy: "critic" });
+    }
+    lifecycle.promote(candidate.id, { decidedBy: "admin", reason: "passed evaluations", evidenceRefs: ["eval:all-pass"] });
+    return candidate.id;
+  };
+  const drive = async (
+    prefix: string,
+    prompt: string,
+    setup?: (root: string) => void,
+    afterPin?: (root: string) => void,
+  ): Promise<{ request: KxmProducerRequest; logs: Array<Record<string, unknown>> }> => {
+    const { root, stateRoot } = engineProject(prefix, ["one-step.yaml"]);
+    try {
+      setup?.(root);
+      const bundle = loadKxmProject(root);
+      const logs: Array<Record<string, unknown>> = [];
+      const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME, logger: (entry) => { logs.push(entry); } });
+      try {
+        const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt });
+        pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+        afterPin?.(root);
+        const requests: KxmProducerRequest[] = [];
+        const producer = createKxmSimulatedProducer(async (request) => {
+          requests.push(request);
+          return { outcome: "passed" };
+        });
+        const driven = await driveKxmRun(context, accepted.run.runId, producer);
+        assert.equal(driven.state.status, "completed", `${prefix}: the step still completes`);
+        assert.equal(requests.length, 1);
+        return { request: requests[0]!, logs };
+      } finally {
+        closeKxmRuntimeContext(context);
+      }
+    } finally {
+      removeTempDir(root, stateRoot);
+    }
+  };
+  const assembled = (logs: Array<Record<string, unknown>>) => logs.filter((entry) => entry.event === "dispatch_context_assembled");
+  const assertWithheld = (label: string, request: KxmProducerRequest, gap: string): void => {
+    const packet = request.contextPacket!;
+    assert.ok(packet.budget.unresolvedGaps.includes(gap), `${label}: ${JSON.stringify(packet.budget.unresolvedGaps)}`);
+    for (const [section, items] of Object.entries(packet.environment)) {
+      assert.equal(items.length, 0, `${label}: environment.${section} is empty`);
+    }
+    assert.equal(request.prompt?.includes("## 5."), false, `${label}: no environment section`);
+    assert.equal(request.prompt?.includes("dispatch_context_"), false, `${label}: gaps are never rendered`);
+  };
+
+  // Case 0: no memory and no promoted skill: no git, no hashing, today's packet.
+  const none = await drive("kxm-engine-dctx-none-", "Apply the fixed witness policy");
+  assert.equal(none.request.contextPacket!.budget.unresolvedGaps.some((gap) => gap.startsWith("dispatch_context_")), false);
+  assert.equal(none.request.prompt?.includes("## 5."), false);
+  assert.equal(assembled(none.logs).length, 0, "the presence probe short-circuits before any git or hashing work");
+
+  // Case P: committed, pinned memory and a verified promoted skill are delivered.
+  const summary = "Always run the fixed witness before review";
+  const unrelated = [
+    "Database migrations run inside one transaction",
+    "Release notes are drafted by the maintainer",
+    "Frontend builds target evergreen browsers",
+    "Logs rotate after two megabytes",
+    "Branch names carry the ticket number",
+  ];
+  let skillId = "";
+  const positive = await drive("kxm-engine-dctx-positive-", "Apply the fixed witness policy", (root) => {
+    writeMemory(root, "testing-policy", "project", summary);
+    unrelated.forEach((text, index) => writeMemory(root, `extra-${index + 1}`, "project", text));
+    writeMemory(root, "shared-style", "operator", "Prefer small focused commits");
+    skillId = promoteSkill(root);
+    commitAll(root, "memory and skill");
+  });
+  const environment = positive.request.contextPacket!.environment;
+  assert.equal(environment.projectKnowledge.length, 5);
+  assert.ok(environment.projectKnowledge.some((item) => item.id === "mem_testing-policy"));
+  assert.ok(environment.sharedDefaults.some((item) => item.id === "mem_shared-style"));
+  assert.deepEqual(environment.activeSkills.map((item) => item.id), [`skill_${skillId}`]);
+  assert.ok(positive.request.prompt?.includes(summary));
+  assert.ok(positive.request.prompt?.includes("### Active Skills"));
+  assert.deepEqual(positive.request.contextPacket!.budget.unresolvedGaps, ["dispatch_context_render_deferred:1"]);
+  const [line] = assembled(positive.logs);
+  assert.ok(line, "the dispatch is logged");
+  assert.equal(line.renderDeferred, 1);
+  assert.ok((line.deliveredIds as string[]).includes("mem_testing-policy"));
+  const serialized = JSON.stringify(line);
+  for (const text of ["Apply the fixed witness policy", summary, ...unrelated, "Prefer small focused commits"]) {
+    assert.equal(serialized.includes(text), false, "the log carries ids and counts, never task or summary text");
+  }
+  assert.equal(contextRoleForAgent("critic-arch"), "critic");
+  assert.equal(contextRoleForAgent("critic-cli"), "critic");
+  assert.equal(contextRoleForAgent("implementer"), "implementer");
+  assert.equal(contextRoleForAgent("coordinator"), "coordinator");
+
+  // Case A: committed memory that does not parse.
+  const malformed = await drive("kxm-engine-dctx-malformed-", "Apply the fixed witness policy", (root) => {
+    mkdirSync(join(root, ".kxm", "memory"), { recursive: true });
+    writeFileSync(join(root, ".kxm", "memory", "guidelines.md"), "# Guidelines\nAlways verify before commit.\n");
+    commitAll(root, "malformed memory");
+  });
+  assertWithheld("malformed", malformed.request, "dispatch_context_memory_unreadable");
+
+  // Case B: memory edited and committed after the pin.
+  const edited = "Edited after the pin: skip the witness";
+  const drift = await drive("kxm-engine-dctx-drift-", "Apply the fixed witness policy", (root) => {
+    writeMemory(root, "testing-policy", "project", summary);
+    commitAll(root, "memory");
+  }, (root) => {
+    writeMemory(root, "testing-policy", "project", edited);
+    commitAll(root, "edit memory after pin");
+  });
+  assertWithheld("drift", drift.request, "dispatch_context_withheld:memory_revision_drift");
+  assert.equal(drift.request.prompt?.includes(edited), false);
+
+  // Case C: a promoted skill that is not committed.
+  const uncommitted = await drive("kxm-engine-dctx-uncommitted-", "Apply the fixed witness policy", (root) => {
+    promoteSkill(root);
+  });
+  assertWithheld("uncommitted", uncommitted.request, "dispatch_context_withheld:uncommitted");
+  assert.equal(uncommitted.request.contextPacket!.environment.activeSkills.length, 0);
 });
 
 test("permission ceiling: steps without write repository receive read-only ceiling", async () => {

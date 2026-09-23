@@ -802,6 +802,8 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   assert.match(readFileSync(retrospectiveJson, "utf8"), /"reviewDecision": "proposed"/);
   const report = await coordinator.improvementReport();
   assert.equal(report.entries, 3);
+  assert.ok(Array.isArray(report.signals));
+  assert.ok(report.signals.length >= 1);
   assert.equal(report.reports.find((item) => item.area === "gates")?.contradictions, 1);
   assert.equal(report.reports.find((item) => item.area === "workflow")?.errors, 1);
   await coordinator.reply(acceptedBody.run.messageId, "Workflow complete with evidence");
@@ -845,8 +847,11 @@ test("webhook workflows reject unsigned deliveries and unknown coordinators", as
 });
 
 test("a coordinator that settles before passing checkpoints fails the run and records an error", async (context) => {
+  const assetsDir = mkdtempSync(join(tmpdir(), "pi-mesh-premature-"));
+  context.after(() => rmSync(assetsDir, { recursive: true, force: true }));
   const secret = "premature-settlement-secret";
   const mesh = await createTestMesh(context, {
+    assetsDir,
     webhookWorkflows: [{
       id: "premature",
       source: "generic",
@@ -877,6 +882,9 @@ test("a coordinator that settles before passing checkpoints fails the run and re
   const result = await coordinator.getWorkflow(accepted.run.id);
   assert.equal(result.run.status, "failed");
   assert.ok(result.journal.some((entry) => entry.category === "error" && entry.area === "workflow"));
+  const settlementError = result.journal.find((entry) => entry.category === "error" && entry.area === "workflow");
+  assert.equal(settlementError?.stageId, "gate");
+  assert.equal(settlementError?.attempt, 1);
   const lateJournal = await coordinator.recordWorkflowEntry(accepted.run.id, {
     category: "lesson",
     area: "workflow",
@@ -884,6 +892,28 @@ test("a coordinator that settles before passing checkpoints fails the run and re
     evidence: ["class:premature_settlement"],
   });
   assert.equal(lateJournal.category, "lesson");
+  // Late entries and promotions refresh the terminal run's retrospective.
+  const retrospectivePath = join(assetsDir, "retrospectives", `${accepted.run.id}.json`);
+  const readRetrospective = () => JSON.parse(readFileSync(retrospectivePath, "utf8")) as {
+    entries: Array<{ id: string; promotionState?: string }>;
+  };
+  assert.ok(readRetrospective().entries.some((entry) => entry.id === lateJournal.id));
+  const skillCandidate = await coordinator.recordWorkflowEntry(accepted.run.id, {
+    category: "skill-candidate",
+    area: "workflow",
+    summary: "Checkpoint every stage before settling the turn",
+    evidence: ["receipt:premature-1/verify"],
+  });
+  const promotion = await fetch(`${mesh.address.url}/v1/journal/${skillCandidate.id}/promotion`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mesh.token}` },
+    body: JSON.stringify({ to: "approved", evidenceRefs: ["eval:static-review", "eval:sandbox"], reason: "protected eval passed" }),
+  });
+  assert.equal(promotion.status, 200);
+  assert.equal(
+    readRetrospective().entries.find((entry) => entry.id === skillCandidate.id)?.promotionState,
+    "approved",
+  );
   await assert.rejects(() => coordinator.checkpointWorkflow(accepted.run.id, {
     stageId: "gate",
     status: "passed",

@@ -28,6 +28,7 @@ const DECOY_SPECIFIERS = [
 const SURFACE_FILES = [
   resolve(SRC_ROOT, "extension.ts"),
   resolve(SRC_ROOT, "mcp-server.ts"),
+  resolve(SRC_ROOT, "claude-hook.ts"),
 ];
 const LIBRARY_BARRELS = [
   resolve(SRC_ROOT, "core.ts"),

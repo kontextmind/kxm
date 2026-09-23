@@ -149,6 +149,17 @@ export type JournalCategory =
   | "state-change"
   | "skill-candidate";
 export type ImprovementArea = "harness" | "gates" | "implementation" | "workflow" | "documentation" | "security" | "other";
+/** Every improvement area, in report order. The order also breaks ties when
+ * a signal's modal area is ambiguous. */
+export const IMPROVEMENT_AREAS: readonly ImprovementArea[] = [
+  "harness",
+  "gates",
+  "implementation",
+  "workflow",
+  "documentation",
+  "security",
+  "other",
+];
 
 /** Evidence submitted for one checkpoint or external signal, keyed by a
  * requirement from WorkflowStageDefinition.requiredEvidence. */

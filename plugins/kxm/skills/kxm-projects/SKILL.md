@@ -1,6 +1,6 @@
 ---
 name: kxm-projects
-description: KontextMind projects and org admin — list/register mind repos, reindex against git HEAD, invite members. Use when asked to add a project, list projects, reindex, invite a steward/member, km_projects, km_project_add, km_reindex, or km_invite.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Lists, registers, and reindexes KontextMind mind repositories with km_projects and km_reindex. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:

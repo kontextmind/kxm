@@ -150,6 +150,7 @@ export interface ContextPacket {
   workingState: Record<string, unknown>;
   currentState: ContextItem[];
   knowledge: ContextItem[];
+  evidence: ContextItem[];
   episodes: ContextItem[];
   skills: ContextItem[];
   contradictions: ContextItem[];
@@ -334,7 +335,14 @@ export function parseContextRequest(value: unknown): ContextRequest {
 /** Validate that a packet only contains items matching the request's project
  * and requested kinds. Cross-project content fails closed. */
 export function validateContextPacketContents(request: ContextRequest, packet: ContextPacket): void {
-  const items = [...packet.currentState, ...packet.knowledge, ...packet.episodes, ...packet.skills, ...packet.contradictions];
+  const items = [
+    ...packet.currentState,
+    ...packet.knowledge,
+    ...packet.evidence,
+    ...packet.episodes,
+    ...packet.skills,
+    ...packet.contradictions,
+  ];
   if (items.length > MAX_CONTEXT_ITEMS) {
     throw new ProtocolError(400, `context packet exceeds ${MAX_CONTEXT_ITEMS} items`, "context_limits_exceeded");
   }
@@ -357,14 +365,17 @@ export function validateContextPacketContents(request: ContextRequest, packet: C
   }
 }
 
+/** Serialized size of one item as the token estimate counts it: summary, id,
+ * kind, and provenance sourceRef characters. */
+export function contextItemCharacters(item: ContextItem): number {
+  return item.summary.length + item.id.length + item.kind.length + (item.provenance.sourceRef?.length ?? 0);
+}
+
 /** Deterministic, dependency-free token estimate. Roughly 4 characters per
  * token; used for budget enforcement, never for billing. */
 export function estimateContextTokens(items: ContextItem[]): number {
   let characters = 0;
-  for (const item of items) {
-    characters += item.summary.length + item.id.length + item.kind.length;
-    if (item.provenance.sourceRef) characters += item.provenance.sourceRef.length;
-  }
+  for (const item of items) characters += contextItemCharacters(item);
   return Math.ceil(characters / 4);
 }
 

@@ -10,6 +10,7 @@ import {
   addWorkflowDefinition,
   removeWorkflowDefinition,
   modifyWorkflowDefinition,
+  scaffoldWorkflowDefinition,
   WORKFLOW_TEMPLATES,
 } from "../workflow-manager.ts";
 import {
@@ -203,11 +204,26 @@ export async function cmdWorkflowAdd(
     scope?: "global" | "local" | undefined;
     overwrite?: boolean | undefined;
     pick?: string | boolean | undefined;
+    template?: string | undefined;
   },
 ): Promise<number> {
   const scope = options.scope ?? "local";
   let content: Record<string, unknown> | string | undefined;
-  if (!workflowId || options.pick) {
+  if (options.template !== undefined) {
+    const refuse = (error: string, text: string): number => {
+      print(runtime.io, runtime.json, { ok: false, command: "workflow add", error }, `workflow add failed: ${text}`);
+      return 2;
+    };
+    if (options.file !== undefined || options.pick !== undefined) {
+      return refuse("workflow_add_conflict", "--template cannot be combined with --file or --pick");
+    }
+    if (!workflowId) return refuse("workflow_id_required", "usage: kxm workflow add <workflowId> --template <name>");
+    const template = Object.hasOwn(WORKFLOW_TEMPLATES, options.template) ? WORKFLOW_TEMPLATES[options.template] : undefined;
+    if (!template) {
+      return refuse("workflow_template_unknown", `unknown template ${options.template}; choose ${Object.keys(WORKFLOW_TEMPLATES).join(", ")}`);
+    }
+    content = { ...template, ...(options.description ? { description: options.description } : {}) };
+  } else if (!workflowId || options.pick) {
     const candidates: PickCandidate[] = Object.entries(WORKFLOW_TEMPLATES).map(([id, tmpl]) => ({
       id,
       description: String(tmpl.description ?? id),
@@ -243,21 +259,7 @@ export async function cmdWorkflowAdd(
     const filePath = resolve(runtime.cwd, options.file);
     content = readFileSync(filePath, "utf8");
   } else if (!content) {
-    content = {
-      schema: "kxm.workflow.v1",
-      id: workflowId!,
-      description: options.description || `Workflow ${workflowId}`,
-      coordinator: "coordinator",
-      limits: { maxTransitions: 8 },
-      steps: [
-        {
-          id: "step-1",
-          kind: "agent",
-          role: "writer",
-          on: { passed: { target: "$terminal", terminalStatus: "completed" } },
-        },
-      ],
-    };
+    content = scaffoldWorkflowDefinition(options.description || `Workflow ${workflowId}`);
   }
 
   try {

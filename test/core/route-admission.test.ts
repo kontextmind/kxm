@@ -14,6 +14,7 @@ import {
   startKxmRun,
   stepKxmRun,
 } from "../../plugins/kxm/src/engine.ts";
+import { kxmAttemptFinalOutcome } from "../../plugins/kxm/src/engine-plan.ts";
 import {
   acceptKxmRun,
   closeKxmRuntimeContext,
@@ -119,6 +120,74 @@ test("D5 Gate: N attempts leave N routing records with required costBasis", asyn
         assert.ok(payload.routing.latencyMs >= 0);
         assert.equal(payload.routing.runId, accepted.run.runId);
       }
+
+      const routingOf = (runId: string): RoutingRecordV2[] => context.eventStore.events(runId, 0, 1000)
+        .filter((e) => e.eventType === "routing.attempt.recorded")
+        .map((e) => (e.payload as { routing: RoutingRecordV2 }).routing);
+
+      // Run 2: the same workflow and prompt in a new run.
+      const second = acceptKxmRun(context, bundle, { workflowId: "default", prompt: "default run" });
+      pinKxmCompiledPlan(context, bundle, second.run.runId);
+      assert.equal((await driveKxmRun(context, second.run.runId, producer, { allowLimits: true })).state.status, "completed");
+
+      // The engine reserves the ask-identity keys: stable across runs for the same
+      // step and agent, and never derived from anything a run chose.
+      const byStep = [routingOf(accepted.run.runId), routingOf(second.run.runId)].map((records) => {
+        assert.deepEqual(records.map((record) => record.stepId), ["plan", "implement", "ready"]);
+        return Object.fromEntries(records.map((record) => [record.stepId, record])) as Record<string, RoutingRecordV2>;
+      });
+      for (const records of byStep) {
+        for (const [stepId, role, writes] of [["plan", "planner", false], ["implement", "implementer", true], ["ready", "planner", false]] as const) {
+          const record = records[stepId]!;
+          assert.equal(record.providerMetadata?.workflowId, "default");
+          assert.match(String(record.providerMetadata?.askSha256), /^sha256:[a-f0-9]{64}$/);
+          assert.equal(record.providerMetadata?.stepWrites, writes, `${stepId} stepWrites`);
+          assert.equal(record.agentRole, role, `${stepId} agentRole`);
+          assert.equal(record.finalOutcome, undefined, "forward edges and completed terminals are undecided at record time");
+        }
+        assert.notEqual(records.plan!.providerMetadata?.askSha256, records.ready!.providerMetadata?.askSha256);
+      }
+      for (const stepId of ["plan", "implement", "ready"]) {
+        assert.equal(byStep[0]![stepId]!.providerMetadata?.askSha256, byStep[1]![stepId]!.providerMetadata?.askSha256, `${stepId} askSha256 is stable across runs`);
+        assert.equal(byStep[0]![stepId]!.providerMetadata?.objectiveSha256, byStep[1]![stepId]!.providerMetadata?.objectiveSha256);
+        assert.equal(byStep[0]![stepId]!.providerMetadata?.objectiveSha256, accepted.run.promptSha256);
+      }
+
+      // Run 3: plan returns 'blocked', a terminal failure edge.
+      const blocked = acceptKxmRun(context, bundle, { workflowId: "default", prompt: "blocked run" });
+      pinKxmCompiledPlan(context, bundle, blocked.run.runId);
+      const blockedProducer = createKxmSimulatedProducer(async (request) => ({ outcome: request.stepId === "plan" ? "blocked" : "passed" }));
+      await driveKxmRun(context, blocked.run.runId, blockedProducer, { allowLimits: true });
+      const blockedPlan = routingOf(blocked.run.runId).find((record) => record.stepId === "plan");
+      assert.equal(blockedPlan?.finalOutcome, "failed");
+
+      // Run 4: the producer throws on plan.
+      const thrown = acceptKxmRun(context, bundle, { workflowId: "default", prompt: "throwing run" });
+      pinKxmCompiledPlan(context, bundle, thrown.run.runId);
+      const throwingProducer = createKxmSimulatedProducer(async (request) => {
+        if (request.stepId === "plan") throw new Error("producer_error");
+        return { outcome: "passed" };
+      });
+      await driveKxmRun(context, thrown.run.runId, throwingProducer, { allowLimits: true });
+      const thrownPlan = routingOf(thrown.run.runId).find((record) => record.stepId === "plan");
+      assert.equal(thrownPlan?.finalOutcome, "failed");
+      assert.equal(thrownPlan?.agentRole, "planner");
+      assert.equal(thrownPlan?.providerMetadata?.workflowId, "default");
+
+      for (const runId of [accepted.run.runId, second.run.runId, blocked.run.runId, thrown.run.runId]) {
+        for (const record of routingOf(runId)) assert.deepEqual(parseRoutingRecordV2(record), record);
+      }
+
+      const transitions = {
+        retry: { to: "step", target: "plan", edge: "back" },
+        next: { to: "step", target: "ready", edge: "forward" },
+        done: { to: "terminal", terminalStatus: "completed" },
+      } as const;
+      assert.equal(kxmAttemptFinalOutcome({ transitions }, { resultClass: "outcome", outcome: "retry" }), "blocked");
+      assert.equal(kxmAttemptFinalOutcome({ transitions }, { resultClass: "outcome", outcome: "next" }), undefined);
+      assert.equal(kxmAttemptFinalOutcome({ transitions }, { resultClass: "outcome", outcome: "done" }), undefined);
+      assert.equal(kxmAttemptFinalOutcome({ transitions }, { resultClass: "outcome", outcome: "missing" }), "failed");
+      assert.equal(kxmAttemptFinalOutcome({ transitions }, { resultClass: "producer_rejected" }), "failed");
     } finally {
       closeKxmRuntimeContext(context);
     }

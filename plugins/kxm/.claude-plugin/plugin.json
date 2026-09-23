@@ -19,11 +19,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "kxm session brief --status"
-          },
-          {
-            "type": "command",
-            "command": "kxm memory brief"
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js", "session-start"],
+            "timeout": 5,
+            "statusMessage": "KXM brief"
           }
         ]
       }
@@ -38,21 +37,21 @@
     "server_url": {
       "type": "string",
       "title": "KXM server URL",
-      "description": "URL of the running KXM hub",
+      "description": "URL of the KXM hub (the operator starts it with kxm hub start)",
       "default": "http://127.0.0.1:7331",
       "required": true
     },
     "auth_token": {
       "type": "string",
       "title": "Authentication token",
-      "description": "Project bearer token for this agent",
+      "description": "Project token for this project from the hub KXM_PROJECT_TOKENS. Leave blank on the machine that runs the hub to use the project token the hub saved for this project. The hub admin token is never used",
       "sensitive": true,
       "required": false
     },
     "agent_name": {
       "type": "string",
       "title": "Agent name",
-      "description": "Unique name shown to other agents in the project",
+      "description": "Name other agents see. The first active session in a project keeps it; a later concurrent session registers as <name>-<pid>",
       "default": "claude",
       "required": true
     },
@@ -66,7 +65,7 @@
     "project": {
       "type": "string",
       "title": "Project",
-      "description": "Optional project namespace; defaults to the current directory name",
+      "description": "Hub project key; must match a key in the hub KXM_PROJECT_TOKENS. Blank uses the package.json name, then the directory name",
       "required": false
     }
   }

@@ -256,6 +256,11 @@ test("Rule 2: proposed items never reach a packet's skills or current state; arb
     assert.equal(outcome.packet.skills.some((item) => item.status === "proposed"), false);
     assert.equal(outcome.packet.skills.some((item) => item.id === "ctx-prop-skill"), false);
     assert.equal(outcome.packet.skills.some((item) => item.id === "journal_j-skill-1"), false);
+    // Inert proposals are not eligible: they never consume budget or appear
+    // in the audit's selection.
+    for (const inertId of ["ctx-prop-state", "ctx-prop-skill", "journal_j-skill-1"]) {
+      assert.equal(outcome.audit.selectedIds.includes(inertId), false, `${inertId} must not be selected`);
+    }
 
     // Valid promoted skill whose content matches hash IS in packet.skills
     const validPromotedSkill = outcome.packet.skills.find((item) => item.id === `skill_${candidate.id}`);

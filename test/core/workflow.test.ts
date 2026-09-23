@@ -4,6 +4,7 @@ import {
   checkpointRun,
   improvementReport,
   parseWorkflowDefinitions,
+  rankImprovementSignals,
   renderWorkflowPrompt,
   resumeWorkflowFromSignal,
   valueAtPath,
@@ -292,4 +293,46 @@ test("improvement reports group and prioritize learning evidence", () => {
   assert.equal(reports[0]!.errors, 1);
   assert.equal(reports[0]!.priorities[0]!.id, "1");
   assert.equal(reports[1]!.area, "implementation");
+
+  // Cross-run signals merge duplicates and rank by frequency x severity x
+  // run-attempt cost x evidence confidence, security first.
+  const fixRun = (id: string, attempts: number): WorkflowRun => ({
+    id,
+    definitionId: "fix",
+    stages: [{ id: "verify", attempts }],
+  }) as unknown as WorkflowRun;
+  const runs = new Map([
+    ["run_a", fixRun("run_a", 2)],
+    ["run_b", fixRun("run_b", 3)],
+    ["run_c", fixRun("run_c", 1)],
+  ]);
+  const signalEntries: WorkflowJournalEntry[] = [
+    { ...base, id: "eA", runId: "run_a", category: "error", area: "gates", severity: "error", summary: "verify failed in run A", evidence: ["class:test_failure"] },
+    { ...base, id: "eB", runId: "run_b", category: "error", area: "gates", severity: "error", summary: "verify failed in run B", evidence: ["class:test_failure"] },
+    { ...base, id: "cA", runId: "run_a", category: "contradiction", area: "workflow", severity: "warning", summary: "peers disagree on run_0123456789abcdef scope", evidence: ["note:a"] },
+    { ...base, id: "cC", runId: "run_c", category: "contradiction", area: "workflow", severity: "warning", summary: "peers disagree on run_fedcba9876543210 scope", evidence: ["note:c"] },
+    { ...base, id: "sD", runId: "run_d", category: "error", area: "security", severity: "info", summary: "coordinator token scope was wider than needed" },
+    { ...base, id: "xA", runId: "run_a", category: "error", area: "harness", severity: "error", summary: "auth failed token=sk-ABC12345defghijkLMNOP" },
+  ];
+  const signals = rankImprovementSignals(signalEntries, runs);
+  assert.equal(signals.length, 4);
+  assert.deepEqual(signals[0]!.entryIds, ["sD"]);
+  assert.equal(signals[0]!.overrideTier, "security");
+  assert.equal(signals[0]!.workflowCost, null);
+  assert.equal(signals[0]!.costBasis, "unknown");
+  const testFailure = signals.find((signal) => signal.key === "error|class:test_failure")!;
+  assert.equal(testFailure.frequency, 2);
+  assert.equal(testFailure.workflowCost, 2.5);
+  assert.equal(testFailure.confidence, 1);
+  assert.equal(testFailure.priority, 15);
+  const contradiction = signals.find((signal) => signal.category === "contradiction")!;
+  assert.match(contradiction.key, /<id>/);
+  assert.equal(contradiction.frequency, 2);
+  assert.equal(contradiction.priority, 6);
+  assert.deepEqual(signals.slice(1).map((signal) => signal.priority), [15, 6, 3]);
+  for (const signal of signals) {
+    assert.doesNotMatch(signal.key, /defghijk/i);
+    assert.doesNotMatch(signal.summary, /defghijk/i);
+  }
+  assert.deepEqual(rankImprovementSignals(signalEntries, runs), signals);
 });

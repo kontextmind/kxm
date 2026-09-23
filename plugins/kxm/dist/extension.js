@@ -14545,8 +14545,117 @@ var MAX_CONTENT_CHARS = 32e3;
 var MAX_AGENT_HOST_CHARS = 64;
 var MAX_LEASE_TTL_MS = 10 * 6e4;
 var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
+var IMPROVEMENT_AREAS = [
+  "harness",
+  "gates",
+  "implementation",
+  "workflow",
+  "documentation",
+  "security",
+  "other"
+];
+
+// plugins/kxm/src/redact.ts
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
+  /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
+  /\b1\/\/[A-Za-z0-9_-]+/g,
+  /\b1\/[A-Za-z0-9_-]{20,}/g,
+  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
+  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
+  /\b[A-Fa-f0-9]{64}\b/g
+];
+function redactSecrets(value) {
+  let result2 = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result2 = result2.replace(pattern, "[redacted]");
+  }
+  return result2;
+}
+
+// plugins/kxm/src/relevance.ts
+var RELEVANCE_STOPWORDS = Object.freeze(/* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "how",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "our",
+  "should",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your"
+]));
 
 // plugins/kxm/src/workflow.ts
+var JOURNAL_CATEGORIES = [
+  "plan",
+  "decision",
+  "contradiction",
+  "error",
+  "lesson",
+  "observation",
+  "hypothesis",
+  "experiment",
+  "state-change",
+  "skill-candidate"
+];
 function canonicalWorkflowEvidenceKey(value) {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
 }
@@ -15344,7 +15453,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "run",
     label: "Get workflow run",
-    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    description: "Get a workflow's stages and its learning journal (plans, decisions, contradictions, errors, lessons, and the other journal categories).",
     parameters: {
       type: "object",
       properties: {
@@ -15418,20 +15527,24 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "record",
     label: "Record workflow journal entry",
-    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    description: "Record a plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, or skill-candidate for continuous improvement. Pass stageId to bind the entry to that stage: the hub derives the attempt, and area defaults to the stage's declared area. Lessons and skill-candidates require evidence.",
     parameters: {
       type: "object",
       properties: {
         runId: { type: "string", description: "Active durable workflow run ID" },
         category: {
           type: "string",
-          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          enum: [...JOURNAL_CATEGORIES],
           description: "Category of journal entry"
         },
         area: {
           type: "string",
-          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
-          description: "System area"
+          enum: [...IMPROVEMENT_AREAS],
+          description: "System area; required unless stageId names a stage that declares an area"
+        },
+        stageId: {
+          type: "string",
+          description: "Stage the entry belongs to; the hub binds the attempt from the stage's state"
         },
         severity: {
           type: "string",
@@ -15454,13 +15567,14 @@ var AGENT_COMMANDS = [
           description: "Related previous journal entry IDs"
         }
       },
-      required: ["runId", "category", "area", "summary"],
+      required: ["runId", "category", "summary"],
       additionalProperties: false
     },
     async execute(client, args) {
       return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
         category: requiredString(args.category, "category"),
-        area: requiredString(args.area, "area"),
+        ...optionalString(args.area) ? { area: optionalString(args.area) } : {},
+        ...optionalString(args.stageId) ? { stageId: optionalString(args.stageId) } : {},
         ...optionalString(args.severity) ? { severity: optionalString(args.severity) } : {},
         summary: requiredString(args.summary, "summary"),
         ...optionalString(args.details) ? { details: optionalString(args.details) } : {},
@@ -15537,7 +15651,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "improve-report",
     label: "Summarize improvement report",
-    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    description: "Summarize workflow errors, contradictions, lessons, and skill candidates by improvement area, plus ranked cross-run signals: duplicates merged across runs and scored by frequency x severity x run-attempt cost x evidence confidence, security first, with redacted text.",
     parameters: {
       type: "object",
       properties: {},
@@ -15591,7 +15705,7 @@ var AGENT_COMMANDS = [
     group: "context",
     verb: "recall",
     label: "Recall context metadata",
-    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    description: "Search durable context records for a project by query. Ranks exact-phrase matches first, then token relevance, then id; returns bounded metadata with a numeric relevance per item, never summaries.",
     parameters: {
       type: "object",
       properties: {
@@ -15861,6 +15975,7 @@ import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as rea
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
 var KXM_CONFIG_SCHEMA = "kxm.config.v1";
+var IMPROVEMENT_PROMOTION_POLICIES = ["manual_pr", "critic_quorum", "auto_threshold"];
 var DEFAULT_KXM_CONFIG = {
   schema: KXM_CONFIG_SCHEMA,
   user: {
@@ -15934,6 +16049,30 @@ function normalizeHubConfig(raw) {
   const autoStart = raw?.autoStart;
   return { autoStart: autoStart === "off" || autoStart === "background" ? autoStart : DEFAULT_KXM_CONFIG.hub.autoStart };
 }
+function recordOf(raw) {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
+function normalizeImprovementConfig(raw) {
+  const value = recordOf(raw);
+  const threshold = recordOf(value.autoThreshold);
+  const policy = value.promotionPolicy;
+  const halfLife = finiteNumber(value.telemetryHalfLifeDays);
+  const minRuns = finiteNumber(threshold.minRuns);
+  const minPassRate = finiteNumber(threshold.minPassRate);
+  const minCostSavings = finiteNumber(threshold.minCostSavings);
+  return {
+    promotionPolicy: IMPROVEMENT_PROMOTION_POLICIES.includes(policy) ? policy : "manual_pr",
+    telemetryHalfLifeDays: halfLife !== void 0 && halfLife > 0 && halfLife <= 3650 ? halfLife : 14,
+    autoThreshold: {
+      minRuns: minRuns !== void 0 && Number.isInteger(minRuns) && minRuns >= 1 && minRuns <= 1e6 ? minRuns : 10,
+      minPassRate: minPassRate !== void 0 && minPassRate >= 0 && minPassRate <= 1 ? minPassRate : 0.95,
+      minCostSavings: minCostSavings !== void 0 && minCostSavings >= 0 ? minCostSavings : 0.5
+    }
+  };
+}
 function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   const userDir = userConfigDirectory(options.userConfigDir);
   const userConfigFile = join2(userDir, "config.yaml");
@@ -15971,7 +16110,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
     dash: mergedAll.dash ?? {},
     sync: mergedAll.sync ?? {},
     hub: normalizeHubConfig(mergedAll.hub),
-    improvement: mergedAll.improvement ?? DEFAULT_KXM_CONFIG.improvement,
+    improvement: normalizeImprovementConfig(mergedAll.improvement),
     routing: mergedAll.routing ?? DEFAULT_KXM_CONFIG.routing,
     telemetry: mergedAll.telemetry ?? DEFAULT_KXM_CONFIG.telemetry,
     loadedFrom: {
@@ -16254,30 +16393,6 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
   throw new Error(
     `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
   );
-}
-
-// plugins/kxm/src/redact.ts
-var SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
-  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
-  /\bghp_[A-Za-z0-9_]{20,}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
-  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
-  /\b1\/\/[A-Za-z0-9_-]+/g,
-  /\b1\/[A-Za-z0-9_-]{20,}/g,
-  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
-  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
-  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
-  /\b[A-Fa-f0-9]{64}\b/g
-];
-function redactSecrets(value) {
-  let result2 = value;
-  for (const pattern of SECRET_PATTERNS) {
-    result2 = result2.replace(pattern, "[redacted]");
-  }
-  return result2;
 }
 
 // plugins/kxm/src/hub-autostart.ts
@@ -36527,6 +36642,8 @@ function readRoutingRecords(path) {
 }
 
 // plugins/kxm/src/local-snapshot.ts
+var DEFAULT_BUSY_TIMEOUT_MS = 5e3;
+var RUNTIME_PROJECT_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 function processExists(pid) {
   try {
     process.kill(pid, 0);
@@ -36535,8 +36652,8 @@ function processExists(pid) {
     return error2.code === "EPERM";
   }
 }
-function readJsonRows(database, sql) {
-  const rows = database.prepare(sql).all();
+function readJsonRows(database, sql, params = []) {
+  const rows = database.prepare(sql).all(...params);
   const out = [];
   for (const row of rows) {
     try {
@@ -36611,11 +36728,15 @@ function readPlanMetadata(database) {
     return [];
   }
 }
-function countRows(database, table, where = "") {
-  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get();
+function countRows(database, table, where = "", params = []) {
+  const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table}${where}`).get(...params);
   return Number(row?.count ?? 0);
 }
-function readOpenMessageMetadata(database) {
+var OPEN_MESSAGE_WHERE = " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')";
+var SCOPED_MESSAGE_WHERE = `${OPEN_MESSAGE_WHERE}
+      AND json_extract(record, '$.project') = ?
+      AND COALESCE(json_extract(record, '$.toName'), json_extract(record, '$.to')) = ?`;
+function readOpenMessageMetadata(database, where = OPEN_MESSAGE_WHERE, params = []) {
   const rows = database.prepare(`
     SELECT
       json_extract(record, '$.id') AS id,
@@ -36625,11 +36746,10 @@ function readOpenMessageMetadata(database) {
       json_extract(record, '$.delivery') AS delivery,
       json_extract(record, '$.createdAt') AS createdAt,
       json_extract(record, '$.correlationId') AS correlationId
-    FROM messages
-    WHERE json_extract(record, '$.status') IN ('queued', 'delivered')
+    FROM messages${where}
     ORDER BY json_extract(record, '$.createdAt') DESC
     LIMIT 16
-  `).all();
+  `).all(...params);
   const messages = [];
   for (const row of rows) {
     if (typeof row.id !== "string" || row.status !== "queued" && row.status !== "delivered" || typeof row.fromName !== "string" || typeof row.toName !== "string" || row.delivery !== "steer" && row.delivery !== "followUp" && row.delivery !== "nextTurn" || typeof row.createdAt !== "string") continue;
@@ -36678,7 +36798,29 @@ function resolveKxmStateRoot(stateDir, options) {
   if (existsSync8(base)) return base;
   return void 0;
 }
+function readRuntimeRuns(eventDb, projectId) {
+  const where = projectId === void 0 ? "" : " WHERE project_id = ?";
+  const params = projectId === void 0 ? [] : [projectId];
+  const runRows = eventDb.prepare(`
+    SELECT run_id, project_id, workflow_id, status, created_at, updated_at
+    FROM runs${where} ORDER BY created_at DESC, run_id DESC LIMIT 8
+  `).all(...params);
+  const countRow = eventDb.prepare(`SELECT COUNT(*) AS total FROM runs${where}`).get(...params);
+  return {
+    total: Number(countRow?.total ?? runRows.length),
+    runs: runRows.map((r) => ({
+      id: r.run_id,
+      status: r.status,
+      definitionId: r.workflow_id,
+      project: r.project_id,
+      updatedAt: r.updated_at || r.created_at
+    }))
+  };
+}
 function loadLocalMeshSnapshot(dataPath, stateDir, options) {
+  const busyTimeoutMs = Math.max(0, Math.trunc(Number(options?.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS)) || 0);
+  const busyTimeout = `PRAGMA busy_timeout = ${busyTimeoutMs}`;
+  const scope = options?.scope;
   let hasLegacy = false;
   let agents = [];
   let openMessages = [];
@@ -36690,13 +36832,24 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     hasLegacy = true;
     const database = openReadOnlyDatabase(dataPath);
     try {
-      database.exec("PRAGMA busy_timeout = 5000");
+      database.exec(busyTimeout);
       agents = readJsonRows(database, "SELECT record FROM agents");
-      openMessages = readOpenMessageMetadata(database);
-      openMessageTotal = countRows(database, "messages", " WHERE json_extract(record, '$.status') IN ('queued', 'delivered')");
-      legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
-      legacyRunTotal = countRows(database, "workflow_runs");
-      plans = readPlanMetadata(database);
+      if (!scope) {
+        openMessages = readOpenMessageMetadata(database);
+        openMessageTotal = countRows(database, "messages", OPEN_MESSAGE_WHERE);
+        legacyRuns = readJsonRows(database, "SELECT record FROM workflow_runs ORDER BY rowid DESC LIMIT 8");
+        legacyRunTotal = countRows(database, "workflow_runs");
+        plans = readPlanMetadata(database);
+      } else {
+        if (scope.recipientName) {
+          const messageParams = [scope.hubProject, scope.recipientName];
+          openMessages = readOpenMessageMetadata(database, SCOPED_MESSAGE_WHERE, messageParams);
+          openMessageTotal = countRows(database, "messages", SCOPED_MESSAGE_WHERE, messageParams);
+        }
+        const runWhere = " WHERE json_extract(record, '$.project') = ?";
+        legacyRuns = readJsonRows(database, `SELECT record FROM workflow_runs${runWhere} ORDER BY rowid DESC LIMIT 8`, [scope.hubProject]);
+        legacyRunTotal = countRows(database, "workflow_runs", runWhere, [scope.hubProject]);
+      }
     } finally {
       database.close();
     }
@@ -36704,7 +36857,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   let hasKxm = false;
   const kxmRuns = [];
   let kxmRunTotal = 0;
-  const kxmStateRoot = resolveKxmStateRoot(stateDir, options);
+  const kxmStateRoot = scope && !scope.runtimeProjectId ? void 0 : resolveKxmStateRoot(stateDir, options);
   if (kxmStateRoot) {
     const runtimeDir = join11(kxmStateRoot, "runtime");
     const registryDbPath = join11(runtimeDir, "registry.db");
@@ -36715,8 +36868,8 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       try {
         const regDb = openReadOnlyDatabase(registryDbPath);
         try {
-          regDb.exec("PRAGMA busy_timeout = 5000");
-          const pRows = regDb.prepare("SELECT project_key FROM projects").all();
+          regDb.exec(busyTimeout);
+          const pRows = scope ? regDb.prepare("SELECT project_key FROM projects WHERE project_id = ?").all(scope.runtimeProjectId) : regDb.prepare("SELECT project_key FROM projects").all();
           for (const row of pRows) {
             if (row.project_key) projectKeys.add(row.project_key);
           }
@@ -36726,7 +36879,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       } catch {
       }
     }
-    if (existsSync8(projectsDir)) {
+    if (!scope && existsSync8(projectsDir)) {
       try {
         for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
           if (entry.isDirectory()) {
@@ -36737,28 +36890,17 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       }
     }
     for (const key of projectKeys) {
+      if (scope && !RUNTIME_PROJECT_KEY.test(key)) continue;
       const eventDbPath = join11(projectsDir, key, "run-events.db");
       if (existsSync8(eventDbPath)) {
         hasKxm = true;
         try {
           const eventDb = openReadOnlyDatabase(eventDbPath);
           try {
-            eventDb.exec("PRAGMA busy_timeout = 5000");
-            const runRows = eventDb.prepare(`
-              SELECT run_id, project_id, workflow_id, status, created_at, updated_at
-              FROM runs ORDER BY created_at DESC, run_id DESC LIMIT 8
-            `).all();
-            const countRow = eventDb.prepare("SELECT COUNT(*) AS total FROM runs").get();
-            kxmRunTotal += Number(countRow?.total ?? runRows.length);
-            for (const r of runRows) {
-              kxmRuns.push({
-                id: r.run_id,
-                status: r.status,
-                definitionId: r.workflow_id,
-                project: r.project_id,
-                updatedAt: r.updated_at || r.created_at
-              });
-            }
+            eventDb.exec(busyTimeout);
+            const { runs: runs2, total } = readRuntimeRuns(eventDb, scope?.runtimeProjectId);
+            kxmRunTotal += total;
+            kxmRuns.push(...runs2);
           } finally {
             eventDb.close();
           }

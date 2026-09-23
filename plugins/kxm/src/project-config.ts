@@ -813,6 +813,29 @@ function validateAgentScope(
   }
 }
 
+/** The outcomes a gate step settles on, by `expect` (computeGateEvidenceOutcome
+ * in runtime-store.ts): nothing else ever reaches a gate step's `on` map. */
+const GATE_STEP_OUTCOMES = {
+  pass: ["passed", "implementation-failure"],
+  fail: ["passed", "repro-missing"],
+} as const satisfies Record<"pass" | "fail", readonly string[]>;
+
+/** A gate step that routes on an outcome it never produces (such as `failed`)
+ * instead of one it does can never settle: the Runtime records the produced
+ * outcome, finds no transition for it, and leaves the attempt unsettled. An
+ * extra dead key next to every produced outcome still settles, and the built-in
+ * template has always declared `failed` beside `implementation-failure`, so only
+ * the combination is refused. Misspellings are gate_outcome_renamed's. */
+function gateOutcomeImpossible(step: JsonObject, stepId: string, file: string): KxmConfigIssue | undefined {
+  const expect = step.expect === "fail" ? "fail" : "pass";
+  const produced: readonly string[] = GATE_STEP_OUTCOMES[expect];
+  const declared = Object.keys(objectValue(step.on) ?? {});
+  const impossible = declared.filter((outcome) => !produced.includes(outcome) && outcome !== "implementation_failure" && outcome !== "repro_missing");
+  const missing = produced.filter((outcome) => !declared.includes(outcome));
+  if (impossible.length === 0 || missing.length === 0) return undefined;
+  return issue("semantic", "gate_outcome_impossible", file, `${stepId} declares ${impossible.join(", ")}, which a gate step with expect ${expect} never produces; it settles on ${produced.join(" or ")}, so declare ${missing.join(" and ")}`);
+}
+
 function transition(value: JsonValue): { target?: string; maxTransitions?: number; terminalStatus?: string } {
   if (typeof value === "string") return { target: value };
   const object = objectValue(value);
@@ -887,6 +910,8 @@ function validateWorkflow(
     if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
       issues.push(issue("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
     }
+    const impossibleOutcome = kind === "gate" ? gateOutcomeImpossible(step, stepId, file) : undefined;
+    if (impossibleOutcome) issues.push(impossibleOutcome);
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
