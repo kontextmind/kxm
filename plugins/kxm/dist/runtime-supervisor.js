@@ -16572,10 +16572,13 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
     parent = dirname2(parent);
   }
   if (!stat.isFile()) fail2("path", "resource_not_file", label, "configuration resource must be a regular file");
-  const value = parseRestrictedYaml2(readFileSync(file), label);
+  return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value: resourceValue(registry, readFileSync(file), label, kind) };
+}
+function resourceValue(registry, input, label, kind) {
+  const value = parseRestrictedYaml2(input, label);
   const issues = registry.validate(kind, value, label);
   if (issues.length > 0) throw new KxmConfigError(issues);
-  return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
+  return value;
 }
 function readTemplateProvenance(registry, root) {
   const file = join2(root, ".kxm", "template-provenance.yaml");
@@ -16624,7 +16627,7 @@ function readTemplateProvenance(registry, root) {
   }
   return value;
 }
-function listNamedResources(registry, root, directory, logicalDirectory, kind) {
+function listNamedResources(registry, root, directory, logicalDirectory, kind, replacedId) {
   const resources = /* @__PURE__ */ new Map();
   if (!existsSync3(directory)) return resources;
   const stat = lstatSync(directory);
@@ -16645,6 +16648,7 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
     }
     const id = basename(entry.name, ".yaml");
     if (kind === "model" && id === "inventory") continue;
+    if (id === replacedId) continue;
     if (!resourceIdentifier(id)) {
       issues.push(issue2("path", "resource_id_invalid", displayPath(root, join2(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
@@ -17245,6 +17249,9 @@ function assertNoRegisteredGates(options) {
   }
 }
 function loadKxmProject(projectRoot, options = {}) {
+  return loadProjectBundle(projectRoot, options);
+}
+function loadProjectBundle(projectRoot, options, workflowCandidate) {
   assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
   const legacyPresent = legacyConfigFilesAt(root);
@@ -17278,7 +17285,15 @@ function loadKxmProject(projectRoot, options = {}) {
   if (earlyIssues.length > 0) throw new KxmConfigError(earlyIssues);
   const agents = listNamedResources(registry, root, join2(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model");
-  const workflows = listNamedResources(registry, root, join2(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
+  const workflows = listNamedResources(registry, root, join2(root, ".kxm", "workflows"), ".kxm/workflows", "workflow", workflowCandidate?.id);
+  if (workflowCandidate) {
+    const { id, document } = workflowCandidate;
+    const logicalPath = `.kxm/workflows/${id}.yaml`;
+    if (!resourceIdentifier(id)) fail2("path", "resource_id_invalid", logicalPath, `filename-derived identity ${id} is invalid or platform-reserved`);
+    const collision = [...workflows.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
+    if (collision) fail2("path", "resource_id_collision", logicalPath, `${id} case-folds to existing ${collision}`);
+    workflows.set(id, { kind: "workflow", id, file: join2(root, logicalPath), logicalPath, value: resourceValue(registry, document, logicalPath, "workflow") });
+  }
   const gatePath = join2(root, ".kxm", "gates.yaml");
   const gateRegistry = existsSync3(gatePath) ? readResource(registry, root, gatePath, ".kxm/gates.yaml", "gate-registry") : void 0;
   const environments = [];

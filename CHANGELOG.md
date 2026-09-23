@@ -307,6 +307,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **`kxm workflow add` no longer leaves a project that refuses to load.** A local add now
+  needs a KXM project (`project_not_found` otherwise, and no stray `.kxm/` that would make
+  `kxm init` refuse), writes under the project root from any subdirectory, and is checked
+  by the project loader first, with the parser, schema and rules `kxm run` uses and the new
+  document in place of any file of that ID. If the project would not load, it refuses with
+  `workflow_invalid`, lists each issue, exits 2 and writes nothing, also under `--dry-run`.
+  `--file` with a top-level `id` or a `role:` step, the shape `workflow add` wrote through
+  0.7.92, is refused, and `workflow add <id> --overwrite` replaces a file left in that
+  shape.
 - **Signed webhooks cannot be replayed.** KXM's own webhook senders now sign the
   timestamp, delivery ID, definition, run and signal key along with the body
   (`x-kxm-signature`, `x-kxm-timestamp`, `x-kxm-delivery-id`; see

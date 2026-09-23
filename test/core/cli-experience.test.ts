@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import test from "node:test";
@@ -746,7 +746,7 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
 });
 
 test("workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused", async () => {
-  const root = mkdtempSync(join(tmpdir(), "kxm-workflow-add-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-workflow-add-")));
   const project = join(root, "project");
   mkdirSync(project, { recursive: true });
   const env: NodeJS.ProcessEnv = {
