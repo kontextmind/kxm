@@ -1408,7 +1408,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `km-gh-rn01` repository runner intentionally does not carry the
   `kontextmind-doks` label. DOKS keeps one warm ephemeral runner and bursts to
   eight; each runner requests two CPUs so the autoscaling node pool (two to
-  three 8-vCPU nodes) adds capacity under load. Live workflow jobs were
+  four 8-vCPU nodes) adds capacity under load. Live workflow jobs were
   verified on `kontextmind-doks-*` ephemeral runners in that runner group.
 
   The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
