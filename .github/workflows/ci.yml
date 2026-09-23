@@ -140,12 +140,9 @@ jobs:
           else
             npm run validate:ci
           fi
-      - name: Inspect package (main only)
-        if: needs.changes.outputs.code == 'true' && github.event_name == 'push'
-        run: npm pack --dry-run
-
+      # validate:pr already checks the just-built artifacts without rebuilding.
       - name: Verify generated runtime bundles are current
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && github.event_name != 'pull_request'
         run: npm run check:generated
 
   plugin:
