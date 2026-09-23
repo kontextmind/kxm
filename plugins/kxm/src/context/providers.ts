@@ -44,6 +44,10 @@ export interface StateChangeProposal {
   confidence: ContextItem["confidence"];
   evidenceRefs: string[];
   proposedBy: string;
+  /** Origin of the credential the hub verified for the proposer: an agent
+   * key is `peer` (evidence at most), the administrative token `human`.
+   * Never inferred from `proposedBy`, which is a label, not a credential. */
+  origin: "peer" | "human";
   supersedes?: string[];
 }
 

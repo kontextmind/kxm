@@ -29,6 +29,7 @@ function proposal(overrides: Partial<StateChangeProposal> = {}): StateChangeProp
     confidence: "verified",
     evidenceRefs: ["journal_journal_1", "receipt:run_1/verify"],
     proposedBy: "agent_implementer",
+    origin: "peer",
     ...overrides,
   };
 }
