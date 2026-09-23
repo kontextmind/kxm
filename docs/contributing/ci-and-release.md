@@ -1,7 +1,9 @@
 # CI and release
 
-Every pull request runs a lean gate, every merge to `main` runs the full gate and
-cuts a patch release, and every release is verified before it reaches npm. This
+Every pull request and every push to `main` that changes code runs a
+three-minute merge-safety gate, the complete suite with coverage floors runs
+nightly, every merge to `main` cuts a patch release, and every release is
+verified before it reaches npm. This
 page explains which checks run where, how a merge becomes a published version,
 and which smoke tests stay manual. It is for contributors and maintainers.
 
@@ -14,7 +16,7 @@ release and an npm publish; the nightly job adds the slower suites.
 flowchart LR
   PR[Pull request] -->|"validate:pr, docs lint, plugin validation"| MERGE{Merged?}
   MERGE -->|yes| MAIN[main]
-  MAIN -->|"validate:ci, npm pack --dry-run"| PUSH[Push CI]
+  MAIN -->|"same three-minute validate:pr"| PUSH[Push CI]
   MAIN -->|"Auto-Release: next patch tag"| TAG[Tag vX.Y.Z]
   TAG -->|dispatch| REL[Release workflow]
   REL -->|"verify, stamp version, pack"| GH[GitHub release<br/>kxm-X.Y.Z.tgz]
@@ -23,7 +25,7 @@ flowchart LR
 ```
 
 All workflows live in `.github/workflows/`. Every job runs on the organization's
-self-hosted runner scale set, and `test/core/ci-contract.test.ts` pins the
+ARC runner scale set, and `test/core/ci-contract.test.ts` pins the
 runner selector, job names, coverage floors and release triggers. Change a
 workflow and that test together.
 
@@ -32,10 +34,9 @@ workflow and that test together.
 | Trigger | Workflow (job) | What it runs |
 |---|---|---|
 | Before you push | Local | `npm run verify` |
-| Pull request | `ci.yml` (Validate, two Node legs) | `validate:pr`, then `check:generated` |
-| Push to `main` | `ci.yml` (Validate, two Node legs) | `validate:ci`, `npm pack --dry-run`, then `check:generated` |
-| Pull request and push | `ci.yml` (Docs lint) | `lint:docs` and `check:versions` |
-| Pull request and push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin |
+| Pull request and push to `main` | `ci.yml` (Validate, two Node legs) | `validate:pr`, the three-minute gate; skipped for documentation-only changes |
+| Pull request and push | `ci.yml` (Docs lint) | `lint:docs` and `check:versions`, always |
+| Pull request and push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin; skipped for documentation-only changes |
 | Daily at 04:00 UTC, or manual | `nightly.yml` | `test:coverage:complete`, `check`, `check:generated`, `npm pack --dry-run` |
 | Merged pull request | `auto-release.yml` | Tags the merge commit and dispatches `release.yml` |
 | Tag push or dispatch | `release.yml` | Verifies, packs and publishes (see [Release flow](#release-flow)) |
@@ -46,22 +47,25 @@ The npm scripts behind those rows:
 | Script | Composition |
 |---|---|
 | `verify` | `npm test` (core and package unit tests), `check`, `check:generated` |
-| `validate:pr` | `test:core` (core suite, no coverage), `check`, `check:generated` |
-| `validate:ci` | `test:coverage` (core and package tests, 91/80/92 floors), `check`, `npm pack --dry-run` |
+| `validate:pr` | `build`, `typecheck`, a compact contract and smoke set of nine `test/core` files, `check:versions`, and the generated-`dist` check |
+| `validate:ci` | `test:coverage` (core and package tests, 91/80/92 floors), `check`, `npm pack --dry-run`; not run by CI today, available locally |
 | `test:coverage:complete` | Core, simulation and package tests with 93/80/93 floors |
 | `check` | `typecheck`, `lint:docs`, `check:versions` |
 
 Three differences matter when a check fails on one side only:
 
-- PR CI runs `test/core` only. Package unit tests under `packages/core/*/tests`
-  run in your local `verify` and on `main`.
-- Coverage is measured on `main`, at release and nightly, never on a pull
-  request.
-- `test/simulations` runs only in the nightly complete suite.
+- CI runs a compact contract and smoke set, not the core suite. The full core
+  suite and the package unit tests under `packages/core/*/tests` run in your
+  local `npm run verify`; run it before every push.
+- Coverage and `test/simulations` run only in the nightly complete suite, never
+  on a pull request or a push to `main`.
+- A regression the compact set misses can reach `main` and show up in the
+  nightly run, so treat a nightly failure as a release blocker.
 
 ### Validate matrix and required checks
 
-The Validate job runs on Node 22.19.0 and Node 24, on Linux. The branch ruleset
+The Validate job runs on Node 22.19.0 and Node 24, on Linux, with a
+three-minute job timeout. The branch ruleset
 requires the job names `Validate (linux, Node 22.19.0)` and
 `Validate (linux, Node 24)`, so renaming the job or the matrix means updating
 the ruleset in the same change. A newer push cancels an older pull request run;
@@ -69,17 +73,37 @@ runs on `main` are never cancelled.
 
 ### CI jobs stay queued while a runner is online
 
-When every job stays queued although a runner is online, the self-hosted runner
-has usually lost the custom label that `runs-on` in `.github/workflows/ci.yml`
-requests, for example after re-registration. The default labels alone never
-match. List the runners' labels and re-add the missing one:
+Every Linux workflow targets the ARC runner scale set `kontextmind-doks`. That
+name is the scale set, not a custom label on a repository runner. The scale set
+belongs to the selected-repository runner group `KontextMind DOKS ARC`, which
+must allow this public repository. The legacy repository runner `km-gh-rn01`
+must not carry the `kontextmind-doks` label; adding it bypasses ARC and
+serializes the build queue.
+
+Check GitHub routing first:
 
 ```bash
-gh api repos/kontextmind/kxm/actions/runners --jq '.runners[] | {id, name, labels: [.labels[].name]}'
-gh api repos/kontextmind/kxm/actions/runners/<runner-id>/labels -X POST -f 'labels[]=<label>'
+gh api repos/kontextmind/kxm/actions/runners \
+  --jq '.runners[] | {name, status, busy, labels: [.labels[].name]}'
+gh api orgs/kontextmind/actions/runner-groups \
+  --jq '.runner_groups[] | select(.name == "KontextMind DOKS ARC") |
+    {name, visibility, allows_public_repositories}'
 ```
 
-If the queued run still does not start, push an empty commit.
+Then check ARC in the cluster:
+
+```bash
+kubectl -n arc-runners get autoscalingrunnerset kontextmind-doks
+kubectl -n arc-runners get ephemeralrunners,pods
+```
+
+The capacity policy keeps one warm runner, bursts to four, and requests three
+CPUs per runner so the node-pool autoscaler adds capacity instead of packing
+CPU-bound jobs onto busy nodes. If jobs stay queued while the listener is
+assigned zero jobs, check the runner group's selected repository and public
+repository access. If ARC has pending pods, check node capacity and the cluster
+autoscaler. Do not relabel `km-gh-rn01` or push an empty commit as a routing
+workaround.
 
 > [!NOTE]
 > Windows legs are paused, not removed. Windows stays a supported target, and
@@ -90,17 +114,18 @@ If the queued run still does not start, push an empty commit.
 
 The first job, Classify changes, lists the changed paths and sets `code=false`
 when every path matches `*.md`, `docs/*`, `.kxm/assets/*`, `LICENSE`, the issue
-and PR templates, or `dependabot.yml`. It prints the result, but no job reads it:
-Validate, Docs lint and Plugin validation run on every pull request, including
-documentation-only ones. `ci-contract.test.ts` asserts that those jobs stay
-unconditional.
+and PR templates, or `dependabot.yml`. Validate and Plugin validation read it:
+for a documentation-only change they report success without checking out the
+code, so the required job names still pass. Docs lint always runs.
+`ci-contract.test.ts` pins this behavior.
 
-This matters for renames. Several tests and code paths read documentation files
-by path. If the classifier were ever used to skip the test legs, a pull request
-that only moved a pinned doc would pass CI and break the next code change. Keep
-the pinned-path update in the same pull request, run `npm run test:core`
-locally for any docs move, and check the list in
-[Pinned paths](writing-docs.md#pinned-paths).
+> [!WARNING]
+> Several tests and code paths read documentation files by path. A pull request
+> that only moves or renames a pinned doc is classified documentation-only, so
+> CI does not run the tests that would catch the broken path; the next code
+> change fails instead. For any docs move, update the pinned readers in the same
+> pull request (see [Pinned paths](writing-docs.md#pinned-paths)) and run
+> `npm run verify` locally before you push.
 
 ## Release flow
 

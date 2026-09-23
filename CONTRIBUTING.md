@@ -41,16 +41,18 @@ See [Develop KXM](docs/contributing/development.md#change-the-protocol).
 
 ## What CI checks
 
-Every pull request, including a documentation-only one, runs these checks:
+Every pull request and every push to `main` runs these checks:
 
-- **Validate** on Node 22.19.0 and Node 24: `npm run validate:pr` (the core
-  suite, `check` and `check:generated`).
-- **Docs lint**: `npm run lint:docs` and `npm run check:versions`.
+- **Validate** on Node 22.19.0 and Node 24: `npm run validate:pr`, a
+  three-minute merge-safety gate (build, typecheck, a compact contract and
+  smoke set, version parity, generated `dist`). Skipped for
+  documentation-only changes.
+- **Docs lint**: `npm run lint:docs` and `npm run check:versions`, always.
 - **Plugin validation**: `claude plugin validate --strict` on the marketplace
-  and the plugin.
+  and the plugin. Skipped for documentation-only changes.
 
-Pushes to `main` run the full `npm run validate:ci`, with coverage floors and a
-package dry run. Every merged pull request is released as a new patch version
+CI does not run the full core suite, so run `npm run verify` locally before
+every push. The complete suite with coverage floors runs nightly. Every merged pull request is released as a new patch version
 automatically, so do not bump versions yourself. See
 [CI and release](docs/contributing/ci-and-release.md).
 

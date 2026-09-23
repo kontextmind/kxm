@@ -239,8 +239,10 @@ stateDiagram-v2
 
 ## Pass the doc gates
 
-Every check below except the link check runs on every pull request, including
-documentation-only ones. Run them locally first.
+Markdown lint runs on every pull request. The docs-copy test and the
+pinned-path tests run only in your local `npm run verify`: CI skips code
+validation for documentation-only changes and runs a compact test set
+otherwise. Run them locally first.
 
 ### Markdown lint
 
@@ -329,7 +331,7 @@ follow each anchor link once.
    to it do.
 6. `npm run lint:docs` passes and the link check prints nothing.
 7. If you moved or renamed a doc, you updated every reader in
-   [Pinned paths](#pinned-paths) and ran `npm run test:core`.
+   [Pinned paths](#pinned-paths) and ran `npm run verify`.
 
 ## Next steps
 

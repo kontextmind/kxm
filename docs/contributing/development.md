@@ -243,12 +243,13 @@ Other scripts you will use:
 
 | Script | Use it for |
 |---|---|
-| `npm run test:core` | The core suite only (what PR CI runs) |
+| `npm run test:core` | The core suite only (CI runs a smaller contract set; see [CI and release](ci-and-release.md)) |
 | `npm run test:simulations` | `test/simulations/*.test.ts` |
-| `npm run test:coverage` | Core suite with coverage floors (what `main` CI runs) |
+| `npm run test:coverage` | Core suite with coverage floors |
 | `npm run test:coverage:complete` | Core plus simulations with the higher nightly floors |
 | `npm run lint:docs` | Markdown lint only |
-| `npm run validate:pr`, `npm run validate:ci` | The exact CI legs; see [CI and release](ci-and-release.md) |
+| `npm run validate:pr` | The three-minute CI gate; see [CI and release](ci-and-release.md) |
+| `npm run validate:ci` | Coverage suite, `check` and a package dry run (not run by CI today) |
 | `npm run validate:claude` | Strict Claude plugin and marketplace validation |
 
 Plugin validation needs the Claude Code CLI, so it is a CI job rather than part
