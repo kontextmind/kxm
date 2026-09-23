@@ -2,8 +2,9 @@
 
 The release gate executes every test, measures the core source directly, type-checks strict TypeScript, lints documentation, verifies package versions, validates Claude manifests, rebuilds the generated runtimes, and installs and executes the npm artifact outside the repository.
 
-Run the commit gate with `npm run verify`. CI PR legs run `validate:ci` plus
-`check:generated`. Plugin validation is a hosted CI job.
+Run the commit gate with `npm run verify`. CI PR legs run `validate:pr` plus
+`check:generated`; pushes to main run `validate:ci`. Plugin validation is a hosted CI
+job.
 
 ```powershell
 npm run verify
@@ -35,13 +36,18 @@ npm run verify
 | Claude MCP catalog, outbound and inbound tools, channel delivery | `test/core/mcp.test.ts` |
 | Responsive metadata-only TUI, authenticated ops mode, presence-only fallback, observer filtering, key controls, and local body-free projection | `test/core/tui.test.ts`, `test/core/hub-api.test.ts` |
 | Session manifest creation, fail-closed rosters, shared worker/result envelopes, and hub-owned envelope fields | `test/core/session.test.ts`, `test/core/cli.test.ts`, `test/core/envelope.test.ts`, `test/core/envelope-contract.test.ts` |
-| Generic CLI/project telemetry classification, JSONL recovery, and proposed `kxm improve` output | `test/core/telemetry.test.ts`, `test/core/cli.test.ts` |
+| Generic CLI/project telemetry classification, JSONL recovery, and proposed `kxm improve` output | `test/core/telemetry.test.ts`, `test/core/cli.test.ts`, `test/core/improve.test.ts` |
+| `kxm improve` and `kxm routing report` read the project's Runtime event store read-only plus telemetry, resolve each attempt's outcome from the event log, drop simulated attempts and duplicate attempts, flag only same-ask repeats across runs, exclude write steps, and report promotion readiness that never authorizes | `test/core/improve.test.ts` (`kxm improve report resolves Runtime-settled attempts from the event log and flags only same-ask cross-run repeats`), `test/core/cli.test.ts`, `test/core/cli-experience.test.ts`, `test/core/commands-policy.test.ts` |
+| Engine routing records carry the engine-reserved `workflowId`, `askSha256`, `objectiveSha256` and `stepWrites` keys (stable across runs), default `agentRole` to the agent, and record only `blocked` or `failed` at settlement | `test/core/route-admission.test.ts` |
+| Runtime dispatch context: only committed, pinned project memory and hash-verified promoted skills reach a dispatched agent; malformed, drifted or uncommitted content is withheld with a `dispatch_context_*` gap outside the prompt, and the step still completes | `test/core/engine.test.ts` (`dispatch context: agents receive only committed, pinned memory and verified skills; anything else is withheld with a gap and the step still completes`) |
 | Signed Jira webhook verification, filtering, dispatch, and retry deduplication | `test/core/hub-api.test.ts` |
 | Ordered workflow checkpoints, normalized keyed evidence gates, unrelated-volume rejection, and warning/failure retry | `test/core/hub-api.test.ts`, `test/core/workflow.test.ts` |
 | Run-start eligible-producer resolution, immutable workflow context, per-requirement message-reference verification, unique-producer quorum, and replay/cross-context rejection | `test/core/workflow-provenance.test.ts`, `test/core/workflow.test.ts`, `test/core/hub-api.test.ts`, `test/core/client.test.ts`, `test/core/store.test.ts` |
 | Explicit current-attempt admin degradation, configured lower minimum, audit journal, idempotency, and forbidden or stale approvals | `test/core/workflow-provenance.test.ts`, `test/core/cli.test.ts` |
 | Durable external waits, local/callback evidence accumulation, safe settlement, checkpoint/expiry race rejection, minimal signed responses, retry/conflict deduplication, separate secrets, and timeout notification | `test/core/hub-api.test.ts`, `test/core/workflow.test.ts`, `test/core/workflow-provenance.test.ts` |
 | Plans, decisions, contradictions, errors, lessons, and improvement reports | `test/core/hub-api.test.ts`, `test/core/workflow.test.ts` |
+| All ten journal categories and `stageId` through the shared `kxm_workflow_record` tool, hub-derived attempt, stage-default area, stage-bound hub-authored entries, ranked redacted cross-run signals, and retrospectives refreshed by late entries and promotions | `test/core/journal-evolution.test.ts` (`kxm_workflow_record binds stage provenance and the stage's area end to end, and hub-authored entries carry it too`), `test/core/workflow.test.ts`, `test/core/retrospective.test.ts`, `test/core/hub-api.test.ts` |
+| Context packets rank by deterministic task relevance, fill the budget first-fit, deliver every selected item (including evidence) in a packet section, order ties newest first, and report numeric `audit.relevance`; recall ranks by phrase then relevance; hub logs carry sizes, not task or query text | `test/core/arbiter.test.ts` (`arbitrate ranks task-relevant candidates first, delivers every selected item in a packet section, orders ties newest first, and reports relevance`), `test/core/context-surfaces.test.ts` |
 | Safe diagnostic classification and redaction | `test/core/diagnostics.test.ts`, `test/core/extension.test.ts`, `test/core/hub-api.test.ts` |
 | Operator CLI init/validate/export/watch | `test/core/cli.test.ts`, `test/core/github-watch.test.ts` |
 | Local and isolated-global packed npm CLI plus hub runtimes | `test/core/package-install.test.ts` |
@@ -115,12 +121,12 @@ When adding a feature, add executable coverage and update this matrix in the sam
 | `test/core/context.test.ts` | Context schema round-trips, hostile input, cross-project fail-closed, storage upgrade |
 | `test/core/state.test.ts` | Temporal state lifecycle, asOf queries, supersession, contradictions, restart durability |
 | `test/core/context-authority.test.ts` | Authority grant floor, reserialization escalation, lineage bounds, control-plane smuggling |
-| `test/core/arbiter.test.ts` | Role-aware packet assembly, budgets, contradiction routing, journal conversion, hub surfaces |
+| `test/core/arbiter.test.ts` | Role-aware packet assembly, task-relevance ranking, first-fit budgets, the evidence section, contradiction routing, journal conversion, hub surfaces |
 | `test/core/context-surfaces.test.ts` | CLI and Pi tool parity for the context API |
-| `test/core/journal-evolution.test.ts` | New journal categories, evidence requirements, governed promotion |
+| `test/core/journal-evolution.test.ts` | New journal categories, evidence requirements, governed promotion, stage provenance through the shared tool |
 | `test/core/wiki.test.ts` | Wiki compilation determinism, lifecycle preservation, contradiction visibility, lint |
 | `test/core/workflow-transitions.test.ts` | Typed back-edges, budgets, bypass protection, restart recovery |
 | `test/core/fix-workflow.test.ts` | /fix end-to-end, independent repro-review oracle, wrong-seam invalidation, failed self-retry, plan-hash gating, exhaustion |
 | `test/core/skills.test.ts` | Skill candidate lifecycle, quarantine, immutability, CLI |
 | `test/core/routing.test.ts` | Behavioral hash, record parsing, comparisons, routing report |
-| `test/core/migration.test.ts` | v0.4 → v0.5 database upgrade fixture |
+| `test/core/improve.test.ts` | Routing-record sources, event-log outcome resolution, same-ask candidacy, candidate files, promotion readiness |

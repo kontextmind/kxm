@@ -433,14 +433,26 @@ posts an exact failed signal and exits `4` on timeout.
 ### Improvement command
 
 ```text
-kxm improve [--target cli|project]
+kxm improve [report] [--file <path>] [--out-dir <path>]
 ```
 
-This groups redacted `.kxm/logs/telemetry.jsonl` records into a proposed-only
-report. Named project/workflow activity is classified as `project`; unscoped
-operator activity is `cli`. `KXM_IMPROVE_TARGET=cli|project` explicitly
-overrides that classification. The command does not automatically modify code,
-configuration, gates, or the workflow journal.
+This looks for agent steps a script, test or workflow `gate` could do instead of a
+model. Run it from the project root. It reads the project's Runtime event store
+read-only (the checkout's own `run-events.db` under the user state root) and then
+`.kxm/logs/telemetry.jsonl`; `--file` reads only the named file. The output starts
+with the sources it read and their counts, and an unreadable store exits 1 with
+`improve_source_unreadable`. Each Runtime attempt's outcome is resolved from the
+event log (`accepted` only when its run completed and the step was not re-entered).
+
+Records group by workflow, step, agent role and ask. A group is a coded-repeat
+candidate only when the same ask was decided in at least two runs, at least 0.75 of
+its decided attempts were accepted, and its step writes no repository; otherwise the
+row says why (`writes-repository` or `ask-not-repeated`). Candidates are written as
+proposed JSON and diff files under `.kxm/candidates/` (not with `--dry-run`), and
+each gets a promotion readiness line under `improvement.promotionPolicy`. Readiness
+never authorizes: the command does not modify code, configuration, gates, or the
+workflow journal, and activation is a reviewed Git change. See
+[Continuous improvement](continuous-improvement.md#coded-repeats-kxm-improve).
 
 ### Context commands
 
@@ -671,8 +683,8 @@ These tools are available in Pi and Claude MCP:
 | `kxm_workflow_get` | Read stages, evidence policies, waits, and journal |
 | `kxm_workflow_checkpoint` | Submit a stage result with keyed evidence and verified message references |
 | `kxm_workflow_wait` | Save evidence and pause until an authenticated callback |
-| `kxm_workflow_record` | Record a plan, decision, contradiction, error, or lesson |
-| `kxm_improvement_report` | Summarize learning by improvement area |
+| `kxm_workflow_record` | Record journal knowledge in one of ten categories, optionally bound to a stage with `stageId` |
+| `kxm_improvement_report` | Summarize learning by improvement area, plus ranked, redacted signals merged across runs |
 
 Claude MCP also exposes:
 
@@ -743,7 +755,7 @@ For every active stage:
 
 1. call `kxm_workflow_get`;
 2. follow only `currentStage`;
-3. record material plans, decisions, contradictions, errors, and lessons;
+3. record material knowledge in the journal categories below, passing the stage's `stageId`;
 4. gather exact required evidence;
 5. send peer-policy work with exact `workflowContext` when required;
 6. checkpoint or enter an external wait; and
@@ -761,10 +773,20 @@ compute until the callback creates a fresh message.
 | `decision` | Selected option and rationale |
 | `contradiction` | Incompatible evidence, claims, requirements, or tests |
 | `error` | Failed tools, assumptions, integrations, or gates |
-| `lesson` | Evidence-supported reusable improvement |
+| `lesson` | Evidence-supported reusable improvement (evidence required) |
+| `observation` | Notable behavior without a causal claim |
+| `hypothesis` | A falsifiable claim; keep it when disproven |
+| `experiment` | A trial and its outcome, including failures |
+| `state-change` | An authoritative project fact changed |
+| `skill-candidate` | A reusable procedure backed by verified run or receipt evidence (evidence required) |
 
 Areas are `harness`, `gates`, `implementation`, `workflow`, `documentation`,
-`security`, or `other`.
+`security`, or `other`. Pass `stageId` (`--stage-id` on the CLI) to bind an entry to
+its stage: the hub derives the attempt (the current one for an active or waiting
+stage, the last one consumed for a finished stage), and `area` may be omitted when the
+stage declares one. An entry with neither an area nor such a stage is refused with
+`invalid_improvement_area`. The journal covers hub webhook runs; a `kxm run` id is
+refused with `workflow_not_found`.
 
 ---
 
@@ -890,16 +912,79 @@ through `kxm_context`, `kxm_recall`, `kxm_state`, `kxm_episode`, and
 
 `kxm context get <project> --role <role> --task <task>` assembles a
 token-budgeted packet. Roles shape selection: repro agents get prior
-reproductions and incidents; planners get state and decisions; critics get
-contradictions and failed approaches; implementers get the approved plan and
-skills; verifiers get acceptance evidence. Superseded and rejected records
-are excluded by default, and every packet is project-isolated.
+reproductions, incidents and evidence; planners get state and decisions; critics
+get contradictions and failed approaches; implementers get the approved plan,
+skills and evidence; verifiers get acceptance evidence. Superseded and rejected
+records are excluded by default, and every packet is project-isolated.
+
+Selection is deterministic: no model, clock or randomness is involved, so the same
+records and request give the same packet. An item is eligible when it is an open
+contradiction or a requested kind that is not an inert proposal (non-current state
+and proposed skills are never selected). Eligible items are ordered by nine keys, in
+this order:
+
+1. open contradictions first;
+2. the requested project before `_shared` defaults;
+3. items that share a word with the task before items that do not;
+4. the role's kind priority;
+5. a lexical BM25 relevance score over the item's summary and state key (fixed English
+   stopword list, plural folding);
+6. confidence;
+7. authority;
+8. recency, newest first, from the item's own timestamps;
+9. id, by code unit.
+
+The budget is filled first-fit: an item that does not fit is skipped and smaller
+items keep filling it, and a gap such as `budget of 4000 tokens reached; 2 candidates
+deferred` reports what was left out. The packet has `currentState`, `knowledge`,
+`evidence`, `episodes`, `skills` and `contradictions` sections, so every selected
+item is delivered in one of them. The response's `audit.relevance` holds numbers only:
+`taskTokens` (distinct task words), `matchedCandidates` (eligible items sharing a
+task word) and `selected` (each selected item's rounded score, in `selectedIds`
+order). The hub log records the task's size, never its text.
 
 `kxm context recall <project> --query <text>` searches durable context records
-and returns metadata only. `kxm context episode <project>` lists episodic
-learning records from workflow journals (`--run` limits to one run).
-`kxm context explain <project> <itemId>` explains which evidence and lineage
-back a context item.
+and returns metadata only, with a numeric `relevance` per item. Items whose summary or
+state key contains the query (ignoring case) come first, then items that share a word
+with it ranked by relevance, then id; items with neither are left out.
+`kxm context episode <project>` lists episodic learning records from workflow
+journals (`--run` limits to one run). `kxm context explain <project> <itemId>`
+explains which evidence and lineage back a context item.
+
+### Context for Runtime-dispatched agents
+
+When `kxm run` dispatches an agent step, the Runtime gives the agent the project's
+authored memory (active `.kxm/memory/*.md` records in project or operator scope) and
+its promoted skills whose content hash verifies, selected by the same arbiter for the
+agent's role with the step instructions and prompt as the task, within 4,000 tokens
+(or the role's budget when lower). The prompt renders them under **Environment &
+Memory**, with promoted skills under **Active Skills**; at most five project items are
+delivered because the prompt renders five.
+
+Only committed content is delivered: the memory and promoted-skill files must be
+tracked and clean at `HEAD` (`git status` over those paths), and the memory revision
+must still match the one the run pinned when it was created. Otherwise the context is
+withheld and the packet records a gap instead:
+
+| Gap | Meaning |
+|---|---|
+| `dispatch_context_withheld:uncommitted` | A memory or promoted-skill file is modified, untracked or ignored |
+| `dispatch_context_withheld:git_unavailable` | `git status` failed or timed out (5 s) |
+| `dispatch_context_withheld:memory_revision_drift` | Memory or skills changed since the run pinned its revision |
+| `dispatch_context_memory_unreadable` | A memory file does not parse |
+| `dispatch_context_memory_rejected:<id>` | One record could not become a context item |
+| `dispatch_context_skill_unverified:<id>` | A promoted skill's content does not match its hash |
+| `dispatch_context_skills_unreadable` | The promoted skills could not be listed |
+| `dispatch_context_render_deferred:<n>` | More project items were selected than the prompt renders |
+| `dispatch_context_not_loaded` | The context could not be loaded for this step before dispatch |
+| `dispatch_context_failed` | Loading or assembly failed unexpectedly |
+
+Gaps go in the packet's `budget.unresolvedGaps`, never in the prompt, and a gap never
+blocks dispatch: the step runs without the withheld context. Memory with `agent` or
+`run` scope is not delivered, because nothing binds it to an agent or run. No hub
+source (journal, stored state, contradictions) is read at dispatch, so a Runtime run
+works with the hub down. A project with no memory and no promoted skill dispatches
+exactly as before.
 
 ### Temporal state and promotion
 

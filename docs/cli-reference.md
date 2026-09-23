@@ -115,9 +115,9 @@ Warning: `kxm restore --dry-run` overwrites the live SQLite store, and `kxm ssh 
 | Local project records under `<project>/.kxm/` | `config.yaml` (project scope), `goals/`, `tasks/`, `memory/`, `skills/`, `candidates/`, `backups/`, `run/ssh-sockets/` | `config`, `goal`, `task`, `memory`, `skills`, `improve`, `backup`, `ssh` |
 | Workspace directories (`.kxm/state`, `.kxm/logs`, `.kxm/assets`, `.kxm/config`; moved by `--workspace` or `KXM_*_DIR`) | hub SQLite store `state/kxm.db` (or `KXM_DATA_PATH`), `state/hub.pid`, `state/session-brief.json`, `logs/telemetry.jsonl`, `logs/kxm-hub.jsonl`, `assets/sessions/`, `assets/workflows/`, `assets/improvements/`, `assets/retrospectives/`, legacy `config/agents.json` and `config/gates.json` | `hub`, `session`, `dash`, `agent worker`, `workflow list\|get\|export`, `gate`, `improve`, `routing report` |
 | User config directory (`KXM_USER_CONFIG_DIR`, default `~/.config/kxm`) | `config.yaml` (user scope), `session.token`, global `roles/` and `workflows/`, `role-hosts.yaml`, `completions/` | `config --scope user`, `auth token`, `session brief\|token`, `role`/`workflow` with `--scope global`, `studio serve`, `completion install` |
-| User state root (`KXM_STATE_HOME`; macOS `~/Library/Application Support/KXM`; Linux `$XDG_STATE_HOME/kxm` or `~/.local/state/kxm`; Windows `%LOCALAPPDATA%\KXM`) | `hub-env.json` (persisted hub credentials), `hub-binding.json`, `runtime/` (Runtime supervisor registry and per-project run stores), `update.yaml`, repository bindings | `hub start\|bind\|unbind`, every hub client, `run`, `runs`, `runtime`, `tenant status`, `update`, `init --repository` |
+| User state root (`KXM_STATE_HOME`; macOS `~/Library/Application Support/KXM`; Linux `$XDG_STATE_HOME/kxm` or `~/.local/state/kxm`; Windows `%LOCALAPPDATA%\KXM`) | `hub-env.json` (persisted hub credentials), `hub-binding.json`, `runtime/` (Runtime supervisor registry and per-project run stores), `update.yaml`, repository bindings | `hub start\|bind\|unbind`, every hub client, `run`, `runs`, `runtime`, `tenant status`, `update`, `init --repository`, and (read-only, the project's run store) `improve` and `routing report` |
 
-`init`, `trust`, `run`, `runs`, `runtime sync-retry`, `tenant status`, and `studio layout` find the project root by walking up from the current directory. `config`, `role`, `workflow definitions|add|remove|modify`, `goal`, `task`, `memory`, `skills`, `improve` (candidates), `backup`, `restore`, `studio serve`, and `ssh` (socket directory) use `.kxm` in the current directory. Run those from the project root.
+`init`, `trust`, `run`, `runs`, `runtime sync-retry`, `tenant status`, and `studio layout` find the project root by walking up from the current directory. `improve` and `routing report` use the current directory's Git root when it holds `.kxm/project.yaml`, to find the project's Runtime run store (and, for `improve`, its configuration and default candidate directory). `config`, `role`, `workflow definitions|add|remove|modify`, `goal`, `task`, `memory`, `skills`, `backup`, `restore`, `studio serve`, and `ssh` (socket directory) use `.kxm` in the current directory. Run those from the project root.
 
 ## Task to command
 
@@ -1686,16 +1686,17 @@ Not run: writes to a hub workflow.
 ### `kxm workflow record`
 
 ```text
-kxm workflow record [runId] [category] [area] [summary] [--severity <level>] [--details <text>] [--evidence <items...>] [--related-entry-ids <ids...>]
+kxm workflow record [runId] [category] [area] [summary] [--stage-id <id>] [--severity <level>] [--details <text>] [--evidence <items...>] [--related-entry-ids <ids...>]
 ```
 
-Record workflow journal knowledge: a plan, decision, contradiction, error, or lesson.
+Record workflow journal knowledge in one of ten categories: plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, or skill-candidate.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--run-id` | `<id>` | none | Workflow run ID |
-| `--category` | `<category>` | none | plan, decision, contradiction, error, lesson |
-| `--area` | `<area>` | none | harness, gates, implementation, workflow, documentation, security, other |
+| `--category` | `<category>` | none | plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate |
+| `--area` | `<area>` | the stage's area with `--stage-id` | harness, gates, implementation, workflow, documentation, security, other (defaults to the stage area with --stage-id) |
+| `--stage-id` | `<id>` | none | Stage the entry is about; the hub derives attempt and default area |
 | `--severity` | `<level>` | `info` | info, warning, error |
 | `--summary` | `<text>` | none | Entry summary |
 | `--details` | `<text>` | none | Detailed text |
@@ -1703,7 +1704,10 @@ Record workflow journal knowledge: a plan, decision, contradiction, error, or le
 | `--related-entry-ids` | `<ids...>` | none | Related entry IDs |
 | `--payload` | `<json>` | none | JSON payload |
 
-- `--evidence` (up to 32) and `--related-entry-ids` (up to 16) take space-separated values.
+- `--evidence` (up to 32) and `--related-entry-ids` (up to 16) take space-separated values. `lesson` and `skill-candidate` entries require evidence.
+- Area is optional. With three positionals and no `--summary`, the third positional is the summary: `record <runId> <category> <summary>`. The four-positional form `record <runId> <category> <area> <summary>` still works.
+- `--stage-id` binds the entry to that stage. The hub derives the attempt (the current attempt for an in-progress or waiting stage, the last attempt consumed for a finished stage); callers cannot set it. Without `--area`, the entry takes the stage's declared area. With neither an area nor a stage that declares one, the hub answers 400 `invalid_improvement_area`; a stage that is not part of the run answers `invalid_journal_relation`.
+- The journal covers hub webhook runs only. A `kxm run` ID answers `workflow_not_found`.
 - Needs a hub. Mutates the journal. Honors `--dry-run`.
 
 ```bash
@@ -1712,6 +1716,16 @@ kxm workflow record wf_123 lesson gates "Flaky test hid a race" --severity warni
 
 ```text
 {"schema":"kxm.cli-result.v1","ok":true,"command":"workflow record","dryRun":true,"args":{"severity":"warning","evidence":["https://ci.example.com/run/42"],"runId":"wf_123","category":"lesson","area":"gates","summary":"Flaky test hid a race"}}
+```
+
+Bound to a stage, with the area taken from the stage:
+
+```bash
+kxm workflow record wf_123 lesson "Flaky test hid a race" --stage-id verify --evidence https://ci.example.com/run/42 --dry-run --json
+```
+
+```text
+{"schema":"kxm.cli-result.v1","ok":true,"command":"workflow record","dryRun":true,"args":{"stageId":"verify","evidence":["https://ci.example.com/run/42"],"runId":"wf_123","category":"lesson","summary":"Flaky test hid a race"}}
 ```
 
 ### `kxm workflow wait`
@@ -2581,14 +2595,16 @@ Assemble a role-aware context packet within a token budget.
 | `--kinds` | `<kinds>` | all | Comma-separated item kinds to include |
 
 - `--budget` must be an integer from 512 to 200000 (exit 2).
-- Reads only. Output keys: `status`, `packet` (`workingState`, `currentState`, `knowledge`, `episodes`, `skills`, `contradictions`, `unresolvedGaps`, `provenanceSummary`, `estimatedTokens`), `audit`.
+- Reads only. Output keys: `status`, `packet` (`workingState`, `currentState`, `knowledge`, `evidence`, `episodes`, `skills`, `contradictions`, `unresolvedGaps`, `provenanceSummary`, `estimatedTokens`), `audit`.
+- Selection is deterministic. Eligible items are ordered by open contradiction, project before `_shared`, task-matched before unmatched, role kind priority, lexical BM25 relevance to `--task`, confidence, authority, recency (newest first), then id. The budget is filled first-fit: an item that does not fit is skipped and smaller ones still fill it.
+- `audit.relevance` holds numbers only: `taskTokens` (distinct task words after stopword removal), `matchedCandidates` (eligible items sharing a task word) and `selected` (each selected item's rounded score, in `selectedIds` order).
 
 ```bash
 KXM_AUTH_TOKEN="$ADMIN_TOKEN" kxm context get proj --role planner --task "Plan the auth refactor" --budget 4000 --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"context get","status":200,"packet":{"workingState":{},"currentState":[],"knowledge":[],"episodes":[],"skills":[],"contradictions":[],"unresolvedGaps":["no context records exist for this project yet"],"provenanceSummary":{},"estimatedTokens":0},"audit":{"request":{"project":"proj","role":"planner","task":"Plan the auth refactor"},"selectedIds":[],"provenanceSummary":{},"estimatedTokens":0,"budgetTokens":4000,"candidateCount":0,"excludedSuperseded":0,"unresolvedGaps":["no context records exist for this project yet"]}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"context get","status":200,"packet":{"workingState":{},"currentState":[],"knowledge":[],"evidence":[],"episodes":[],"skills":[],"contradictions":[],"unresolvedGaps":["no context records exist for this project yet"],"provenanceSummary":{},"estimatedTokens":0},"audit":{"request":{"project":"proj","role":"planner","task":"Plan the auth refactor"},"selectedIds":[],"provenanceSummary":{},"estimatedTokens":0,"budgetTokens":4000,"candidateCount":0,"excludedSuperseded":0,"unresolvedGaps":["no context records exist for this project yet"],"relevance":{"taskTokens":3,"matchedCandidates":0,"selected":[]}}}
 ```
 
 ```bash
@@ -2619,11 +2635,12 @@ Search durable context records (metadata only).
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
-| `--query` | `<text>` | none | Substring query against summaries and state keys |
+| `--query` | `<text>` | none | Query against summaries and state keys |
 | `--kinds` | `<kinds>` | all | Comma-separated item kinds to include |
 | `--limit` | `<n>` | hub default | Maximum results (1-100) |
 
-- Reads only. Output keys: `status`, `items`, `unresolvedGaps`.
+- Ranking: items whose summary or state key contains the whole query (ignoring case) come first, then items that share a word with it, by BM25 relevance, then id. Items with neither are left out; an empty query returns every item in id order.
+- Reads only. Output keys: `status`, `items` (metadata plus a numeric `relevance`; never summaries), `unresolvedGaps`.
 
 ```bash
 KXM_AUTH_TOKEN="$ADMIN_TOKEN" kxm context recall proj --query auth --limit 5 --json
@@ -2999,37 +3016,48 @@ skills verify failed: skill skill_x not found in promoted
 
 ## `kxm improve`
 
-Proposes CLI or project improvements from routing records in telemetry. `kxm improve` with no subcommand runs `improve report`.
+Proposes coded-repeat candidates from this project's Runtime routing records and telemetry. `kxm improve` with no subcommand runs `improve report`.
 
 ### `kxm improve report`
 
 ```text
-kxm improve report [--file <path>] [--target <cli|project>] [--out-dir <path>]
+kxm improve report [--file <path>] [--out-dir <path>]
 ```
 
-Generate improvement report and candidates from routing records. Routing records (`kxm.routing-record.v1` and `v2`, bare or nested under `routing`, `envelope.routing`, or a `routing.attempt.recorded` event) are grouped by workflow, step, role, and prompt. Groups that qualify become proposed candidates, each written as a `.diff` and a `.json` file. Nothing is applied.
+Generate the improvement report and candidates from routing records. Inside a KXM project (the current directory's Git root holds `.kxm/project.yaml`) it reads the project's Runtime event store, then `telemetry.jsonl` in the workspace logs directory; `--file` reads only the named file. Routing records (`kxm.routing-record.v1` and `v2`, bare or nested under `routing`, `envelope.routing`, or a `routing.attempt.recorded` event) are grouped by workflow, step, agent role, and ask. Groups that qualify become proposed candidates, each written as a `.diff` and a `.json` file. Nothing is applied.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
-| `--file` | `<path>` | `.kxm/logs/telemetry.jsonl` | Telemetry JSONL file to read routing records from |
-| `--target` | `<cli\|project>` | none | Limit proposals to cli or project |
-| `--out-dir` | `<path>` | `.kxm/candidates` | Directory for candidates (default .kxm/candidates) |
+| `--file` | `<path>` | the Runtime store, then `.kxm/logs/telemetry.jsonl` | Read only this routing-record JSONL instead of the project's Runtime store and telemetry |
+| `--out-dir` | `<path>` | `<project>/.kxm/candidates` | Directory for candidates (default .kxm/candidates) |
 
-- `--target` is accepted but not applied in 0.7.1. `KXM_IMPROVE_TARGET` only changes how telemetry is classified when it is written.
-- Writes candidate files under `--out-dir` (relative to the current directory) and the report at `.kxm/assets/improvements/<timestamp>.json`. Honors `--dry-run`. No hub needed.
-- JSON keys: `path`, `events`, `recordsCount`, `groupsCount`, `candidatesCount`, `candidates`, `report` (`schema`, `createdAt`, `reviewDecision`, `recordsCount`, `groups`, `candidates`).
+- The Runtime store is `<state root>/runtime/projects/<key>/run-events.db`, with the key derived from the checkout's real path, so each checkout and worktree reads only its own. It is opened read-only for one query over its events table and is never created, written, or migrated. Outside a KXM project only telemetry is read, and the text output says `Runtime store not read`.
+- A telemetry record whose `attemptId` the store already supplied is dropped (`duplicatesDropped`). Attempts from simulated drives are excluded (`excludedSimulated`). Each Runtime attempt's outcome is resolved from the event log and never written back: `accepted` when the run completed and the step was not re-entered, `reworked` when the step was entered again, `failed` when the run failed, undecided (`undecided`) when the run was cancelled or is still running.
+- A group becomes a candidate only when the same objective was decided in at least 2 runs, at least 0.75 of its decided records were accepted, and its step writes no repository. A group that passes but misses shows `no (writes-repository)` or `no (ask-not-repeated)`. `Weighted` is the recency-weighted record count (`improvement.telemetryHalfLifeDays`); it orders rows and never decides candidacy.
+- Reads `improvement.*` from the project and user configuration (see [`kxm.config.v1`](config-reference.md#personalization-settings-kxmconfigv1)) and reports each candidate's promotion readiness under `improvement.promotionPolicy`. Readiness never authorizes anything. Under `critic_quorum` every candidate reports not ready, because this command cites no critic receipts. A configuration that cannot be loaded exits 1 with `config_invalid`.
+- A Runtime store that exists but cannot be read exits 1 with `improve_source_unreadable`; `detail` names the path.
+- Writes candidate files under `--out-dir` (relative to the current directory) and the report at `.kxm/assets/improvements/<timestamp>.json`. Honors `--dry-run` (writes neither). No hub needed.
+- JSON keys: `path`, `events`, `recordsCount`, `groupsCount`, `candidatesCount`, `candidates`, `report` (`schema`, `createdAt`, `reviewDecision`, `recordsCount`, `groups`, `candidates`, `promotionPolicy`, `promotion`), `sources`, `projectRoot` (`null` outside a project).
+- Each `sources` entry has `kind` (`engine`, `telemetry`, or `file`), `path`, `exists`, `records`, and `duplicatesDropped`; the `engine` entry also has `skippedInvalid`, `excludedSimulated`, and `undecided`.
+- Each `report.groups` row has `workflowHash`, `workflowId` (Runtime records), `stepId`, `agentRole`, `promptHash`, `recurrence`, `distinctRuns`, `askRecurrence`, `undecidedRecords`, `meanCost`, `meanLatency`, `verifyPassRate` (accepted share of decided records), `rework`, `weightedRecurrence`, `undatedRecords`, `costSamples`, `writesRepository`, `evidenceRefs`, `isCandidate`, and, when they apply, `excludedReason`, `candidateKind`, and `candidateId`.
+- Each `report.promotion` entry has `candidateId`, `policy`, `readyForReview`, and `reason`.
 
-With no routing records yet:
+With no routing records yet, from the project root:
 
 ```bash
 kxm improve --dry-run
 ```
 
 ```text
-Improvement Report (0 record(s), 0 group(s), 0 candidate(s))
+Sources:
+  engine    /home/me/.local/state/kxm/runtime/projects/605a33e70739a298f89939ca/run-events.db (exists=false, records=0, skippedInvalid=0, excludedSimulated=0, undecided=0, duplicatesDropped=0)
+  telemetry /work/proj/.kxm/logs/telemetry.jsonl (exists=false, records=0, duplicatesDropped=0)
+Project root: /work/proj
 
-Workflow       Step         Role         Prompt       Recurrence  Cost ($)  Latency (ms)  Pass Rate  Rework  Candidate
--------------------------------------------------------------------------------------------------------------------------
+Improvement Report (0 record(s), 0 group(s), 0 candidate(s); promotion policy manual_pr)
+
+Workflow       Step         Role         Prompt       Records  Runs  Asks  Weighted  Cost ($)  Latency (ms)  Accepted  Rework  Candidate
+------------------------------------------------------------------------------------------------------------------------------------------
 ```
 
 ```bash
@@ -3037,7 +3065,17 @@ kxm improve report --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"improve","dryRun":true,"path":"/work/proj/.kxm/assets/improvements/2026-09-23T13-52-18-709Z.json","events":0,"recordsCount":0,"groupsCount":0,"candidatesCount":0,"candidates":[],"report":{"schema":"kxm.improvement-report.v2","createdAt":"2026-09-23T13:52:18.709Z","reviewDecision":"proposed","recordsCount":0,"groups":[],"candidates":[]}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"improve","dryRun":true,"path":"/work/proj/.kxm/assets/improvements/2026-09-23T16-42-18-170Z.json","events":0,"recordsCount":0,"groupsCount":0,"candidatesCount":0,"candidates":[],"report":{"schema":"kxm.improvement-report.v2","createdAt":"2026-09-23T16:42:18.170Z","reviewDecision":"proposed","recordsCount":0,"groups":[],"candidates":[],"promotionPolicy":"manual_pr","promotion":[]},"sources":[{"kind":"engine","path":"/home/me/.local/state/kxm/runtime/projects/605a33e70739a298f89939ca/run-events.db","exists":false,"records":0,"skippedInvalid":0,"excludedSimulated":0,"undecided":0,"duplicatesDropped":0},{"kind":"telemetry","path":"/work/proj/.kxm/logs/telemetry.jsonl","exists":false,"records":0,"duplicatesDropped":0}],"projectRoot":"/work/proj"}
+```
+
+When the Runtime store exists but is not a readable database:
+
+```bash
+kxm improve report --json
+```
+
+```text
+{"schema":"kxm.cli-result.v1","ok":false,"command":"improve","error":"improve_source_unreadable","detail":"/home/me/.local/state/kxm/runtime/projects/605a33e70739a298f89939ca/run-events.db: file is not a database"}
 ```
 
 ## `kxm routing`
@@ -3052,15 +3090,19 @@ kxm routing report [-f <path>] [-l] [--prices <path>]
 
 Compare verified completion, cost, and rework per behavioral configuration. The table ranks routes quality-first with columns Harness, Model, Effort, Role, Att, Pass%, Rwk%, p50(ms), p95(ms), CtxTok, Metered($), $/Acc, Unm, Unk, Quota, and optionally ListEquiv($).
 
+Without `--file` it reads the same sources as [`kxm improve report`](#kxm-improve-report): the current project's Runtime event store (read-only), then the workspace `telemetry.jsonl`, dropping a telemetry copy of an attempt the store already supplied and excluding simulated drives. A Runtime attempt counts toward Pass% only when the event log shows its run completed without the step being re-entered.
+
 | Option | Argument | Default | Description |
 |---|---|---|---|
-| `-f`, `--file` | `<path>` | workspace telemetry | Telemetry or event log JSONL file (default: workspace telemetry) |
+| `-f`, `--file` | `<path>` | the Runtime store, then workspace telemetry | Telemetry or event log JSONL file (default: workspace telemetry) |
 | `-l`, `--equivalent-list-cost` | none | off | Include equivalent list price column using price catalog |
 | `--list-prices` | none | off | Alias for --equivalent-list-cost |
 | `--prices` | `<path>` | `.kxm/prices.yaml` | Path to price catalog (default: .kxm/prices.yaml) |
 
 - Reads only. A price catalog that cannot be loaded is skipped silently.
-- JSON keys: `file`, `configurations` (per behavioral hash for v1 records), `report` (`schema`, `generatedAt`, `totalAttempts`, `rows`).
+- The `--file` help text still says `(default: workspace telemetry)`; without `--file` the Runtime store is read first, as described above. A Runtime store that exists but cannot be read exits 1 with `improve_source_unreadable`.
+- The text output does not list the sources, and prints `no routing records in telemetry` when no source holds a record. The Rwk% column counts records with `transitions` greater than 0, which Runtime records never set.
+- JSON keys: `file` (the telemetry path, also when the Runtime store was read), `sources` (without `--file`; the same shape as in `kxm improve`), `configurations` (per behavioral hash for v1 records), `report` (`schema`, `generatedAt`, `totalAttempts`, `rows`).
 
 With no routing records yet:
 
@@ -3077,7 +3119,7 @@ kxm routing report --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"routing report","file":"/work/proj/.kxm/logs/telemetry.jsonl","configurations":[],"report":{"schema":"kxm.routing-report.v1","generatedAt":"2026-09-23T13:52:19.132Z","totalAttempts":0,"rows":[]}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"routing report","file":"/work/proj/.kxm/logs/telemetry.jsonl","sources":[{"kind":"engine","path":"/home/me/.local/state/kxm/runtime/projects/605a33e70739a298f89939ca/run-events.db","exists":false,"records":0,"skippedInvalid":0,"excludedSimulated":0,"undecided":0,"duplicatesDropped":0},{"kind":"telemetry","path":"/work/proj/.kxm/logs/telemetry.jsonl","exists":false,"records":0,"duplicatesDropped":0}],"configurations":[],"report":{"schema":"kxm.routing-report.v1","generatedAt":"2026-09-23T16:42:18.482Z","totalAttempts":0,"rows":[]}}
 ```
 
 Read an explicit file and add the list-price column (the missing catalog is skipped):
@@ -3353,7 +3395,6 @@ These are behaviors of the current build that differ from what the help text or 
 - `kxm task run --dry-run` changes the task status to `in_progress` even though no run is created.
 - `kxm workflow add` writes definitions (scaffold and templates) that fail the `kxm.workflow.v1` schema, which breaks `kxm run` for the whole project until the file is removed.
 - `kxm memory sync` creates `CLAUDE.md` and `GEMINI.md` with headers taken from the KXM repository's own instructions.
-- `kxm improve report --target` has no effect.
 - `kxm routing benchmark` prints constant placeholder figures.
 - `kxm task sync` does not contact GitHub or Jira.
 - `kxm runs drive` without `--simulated` runs live harness calls, although its description says "model-free simulation".

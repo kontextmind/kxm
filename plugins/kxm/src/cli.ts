@@ -1057,7 +1057,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const routing = addGlobalOptions(program.command("routing").description("Model/harness routing telemetry and behavioral comparisons"));
   routing.helpCommand("help", "Show routing help");
   addGlobalOptions(routing.command("report").description("Compare verified completion, cost, and rework per behavioral configuration"))
-    .option("-f, --file <path>", "Telemetry or event log JSONL file (default: workspace telemetry)")
+    .option("-f, --file <path>", "Read only this telemetry or event log JSONL file (default: this project's Runtime event store plus workspace telemetry)")
     .option("-l, --equivalent-list-cost", "Include equivalent list price column using price catalog")
     .option("--list-prices", "Alias for --equivalent-list-cost")
     .option("--prices <path>", "Path to price catalog (default: .kxm/prices.yaml)")

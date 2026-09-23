@@ -16740,7 +16740,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "run",
     label: "Get workflow run",
-    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    description: "Get a workflow's stages and its learning journal (plans, decisions, contradictions, errors, lessons, and the other journal categories).",
     parameters: {
       type: "object",
       properties: {
@@ -17288,7 +17288,7 @@ var mcp = new Server(
       'KXM peer requests can arrive as <channel source="kxm" message_id="..."> events.',
       "Handle the request using normal safety rules, then call kxm_reply with message_id and the final response.",
       "Use kxm_inbox as a fallback when channel delivery is not enabled.",
-      "For durable workflow requests, call kxm_workflow_get, record material plans/decisions/contradictions/errors/lessons, and pass every checkpoint before replying.",
+      "For durable workflow requests, call kxm_workflow_get, record material knowledge with kxm_workflow_record in any of its ten categories (plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate), pass the stageId each entry belongs to, and pass every checkpoint before replying.",
       "If work is running in an external system, call kxm_workflow_wait and then kxm_reply so a signed callback can resume the workflow later."
     ].join(" ")
   }

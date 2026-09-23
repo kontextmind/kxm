@@ -1235,11 +1235,15 @@ in `plugins/kxm/src/config.ts`, then the user file
 `$KXM_USER_CONFIG_DIR/config.yaml` (default `~/.config/kxm/config.yaml`), then
 the project file `.kxm/config.yaml` in the current directory. Later layers win
 key by key; arrays are replaced, not merged. The files need no `schema` key.
-Nothing validates keys or values except `hub.autoStart`, but a file that is
-not valid YAML makes every `kxm config` command fail.
+Nothing validates keys or values except `hub.autoStart` and the `improvement.*`
+keys, which fall back to their defaults field by field (see the table), but a file
+that is not valid YAML makes every `kxm config` command fail. `kxm improve` loads
+the project file from its project root (the current directory's Git root when it
+holds `.kxm/project.yaml`) rather than from the current directory.
 
-Only one key changes behavior today. The **Read by** column lists every reader
-found in `plugins/kxm/src`, `scripts/`, and `packages/`; the `kxm config`
+Two groups of keys change behavior today: `hub.autoStart`, and the `improvement.*`
+keys that shape the report `kxm improve` prints. The **Read by** column lists every
+reader found in `plugins/kxm/src`, `scripts/`, and `packages/`; the `kxm config`
 commands themselves are not counted.
 
 | Key | Type and allowed values | Default | Read by |
@@ -1259,9 +1263,9 @@ commands themselves are not counted.
 | `sync.defaultTracker` | `github`, `jira`, or `none` | `none` | Not read by any code path yet |
 | `sync.github.owner`, `.repo`, `.syncLabels`, `.autoComment` | String or boolean | none | Not read by any code path yet |
 | `sync.jira.host`, `.projectKey`, `.issueType`, `.autoTransition` | String or boolean | none | Not read by any code path yet |
-| `improvement.promotionPolicy` | `manual_pr`, `critic_quorum`, or `auto_threshold` | `manual_pr` | Not read by any code path yet (`evaluatePromotionPolicy` in `improve.ts` has no production caller) |
-| `improvement.telemetryHalfLifeDays` | Number | `14` | Not read by any code path yet |
-| `improvement.autoThreshold.minRuns`, `.minPassRate`, `.minCostSavings` | Number | `10`, `0.95`, `0.5` | Not read by any code path yet |
+| `improvement.promotionPolicy` | `manual_pr`, `critic_quorum`, or `auto_threshold`; any other value falls back to `manual_pr` | `manual_pr` | `kxm improve` (`cmdImprove` in `plugins/kxm/src/cli/system.ts`, then `evaluatePromotionPolicy` in `improve.ts`): selects the review-readiness rule reported per candidate. No value authorizes or activates anything |
+| `improvement.telemetryHalfLifeDays` | Number greater than 0 and at most 3650; otherwise `14` | `14` | `kxm improve`: the half-life of each record's weight in `weightedRecurrence`, which orders report rows and never decides candidacy |
+| `improvement.autoThreshold.minRuns`, `.minPassRate`, `.minCostSavings` | `minRuns` an integer from 1 to 1,000,000, `minPassRate` from 0 to 1, `minCostSavings` at least 0; otherwise the default | `10`, `0.95`, `0.5` | `kxm improve`, only under `auto_threshold`: distinct runs, accepted share, and mean recorded cost per attempt a candidate needs to report ready for review. A group with no recorded cost is never ready |
 | `routing.shadowExecution.enabled` | Boolean | `false` | Not read by any code path yet |
 | `routing.shadowExecution.sampleRate` | Number | `0.05` | Not read by any code path yet |
 | `routing.shadowExecution.candidateModels` | Array of strings | `[]` | Not read by any code path yet |
@@ -1273,9 +1277,12 @@ commands themselves are not counted.
 
 ```yaml
 # .kxm/config.yaml (project scope) or ~/.config/kxm/config.yaml (user scope).
-# Only hub.autoStart changes behavior today.
+# Only hub.autoStart and improvement.* change behavior today.
 hub:
   autoStart: background        # background | off
+improvement:
+  promotionPolicy: manual_pr   # manual_pr | critic_quorum | auto_threshold (readiness only)
+  telemetryHalfLifeDays: 14
 user:
   preferredHarness: grok
   theme: dark                  # dark | light | minimal
@@ -1499,8 +1506,10 @@ Both directories are written by commands, not configured by hand.
   memory revision pinned on each run. See [Skills](skills.md).
 - `.kxm/candidates/` holds improvement candidates (`<id>.json`,
   `kxm.candidate.v1`, with a proposed diff file) written by `kxm improve`
-  (`--out-dir` relocates them). The report itself goes to
-  `<workspace>/assets/improvements/`.
+  (`--out-dir` relocates them; `--dry-run` writes none). The report itself goes to
+  `<workspace>/assets/improvements/`. A candidate is a proposal: its diff has
+  placeholder hunks, nothing applies it, and its promotion readiness never
+  authorizes. See [Continuous improvement](continuous-improvement.md#coded-repeats-kxm-improve).
 
 ## Webhook workflow definitions
 

@@ -57,6 +57,64 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Context packets rank by deterministic task relevance.** `kxm context get`,
+  `kxm_context` and Runtime dispatch order eligible items by nine keys: open
+  contradictions first, project before `_shared` defaults, items that share a word with
+  the task before items that do not, role kind priority, a lexical BM25 score over the
+  item's summary and state key, confidence, authority, recency (newest first), then id.
+  Scoring uses a fixed English stopword list and no model, clock or randomness, so the
+  same records and request give the same packet. Contradiction and project-first order
+  are unchanged. The token budget is filled first-fit, so one oversized item no longer
+  stops smaller ones from fitting, and non-current state and proposed skills no longer
+  consume budget. `audit.relevance` reports numbers only (`taskTokens`,
+  `matchedCandidates`, and a rounded score per selected item).
+- **`kxm_improvement_report` returns ranked, redacted cross-run signals.** Alongside the
+  per-area reports, `GET /v1/improvements` returns `signals`: journal entries from the
+  project's runs merged by evidence class, then an error's stage, then a normalized
+  summary that is redacted before it becomes a key. Only errors, open contradictions,
+  lessons and still-proposed skill candidates count. Priority is distinct runs × severity
+  (3/2/1) × mean run attempts × evidence confidence; an unknown run cost counts as 1 and
+  is labelled `unknown`, never 0; security signals rank first. The journal and
+  retrospective loop covers hub webhook runs only; `kxm run` (Runtime) runs have no
+  journal yet.
+- **Recall ranks exact phrases, then token relevance, then id, and returns a relevance
+  per item.** `kxm context recall` and `kxm_recall` previously returned substring matches
+  in id order. Items that neither contain the query nor share a word with it are still
+  left out, and results still carry metadata only, never summaries.
+- **The hub logs task and query sizes, not their text.** `context_packet_assembled` now
+  records `taskChars`, `taskTokens` and `matchedCandidates`, and `context_recall` records
+  `queryChars` and `queryTokens`. The caller still receives its own request in the
+  response.
+- **Engine routing records carry an ask identity and only gate-negative outcomes.** Every
+  `routing.attempt.recorded` record carries four engine-reserved `providerMetadata` keys,
+  written after the producer's so a producer cannot spoof them: `workflowId`, `askSha256`
+  (the same for one step and agent across runs, whatever the run was asked to do),
+  `objectiveSha256` (the run prompt's digest) and `stepWrites`. A producer keeps up to 28
+  keys of its own. `agentRole` defaults to the dispatched agent. `finalOutcome` is written
+  only as `blocked` (a back edge) or `failed` (a producer error, an undeclared outcome or a
+  failing terminal); acceptance is resolved later from the event log. Records written
+  before this change are not backfilled.
+- **`improvement.promotionPolicy` reports review readiness and never authorizes.**
+  `kxm improve` now reads `improvement.*` and reports, per candidate, `readyForReview` and a
+  reason under the configured policy: `manual_pr` is always ready for an operator PR,
+  `critic_quorum` waits for two critic receipts (the CLI supplies none, so it reports not
+  ready), and `auto_threshold` needs `minRuns` distinct runs, `minPassRate`, and a mean
+  recorded cost of at least `minCostSavings` over at least one cost sample. Every policy
+  ends at an operator PR; the old `authorized` result is gone. Values fail closed field by
+  field: an unknown policy is `manual_pr`, a half-life outside (0, 3650] days is 14, and
+  out-of-range thresholds fall back to 10, 0.95 and 0.5.
+  `improvement.telemetryHalfLifeDays` orders report rows through `weightedRecurrence` and
+  never decides candidacy.
+- **`kxm routing report` reads Runtime records by default and counts only event-log
+  acceptance as a Runtime pass.** Without `--file` it reads the current project's Runtime
+  event store and then `.kxm/logs/telemetry.jsonl` (the same sources as `kxm improve`),
+  and `--json` output gains `sources`. A Runtime attempt counts as a pass only when its run
+  completed and the step was not re-entered. The ranking code is unchanged, and the rework
+  column still reads `transitions`, which Runtime records do not set.
+- **`kxm improve --target` is removed.** It was accepted and never applied. Passing it
+  is now an unknown-option error. `KXM_IMPROVE_TARGET` still labels telemetry when it is
+  written; no report reads that label.
+
 - **Hub store schema v3 → v4, external-effects ledger v1 → v2.** The hub store gains a
   `leases` table and the ledger gains `lease_resource`/`fencing_token` columns. Neither has
   a migration lane: an older file is refused at open with `runtime_schema_outdated`, and the
@@ -173,6 +231,52 @@ All notable user-facing changes are documented here. The project follows [Semant
   false `run_projection_divergent`.
 
 ### Fixed
+
+- **`kxm improve` sees the Runtime's settled attempts and flags only same-ask repeats
+  across runs.** It read only `.kxm/logs/telemetry.jsonl`, which no Runtime step writes, so
+  it never saw an agent step; and on engine records it grouped per run and scored every pass
+  rate 0. It now reads the current checkout's Runtime event store read-only (one query over
+  the events table; it never creates, writes or migrates a store) plus telemetry, dropping
+  a telemetry copy of an attempt the store already supplied; `--file` still reads only the
+  named file. Each attempt's outcome is resolved from the event log: `accepted` when the run
+  completed and the step was not re-entered, `reworked` when the step was entered again,
+  `failed` when the run failed, and undecided otherwise. Simulated attempts are excluded
+  and counted. Groups key on workflow, step, agent role and ask; a coded-repeat candidate
+  needs the same ask decided in at least 2 runs, an accepted share of at least 0.75, and a
+  step that writes no repository, and a passing group that misses says why
+  (`writes-repository` or `ask-not-repeated`). The output names every source it read, with
+  counts; an unreadable store exits 1 with `improve_source_unreadable` and its path.
+  Workflow-step candidates now propose a `kind: gate` step and a `gates.yaml` entry with a
+  placeholder command, and skill candidates are labelled consolidation. Candidates remain
+  proposals; nothing is applied.
+- **Runtime-dispatched agents receive committed, pinned project memory and hash-verified
+  promoted skills.** The engine built each agent's context packet with no project items, so
+  `.kxm/memory` and promoted skills never reached a `kxm run` agent. Now, when either
+  exists, the Runtime delivers active memory in project or operator scope and promoted
+  skills whose hash verifies, selected for the agent's role and step within 4,000 tokens,
+  and only when those files are tracked and clean at HEAD and still match the run's pinned
+  memory revision. Otherwise the context is withheld with a `dispatch_context_*` gap in the
+  packet (never in the prompt) and the step still runs. Promoted skills render under a new
+  `### Active Skills` heading. No hub call is made at dispatch.
+- **Journal entries accept all ten categories and stage provenance.** The shared
+  `kxm_workflow_record` tool (MCP, Pi and `kxm workflow record`) offered 5 of the 10
+  categories, required an area and dropped `stageId`. It now takes every category and an
+  optional `stageId`; area defaults to the stage's declared area; and the hub, not the
+  caller, derives the attempt: the current attempt for an active or waiting stage, the last
+  one consumed for a finished stage (previously always one past it). Entries the hub writes
+  itself (checkpoint results, signal results, wait timeout, prompt expiry, degraded-quorum
+  approval and premature settlement) carry the stage and attempt; the checkpoint and
+  premature-settlement cases are the ones under test. `kxm workflow record` gained
+  `--stage-id` and accepts `record <runId> <category> <summary>` when area is omitted.
+- **Late journal entries and promotions refresh the exported retrospective.** A terminal
+  run's retrospective is re-exported when an entry is recorded or a promotion decided
+  afterwards. Retrospectives also count only error entries as recurring error classes and
+  propose up to 12 ranked error and lesson signals. A promotion now publishes its update to
+  the run's project rather than to the run id.
+- **Context packets deliver the evidence they select.** Evidence items could be selected
+  and budgeted but no packet section carried them; packets now have an `evidence` section,
+  and the repro and implementer roles receive evidence, so the error, observation and
+  state-change entries they recall reach them.
 
 - **Release version surfaces cover workspace packages:** a merged PR no longer
   breaks the release pipeline. `scripts/kxm-bump-version.mjs` now writes the

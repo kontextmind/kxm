@@ -366,9 +366,10 @@ kxm routing report
 no routing records in telemetry
 ```
 
-By default the report reads `.kxm/logs/telemetry.jsonl`. Engine run events are stored in the run event store, not in that file. An empty report after a live run is therefore expected. To report on run events, pass a JSONL export with `--file`. The reader accepts lines whose `eventType` is `routing.attempt.recorded` (`plugins/kxm/src/telemetry.ts:98-99`). The Runtime serves a run's events at `GET /v1/runs/<runId>/events`. There is no `kxm` verb that exports them yet.
+By default, from inside a KXM project, the report reads the project's Runtime event store first (`<state root>/runtime/projects/<key>/run-events.db`, read-only) and then `.kxm/logs/telemetry.jsonl`, so live `kxm run` attempts appear without an export (`loadRoutingSources` in `plugins/kxm/src/improve-sources.ts`). Each checkout reads only its own store. Attempts from simulated drives are excluded, and a Runtime attempt counts toward Pass% only when its run completed without the step being re-entered; a cancelled or still-running run leaves its attempts undecided. `--json` lists what was read under `sources`; the text output does not. An empty report after a simulated drive is therefore expected. `--file` reads only the named JSONL, which may hold `routing.attempt.recorded` events (`plugins/kxm/src/telemetry.ts:98-99`); the Runtime serves a run's events at `GET /v1/runs/<runId>/events`.
 
 ```bash
+kxm routing report --json
 kxm routing report --file ./run-events.jsonl --equivalent-list-cost
 ```
 

@@ -1049,7 +1049,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       `Evidence: ${workflowEvidenceStrings(evidence).join(", ") || "none supplied"}`,
       "",
       nextInstruction,
-      "Review the run with kxm_workflow_get and keep recording material plans, decisions, contradictions, errors, and lessons.",
+      "Review the run with kxm_workflow_get and keep recording material learning with kxm_workflow_record (any of its ten categories; pass stageId for stage-bound entries).",
       "Do not claim the workflow is complete until the checkpoint response reports completed=true.",
     ].join("\n"), "workflow resume prompt", { max: MAX_CONTENT_CHARS });
     const seq = store.nextAgentSequence(run.targetAgentId);

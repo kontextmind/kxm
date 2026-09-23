@@ -15,7 +15,7 @@ in `--evidence-refs`. Caller-authored text never satisfies peer quorum.
 | `kxm workflow list` | List local workflow runs | `--json` |
 | `kxm workflow get <runId>` | Show one run | `--json` |
 | `kxm workflow checkpoint [runId] [stageId] [status] [summary]` | Record a stage result | `--run-id`, `--stage-id`, `--status passed\|warning\|failed`, `--summary`, `--evidence`, `--evidence-refs` |
-| `kxm workflow record [runId] [category] [area] [summary]` | Journal plan/decision/contradiction/error/lesson | `--category`, `--area`, `--severity`, `--details`, `--evidence` |
+| `kxm workflow record [runId] [category] [area] [summary]` | Journal one of ten categories | `--category`, `--area`, `--stage-id`, `--severity`, `--details`, `--evidence` |
 | `kxm workflow wait [runId] [stageId] [signalKey] [summary]` | Wait for a signed callback | `--signal-key`, `--timeout-ms`, `--evidence`, `--evidence-refs` |
 | `kxm workflow signal <runId> <signalKey> <status> <summary>` | Resume a wait or KXM run | `[evidence...]`, `--delivery-id` |
 | `kxm workflow start [definitionId]` | POST a signed workflow-start webhook | `--payload`, `--delivery-id`, `--event` |
@@ -40,6 +40,18 @@ kxm workflow list --json
 kxm workflow get run_12345 --json
 kxm workflow checkpoint run_12345 stage_abc passed "Implementation complete" --evidence '{"code_changes":"added feature"}' --json
 kxm gate validate --file workflows/default.yaml --json
+```
+
+Journal categories: `plan`, `decision`, `contradiction`, `error`, `lesson`,
+`observation`, `hypothesis`, `experiment`, `state-change`, `skill-candidate`.
+`lesson` and `skill-candidate` need evidence. Pass `--stage-id` to bind an entry
+to its stage: the hub derives the attempt, and area defaults to the stage's
+declared area, so `kxm workflow record <runId> <category> <summary> --stage-id
+<id>` works without an area. Never supply an attempt. The journal covers hub
+webhook runs; a `kxm run` ID is `workflow_not_found`.
+
+```bash
+kxm workflow record run_12345 lesson "Flaky test hid a race" --stage-id verify --evidence https://ci.example.com/run/42 --json
 ```
 
 Do not invent `gate list`, `gate run`, or `gate status`.

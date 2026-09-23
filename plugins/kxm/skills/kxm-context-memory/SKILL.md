@@ -22,6 +22,14 @@ small role-aware packet rather than an unbounded history dump.
 
 All commands accept `--json`. Use comma-separated kind filters and evidence
 references where requested. Verify command-specific `--help` before mutations.
+
+Packets and recall are ranked deterministically, without a model. `context get`
+orders eligible items by contradiction, project before shared defaults, task
+match, role kind, lexical relevance to `--task`, confidence, authority and
+recency, fills the budget first-fit, and reports numeric `audit.relevance`.
+`context recall` returns whole-query matches first, then items sharing a query
+word by relevance, then id, each with a numeric `relevance` and never a
+summary. Write a specific `--task` or `--query`: the words drive the ranking.
 The CLI promotion command is not the same interface as an agent tool that
 merely proposes state: never substitute a state key for a proposal ID or
 assume that a proposal grants approval.
@@ -65,5 +73,9 @@ corrections, respecting provenance and historical records.
 - Keep secrets and unrelated private observations out of shared packets.
 - Pi, native harnesses, and generated instruction projections consume the
   same KXM policy; none creates a separate authoritative memory store here.
+- `kxm run` agents receive only committed, pinned memory (project or operator
+  scope) and hash-verified promoted skills. Uncommitted or changed memory is
+  withheld with a `dispatch_context_*` gap until it is committed and a new run
+  pins it; a successful `memory note` does not reach a dispatched agent.
 - Wiki compile/ingest is deferred by this project's release policy. Do not
   activate it merely because a CLI entry exists.

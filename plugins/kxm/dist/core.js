@@ -1328,7 +1328,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "run",
     label: "Get workflow run",
-    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    description: "Get a workflow's stages and its learning journal (plans, decisions, contradictions, errors, lessons, and the other journal categories).",
     parameters: {
       type: "object",
       properties: {

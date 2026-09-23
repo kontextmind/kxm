@@ -20318,7 +20318,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "run",
     label: "Get workflow run",
-    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    description: "Get a workflow's stages and its learning journal (plans, decisions, contradictions, errors, lessons, and the other journal categories).",
     parameters: {
       type: "object",
       properties: {
@@ -47067,7 +47067,7 @@ _kxm() {
     'peer:Peer agent messaging and coordination'
     'workflow:Start and inspect workflow runs'
     'gate:Validate definitions and operate evidence gates'
-    'improve:Propose CLI or project improvements'
+    'improve:Propose coded-repeat candidates from routing records'
     'context:KXM context operating-system queries'
     'skills:Governed skill candidate lifecycle'
     'memory:Harness-agnostic Git memory operations'
@@ -49161,7 +49161,7 @@ function createProgram(ctx, result) {
   });
   const routing = addGlobalOptions(program2.command("routing").description("Model/harness routing telemetry and behavioral comparisons"));
   routing.helpCommand("help", "Show routing help");
-  addGlobalOptions(routing.command("report").description("Compare verified completion, cost, and rework per behavioral configuration")).option("-f, --file <path>", "Telemetry or event log JSONL file (default: workspace telemetry)").option("-l, --equivalent-list-cost", "Include equivalent list price column using price catalog").option("--list-prices", "Alias for --equivalent-list-cost").option("--prices <path>", "Path to price catalog (default: .kxm/prices.yaml)").action(async function routingReportAction(options) {
+  addGlobalOptions(routing.command("report").description("Compare verified completion, cost, and rework per behavioral configuration")).option("-f, --file <path>", "Read only this telemetry or event log JSONL file (default: this project's Runtime event store plus workspace telemetry)").option("-l, --equivalent-list-cost", "Include equivalent list price column using price catalog").option("--list-prices", "Alias for --equivalent-list-cost").option("--prices <path>", "Path to price catalog (default: .kxm/prices.yaml)").action(async function routingReportAction(options) {
     result.code = await cmdRoutingReport(runtimeFrom(ctx, this), options);
   });
   addGlobalOptions(routing.command("benchmark").description("Dedicated offline benchmark for side-by-side model comparison (Decision Q12)")).option("--task <fixture>", "Task prompt or fixture path for benchmark comparison").option("--arms <models>", "Comma-separated model routes to benchmark (e.g. grok/grok-4.6,claude/fable)").option("--runs <count>", "Benchmark runs per arm", "1").action(async function routingBenchmarkAction(options) {
