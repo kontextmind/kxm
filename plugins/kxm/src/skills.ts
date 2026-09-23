@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { redactSecrets } from "./redact.ts";
 
@@ -190,17 +190,32 @@ export interface SkillLifecycleOptions {
    * evals. When unset, `optimization` evaluations are rejected. */
   allowOptimizationEvals?: boolean;
   now?: () => string;
+  /** Validate and record every change in `planned` without touching disk. */
+  dryRun?: boolean;
 }
 
 export class SkillLifecycle {
   private readonly root: string;
   private readonly now: () => string;
   private readonly allowOptimizationEvals: boolean;
+  private readonly dryRun: boolean;
+  /** What a `dryRun` lifecycle would have written or moved, in order. */
+  readonly planned: Array<{ action: "write" | "move"; target: string }> = [];
 
   constructor(root: string, options: SkillLifecycleOptions = {}) {
     this.root = root;
     this.now = options.now ?? (() => new Date().toISOString());
     this.allowOptimizationEvals = options.allowOptimizationEvals === true;
+    this.dryRun = options.dryRun === true;
+  }
+
+  private write(file: string, content: string): void {
+    if (this.dryRun) {
+      this.planned.push({ action: "write", target: file });
+      return;
+    }
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, content);
   }
 
   private dir(state: SkillState): string {
@@ -217,15 +232,14 @@ export class SkillLifecycle {
   }
 
   private appendHistory(id: string, record: unknown): void {
-    mkdirSync(join(this.root, "history"), { recursive: true });
     const line = `${JSON.stringify(record)}\n`;
     if (existsSync(this.historyFile(id))) {
       // Bound the history file: append within the audit limit.
       const existing = readFileSync(this.historyFile(id), "utf8");
       const lines = existing.split("\n").filter((entry) => entry.trim());
-      writeFileSync(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
+      this.write(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
     } else {
-      writeFileSync(this.historyFile(id), line);
+      this.write(this.historyFile(id), line);
     }
   }
 
@@ -251,6 +265,10 @@ export class SkillLifecycle {
     const toDir = join(this.dir(to), id);
     if (!existsSync(fromDir)) {
       throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${from}`);
+    }
+    if (this.dryRun) {
+      this.planned.push({ action: "move", target: `${fromDir} -> ${toDir}` });
+      return;
     }
     mkdirSync(this.dir(to), { recursive: true });
     if (existsSync(toDir)) rmSync(toDir, { recursive: true, force: true });
@@ -299,7 +317,7 @@ export class SkillLifecycle {
 
     const contentSha256 = skillContentSha256(content);
     const id = skillIdFor(name, contentSha256);
-    const { dir, metadata, skill } = this.paths("candidate", id);
+    const { metadata, skill } = this.paths("candidate", id);
     if (existsSync(metadata)) {
       throw new SkillLifecycleError(
         "skill_candidate_exists",
@@ -319,9 +337,8 @@ export class SkillLifecycle {
       createdAt: this.now(),
       ...(input.supersedes ? { supersedes: input.supersedes } : {}),
     };
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(skill, content);
-    writeFileSync(metadata, `${JSON.stringify(record, null, 2)}\n`);
+    this.write(skill, content);
+    this.write(metadata, `${JSON.stringify(record, null, 2)}\n`);
     this.appendHistory(id, { schema: "kxm.skill-history-event.v1", event: "candidate_created", by: createdBy, supersedes: input.supersedes, at: record.createdAt });
     return record;
   }
@@ -429,20 +446,17 @@ export class SkillLifecycle {
     // Instead of moving directory, write promoted directory and generate patch
     const candidatePaths = this.paths("candidate", candidateId);
     const promotedPaths = this.paths("promoted", candidateId);
-    mkdirSync(promotedPaths.dir, { recursive: true });
 
     const skillContent = readFileSync(candidatePaths.skill, "utf8");
     const metadataContent = readFileSync(candidatePaths.metadata, "utf8");
-    writeFileSync(promotedPaths.skill, skillContent);
-    writeFileSync(promotedPaths.metadata, metadataContent);
+    this.write(promotedPaths.skill, skillContent);
+    this.write(promotedPaths.metadata, metadataContent);
 
-    const patchesDir = join(this.root, "patches");
-    mkdirSync(patchesDir, { recursive: true });
-    const patchPath = join(patchesDir, `${candidateId}.patch`);
+    const patchPath = join(this.root, "patches", `${candidateId}.patch`);
     const relSkillPath = `.kxm/skills/promoted/${candidateId}/SKILL.md`;
     const relMetaPath = `.kxm/skills/promoted/${candidateId}/metadata.json`;
     const patch = `${createUnifiedPatch(relSkillPath, skillContent)}${createUnifiedPatch(relMetaPath, metadataContent)}`;
-    writeFileSync(patchPath, patch, "utf8");
+    this.write(patchPath, patch);
 
     this.appendHistory(candidateId, record);
     return { ...metadata, patch, patchPath };

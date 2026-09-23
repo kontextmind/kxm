@@ -326,11 +326,14 @@ export function addWorkflowDefinition(
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
     overwrite?: boolean | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { id: string; filePath: string; scope: "global" | "local" } {
   const scope = options.scope ?? "local";
   const repoRoot = options.repoRoot ?? process.cwd();
-  const dir = ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
+  const dir = options.dryRun
+    ? workflowsDirectory(scope, repoRoot, options.userConfigDir)
+    : ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
   const filePath = join(dir, `${workflowId}.yaml`);
 
   if (existsSync(filePath) && !options.overwrite) {
@@ -338,7 +341,7 @@ export function addWorkflowDefinition(
   }
 
   const payload = typeof content === "string" ? content : stringify(content);
-  writeFileSync(filePath, payload, "utf8");
+  if (!options.dryRun) writeFileSync(filePath, payload, "utf8");
   return { id: workflowId, filePath, scope };
 }
 
@@ -348,6 +351,7 @@ export function removeWorkflowDefinition(
     scope?: "global" | "local" | undefined;
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { id: string; removed: boolean; filePath: string; scope: "global" | "local" } {
   const scope = options.scope ?? "local";
@@ -359,6 +363,7 @@ export function removeWorkflowDefinition(
     throw new Error(`workflow_not_found: workflow '${workflowId}' not found in ${scope} directory (${filePath})`);
   }
 
+  if (options.dryRun) return { id: workflowId, removed: false, filePath, scope };
   rmSync(filePath);
   return { id: workflowId, removed: true, filePath, scope };
 }
@@ -370,6 +375,7 @@ export function modifyWorkflowDefinition(
     scope?: "global" | "local" | undefined;
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { id: string; workflow: Record<string, unknown>; filePath: string; scope: "global" | "local" } {
   const target = getWorkflowDefinition(workflowId, { scope: options.scope, repoRoot: options.repoRoot, userConfigDir: options.userConfigDir });
@@ -384,9 +390,11 @@ export function modifyWorkflowDefinition(
 
   const scope = options.scope ?? target.scope;
   const repoRoot = options.repoRoot ?? process.cwd();
-  const dir = ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
+  const dir = options.dryRun
+    ? workflowsDirectory(scope, repoRoot, options.userConfigDir)
+    : ensureWorkflowsDirectory(scope, repoRoot, options.userConfigDir);
   const filePath = join(dir, `${workflowId}.yaml`);
 
-  writeFileSync(filePath, stringify(updated), "utf8");
+  if (!options.dryRun) writeFileSync(filePath, stringify(updated), "utf8");
   return { id: workflowId, workflow: updated, filePath, scope };
 }
