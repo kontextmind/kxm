@@ -467,9 +467,26 @@ test("supervisor /drive returns 409 for still-unsupported maxAgentTimeMs", async
     supervisor = await startKxmRuntimeSupervisor({ stateRoot });
     const token = readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!;
     const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    writeFileSync(join(root, ".kxm", "workflows", "agent-time.yaml"), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxAgentTimeMs: 1000
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
     const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", {
       projectRoot: root,
-      workflowId: "default",
+      workflowId: "agent-time",
       prompt: "unsupported agent time",
     });
     const runId = (acceptance.run as { runId: string }).runId;

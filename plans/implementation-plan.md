@@ -1799,25 +1799,32 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   because of). A second project with no in-project hub answered `backup_no_stores`. So the
   verified, hashed manifest passes while omitting every run event, drive receipt, gate record and
   outbox row — including the `refused_code` state P6 just added — and the operator sees `ok`.
-  `docs/operations.md` already
-  tells operators to copy the whole state tree, so the file-level recipe is honest; the
-  **command** claims "all stores" and does not mean it. Not scheduled here because the fix is a
-  scope decision, not a bug fix: it must decide whether one command backs up two roots (the
-  project and the user state root), how `kxm restore` remaps `$S/...` paths onto a new box, and
-  what a *partial* manifest must refuse. First slice should start from that question, not from a path patch.
-  Gate it needs: a named test asserting a backup of a project with a live event store in the
-  user state root lists that store in the manifest, and that restoring it into a fresh root
-  brings the outbox back — the current round-trip test only ever puts stores inside
-  `projectRoot`, which is why the gap survived.
-  **Consequence for P6, so the row is not read as more than it is:** the v6→v7 bump's deployed
-  witness covers the **brake** (kxm-dev-svr, 2026-09-23: the real pre-bump `run-events.db` copy,
-  46/46 acked, refused by the v7 build with `runtime_schema_outdated … is schema version 6; this
-  build requires 7`) and **fresh creation** (a new store at v7 with `attempt_count`/`refused_code`
-  /`refused_at` and both partial indexes). It does **not** cover a deployed backup/restore
-  round-trip of the event store, because the command cannot enumerate it. Do not mark the P6
-  deployed restore witness passed for the event store until this gap is closed; the v7
-  round-trip is proven only by the suite (`restore ceilings track every store's own schema
-  version` plus the e6 round-trip).
+  **Landed (2026-09-23):** `discoverProjectStores` now includes `$S/runtime/registry.db`
+  (store id `registry`, or `runtime-registry` when the project-local id is taken) and
+  `$S/runtime/projects/<projectKey>/run-events.db`, and copies each present
+  `run-events.db.run-prompts.json` sidecar as a manifest file. A manifest that missed a
+  discovered store or sidecar sets `complete: false`; `kxm backup` exits 1 with `ok: false`,
+  and `kxm restore` refuses `complete: false`. Legacy manifests that omit `complete` still
+  restore. What remains: restore does not remap absolute `$S` paths onto another box, and the
+  non-sqlite roots in `docs/operations.md` are still the stopped-state file copy. A green
+  `kxm backup` is not that whole-tree copy. The named test is
+  `backup discovers user-state runtime stores and refuses a partial manifest`.
+  **Consequence for P6:** the v6→v7 deployed witness still covers the brake and fresh creation
+  only. Cross-box restore of the live event store is not claimed; the v7 round-trip in the
+  suite now includes user-state discovery, not a second box.
+
+- **Pre-use must-fix slice (landed 2026-09-23):** live `kxm runs drive` write steps run only
+  on an audited writer profile (pi `-a` with extensions, skills, and session off; grok
+  `--always-approve` with subagents and web search off). A live write that does not change
+  the checkout settles `failed` (`authored: false`); a read-only step that changes the
+  checkout cannot settle `passed`. The v4 init template drops `limits.maxAgentTimeMs`, names
+  admitted harness/model pairs, and writes `.kxm/routes.yaml` for those two models. Guide
+  setup admits only reviewed selectors and routes Google through Pi `antigravity`. `kxm run`
+  and drive help match that behavior. Studio mutate without a handler returns 501.
+  `kxm prices acknowledge` stamps the local list as today without fetching rates; routing
+  totals stay null when any cost is missing. `kxm improve` stays proposal-only. Wiki compile
+  stays a dry run unless `--out`. Wiki ingest stays unselected. The S4 cell above remains
+  the historical template refusal; fresh init no longer carries that limit.
 
 - **Recorded gap, not scheduled (2026-09-20, found while fixing S3):**
   `producerPolicy.acceptedStatuses` compiles to `["passed"]` in

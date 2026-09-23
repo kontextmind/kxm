@@ -317,7 +317,7 @@ restore lands somewhere the running service will not look.
    routing manifests and update configuration are not databases, so a snapshot-only backup
    reproduces exactly the failure this section exists to remove. The hub's own backup path already writes a hashed manifest and records
    a schema version ceiling; keep that manifest with the files. That ceiling is
-   **hub store v5 and event store v6** as of the sync-outbox release: a backup taken by
+   **hub store v5 and event store v7** (`KXM_BACKUP_CEILINGS`): a backup taken by
    an earlier build records hub v4 or event store v5 and is refused by this one, because
    there is no migration lane.
    Restore such a backup with the release that produced it, or start fresh.
@@ -344,9 +344,15 @@ restore order is: matching-or-newer release, then data. Online backups need a
 SQLite-aware tool or a consistent snapshot of each database with its `-wal` and `-shm`;
 a plain copy of a live `kxm.db` can omit committed WAL data.
 
-Test restoration periodically. Routine unattended recovery (automated discovery of every
-Runtime store plus sidecars) is deliberately **not** claimed here: it is a tracked
-post-MVP item, and today this procedure is executed stopped and by hand.
+`kxm backup` copies the SQLite stores it can see: project-local databases, `$S/runtime/registry.db`,
+each `$S/runtime/projects/<projectKey>/run-events.db`, and the prompt sidecar beside those event
+stores. A manifest that missed one of those is `complete: false`, the command exits 1, and
+`kxm restore` refuses it. The command does not copy the other roots in the table above, and
+restore does not remap an absolute `$S` path onto a different box. The stopped-state file copy
+remains the procedure for the whole set.
+
+Test restoration periodically. Routine unattended recovery of every root in the table is not
+what `kxm backup` does.
 
 ## Upgrade and rollback
 

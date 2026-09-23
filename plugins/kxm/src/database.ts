@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
+import { kxmUserStateRoot } from "./bindings.ts";
 import { KxmConfigError, type KxmConfigIssue } from "./project-config.ts";
 
 export interface DatabaseSchemaSpec {
@@ -31,12 +32,24 @@ export interface BackupStoreRecord {
   integrity: "ok";
 }
 
+export interface BackupFileRecord {
+  id: string;
+  sourcePath: string;
+  backupFile: string;
+  sha256: string;
+  bytes: number;
+}
+
 export interface BackupManifest {
   schema: "kxm.backup-manifest.v1";
   backupId: string;
   createdAt: string;
   projectRoot?: string;
   stores: BackupStoreRecord[];
+  files?: BackupFileRecord[];
+  /** False when a discovered store or prompt sidecar was left out. Absent on legacy manifests. */
+  complete?: boolean;
+  omitted?: string[];
   manifestSha256?: string;
 }
 
@@ -607,59 +620,152 @@ export const KXM_BACKUP_CEILINGS = {
 } as const;
 
 export function kxmBackupCeiling(storeId: string): number {
+  if (storeId === "runtime-registry") return KXM_BACKUP_CEILINGS.registry;
   if (storeId.startsWith("events:")) return KXM_BACKUP_CEILINGS.events;
   // An id this build does not know keeps the ceiling restore has always defaulted to.
   return KXM_BACKUP_CEILINGS[storeId as keyof typeof KXM_BACKUP_CEILINGS] ?? KXM_BACKUP_CEILINGS["hub-store"];
 }
 
-export function discoverProjectStores(projectRoot: string, options: { hubDataPath?: string } = {}): Array<{ storeId: string; sourcePath: string; maxSupportedVersion: number }> {
+interface DiscoveredStore {
+  storeId: string;
+  sourcePath: string;
+  maxSupportedVersion: number;
+}
+
+interface DiscoveredFile {
+  id: string;
+  sourcePath: string;
+}
+
+function pushStore(stores: DiscoveredStore[], storeId: string, sourcePath: string): void {
+  if (stores.some((store) => store.storeId === storeId || store.sourcePath === sourcePath)) return;
+  stores.push({ storeId, sourcePath, maxSupportedVersion: kxmBackupCeiling(storeId) });
+}
+
+function discoverUserRuntime(env: NodeJS.ProcessEnv | undefined, stores: DiscoveredStore[], files: DiscoveredFile[]): void {
+  let stateRoot: string;
+  try {
+    stateRoot = kxmUserStateRoot(env ? { env } : {});
+  } catch {
+    return;
+  }
+  const runtimeDir = join(stateRoot, "runtime");
+  const registryPath = join(runtimeDir, "registry.db");
+  if (existsSync(registryPath)) {
+    const storeId = stores.some((store) => store.storeId === "registry") ? "runtime-registry" : "registry";
+    pushStore(stores, storeId, registryPath);
+  }
+  const projectsDir = join(runtimeDir, "projects");
+  if (!existsSync(projectsDir)) return;
+  let entries;
+  try {
+    entries = readdirSync(projectsDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dbPath = join(projectsDir, entry.name, "run-events.db");
+    if (!existsSync(dbPath)) continue;
+    const safe = entry.name.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    let storeId = `events:${safe}`;
+    if (stores.some((store) => store.storeId === storeId)) storeId = `events:runtime:${safe}`;
+    pushStore(stores, storeId, dbPath);
+    const sidecar = `${dbPath}.run-prompts.json`;
+    if (existsSync(sidecar)) {
+      const id = `${storeId}:run-prompts`;
+      if (!files.some((file) => file.id === id || file.sourcePath === sidecar)) {
+        files.push({ id, sourcePath: sidecar });
+      }
+    }
+  }
+}
+
+function discoverBackupSources(
+  projectRoot: string,
+  options: { hubDataPath?: string; env?: NodeJS.ProcessEnv } = {},
+): { stores: DiscoveredStore[]; files: DiscoveredFile[] } {
   const root = resolve(projectRoot);
-  const stores: Array<{ storeId: string; sourcePath: string; maxSupportedVersion: number }> = [];
+  const stores: DiscoveredStore[] = [];
+  const files: DiscoveredFile[] = [];
 
   const hubPath = options.hubDataPath ? resolve(options.hubDataPath) : join(root, ".kxm", "state", "kxm.db");
-  if (existsSync(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: kxmBackupCeiling("hub-store") });
-  }
+  if (existsSync(hubPath)) pushStore(stores, "hub-store", hubPath);
 
   const registryPath = join(root, ".kxm", "runtime", "registry.db");
-  if (existsSync(registryPath)) {
-    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: kxmBackupCeiling("registry") });
-  }
+  if (existsSync(registryPath)) pushStore(stores, "registry", registryPath);
 
   const bindingsPath = join(root, ".kxm", "runtime", "bindings.db");
-  if (existsSync(bindingsPath)) {
-    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: kxmBackupCeiling("binding-store") });
-  }
+  if (existsSync(bindingsPath)) pushStore(stores, "binding-store", bindingsPath);
 
   const eventsDir = join(root, ".kxm", "runtime", "events");
   if (existsSync(eventsDir)) {
     const entries = readdirSync(eventsDir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isFile() && entry.name.endsWith(".db")) {
-        const key = entry.name.replace(/\.db$/, "");
-        stores.push({
-          storeId: `events:${key}`,
-          sourcePath: join(eventsDir, entry.name),
-          maxSupportedVersion: kxmBackupCeiling(`events:${key}`),
-        });
+        const key = entry.name.replace(/\.db$/, "").replace(/[^a-zA-Z0-9_.-]/g, "_");
+        pushStore(stores, `events:${key}`, join(eventsDir, entry.name));
       }
     }
   }
 
-  return stores;
+  discoverUserRuntime(options.env, stores, files);
+  return { stores, files };
+}
+
+function backupPlainFile(sourcePath: string, targetPath: string, id: string): BackupFileRecord {
+  const resolvedSource = resolve(sourcePath);
+  const sourceStat = lstatSync(resolvedSource, { throwIfNoEntry: false });
+  if (!sourceStat || !sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw databaseError("runtime_path_invalid", resolvedSource, `backup file ${resolvedSource} must be a regular file, not a link or directory`);
+  }
+  checkedParent(targetPath, "backup target");
+  if (existsSync(targetPath)) unlinkSync(targetPath);
+  copyFileSync(resolvedSource, targetPath);
+  try { chmodSync(targetPath, 0o600); } catch { /* Windows */ }
+  return {
+    id,
+    sourcePath: resolvedSource,
+    backupFile: basename(targetPath),
+    sha256: fileSha256(targetPath),
+    bytes: sourceStat.size,
+  };
+}
+
+function backupFilename(sourcePath: string, id: string, used: Set<string>): string {
+  let filename = basename(sourcePath);
+  if (used.has(filename)) {
+    filename = `${id.replace(/[^a-zA-Z0-9_.-]/g, "_")}-${filename}`;
+  }
+  used.add(filename);
+  return filename;
+}
+
+function restorePlainFile(backupFilePath: string, targetPath: string): void {
+  checkedParent(targetPath, "restore target");
+  if (existsSync(targetPath)) unlinkSync(targetPath);
+  copyFileSync(backupFilePath, targetPath);
+  try { chmodSync(targetPath, 0o600); } catch { /* Windows */ }
+}
+
+export function discoverProjectStores(projectRoot: string, options: { hubDataPath?: string; env?: NodeJS.ProcessEnv } = {}): Array<{ storeId: string; sourcePath: string; maxSupportedVersion: number }> {
+  return discoverBackupSources(projectRoot, options).stores;
 }
 
 export function createBackup(options: {
   projectRoot?: string;
   outDir?: string;
   hubDataPath?: string;
+  env?: NodeJS.ProcessEnv;
 } = {}): { manifest: BackupManifest; outDir: string } {
   const projectRoot = options.projectRoot ? resolve(options.projectRoot) : process.cwd();
-  const stores = discoverProjectStores(projectRoot, {
+  const discoverOptions = {
     ...(options.hubDataPath !== undefined ? { hubDataPath: options.hubDataPath } : {}),
-  });
+    ...(options.env !== undefined ? { env: options.env } : {}),
+  };
+  const discovered = discoverBackupSources(projectRoot, discoverOptions);
 
-  if (stores.length === 0) {
+  if (discovered.stores.length === 0) {
     throw databaseError("backup_no_stores", projectRoot, "no existing SQLite stores found to backup");
   }
 
@@ -673,19 +779,41 @@ export function createBackup(options: {
   }
 
   const backedUpStores: BackupStoreRecord[] = [];
+  const backedUpFiles: BackupFileRecord[] = [];
+  const omitted: string[] = [];
   const usedFilenames = new Set<string>();
 
-  for (const store of stores) {
-    let filename = basename(store.sourcePath);
-    if (usedFilenames.has(filename)) {
-      const sanitizedId = store.storeId.replace(/[^a-zA-Z0-9_.-]/g, "_");
-      filename = `${sanitizedId}-${filename}`;
+  for (const store of discovered.stores) {
+    const filename = backupFilename(store.sourcePath, store.storeId, usedFilenames);
+    try {
+      backedUpStores.push(backupDatabaseFile(store.sourcePath, join(outDir, filename), store.storeId));
+    } catch {
+      omitted.push(store.storeId);
     }
-    usedFilenames.add(filename);
+  }
+  for (const file of discovered.files) {
+    const filename = backupFilename(file.sourcePath, file.id, usedFilenames);
+    try {
+      backedUpFiles.push(backupPlainFile(file.sourcePath, join(outDir, filename), file.id));
+    } catch {
+      omitted.push(file.id);
+    }
+  }
 
-    const targetFile = join(outDir, filename);
-    const record = backupDatabaseFile(store.sourcePath, targetFile, store.storeId);
-    backedUpStores.push(record);
+  if (backedUpStores.length === 0) {
+    throw databaseError("backup_no_stores", projectRoot, "no SQLite store could be copied");
+  }
+
+  const again = discoverBackupSources(projectRoot, discoverOptions);
+  for (const store of again.stores) {
+    if (!backedUpStores.some((copied) => copied.storeId === store.storeId) && !omitted.includes(store.storeId)) {
+      omitted.push(store.storeId);
+    }
+  }
+  for (const file of again.files) {
+    if (!backedUpFiles.some((copied) => copied.id === file.id) && !omitted.includes(file.id)) {
+      omitted.push(file.id);
+    }
   }
 
   const manifest: BackupManifest = {
@@ -694,6 +822,9 @@ export function createBackup(options: {
     createdAt: now.toISOString(),
     projectRoot,
     stores: backedUpStores,
+    ...(backedUpFiles.length > 0 ? { files: backedUpFiles } : {}),
+    complete: omitted.length === 0,
+    ...(omitted.length > 0 ? { omitted } : {}),
   };
 
   const manifestJson = JSON.stringify(manifest, null, 2) + "\n";
@@ -736,6 +867,9 @@ export function restoreBackup(
   if (manifest.schema !== "kxm.backup-manifest.v1" || !Array.isArray(manifest.stores) || manifest.stores.length === 0) {
     throw databaseError("restore_manifest_invalid", manifestPath, "manifest is not a valid kxm.backup-manifest.v1 document");
   }
+  if (manifest.complete === false) {
+    throw databaseError("restore_incomplete", manifestPath, "backup manifest is incomplete; refusing to restore a partial copy");
+  }
 
   const restoredStores: RestoreStoreRecord[] = [];
 
@@ -770,6 +904,27 @@ export function restoreBackup(
       maxSupported,
     );
     restoredStores.push(result);
+  }
+
+  for (const file of manifest.files ?? []) {
+    const backupFilePath = join(manifestDir, file.backupFile);
+    if (!existsSync(backupFilePath)) {
+      throw databaseError("restore_file_missing", backupFilePath, `backup file ${file.backupFile} missing from ${manifestDir}`);
+    }
+    const actualSha256 = fileSha256(backupFilePath);
+    if (actualSha256 !== file.sha256) {
+      throw databaseError(
+        "restore_manifest_digest_mismatch",
+        backupFilePath,
+        `backup file ${file.backupFile} sha256 ${actualSha256} does not match manifest hash ${file.sha256}`,
+      );
+    }
+    let targetPath = file.sourcePath;
+    if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
+      const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
+      targetPath = join(resolve(options.projectRoot), rel);
+    }
+    restorePlainFile(backupFilePath, targetPath);
   }
 
   return {

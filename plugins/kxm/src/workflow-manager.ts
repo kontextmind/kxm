@@ -30,7 +30,8 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "implement",
         kind: "agent",
-        role: "writer",
+        agent: "implementer",
+        repositories: { control: "write" },
         maxAttempts: 2,
         on: {
           passed: "verify",
@@ -43,7 +44,8 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "verify",
         kind: "gate",
-        gate: "verify-gate",
+        gate: "test",
+        repositories: { control: "write" },
         expect: "pass",
         maxAttempts: 1,
         on: {
@@ -70,7 +72,8 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "implement",
         kind: "agent",
-        role: "writer",
+        agent: "implementer",
+        repositories: { control: "write" },
         maxAttempts: 2,
         on: {
           passed: "review-arch",
@@ -83,7 +86,8 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "review-arch",
         kind: "agent",
-        role: "critic-arch",
+        agent: "critic-arch",
+        repositories: { control: "read" },
         maxAttempts: 2,
         on: {
           passed: "review-cli",
@@ -96,7 +100,8 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "review-cli",
         kind: "agent",
-        role: "critic-cli",
+        agent: "critic-cli",
+        repositories: { control: "read" },
         maxAttempts: 2,
         on: {
           passed: "verify",
@@ -109,7 +114,8 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "verify",
         kind: "gate",
-        gate: "verify-gate",
+        gate: "test",
+        repositories: { control: "write" },
         expect: "pass",
         maxAttempts: 1,
         on: {

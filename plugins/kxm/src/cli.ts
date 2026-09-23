@@ -146,6 +146,7 @@ import {
   cmdConfigList,
   cmdCompletion,
   cmdCompletionInstall,
+  cmdPricesAcknowledge,
   cmdRoutingReport,
   cmdRoutingBenchmark,
   maybeOfferCompletionInstall,
@@ -356,7 +357,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdRestore(runtimeFrom(ctx, this), manifest);
     });
 
-  addGlobalOptions(program.command("run").description("Create a KXM run (offline-first; no steps execute until the run engine lands)")
+  addGlobalOptions(program.command("run").description("Create a KXM run. The run stays created until `kxm runs drive` executes it")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (hashed, never stored raw)")
     .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
@@ -369,9 +370,9 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .action(async function runStatusAction(this: Command, runId: string) {
       result.code = await cmdKxmRunStatus(runtimeFrom(ctx, this), runId);
     });
-  addGlobalOptions(runCmd.command("drive").description("Drive a run with an explicit model-free simulation"))
+  addGlobalOptions(runCmd.command("drive").description("Drive a run. Live is the default and spends an admitted model"))
     .argument("<runId>", "Run id")
-    .option("--simulated", "Use the model-free simulation producer")
+    .option("--simulated", "Use the model-free simulation producer instead of a live model")
     .option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement")
     .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)")
     .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean; wait?: boolean; timeoutMs?: string }) {
@@ -401,6 +402,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(tenantCmd.command("status").description("Read hub metadata and authoritative Runtime run state as one labeled view"))
     .action(async function tenantStatusAction(this: Command) {
       result.code = await cmdTenantStatus(runtimeFrom(ctx, this));
+    });
+
+  const pricesCmd = addGlobalOptions(program.command("prices").description("Stamp the local list-price catalog. Estimates stay unknown until today's stamp"));
+  pricesCmd.helpCommand("help", "Show prices help");
+  addGlobalOptions(pricesCmd.command("acknowledge").description("Stamp the existing .kxm/prices.yaml list as today's estimate without fetching vendor rates"))
+    .action(async function pricesAcknowledgeAction(this: Command) {
+      result.code = await cmdPricesAcknowledge(runtimeFrom(ctx, this));
     });
 
   const modelsCmd = addGlobalOptions(program.command("models").description("Manage model catalogs, roles, and route state"));
@@ -847,7 +855,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdGithubWatch(runtimeFrom(ctx, this), options);
     });
 
-  const improve = addGlobalOptions(program.command("improve").description("Propose CLI or project improvements from routing records and telemetry"));
+  const improve = addGlobalOptions(program.command("improve").description("Propose CLI or project improvements from routing records and telemetry. Proposals are not applied to the next run"));
   improve.helpCommand("help", "Show improve help");
   addGlobalOptions(improve.command("report", { isDefault: true }).description("Generate improvement report and candidates from routing records"))
     .option("--file <path>", "Telemetry JSONL file to read routing records from")

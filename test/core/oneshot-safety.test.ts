@@ -61,7 +61,7 @@ for (const harness of ["deepseek"]) {
   test(`unaudited ${harness} one-shot permissions refuse before authentication and execution`, async () => {
     let probes = 0;
     let spawns = 0;
-    const producer = createKxmOneShotProducer({ defaultHarness: harness,
+    const producer = createKxmOneShotProducer({ defaultHarness: harness, defaultModel: "deepseek-v4",
       probeHarness: () => { probes++; return authenticated(); },
       spawnProcess: async () => { spawns++; return { stdout: reply(), stderr: "", code: 0 }; },
     });
@@ -127,6 +127,7 @@ test("audited agy and kimi one-shot dispatches apply sandboxed read-only flags",
 test("pre-aborted producer performs no authentication or execution", async () => {
   let probes = 0;
   const producer = createKxmOneShotProducer({
+    defaultModel: "fable",
     probeHarness: () => { probes++; return authenticated(); },
     spawnProcess: async () => { throw new Error("must not spawn"); },
   });
@@ -158,6 +159,7 @@ test("close cancels and drains pending async authentication before model spawn",
   const probing = new Promise<void>((resolve) => { entered = resolve; });
   let spawned = 0;
   const producer = createKxmOneShotProducer({
+    defaultModel: "fable",
     probeHarness: async (options) => {
       entered();
       await new Promise<void>((resolve) => {
@@ -294,7 +296,7 @@ test("closing a producer cancels and drains its active subprocesses", { timeout:
   let started!: () => void;
   const launched = new Promise<void>((resolve) => { started = resolve; });
   const producer = createKxmOneShotProducer({
-    projectRoot: resolve("examples/project"), probeHarness: authenticated,
+    projectRoot: resolve("examples/project"), defaultModel: "fable", probeHarness: authenticated,
     spawnProcess: (_command, _args, options) => {
       const work = defaultSpawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], options);
       started();

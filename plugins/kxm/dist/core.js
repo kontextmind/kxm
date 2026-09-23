@@ -452,6 +452,8 @@ function compareRoutingRecords(records) {
   const blocked = settled.filter((record) => record.finalOutcome === "blocked").length;
   const failed = settled.filter((record) => record.finalOutcome === "failed").length;
   const reworked = records.filter((record) => record.retries > 0 || record.transitions > 0).length;
+  const missingCostRuns = records.filter((record) => typeof record.costUsd !== "number" || !Number.isFinite(record.costUsd)).length;
+  const summedCost = records.reduce((sum, record) => sum + (typeof record.costUsd === "number" && Number.isFinite(record.costUsd) ? record.costUsd : 0), 0);
   return {
     behavioralSha256,
     runs: records.length,
@@ -459,7 +461,8 @@ function compareRoutingRecords(records) {
     blocked,
     failed,
     reworkRate: records.length === 0 ? 0 : Math.round(reworked / records.length * 100) / 100,
-    totalCostUsd: Math.round(records.reduce((sum, record) => sum + (record.costUsd ?? 0), 0) * 1e4) / 1e4,
+    totalCostUsd: missingCostRuns > 0 ? null : Math.round(summedCost * 1e4) / 1e4,
+    missingCostRuns,
     totalTokensIn: records.reduce((sum, record) => sum + (record.tokensIn ?? 0), 0),
     totalTokensOut: records.reduce((sum, record) => sum + (record.tokensOut ?? 0), 0),
     totalHumanInterventions: records.reduce((sum, record) => sum + record.humanInterventions, 0)
@@ -643,7 +646,7 @@ function generateRoutingReport(records, options = {}) {
       medianContextTokens = contextVals.length % 2 !== 0 ? contextVals[mid] : Math.round((contextVals[mid - 1] + contextVals[mid]) / 2);
     }
     const meteredCostUsd = Math.round(meteredCostTotal * 1e4) / 1e4;
-    const costPerAcceptedUsd = acceptedCount > 0 ? meteredCostUsd > 0 || unmeteredAttempts > 0 ? Math.round(meteredCostUsd / acceptedCount * 1e4) / 1e4 : unknownCostAttempts === attempts ? null : 0 : null;
+    const costPerAcceptedUsd = acceptedCount > 0 ? unknownCostAttempts > 0 ? null : meteredCostUsd > 0 || unmeteredAttempts > 0 ? Math.round(meteredCostUsd / acceptedCount * 1e4) / 1e4 : 0 : null;
     const flagged = unknownCostAttempts > 0;
     let equivalentListCostUsd = void 0;
     if (options.includeEquivalentListCost && options.catalog) {
@@ -701,10 +704,9 @@ function generateRoutingReport(records, options = {}) {
     if (a.reworkRate !== b.reworkRate) {
       return a.reworkRate - b.reworkRate;
     }
-    const aCostUnknown = a.costPerAcceptedUsd === null && a.unknownCostAttempts > 0 && a.meteredCostUsd === 0;
-    const bCostUnknown = b.costPerAcceptedUsd === null && b.unknownCostAttempts > 0 && b.meteredCostUsd === 0;
-    if (aCostUnknown && !bCostUnknown) return 1;
-    if (!aCostUnknown && bCostUnknown) return -1;
+    const aIncomplete = a.unknownCostAttempts > 0;
+    const bIncomplete = b.unknownCostAttempts > 0;
+    if (aIncomplete !== bIncomplete) return aIncomplete ? 1 : -1;
     if (a.costPerAcceptedUsd !== null && b.costPerAcceptedUsd !== null) {
       if (a.costPerAcceptedUsd !== b.costPerAcceptedUsd) {
         return a.costPerAcceptedUsd - b.costPerAcceptedUsd;

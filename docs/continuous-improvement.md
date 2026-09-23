@@ -6,7 +6,8 @@ Every workflow run produces two distinct records:
 - a structured journal for plans, decisions, contradictions, errors, lessons, observations, hypotheses, experiments, state changes, and skill candidates.
 
 `kxm improve` buckets redacted `.kxm/logs/telemetry.jsonl` events into a
-proposed-only report and does not read the workflow journal. Journal capture
+proposed-only report and does not read the workflow journal. It does not edit
+the next run's agents, routes, workflows, or prices. Journal capture
 uses `kxm_workflow_record`. Terminal runs export a bounded retrospective under
 `.kxm/assets/retrospectives`; re-export from durable local state with
 `kxm workflow export`.

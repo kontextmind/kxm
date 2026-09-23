@@ -496,6 +496,35 @@ export function oneShotReadOnlyArgs(harness: string): readonly string[] | undefi
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness as keyof typeof READ_ONLY_ONESHOT_ARGS] : undefined;
 }
 
+/**
+ * Audited edit profiles. These are a writer containment, not read-only flags
+ * with the sandbox removed. They match the assignment helper
+ * (`scripts/harness-run.mjs` `buildArgv` for `permission: "edit"` with hooks
+ * and skills refused):
+ *
+ * - Pi: `-a` auto-approves tools so the process can edit the checkout, while
+ *   extensions, skills, prompt templates, and session persistence stay off.
+ *   `--no-tools` is the read-only profile and is not used here.
+ * - Grok: `--always-approve` so edits are not an interactive prompt, with
+ *   subagents and web search disabled. Grok has no audited read-only edit
+ *   mix; the read-only one-shot flags stay on the read-only profile.
+ *
+ * Claude, Codex, agy, and Kimi stay read-only. A live write step on a harness
+ * without an entry here hands off instead of spawning unconstrained.
+ */
+const WRITER_ONESHOT_ARGS = Object.freeze({
+  pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"]),
+});
+
+export function oneShotWriterArgs(harness: string): readonly string[] | undefined {
+  return Object.hasOwn(WRITER_ONESHOT_ARGS, harness) ? WRITER_ONESHOT_ARGS[harness as keyof typeof WRITER_ONESHOT_ARGS] : undefined;
+}
+
+export function oneShotPermissionArgs(harness: string, permission: "read-only" | "edit"): readonly string[] | undefined {
+  return permission === "edit" ? oneShotWriterArgs(harness) : oneShotReadOnlyArgs(harness);
+}
+
 export const BUILTIN_HARNESSES: readonly HarnessCatalogEntry[] = Object.freeze([
   {
     id: "pi",

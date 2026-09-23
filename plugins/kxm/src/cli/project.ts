@@ -183,22 +183,27 @@ export async function cmdBackup(runtime: Runtime, options: { out?: string | unde
   try {
     const { manifest, outDir } = createBackup({
       projectRoot: runtime.cwd,
+      env: runtime.env,
       ...(options.out ? { outDir: resolve(runtime.cwd, options.out) } : {}),
     });
+    const complete = manifest.complete === true;
     const payload = {
-      ok: true,
+      ok: complete,
       command: "backup",
       backupId: manifest.backupId,
       outDir,
       manifest,
     };
     const summary = [
-      `Created SQLite backup with ${manifest.stores.length} store(s):`,
+      complete
+        ? `Created SQLite backup with ${manifest.stores.length} store(s):`
+        : `Backup is incomplete (${manifest.omitted?.length ?? 0} omitted); not ok:`,
       ...manifest.stores.map((s) => `  - ${s.storeId}: ${s.sourcePath} -> ${s.backupFile} (schema v${s.schemaVersion}, ${s.bytes} bytes, sha256 ${s.sha256.slice(0, 12)}...)`),
+      ...(manifest.omitted ?? []).map((id) => `  - omitted ${id}`),
       `Manifest: ${join(outDir, "manifest.json")}`,
     ].join("\n");
     print(runtime.io, runtime.json, payload, summary);
-    return 0;
+    return complete ? 0 : 1;
   } catch (error) {
     if (error instanceof KxmConfigError) {
       print(runtime.io, runtime.json, { ok: false, command: "backup", error: "backup_failed", issues: error.issues }, `backup failed: ${error.message}`);
@@ -282,7 +287,7 @@ export async function cmdKxmTrust(runtime: Runtime, check: boolean, options: { b
 }
 
 export const RUN_ENGINE_PHASE = "pre-3a";
-export const RUN_ENGINE_NOTICE = "runs remain created until the run engine lands; no steps execute yet";
+export const RUN_ENGINE_NOTICE = "run created; kxm runs drive executes the pinned plan (live spends an admitted model; --simulated is model-free)";
 
 export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
   if (runtime.workspaceFlag !== undefined) {

@@ -911,9 +911,11 @@ kxm context promote <project> <proposalId> --evidence "receipt:run_9/verify"
 
 ### Compiled knowledge wiki
 
-`kxm context wiki-compile` renders `.kxm/knowledge/wiki/` from reviewed
-records; every claim links its evidence, superseded state stays visible, and
-open contradictions are never silently resolved. `kxm context wiki-lint`
+`kxm context wiki-compile` prints a dry run unless `--out` names a workspace
+root, in which case it renders `.kxm/knowledge/wiki/` from reviewed
+records. Every claim links its evidence, superseded state stays visible, and
+open contradictions are never silently resolved. Compiling the wiki does not
+ingest new sources and does not change the next run. `kxm context wiki-lint`
 checks broken refs, orphan pages, stale state links, and unsurfaced
 contradictions.
 

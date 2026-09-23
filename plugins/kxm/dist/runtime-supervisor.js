@@ -164,10 +164,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify3(x) {
+    function stringify4(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify3;
+    exports.stringify = stringify4;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -8918,7 +8918,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify3(item, ctx, onComment, onChompKeep) {
+    function stringify4(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -8947,7 +8947,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify3;
+    exports.stringify = stringify4;
   }
 });
 
@@ -8957,7 +8957,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify3 = require_stringify();
+    var stringify4 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -8979,7 +8979,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify3.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify4.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -9031,7 +9031,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify3.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify4.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -9172,7 +9172,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify3 = require_stringify();
+    var stringify4 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -9208,7 +9208,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify3.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify4.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -9275,12 +9275,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify3 = require_stringify();
+    var stringify4 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify4 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify4(collection, ctx, options);
+      const stringify5 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify5(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -9305,7 +9305,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify3.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify4.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -9372,7 +9372,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify3.stringify(item, itemCtx, () => comment = null);
+        let str = stringify4.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -10733,7 +10733,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify3 = require_stringify();
+    var stringify4 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -10748,7 +10748,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify3.createStringifyContext(doc, options);
+      const ctx = stringify4.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -10770,7 +10770,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify3.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify4.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -10778,7 +10778,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify3.stringify(doc.contents, ctx));
+        lines.push(stringify4.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -12914,7 +12914,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify3 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify4 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -12967,7 +12967,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify3;
+    exports.stringify = stringify4;
   }
 });
 
@@ -14697,7 +14697,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify3(value, replacer, options) {
+    function stringify4(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -14722,7 +14722,7 @@ var require_public_api = __commonJS({
     exports.parse = parse5;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
-    exports.stringify = stringify3;
+    exports.stringify = stringify4;
   }
 });
 
@@ -14781,7 +14781,7 @@ var require_dist = __commonJS({
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash12, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync13, lstatSync as lstatSync5, mkdirSync as mkdirSync7, readFileSync as readFileSync10, renameSync as renameSync4, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync13, lstatSync as lstatSync5, mkdirSync as mkdirSync7, readFileSync as readFileSync10, renameSync as renameSync4, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname9, isAbsolute as isAbsolute6, join as join15 } from "node:path";
 
@@ -15078,6 +15078,35 @@ function coreTemplate(projectId, projectName, variant) {
     }]
   ]);
   if (variant === "v4-registry") {
+    const coordinator = files.get(".kxm/agents/coordinator.yaml");
+    if (coordinator) {
+      files.set(".kxm/agents/coordinator.yaml", {
+        ...coordinator,
+        harness: "claude",
+        model: { provider: "anthropic", model: "fable" }
+      });
+    }
+    const implementer = files.get(".kxm/agents/implementer.yaml");
+    if (implementer) {
+      files.set(".kxm/agents/implementer.yaml", {
+        ...implementer,
+        harness: "grok",
+        model: { provider: "xai", model: "grok-4.6" }
+      });
+    }
+    const workflow = files.get(".kxm/workflows/default.yaml");
+    if (workflow) {
+      const limits = { ...workflow.limits };
+      delete limits.maxAgentTimeMs;
+      files.set(".kxm/workflows/default.yaml", { ...workflow, limits });
+    }
+    files.set(".kxm/routes.yaml", {
+      schema: "kxm.routes.v2",
+      updatedAt: "2026-09-23T00:00:00.000Z",
+      admitted: ["anthropic/fable", "xai/grok-4.6"],
+      disabled: [],
+      roles: { implementer: ["xai/grok-4.6"] }
+    });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",
       gates: { test: { kind: "command", argv: ["npm", "test"], timeoutMs: 36e5 } }
@@ -15586,6 +15615,16 @@ var READ_ONLY_ONESHOT_ARGS = Object.freeze({
 });
 function oneShotReadOnlyArgs(harness) {
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
+}
+var WRITER_ONESHOT_ARGS = Object.freeze({
+  pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"])
+});
+function oneShotWriterArgs(harness) {
+  return Object.hasOwn(WRITER_ONESHOT_ARGS, harness) ? WRITER_ONESHOT_ARGS[harness] : void 0;
+}
+function oneShotPermissionArgs(harness, permission) {
+  return permission === "edit" ? oneShotWriterArgs(harness) : oneShotReadOnlyArgs(harness);
 }
 var BUILTIN_HARNESSES = Object.freeze([
   {
@@ -23087,7 +23126,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
 import { createHash as createHash8 } from "node:crypto";
-import { existsSync as existsSync7, readFileSync as readFileSync5, statSync } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync5, statSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join8 } from "node:path";
 
 // plugins/kxm/src/price-calc.ts
@@ -23256,7 +23295,7 @@ import { join as join11 } from "node:path";
 
 // plugins/kxm/src/routes.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync8, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3, readdirSync as readdirSync4 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync4, readdirSync as readdirSync4 } from "node:fs";
 import { join as join9 } from "node:path";
 var RETIRED_POLICY = ".kxm/producers.yaml";
 var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
@@ -23282,6 +23321,55 @@ function listRoleBindings(root) {
 function isRouteAdmitted(root, modelId) {
   const policy = loadRoutePolicy(root);
   return policy.admitted.includes(modelId) && !policy.disabled.includes(modelId);
+}
+
+// plugins/kxm/src/worktree-witness.ts
+import { spawnSync as spawnSync3 } from "node:child_process";
+function gitText(cwd, args) {
+  const result = spawnSync3("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15e3
+  });
+  if (result.error || result.status !== 0) return void 0;
+  return result.stdout ?? "";
+}
+function captureWorktreeWitness(cwd) {
+  const porcelain = gitText(cwd, ["status", "--porcelain=v1", "-uall"]);
+  const diff = gitText(cwd, ["diff", "--no-ext-diff"]);
+  const staged = gitText(cwd, ["diff", "--cached", "--no-ext-diff"]);
+  if (porcelain === void 0 || diff === void 0 || staged === void 0) {
+    return { unwitnessed: true, fingerprint: "" };
+  }
+  return { unwitnessed: false, fingerprint: `${porcelain}\0${diff}\0${staged}` };
+}
+function worktreeChanged(before, after) {
+  if (before.unwitnessed || after.unwitnessed) return false;
+  return before.fingerprint !== after.fingerprint;
+}
+function applyAuthoringWitness(result, input) {
+  const changed = worktreeChanged(input.before, input.after);
+  const unwitnessed = input.before.unwitnessed || input.after.unwitnessed;
+  const providerMetadata = { ...result.providerMetadata ?? {} };
+  if (input.writes) {
+    if (unwitnessed || !changed) {
+      providerMetadata.authored = false;
+      providerMetadata.authoringWitness = unwitnessed ? "unwitnessed" : "unchanged";
+      if (result.outcome === "passed") return { ...result, outcome: "failed", providerMetadata };
+    } else {
+      providerMetadata.authored = true;
+      providerMetadata.authoringWitness = "changed";
+    }
+  } else {
+    providerMetadata.authored = false;
+    if (!unwitnessed && changed) {
+      providerMetadata.authoringWitness = "readonly_mutated";
+      if (result.outcome === "passed") return { ...result, outcome: "failed", providerMetadata };
+    } else {
+      providerMetadata.authoringWitness = unwitnessed ? "unwitnessed" : "read-only";
+    }
+  }
+  return { ...result, providerMetadata };
 }
 
 // plugins/kxm/src/context-packet.ts
@@ -25655,6 +25743,8 @@ function prepareDispatch(context, runId, producerId) {
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
     }
     resolvedRoute = routeResult;
+    const writeRefusal = unsupportedLiveWrite(context.projectRoot, step, agentId, resolvedRoute.selector);
+    if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
   }
   const used = state.stepAttempts[stepId] ?? 0;
   if (used >= step.maxAttempts) {
@@ -25852,6 +25942,7 @@ function birthMember(context, input) {
 
 ${generatedPrompt}` : generatedPrompt,
       thinking: input.stepAttempt <= 1 ? "low" : "medium",
+      permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       contextPacket,
       ...resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}
     },
@@ -25958,7 +26049,18 @@ async function drivePanel(context, panel, producer) {
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
         kxmPanelDispatchSeams.beforeInvoke?.(member);
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        const live = member.producerId !== "driver-simulated";
+        const writes = Object.values(member.step.repositories).some((access) => access === "write");
+        const before = live ? captureWorktreeWitness(context.projectRoot) : void 0;
         const produced = await invokeProducer(producer, member.request);
+        if (live && produced.result && before) {
+          const after = captureWorktreeWitness(context.projectRoot);
+          return {
+            attemptId: member.attemptId,
+            invoked: true,
+            produced: { ...produced, result: applyAuthoringWitness(produced.result, { writes, before, after }) }
+          };
+        }
         return { attemptId: member.attemptId, invoked: true, produced };
       } catch (error) {
         member.controller.abort();
@@ -26559,11 +26661,64 @@ function unsupportedStep(plan, step, producerId) {
       return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
     }
   }
-  if (producerId !== "driver-simulated" && Object.values(step.repositories).some((access) => access === "write")) {
+  return void 0;
+}
+function readYamlRecord(path) {
+  if (!existsSync9(path)) return void 0;
+  try {
+    const parsed = (0, import_yaml5.parse)(readFileSync7(path, "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function agentHarness(projectRoot, agentId) {
+  const harness = readYamlRecord(join11(projectRoot, ".kxm", "agents", `${agentId}.yaml`))?.harness;
+  return typeof harness === "string" && harness.length > 0 ? harness : void 0;
+}
+function projectDefaultHarness(projectRoot) {
+  const harness = readYamlRecord(join11(projectRoot, ".kxm", "project.yaml"))?.defaultHarness;
+  return typeof harness === "string" && harness.length > 0 ? harness : "pi";
+}
+function unsupportedLiveWrite(projectRoot, step, agentId, selector) {
+  if (!Object.values(step.repositories).some((access) => access === "write")) return void 0;
+  const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
+  if (!oneShotWriterArgs(harness)) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: "live write steps are unsupported until writer sandboxing witness passes"
+      detail: `live write steps require an audited writer profile; ${harness} has none`
+    };
+  }
+  const rosterPath = join11(projectRoot, ".kxm", "roster.yaml");
+  if (!existsSync9(rosterPath)) return void 0;
+  const roster = readYamlRecord(rosterPath);
+  if (!roster || roster.schema !== "kxm.developer-roster.v1") {
+    return { reason: "step_unsupported", field: "model", detail: "live write steps require a readable kxm.developer-roster.v1" };
+  }
+  const routes = roster.routes;
+  const lineup = roster.lineup;
+  const writerIds = lineup && typeof lineup === "object" && !Array.isArray(lineup) ? lineup.writer : void 0;
+  if (!routes || typeof routes !== "object" || Array.isArray(routes) || !Array.isArray(writerIds)) {
+    return { reason: "step_unsupported", field: "model", detail: "developer roster has no writer lineup" };
+  }
+  const allowed = writerIds.some((id) => {
+    if (typeof id !== "string") return false;
+    const route = routes[id];
+    if (!route || typeof route !== "object" || Array.isArray(route)) return false;
+    const record2 = route;
+    if (record2.harness !== harness || record2.status !== "admitted") return false;
+    if (!Array.isArray(record2.permissions) || !record2.permissions.includes("edit")) return false;
+    const model = typeof record2.model === "string" ? record2.model : "";
+    const vendor = typeof record2.vendor === "string" ? record2.vendor : "";
+    return model === selector || vendor.length > 0 && `${vendor}/${model}` === selector;
+  });
+  if (!allowed) {
+    return {
+      reason: "step_unsupported",
+      field: "model",
+      detail: `live write route ${selector} on ${harness} is not on the developer roster writer lineup`
     };
   }
   return void 0;
@@ -27029,10 +27184,10 @@ function createKxmOneShotProducer(options = {}) {
       if (request.provider) {
         return { provider: request.provider.toLowerCase(), model: request.model, thinking: request.thinking };
       }
-      const parsed2 = parseModelString(request.model, harness);
+      const parsed = parseModelString(request.model, harness);
       return {
-        provider: request.provider?.toLowerCase() ?? parsed2.provider,
-        model: parsed2.model,
+        provider: request.provider?.toLowerCase() ?? parsed.provider,
+        model: parsed.model,
         thinking: request.thinking
       };
     }
@@ -27042,17 +27197,19 @@ function createKxmOneShotProducer(options = {}) {
         if (resolved.provider) {
           return { provider: resolved.provider.toLowerCase(), model: resolved.model, thinking: resolved.thinking };
         }
-        const parsed2 = parseModelString(resolved.model, harness);
+        const parsed = parseModelString(resolved.model, harness);
         return {
-          provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
-          model: parsed2.model,
+          provider: resolved.provider?.toLowerCase() ?? parsed.provider,
+          model: parsed.model,
           thinking: resolved.thinking
         };
       }
     }
-    const defaultModel = options.defaultModel ?? (harness === "codex" ? "gpt-5.6-sol" : harness === "kimi" ? "kimi-for-coding" : harness === "agy" ? "gemini-3.8-flash-high" : "claude-3-7-sonnet");
-    const parsed = parseModelString(defaultModel, harness);
-    return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+    if (options.defaultModel) {
+      const parsed = parseModelString(options.defaultModel, harness);
+      return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+    }
+    throw new Error("producer_route_not_admitted");
   }
   async function checkAuth(harness, provider, model, env, signal) {
     if (options.inventory) {
@@ -27090,8 +27247,11 @@ function createKxmOneShotProducer(options = {}) {
     if (request.signal.aborted) return cancelled();
     const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
     if (!catalogEntry?.oneShot) throw new Error(`oneshot_harness_unsupported: ${harness}`);
-    const permissionArgs = oneShotReadOnlyArgs(harness);
-    if (!permissionArgs) throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
+    const permission = request.permission === "edit" || request.contextPacket?.task.permissionCeiling === "edit" ? "edit" : "read-only";
+    const permissionArgs = oneShotPermissionArgs(harness, permission);
+    if (!permissionArgs) {
+      throw new Error(`oneshot_harness_unsupported: ${harness} ${permission === "edit" ? "writer_profile_unaudited" : "permission_profile_unaudited"}`);
+    }
     const env = { ...options.env ?? process.env };
     let auth;
     try {
@@ -27207,7 +27367,10 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
     const outcome = aborted ? "cancelled" : transportFailed || parsed.isError ? "failed" : determineOutcome(parsed.text, request.allowedOutcomes);
     const providerMetadata = {
       processStatus: aborted ? "aborted" : transportFailed ? "failed" : "completed",
-      executionEvidenceId: evidence.id
+      executionEvidenceId: evidence.id,
+      permission,
+      permissionProfile: permission === "edit" ? "writer" : "read-only",
+      authored: false
     };
     if (procResult.code !== null && Number.isFinite(procResult.code)) providerMetadata.processExitCode = procResult.code;
     if (procResult.signal) providerMetadata.processSignal = procResult.signal;
@@ -27421,7 +27584,7 @@ var RuntimeHubClient = class {
 };
 
 // plugins/kxm/src/hub-binding.ts
-import { existsSync as existsSync10, mkdirSync as mkdirSync4, readFileSync as readFileSync8, renameSync, rmSync, writeFileSync as writeFileSync4 } from "node:fs";
+import { existsSync as existsSync10, mkdirSync as mkdirSync4, readFileSync as readFileSync8, renameSync, rmSync, writeFileSync as writeFileSync5 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname6, isAbsolute as isAbsolute4, join as join13, resolve as resolve6 } from "node:path";
 var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
@@ -27493,7 +27656,7 @@ function readHubBinding(env = process.env) {
 }
 
 // plugins/kxm/src/hub-env.ts
-import { existsSync as existsSync11, mkdirSync as mkdirSync5, readFileSync as readFileSync9, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { existsSync as existsSync11, mkdirSync as mkdirSync5, readFileSync as readFileSync9, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { dirname as dirname7, isAbsolute as isAbsolute5, join as join14, resolve as resolve7 } from "node:path";
 var HUB_ENV_SCHEMA = "kxm.hub-env.v1";
@@ -27723,7 +27886,7 @@ function publishKxmSupervisorToken(paths, token) {
   const file = kxmSupervisorTokenFile(paths);
   mkdirSync7(dirname9(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync6(temp, `${token}
+  writeFileSync7(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
   try {
     chmodSync2(temp, 384);
@@ -27768,7 +27931,7 @@ function clearSupervisorError(paths) {
 function recordSupervisorError(paths, message) {
   try {
     mkdirSync7(paths.runtimeDir, { recursive: true, mode: 448 });
-    writeFileSync6(supervisorErrorFile(paths), `${message}
+    writeFileSync7(supervisorErrorFile(paths), `${message}
 `, { encoding: "utf8", mode: 384 });
   } catch {
   }

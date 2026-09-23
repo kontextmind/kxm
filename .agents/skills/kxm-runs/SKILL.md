@@ -5,9 +5,10 @@ description: Create and inspect local KXM runs while preserving current executio
 
 # KXM Runs
 
-`kxm run` creates a KXM run (offline-first; steps do not execute until the
-run engine lands). Inspect with `kxm runs`. Do not invent get/create/logs
-verbs under `runs`.
+`kxm run` creates a KXM run and leaves it created until `kxm runs drive`
+executes the pinned plan. Live drive is the default and spends an admitted
+model; `--simulated` is the model-free producer. Inspect with `kxm runs`.
+Do not invent get/create/logs verbs under `runs`.
 
 ## Commands
 
@@ -29,5 +30,6 @@ kxm runs drive run_12345 --simulated --wait --timeout-ms 60000 --json
 kxm runs cancel run_12345 --json
 ```
 
-Created runs remain `created` until the engine executes. Do not treat listing
-or status as proof that steps ran.
+Created runs remain `created` until `kxm runs drive` executes them. Do not treat
+listing or status as proof that steps ran. A read-only step that settles
+`passed` did not author a checkout change.

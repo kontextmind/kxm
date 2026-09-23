@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { stringify } from "yaml";
-import { calculateModelCost, findModelPrice, hashPriceCatalog, loadPriceCatalogForEstimate, parsePriceCatalog, type PriceCatalog, type PriceTier } from "../../plugins/kxm/src/prices.ts";
+import { acknowledgePriceCatalog, calculateModelCost, findModelPrice, hashPriceCatalog, loadPriceCatalogForEstimate, parsePriceCatalog, type PriceCatalog, type PriceTier } from "../../plugins/kxm/src/prices.ts";
 
 const tier = { upToContextTokens: null, inputPerMillion: 1, outputPerMillion: 2, cacheReadPerMillion: 0.1, cacheWritePerMillion: 0.2 };
 function catalog(tiers: readonly PriceTier[] = [tier]): PriceCatalog {
@@ -90,5 +90,24 @@ test("list-estimate catalog loads verify digest, drop stale snapshots, and never
     assert.equal(failed.catalog, undefined);
   } finally {
     rmSync(corruptDir, { recursive: true, force: true });
+  }
+});
+
+test("acknowledgePriceCatalog stamps the existing list as today without fetching rates", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-prices-ack-"));
+  try {
+    mkdirSync(join(root, ".kxm"), { recursive: true });
+    writeFileSync(join(root, ".kxm", "prices.yaml"), stringify(catalog()), "utf8");
+    const before = loadPriceCatalogForEstimate({ projectRoot: root });
+    assert.equal(before.stale, true);
+    assert.equal(before.catalog, undefined);
+    const stamped = acknowledgePriceCatalog(root);
+    assert.equal(stamped.date, new Date().toISOString().slice(0, 10));
+    const after = loadPriceCatalogForEstimate({ projectRoot: root });
+    assert.equal(after.stale, false);
+    assert.equal(after.unavailable, false);
+    assert.equal(after.catalog?.sha256, stamped.sha256);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

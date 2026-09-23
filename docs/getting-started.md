@@ -60,6 +60,11 @@ kxm init
 ```
 
 `kxm init` never copies the package repository's dogfood roster or workflows into a consumer workspace.
+The current template workflow can be driven: it does not set `limits.maxAgentTimeMs`,
+and its coordinator and implementer name admitted harness/model pairs
+(`claude` / `anthropic/fable`, `grok` / `xai/grok-4.6`) in `.kxm/routes.yaml`.
+Driving them spends those harnesses only when they are installed and authenticated.
+A missing model is refused; kxm does not substitute an unadmitted default.
 
 When `kxm init` succeeds in an interactive terminal, it offers to install shell
 completion for the detected shell. Accepting writes the completion script
@@ -73,13 +78,15 @@ After the completion offer, an interactive `kxm init` also offers to set up
 workflow-guide agents and workflows for the harnesses you have installed and
 authenticated. Accepting lists the software-engineering workflows from
 [`workflow-guide.md`](workflow-guide.md); pick by number or slug (`all` works
-too). kxm resolves each role's first guide candidate whose harness is
-authenticated and writes only current KXM project resources —
-`.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and `.kxm/workflows/<slug>.yaml`
-(`kxm.workflow.v1`). It never writes retired legacy authority (`.kxm/config`,
-retired `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy. Roles whose candidates have no authenticated harness are
-reported as skipped, not silently downgraded. Guide candidates are dated
-research — verify them before dispatch. Declining is safe: set
+too). kxm keeps a role only when a guide candidate maps to an admitted
+harness and model and that harness is authenticated. It writes
+`.kxm/agents/<role>.yaml` (`kxm.agent.v1`), `.kxm/workflows/<slug>.yaml`
+(`kxm.workflow.v1`), and appends those selectors to `.kxm/routes.yaml`.
+Google candidates use the Pi `antigravity` provider. Unmapped research ids,
+including ones whose harness is logged in, are skipped. It never writes
+retired legacy authority (`.kxm/config`, retired `.kxm/roster.json`) or the
+trusted `.kxm/roster.yaml` policy. Guide candidates are dated research —
+verify them before dispatch. Declining is safe: set
 `KXM_SKIP_GUIDE_SETUP_PROMPT=1` to suppress the offer.
 
 ## 3. Start the hub in another terminal
@@ -253,12 +260,17 @@ kxm context state my-project ci.pipeline --as-of 2026-01-15T00:00:00.000Z
 # Episodic learning from workflow journals
 kxm context episode my-project
 
-# Compile and lint the knowledge wiki
+# Compile the knowledge wiki. Without --out this is a dry run and writes nothing.
 kxm context wiki-compile my-project
+kxm context wiki-compile my-project --out .
 kxm context wiki-lint my-project
 
-# Routing telemetry per behavioral configuration
+# Routing telemetry per behavioral configuration. A missing cost stays unknown.
 kxm routing report
+
+# Stamp the local list-price file as today's estimate. This does not fetch vendor rates.
+# Until you do, cost estimates stay unknown.
+kxm prices acknowledge
 ```
 
 State changes follow a propose-then-promote flow: agents propose through the
