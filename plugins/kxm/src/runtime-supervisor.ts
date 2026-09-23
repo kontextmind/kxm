@@ -436,7 +436,11 @@ export async function syncKxmOutbox(
 function runtimeHubClientFor(context: KxmRuntimeContext, env: NodeJS.ProcessEnv): RuntimeHubClient | undefined {
   const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
   if (!serverUrl) return undefined;
-  const project = defaultProjectName(context.projectRoot, env);
+  // Use the context's actual projectId — the same identity sync events carry — so the
+  // ops snapshot can join runs to their home Runtime. defaultProjectName() resolves to
+  // the npm package name (e.g. "@kontextmind/kxm"), which never matches project.yaml's
+  // prj_* id, leaving presence orphaned from the runs it owns.
+  const project = context.projectId;
   const authToken = resolveClientHubAuthToken(env, project);
   return new RuntimeHubClient({
     serverUrl,
@@ -495,7 +499,7 @@ async function startKxmRuntimeSupervisorInner(
     // BEFORE any event can be appended — so the very first outbox row is
     // already scrubbed. Registering on the sync tick leaves a window where
     // appended events retain credentials.
-    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    const hubToken = resolveClientHubAuthToken(process.env, context.projectId);
     if (hubToken) context.eventStore.syncRedactor.register(hubToken);
     for (const key of Object.keys(process.env)) {
       if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {

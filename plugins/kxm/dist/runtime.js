@@ -17089,8 +17089,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join21 = objectValue(step.join);
-    const minimumPassed = join21 && typeof join21.minimumPassed === "number" ? join21.minimumPassed : void 0;
+    const join20 = objectValue(step.join);
+    const minimumPassed = join20 && typeof join20.minimumPassed === "number" ? join20.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -21422,7 +21422,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join21 = compileJoin(step, id, sink);
+  const join20 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -21450,7 +21450,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join21
+    join: join20
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -21500,15 +21500,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join21 = objectValue2(step.join);
-  if (!join21) return { strategy: "all" };
-  const declared = stringValue2(join21.strategy);
+  const join20 = objectValue2(step.join);
+  if (!join20) return { strategy: "all" };
+  const declared = stringValue2(join20.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join21.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join20.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join21.cancelRemaining === "boolean" ? { cancelRemaining: join21.cancelRemaining } : {}
+    ...typeof join20.cancelRemaining === "boolean" ? { cancelRemaining: join20.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -23356,9 +23356,9 @@ function assertKxmConfigError(error) {
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash13, createHmac, randomBytes as randomBytes3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync12, lstatSync as lstatSync5, mkdirSync as mkdirSync6, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync12, lstatSync as lstatSync5, mkdirSync as mkdirSync6, readFileSync as readFileSync10, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname8, isAbsolute as isAbsolute6, join as join16 } from "node:path";
+import { dirname as dirname8, isAbsolute as isAbsolute6, join as join15 } from "node:path";
 
 // plugins/kxm/src/oneshot-producer.ts
 import { join as join12 } from "node:path";
@@ -27988,23 +27988,9 @@ function resolveClientHubAuthToken(env, project) {
   return record2?.projectTokens?.[project]?.trim() || record2?.authToken?.trim() || void 0;
 }
 
-// plugins/kxm/src/project-name.ts
-import { readFileSync as readFileSync10 } from "node:fs";
-import { basename as basename3, join as join15 } from "node:path";
-function defaultProjectName(cwd, env = process.env) {
-  const fromEnv = env.KXM_PROJECT?.trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const pkg = JSON.parse(readFileSync10(join15(cwd, "package.json"), "utf8"));
-    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
-  } catch {
-  }
-  return basename3(cwd);
-}
-
 // plugins/kxm/src/runtime-supervisor.ts
 function kxmSupervisorTokenFile(paths) {
-  return join16(paths.runtimeDir, "supervisor.token");
+  return join15(paths.runtimeDir, "supervisor.token");
 }
 function publishKxmSupervisorToken(paths, token) {
   const file = kxmSupervisorTokenFile(paths);
@@ -28032,7 +28018,7 @@ function readKxmSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync11(file, "utf8").trim();
+  const token = readFileSync10(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -28046,7 +28032,7 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join16(paths.runtimeDir, "supervisor.error");
+  return join15(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
@@ -28067,7 +28053,7 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync11(file, "utf8").trim();
+    return readFileSync10(file, "utf8").trim();
   } catch {
     return void 0;
   }
@@ -28143,7 +28129,7 @@ async function ensureKxmSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join16(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join15(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn3(process.execPath, [script], {
       detached: true,
@@ -28298,7 +28284,7 @@ async function syncKxmOutbox(eventStore, client, options = {}) {
 function runtimeHubClientFor(context, env) {
   const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
   if (!serverUrl) return void 0;
-  const project = defaultProjectName(context.projectRoot, env);
+  const project = context.projectId;
   const authToken = resolveClientHubAuthToken(env, project);
   return new RuntimeHubClient({
     serverUrl,
@@ -28330,7 +28316,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
   let activeRuntimeId = runtimeId;
   const contexts = /* @__PURE__ */ new Map();
   const registerSyncCredentials = (context) => {
-    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    const hubToken = resolveClientHubAuthToken(process.env, context.projectId);
     if (hubToken) context.eventStore.syncRedactor.register(hubToken);
     for (const key of Object.keys(process.env)) {
       if (key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY")) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
@@ -28774,7 +28760,7 @@ async function kxmRuntimeRequest(handle, method, path, body) {
 
 // plugins/kxm/src/pi-producer.ts
 import { spawn as spawn4 } from "node:child_process";
-import { join as join17 } from "node:path";
+import { join as join16 } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 function formatPiSessionKey(params) {
   if (params.agentId === "coordinator") {
@@ -29148,7 +29134,7 @@ function createKxmPiProducer(options = {}) {
     const args = ["--mode", "rpc", "--name", displayName];
     if (options.sessionDir) {
       const safeDirName = key.replace(/[^a-zA-Z0-9_-]/g, "_");
-      args.push("--session-dir", join17(options.sessionDir, request.runId, safeDirName));
+      args.push("--session-dir", join16(options.sessionDir, request.runId, safeDirName));
     }
     if (model) {
       args.push("--model", model);
@@ -29427,7 +29413,7 @@ function createLogger(options) {
 // plugins/kxm/src/improve.ts
 import { createHash as createHash14 } from "node:crypto";
 import { existsSync as existsSync14, mkdirSync as mkdirSync8, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join18, relative as relative4, resolve as resolve8 } from "node:path";
+import { join as join17, relative as relative4, resolve as resolve8 } from "node:path";
 var CANDIDATE_SCHEMA = "kxm.candidate.v1";
 var IMPROVEMENT_REPORT_SCHEMA = "kxm.improvement-report.v2";
 var IMPROVEMENT_REPORT_V1_SCHEMA = "kxm.improvement-report.v1";
@@ -29600,7 +29586,7 @@ function groupRoutingRecords(records, options = {}) {
 }
 function buildImprovementReport(records, options = {}) {
   const projectRoot = options.projectRoot ? resolve8(options.projectRoot) : process.cwd();
-  const candidatesDir = options.candidatesDir ? resolve8(options.candidatesDir) : join18(projectRoot, ".kxm", "candidates");
+  const candidatesDir = options.candidatesDir ? resolve8(options.candidatesDir) : join17(projectRoot, ".kxm", "candidates");
   const groups = groupRoutingRecords(records, options);
   const candidates = [];
   for (const group of groups) {
@@ -29612,7 +29598,7 @@ function buildImprovementReport(records, options = {}) {
       group.workflowHash
     );
     const diffFileName = `${group.candidateId}.diff`;
-    const diffFilePath = join18(candidatesDir, diffFileName);
+    const diffFilePath = join17(candidatesDir, diffFileName);
     const relDiffPath = relative4(projectRoot, diffFilePath).replace(/\\/g, "/");
     const candidate = {
       schema: CANDIDATE_SCHEMA,
@@ -29638,7 +29624,7 @@ function buildImprovementReport(records, options = {}) {
         mkdirSync8(candidatesDir, { recursive: true });
       }
       writeFileSync7(diffFilePath, diff, "utf8");
-      const jsonFilePath = join18(candidatesDir, `${group.candidateId}.json`);
+      const jsonFilePath = join17(candidatesDir, `${group.candidateId}.json`);
       writeFileSync7(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
     }
     candidates.push(candidate);
@@ -29654,7 +29640,7 @@ function buildImprovementReport(records, options = {}) {
 }
 function writeImprovementReport(improvementsDir, report, dryRun = false) {
   const stamp = report.createdAt.replace(/[:.]/g, "-");
-  const path = join18(improvementsDir, `${stamp}.json`);
+  const path = join17(improvementsDir, `${stamp}.json`);
   if (!dryRun) {
     mkdirSync8(improvementsDir, { recursive: true });
     writeFileSync7(path, `${JSON.stringify(report, null, 2)}
@@ -30158,8 +30144,8 @@ Instructions for Operator:
 
 // plugins/kxm/src/modes.ts
 var import_yaml6 = __toESM(require_dist(), 1);
-import { existsSync as existsSync15, readFileSync as readFileSync13 } from "node:fs";
-import { join as join19 } from "node:path";
+import { existsSync as existsSync15, readFileSync as readFileSync12 } from "node:fs";
+import { join as join18 } from "node:path";
 var DEFAULT_MODES_CONFIG = Object.freeze({
   schema: "kxm.modes.v1",
   majorModes: {
@@ -30222,12 +30208,12 @@ function loadModesConfig(projectRoot) {
   if (!projectRoot) {
     return DEFAULT_MODES_CONFIG;
   }
-  const modesPath = join19(projectRoot, ".kxm", "modes.yaml");
+  const modesPath = join18(projectRoot, ".kxm", "modes.yaml");
   if (!existsSync15(modesPath)) {
     return DEFAULT_MODES_CONFIG;
   }
   try {
-    const raw = readFileSync13(modesPath, "utf8");
+    const raw = readFileSync12(modesPath, "utf8");
     const parsed = (0, import_yaml6.parse)(raw);
     if (parsed && parsed.schema === "kxm.modes.v1" && parsed.majorModes) {
       return {
@@ -30313,11 +30299,11 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
     estimatedTokens: estimateTokens(baseSystemPromptChars)
   });
   for (const relPath of resolved.contextFiles) {
-    const fullPath = join19(projectRoot, relPath);
+    const fullPath = join18(projectRoot, relPath);
     let chars = 0;
     if (existsSync15(fullPath)) {
       try {
-        chars = readFileSync13(fullPath, "utf8").length;
+        chars = readFileSync12(fullPath, "utf8").length;
       } catch {
         chars = 0;
       }
@@ -30449,9 +30435,9 @@ ${divider}
 
 // plugins/kxm/src/ssh-remote.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
-import { existsSync as existsSync16, mkdirSync as mkdirSync9, readFileSync as readFileSync14, readdirSync as readdirSync5, rmSync as rmSync4, statSync as statSync4 } from "node:fs";
+import { existsSync as existsSync16, mkdirSync as mkdirSync9, readFileSync as readFileSync13, readdirSync as readdirSync5, rmSync as rmSync4, statSync as statSync4 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { join as join20, resolve as resolve9 } from "node:path";
+import { join as join19, resolve as resolve9 } from "node:path";
 var MAX_SSH_OUTPUT_BYTES = 50 * 1024;
 var MAX_SSH_OUTPUT_LINES = 2e3;
 var DEFAULT_SOCKET_DIR = ".kxm/run/ssh-sockets";
@@ -30477,12 +30463,12 @@ function truncateSshOutput(raw) {
   return { text, truncated };
 }
 function parseSshConfig(configPath) {
-  const targetPath = configPath ?? join20(homedir4(), ".ssh", "config");
+  const targetPath = configPath ?? join19(homedir4(), ".ssh", "config");
   if (!existsSync16(targetPath)) {
     return [];
   }
   try {
-    const content = readFileSync14(targetPath, "utf-8");
+    const content = readFileSync13(targetPath, "utf-8");
     const lines = content.split("\n");
     const hosts = [];
     let currentHosts = [];
@@ -30567,7 +30553,7 @@ function ensureSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
 }
 function buildSshArgs(options) {
   const socketDir = ensureSocketDir(options.socketDir ?? DEFAULT_SOCKET_DIR);
-  const controlPath = join20(socketDir, "%C");
+  const controlPath = join19(socketDir, "%C");
   const persist2 = options.controlPersist ?? DEFAULT_CONTROL_PERSIST;
   const args = [
     "-o",
@@ -30592,7 +30578,7 @@ function buildSshArgs(options) {
 }
 function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync3) {
   const resolvedDir = ensureSocketDir(socketDir);
-  const controlPath = join20(resolvedDir, "%C");
+  const controlPath = join19(resolvedDir, "%C");
   try {
     const result = execFn("ssh", ["-O", "check", "-o", `ControlPath=${controlPath}`, host], {
       encoding: "utf-8"
@@ -30604,7 +30590,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync3) {
   const resolvedDir = ensureSocketDir(socketDir);
-  const controlPath = join20(resolvedDir, "%C");
+  const controlPath = join19(resolvedDir, "%C");
   try {
     const result = execFn("ssh", ["-O", "stop", "-o", `ControlPath=${controlPath}`, host], {
       encoding: "utf-8"
@@ -30620,7 +30606,7 @@ function pruneSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
   try {
     const entries = readdirSync5(resolvedDir);
     for (const entry of entries) {
-      const fullPath = join20(resolvedDir, entry);
+      const fullPath = join19(resolvedDir, entry);
       try {
         const stat = statSync4(fullPath);
         if (stat.isSocket()) {

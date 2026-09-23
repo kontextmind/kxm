@@ -14781,9 +14781,9 @@ var require_dist = __commonJS({
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash12, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync12, lstatSync as lstatSync5, mkdirSync as mkdirSync6, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync12, lstatSync as lstatSync5, mkdirSync as mkdirSync6, readFileSync as readFileSync10, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync6 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname8, isAbsolute as isAbsolute6, join as join16 } from "node:path";
+import { dirname as dirname8, isAbsolute as isAbsolute6, join as join15 } from "node:path";
 
 // plugins/kxm/src/repo-root.ts
 import { existsSync } from "node:fs";
@@ -16919,8 +16919,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join17 = objectValue(step.join);
-    const minimumPassed = join17 && typeof join17.minimumPassed === "number" ? join17.minimumPassed : void 0;
+    const join16 = objectValue(step.join);
+    const minimumPassed = join16 && typeof join16.minimumPassed === "number" ? join16.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -20987,7 +20987,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join17 = compileJoin(step, id, sink);
+  const join16 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -21015,7 +21015,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join17
+    join: join16
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -21065,15 +21065,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join17 = objectValue2(step.join);
-  if (!join17) return { strategy: "all" };
-  const declared = stringValue2(join17.strategy);
+  const join16 = objectValue2(step.join);
+  if (!join16) return { strategy: "all" };
+  const declared = stringValue2(join16.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join17.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join16.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join17.cancelRemaining === "boolean" ? { cancelRemaining: join17.cancelRemaining } : {}
+    ...typeof join16.cancelRemaining === "boolean" ? { cancelRemaining: join16.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -27473,23 +27473,9 @@ function resolveClientHubAuthToken(env, project) {
   return record2?.projectTokens?.[project]?.trim() || record2?.authToken?.trim() || void 0;
 }
 
-// plugins/kxm/src/project-name.ts
-import { readFileSync as readFileSync10 } from "node:fs";
-import { basename as basename3, join as join15 } from "node:path";
-function defaultProjectName(cwd, env = process.env) {
-  const fromEnv = env.KXM_PROJECT?.trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const pkg = JSON.parse(readFileSync10(join15(cwd, "package.json"), "utf8"));
-    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
-  } catch {
-  }
-  return basename3(cwd);
-}
-
 // plugins/kxm/src/runtime-supervisor.ts
 function kxmSupervisorTokenFile(paths) {
-  return join16(paths.runtimeDir, "supervisor.token");
+  return join15(paths.runtimeDir, "supervisor.token");
 }
 function publishKxmSupervisorToken(paths, token) {
   const file = kxmSupervisorTokenFile(paths);
@@ -27517,7 +27503,7 @@ function readKxmSupervisorToken(paths) {
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw runtimeError("runtime_path_invalid", file, "supervisor token file must be a regular file, not a link");
   }
-  const token = readFileSync11(file, "utf8").trim();
+  const token = readFileSync10(file, "utf8").trim();
   return token.length >= 32 ? token : void 0;
 }
 function processAlive(pid) {
@@ -27531,7 +27517,7 @@ function processAlive(pid) {
 var HEARTBEAT_STALE_MS = 15e3;
 var SUPERVISOR_ERROR_MAX_AGE_MS = 3e4;
 function supervisorErrorFile(paths) {
-  return join16(paths.runtimeDir, "supervisor.error");
+  return join15(paths.runtimeDir, "supervisor.error");
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
@@ -27552,7 +27538,7 @@ function readRecentSupervisorError(paths) {
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > SUPERVISOR_ERROR_MAX_AGE_MS) return void 0;
   try {
-    return readFileSync11(file, "utf8").trim();
+    return readFileSync10(file, "utf8").trim();
   } catch {
     return void 0;
   }
@@ -27628,7 +27614,7 @@ async function ensureKxmSupervisor(options = {}) {
     throw runtimeError("runtime_supervisor_unreachable", paths.registryDb, `runtime supervisor pid ${status.pid} is registered as running but cannot be probed`);
   }
   clearSupervisorError(paths);
-  const scriptPath = join16(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
+  const scriptPath = join15(findKxmRepoRoot(import.meta.url), "scripts", "kxm-runtime-supervisor.mjs");
   const spawnImpl = options.spawnImpl ?? ((script, env) => {
     const child = spawn3(process.execPath, [script], {
       detached: true,
@@ -27783,7 +27769,7 @@ async function syncKxmOutbox(eventStore, client, options = {}) {
 function runtimeHubClientFor(context, env) {
   const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
   if (!serverUrl) return void 0;
-  const project = defaultProjectName(context.projectRoot, env);
+  const project = context.projectId;
   const authToken = resolveClientHubAuthToken(env, project);
   return new RuntimeHubClient({
     serverUrl,
@@ -27815,7 +27801,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
   let activeRuntimeId = runtimeId;
   const contexts = /* @__PURE__ */ new Map();
   const registerSyncCredentials = (context) => {
-    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    const hubToken = resolveClientHubAuthToken(process.env, context.projectId);
     if (hubToken) context.eventStore.syncRedactor.register(hubToken);
     for (const key of Object.keys(process.env)) {
       if (key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY")) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
