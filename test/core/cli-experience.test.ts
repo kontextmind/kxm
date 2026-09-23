@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import test from "node:test";
 import {
   loadKxmConfig,
@@ -32,6 +34,10 @@ import {
   TASK_SCHEMA,
 } from "../../plugins/kxm/src/task-manager.ts";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
+import { PROMOTION_REQUIRED_EVALUATIONS } from "../../plugins/kxm/src/skills.ts";
+import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
+import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
+import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
 
 function createSandbox(): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "kxm-cli-exp-"));
@@ -556,5 +562,159 @@ test("task-manager error branches: nonexistent tasks and missing tracker sync fa
     assert.equal(listWithFilter.length, 0);
   } finally {
     sandbox.cleanup();
+  }
+});
+
+/** Every file and directory under `root`, keyed by relative path; files carry
+ * their content digest so a rewrite with identical bytes still compares equal. */
+function treeSnapshot(root: string): Record<string, string> {
+  const entries: Record<string, string> = {};
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir).sort()) {
+      const path = join(dir, name);
+      const stat = lstatSync(path);
+      const key = relative(root, path);
+      if (stat.isDirectory()) {
+        entries[key] = "dir";
+        walk(path);
+      } else {
+        entries[key] = stat.isFile() ? createHash("sha256").update(readFileSync(path)).digest("hex") : "other";
+      }
+    }
+  };
+  walk(root);
+  return entries;
+}
+
+test("every mutating command under --dry-run leaves the workspace, state root, and hub untouched", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-dry-run-"));
+  const project = join(root, "project");
+  const state = join(root, "state");
+  mkdirSync(project, { recursive: true });
+  const env: NodeJS.ProcessEnv = {
+    HOME: join(root, "home"),
+    KXM_STATE_HOME: state,
+    KXM_USER_CONFIG_DIR: join(root, "user-config"),
+    KXM_USER_TELEMETRY_DIR: join(root, "telemetry"),
+    XDG_CONFIG_HOME: join(root, "xdg-config"),
+    XDG_STATE_HOME: join(root, "xdg-state"),
+    KXM_SERVER_URL: "http://hub.kxm-dry-run.invalid",
+    KXM_SKIP_COMPLETION_PROMPT: "1",
+    KXM_SKIP_GUIDE_SETUP_PROMPT: "1",
+    PATH: process.env.PATH,
+  };
+  const requests: string[] = [];
+  const stubHub: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    requests.push(`${init?.method ?? "GET"} ${url.pathname}`);
+    if (url.pathname === "/v1/context/wiki/compile") {
+      return Response.json({ audit: { pages: ["index.md"], contradictions: 0 }, pages: [{ path: ".kxm/knowledge/wiki/index.md", content: "# wiki\n" }] });
+    }
+    return Response.json({ ok: true });
+  };
+  const kxm = async (argv: string[]): Promise<{ code: number; out: string; err: string }> => {
+    let out = "";
+    let err = "";
+    const code = await runCliImplementation(argv, env, { stdout: (text) => { out += text; }, stderr: (text) => { err += text; }, fetchImpl: stubHub }, project);
+    return { code, out, err };
+  };
+  const seed = async (argv: string[]): Promise<Record<string, unknown>> => {
+    const result = await kxm([...argv, "--json"]);
+    assert.equal(result.code, 0, `seed ${argv.join(" ")}: ${result.err}`);
+    return JSON.parse(result.out) as Record<string, unknown>;
+  };
+  try {
+    // Real state for every command to plan against: a committed project, a role,
+    // a workflow, a tracked task, a skill candidate with passing evaluations, a
+    // hub store, and a verified backup of it.
+    assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
+    await seed(["init", "--project-id", "prj_01JDRYRUN0000000000000000", "--name", "Dry Run"]);
+    assert.equal(spawnSync("git", ["-C", project, "add", "-A"]).status, 0);
+    assert.equal(spawnSync("git", ["-C", project, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"]).status, 0);
+    await seed(["role", "add", "seed-role", "--description", "seed"]);
+    await seed(["workflow", "add", "seed-flow", "--description", "seed", "--scope", "global"]);
+    const taskId = ((await seed(["task", "create", "Seed task", "--tracker", "github", "--issue", "1"])).task as { id: string }).id;
+    writeFileSync(join(root, "SKILL.md"), "---\nname: seed-skill\ndescription: seed skill\n---\nDo the thing.\n");
+    const skillId = ((await seed([
+      "skills", "create", "--file", join(root, "SKILL.md"), "--name", "seed-skill", "--created-by", "author",
+      "--receipt", "receipt:seed", "--harness", "pi", "--models", "pi/model",
+    ])).metadata as { id: string }).id;
+    for (const kind of PROMOTION_REQUIRED_EVALUATIONS) await seed(["skills", "evaluate", skillId, "--kind", kind, "--evaluator", "v1"]);
+    // A WAL store, like every real hub store: a careless read-only open of one
+    // leaves -wal/-shm sidecars behind, which the snapshot below would catch.
+    mkdirSync(join(project, ".kxm", "state"), { recursive: true });
+    const hubStore = new DatabaseSync(join(project, ".kxm", "state", "kxm.db"));
+    hubStore.exec(`PRAGMA journal_mode = WAL;
+      CREATE TABLE workflow_runs (id TEXT PRIMARY KEY, record TEXT NOT NULL);
+      CREATE TABLE workflow_journal (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, category TEXT NOT NULL, area TEXT NOT NULL, record TEXT NOT NULL);`);
+    const stage = { id: "review", label: "Review", instructions: "Review", requiredEvidence: [], maxAttempts: 2, autoResumeLimit: 1, status: "waiting", attempts: 1, evidence: {} };
+    hubStore.prepare("INSERT INTO workflow_runs (id, record) VALUES (?, ?)").run("wf_dry_run", JSON.stringify({
+      id: "wf_dry_run", definitionId: "audit-flow", source: "generic", deliveryId: "d1", payloadHash: "h1", project: "dry-run",
+      targetAgentId: "agent_1", targetAgentName: "agent", messageId: "msg_1", status: "waiting", currentStage: "review", stages: [stage],
+      waiting: { stageId: "review", signalKey: "audit_escalation", summary: "escalated", createdAt: "2026-09-23T00:00:00.000Z", expiresAt: "2026-09-24T00:00:00.000Z" },
+      createdAt: "2026-09-23T00:00:00.000Z", updatedAt: "2026-09-23T00:00:00.000Z",
+    }));
+    hubStore.close();
+    await seed(["backup", "--out", join(root, "backup")]);
+
+    const before = treeSnapshot(root);
+    requests.length = 0;
+    const planned: Array<[string[], string]> = [
+      [["backup"], "write"],
+      [["restore", join(root, "backup", "manifest.json")], "write"],
+      [["config", "set", "user.theme", "light"], "write"],
+      [["role", "add", "new-role"], "write"],
+      [["role", "remove", "seed-role"], "delete"],
+      [["role", "modify", "seed-role", "--add-skill", "extra"], "write"],
+      [["role", "set-host", "writer", "grok"], "write"],
+      [["role", "resume", `run_${"0".repeat(32)}`, "carry on"], "request"],
+      [["role", "resume", "wf_dry_run", "carry on"], "write"],
+      [["workflow", "add", "new-flow"], "write"],
+      [["workflow", "remove", "seed-flow", "--scope", "global"], "delete"],
+      [["workflow", "modify", "seed-flow", "--description", "changed", "--scope", "global"], "write"],
+      [["goal", "create", "Ship it"], "write"],
+      [["task", "create", "Another task"], "write"],
+      [["task", "run", taskId], "request"],
+      [["task", "sync", taskId], "write"],
+      [["memory", "note", "a learned fact"], "write"],
+      [["memory", "sync"], "write"],
+      [["skills", "evaluate", skillId, "--kind", "functional", "--evaluator", "v2", "--fail"], "write"],
+      [["skills", "promote", skillId, "--decided-by", "promoter", "--evidence", "receipt:seed"], "write"],
+      [["skills", "reject", skillId, "--decided-by", "reviewer"], "move"],
+      [["context", "promote", "dry-run", "prop_1", "--evidence", "receipt:seed"], "request"],
+      [["context", "wiki-compile", "dry-run", "--out", join(project, "wiki")], "write"],
+      [["session", "brief"], "write"],
+      [["session", "brief", "--token"], "write"],
+      [["auth", "token"], "write"],
+      [["auth", "token", "--issue"], "write"],
+      [["ssh", "run", "host.kxm-dry-run.invalid", "touch", "/tmp/x"], "ssh"],
+      [["ssh", "file", "host.kxm-dry-run.invalid", "/tmp/x", "--content", "x"], "ssh"],
+      [["ssh", "close", "host.kxm-dry-run.invalid"], "ssh"],
+    ];
+    for (const [argv, action] of planned) {
+      const result = await kxm([...argv, "--dry-run", "--json"]);
+      assert.equal(result.code, 0, `${argv.join(" ")}: ${result.err}`);
+      const payload = JSON.parse(result.out) as { ok: boolean; dryRun: boolean; planned: Array<{ action: string }> };
+      assert.equal(payload.dryRun, true, argv.join(" "));
+      assert.ok(payload.planned.some((change) => change.action === action), `${argv.join(" ")} plans a ${action}`);
+    }
+    // Two answers without a plan: a read that would have to start the Runtime, and a
+    // command that never learned --dry-run. Both refuse instead of acting.
+    for (const argv of [["runs", "status", `run_${"0".repeat(32)}`], ["models"]]) {
+      const result = await kxm([...argv, "--dry-run", "--json"]);
+      assert.equal(result.code, 2, argv.join(" "));
+      assert.equal((JSON.parse(result.err) as { error: string }).error, "dry_run_unsupported");
+    }
+
+    const after = treeSnapshot(root);
+    const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((path) => before[path] !== after[path]);
+    assert.deepEqual(changed, [], "paths a dry run created, changed, or removed");
+    const hubReads = new Set(["GET /health", "POST /v1/context/wiki/compile"]);
+    assert.deepEqual(requests.filter((request) => !hubReads.has(request)), []);
+    assert.equal(kxmSupervisorStatus(kxmRuntimePaths({ env })).running, false);
+  } finally {
+    const supervisor = kxmSupervisorStatus(kxmRuntimePaths({ env }));
+    if (supervisor.running && supervisor.pid) process.kill(supervisor.pid);
+    rmSync(root, { recursive: true, force: true });
   }
 });

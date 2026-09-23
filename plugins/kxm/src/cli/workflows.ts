@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { DatabaseSync } from "../sqlite.ts";
+import { openReadOnlyDatabase } from "../sqlite.ts";
 import { buildRetrospective, writeRetrospective } from "../retrospective.ts";
 import { redactSecrets } from "../redact.ts";
 import { postWorkflowSignal, watchGithubChecks } from "../github-watch.ts";
@@ -24,6 +24,7 @@ import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts
 import type { WorkerOutcome } from "../envelope.ts";
 import {
   print,
+  printPlan,
   printWorker,
   gateOf,
   parseEvidencePairs,
@@ -37,7 +38,7 @@ const CLI_NAME = "kxm";
 
 export function localWorkflowSnapshot(dataPath: string, runId?: string): { runs: WorkflowRun[]; journal: WorkflowJournalEntry[] } {
   if (!existsSync(dataPath)) throw new Error("state_database_not_found");
-  const database = new DatabaseSync(dataPath, { readOnly: true });
+  const database = openReadOnlyDatabase(dataPath);
   try {
     const rows = runId
       ? database.prepare("SELECT record FROM workflow_runs WHERE id = ?").all(runId)
@@ -265,7 +266,12 @@ export async function cmdWorkflowAdd(
       repoRoot: runtime.cwd,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
       overwrite: options.overwrite,
+      dryRun: runtime.dryRun,
     });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "workflow add", workflowId, ...res }, [{ action: "write", target: res.filePath }], `add workflow '${workflowId}' to ${res.scope}`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -316,7 +322,12 @@ export async function cmdWorkflowRemove(
       scope,
       repoRoot: runtime.cwd,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+      dryRun: runtime.dryRun,
     });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "workflow remove", workflowId, ...res }, [{ action: "delete", target: res.filePath }], `remove workflow '${workflowId}' from ${res.scope}`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -373,8 +384,13 @@ export async function cmdWorkflowModify(
         scope: options.scope,
         repoRoot: runtime.cwd,
         userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
+        dryRun: runtime.dryRun,
       },
     );
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "workflow modify", workflowId, ...res }, [{ action: "write", target: res.filePath }], `modify workflow '${workflowId}' in ${res.scope}`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -520,7 +536,7 @@ export async function cmdSignal(runtime: Runtime, runId: string, signalKey: stri
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
   if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
     if (runtime.dryRun) {
-      printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signal to KXM run");
+      printWorker(runtime, worker, { ok: true, command: "signal", dryRun: true, runId, signalKey, status, summary, evidence }, "would post signal to KXM run");
       return 0;
     }
     const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID()}`);
@@ -557,7 +573,7 @@ export async function cmdSignal(runtime: Runtime, runId: string, signalKey: stri
     return 2;
   }
   if (runtime.dryRun) {
-    printWorker(runtime, worker, { ok: true, command: "signal", runId, signalKey, status, summary, evidence }, "would post signed signal");
+    printWorker(runtime, worker, { ok: true, command: "signal", dryRun: true, runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
   }
   const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID()}`);

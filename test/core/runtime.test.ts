@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -1085,6 +1085,68 @@ test("the supervisor sync tick pushes under the identity its own sync events car
   } finally {
     if (supervisor) await supervisor.stop();
     await hub.close();
+    cleanup(root, stateRoot);
+  }
+});
+
+test("a project whose store the build refuses is reported as unreadable, never as empty", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-refused-store-");
+  const paths = kxmRuntimePaths({ stateRoot });
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot, env: { KXM_RUNTIME_SYNC_INTERVAL_MS: "250" } });
+    const handle = {
+      runtimeId: supervisor.runtimeId,
+      port: supervisor.port,
+      token: readKxmSupervisorToken(paths)!,
+      started: true,
+    };
+    await kxmRuntimeRequest(handle, "POST", "/v1/runs", { projectRoot: root, workflowId: "default", prompt: "opens the store" });
+    // Match on the project id, never on a temp path: the supervisor canonicalises
+    // roots through realpath, so a string comparison against a raw mkdtemp path
+    // vacuously misses on macOS (/var -> /private/var) and the assertions below
+    // would then prove nothing.
+    type SyncEntry = { projectId: string; state: string; storeReadable?: boolean; lastError?: string; outbox: { pending: number; acked: number; refused: number } };
+    const syncEntriesFor = async (target: typeof handle): Promise<SyncEntry[]> => {
+      const response = await kxmRuntimeRequest(target, "GET", "/v1/sync/status");
+      return response.projects as unknown as SyncEntry[];
+    };
+    await waitFor(async () => (await syncEntriesFor(handle)).some((entry) => entry.projectId === "prj_01JRUNTIMETEST0000000000"), 10_000);
+    await supervisor.stop();
+    supervisor = undefined;
+
+    // Roll the store back one schema, exactly what a bumped build meets on an
+    // upgraded box: the rows are there and unreachable, not gone.
+    const storePath = join(paths.projectsDir, projectRuntimeKey(realpathSync(root)), "run-events.db");
+    const stamped = new DatabaseSync(storePath);
+    stamped.exec("PRAGMA user_version = 6");
+    stamped.close();
+
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot, env: { KXM_RUNTIME_SYNC_INTERVAL_MS: "250" } });
+    const restarted = { runtimeId: supervisor.runtimeId, port: supervisor.port, token: readKxmSupervisorToken(paths)!, started: true };
+    const refusedEntry = async (): Promise<SyncEntry | undefined> =>
+      (await syncEntriesFor(restarted)).find((entry) => entry.projectId === "prj_01JRUNTIMETEST0000000000");
+    await waitFor(async () => (await refusedEntry())?.storeReadable === false, 10_000);
+    const refused = await refusedEntry();
+    assert(refused, "the refused project is listed, not skipped");
+    assert.equal(refused.state, "blocked");
+    assert.equal(refused.storeReadable, false, "an unreadable store is never reported as an empty one");
+    assert.match(refused.lastError ?? "", /runtime_schema_outdated/, "the status carries the brake that fired");
+    // Zeroed counts must be labelled unreadable, or "pending 0" reads as drained.
+    assert.equal(refused.outbox.pending, 0);
+    assert.equal(refused.outbox.acked, 0);
+
+    const logged = readFileSync(join(paths.runtimeDir, "logs", "kxm-runtime.jsonl"), "utf8");
+    assert.match(logged, /"event":"runtime_sync_context_unavailable"/);
+    assert.match(logged, /runtime_schema_outdated/, "the log names the reason, not just the failure");
+    // Retried every tick, stated once: a repeated refusal must not become noise.
+    const refusals = logged.split('"runtime_sync_context_unavailable"').length - 1;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 1_200));
+    const after = readFileSync(join(paths.runtimeDir, "logs", "kxm-runtime.jsonl"), "utf8");
+    assert.equal(after.split('"runtime_sync_context_unavailable"').length - 1, refusals,
+      "the same refusal is logged once, not once per tick");
+  } finally {
+    if (supervisor) await supervisor.stop();
     cleanup(root, stateRoot);
   }
 });

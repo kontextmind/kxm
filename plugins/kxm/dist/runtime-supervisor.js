@@ -14783,7 +14783,7 @@ import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash13, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync2, existsSync as existsSync15, lstatSync as lstatSync5, mkdirSync as mkdirSync9, readFileSync as readFileSync12, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync8 } from "node:fs";
 import { createServer } from "node:http";
-import { dirname as dirname10, isAbsolute as isAbsolute6, join as join18 } from "node:path";
+import { dirname as dirname11, isAbsolute as isAbsolute6, join as join18 } from "node:path";
 
 // plugins/kxm/src/repo-root.ts
 import { existsSync } from "node:fs";
@@ -24335,7 +24335,7 @@ function loadAuthoredMemory(repoRoot) {
 var import_yaml6 = __toESM(require_dist(), 1);
 import { createHash as createHash9 } from "node:crypto";
 import { existsSync as existsSync10, mkdirSync as mkdirSync5, readdirSync as readdirSync6, readFileSync as readFileSync8, renameSync, rmSync, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join11 } from "node:path";
+import { dirname as dirname7, join as join11 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
 var SKILL_EVALUATION_SCHEMA = "kxm.skill-evaluation.v1";
 var SKILL_DECISION_SCHEMA = "kxm.skill-decision.v1";
@@ -24423,10 +24423,22 @@ var SkillLifecycle = class {
   root;
   now;
   allowOptimizationEvals;
+  dryRun;
+  /** What a `dryRun` lifecycle would have written or moved, in order. */
+  planned = [];
   constructor(root, options = {}) {
     this.root = root;
     this.now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
     this.allowOptimizationEvals = options.allowOptimizationEvals === true;
+    this.dryRun = options.dryRun === true;
+  }
+  write(file, content) {
+    if (this.dryRun) {
+      this.planned.push({ action: "write", target: file });
+      return;
+    }
+    mkdirSync5(dirname7(file), { recursive: true });
+    writeFileSync5(file, content);
   }
   dir(state) {
     return join11(this.root, state === "candidate" ? "candidates" : `${state}s`.replace("rejecteds", "rejected").replace("promoteds", "promoted"));
@@ -24439,15 +24451,14 @@ var SkillLifecycle = class {
     return { dir, metadata: join11(dir, "metadata.json"), skill: join11(dir, "SKILL.md") };
   }
   appendHistory(id, record2) {
-    mkdirSync5(join11(this.root, "history"), { recursive: true });
     const line = `${JSON.stringify(record2)}
 `;
     if (existsSync10(this.historyFile(id))) {
       const existing = readFileSync8(this.historyFile(id), "utf8");
       const lines = existing.split("\n").filter((entry) => entry.trim());
-      writeFileSync5(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
+      this.write(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
     } else {
-      writeFileSync5(this.historyFile(id), line);
+      this.write(this.historyFile(id), line);
     }
   }
   history(id) {
@@ -24467,6 +24478,10 @@ var SkillLifecycle = class {
     const toDir = join11(this.dir(to), id);
     if (!existsSync10(fromDir)) {
       throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${from}`);
+    }
+    if (this.dryRun) {
+      this.planned.push({ action: "move", target: `${fromDir} -> ${toDir}` });
+      return;
     }
     mkdirSync5(this.dir(to), { recursive: true });
     if (existsSync10(toDir)) rmSync(toDir, { recursive: true, force: true });
@@ -24511,7 +24526,7 @@ var SkillLifecycle = class {
     if (!harness) throw new SkillLifecycleError("invalid_skill_compatibility", "compatibility.harness is required");
     const contentSha256 = skillContentSha256(content);
     const id = skillIdFor(name, contentSha256);
-    const { dir, metadata, skill } = this.paths("candidate", id);
+    const { metadata, skill } = this.paths("candidate", id);
     if (existsSync10(metadata)) {
       throw new SkillLifecycleError(
         "skill_candidate_exists",
@@ -24531,9 +24546,8 @@ var SkillLifecycle = class {
       createdAt: this.now(),
       ...input.supersedes ? { supersedes: input.supersedes } : {}
     };
-    mkdirSync5(dir, { recursive: true });
-    writeFileSync5(skill, content);
-    writeFileSync5(metadata, `${JSON.stringify(record2, null, 2)}
+    this.write(skill, content);
+    this.write(metadata, `${JSON.stringify(record2, null, 2)}
 `);
     this.appendHistory(id, { schema: "kxm.skill-history-event.v1", event: "candidate_created", by: createdBy, supersedes: input.supersedes, at: record2.createdAt });
     return record2;
@@ -24622,18 +24636,15 @@ var SkillLifecycle = class {
     };
     const candidatePaths = this.paths("candidate", candidateId);
     const promotedPaths = this.paths("promoted", candidateId);
-    mkdirSync5(promotedPaths.dir, { recursive: true });
     const skillContent = readFileSync8(candidatePaths.skill, "utf8");
     const metadataContent = readFileSync8(candidatePaths.metadata, "utf8");
-    writeFileSync5(promotedPaths.skill, skillContent);
-    writeFileSync5(promotedPaths.metadata, metadataContent);
-    const patchesDir = join11(this.root, "patches");
-    mkdirSync5(patchesDir, { recursive: true });
-    const patchPath = join11(patchesDir, `${candidateId}.patch`);
+    this.write(promotedPaths.skill, skillContent);
+    this.write(promotedPaths.metadata, metadataContent);
+    const patchPath = join11(this.root, "patches", `${candidateId}.patch`);
     const relSkillPath = `.kxm/skills/promoted/${candidateId}/SKILL.md`;
     const relMetaPath = `.kxm/skills/promoted/${candidateId}/metadata.json`;
     const patch = `${createUnifiedPatch(relSkillPath, skillContent)}${createUnifiedPatch(relMetaPath, metadataContent)}`;
-    writeFileSync5(patchPath, patch, "utf8");
+    this.write(patchPath, patch);
     this.appendHistory(candidateId, record2);
     return { ...metadata, patch, patchPath };
   }
@@ -28858,7 +28869,7 @@ var RuntimeHubClient = class {
 // plugins/kxm/src/hub-binding.ts
 import { existsSync as existsSync12, mkdirSync as mkdirSync6, readFileSync as readFileSync10, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { dirname as dirname7, isAbsolute as isAbsolute4, join as join16, resolve as resolve7 } from "node:path";
+import { dirname as dirname8, isAbsolute as isAbsolute4, join as join16, resolve as resolve7 } from "node:path";
 var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
 var HubBindingError = class extends Error {
   constructor(message) {
@@ -28930,7 +28941,7 @@ function readHubBinding(env = process.env) {
 // plugins/kxm/src/hub-env.ts
 import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname8, isAbsolute as isAbsolute5, join as join17, resolve as resolve8 } from "node:path";
+import { dirname as dirname9, isAbsolute as isAbsolute5, join as join17, resolve as resolve8 } from "node:path";
 var HUB_ENV_SCHEMA = "kxm.hub-env.v1";
 var HubEnvError = class extends Error {
   constructor(message) {
@@ -29003,7 +29014,7 @@ function resolveClientHubAuthToken(env, project) {
 
 // plugins/kxm/src/logger.ts
 import { appendFileSync, existsSync as existsSync14, mkdirSync as mkdirSync8, renameSync as renameSync4, statSync as statSync4, unlinkSync as unlinkSync2 } from "node:fs";
-import { dirname as dirname9 } from "node:path";
+import { dirname as dirname10 } from "node:path";
 var LOG_LEVEL_PRIORITY = {
   debug: 10,
   info: 20,
@@ -29109,7 +29120,7 @@ function createLogger(options) {
         currentSize = 0;
       }
       try {
-        mkdirSync8(dirname9(filePath), { recursive: true });
+        mkdirSync8(dirname10(filePath), { recursive: true });
         appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
         currentSize += lineBytes;
       } catch {
@@ -29156,7 +29167,7 @@ function kxmSupervisorTokenFile(paths) {
 }
 function publishKxmSupervisorToken(paths, token) {
   const file = kxmSupervisorTokenFile(paths);
-  mkdirSync9(dirname10(file), { recursive: true, mode: 448 });
+  mkdirSync9(dirname11(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
   writeFileSync8(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
@@ -29918,17 +29929,38 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
     }
   }, 1e3);
   heartbeat.unref();
-  for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
-    try {
-      contextFor(reg.projectRoot);
-    } catch {
-      logger.warn({
-        event: "runtime_sync_context_unavailable",
-        projectId: reg.projectId,
-        message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`
-      });
+  const reopenRegisteredProjects = () => {
+    for (const reg of registry.projectsForRuntime(activeRuntimeId)) {
+      const key = projectRuntimeKey(reg.projectRoot);
+      if (contexts.has(key)) continue;
+      try {
+        contextFor(reg.projectRoot);
+        syncStatuses.delete(key);
+      } catch (error) {
+        const reason = syncFailureText(error);
+        const prior = syncStatuses.get(key);
+        if (prior === void 0 || prior.lastError !== reason) {
+          logger.warn({
+            event: "runtime_sync_context_unavailable",
+            projectId: reg.projectId,
+            message: `cannot reopen ${reg.projectRoot}: its outbox rows stay pending`,
+            reason
+          });
+        }
+        syncStatuses.set(key, {
+          projectId: reg.projectId,
+          projectRoot: reg.projectRoot,
+          homeRuntimeId: activeRuntimeId,
+          state: "blocked",
+          outbox: { pending: 0, acked: 0, refused: 0, refusals: [] },
+          storeReadable: false,
+          consecutiveFailures: 1,
+          lastError: reason
+        });
+      }
     }
-  }
+  };
+  reopenRegisteredProjects();
   const recordSyncStatus = (context, next) => {
     const key = projectRuntimeKey(context.projectRoot);
     const previous = syncStatuses.get(key);
@@ -29957,6 +29989,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
     if (syncing || stopping) return;
     syncing = true;
     void (async () => {
+      reopenRegisteredProjects();
       for (const context of [...contexts.values()]) {
         const key = projectRuntimeKey(context.projectRoot);
         const prior = syncStatuses.get(key);

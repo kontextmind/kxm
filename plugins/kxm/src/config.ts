@@ -338,8 +338,8 @@ export function setKxmConfigValue(
   repoRoot: string,
   keyPath: string,
   value: unknown,
-  options: { scope?: "user" | "project"; userConfigDir?: string } = {},
-): void {
+  options: { scope?: "user" | "project"; userConfigDir?: string; dryRun?: boolean } = {},
+): { file: string } {
   const targetFile = kxmConfigFileForScope(repoRoot, options.scope ?? "project", options.userConfigDir);
   const existing = readConfigFile(targetFile);
   const parts = configKeyParts(keyPath);
@@ -352,7 +352,8 @@ export function setKxmConfigValue(
     cursor = cursor[p] as Record<string, unknown>;
   }
   cursor[parts[parts.length - 1]!] = value;
-  writeConfigFile(targetFile, existing);
+  if (!options.dryRun) writeConfigFile(targetFile, existing);
+  return { file: targetFile };
 }
 
 /**
