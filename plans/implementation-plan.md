@@ -526,7 +526,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   online) still cannot see the old agent's requests (documented in peer messaging
   troubleshooting). Against a hub without the inbox route every MCP tool call now fails
   closed with `route_not_found`, not only `kxm peer inbox`. Gate: `npm run verify`, green
-  (GATE_COUNTS), no new npm script or CI job. Named tests, each failing with
+  (1294 tests, 1288 pass, 0 fail, 6 skipped, on main after #307), no new npm script or CI job. Named tests, each failing with
   its fix reverted: `MCP inbox keeps an acknowledged, unanswered request across a restart
   under a durable agent name` (`test/core/mcp.test.ts`; it read `{"messages":[]}`), `MCP
   restart does not announce a request cancelled while its inbox read was in flight`
