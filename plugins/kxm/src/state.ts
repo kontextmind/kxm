@@ -184,6 +184,9 @@ export class NativeStateProvider implements StateProvider {
     if (change?.schema !== "kxm.state-change-proposal.v1") {
       throw new ProtocolError(400, "invalid state change proposal schema", "invalid_state_proposal");
     }
+    if (change.origin !== "peer" && change.origin !== "human") {
+      throw new ProtocolError(400, "state change proposal origin must be peer or human", "invalid_state_proposal");
+    }
     const project = requireNonEmpty(change.project, "proposal project");
     const key = requireNonEmpty(change.key, "proposal key");
     const evidenceRefs = boundedRefs(change.evidenceRefs, "proposal evidenceRefs");
@@ -193,7 +196,7 @@ export class NativeStateProvider implements StateProvider {
       project,
       summary: change.summary,
       provenance: {
-        sourceType: change.proposedBy.startsWith("agent_") ? "peer" : "human",
+        sourceType: change.origin,
         sourceRef: `proposed-by:${change.proposedBy}`,
       },
       authority: change.authority,

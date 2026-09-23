@@ -493,6 +493,34 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **An agent's state proposal is peer origin, decided by its credential (2026-09-23):**
+  `NativeStateProvider.propose` classified the proposer as `peer` only when `proposedBy`
+  started with `agent_`, while the hub mints `agt_…` and let the caller supply `proposedBy`
+  freely, so **every** agent proposal was stored as `human` origin, whose grant floor is
+  `policy`. An agent could propose a `policy` claim, it surfaced in recall, and one operator
+  promotion made it current. `docs/architecture.md` and the lattice in
+  `docs/provenance-gates.md` already said peer content stops at `evidence`, and now that holds,
+  so neither doc changed. Origin now comes from the credential `contextCallerProject` verified:
+  an agent key is `peer`, and `human` needs the **configured** admin token with no loopback
+  bypass, the same rule promotion uses. Without that, an agent on a tokenless loopback hub
+  could drop its headers and propose as the operator. A `proposedBy` naming anyone else is
+  **refused** (403 `state_proposer_mismatch`, logged as `security_alert`), not ignored. The hub
+  already refuses an identity it did not verify (`requireAgent(request, expectedId)`, the
+  `*_mismatch` codes), and no first-party client sends the field. `StateChangeProposal`
+  carries an explicit `origin` and the provider fails closed on anything else. The
+  `kxm_promote` tool schema now offers only `evidence`/`hypothesis`, because the MCP and CLI
+  paths register before calling and so always propose as agents. Sweep: that `startsWith` was
+  the only origin inferred from an id. Authored memory takes its origin from Git-tracked files,
+  which are reviewed content, not a caller. **Not addressed:** a process holding the admin
+  token is the operator by construction; that is about who gets the credential, not about
+  inferring origin. Proposals stored before this change keep the origin they were recorded
+  with (no migration, per the 2026-09-20 rule), so review any pending agent proposal before
+  promoting it. Gate: existing `npm run verify` and one named test,
+  `a state proposal takes its origin from the verified credential, so an agent is peer and
+  capped at evidence`, in `test/core/context-authority.test.ts`. It fails on the prior code
+  (an agent's `policy` claim got 201), and separately when the configured-token gate, the
+  proposer refusal or the credential-to-origin mapping is removed.
+
 - **S0: plan authority reconciled, and the queue replaced the two competing
   “first product” sequences (2026-09-20; design record
   [reviews/plan-set-reprioritization-astra.md](reviews/plan-set-reprioritization-astra.md)):**
