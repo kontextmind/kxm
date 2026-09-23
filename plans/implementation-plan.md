@@ -497,6 +497,38 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **`kxm workflow add` writes a local workflow only if the project loader accepts it, and
+  only where that loader reads (2026-09-23).** A report that one `workflow add demo` left the
+  project refusing every `kxm run` (`/ must NOT have additional properties (id)`, `/steps/0
+  … (role)`, `… required property 'agent'`) was the fallback shipped through v0.7.92. #298
+  replaced it and the three templates with valid definitions (v0.7.93), so the scaffold no
+  longer reproduces. Four write paths still could: `--file` copied any document unchecked,
+  including that exact old shape; an add before `kxm init` left a partial `.kxm/` that made
+  `init` refuse with `project_definition_missing`; an add from a subdirectory wrote
+  `sub/.kxm/workflows/`, which no loader reads; and the `--scope local` pick list is the only
+  path from a global definition into a project (see *Not done*). **Changed:** local scope
+  resolves the project with `discoverKxmProjectRoot` and refuses with `project_not_found`
+  outside one. Before writing, even under `--dry-run`, `kxmWorkflowWriteIssues`
+  (`project-config.ts`) runs the loader itself with the new document in place of any file of
+  that id: the same restricted YAML parser, `kxm.workflow.v1` schema, id and case-fold rules,
+  and bundle validation. Any issue refuses with `workflow_invalid` and lists them, writing
+  nothing. Because the replaced file is left out, `--overwrite` repairs a leftover from
+  ≤v0.7.92. Emitting valid templates (already landed) and checking before writing are both
+  kept: templates are valid by construction, and the brake covers `--file` and anything a
+  later template gets wrong. The templates in `WORKFLOW_TEMPLATES` are the same objects for
+  both scopes and validate; global scope is not checked because no loader reads
+  `~/.config/kxm/workflows/`. **Gate:** existing `npm run verify`, green (1273 tests, 1267
+  pass, 0 fail, 6 skipped), no new npm script or CI job. New named test `workflow add writes only what the project loader accepts, at the
+  project root, and loadKxmProject still loads` in `test/core/role-and-workflow-manager.test.ts`
+  fails with any one of these reverted: the loader check, the project-root write, the
+  project requirement, or the replaced-file skip. The older `Role & Workflow CLI` test's
+  local adds in a directory that is not a project moved to `--scope global`, and the template
+  test compares realpaths, because the file path is now the Git root. **Not done:** `workflow
+  modify` still writes without the check (it merges only `description`, which the schema
+  caps at 4000 characters). Picking a global definition into local scope (`workflow add
+  --pick <global-id>`) writes the one-step scaffold under that id instead of the global
+  content, because global candidates carry no payload.
+
 - **Docs-audit fixes: webhook replay, agent admin-token fallback, agent hop propagation,
   three small items (2026-09-23; audit against main after #287, #293, #294 and in-flight
   #298/#299, reproduced on a real hub in an isolated state root).** The operator asked

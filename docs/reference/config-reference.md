@@ -878,8 +878,10 @@ compiles and pins the plan, then drives it live, or without models with
 reads). Both are valid `kxm.workflow.v1` definitions that use only what
 `kxm init` creates: the `coordinator` and `implementer` agents, the `control`
 repository, and the `test` gate. The templates route gate failures on
-`implementation-failure`. Review the new file with `kxm trust check` before
-committing it.
+`implementation-failure`. A local add is checked by the project loader first:
+if the project would not load with the new file, it is refused with
+`workflow_invalid` and nothing is written. Review the new file with
+`kxm trust check` before committing it.
 
 ## `.kxm/gates.yaml` (`kxm.gate-registry.v1`)
 
