@@ -534,6 +534,23 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `concurrent MCP inbox notifications for one message announce it once`
   (`test/core/inbox.test.ts`).
 
+- **`kxm role resume` routes by Runtime ownership, not run-id shape (2026-09-23; Still open
+  item (b) of the docs-audit follow-ups, after the #304 entry below).** Inside a KXM
+  project `cmdRoleResume` still sent every `run_` + 32-hex id to the Runtime, so a hub
+  workflow run failed `run_unknown` instead of reaching the hub store. It now asks
+  `projectRuntimeOwnsRun`, like `gate signal` and `workflow wait`. That lookup opened the
+  WAL Runtime store with a plain read-only open, which leaves `-wal`/`-shm` sidecars
+  behind; it now uses `openReadOnlyDatabase`, so all three commands' `--dry-run` leave the
+  state root untouched. The `kxm-workflow` skill no longer tells agents that `gate signal`
+  routes by id shape. The operator asked Claude to implement this directly, so the runner
+  path was not used. Gate: `npm run verify`, green (1289 tests, 1283 pass, 0 fail, 6
+  skipped), no new npm script or CI job. Named test, failing with the route reverted: `kxm
+  workflow wait, gate signal, and role resume bind to the Runtime only for a run its store
+  owns` (`test/core/commands-policy.test.ts`, extended from the `wait and signal` test
+  below). `every mutating command under --dry-run leaves the workspace, state root, and hub
+  untouched` (`test/core/cli-experience.test.ts`) now seeds the Runtime run its `role
+  resume` case resumes, and failed on the sidecars until the lookup changed.
+
 - **`kxm workflow add --pick <global-id>` copies the global definition into the project
   (2026-09-23).** In local scope the pick list offers the built-in templates and the global
   definitions, but only the templates carried their content as the pick's payload. Picking a
@@ -3007,12 +3024,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - Persisted Nous catalog via Pi `publish` is deferred.
 - **Claude experiment outcome (2026-09-07):** installed CLI 2.1.261 local mocked Messages streaming and model passthrough, dummy API-key and bearer auth, and unknown-tool rejection passed; no real tools executed. Official Nous implementation provides native Messages only for `anthropic/*`; Qwen is chat/completions, so direct Claude→Nous→Qwen is unsupported by the documented route ([hermes_cli/providers.py](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/providers.py), observed 2026-09-07). Anthropic via Nous was not live-tested because the authenticated native subscription is preferred. No adapter/translation layer or role admission was built. Mocked env bearer support does not prove OAuth credential interchangeability.
 
-- **Left open by the 2026-09-23 docs-audit fixes.** (b) `kxm role resume` still routes by run-id shape;
-  it should use `projectRuntimeOwnsRun` like `gate signal` and `workflow wait`. (c) A
-  CLI-based agent (`kxm peer send` from Codex) has no active inbound request in
-  process, so its forwards still start a new hop chain. (d) Jira and GitHub deliveries
-  carry no signed timestamp; the one-run-per-signed-body rule bounds their replay, and
-  a replayed identical delivery still answers as a duplicate.
+- **Left open by the 2026-09-23 docs-audit fixes.** (c) A CLI-based agent (`kxm peer
+  send` from Codex) has no active inbound request in process, so its forwards still start
+  a new hop chain. (d) Jira and GitHub deliveries carry no signed timestamp; the
+  one-run-per-signed-body rule bounds their replay, and a replayed identical delivery
+  still answers as a duplicate.
 
 ### Plan hygiene (periodic, not every turn)
 

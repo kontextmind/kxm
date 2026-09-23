@@ -1351,10 +1351,12 @@ kxm role resume <runId> [ruling]
 Resumes an audit-escalated run with an operator directive. The default ruling is `operator_ruling: waived and resumed`.
 
 - Arguments: `<runId>`; `[ruling]`, free text recorded with the decision.
-- For a KXM run ID (`run_` followed by 32 hex digits) inside a project, posts an `audit_escalation` signal with action `unblock` to the Runtime, starting the supervisor if needed. `--dry-run` plans the request without starting the supervisor. JSON keys: `runId`, `ruling`, `unblocked`.
-- For any other ID, updates the hub store at `.kxm/state/kxm.db` in the current directory directly (ignoring `--workspace` and `KXM_DATA_PATH`) and adds a `decision` journal entry. `--dry-run` reads the store read-only, reports the stage it would resume and the resulting `status`, and plans the write. JSON keys: `runId`, `stageId`, `ruling`, `status`.
+- Inside a project, a run that this project's Runtime store holds gets an `audit_escalation` signal with action `unblock` in the Runtime, starting the supervisor if needed. Hub workflow runs share the `run_` + 32-hex shape, so the store, not the ID, decides. `--dry-run` plans the request without starting the supervisor. JSON keys: `runId`, `ruling`, `unblocked`.
+- Any other run ID, including a hub workflow run of the same shape, updates the hub store at `.kxm/state/kxm.db` in the current directory directly (ignoring `--workspace` and `KXM_DATA_PATH`) and adds a `decision` journal entry. `--dry-run` reads the store read-only, reports the stage it would resume and the resulting `status`, and plans the write. JSON keys: `runId`, `stageId`, `ruling`, `status`.
 - The hub-run path bypasses the hub even while one is running: it writes SQLite directly, without authentication, in two statements outside one transaction. A running hub keeps runs in memory, so it does not see the change until it restarts, and its next write to that run overwrites it; it also pushes no event and sends the coordinator no resume message. Stop the hub first, or resume a live hub's run with a signed `audit_escalation` signal (see [Waits, signals and escalation](workflow-definitions.md#waits-signals-and-escalation)).
 - Errors: `resume_failed` (exit 1), or a plain `not found` line (exit 1).
+
+A run the project's Runtime holds:
 
 ```bash
 kxm role resume run_0123456789abcdef0123456789abcdef "waive the audit" --dry-run --json

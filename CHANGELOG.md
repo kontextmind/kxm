@@ -375,8 +375,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   or the Claude MCP server send one hop past the inbound request being handled, so a
   chain of agents forwarding to each other stops at `hop_limit_reached`.
 - **Workflow prompts no longer point agents at `.kxm/config`**, a path KXM refuses.
-- **`kxm gate signal` and `kxm workflow wait` inside a KXM project reach the hub for hub
-  runs.** They go to the local Runtime only for a run its store holds.
+- **`kxm gate signal`, `kxm workflow wait` and `kxm role resume` inside a KXM project reach
+  the hub for hub runs.** They go to the local Runtime only for a run its store holds, and
+  the lookup leaves no files behind, so `--dry-run` changes nothing.
 - **`kxm peer inbox` lists the requests waiting for a named CLI agent.** It returned
   `{"messages":[]}` every time. The hub now serves `GET /v1/agents/:id/inbox`
   (agent-authenticated, project-scoped): the caller's queued and delivered requests,
