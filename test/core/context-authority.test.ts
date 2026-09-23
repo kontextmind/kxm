@@ -15,7 +15,9 @@ import {
   type ContextItem,
   type ContextPacket,
 } from "../../plugins/kxm/src/context.ts";
+import { createMeshHub } from "../../plugins/kxm/src/hub.ts";
 import { redactSecrets } from "../../plugins/kxm/src/redact.ts";
+import { responseJson } from "../helpers.ts";
 
 function item(overrides: Record<string, unknown> = {}): ContextItem {
   return parseContextItem({
@@ -228,4 +230,69 @@ test("provenance survives handoffs immutably and secrets stay redacted", () => {
   assert.equal(redactSecrets("token sk-abc123def456ghi"), "token [redacted]");
   const metadata = contextItemAuditMetadata(original);
   assert.equal(JSON.stringify(metadata).includes("sk-"), false);
+});
+
+test("a state proposal takes its origin from the verified credential, so an agent is peer and capped at evidence", async () => {
+  const hub = createMeshHub({ host: "127.0.0.1", port: 0, authToken: "admin-token" });
+  const { url } = await hub.start();
+  const tokenless = createMeshHub({ host: "127.0.0.1", port: 0 });
+  const tokenlessUrl = (await tokenless.start()).url;
+  try {
+    const registered = await fetch(`${url}/v1/agents/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer admin-token" },
+      body: JSON.stringify({ name: "implementer", project: "kxm" }),
+    });
+    const { agent, agentKey } = await responseJson(registered) as { agent: { id: string }; agentKey: string };
+    const asAgent = {
+      "content-type": "application/json",
+      authorization: "Bearer admin-token",
+      "x-kxm-agent-id": agent.id,
+      "x-kxm-agent-key": agentKey,
+    };
+    const propose = (base: string, headers: Record<string, string>, fields: Record<string, unknown>) =>
+      fetch(`${base}/v1/context/state/propose`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          project: "kxm",
+          key: "ci.pipeline",
+          summary: "pipeline moved to gitlab",
+          confidence: "verified",
+          evidenceRefs: ["receipt:run_1/verify"],
+          ...fields,
+        }),
+      });
+    const refusal = async (response: Response) => [response.status, (await responseJson(response)).code];
+
+    // Agent ids are `agt_…`; origin must not depend on any id shape.
+    assert.equal((await propose(url, asAgent, { authority: "evidence" })).status, 201);
+    // Claiming more than evidence is refused, and naming a human proposer
+    // does not lend the agent that human's origin.
+    assert.deepEqual(await refusal(await propose(url, asAgent, { authority: "policy" })), [403, "context_authority_violation"]);
+    assert.deepEqual(
+      await refusal(await propose(url, asAgent, { authority: "policy", proposedBy: "kxm-admin" })),
+      [403, "state_proposer_mismatch"],
+    );
+    // Without a configured admin token there is no credential that can mint
+    // human origin, so dropping the agent headers on loopback proves nothing.
+    assert.deepEqual(
+      await refusal(await propose(tokenlessUrl, { "content-type": "application/json" }, { authority: "policy" })),
+      [503, "admin_auth_not_configured"],
+    );
+
+    const recalled = await fetch(`${url}/v1/context/recall`, {
+      method: "POST",
+      headers: asAgent,
+      body: JSON.stringify({ project: "kxm", query: "ci.pipeline", kinds: ["state"] }),
+    });
+    const { items } = await responseJson(recalled) as { items: Array<Record<string, unknown>> };
+    assert.deepEqual(
+      items.map(({ sourceType, sourceRef, authority, status }) => ({ sourceType, sourceRef, authority, status })),
+      [{ sourceType: "peer", sourceRef: `proposed-by:${agent.id}`, authority: "evidence", status: "proposed" }],
+    );
+  } finally {
+    await hub.close();
+    await tokenless.close();
+  }
 });
