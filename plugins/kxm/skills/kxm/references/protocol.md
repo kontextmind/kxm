@@ -1,4 +1,4 @@
-# Pi Mesh protocol reference
+# KXM hub protocol reference
 
 The hub exposes a project-scoped HTTP API and an SSE event stream.
 
