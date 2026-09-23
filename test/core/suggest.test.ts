@@ -19,6 +19,8 @@ function inventory(claudeAuth: boolean | null = true) {
         : key === "claude auth status" ? JSON.stringify(claudeAuth === null ? {} : { loggedIn: claudeAuth, authMethod: "claude.ai" })
         : key === "codex --version" ? "codex 0.1\n"
         : key === "codex login status" ? "Logged in using ChatGPT\n"
+        : key === "grok --version" ? "1.1.0\n"
+        : key === "grok models" ? "You are logged in with grok.com.\n"
         : undefined;
       return stdout === undefined
         ? { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" }
@@ -90,6 +92,51 @@ test("suggest refuses an unavailable required Claude harness instead of silently
   assert.deepEqual(unconstrained.roles.map((role) => role.harness), ["codex"]);
 });
 
+test("suggest exposes live writer admission and real verification prerequisites for an authenticated Grok writer", () => {
+  const availableHarnesses = inventory().harnesses.filter((entry) => entry.id === "grok");
+  const suggestion = suggestWorkflowAndRoles("Fix a bug in an isolated worktree", { availableHarnesses });
+  assert.equal(suggestion.workflowId, "bug-fix");
+  assert.equal(suggestion.template, "implement-and-verify");
+  assert.deepEqual(suggestion.roles, [{ agent: "implementer", harness: "grok", role: "implement" }]);
+  if (!suggestion.execution.supported) assert.fail(suggestion.execution.reason);
+  assert.match(suggestion.execution.createCommand, /^kxm run bug-fix -- /);
+  assert.equal(suggestion.execution.driveCommand, "kxm runs drive <runId> --wait");
+  const prerequisites = suggestion.execution.prerequisites.join("\n");
+  assert.match(prerequisites, /\.kxm\/agents\/implementer\.yaml/);
+  assert.match(prerequisites, /harness: grok/);
+  assert.match(prerequisites, /model:/);
+  assert.match(prerequisites, /\.kxm\/routes\.yaml/);
+  assert.match(prerequisites, /assignments\.maximum: 1/);
+  assert.match(prerequisites, /limits\.maxConcurrentRuns: 1/);
+  assert.match(prerequisites, /\.kxm\/project\.yaml/);
+  assert.match(prerequisites, /\.kxm\/roster\.yaml/);
+  assert.match(prerequisites, /kxm\.developer-roster\.v1/);
+  assert.match(prerequisites, /lineup\.writer/);
+  assert.match(prerequisites, /status: admitted/);
+  assert.match(prerequisites, /permissions.*edit/);
+  assert.match(prerequisites, /\.kxm\/gates\.yaml/);
+  assert.match(prerequisites, /kind: command.*argv/);
+});
+
+test("suggest refuses an unsupported selected writer and does not bypass missing writer authentication", () => {
+  const availableHarnesses = inventory().harnesses;
+  const codex = suggestWorkflowAndRoles("Fix a bug", {
+    availableHarnesses: availableHarnesses.filter((entry) => entry.id === "codex"),
+  });
+  if (codex.execution.supported) assert.fail("Codex has no audited live writer profile");
+  assert.equal(codex.execution.error, "live_write_unsupported");
+  assert.deepEqual(codex.roles, []);
+  assert.equal("createCommand" in codex.execution, false);
+
+  const grok = availableHarnesses.find((entry) => entry.id === "grok")!;
+  const unauthenticated = suggestWorkflowAndRoles("Fix a bug", {
+    availableHarnesses: [{ ...grok, authenticated: false }],
+  });
+  if (unauthenticated.execution.supported) assert.fail("a writer profile does not bypass authentication");
+  assert.equal(unauthenticated.execution.error, "harness_unavailable");
+  assert.equal("createCommand" in unauthenticated.execution, false);
+});
+
 test("suggest refuses to drive an existing workflow whose routing has not been checked", async () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-suggest-existing-"));
   try {
@@ -139,7 +186,7 @@ test("suggest CLI preserves actual probe authentication and separates installati
   assert.equal(result.execution.driveCommand, "kxm runs drive <runId> --wait");
 });
 
-test("suggest CLI returns actionable JSON refusal for the Claude-only writer request", async () => {
+test("suggest CLI refuses a Claude-only writer without substituting the available audited Grok writer", async () => {
   const captured = captureRuntime(process.cwd());
   const code = await cmdSuggest(captured.runtime, ["Fix a bug in an isolated worktree using Claude only"], async () => inventory());
   assert.equal(code, 1);

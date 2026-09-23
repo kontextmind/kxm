@@ -313,7 +313,7 @@ test("unknown harness update is skipped fail-closed", () => {
   assert.equal(steps[0]?.detail, "unknown_harness");
 });
 
-test("omitted agent harness equals pi; unknown ids fail closed; claude is a customization", () => {
+test("fresh template names admitted harnesses; omitted harness still loads; unknown ids fail closed", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-harness-config-"));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-harness-state-"));
   try {
@@ -321,8 +321,22 @@ test("omitted agent harness equals pi; unknown ids fail closed; claude is a cust
     initializeKxmProject(root, { projectId: "prj_01JHARNESSTEST00000000000", projectName: "Harness", localStateRoot: stateRoot });
     const bundle = loadKxmProject(root);
     assert.equal(bundle.project.value.defaultHarness, "pi");
-    const implementer = bundle.agents.get("implementer");
-    assert.equal(implementer?.value.harness, undefined);
+    assert.equal(bundle.agents.get("implementer")?.value.harness, "grok");
+    assert.equal(bundle.agents.get("coordinator")?.value.harness, "claude");
+    writeFileSync(join(root, ".kxm", "agents", "coordinator.yaml"), [
+      "schema: kxm.agent.v1",
+      "purpose: Coordinate the pinned workflow and emit schema-validated commands.",
+      "tools:",
+      "  preset: coordinator",
+      "defaultRepositoryAccess: read",
+      "repositories:",
+      "  control: read",
+      "network: provider-only",
+      "resultSchema: kxm.assignment-result.v1",
+      "",
+    ].join("\n"));
+    const omitted = loadKxmProject(root);
+    assert.equal(omitted.agents.get("coordinator")?.value.harness, undefined);
 
     writeFileSync(join(root, ".kxm", "agents", "implementer.yaml"), [
       "schema: kxm.agent.v1",

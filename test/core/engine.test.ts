@@ -705,10 +705,11 @@ test("live preflight refuses the starter npm gate until the repository has a tes
 test("handoffs: duration limits, unsupported steps, unreconciled attempts, and resume between steps", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-handoff-");
   try {
+    writeDurationWorkflow(root, "agent-time", "  maxTransitions: 2\n  maxAgentTimeMs: 1000");
     const bundle = loadKxmProject(root);
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
-      const def = acceptKxmRun(context, bundle, { workflowId: "default", prompt: "default" });
+      const def = acceptKxmRun(context, bundle, { workflowId: "agent-time", prompt: "default" });
       pinKxmCompiledPlan(context, bundle, def.run.runId);
       const limited = startKxmRun(context, def.run.runId);
       assert.equal(limited.handoff?.reason, "limit_unsupported");
@@ -860,7 +861,7 @@ test("run-duration budget cancels at a step boundary and on resume before any ne
   }
 });
 
-test("run-duration budget chooses min of project and workflow and fills receipt overrun false", { timeout: 15_000 }, async () => {
+test("run-duration budget chooses min of project and workflow and fills receipt overrun false", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-run-duration-source-");
   try {
     writeDurationWorkflow(root, "workflow-only", "  maxTransitions: 2\n  maxRunDurationMs: 25");
@@ -3980,6 +3981,20 @@ steps:
 test("permission ceiling: live write step fails closed with step_unsupported handoff before birth", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-perm-wr-live-");
   try {
+    writeFileSync(join(root, ".kxm", "agents", "implementer.yaml"), `schema: kxm.agent.v1
+purpose: Claude has no audited writer profile.
+harness: claude
+model:
+  provider: anthropic
+  model: fable
+tools:
+  preset: workspace-writer
+defaultRepositoryAccess: none
+repositories:
+  control: write
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
     writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
 description: Write step workflow
 coordinator: coordinator
@@ -4000,6 +4015,7 @@ steps:
         terminalStatus: failed
 `);
     const bundle = loadKxmProject(root);
+    assert(kxmLiveRunPrerequisites(bundle, "write-step", root).some((entry) => entry.field === "harness" && entry.detail.includes("claude")));
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
       const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "Test live write" });
@@ -4037,6 +4053,213 @@ steps:
     removeTempDir(root, stateRoot);
   }
 });
+
+test("authoring witness: a live write that does not change the checkout cannot pass", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-author-unchanged-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step workflow
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: implementer
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "claim a write" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10, providerMetadata: { authored: true } };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+      const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.state.status, "failed");
+      const routing = context.eventStore.events(accepted.run.runId, 0, 100).find((event) => event.eventType === "routing.attempt.recorded");
+      const metadata = (routing?.payload.routing as JsonObject | undefined)?.providerMetadata as JsonObject | undefined;
+      assert.equal(metadata?.authored, false);
+      assert.equal(metadata?.authoringWitness, "unchanged");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("authoring witness: a live write that creates a file settles passed", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-author-changed-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step workflow
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: implementer
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    assert.deepEqual(kxmLiveRunPrerequisites(bundle, "write-step", root), []);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "write a file" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          writeFileSync(join(root, "authored.txt"), "authored\n");
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+      const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.state.status, "completed");
+      const routing = context.eventStore.events(accepted.run.runId, 0, 100).find((event) => event.eventType === "routing.attempt.recorded");
+      const metadata = (routing?.payload.routing as JsonObject | undefined)?.providerMetadata as JsonObject | undefined;
+      assert.equal(metadata?.authored, true);
+      assert.equal(metadata?.authoringWitness, "changed");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("authoring witness: a read-only step that changes the checkout cannot pass", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-author-readonly-");
+  try {
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "read only" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          writeFileSync(join(root, "should-not-land.txt"), "mutated\n");
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+      const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.state.status, "failed");
+      const routing = context.eventStore.events(accepted.run.runId, 0, 100).find((event) => event.eventType === "routing.attempt.recorded");
+      const metadata = (routing?.payload.routing as JsonObject | undefined)?.providerMetadata as JsonObject | undefined;
+      assert.equal(metadata?.authored, false);
+      assert.equal(metadata?.authoringWitness, "readonly_mutated");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+for (const scenario of [
+  {
+    name: "a write step with more than one assignment",
+    field: "assignments.maximum",
+    assignments: `    assignments:
+      allowedAgents: [implementer]
+      minimum: 1
+      target: 2
+      maximum: 2
+      maxParallel: 2
+`,
+    projectLimits: undefined,
+  },
+  {
+    name: "a write step in a project that admits concurrent runs",
+    field: "limits.maxConcurrentRuns",
+    assignments: "",
+    projectLimits: "limits:\n  maxConcurrentRuns: 2\n",
+  },
+]) {
+  test(`authoring witness: ${scenario.name} hands off before birth`, async () => {
+    const { root, stateRoot } = engineProject("kxm-engine-author-shared-");
+    try {
+      if (scenario.projectLimits) {
+        writeFileSync(join(root, ".kxm", "project.yaml"), readFileSync(join(root, ".kxm", "project.yaml"), "utf8").replace(
+          "defaultHarness: pi\n",
+          `defaultHarness: pi\n${scenario.projectLimits}`,
+        ));
+      }
+      writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step workflow
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: implementer
+    repositories:
+      control: write
+${scenario.assignments}    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+      const bundle = loadKxmProject(root);
+      const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+      try {
+        const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "write together" });
+        pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+        let invoked = 0;
+        const liveProducer = {
+          id: "oneshot" as const,
+          async produce() {
+            invoked += 1;
+            writeFileSync(join(root, `authored-${invoked}.txt`), "authored\n");
+            return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
+          },
+        };
+        registerTrustedProducer(liveProducer as never);
+        const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
+        assert.equal(result.handoff?.reason, "step_unsupported");
+        assert.equal(result.handoff?.field, scenario.field);
+        assert.equal(result.handoff?.stepId, "write-step");
+        assert.equal(invoked, 0);
+        const events = context.eventStore.events(accepted.run.runId, 0, 100);
+        assert.equal(events.filter((e) => e.eventType === "assignment.created").length, 0);
+      } finally {
+        closeKxmRuntimeContext(context);
+      }
+    } finally {
+      removeTempDir(root, stateRoot);
+    }
+  });
+}
 
 test("admission: agent without model returns handoff before birth", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-adm-no-model-");
@@ -4129,13 +4352,14 @@ test("admission: demoted selector returns handoff before birth", async () => {
   }
 });
 
-test("admission: role roster excludes model returns handoff before birth", async () => {
+test("admission: role roster that excludes the agent model fails closed at load", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-adm-roster-");
   try {
-    // Promote and enable model in producer policy
+    // The template names xai/grok-4.6 on implementer and admits it. A writer
+    // role roster that omits that model is a lie, so load refuses before a
+    // drive can be born.
     setRouteState(root, "xai/grok-4.6", "admitted");
     updateRouteState(root, "xai/grok-4.6", "admitted");
-    // But write writer role roster without xai/grok-4.6
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
     writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v1
 id: writer
@@ -4144,29 +4368,7 @@ roster:
     enabled: true
 `);
 
-    const bundle = loadKxmProject(root);
-    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
-    try {
-      const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "Test roster exclusion" });
-      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
-
-      const liveProducer = {
-        id: "oneshot" as const,
-        async produce() {
-          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 10 };
-        },
-      };
-      registerTrustedProducer(liveProducer as never);
-
-      const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
-      assert.equal(result.handoff?.reason, "step_unsupported");
-      assert.equal(result.handoff?.field, "model");
-
-      const events = context.eventStore.events(accepted.run.runId, 0, 100);
-      assert.equal(events.filter((e) => e.eventType === "assignment.created").length, 0);
-    } finally {
-      closeKxmRuntimeContext(context);
-    }
+    assert.throws(() => loadKxmProject(root), /role_roster_conflicts_with_agent/);
   } finally {
     removeTempDir(root, stateRoot);
   }

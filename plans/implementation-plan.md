@@ -497,6 +497,141 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **A restarted Claude Code session keeps the requests it acknowledged but never answered
+  (2026-09-23; found by reading the code, builds on the `kxm peer inbox` entry below).** The operator asked
+  Claude to implement this directly, so the runner path (`just assign`, `just witness`, two
+  critic PASS records, `just accept`) was not used and there is no assignment manifest,
+  witness receipt or acceptance record. The MCP server acknowledges each queued request on
+  arrival, and the ack advances the agent's consumer cursor; `flushPending` replays only
+  `seq > cursor`, and the MCP inbox is process memory. A session restarting under a durable
+  `KXM_AGENT_NAME` resumed its agent id but lost those requests from `kxm_inbox` and the
+  channel until they expired, though the hub still held them `delivered`. After it
+  registers, the server now reads its open requests with `HubClient.listInbox()`, adds each
+  `delivered` one to the inbox, reconciles the inbox (`reconcileInbox` re-reads each request
+  and drops terminal ones) and only then announces what is left, all before any tool call can
+  use the client; a failed read unregisters the candidate and fails the call (retried on the
+  next one). The reconcile keeps the seed from announcing a request cancelled or expired
+  while the list was in flight, whose event may have gone to a stream that was not connected
+  yet; an independent code-review subagent found that race. Queued requests are left to the
+  event stream, so acknowledgements stay in `seq` order. Decision: seeded requests also raise a channel event, once per process, because
+  `notifiedInbox` is per process and the server's instructions treat `kxm_inbox` as the
+  fallback when channels are off, so a pull-only seed would leave a channel session unaware
+  of them. `deliverInboxNotification` now claims the id before sending (and releases it on
+  failure), so the seed and the stream cannot both announce one request. The event handler
+  takes its client as an argument instead of reading `meshClient`, which is set only once
+  the seed is done. Reconcile semantics are unchanged: `kxm_inbox` still reconciles the
+  process inbox and does not re-read the hub. An in-process re-registration
+  (`recoverRegistration`) is not reseeded, because the inbox survives it. A restart that
+  lands on another name (`claude-<pid>`, or `<name>-<pid>` while the old session is still
+  online) still cannot see the old agent's requests (documented in peer messaging
+  troubleshooting). Against a hub without the inbox route every MCP tool call now fails
+  closed with `route_not_found`, not only `kxm peer inbox`. Gate: `npm run verify`, green
+  (1294 tests, 1288 pass, 0 fail, 6 skipped, on main after #307), no new npm script or CI job. Named tests, each failing with
+  its fix reverted: `MCP inbox keeps an acknowledged, unanswered request across a restart
+  under a durable agent name` (`test/core/mcp.test.ts`; it read `{"messages":[]}`), `MCP
+  restart does not announce a request cancelled while its inbox read was in flight`
+  (`test/core/mcp.test.ts`; it holds the hub's inbox response until the sender cancels) and
+  `concurrent MCP inbox notifications for one message announce it once`
+  (`test/core/inbox.test.ts`).
+
+- **`kxm role resume` routes by Runtime ownership, not run-id shape (2026-09-23; Still open
+  item (b) of the docs-audit follow-ups, after the #304 entry below).** Inside a KXM
+  project `cmdRoleResume` still sent every `run_` + 32-hex id to the Runtime, so a hub
+  workflow run failed `run_unknown` instead of reaching the hub store. It now asks
+  `projectRuntimeOwnsRun`, like `gate signal` and `workflow wait`. That lookup opened the
+  WAL Runtime store with a plain read-only open, which leaves `-wal`/`-shm` sidecars
+  behind; it now uses `openReadOnlyDatabase`, so all three commands' `--dry-run` leave the
+  state root untouched. The `kxm-workflow` skill no longer tells agents that `gate signal`
+  routes by id shape. The operator asked Claude to implement this directly, so the runner
+  path was not used. Gate: `npm run verify`, green (1289 tests, 1283 pass, 0 fail, 6
+  skipped), no new npm script or CI job. Named test, failing with the route reverted: `kxm
+  workflow wait, gate signal, and role resume bind to the Runtime only for a run its store
+  owns` (`test/core/commands-policy.test.ts`, extended from the `wait and signal` test
+  below). `every mutating command under --dry-run leaves the workspace, state root, and hub
+  untouched` (`test/core/cli-experience.test.ts`) now seeds the Runtime run its `role
+  resume` case resumes, and failed on the sidecars until the lookup changed.
+
+- **`kxm workflow add --pick <global-id>` copies the global definition into the project
+  (2026-09-23).** In local scope the pick list offers the built-in templates and the global
+  definitions, but only the templates carried their content as the pick's payload. Picking a
+  global definition therefore skipped the copy and wrote the one-step `implementer` scaffold
+  under the global's id, reporting success. Reproduced in an isolated sandbox: a global
+  `gdemo` from `--template spec-and-plan` arrived in `.kxm/workflows/gdemo.yaml` as the
+  scaffold. **Changed:** `cmdWorkflowAdd` (`cli/workflows.ts`) reads each listed global file
+  with `parseWorkflowFile(gd.filePath)` and gives the pick that definition as its payload, so
+  it is written the way a template is, with `--description` replacing its description. It
+  reads the listed file rather than calling `getWorkflowDefinition(id)`, which only looks up
+  `<id>.yaml` and would have left a `.yml` global with no payload, the same silent scaffold.
+  A global file that no longer parses is not offered. The copy goes through the
+  `kxmWorkflowWriteIssues` loader check from the entry below, so a global in a shape the
+  project refuses exits 2 with `workflow_invalid` and writes nothing. **Gate:** existing
+  `npm run verify`, green (1274 tests, 1268 pass, 0 fail, 6
+  skipped), no new npm script or CI job. New named test
+  `workflow add --pick <global-id> copies that global definition into the project, and refuses
+  one the project loader rejects` in `test/core/role-and-workflow-manager.test.ts`: without the
+  payload it fails on the scaffold, and with a `<id>.yaml` lookup it fails because the `.yml`
+  global is not offered. `docs/reference/cli-reference.md` now says what a pick writes.
+  **Not done:** `kxm role add --pick <global-role>` in local scope has the same bug: the pick
+  uses its payload only for a `DEFAULT_ROLES` id, so a global role is written as an empty
+  `Role <id>` with no skills or roster (reproduced the same way). A global definition with a
+  template's id is still not offered, so `--pick` of that id writes the built-in template.
+
+- **`kxm workflow add` writes a local workflow only if the project loader accepts it, and
+  only where that loader reads (2026-09-23).** A report that one `workflow add demo` left the
+  project refusing every `kxm run` (`/ must NOT have additional properties (id)`, `/steps/0
+  … (role)`, `… required property 'agent'`) was the fallback shipped through v0.7.92. #298
+  replaced it and the three templates with valid definitions (v0.7.93), so the scaffold no
+  longer reproduces. Four write paths still could: `--file` copied any document unchecked,
+  including that exact old shape; an add before `kxm init` left a partial `.kxm/` that made
+  `init` refuse with `project_definition_missing`; an add from a subdirectory wrote
+  `sub/.kxm/workflows/`, which no loader reads; and the `--scope local` pick list is the only
+  path from a global definition into a project (see *Not done*). **Changed:** local scope
+  resolves the project with `discoverKxmProjectRoot` and refuses with `project_not_found`
+  outside one. Before writing, even under `--dry-run`, `kxmWorkflowWriteIssues`
+  (`project-config.ts`) runs the loader itself with the new document in place of any file of
+  that id: the same restricted YAML parser, `kxm.workflow.v1` schema, id and case-fold rules,
+  and bundle validation. Any issue refuses with `workflow_invalid` and lists them, writing
+  nothing. Because the replaced file is left out, `--overwrite` repairs a leftover from
+  ≤v0.7.92. Emitting valid templates (already landed) and checking before writing are both
+  kept: templates are valid by construction, and the brake covers `--file` and anything a
+  later template gets wrong. The templates in `WORKFLOW_TEMPLATES` are the same objects for
+  both scopes and validate; global scope is not checked because no loader reads
+  `~/.config/kxm/workflows/`. **Gate:** existing `npm run verify`, green (1273 tests, 1267
+  pass, 0 fail, 6 skipped), no new npm script or CI job. New named test `workflow add writes only what the project loader accepts, at the
+  project root, and loadKxmProject still loads` in `test/core/role-and-workflow-manager.test.ts`
+  fails with any one of these reverted: the loader check, the project-root write, the
+  project requirement, or the replaced-file skip. The older `Role & Workflow CLI` test's
+  local adds in a directory that is not a project moved to `--scope global`, and the template
+  test compares realpaths, because the file path is now the Git root. **Not done:** `workflow
+  modify` still writes without the check (it merges only `description`, which the schema
+  caps at 4000 characters). Picking a global definition into local scope (`workflow add
+  --pick <global-id>`) wrote the one-step scaffold under that id instead of the global
+  content, because global candidates carried no payload; fixed in the entry above.
+
+- **`kxm peer inbox` reads the agent's open requests from the hub (2026-09-23; Still open
+  item (a) of the docs-audit follow-ups, after the #304 entry below).** The operator asked
+  Claude to implement this directly, so the runner path (`just assign`, `just witness`, two
+  critic PASS records, `just accept`) was not used and there is no assignment manifest,
+  witness receipt or acceptance record. `kxm_inbox` listed only a map its caller passed; the
+  CLI and the Pi extension passed none, so both answered `[]`, and the hub had no read route
+  for an agent's open inbound requests. The hub now serves `GET /v1/agents/:id/inbox`
+  (`requireAgent` on that id, `requireProjectAuth`, `expireMessages` first): the agent's
+  queued and delivered messages in `seq` order from the store, acknowledging nothing and
+  moving no consumer cursor. `HubClient.listInbox()` reads it. Each surface now names its
+  inbox source in the command context: the MCP server its event-fed map (`inbox`,
+  reconciled as before), the CLI the hub (`hubInbox`), and the Pi extension neither, so
+  `kxm_inbox` refuses there rather than list requests Pi's `pending` queue will activate as
+  turns, or report an empty inbox. A durable CLI name (`KXM_AGENT_NAME=codex`) resumes its
+  agent id on registration, so `kxm peer inbox` lists what peers queued for it while it was
+  offline; the default `cli-<pid>` name is new on every call and its inbox is empty
+  (documented, not refused). The CLI, tools, HTTP API and peer-messaging docs say so. No
+  store schema change. Gate: `npm run verify`, green (1278 tests, 1272 pass, 0 fail, 6
+  skipped), no new npm script or CI job. Named test, failing with the fix reverted (it read `[]`):
+  `kxm peer inbox lists a request queued for a durable CLI agent name`
+  (`test/core/cli.test.ts`). `inbox reconciliation and reply handle terminal statuses and
+  error branches` (`test/core/commands-policy.test.ts`) now pins the hub read and the
+  no-source refusal instead of the empty result.
+
 - **Docs-audit fixes: webhook replay, agent admin-token fallback, agent hop propagation,
   three small items (2026-09-23; audit against main after #287, #293, #294 and in-flight
   #298/#299, reproduced on a real hub in an isolated state root).** The operator asked
@@ -538,8 +673,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   refuses (`legacy_state_unsupported`). `kxm gate signal` and `kxm workflow wait` inside a
   KXM project now route to the Runtime only when the project's Runtime store holds the run
   id (`projectRuntimeOwnsRun`); hub and Runtime ids share the `run_` + 32-hex shape, so a
-  hub run id used to go to the Runtime and fail `run_unknown`. `kxm peer inbox` is not
-  fixed (Still open). Gate: `npm run verify`, green (1277 tests, 1271 pass, 0 fail, 6
+  hub run id used to go to the Runtime and fail `run_unknown`. `kxm peer inbox` was left
+  open here; the entry above fixes it. Gate: `npm run verify`, green (1277 tests, 1271 pass, 0 fail, 6
   skipped), no new npm script or CI job. Named tests,
   each failing with its fix reverted: `a captured workflow-start webhook cannot start a
   second run under a new delivery ID or a different body` and `a captured signal callback
@@ -2399,25 +2534,33 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   because of). A second project with no in-project hub answered `backup_no_stores`. So the
   verified, hashed manifest passes while omitting every run event, drive receipt, gate record and
   outbox row — including the `refused_code` state P6 just added — and the operator sees `ok`.
-  `docs/operations.md` already
-  tells operators to copy the whole state tree, so the file-level recipe is honest; the
-  **command** claims "all stores" and does not mean it. Not scheduled here because the fix is a
-  scope decision, not a bug fix: it must decide whether one command backs up two roots (the
-  project and the user state root), how `kxm restore` remaps `$S/...` paths onto a new box, and
-  what a *partial* manifest must refuse. First slice should start from that question, not from a path patch.
-  Gate it needs: a named test asserting a backup of a project with a live event store in the
-  user state root lists that store in the manifest, and that restoring it into a fresh root
-  brings the outbox back — the current round-trip test only ever puts stores inside
-  `projectRoot`, which is why the gap survived.
-  **Consequence for P6, so the row is not read as more than it is:** the v6→v7 bump's deployed
-  witness covers the **brake** (kxm-dev-svr, 2026-09-23: the real pre-bump `run-events.db` copy,
-  46/46 acked, refused by the v7 build with `runtime_schema_outdated … is schema version 6; this
-  build requires 7`) and **fresh creation** (a new store at v7 with `attempt_count`/`refused_code`
-  /`refused_at` and both partial indexes). It does **not** cover a deployed backup/restore
-  round-trip of the event store, because the command cannot enumerate it. Do not mark the P6
-  deployed restore witness passed for the event store until this gap is closed; the v7
-  round-trip is proven only by the suite (`restore ceilings track every store's own schema
-  version` plus the e6 round-trip).
+  **Landed (2026-09-23):** `discoverProjectStores` now includes `$S/runtime/registry.db`
+  (store id `registry`, or `runtime-registry` when the project-local id is taken) and
+  `$S/runtime/projects/<projectKey>/run-events.db`, and copies each present
+  `run-events.db.run-prompts.json` sidecar as a manifest file. A manifest that missed a
+  discovered store or sidecar sets `complete: false`; `kxm backup` exits 1 with `ok: false`,
+  and `kxm restore` refuses `complete: false`. Legacy manifests that omit `complete` still
+  restore. What remains: restore does not remap absolute `$S` paths onto another box, and the
+  non-sqlite roots in `docs/operations.md` are still the stopped-state file copy. A green
+  `kxm backup` is not that whole-tree copy. The named test is
+  `backup discovers user-state runtime stores and refuses a partial manifest`.
+  **Consequence for P6:** the v6→v7 deployed witness still covers the brake and fresh creation
+  only. Cross-box restore of the live event store is not claimed; the v7 round-trip in the
+  suite now includes user-state discovery, not a second box.
+
+- **Pre-use must-fix slice (landed 2026-09-23):** live `kxm runs drive` write steps run only
+  on an audited writer profile (pi `-a` with extensions, skills, and session off; grok
+  `--always-approve` with subagents and web search off). A live write that does not change
+  the checkout settles `failed` (`authored: false`); a read-only step that changes the
+  checkout cannot settle `passed`. The v4 init template drops `limits.maxAgentTimeMs`, names
+  admitted harness/model pairs, and writes `.kxm/routes.yaml` for those two models. Guide
+  setup admits only reviewed selectors and skips Google until drive can reach Pi
+  `antigravity`. `kxm run` and drive help match that behavior. Studio mutate without a
+  handler returns 501.
+  `kxm prices acknowledge` stamps the local list as today without fetching rates; routing
+  totals stay null when any cost is missing. `kxm improve` stays proposal-only. Wiki compile
+  stays a dry run unless `--out`. Wiki ingest stays unselected. The S4 cell above remains
+  the historical template refusal; fresh init no longer carries that limit.
 
 - **Recorded gap, not scheduled (2026-09-20, found while fixing S3):**
   `producerPolicy.acceptedStatuses` compiles to `["passed"]` in
@@ -2882,17 +3025,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - Persisted Nous catalog via Pi `publish` is deferred.
 - **Claude experiment outcome (2026-09-07):** installed CLI 2.1.261 local mocked Messages streaming and model passthrough, dummy API-key and bearer auth, and unknown-tool rejection passed; no real tools executed. Official Nous implementation provides native Messages only for `anthropic/*`; Qwen is chat/completions, so direct Claude→Nous→Qwen is unsupported by the documented route ([hermes_cli/providers.py](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/providers.py), observed 2026-09-07). Anthropic via Nous was not live-tested because the authenticated native subscription is preferred. No adapter/translation layer or role admission was built. Mocked env bearer support does not prove OAuth credential interchangeability.
 
-- **Left open by the 2026-09-23 docs-audit fixes.** (a) `kxm peer inbox` from the CLI
-  always returns `[]`, and so does the Pi extension's `kxm_inbox` tool: `kxm_inbox`
-  reads only an in-memory map the caller passes, and the hub has no read route for an
-  agent's open inbound messages (delivery is push-only over `/v1/events`). A fix needs
-  that route, which is an API addition, not a trivial fix, and must not let Pi's tool
-  race its own activation queue. (b) `kxm role resume` still routes by run-id shape;
-  it should use `projectRuntimeOwnsRun` like `gate signal` and `workflow wait`. (c) A
-  CLI-based agent (`kxm peer send` from Codex) has no active inbound request in
-  process, so its forwards still start a new hop chain. (d) Jira and GitHub deliveries
-  carry no signed timestamp; the one-run-per-signed-body rule bounds their replay, and
-  a replayed identical delivery still answers as a duplicate.
+- **Left open by the 2026-09-23 docs-audit fixes.** (c) A CLI-based agent (`kxm peer
+  send` from Codex) has no active inbound request in process, so its forwards still start
+  a new hop chain. (d) Jira and GitHub deliveries carry no signed timestamp; the
+  one-run-per-signed-body rule bounds their replay, and a replayed identical delivery
+  still answers as a duplicate.
 
 ### Plan hygiene (periodic, not every turn)
 

@@ -604,10 +604,30 @@ test("portal create-drive-cancel preserves command identity and reports authorit
     makeGitRoot(cwd);
     initializeKxmProject(cwd, { projectId: "prj_01JS4PORTALDRIVE00000000", projectName: "S4 Portal" });
     // A slim agent-only workflow, as the S1 tenant recipe intends the portal to drive.
-    // The template's `default` declares `limits.maxAgentTimeMs`, which the direct-drive
+    // An explicit workflow still declares `limits.maxAgentTimeMs`, which the direct-drive
     // path refuses on purpose (`limit_unsupported`: agent-time budget enforcement is not
     // available in this slice) — asserted below. The slim workflow omits that limit.
     mkdirSync(join(cwd, ".kxm", "workflows"), { recursive: true });
+    writeFileSync(join(cwd, ".kxm", "workflows", "agent-time.yaml"), [
+      "schema: kxm.workflow.v1",
+      "description: Still-unsupported agent-time budget.",
+      "coordinator: coordinator",
+      "limits:",
+      "  maxTransitions: 2",
+      "  maxAgentTimeMs: 1000",
+      "steps:",
+      "  - id: only",
+      "    kind: agent",
+      "    agent: implementer",
+      "    on:",
+      "      passed:",
+      "        target: $terminal",
+      "        terminalStatus: completed",
+      "      failed:",
+      "        target: $terminal",
+      "        terminalStatus: failed",
+      "",
+    ].join("\n"));
     writeFileSync(join(cwd, ".kxm", "workflows", "portal.yaml"), [
       "schema: kxm.workflow.v1",
       "description: Slim portal-driven workflow.",
@@ -636,7 +656,7 @@ test("portal create-drive-cancel preserves command identity and reports authorit
     git(["commit", "--quiet", "-m", "portal workflow"]);
 
     // the limited workflow refuses direct drive — the boundary is honest, not hidden
-    const limitedRun = await cli(["run", "default", "--json", "limited workflow witness"]);
+    const limitedRun = await cli(["run", "agent-time", "--json", "limited workflow witness"]);
     assert.equal(limitedRun.code, 0, limitedRun.stderr);
     const limitedRunId = (JSON.parse(limitedRun.stdout) as { run: { runId: string } }).run.runId;
     const refused = await cli(["runs", "drive", limitedRunId, "--json", "--simulated"]);
@@ -769,5 +789,25 @@ test("portal create-drive-cancel preserves command identity and reports authorit
       // failing here is the point — silence would hide exactly this leak.
       assert.fail("runtime supervisor did not confirm shutdown; state root left in place at " + stateRoot);
     }
+  }
+});
+
+test("studio mutate without a handler does not report a successful CLI mapping", async () => {
+  const server = createStudioServer({ port: 0 });
+  const port = await server.listen();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/mutate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "workflow.signal", args: { runId: "run_x" } }),
+    });
+    assert.equal(response.status, 501);
+    const body = await response.json() as { ok?: boolean; mappedToCli?: boolean; error?: string; executed?: boolean };
+    assert.equal(body.ok, false);
+    assert.equal(body.executed, false);
+    assert.equal(body.mappedToCli, false);
+    assert.equal(body.error, "mutation_handler_missing");
+  } finally {
+    await server.close();
   }
 });

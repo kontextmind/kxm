@@ -174,6 +174,37 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
     }],
   ]);
   if (variant === "v4-registry") {
+    const coordinator = files.get(".kxm/agents/coordinator.yaml");
+    if (coordinator) {
+      files.set(".kxm/agents/coordinator.yaml", {
+        ...coordinator,
+        harness: "claude",
+        model: { provider: "anthropic", model: "fable" },
+      });
+    }
+    const implementer = files.get(".kxm/agents/implementer.yaml");
+    if (implementer) {
+      files.set(".kxm/agents/implementer.yaml", {
+        ...implementer,
+        harness: "grok",
+        model: { provider: "xai", model: "grok-4.6" },
+      });
+    }
+    const workflow = files.get(".kxm/workflows/default.yaml");
+    if (workflow) {
+      const limits = { ...(workflow.limits as JsonObject) };
+      delete limits.maxAgentTimeMs;
+      files.set(".kxm/workflows/default.yaml", { ...workflow, limits });
+    }
+    // The two models the template names, and nothing else. A fresh project can
+    // be driven without falling through to an unadmitted default model.
+    files.set(".kxm/routes.yaml", {
+      schema: "kxm.routes.v2",
+      updatedAt: "2026-09-23T00:00:00.000Z",
+      admitted: ["anthropic/fable", "xai/grok-4.6"],
+      disabled: [],
+      roles: { implementer: ["xai/grok-4.6"] },
+    });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",
       gates: { test: { kind: "command", argv: ["npm", "test"], timeoutMs: 3_600_000 } },

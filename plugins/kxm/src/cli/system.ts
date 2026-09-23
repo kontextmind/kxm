@@ -22,7 +22,7 @@ import {
   type RoutingRecord,
   type RoutingRecordV2,
 } from "../routing.ts";
-import { loadPriceCatalog, type PriceCatalog } from "../prices.ts";
+import { acknowledgePriceCatalog, loadPriceCatalog, type PriceCatalog } from "../prices.ts";
 import {
   buildImprovementReport,
   formatImprovementReport,
@@ -61,6 +61,7 @@ import {
 import {
   GUIDE_WORKFLOWS,
   parseGuideSelection,
+  mergeGuideRouteAdmission,
   planGuideSetup,
   renderGuideSetupFiles,
   writeGuideSetupFiles,
@@ -885,13 +886,33 @@ export async function maybeOfferGuideSetup(runtime: Runtime): Promise<void> {
   const plan = planGuideSetup({ inventory, selected });
   const files = renderGuideSetupFiles(runtime.cwd, plan);
   const report = writeGuideSetupFiles(files);
+  const admitted = mergeGuideRouteAdmission(runtime.cwd, plan);
   for (const file of report.written) runtime.io.stdout(`wrote ${file}\n`);
   for (const file of report.existed) runtime.io.stdout(`kept existing ${file} (not overwritten)\n`);
+  for (const selector of admitted) runtime.io.stdout(`admitted route ${selector}\n`);
   for (const skip of plan.skipped) {
     runtime.io.stdout(`skipped ${skip.workflow}/${skip.role}: ${skip.reason}\n`);
   }
   if (report.written.length > 0) {
     runtime.io.stdout("inspect with `kxm workflow definitions`; guide candidates are dated research — verify before dispatch\n");
+  }
+}
+
+export async function cmdPricesAcknowledge(runtime: Runtime): Promise<number> {
+  try {
+    const catalog = acknowledgePriceCatalog(runtime.cwd);
+    print(runtime.io, runtime.json, {
+      ok: true,
+      command: "prices acknowledge",
+      date: catalog.date,
+      sha256: catalog.sha256,
+      note: "stamped the existing list as today's estimate; vendor rates were not fetched",
+    }, `price catalog stamped ${catalog.date} (list estimate only; vendor rates were not fetched)`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    print(runtime.io, runtime.json, { ok: false, command: "prices acknowledge", error: "prices_acknowledge_failed", message }, `prices acknowledge failed: ${message}`);
+    return 1;
   }
 }
 

@@ -469,9 +469,26 @@ test("supervisor /drive returns 409 for still-unsupported maxAgentTimeMs", async
     supervisor = await startKxmRuntimeSupervisor({ stateRoot });
     const token = readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!;
     const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    writeFileSync(join(root, ".kxm", "workflows", "agent-time.yaml"), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxAgentTimeMs: 1000
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
     const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", {
       projectRoot: root,
-      workflowId: "default",
+      workflowId: "agent-time",
       prompt: "unsupported agent time",
     });
     const runId = (acceptance.run as { runId: string }).runId;
@@ -502,7 +519,26 @@ test("runs drive surfaces handoff field and detail on run_handoff_required", asy
     supervisor = await startKxmRuntimeSupervisor({ stateRoot });
     const token = readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!;
     const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
-    const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", { projectRoot: root, workflowId: "default", prompt: "handoff text" });
+    // The `kxm init` template no longer declares an agent-time limit, so the
+    // workflow that needs a handoff declares its own.
+    writeFileSync(join(root, ".kxm", "workflows", "agent-time.yaml"), `schema: kxm.workflow.v1
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+  maxAgentTimeMs: 1000
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", { projectRoot: root, workflowId: "agent-time", prompt: "handoff text" });
     const runId = (acceptance.run as { runId: string }).runId;
     // The same request `kxm runs drive` makes; its refusal text is what the CLI prints.
     await assert.rejects(

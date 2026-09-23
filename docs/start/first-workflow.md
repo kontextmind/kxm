@@ -254,11 +254,11 @@ The file is a `kxm.workflow.v1` definition. `coordinator` names the agent that o
 | Cost | None | Model usage on your accounts |
 
 > [!WARNING]
-> Without `--simulated`, `kxm runs drive` calls live harnesses. An agent whose model is not an admitted route fails with `producer_route_not_admitted`. Read [Harness routing](../reference/harness-routing.md) before your first live drive. A live drive hands off any agent, panel, approval or wait step with `write` access; gate steps are exempt, and the read-only `spec-and-plan` template avoids the refusal.
+> Without `--simulated`, `kxm runs drive` calls live harnesses. An agent whose model is not an admitted route fails with `producer_route_not_admitted`. Read [Harness routing](../reference/harness-routing.md) before your first live drive. A live step with `write` access runs only on a harness with an audited writer profile (`pi` or `grok`), as a single assignment, in a project whose `limits.maxConcurrentRuns` is 1, and, when `.kxm/roster.yaml` exists, only on a route in its writer lineup; any other live write step is handed off. A live write step settles `passed` only when the checkout changed, and a read-only step that changes the checkout settles `failed`. Gate steps are exempt. The read-only `spec-and-plan` template needs none of this.
 
-### Why not the `default` workflow
+### Why start with `first` and not `default`
 
-`kxm init` also writes a `default` workflow that plans, implements and runs the test gate. It declares `limits.maxAgentTimeMs`, an agent-time budget the Runtime cannot enforce yet. A drive of it is refused with HTTP 409 `run_handoff_required` (reason `limit_unsupported`), and the run stays `preparing` until you cancel it with `kxm runs cancel <run-id>`. [Steps the Runtime does not execute yet](../reference/config-reference.md#steps-the-runtime-does-not-execute-yet) lists every setting that causes a handoff.
+`kxm init` also writes a `default` workflow. Its coordinator plans on `claude` / `anthropic/fable`, its implementer writes the checkout on `grok` / `xai/grok-4.6`, and a `test` gate runs `npm test`; `kxm init` admits exactly those two models in `.kxm/routes.yaml`. You can drive it, but even a simulated drive runs `npm test` in your checkout, and a live drive spends both subscriptions and passes the implement step only when Grok changes the checkout. `first` calls no model and runs no command, so it is the safer first run. [Steps the Runtime does not execute yet](../reference/config-reference.md#steps-the-runtime-does-not-execute-yet) lists every setting that makes a drive hand the run off.
 
 ### Two kinds of runs
 
@@ -268,7 +268,7 @@ The file is a `kxm.workflow.v1` definition. `coordinator` names the agent that o
 
 | Message or symptom | Cause | Fix |
 |---|---|---|
-| `run_handoff_required` naming `limits.maxAgentTimeMs` | You drove the `default` workflow | Cancel the run and use `first` |
+| `run_handoff_required` naming `limits.maxAgentTimeMs` | The workflow declares an agent-time budget, which the Runtime does not enforce; a project from an older `kxm init` template has one on `default` | Cancel the run, remove the limit or use `first` |
 | `trust check failed: review every expansion above before merging` | The workflow is not committed | Review it, then commit it |
 | `workflow <id> does not exist in this project` | The ID is not a local workflow | Use an ID from `kxm workflow definitions` marked `[local]` |
 | `gate_outcome_impossible` from `kxm init` | A gate step routes failure on `failed` | Declare `implementation-failure` on the gate step |

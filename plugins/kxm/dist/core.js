@@ -461,6 +461,8 @@ function compareRoutingRecords(records) {
   const blocked = settled.filter((record) => record.finalOutcome === "blocked").length;
   const failed = settled.filter((record) => record.finalOutcome === "failed").length;
   const reworked = records.filter((record) => record.retries > 0 || record.transitions > 0).length;
+  const missingCostRuns = records.filter((record) => typeof record.costUsd !== "number" || !Number.isFinite(record.costUsd)).length;
+  const summedCost = records.reduce((sum, record) => sum + (typeof record.costUsd === "number" && Number.isFinite(record.costUsd) ? record.costUsd : 0), 0);
   return {
     behavioralSha256,
     runs: records.length,
@@ -468,7 +470,8 @@ function compareRoutingRecords(records) {
     blocked,
     failed,
     reworkRate: records.length === 0 ? 0 : Math.round(reworked / records.length * 100) / 100,
-    totalCostUsd: Math.round(records.reduce((sum, record) => sum + (record.costUsd ?? 0), 0) * 1e4) / 1e4,
+    totalCostUsd: missingCostRuns > 0 ? null : Math.round(summedCost * 1e4) / 1e4,
+    missingCostRuns,
     totalTokensIn: records.reduce((sum, record) => sum + (record.tokensIn ?? 0), 0),
     totalTokensOut: records.reduce((sum, record) => sum + (record.tokensOut ?? 0), 0),
     totalHumanInterventions: records.reduce((sum, record) => sum + record.humanInterventions, 0)
@@ -652,7 +655,7 @@ function generateRoutingReport(records, options = {}) {
       medianContextTokens = contextVals.length % 2 !== 0 ? contextVals[mid] : Math.round((contextVals[mid - 1] + contextVals[mid]) / 2);
     }
     const meteredCostUsd = Math.round(meteredCostTotal * 1e4) / 1e4;
-    const costPerAcceptedUsd = acceptedCount > 0 ? meteredCostUsd > 0 || unmeteredAttempts > 0 ? Math.round(meteredCostUsd / acceptedCount * 1e4) / 1e4 : unknownCostAttempts === attempts ? null : 0 : null;
+    const costPerAcceptedUsd = acceptedCount > 0 ? unknownCostAttempts > 0 ? null : meteredCostUsd > 0 || unmeteredAttempts > 0 ? Math.round(meteredCostUsd / acceptedCount * 1e4) / 1e4 : 0 : null;
     const flagged = unknownCostAttempts > 0;
     let equivalentListCostUsd = void 0;
     if (options.includeEquivalentListCost && options.catalog) {
@@ -1281,7 +1284,10 @@ var AGENT_COMMANDS = [
         await reconcileInbox(client, context.inbox, context.notifiedInbox);
         return { messages: [...context.inbox.values()] };
       }
-      return { messages: [] };
+      if (context?.hubInbox) return { messages: await client.listInbox() };
+      throw new Error(
+        "kxm_inbox is not available in this session: it activates each inbound request as a turn, and that turn's final response is the reply"
+      );
     }
   },
   {

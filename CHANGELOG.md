@@ -8,15 +8,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 - **Claude-only workflow recommendations now fail honestly when execution is unavailable.**
   `suggest` honors explicit harness constraints, uses flat installable IDs and verified
-  read-only routes, refuses unchecked existing definitions, and never substitutes a
+  capability-appropriate routes, refuses unchecked existing definitions, and never substitutes a
   different writer. `workflow add` validates IDs and runner-compatible YAML before
   writing; picked/imported dry runs leave configuration untouched. `gate validate
   --file` accepts local YAML without changing webhook environment-source validation.
   Run output distinguishes creation from execution and names live prerequisites and
   `runs drive/status/receipt`; incompatible `task run` requests leave tasks unchanged.
   Harness inventory reflects the project default, and initialization explains the
-  generic Pi/npm starter settings. Live writers remain unsupported by the read-only
-  one-shot profiles. See the [CLI reference](docs/reference/cli-reference.md#kxm-suggest).
+  generic Pi/npm starter settings. Claude's one-shot profile remains read-only; Pi/Grok
+  writer recommendations require audited writer admission. See the [CLI reference](docs/reference/cli-reference.md#kxm-suggest).
 
 - **`kxm workflow add --template <name>` writes a valid first workflow.**
   `implement-and-verify` (the `implementer` agent, then the project's `test` gate; a
@@ -81,6 +81,20 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **The rotation surface drive uses is the one setup writes.** Guide setup appends only
+  reviewed selectors to `.kxm/routes.yaml`. It skips Google guide candidates: Google's
+  route is the Pi `antigravity` provider, which a Runtime drive cannot reach yet, so a
+  Google role falls to its next reviewed candidate or is not written.
+
+- **CLI and Studio stop reporting work they did not do.** Drive help no longer
+  describes the default as a model-free simulation. A Studio mutation with no handler returns 501 and `mappedToCli: false`.
+
+- **Missing cost stays unknown.** `kxm prices acknowledge` restamps the local catalog
+  as today without fetching vendor rates, which is what an estimate will accept.
+  Routing totals are null when any attempt has no cost, and those rows sort after
+  complete-cost rows. `kxm improve` stays proposal-only. Wiki compile writes a file
+  only with `--out` and does not ingest.
+
 - **The workflow loader refuses a gate step that can never settle
   (`gate_outcome_impossible`).** A gate step settles only on `passed` or
   `implementation-failure` when `expect` is `pass`, and only on `passed` or `repro-missing`
@@ -102,8 +116,8 @@ All notable user-facing changes are documented here. The project follows [Semant
   execute until the run engine lands. The JSON result and its
   `phase` are unchanged. A `run_handoff_required` refusal from `kxm runs drive` now ends
   with `(handoff reason …; field …; detail …)`, each part capped at 200 characters; a run of
-  the `default` workflow that `kxm init` writes, for example, reports `limit_unsupported`
-  on `limits.maxAgentTimeMs`. Top-level help names the product KXM instead of KontextMind,
+  a workflow that declares `limits.maxAgentTimeMs`, for example, reports `limit_unsupported`
+  on that field. Top-level help names the product KXM instead of KontextMind,
   and `kxm init` text output lists each validation issue as `file: code: message`.
 - **`kxm suggest` recommends only KXM command skills.** Suggested skills come from the
   command skills shipped in `plugins/kxm/skills` (such as `kxm-workflow`, `kxm-runs`,
@@ -319,6 +333,43 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **A local `kxm workflow add` writes only what the project loader accepts, where it reads
+  it.** Local scope needs a KXM project (`project_not_found` outside one, creating nothing)
+  and writes to the project root's `.kxm/workflows/` from any subdirectory. Before writing,
+  also under `--dry-run`, the project loader checks the project with the new document; if
+  it would not load, the command exits 2 with `workflow_invalid`, lists the issues and
+  writes nothing. A `--file` in the shape written through 0.7.92 is refused, and
+  `--overwrite` repairs a file left in that shape. See
+  `docs/reference/cli-reference.md#kxm-workflow-add`.
+- **`kxm workflow add --pick <global-id>` copies the global definition.** In local scope,
+  picking a global definition wrote the one-step scaffold under its id and reported
+  success. It now writes the global definition's content, with `--description` replacing
+  its description, and the loader check refuses one the project cannot load.
+- **Live `kxm runs drive` can author on an audited writer profile.** A write-repository
+  step on pi (`-a`, with extensions, skills, and the session off) or grok
+  (`--always-approve`, with subagents and web search off) runs against the checkout.
+  A live write that leaves the tree unchanged settles `failed` with `authored: false`.
+  A read-only step that changes the tree cannot settle `passed`. Harnesses without a
+  writer profile still hand off. Simulated drive does not require a diff. The witness
+  fingerprints the one checkout, so a live write step must be a single assignment
+  (`assignments.maximum: 1`) in a project whose `limits.maxConcurrentRuns` is 1; a
+  panel of writers or a project that admits concurrent runs hands off with
+  `step_unsupported` instead of crediting one writer's change to another.
+
+- **Fresh `kxm init` can be driven.** The current template drops `limits.maxAgentTimeMs`,
+  names coordinator `claude` / `anthropic/fable` and implementer `grok` / `xai/grok-4.6`,
+  and admits those two routes. One-shot production no longer falls through to an
+  unadmitted `claude-3-7-sonnet`.
+
+- **`kxm backup` includes the Runtime stores under the user-state root.** Discovery
+  copies `$S/runtime/registry.db` and `$S/runtime/projects/<projectKey>/run-events.db`,
+  plus each `run-events.db.run-prompts.json` sidecar. A copy that misses a discovered
+  store is `complete: false`: `kxm backup` exits 1 with `ok: false`, and restore
+  refuses that manifest. Cross-box remap of absolute `$S` paths is still the file recipe.
+  The Runtime stores are machine-wide, so a backup holds every project's run store and a
+  restore rolls all of them back. `kxm backup --help` no longer says Runtime stores are
+  left out.
+
 - **Signed webhooks cannot be replayed.** KXM's own webhook senders now sign the
   timestamp, delivery ID, definition, run and signal key along with the body
   (`x-kxm-signature`, `x-kxm-timestamp`, `x-kxm-delivery-id`; see
@@ -338,8 +389,24 @@ All notable user-facing changes are documented here. The project follows [Semant
   or the Claude MCP server send one hop past the inbound request being handled, so a
   chain of agents forwarding to each other stops at `hop_limit_reached`.
 - **Workflow prompts no longer point agents at `.kxm/config`**, a path KXM refuses.
-- **`kxm gate signal` and `kxm workflow wait` inside a KXM project reach the hub for hub
-  runs.** They go to the local Runtime only for a run its store holds.
+- **`kxm gate signal`, `kxm workflow wait` and `kxm role resume` inside a KXM project reach
+  the hub for hub runs.** They go to the local Runtime only for a run its store holds, and
+  the lookup leaves no files behind, so `--dry-run` changes nothing.
+- **`kxm peer inbox` lists the requests waiting for a named CLI agent.** It returned
+  `{"messages":[]}` every time. The hub now serves `GET /v1/agents/:id/inbox`
+  (agent-authenticated, project-scoped): the caller's queued and delivered requests,
+  oldest first, acknowledging nothing. Run with a stable `KXM_AGENT_NAME` (for example
+  `codex`) to list requests peers queued for it while it was offline, then answer them
+  with `kxm peer reply`. The Pi extension's `kxm_inbox` tool now refuses instead of
+  returning an empty list, because Pi activates each inbound request as a turn itself.
+- **A restarted Claude Code session keeps the requests it acknowledged but never answered.**
+  The MCP server acknowledges a request on arrival, and the hub pushes only unacknowledged
+  requests again on reconnect, so a session that restarted under the same agent name (the
+  plugin's `agent_name`) resumed its agent id but lost those requests from `kxm_inbox` and
+  the channel until they expired. After it registers, the server now reads them back from
+  the hub into `kxm_inbox` and announces each once as a channel event; one cancelled or
+  expired meanwhile is dropped, not announced. A tool call waits for that read, and a failed
+  read fails the call instead of listing a partial inbox.
 
 - **The Claude plugin's SessionStart hook is one bundled, read-only, project-scoped
   script.** The two shell hooks it replaces (`kxm session brief --status` and

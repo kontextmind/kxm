@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync, statSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, mkdirSync, mkdtempSync, rmSync, statSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -25,6 +25,7 @@ import {
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { KxmRunEventStore, kxmProjectRunEventsPath } from "../../plugins/kxm/src/runtime-store.ts";
+import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
 
 function capture() {
   let stdout = "";
@@ -341,7 +342,7 @@ test("kxm router skill scopes tool_policy_denied to agent-command and MCP/extens
   );
 });
 
-test("kxm workflow wait and signal bind to the Runtime only for a run its store owns", async () => {
+test("kxm workflow wait, gate signal, and role resume bind to the Runtime only for a run its store owns", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-test-"));
   const stateHome = mkdtempSync(join(tmpdir(), "kxm-test-state-"));
   try {
@@ -370,6 +371,22 @@ test("kxm workflow wait and signal bind to the Runtime only for a run its store 
     } finally {
       store.close();
     }
+    // The hub workflow run `role resume` finds in the project's hub store.
+    mkdirSync(join(dir, ".kxm", "state"), { recursive: true });
+    const hubStore = new DatabaseSync(join(dir, ".kxm", "state", "kxm.db"));
+    try {
+      hubStore.exec(`CREATE TABLE workflow_runs (id TEXT PRIMARY KEY, record TEXT NOT NULL);
+        CREATE TABLE workflow_journal (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, category TEXT NOT NULL, area TEXT NOT NULL, record TEXT NOT NULL);`);
+      const stage = { id: "review", label: "Review", instructions: "Review", requiredEvidence: [], maxAttempts: 2, autoResumeLimit: 1, status: "waiting", attempts: 1, evidence: {} };
+      hubStore.prepare("INSERT INTO workflow_runs (id, record) VALUES (?, ?)").run(hubRunId, JSON.stringify({
+        id: hubRunId, definitionId: "audit-flow", source: "generic", deliveryId: "d1", payloadHash: "h1", project: "test",
+        targetAgentId: "agent_1", targetAgentName: "agent", messageId: "msg_1", status: "waiting", currentStage: "review", stages: [stage],
+        waiting: { stageId: "review", signalKey: "audit_escalation", summary: "escalated", createdAt: "2026-09-23T00:00:00.000Z", expiresAt: "2026-09-24T00:00:00.000Z" },
+        createdAt: "2026-09-23T00:00:00.000Z", updatedAt: "2026-09-23T00:00:00.000Z",
+      }));
+    } finally {
+      hubStore.close();
+    }
     const wait = (runId: string) => runCli(
       ["workflow", "wait", runId, "stage-1", "test-signal", "waiting for signal", "--dry-run", "--json"],
       env,
@@ -382,6 +399,11 @@ test("kxm workflow wait and signal bind to the Runtime only for a run its store 
       undefined,
       dir,
     );
+    const resume = async (runId: string) => {
+      const result = await runCli(["role", "resume", runId, "carry on", "--dry-run", "--json"], env, undefined, dir);
+      assert.equal(result.exit, 0, result.stderr);
+      return (JSON.parse(result.stdout) as { planned: Array<{ target: string }> }).planned.map((change) => change.target).join("\n");
+    };
 
     const runtimeWait = await wait(runtimeRunId);
     assert.equal(runtimeWait.exit, 0);
@@ -389,6 +411,7 @@ test("kxm workflow wait and signal bind to the Runtime only for a run its store 
     const runtimeSignal = await signal(runtimeRunId);
     assert.equal(runtimeSignal.exit, 0);
     assert.match(runtimeSignal.stdout, /would post signal to KXM run/);
+    assert.match(await resume(runtimeRunId), /kxm-runtime \/v1\/runs\/run_0123[0-9a-f]+\/signal/);
 
     // A hub workflow run has the same id shape; inside the project it still goes to the hub.
     const hubWait = await wait(hubRunId);
@@ -397,6 +420,7 @@ test("kxm workflow wait and signal bind to the Runtime only for a run its store 
     const hubSignal = await signal(hubRunId);
     assert.equal(hubSignal.exit, 0, hubSignal.stderr);
     assert.match(hubSignal.stdout, /would post signed signal/);
+    assert.match(await resume(hubRunId), /kxm\.db \(workflow_runs run_fedcba/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(stateHome, { recursive: true, force: true });
@@ -523,8 +547,14 @@ test("inbox reconciliation and reply handle terminal statuses and error branches
   assert.equal(listed.messages.length, 1);
   assert.equal(listed.messages[0].id, "msg_active");
 
-  const emptyInbox = await inboxCmd.execute(mockClient as any, {}) as { messages: any[] };
-  assert.deepEqual(emptyInbox.messages, []);
+  // A caller that keeps no inbox of its own (the CLI) lists what the hub holds for it.
+  const hubClient = { async listInbox() { return [{ id: "msg_hub", status: "queued" }]; } };
+  const hubListed = await inboxCmd.execute(hubClient as any, {}, { hubInbox: true }) as { messages: any[] };
+  assert.deepEqual(hubListed.messages.map((message) => message.id), ["msg_hub"]);
+
+  // A caller with no inbox source (Pi, whose own queue activates inbound requests) is refused
+  // rather than shown an empty list, and the hub is not read: mockClient has no listInbox.
+  await assert.rejects(inboxCmd.execute(mockClient as any, {}), /kxm_inbox is not available in this session/);
 
   // kxm_reply deletes from context inbox
   const mockReplyClient = {

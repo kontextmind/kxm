@@ -15271,6 +15271,10 @@ var READ_ONLY_ONESHOT_ARGS = Object.freeze({
 function oneShotReadOnlyArgs(harness) {
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
 }
+var WRITER_ONESHOT_ARGS = Object.freeze({
+  pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"])
+});
 var BUILTIN_HARNESSES = Object.freeze([
   {
     id: "pi",
@@ -17219,7 +17223,10 @@ var AGENT_COMMANDS = [
         await reconcileInbox(client, context.inbox, context.notifiedInbox);
         return { messages: [...context.inbox.values()] };
       }
-      return { messages: [] };
+      if (context?.hubInbox) return { messages: await client.listInbox() };
+      throw new Error(
+        "kxm_inbox is not available in this session: it activates each inbound request as a turn, and that turn's final response is the reply"
+      );
     }
   },
   {
@@ -19417,6 +19424,9 @@ var DatabaseSync = class {
     this.inner.close();
   }
 };
+
+// plugins/kxm/src/bindings.ts
+var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 
 // plugins/kxm/src/database.ts
 function databaseError(code, file, message) {
@@ -22517,6 +22527,14 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
         requireProjectAuth(request, current.project);
         await readJson(request);
         json(response, 200, { agent: publicAgent(current, staleAfterMs) });
+        return;
+      }
+      const inboxMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)\/inbox$/);
+      if (method === "GET" && inboxMatch) {
+        const current = requireAgent(request, decodeURIComponent(inboxMatch[1]));
+        requireProjectAuth(request, current.project);
+        expireMessages();
+        json(response, 200, { messages: store.getPendingMessages(current.id) });
         return;
       }
       const agentMatch = url.pathname.match(/^\/v1\/agents\/([^/]+)$/);

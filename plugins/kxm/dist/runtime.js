@@ -163,10 +163,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify4(x) {
+    function stringify5(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify4;
+    exports.stringify = stringify5;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -2986,7 +2986,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve11.call(this, root, ref);
+      let _sch = resolve12.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3013,7 +3013,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve11(root, ref) {
+    function resolve12(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3838,7 +3838,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve11(baseURI, relativeURI, options) {
+    function resolve12(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4200,7 +4200,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve11,
+      resolve: resolve12,
       resolveComponent,
       equal,
       serialize,
@@ -8917,7 +8917,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify4(item, ctx, onComment, onChompKeep) {
+    function stringify5(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -8946,7 +8946,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify4;
+    exports.stringify = stringify5;
   }
 });
 
@@ -8956,7 +8956,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify4 = require_stringify();
+    var stringify5 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -8978,7 +8978,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify4.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify5.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -9030,7 +9030,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify4.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify5.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -9171,7 +9171,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify4 = require_stringify();
+    var stringify5 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -9207,7 +9207,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify4.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify5.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -9274,12 +9274,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify4 = require_stringify();
+    var stringify5 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify5 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify5(collection, ctx, options);
+      const stringify6 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify6(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -9304,7 +9304,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify4.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify5.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -9371,7 +9371,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify4.stringify(item, itemCtx, () => comment = null);
+        let str = stringify5.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -10732,7 +10732,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify4 = require_stringify();
+    var stringify5 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -10747,7 +10747,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify4.createStringifyContext(doc, options);
+      const ctx = stringify5.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -10769,7 +10769,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify4.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify5.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -10777,7 +10777,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify4.stringify(doc.contents, ctx));
+        lines.push(stringify5.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -12913,7 +12913,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify4 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify5 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -12966,7 +12966,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify4;
+    exports.stringify = stringify5;
   }
 });
 
@@ -14696,7 +14696,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify4(value, replacer, options) {
+    function stringify5(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -14721,7 +14721,7 @@ var require_public_api = __commonJS({
     exports.parse = parse8;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument2;
-    exports.stringify = stringify4;
+    exports.stringify = stringify5;
   }
 });
 
@@ -14779,7 +14779,7 @@ var require_dist = __commonJS({
 
 // plugins/kxm/src/runtime-service.ts
 import { createHash as createHash7 } from "node:crypto";
-import { existsSync as existsSync6, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync7, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
 import { join as join6 } from "node:path";
 
 // plugins/kxm/src/project-config.ts
@@ -15051,6 +15051,35 @@ function coreTemplate(projectId, projectName, variant) {
     }]
   ]);
   if (variant === "v4-registry") {
+    const coordinator = files.get(".kxm/agents/coordinator.yaml");
+    if (coordinator) {
+      files.set(".kxm/agents/coordinator.yaml", {
+        ...coordinator,
+        harness: "claude",
+        model: { provider: "anthropic", model: "fable" }
+      });
+    }
+    const implementer = files.get(".kxm/agents/implementer.yaml");
+    if (implementer) {
+      files.set(".kxm/agents/implementer.yaml", {
+        ...implementer,
+        harness: "grok",
+        model: { provider: "xai", model: "grok-4.6" }
+      });
+    }
+    const workflow = files.get(".kxm/workflows/default.yaml");
+    if (workflow) {
+      const limits = { ...workflow.limits };
+      delete limits.maxAgentTimeMs;
+      files.set(".kxm/workflows/default.yaml", { ...workflow, limits });
+    }
+    files.set(".kxm/routes.yaml", {
+      schema: "kxm.routes.v2",
+      updatedAt: "2026-09-23T00:00:00.000Z",
+      admitted: ["anthropic/fable", "xai/grok-4.6"],
+      disabled: [],
+      roles: { implementer: ["xai/grok-4.6"] }
+    });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",
       gates: { test: { kind: "command", argv: ["npm", "test"], timeoutMs: 36e5 } }
@@ -15165,7 +15194,7 @@ function defaultSpawn(command, args, options) {
   if (options.signal?.aborted) {
     return Promise.resolve({ stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") });
   }
-  return new Promise((resolve11) => {
+  return new Promise((resolve12) => {
     const stdout = [];
     const stderr = [];
     let outputBytes = 0;
@@ -15196,7 +15225,7 @@ function defaultSpawn(command, args, options) {
       const started = Boolean(child?.pid);
       if (started && !observedChildExit) error ??= new Error("process_exit_unobserved");
       const unverifiedDescendants = stopping || started && !observedChildExit;
-      resolve11({
+      resolve12({
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
         code,
@@ -15600,6 +15629,16 @@ var READ_ONLY_ONESHOT_ARGS = Object.freeze({
 });
 function oneShotReadOnlyArgs(harness) {
   return Object.hasOwn(READ_ONLY_ONESHOT_ARGS, harness) ? READ_ONLY_ONESHOT_ARGS[harness] : void 0;
+}
+var WRITER_ONESHOT_ARGS = Object.freeze({
+  pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"])
+});
+function oneShotWriterArgs(harness) {
+  return Object.hasOwn(WRITER_ONESHOT_ARGS, harness) ? WRITER_ONESHOT_ARGS[harness] : void 0;
+}
+function oneShotPermissionArgs(harness, permission) {
+  return permission === "edit" ? oneShotWriterArgs(harness) : oneShotReadOnlyArgs(harness);
 }
 var BUILTIN_HARNESSES = Object.freeze([
   {
@@ -16742,10 +16781,13 @@ function readResource(registry, root, file, logicalPath, kind, id, containmentRo
     parent = dirname2(parent);
   }
   if (!stat.isFile()) fail2("path", "resource_not_file", label, "configuration resource must be a regular file");
-  const value = parseRestrictedYaml2(readFileSync(file), label);
+  return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value: resourceValue(registry, readFileSync(file), label, kind) };
+}
+function resourceValue(registry, input, label, kind) {
+  const value = parseRestrictedYaml2(input, label);
   const issues = registry.validate(kind, value, label);
   if (issues.length > 0) throw new KxmConfigError(issues);
-  return { kind, ...id === void 0 ? {} : { id }, file, logicalPath, value };
+  return value;
 }
 function readTemplateProvenance(registry, root) {
   const file = join2(root, ".kxm", "template-provenance.yaml");
@@ -16794,7 +16836,7 @@ function readTemplateProvenance(registry, root) {
   }
   return value;
 }
-function listNamedResources(registry, root, directory, logicalDirectory, kind) {
+function listNamedResources(registry, root, directory, logicalDirectory, kind, replacedId) {
   const resources = /* @__PURE__ */ new Map();
   if (!existsSync3(directory)) return resources;
   const stat = lstatSync(directory);
@@ -16815,6 +16857,7 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind) {
     }
     const id = basename(entry.name, ".yaml");
     if (kind === "model" && id === "inventory") continue;
+    if (id === replacedId) continue;
     if (!resourceIdentifier(id)) {
       issues.push(issue2("path", "resource_id_invalid", displayPath(root, join2(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
@@ -17415,6 +17458,9 @@ function assertNoRegisteredGates(options) {
   }
 }
 function loadKxmProject(projectRoot, options = {}) {
+  return loadProjectBundle(projectRoot, options);
+}
+function loadProjectBundle(projectRoot, options, workflowCandidate) {
   assertNoRegisteredGates(options);
   const root = resolve(projectRoot);
   const legacyPresent = legacyConfigFilesAt(root);
@@ -17448,7 +17494,15 @@ function loadKxmProject(projectRoot, options = {}) {
   if (earlyIssues.length > 0) throw new KxmConfigError(earlyIssues);
   const agents = listNamedResources(registry, root, join2(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model");
-  const workflows = listNamedResources(registry, root, join2(root, ".kxm", "workflows"), ".kxm/workflows", "workflow");
+  const workflows = listNamedResources(registry, root, join2(root, ".kxm", "workflows"), ".kxm/workflows", "workflow", workflowCandidate?.id);
+  if (workflowCandidate) {
+    const { id, document } = workflowCandidate;
+    const logicalPath = `.kxm/workflows/${id}.yaml`;
+    if (!resourceIdentifier(id)) fail2("path", "resource_id_invalid", logicalPath, `filename-derived identity ${id} is invalid or platform-reserved`);
+    const collision = [...workflows.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
+    if (collision) fail2("path", "resource_id_collision", logicalPath, `${id} case-folds to existing ${collision}`);
+    workflows.set(id, { kind: "workflow", id, file: join2(root, logicalPath), logicalPath, value: resourceValue(registry, document, logicalPath, "workflow") });
+  }
   const gatePath = join2(root, ".kxm", "gates.yaml");
   const gateRegistry = existsSync3(gatePath) ? readResource(registry, root, gatePath, ".kxm/gates.yaml", "gate-registry") : void 0;
   const environments = [];
@@ -17607,11 +17661,14 @@ function legacyConfigFilesAt(root) {
 
 // plugins/kxm/src/runtime-store.ts
 import { createHash as createHash5, randomUUID } from "node:crypto";
-import { existsSync as existsSync5, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname as dirname5, join as join5, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync6, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname as dirname5, join as join5, resolve as resolve5 } from "node:path";
 
 // plugins/kxm/src/sqlite.ts
+import { existsSync as existsSync4 } from "node:fs";
 import { createRequire } from "node:module";
+import { resolve as resolve2 } from "node:path";
+import { pathToFileURL } from "node:url";
 var requireFromHere = createRequire(import.meta.url);
 function loadNative() {
   try {
@@ -17648,10 +17705,16 @@ var DatabaseSync = class {
     this.inner.close();
   }
 };
+function openReadOnlyDatabase(path) {
+  if (existsSync4(`${path}-wal`)) return new DatabaseSync(path, { readOnly: true });
+  const uri = pathToFileURL(resolve2(path));
+  uri.searchParams.set("immutable", "1");
+  return new DatabaseSync(uri.href, { readOnly: true });
+}
 
 // plugins/kxm/src/bindings.ts
 import { homedir } from "node:os";
-import { dirname as dirname3, isAbsolute as isAbsolute2, join as join3, parse, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { dirname as dirname3, isAbsolute as isAbsolute2, join as join3, parse, relative as relative2, resolve as resolve3, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
 function bindingIssue(phase, code, message) {
@@ -17667,17 +17730,17 @@ function kxmUserStateRoot(options = {}) {
   const explicit = options.stateRoot ?? env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute2(explicit)) bindingError("path", "local_state_root_not_absolute", "KXM_STATE_HOME must be an absolute host-local path");
-    return resolve2(explicit);
+    return resolve3(explicit);
   }
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
     const base2 = localAppData && isAbsolute2(localAppData) ? localAppData : join3(home, "AppData", "Local");
-    return resolve2(base2, "KXM");
+    return resolve3(base2, "KXM");
   }
-  if (platform === "darwin") return resolve2(home, "Library", "Application Support", "KXM");
+  if (platform === "darwin") return resolve3(home, "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
   const base = xdgState && isAbsolute2(xdgState) ? xdgState : join3(home, ".local", "state");
-  return resolve2(base, "kxm");
+  return resolve3(base, "kxm");
 }
 
 // plugins/kxm/src/sync-transform.ts
@@ -18016,7 +18079,7 @@ import { createHash as createHash4, randomBytes } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
-  existsSync as existsSync4,
+  existsSync as existsSync5,
   lstatSync as lstatSync2,
   mkdirSync,
   readdirSync as readdirSync2,
@@ -18024,14 +18087,14 @@ import {
   unlinkSync,
   writeFileSync
 } from "node:fs";
-import { basename as basename2, dirname as dirname4, join as join4, resolve as resolve3 } from "node:path";
+import { basename as basename2, dirname as dirname4, join as join4, resolve as resolve4 } from "node:path";
 function databaseError(code, file, message) {
   const issue3 = { phase: "semantic", code, file, message };
   return new KxmConfigError([issue3]);
 }
 function checkedParent(path, description) {
   const parent = dirname4(path);
-  if (!existsSync4(parent)) mkdirSync(parent, { recursive: true, mode: 448 });
+  if (!existsSync5(parent)) mkdirSync(parent, { recursive: true, mode: 448 });
   const stat = lstatSync2(parent, { throwIfNoEntry: false });
   if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
     throw databaseError("runtime_path_invalid", description, `${description} parent must be a regular directory, not a link`);
@@ -18253,14 +18316,14 @@ function fileSha256(filePath) {
   return `sha256:${createHash4("sha256").update(bytes).digest("hex")}`;
 }
 function backupDatabaseFile(sourcePath, targetPath, storeId) {
-  const resolvedSource = resolve3(sourcePath);
-  const resolvedTarget = resolve3(targetPath);
+  const resolvedSource = resolve4(sourcePath);
+  const resolvedTarget = resolve4(targetPath);
   const sourceStat = lstatSync2(resolvedSource, { throwIfNoEntry: false });
   if (!sourceStat || !sourceStat.isFile() || sourceStat.isSymbolicLink()) {
     throw databaseError("runtime_path_invalid", resolvedSource, `source database ${resolvedSource} must be a regular file, not a link or directory`);
   }
   checkedParent(resolvedTarget, "backup target");
-  if (existsSync4(resolvedTarget)) {
+  if (existsSync5(resolvedTarget)) {
     unlinkSync(resolvedTarget);
   }
   const sourceDb = new DatabaseSync(resolvedSource);
@@ -18304,8 +18367,8 @@ function backupDatabaseFile(sourcePath, targetPath, storeId) {
   };
 }
 function restoreDatabaseFile(backupPath, targetPath, storeId, expectedSchemaVersion, maxSupportedVersion) {
-  const resolvedBackup = resolve3(backupPath);
-  const resolvedTarget = resolve3(targetPath);
+  const resolvedBackup = resolve4(backupPath);
+  const resolvedTarget = resolve4(targetPath);
   const backupStat = lstatSync2(resolvedBackup, { throwIfNoEntry: false });
   if (!backupStat || !backupStat.isFile() || backupStat.isSymbolicLink()) {
     throw databaseError("runtime_path_invalid", resolvedBackup, `backup database ${resolvedBackup} must be a regular file, not a link or directory`);
@@ -18338,7 +18401,7 @@ function restoreDatabaseFile(backupPath, targetPath, storeId, expectedSchemaVers
   }
   checkedParent(resolvedTarget, "restore target");
   for (const file of [resolvedTarget, `${resolvedTarget}-wal`, `${resolvedTarget}-shm`]) {
-    if (existsSync4(file)) {
+    if (existsSync5(file)) {
       try {
         unlinkSync(file);
       } catch {
@@ -18374,79 +18437,190 @@ var KXM_BACKUP_CEILINGS = {
   events: 7
 };
 function kxmBackupCeiling(storeId) {
+  if (storeId === "runtime-registry") return KXM_BACKUP_CEILINGS.registry;
   if (storeId.startsWith("events:")) return KXM_BACKUP_CEILINGS.events;
   return KXM_BACKUP_CEILINGS[storeId] ?? KXM_BACKUP_CEILINGS["hub-store"];
 }
-function discoverProjectStores(projectRoot, options = {}) {
-  const root = resolve3(projectRoot);
-  const stores = [];
-  const hubPath = options.hubDataPath ? resolve3(options.hubDataPath) : join4(root, ".kxm", "state", "kxm.db");
-  if (existsSync4(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: kxmBackupCeiling("hub-store") });
+function pushStore(stores, storeId, sourcePath) {
+  if (stores.some((store) => store.storeId === storeId || store.sourcePath === sourcePath)) return;
+  stores.push({ storeId, sourcePath, maxSupportedVersion: kxmBackupCeiling(storeId) });
+}
+function discoverUserRuntime(env, stores, files) {
+  let stateRoot;
+  try {
+    stateRoot = kxmUserStateRoot(env ? { env } : {});
+  } catch {
+    return;
   }
-  const registryPath = join4(root, ".kxm", "runtime", "registry.db");
-  if (existsSync4(registryPath)) {
-    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: kxmBackupCeiling("registry") });
+  const runtimeDir = join4(stateRoot, "runtime");
+  const registryPath = join4(runtimeDir, "registry.db");
+  if (existsSync5(registryPath)) {
+    const storeId = stores.some((store) => store.storeId === "registry") ? "runtime-registry" : "registry";
+    pushStore(stores, storeId, registryPath);
   }
-  const bindingsPath = join4(root, ".kxm", "runtime", "bindings.db");
-  if (existsSync4(bindingsPath)) {
-    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: kxmBackupCeiling("binding-store") });
+  const projectsDir = join4(runtimeDir, "projects");
+  if (!existsSync5(projectsDir)) return;
+  let entries;
+  try {
+    entries = readdirSync2(projectsDir, { withFileTypes: true });
+  } catch {
+    return;
   }
-  const eventsDir = join4(root, ".kxm", "runtime", "events");
-  if (existsSync4(eventsDir)) {
-    const entries = readdirSync2(eventsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith(".db")) {
-        const key = entry.name.replace(/\.db$/, "");
-        stores.push({
-          storeId: `events:${key}`,
-          sourcePath: join4(eventsDir, entry.name),
-          maxSupportedVersion: kxmBackupCeiling(`events:${key}`)
-        });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dbPath = join4(projectsDir, entry.name, "run-events.db");
+    if (!existsSync5(dbPath)) continue;
+    const safe = entry.name.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    let storeId = `events:${safe}`;
+    if (stores.some((store) => store.storeId === storeId)) storeId = `events:runtime:${safe}`;
+    pushStore(stores, storeId, dbPath);
+    const sidecar = `${dbPath}.run-prompts.json`;
+    if (existsSync5(sidecar)) {
+      const id = `${storeId}:run-prompts`;
+      if (!files.some((file) => file.id === id || file.sourcePath === sidecar)) {
+        files.push({ id, sourcePath: sidecar });
       }
     }
   }
-  return stores;
+}
+function discoverBackupSources(projectRoot, options = {}) {
+  const root = resolve4(projectRoot);
+  const stores = [];
+  const files = [];
+  const hubPath = options.hubDataPath ? resolve4(options.hubDataPath) : join4(root, ".kxm", "state", "kxm.db");
+  if (existsSync5(hubPath)) pushStore(stores, "hub-store", hubPath);
+  const registryPath = join4(root, ".kxm", "runtime", "registry.db");
+  if (existsSync5(registryPath)) pushStore(stores, "registry", registryPath);
+  const bindingsPath = join4(root, ".kxm", "runtime", "bindings.db");
+  if (existsSync5(bindingsPath)) pushStore(stores, "binding-store", bindingsPath);
+  const eventsDir = join4(root, ".kxm", "runtime", "events");
+  if (existsSync5(eventsDir)) {
+    const entries = readdirSync2(eventsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith(".db")) {
+        const key = entry.name.replace(/\.db$/, "").replace(/[^a-zA-Z0-9_.-]/g, "_");
+        pushStore(stores, `events:${key}`, join4(eventsDir, entry.name));
+      }
+    }
+  }
+  discoverUserRuntime(options.env, stores, files);
+  return { stores, files };
+}
+function backupPlainFile(sourcePath, targetPath, id) {
+  const resolvedSource = resolve4(sourcePath);
+  const sourceStat = lstatSync2(resolvedSource, { throwIfNoEntry: false });
+  if (!sourceStat || !sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    throw databaseError("runtime_path_invalid", resolvedSource, `backup file ${resolvedSource} must be a regular file, not a link or directory`);
+  }
+  checkedParent(targetPath, "backup target");
+  if (existsSync5(targetPath)) unlinkSync(targetPath);
+  copyFileSync(resolvedSource, targetPath);
+  try {
+    chmodSync(targetPath, 384);
+  } catch {
+  }
+  return {
+    id,
+    sourcePath: resolvedSource,
+    backupFile: basename2(targetPath),
+    sha256: fileSha256(targetPath),
+    bytes: sourceStat.size
+  };
+}
+function backupFilename(sourcePath, id, used) {
+  let filename = basename2(sourcePath);
+  if (used.has(filename)) {
+    filename = `${id.replace(/[^a-zA-Z0-9_.-]/g, "_")}-${filename}`;
+  }
+  used.add(filename);
+  return filename;
+}
+function restorePlainFile(backupFilePath, targetPath) {
+  checkedParent(targetPath, "restore target");
+  if (existsSync5(targetPath)) unlinkSync(targetPath);
+  copyFileSync(backupFilePath, targetPath);
+  try {
+    chmodSync(targetPath, 384);
+  } catch {
+  }
+}
+function discoverProjectStores(projectRoot, options = {}) {
+  return discoverBackupSources(projectRoot, options).stores;
+}
+function backupDiscoverOptions(options) {
+  return {
+    ...options.hubDataPath !== void 0 ? { hubDataPath: options.hubDataPath } : {},
+    ...options.env !== void 0 ? { env: options.env } : {}
+  };
 }
 function planBackup(options = {}) {
-  const projectRoot = options.projectRoot ? resolve3(options.projectRoot) : process.cwd();
-  const stores = discoverProjectStores(projectRoot, {
-    ...options.hubDataPath !== void 0 ? { hubDataPath: options.hubDataPath } : {}
-  });
-  if (stores.length === 0) {
+  const projectRoot = options.projectRoot ? resolve4(options.projectRoot) : process.cwd();
+  const discovered = discoverBackupSources(projectRoot, backupDiscoverOptions(options));
+  if (discovered.stores.length === 0) {
     throw databaseError("backup_no_stores", projectRoot, "no existing SQLite stores found to backup");
   }
   const createdAt = (/* @__PURE__ */ new Date()).toISOString();
   const timestamp = createdAt.replace(/[:.]/g, "-");
-  const outDir = options.outDir ? resolve3(options.outDir) : join4(projectRoot, ".kxm", "backups", `backup-${timestamp}`);
+  const outDir = options.outDir ? resolve4(options.outDir) : join4(projectRoot, ".kxm", "backups", `backup-${timestamp}`);
   const usedFilenames = /* @__PURE__ */ new Set();
-  const planned = stores.map((store) => {
-    let filename = basename2(store.sourcePath);
-    if (usedFilenames.has(filename)) {
-      const sanitizedId = store.storeId.replace(/[^a-zA-Z0-9_.-]/g, "_");
-      filename = `${sanitizedId}-${filename}`;
-    }
-    usedFilenames.add(filename);
-    return { storeId: store.storeId, sourcePath: store.sourcePath, backupFile: filename };
-  });
-  return { projectRoot, outDir, createdAt, stores: planned };
+  const stores = discovered.stores.map((store) => ({
+    storeId: store.storeId,
+    sourcePath: store.sourcePath,
+    backupFile: backupFilename(store.sourcePath, store.storeId, usedFilenames)
+  }));
+  const files = discovered.files.map((file) => ({
+    id: file.id,
+    sourcePath: file.sourcePath,
+    backupFile: backupFilename(file.sourcePath, file.id, usedFilenames)
+  }));
+  return { projectRoot, outDir, createdAt, stores, files };
 }
 function createBackup(options = {}) {
-  const { projectRoot, outDir, createdAt, stores } = planBackup(options);
+  const { projectRoot, outDir, createdAt, stores, files } = planBackup(options);
   const backupId = `bk_${randomBytes(8).toString("hex")}`;
-  if (!existsSync4(outDir)) {
+  if (!existsSync5(outDir)) {
     mkdirSync(outDir, { recursive: true, mode: 448 });
   }
   const backedUpStores = [];
+  const backedUpFiles = [];
+  const omitted = [];
   for (const store of stores) {
-    backedUpStores.push(backupDatabaseFile(store.sourcePath, join4(outDir, store.backupFile), store.storeId));
+    try {
+      backedUpStores.push(backupDatabaseFile(store.sourcePath, join4(outDir, store.backupFile), store.storeId));
+    } catch {
+      omitted.push(store.storeId);
+    }
+  }
+  for (const file of files) {
+    try {
+      backedUpFiles.push(backupPlainFile(file.sourcePath, join4(outDir, file.backupFile), file.id));
+    } catch {
+      omitted.push(file.id);
+    }
+  }
+  if (backedUpStores.length === 0) {
+    throw databaseError("backup_no_stores", projectRoot, "no SQLite store could be copied");
+  }
+  const again = discoverBackupSources(projectRoot, backupDiscoverOptions(options));
+  for (const store of again.stores) {
+    if (!backedUpStores.some((copied) => copied.storeId === store.storeId) && !omitted.includes(store.storeId)) {
+      omitted.push(store.storeId);
+    }
+  }
+  for (const file of again.files) {
+    if (!backedUpFiles.some((copied) => copied.id === file.id) && !omitted.includes(file.id)) {
+      omitted.push(file.id);
+    }
   }
   const manifest = {
     schema: "kxm.backup-manifest.v1",
     backupId,
     createdAt,
     projectRoot,
-    stores: backedUpStores
+    stores: backedUpStores,
+    ...backedUpFiles.length > 0 ? { files: backedUpFiles } : {},
+    complete: omitted.length === 0,
+    ...omitted.length > 0 ? { omitted } : {}
   };
   const manifestJson = JSON.stringify(manifest, null, 2) + "\n";
   const manifestSha256 = `sha256:${createHash4("sha256").update(manifestJson, "utf8").digest("hex")}`;
@@ -18457,7 +18631,7 @@ function createBackup(options = {}) {
   return { manifest, outDir };
 }
 function planRestore(manifestPathOrDir, options = {}) {
-  let manifestPath = resolve3(manifestPathOrDir);
+  let manifestPath = resolve4(manifestPathOrDir);
   const stat = lstatSync2(manifestPath, { throwIfNoEntry: false });
   if (!stat) {
     throw databaseError("runtime_path_invalid", manifestPath, `manifest path ${manifestPath} does not exist`);
@@ -18465,7 +18639,7 @@ function planRestore(manifestPathOrDir, options = {}) {
   if (stat.isDirectory()) {
     manifestPath = join4(manifestPath, "manifest.json");
   }
-  if (!existsSync4(manifestPath)) {
+  if (!existsSync5(manifestPath)) {
     throw databaseError("runtime_path_invalid", manifestPath, `backup manifest ${manifestPath} not found`);
   }
   const manifestDir = dirname4(manifestPath);
@@ -18479,10 +18653,13 @@ function planRestore(manifestPathOrDir, options = {}) {
   if (manifest.schema !== "kxm.backup-manifest.v1" || !Array.isArray(manifest.stores) || manifest.stores.length === 0) {
     throw databaseError("restore_manifest_invalid", manifestPath, "manifest is not a valid kxm.backup-manifest.v1 document");
   }
+  if (manifest.complete === false) {
+    throw databaseError("restore_incomplete", manifestPath, "backup manifest is incomplete; refusing to restore a partial copy");
+  }
   const stores = [];
   for (const store of manifest.stores) {
     const backupFilePath = join4(manifestDir, store.backupFile);
-    if (!existsSync4(backupFilePath)) {
+    if (!existsSync5(backupFilePath)) {
       throw databaseError("restore_file_missing", backupFilePath, `backup file ${store.backupFile} missing from ${manifestDir}`);
     }
     const actualSha256 = fileSha256(backupFilePath);
@@ -18504,11 +18681,32 @@ function planRestore(manifestPathOrDir, options = {}) {
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
-      targetPath = join4(resolve3(options.projectRoot), rel);
+      targetPath = join4(resolve4(options.projectRoot), rel);
     }
     stores.push({ storeId: store.storeId, backupFilePath, targetPath, schemaVersion: store.schemaVersion, maxSupportedVersion });
   }
-  return { manifestPath, backupId: manifest.backupId, stores };
+  const files = [];
+  for (const file of manifest.files ?? []) {
+    const backupFilePath = join4(manifestDir, file.backupFile);
+    if (!existsSync5(backupFilePath)) {
+      throw databaseError("restore_file_missing", backupFilePath, `backup file ${file.backupFile} missing from ${manifestDir}`);
+    }
+    const actualSha256 = fileSha256(backupFilePath);
+    if (actualSha256 !== file.sha256) {
+      throw databaseError(
+        "restore_manifest_digest_mismatch",
+        backupFilePath,
+        `backup file ${file.backupFile} sha256 ${actualSha256} does not match manifest hash ${file.sha256}`
+      );
+    }
+    let targetPath = file.sourcePath;
+    if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
+      const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
+      targetPath = join4(resolve4(options.projectRoot), rel);
+    }
+    files.push({ id: file.id, backupFilePath, targetPath });
+  }
+  return { manifestPath, backupId: manifest.backupId, stores, files };
 }
 function restoreBackup(manifestPathOrDir, options = {}) {
   const plan = planRestore(manifestPathOrDir, options);
@@ -18519,6 +18717,9 @@ function restoreBackup(manifestPathOrDir, options = {}) {
     store.schemaVersion,
     store.maxSupportedVersion
   ));
+  for (const file of plan.files) {
+    restorePlainFile(file.backupFilePath, file.targetPath);
+  }
   return {
     manifestPath: plan.manifestPath,
     backupId: plan.backupId,
@@ -18528,7 +18729,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
 
 // plugins/kxm/src/runtime-store.ts
 function kxmRuntimePaths(options = {}) {
-  const stateRoot = options.stateRoot ? resolve4(options.stateRoot) : kxmUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
+  const stateRoot = options.stateRoot ? resolve5(options.stateRoot) : kxmUserStateRoot({ ...options.env ? { env: options.env } : {}, ...options.homeDir ? { homeDir: options.homeDir } : {} });
   const runtimeDir = join5(stateRoot, "runtime");
   return {
     stateRoot,
@@ -18546,9 +18747,9 @@ function runtimeError(code, file, message) {
 function projectRuntimeKey(projectRoot) {
   let canonical;
   try {
-    canonical = realpathSync2.native(resolve4(projectRoot));
+    canonical = realpathSync2.native(resolve5(projectRoot));
   } catch {
-    canonical = resolve4(projectRoot);
+    canonical = resolve5(projectRoot);
   }
   const folded = process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
   return createHash5("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
@@ -18558,8 +18759,8 @@ function kxmProjectRunEventsPath(projectRoot, env) {
 }
 function projectRuntimeOwnsRun(projectRoot, runId, env) {
   const path = kxmProjectRunEventsPath(projectRoot, env);
-  if (!existsSync5(path)) return false;
-  const database = new DatabaseSync(path, { readOnly: true });
+  if (!existsSync6(path)) return false;
+  const database = openReadOnlyDatabase(path);
   try {
     database.exec("PRAGMA busy_timeout = 5000");
     return database.prepare("SELECT 1 FROM runs WHERE run_id = ?").get(runId) !== void 0;
@@ -18596,7 +18797,7 @@ var KxmRuntimeRegistry = class {
   path;
   database;
   constructor(path) {
-    this.path = resolve4(path);
+    this.path = resolve5(path);
     this.database = openDatabase(this.path, "runtime registry", {
       schema: REGISTRY_SCHEMA,
       version: KXM_REGISTRY_SCHEMA_VERSION,
@@ -18695,7 +18896,7 @@ var KxmRuntimeRegistry = class {
     return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
   }
   registerProject(registration) {
-    const projectRoot = resolve4(registration.projectRoot);
+    const projectRoot = resolve5(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
     this.database.exec("BEGIN IMMEDIATE");
     try {
@@ -19122,7 +19323,7 @@ var KxmRunEventStore = class {
   syncRedactor = new KxmSyncRedactor();
   database;
   constructor(path) {
-    this.path = resolve4(path);
+    this.path = resolve5(path);
     this.database = openDatabase(this.path, "run event store", {
       schema: EVENT_STORE_SCHEMA,
       version: KXM_EVENT_STORE_SCHEMA_VERSION,
@@ -19147,7 +19348,7 @@ var KxmRunEventStore = class {
   }
   readRunPrompts() {
     const sidecar = this.runPromptSidecarPath();
-    if (!existsSync5(sidecar)) return {};
+    if (!existsSync6(sidecar)) return {};
     try {
       const parsed = JSON.parse(readFileSync3(sidecar, "utf8"));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -23018,12 +23219,12 @@ function enqueueKxmScheduledRun(storePath, runId, configRevision, bound, start) 
   if (owner.admitted.has(runId) || owner.queue.some((item) => item.runId === runId)) {
     return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already admitted or queued`));
   }
-  return new Promise((resolve11, reject) => {
+  return new Promise((resolve12, reject) => {
     owner.queue.push({
       runId,
       configRevision,
       bound,
-      start: (token) => start(token).then(resolve11, reject),
+      start: (token) => start(token).then(resolve12, reject),
       fail: (error) => reject(error)
     });
     pump(storePath, owner);
@@ -23084,7 +23285,7 @@ function kxmToolPolicyRevision(bundle) {
   return sha256Of(kxmCanonicalJson({ policies, gateRegistry: bundle.gateRegistry?.value ?? null }));
 }
 function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Set()) {
-  if (!existsSync6(dir)) return [];
+  if (!existsSync7(dir)) return [];
   const entries = readdirSync3(dir, { withFileTypes: true });
   const results = [];
   for (const entry of entries) {
@@ -23543,7 +23744,7 @@ function assertKxmConfigError(error) {
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
 import { createHash as createHash14, createHmac, randomBytes as randomBytes3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync15, lstatSync as lstatSync5, mkdirSync as mkdirSync9, readFileSync as readFileSync12, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync8 } from "node:fs";
+import { chmodSync as chmodSync2, existsSync as existsSync16, lstatSync as lstatSync5, mkdirSync as mkdirSync9, readFileSync as readFileSync12, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync9 } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname11, isAbsolute as isAbsolute6, join as join18 } from "node:path";
 
@@ -23670,7 +23871,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
 import { createHash as createHash9 } from "node:crypto";
-import { existsSync as existsSync7, readFileSync as readFileSync5, statSync } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync5, statSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join8 } from "node:path";
 
 // plugins/kxm/src/price-calc.ts
@@ -23823,8 +24024,8 @@ function parsePriceCatalog(text) {
   return catalog;
 }
 function loadPriceCatalog(rootOrPath) {
-  const candidatePath = existsSync7(join8(rootOrPath, ".kxm", "prices.yaml")) ? join8(rootOrPath, ".kxm", "prices.yaml") : existsSync7(join8(rootOrPath, "prices.yaml")) ? join8(rootOrPath, "prices.yaml") : existsSync7(rootOrPath) && statSync(rootOrPath).isFile() ? rootOrPath : void 0;
-  if (!candidatePath || !existsSync7(candidatePath)) {
+  const candidatePath = existsSync8(join8(rootOrPath, ".kxm", "prices.yaml")) ? join8(rootOrPath, ".kxm", "prices.yaml") : existsSync8(join8(rootOrPath, "prices.yaml")) ? join8(rootOrPath, "prices.yaml") : existsSync8(rootOrPath) && statSync(rootOrPath).isFile() ? rootOrPath : void 0;
+  if (!candidatePath || !existsSync8(candidatePath)) {
     return void 0;
   }
   const content = readFileSync5(candidatePath, "utf8");
@@ -23846,19 +24047,19 @@ function loadPriceCatalogForEstimate(options) {
 // plugins/kxm/src/engine.ts
 var import_yaml7 = __toESM(require_dist(), 1);
 import { createHash as createHash13, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
-import { existsSync as existsSync11, readFileSync as readFileSync9 } from "node:fs";
+import { existsSync as existsSync12, readFileSync as readFileSync9 } from "node:fs";
 import { join as join14 } from "node:path";
 
 // plugins/kxm/src/routes.ts
 var import_yaml4 = __toESM(require_dist(), 1);
-import { existsSync as existsSync8, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync3, readdirSync as readdirSync4 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync6, mkdirSync as mkdirSync3, writeFileSync as writeFileSync4, readdirSync as readdirSync4 } from "node:fs";
 import { join as join9 } from "node:path";
 var RETIRED_POLICY = ".kxm/producers.yaml";
 var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
 function loadRoutePolicy(root) {
-  if (existsSync8(join9(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
+  if (existsSync9(join9(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
   const path = join9(root, ".kxm", "routes.yaml");
-  if (!existsSync8(path)) return empty();
+  if (!existsSync9(path)) return empty();
   const value = (0, import_yaml4.parse)(readFileSync6(path, "utf8"));
   if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
   return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
@@ -23866,7 +24067,7 @@ function loadRoutePolicy(root) {
 function listRoleBindings(root) {
   const dir = join9(root, ".kxm", "roles");
   const result = {};
-  if (!existsSync8(dir)) return result;
+  if (!existsSync9(dir)) return result;
   for (const file of readdirSync4(dir).filter((name) => name.endsWith(".yaml"))) {
     const role = file.slice(0, -5);
     const value = (0, import_yaml4.parse)(readFileSync6(join9(dir, file), "utf8"));
@@ -23877,6 +24078,55 @@ function listRoleBindings(root) {
 function isRouteAdmitted(root, modelId) {
   const policy = loadRoutePolicy(root);
   return policy.admitted.includes(modelId) && !policy.disabled.includes(modelId);
+}
+
+// plugins/kxm/src/worktree-witness.ts
+import { spawnSync as spawnSync3 } from "node:child_process";
+function gitText(cwd, args) {
+  const result = spawnSync3("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 15e3
+  });
+  if (result.error || result.status !== 0) return void 0;
+  return result.stdout ?? "";
+}
+function captureWorktreeWitness(cwd) {
+  const porcelain = gitText(cwd, ["status", "--porcelain=v1", "-uall"]);
+  const diff = gitText(cwd, ["diff", "--no-ext-diff"]);
+  const staged = gitText(cwd, ["diff", "--cached", "--no-ext-diff"]);
+  if (porcelain === void 0 || diff === void 0 || staged === void 0) {
+    return { unwitnessed: true, fingerprint: "" };
+  }
+  return { unwitnessed: false, fingerprint: `${porcelain}\0${diff}\0${staged}` };
+}
+function worktreeChanged(before, after) {
+  if (before.unwitnessed || after.unwitnessed) return false;
+  return before.fingerprint !== after.fingerprint;
+}
+function applyAuthoringWitness(result, input) {
+  const changed = worktreeChanged(input.before, input.after);
+  const unwitnessed = input.before.unwitnessed || input.after.unwitnessed;
+  const providerMetadata = { ...result.providerMetadata ?? {} };
+  if (input.writes) {
+    if (unwitnessed || !changed) {
+      providerMetadata.authored = false;
+      providerMetadata.authoringWitness = unwitnessed ? "unwitnessed" : "unchanged";
+      if (result.outcome === "passed") return { ...result, outcome: "failed", providerMetadata };
+    } else {
+      providerMetadata.authored = true;
+      providerMetadata.authoringWitness = "changed";
+    }
+  } else {
+    providerMetadata.authored = false;
+    if (!unwitnessed && changed) {
+      providerMetadata.authoringWitness = "readonly_mutated";
+      if (result.outcome === "passed") return { ...result, outcome: "failed", providerMetadata };
+    } else {
+      providerMetadata.authoringWitness = unwitnessed ? "unwitnessed" : "read-only";
+    }
+  }
+  return { ...result, providerMetadata };
 }
 
 // plugins/kxm/src/context-packet.ts
@@ -24146,7 +24396,7 @@ function pruneContextPacket(packet, tokenBudget) {
 }
 
 // plugins/kxm/src/dispatch-context.ts
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 import { readdirSync as readdirSync7 } from "node:fs";
 import { extname as extname3, join as join12 } from "node:path";
 
@@ -24780,8 +25030,8 @@ function memoryRecordToContextItem(record2, project) {
 
 // plugins/kxm/src/memory.ts
 var import_yaml5 = __toESM(require_dist(), 1);
-import { existsSync as existsSync9, mkdirSync as mkdirSync4, readdirSync as readdirSync5, readFileSync as readFileSync7, writeFileSync as writeFileSync4 } from "node:fs";
-import { extname as extname2, join as join10, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync10, mkdirSync as mkdirSync4, readdirSync as readdirSync5, readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
+import { extname as extname2, join as join10, resolve as resolve6 } from "node:path";
 var MEMORY_SCHEMA = "kxm.memory.v1";
 var VALID_SCOPES = /* @__PURE__ */ new Set(["agent", "project", "run", "operator"]);
 var VALID_AUTHORITIES = /* @__PURE__ */ new Set(["instruction", "evidence", "promoted"]);
@@ -24879,14 +25129,14 @@ function parseMemoryRecord(raw, filename = "memory.md") {
   };
 }
 function memoryDirectories(repoRoot) {
-  const root = resolve5(repoRoot);
+  const root = resolve6(repoRoot);
   const memoryDir = join10(root, ".kxm", "memory");
   const candidatesDir = join10(memoryDir, "candidates");
   return { memoryDir, candidatesDir };
 }
 function loadAuthoredMemory(repoRoot) {
   const { memoryDir } = memoryDirectories(repoRoot);
-  if (!existsSync9(memoryDir)) return [];
+  if (!existsSync10(memoryDir)) return [];
   const records = [];
   const entries = readdirSync5(memoryDir, { withFileTypes: true });
   for (const entry of entries) {
@@ -24909,7 +25159,7 @@ function loadAuthoredMemory(repoRoot) {
 // plugins/kxm/src/skills.ts
 var import_yaml6 = __toESM(require_dist(), 1);
 import { createHash as createHash10 } from "node:crypto";
-import { existsSync as existsSync10, mkdirSync as mkdirSync5, readdirSync as readdirSync6, readFileSync as readFileSync8, renameSync, rmSync, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { existsSync as existsSync11, mkdirSync as mkdirSync5, readdirSync as readdirSync6, readFileSync as readFileSync8, renameSync, rmSync, statSync as statSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname7, join as join11 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
 var SKILL_EVALUATION_SCHEMA = "kxm.skill-evaluation.v1";
@@ -25013,7 +25263,7 @@ var SkillLifecycle = class {
       return;
     }
     mkdirSync5(dirname7(file), { recursive: true });
-    writeFileSync5(file, content);
+    writeFileSync6(file, content);
   }
   dir(state) {
     return join11(this.root, state === "candidate" ? "candidates" : `${state}s`.replace("rejecteds", "rejected").replace("promoteds", "promoted"));
@@ -25028,7 +25278,7 @@ var SkillLifecycle = class {
   appendHistory(id, record2) {
     const line = `${JSON.stringify(record2)}
 `;
-    if (existsSync10(this.historyFile(id))) {
+    if (existsSync11(this.historyFile(id))) {
       const existing = readFileSync8(this.historyFile(id), "utf8");
       const lines = existing.split("\n").filter((entry) => entry.trim());
       this.write(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
@@ -25038,12 +25288,12 @@ var SkillLifecycle = class {
   }
   history(id) {
     const file = this.historyFile(id);
-    if (!existsSync10(file)) return [];
+    if (!existsSync11(file)) return [];
     return readFileSync8(file, "utf8").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
   }
   readMetadata(state, id) {
     const { metadata } = this.paths(state, id);
-    if (!existsSync10(metadata)) {
+    if (!existsSync11(metadata)) {
       throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${state}`);
     }
     return JSON.parse(readFileSync8(metadata, "utf8"));
@@ -25051,7 +25301,7 @@ var SkillLifecycle = class {
   move(from, to, id) {
     const fromDir = join11(this.dir(from), id);
     const toDir = join11(this.dir(to), id);
-    if (!existsSync10(fromDir)) {
+    if (!existsSync11(fromDir)) {
       throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${from}`);
     }
     if (this.dryRun) {
@@ -25059,7 +25309,7 @@ var SkillLifecycle = class {
       return;
     }
     mkdirSync5(this.dir(to), { recursive: true });
-    if (existsSync10(toDir)) rmSync(toDir, { recursive: true, force: true });
+    if (existsSync11(toDir)) rmSync(toDir, { recursive: true, force: true });
     renameSync(fromDir, toDir);
   }
   /** Submit a new skill candidate. Content is redacted of secret material at
@@ -25102,7 +25352,7 @@ var SkillLifecycle = class {
     const contentSha256 = skillContentSha256(content);
     const id = skillIdFor(name, contentSha256);
     const { metadata, skill } = this.paths("candidate", id);
-    if (existsSync10(metadata)) {
+    if (existsSync11(metadata)) {
       throw new SkillLifecycleError(
         "skill_candidate_exists",
         `identical candidate ${id} already exists; changed behavior requires changed content`
@@ -25261,7 +25511,7 @@ var SkillLifecycle = class {
   }
   list(state) {
     const dir = this.dir(state);
-    if (!existsSync10(dir)) return [];
+    if (!existsSync11(dir)) return [];
     const ids = readdirSorted(dir);
     return ids.map((id) => {
       try {
@@ -25350,7 +25600,7 @@ function gitEnvironment2() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function committedGateGap(projectRoot) {
-  const result = spawnSync3("git", [
+  const result = spawnSync4("git", [
     "--no-optional-locks",
     "-C",
     projectRoot,
@@ -25493,14 +25743,14 @@ import { join as join13 } from "node:path";
 
 // plugins/kxm/src/artifacts-exist.ts
 import { lstatSync as lstatSync4, realpathSync as realpathSync3, statSync as statSync3 } from "node:fs";
-import { isAbsolute as isAbsolute3, relative as relative3, resolve as resolve6 } from "node:path";
+import { isAbsolute as isAbsolute3, relative as relative3, resolve as resolve7 } from "node:path";
 function staysUnder(root, candidate) {
   const child = relative3(root, candidate);
   return child === "" || !isAbsolute3(child) && child !== ".." && !child.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`);
 }
 function verifyArtifactExists(rootInput, pathInput) {
-  const lexicalRoot = resolve6(rootInput);
-  const lexicalPath = resolve6(pathInput);
+  const lexicalRoot = resolve7(rootInput);
+  const lexicalPath = resolve7(pathInput);
   if (!staysUnder(lexicalRoot, lexicalPath)) {
     return { ok: false, error: "artifact_outside_workspace_assets", path: lexicalPath };
   }
@@ -25699,8 +25949,8 @@ var CommandObserver = class {
     this.requestStop("error", "lost-close");
   }
   run() {
-    return new Promise((resolve11) => {
-      this.resolveOutcome = resolve11;
+    return new Promise((resolve12) => {
+      this.resolveOutcome = resolve12;
       try {
         this.start();
       } catch (error) {
@@ -27026,8 +27276,8 @@ var KxmRunScheduler = class _KxmRunScheduler {
       resolve: (_value) => void 0,
       reject: (_error) => void 0
     };
-    const settled = new Promise((resolve11, reject) => {
-      pending.resolve = resolve11;
+    const settled = new Promise((resolve12, reject) => {
+      pending.resolve = resolve12;
       pending.reject = reject;
     });
     void settled.then(void 0, () => void 0);
@@ -27426,7 +27676,7 @@ function unreconciledPanelAttemptId(state) {
 function resolveProducerRoute(projectRoot, step, agentId) {
   let agentModel;
   const agentFile = join14(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
-  if (existsSync11(agentFile)) {
+  if (existsSync12(agentFile)) {
     try {
       const parsed = (0, import_yaml7.parse)(readFileSync9(agentFile, "utf8"));
       if (typeof parsed?.model === "string") {
@@ -27637,6 +27887,14 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
     }
     resolvedRoute = routeResult;
+    const writeRefusal = unsupportedLiveWrite(
+      context.projectRoot,
+      step,
+      agentId,
+      resolvedRoute.selector,
+      loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.maxConcurrentRuns
+    );
+    if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
   }
   const used = state.stepAttempts[stepId] ?? 0;
   if (used >= step.maxAttempts) {
@@ -27845,6 +28103,7 @@ function birthMember(context, input) {
 
 ${generatedPrompt}` : generatedPrompt,
       thinking: input.stepAttempt <= 1 ? "low" : "medium",
+      permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       contextPacket,
       ...resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}
     },
@@ -27971,7 +28230,18 @@ async function drivePanel(context, panel, producer) {
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
         kxmPanelDispatchSeams.beforeInvoke?.(member);
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        const live = member.producerId !== "driver-simulated";
+        const writes = Object.values(member.step.repositories).some((access) => access === "write");
+        const before = live ? captureWorktreeWitness(context.projectRoot) : void 0;
         const produced = await invokeProducer(producer, member.request);
+        if (live && produced.result && before) {
+          const after = captureWorktreeWitness(context.projectRoot);
+          return {
+            attemptId: member.attemptId,
+            invoked: true,
+            produced: { ...produced, result: applyAuthoringWitness(produced.result, { writes, before, after }) }
+          };
+        }
         return { attemptId: member.attemptId, invoked: true, produced };
       } catch (error) {
         member.controller.abort();
@@ -28609,11 +28879,78 @@ function unsupportedStep(plan, step, producerId) {
       return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
     }
   }
-  if (producerId !== "driver-simulated" && Object.values(step.repositories).some((access) => access === "write")) {
+  return void 0;
+}
+function readYamlRecord(path) {
+  if (!existsSync12(path)) return void 0;
+  try {
+    const parsed = (0, import_yaml7.parse)(readFileSync9(path, "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function agentHarness(projectRoot, agentId) {
+  const harness = readYamlRecord(join14(projectRoot, ".kxm", "agents", `${agentId}.yaml`))?.harness;
+  return typeof harness === "string" && harness.length > 0 ? harness : void 0;
+}
+function projectDefaultHarness(projectRoot) {
+  const harness = readYamlRecord(join14(projectRoot, ".kxm", "project.yaml"))?.defaultHarness;
+  return typeof harness === "string" && harness.length > 0 ? harness : "pi";
+}
+function unsupportedLiveWrite(projectRoot, step, agentId, selector, maxConcurrentRuns) {
+  if (!Object.values(step.repositories).some((access) => access === "write")) return void 0;
+  if (step.assignments.maximum !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "assignments.maximum",
+      detail: "live write steps run a single assignment; the checkout witness cannot attribute edits between writers"
+    };
+  }
+  if (maxConcurrentRuns !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "limits.maxConcurrentRuns",
+      detail: "live write steps require limits.maxConcurrentRuns of 1; concurrent runs share one checkout"
+    };
+  }
+  const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
+  if (!oneShotWriterArgs(harness)) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: "live write steps are unsupported: the Runtime one-shot harness is read-only; run implementation directly in the selected harness (not --simulated), or choose a genuinely read-only workflow"
+      detail: `live write steps require an audited writer profile; ${harness} has none`
+    };
+  }
+  const rosterPath = join14(projectRoot, ".kxm", "roster.yaml");
+  if (!existsSync12(rosterPath)) return void 0;
+  const roster = readYamlRecord(rosterPath);
+  if (!roster || roster.schema !== "kxm.developer-roster.v1") {
+    return { reason: "step_unsupported", field: "model", detail: "live write steps require a readable kxm.developer-roster.v1" };
+  }
+  const routes = roster.routes;
+  const lineup = roster.lineup;
+  const writerIds = lineup && typeof lineup === "object" && !Array.isArray(lineup) ? lineup.writer : void 0;
+  if (!routes || typeof routes !== "object" || Array.isArray(routes) || !Array.isArray(writerIds)) {
+    return { reason: "step_unsupported", field: "model", detail: "developer roster has no writer lineup" };
+  }
+  const allowed = writerIds.some((id) => {
+    if (typeof id !== "string") return false;
+    const route = routes[id];
+    if (!route || typeof route !== "object" || Array.isArray(route)) return false;
+    const record2 = route;
+    if (record2.harness !== harness || record2.status !== "admitted") return false;
+    if (!Array.isArray(record2.permissions) || !record2.permissions.includes("edit")) return false;
+    const model = typeof record2.model === "string" ? record2.model : "";
+    const vendor = typeof record2.vendor === "string" ? record2.vendor : "";
+    return model === selector || vendor.length > 0 && `${vendor}/${model}` === selector;
+  });
+  if (!allowed) {
+    return {
+      reason: "step_unsupported",
+      field: "model",
+      detail: `live write route ${selector} on ${harness} is not on the developer roster writer lineup`
     };
   }
   return void 0;
@@ -29079,10 +29416,10 @@ function createKxmOneShotProducer(options = {}) {
       if (request.provider) {
         return { provider: request.provider.toLowerCase(), model: request.model, thinking: request.thinking };
       }
-      const parsed2 = parseModelString(request.model, harness);
+      const parsed = parseModelString(request.model, harness);
       return {
-        provider: request.provider?.toLowerCase() ?? parsed2.provider,
-        model: parsed2.model,
+        provider: request.provider?.toLowerCase() ?? parsed.provider,
+        model: parsed.model,
         thinking: request.thinking
       };
     }
@@ -29092,17 +29429,19 @@ function createKxmOneShotProducer(options = {}) {
         if (resolved.provider) {
           return { provider: resolved.provider.toLowerCase(), model: resolved.model, thinking: resolved.thinking };
         }
-        const parsed2 = parseModelString(resolved.model, harness);
+        const parsed = parseModelString(resolved.model, harness);
         return {
-          provider: resolved.provider?.toLowerCase() ?? parsed2.provider,
-          model: parsed2.model,
+          provider: resolved.provider?.toLowerCase() ?? parsed.provider,
+          model: parsed.model,
           thinking: resolved.thinking
         };
       }
     }
-    const defaultModel = options.defaultModel ?? (harness === "codex" ? "gpt-5.6-sol" : harness === "kimi" ? "kimi-for-coding" : harness === "agy" ? "gemini-3.8-flash-high" : "claude-3-7-sonnet");
-    const parsed = parseModelString(defaultModel, harness);
-    return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+    if (options.defaultModel) {
+      const parsed = parseModelString(options.defaultModel, harness);
+      return { provider: parsed.provider, model: parsed.model, thinking: request.thinking };
+    }
+    throw new Error("producer_route_not_admitted");
   }
   async function checkAuth(harness, provider, model, env, signal) {
     if (options.inventory) {
@@ -29140,8 +29479,11 @@ function createKxmOneShotProducer(options = {}) {
     if (request.signal.aborted) return cancelled();
     const catalogEntry = (options.catalog ?? BUILTIN_HARNESSES).find((h) => h.id === harness);
     if (!catalogEntry?.oneShot) throw new Error(`oneshot_harness_unsupported: ${harness}`);
-    const permissionArgs = oneShotReadOnlyArgs(harness);
-    if (!permissionArgs) throw new Error(`oneshot_harness_unsupported: ${harness} permission_profile_unaudited`);
+    const permission = request.permission === "edit" || request.contextPacket?.task.permissionCeiling === "edit" ? "edit" : "read-only";
+    const permissionArgs = oneShotPermissionArgs(harness, permission);
+    if (!permissionArgs) {
+      throw new Error(`oneshot_harness_unsupported: ${harness} ${permission === "edit" ? "writer_profile_unaudited" : "permission_profile_unaudited"}`);
+    }
     const env = { ...options.env ?? process.env };
     let auth;
     try {
@@ -29257,7 +29599,10 @@ Return a final JSON object with an "outcome" field chosen from ${JSON.stringify(
     const outcome = aborted ? "cancelled" : transportFailed || parsed.isError ? "failed" : determineOutcome(parsed.text, request.allowedOutcomes);
     const providerMetadata = {
       processStatus: aborted ? "aborted" : transportFailed ? "failed" : "completed",
-      executionEvidenceId: evidence.id
+      executionEvidenceId: evidence.id,
+      permission,
+      permissionProfile: permission === "edit" ? "writer" : "read-only",
+      authored: false
     };
     if (procResult.code !== null && Number.isFinite(procResult.code)) providerMetadata.processExitCode = procResult.code;
     if (procResult.signal) providerMetadata.processSignal = procResult.signal;
@@ -29460,9 +29805,9 @@ var RuntimeHubClient = class {
 };
 
 // plugins/kxm/src/hub-binding.ts
-import { existsSync as existsSync12, mkdirSync as mkdirSync6, readFileSync as readFileSync10, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync13, mkdirSync as mkdirSync6, readFileSync as readFileSync10, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { dirname as dirname8, isAbsolute as isAbsolute4, join as join16, resolve as resolve7 } from "node:path";
+import { dirname as dirname8, isAbsolute as isAbsolute4, join as join16, resolve as resolve8 } from "node:path";
 var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
 var HubBindingError = class extends Error {
   constructor(message) {
@@ -29474,17 +29819,17 @@ function resolveUserStateRoot(env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute4(explicit)) throw new HubBindingError("local_state_root_not_absolute");
-    return resolve7(explicit);
+    return resolve8(explicit);
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
     const base2 = localAppData && isAbsolute4(localAppData) ? localAppData : join16(homedir2(), "AppData", "Local");
-    return resolve7(base2, "KXM");
+    return resolve8(base2, "KXM");
   }
-  if (process.platform === "darwin") return resolve7(homedir2(), "Library", "Application Support", "KXM");
+  if (process.platform === "darwin") return resolve8(homedir2(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
   const base = xdgState && isAbsolute4(xdgState) ? xdgState : join16(homedir2(), ".local", "state");
-  return resolve7(base, "kxm");
+  return resolve8(base, "kxm");
 }
 function hubBindingFile(env = process.env) {
   return join16(resolveUserStateRoot(env), "hub-binding.json");
@@ -29507,7 +29852,7 @@ function isIsoTimestamp(value) {
 }
 function readHubBinding(env = process.env) {
   const file = hubBindingFile(env);
-  if (!existsSync12(file)) return void 0;
+  if (!existsSync13(file)) return void 0;
   let parsed;
   try {
     parsed = JSON.parse(readFileSync10(file, "utf8"));
@@ -29532,9 +29877,9 @@ function readHubBinding(env = process.env) {
 }
 
 // plugins/kxm/src/hub-env.ts
-import { existsSync as existsSync13, mkdirSync as mkdirSync7, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync14, mkdirSync as mkdirSync7, readFileSync as readFileSync11, renameSync as renameSync3, rmSync as rmSync3, writeFileSync as writeFileSync8 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname9, isAbsolute as isAbsolute5, join as join17, resolve as resolve8 } from "node:path";
+import { dirname as dirname9, isAbsolute as isAbsolute5, join as join17, resolve as resolve9 } from "node:path";
 var HUB_ENV_SCHEMA = "kxm.hub-env.v1";
 var HubEnvError = class extends Error {
   constructor(message) {
@@ -29546,24 +29891,24 @@ function resolveUserStateRoot2(env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute5(explicit)) throw new HubEnvError("local_state_root_not_absolute");
-    return resolve8(explicit);
+    return resolve9(explicit);
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
     const base2 = localAppData && isAbsolute5(localAppData) ? localAppData : join17(homedir3(), "AppData", "Local");
-    return resolve8(base2, "KXM");
+    return resolve9(base2, "KXM");
   }
-  if (process.platform === "darwin") return resolve8(homedir3(), "Library", "Application Support", "KXM");
+  if (process.platform === "darwin") return resolve9(homedir3(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
   const base = xdgState && isAbsolute5(xdgState) ? xdgState : join17(homedir3(), ".local", "state");
-  return resolve8(base, "kxm");
+  return resolve9(base, "kxm");
 }
 function hubEnvFile(env = process.env) {
   return join17(resolveUserStateRoot2(env), "hub-env.json");
 }
 function readHubEnvRecord(env = process.env) {
   const file = hubEnvFile(env);
-  if (!existsSync13(file)) return void 0;
+  if (!existsSync14(file)) return void 0;
   let parsed;
   try {
     parsed = JSON.parse(readFileSync11(file, "utf8"));
@@ -29606,7 +29951,7 @@ function resolveClientHubAuthToken(env, project) {
 }
 
 // plugins/kxm/src/logger.ts
-import { appendFileSync, existsSync as existsSync14, mkdirSync as mkdirSync8, renameSync as renameSync4, statSync as statSync4, unlinkSync as unlinkSync2 } from "node:fs";
+import { appendFileSync, existsSync as existsSync15, mkdirSync as mkdirSync8, renameSync as renameSync4, statSync as statSync4, unlinkSync as unlinkSync2 } from "node:fs";
 import { dirname as dirname10 } from "node:path";
 var LOG_LEVEL_PRIORITY = {
   debug: 10,
@@ -29644,7 +29989,7 @@ function redactLogValue(val, key) {
 function rotateLogFiles(filePath, maxFiles) {
   for (let i = maxFiles; i >= 1; i--) {
     const current = `${filePath}.${i}`;
-    if (existsSync14(current)) {
+    if (existsSync15(current)) {
       if (i >= maxFiles) {
         try {
           unlinkSync2(current);
@@ -29658,7 +30003,7 @@ function rotateLogFiles(filePath, maxFiles) {
       }
     }
   }
-  if (existsSync14(filePath)) {
+  if (existsSync15(filePath)) {
     try {
       renameSync4(filePath, `${filePath}.1`);
     } catch {
@@ -29675,7 +30020,7 @@ function createLogger(options) {
   const shouldStdout = options.stdout ?? !isDaemon;
   const correlationDefaults = options.correlation ?? {};
   let currentSize = 0;
-  if (filePath && existsSync14(filePath)) {
+  if (filePath && existsSync15(filePath)) {
     try {
       currentSize = statSync4(filePath).size;
     } catch {
@@ -29762,7 +30107,7 @@ function publishKxmSupervisorToken(paths, token) {
   const file = kxmSupervisorTokenFile(paths);
   mkdirSync9(dirname11(file), { recursive: true, mode: 448 });
   const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync8(temp, `${token}
+  writeFileSync9(temp, `${token}
 `, { encoding: "utf8", mode: 384 });
   try {
     chmodSync2(temp, 384);
@@ -29802,12 +30147,12 @@ function supervisorErrorFile(paths) {
 }
 function clearSupervisorError(paths) {
   const file = supervisorErrorFile(paths);
-  if (existsSync15(file)) rmSync4(file, { force: true });
+  if (existsSync16(file)) rmSync4(file, { force: true });
 }
 function recordSupervisorError(paths, message) {
   try {
     mkdirSync9(paths.runtimeDir, { recursive: true, mode: 448 });
-    writeFileSync8(supervisorErrorFile(paths), `${message}
+    writeFileSync9(supervisorErrorFile(paths), `${message}
 `, { encoding: "utf8", mode: 384 });
   } catch {
   }
@@ -29825,7 +30170,7 @@ function readRecentSupervisorError(paths) {
   }
 }
 function kxmSupervisorStatus(paths) {
-  if (!existsSync15(paths.registryDb)) return { running: false };
+  if (!existsSync16(paths.registryDb)) return { running: false };
   const registry = new KxmRuntimeRegistry(paths.registryDb);
   try {
     const record2 = registry.supervisor();
@@ -29980,8 +30325,8 @@ async function waitForDriveSessions(settled, graceMs) {
   try {
     await Promise.race([
       Promise.allSettled(settled),
-      new Promise((resolve11) => {
-        timeout = setTimeout(resolve11, graceMs);
+      new Promise((resolve12) => {
+        timeout = setTimeout(resolve12, graceMs);
         timeout.unref?.();
       })
     ]);
@@ -30933,8 +31278,8 @@ var PiSession = class {
     }
     const id = `cmd_${++this.commandCounter}`;
     const payload = { ...command, id };
-    return new Promise((resolve11, reject) => {
-      this.pendingCommands.set(id, { resolve: resolve11, reject });
+    return new Promise((resolve12, reject) => {
+      this.pendingCommands.set(id, { resolve: resolve12, reject });
       try {
         this.process.stdin.write(JSON.stringify(payload) + "\n");
       } catch (err) {
@@ -30954,7 +31299,7 @@ var PiSession = class {
       return { outcome: "cancelled", text: "aborted", usage: {} };
     }
     this.status = "busy";
-    return new Promise((resolve11, reject) => {
+    return new Promise((resolve12, reject) => {
       let signalCleanup;
       if (signal) {
         const onAbort = () => {
@@ -30968,7 +31313,7 @@ var PiSession = class {
         signalCleanup = () => signal.removeEventListener("abort", onAbort);
       }
       this.activePrompt = {
-        resolve: resolve11,
+        resolve: resolve12,
         reject,
         allowedOutcomes,
         text: "",
@@ -31220,8 +31565,8 @@ function createKxmPiProducer(options = {}) {
 
 // plugins/kxm/src/improve.ts
 import { createHash as createHash15 } from "node:crypto";
-import { existsSync as existsSync16, mkdirSync as mkdirSync10, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join20, relative as relative4, resolve as resolve9 } from "node:path";
+import { existsSync as existsSync17, mkdirSync as mkdirSync10, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join20, relative as relative4, resolve as resolve10 } from "node:path";
 var CANDIDATE_SCHEMA = "kxm.candidate.v1";
 var IMPROVEMENT_REPORT_SCHEMA = "kxm.improvement-report.v2";
 var IMPROVEMENT_REPORT_V1_SCHEMA = "kxm.improvement-report.v1";
@@ -31477,8 +31822,8 @@ function groupRoutingRecords(records, options = {}) {
   }).map((entry) => entry.row);
 }
 function buildImprovementReport(records, options = {}) {
-  const projectRoot = options.projectRoot ? resolve9(options.projectRoot) : process.cwd();
-  const candidatesDir = options.candidatesDir ? resolve9(options.candidatesDir) : join20(projectRoot, ".kxm", "candidates");
+  const projectRoot = options.projectRoot ? resolve10(options.projectRoot) : process.cwd();
+  const candidatesDir = options.candidatesDir ? resolve10(options.candidatesDir) : join20(projectRoot, ".kxm", "candidates");
   const promotionPolicy = options.promotionPolicy ?? "manual_pr";
   const groups = groupRoutingRecords(records, options);
   const candidates = [];
@@ -31514,12 +31859,12 @@ function buildImprovementReport(records, options = {}) {
       createdAt: nowIso()
     };
     if (!options.dryRun) {
-      if (!existsSync16(candidatesDir)) {
+      if (!existsSync17(candidatesDir)) {
         mkdirSync10(candidatesDir, { recursive: true });
       }
-      writeFileSync9(diffFilePath, diff, "utf8");
+      writeFileSync10(diffFilePath, diff, "utf8");
       const jsonFilePath = join20(candidatesDir, `${group.candidateId}.json`);
-      writeFileSync9(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
+      writeFileSync10(jsonFilePath, JSON.stringify(candidate, null, 2) + "\n", "utf8");
     }
     candidates.push(candidate);
   }
@@ -31550,7 +31895,7 @@ function writeImprovementReport(improvementsDir, report, dryRun = false) {
   const path = join20(improvementsDir, `${stamp}.json`);
   if (!dryRun) {
     mkdirSync10(improvementsDir, { recursive: true });
-    writeFileSync9(path, `${JSON.stringify(report, null, 2)}
+    writeFileSync10(path, `${JSON.stringify(report, null, 2)}
 `, { encoding: "utf8" });
   }
   return path;
@@ -32050,7 +32395,7 @@ Instructions for Operator:
 
 // plugins/kxm/src/modes.ts
 var import_yaml8 = __toESM(require_dist(), 1);
-import { existsSync as existsSync17, readFileSync as readFileSync14 } from "node:fs";
+import { existsSync as existsSync18, readFileSync as readFileSync14 } from "node:fs";
 import { join as join21 } from "node:path";
 var DEFAULT_MODES_CONFIG = Object.freeze({
   schema: "kxm.modes.v1",
@@ -32115,7 +32460,7 @@ function loadModesConfig(projectRoot) {
     return DEFAULT_MODES_CONFIG;
   }
   const modesPath = join21(projectRoot, ".kxm", "modes.yaml");
-  if (!existsSync17(modesPath)) {
+  if (!existsSync18(modesPath)) {
     return DEFAULT_MODES_CONFIG;
   }
   try {
@@ -32207,7 +32552,7 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
   for (const relPath of resolved.contextFiles) {
     const fullPath = join21(projectRoot, relPath);
     let chars = 0;
-    if (existsSync17(fullPath)) {
+    if (existsSync18(fullPath)) {
       try {
         chars = readFileSync14(fullPath, "utf8").length;
       } catch {
@@ -32340,10 +32685,10 @@ ${divider}
 }
 
 // plugins/kxm/src/ssh-remote.ts
-import { spawnSync as spawnSync4 } from "node:child_process";
-import { existsSync as existsSync18, mkdirSync as mkdirSync11, readFileSync as readFileSync15, readdirSync as readdirSync8, rmSync as rmSync5, statSync as statSync5 } from "node:fs";
+import { spawnSync as spawnSync5 } from "node:child_process";
+import { existsSync as existsSync19, mkdirSync as mkdirSync11, readFileSync as readFileSync15, readdirSync as readdirSync8, rmSync as rmSync5, statSync as statSync5 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { join as join22, resolve as resolve10 } from "node:path";
+import { join as join22, resolve as resolve11 } from "node:path";
 var MAX_SSH_OUTPUT_BYTES = 50 * 1024;
 var MAX_SSH_OUTPUT_LINES = 2e3;
 var DEFAULT_SOCKET_DIR = ".kxm/run/ssh-sockets";
@@ -32370,7 +32715,7 @@ function truncateSshOutput(raw) {
 }
 function parseSshConfig(configPath) {
   const targetPath = configPath ?? join22(homedir4(), ".ssh", "config");
-  if (!existsSync18(targetPath)) {
+  if (!existsSync19(targetPath)) {
     return [];
   }
   try {
@@ -32416,7 +32761,7 @@ function parseSshConfig(configPath) {
     return [];
   }
 }
-function resolveSshHostG(host, execFn = spawnSync4) {
+function resolveSshHostG(host, execFn = spawnSync5) {
   try {
     const result = execFn("ssh", ["-G", host], { encoding: "utf-8" });
     if (result.status !== 0 || !result.stdout) {
@@ -32451,8 +32796,8 @@ function resolveSshHostG(host, execFn = spawnSync4) {
   }
 }
 function ensureSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
-  const resolved = resolve10(socketDir);
-  if (!existsSync18(resolved)) {
+  const resolved = resolve11(socketDir);
+  if (!existsSync19(resolved)) {
     mkdirSync11(resolved, { recursive: true, mode: 448 });
   }
   return resolved;
@@ -32482,7 +32827,7 @@ function buildSshArgs(options) {
   args.push(options.host);
   return args;
 }
-function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync4) {
+function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync5) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join22(resolvedDir, "%C");
   try {
@@ -32494,7 +32839,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
     return false;
   }
 }
-function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync4) {
+function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync5) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join22(resolvedDir, "%C");
   try {
@@ -32528,7 +32873,7 @@ function pruneSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
 }
 function executeSshRun(params) {
   const startTime = Date.now();
-  const execSyncFn = params.execFn ?? spawnSync4;
+  const execSyncFn = params.execFn ?? spawnSync5;
   if (params.action === "info") {
     if (params.host) {
       const hostInfo = resolveSshHostG(params.host, execSyncFn);
@@ -33052,7 +33397,9 @@ export {
   newKxmEvidenceId,
   newKxmObservationId,
   newKxmRunId,
+  oneShotPermissionArgs,
   oneShotReadOnlyArgs,
+  oneShotWriterArgs,
   openDatabase,
   openKxmRuntimeContext,
   parseAgyOneShotUsage,

@@ -1,4 +1,4 @@
-import { BUILTIN_HARNESS_IDS, type HarnessStatus } from "./harness.ts";
+import { BUILTIN_HARNESS_IDS, oneShotWriterArgs, type HarnessStatus } from "./harness.ts";
 import { WORKFLOW_TEMPLATES } from "./workflow-manager.ts";
 
 export interface RoleSpec {
@@ -133,22 +133,6 @@ export function suggestWorkflowAndRoles(
     suggestedCommand: `kxm workflow add ${bestPattern.id} --template ${bestPattern.template}`,
   };
   const writeStep = steps.find((step) => step.kind === "agent" && Object.values(step.repositories ?? {}).includes("write"));
-  if (writeStep) {
-    return {
-      ...base,
-      roles: [],
-      execution: {
-        supported: false,
-        error: "live_write_unsupported",
-        reason: `${bestPattern.template} requires repository writes at step ${writeStep.id}. KXM live execution currently uses read-only harness profiles and refuses live write steps until writer sandboxing is supported.`,
-        nextSteps: [
-          `Run the implementation directly in ${claudeOnly ? "Claude Code" : "your authenticated coding harness"} in the target worktree, and run the repository's actual verification command.`,
-          `For read-only KXM planning, try kxm suggest "Investigate an architecture spike${claudeOnly ? " using Claude only" : ""}"; the shipped spec-and-plan template does not implement changes.`,
-          "Installing a definition or creating a run does not execute it. Simulation is not evidence of a bug fix or workflow completion.",
-        ],
-      },
-    };
-  }
 
   const available = (options.availableHarnesses ?? []).filter((entry) =>
     BUILTIN_HARNESS_IDS.includes(entry.id) && entry.detected && entry.authenticated === true
@@ -172,6 +156,23 @@ export function suggestWorkflowAndRoles(
     };
   }
 
+  if (writeStep && !oneShotWriterArgs(selected.id)) {
+    return {
+      ...base,
+      roles: [],
+      execution: {
+        supported: false,
+        error: "live_write_unsupported",
+        reason: `${bestPattern.template} requires repository writes at step ${writeStep.id}, but the selected ${selected.id} harness has no audited live writer profile. No other harness will be substituted.`,
+        nextSteps: [
+          `Run the implementation directly in ${claudeOnly ? "Claude Code" : selected.id} in the target worktree, and run the repository's actual verification command.`,
+          `For read-only KXM planning, try kxm suggest "Investigate an architecture spike${claudeOnly ? " using Claude only" : ""}"; the shipped spec-and-plan template does not implement changes.`,
+          "Installing a definition or creating a run does not execute it. Simulation is not evidence of a bug fix or workflow completion.",
+        ],
+      },
+    };
+  }
+
   const roles: RoleSpec[] = [];
   for (const step of steps) {
     if (!step.agent) continue;
@@ -190,7 +191,12 @@ export function suggestWorkflowAndRoles(
       supported: true,
       prerequisites: [
         "Run kxm init in the target repository if needed, then install the exact template with the suggested command. If that workflow ID already exists, stop and review it; the commands below apply only to a newly installed template, not an existing definition with potentially different agents or permissions.",
-        ...roles.map((role) => `Set harness: ${role.harness} in .kxm/agents/${role.agent}.yaml and select an admitted, authenticated model compatible with that harness; the recommendation does not change agent routing or models.`),
+        ...roles.map((role) => `Set harness: ${role.harness} and model: <your authenticated compatible model selector> in .kxm/agents/${role.agent}.yaml. Admit that exact selector in .kxm/routes.yaml and ensure it is not disabled; this recommendation does not choose a model or change routing.`),
+        ...(writeStep ? [
+          `Keep each writer step at assignments.maximum: 1 and set limits.maxConcurrentRuns: 1 in .kxm/project.yaml; the live ${selected.id} writer profile requires a lone writer in the checkout.`,
+          `If .kxm/roster.yaml exists, it must be readable kxm.developer-roster.v1 with a lineup.writer route matching harness: ${selected.id} and the selected writer model (model or vendor/model), status: admitted, and permissions containing edit.`,
+          "Configure the test gate in .kxm/gates.yaml with kind: command and argv for this repository's actual verification command. A scaffold/example command or simulation is not evidence that the implementation works.",
+        ] : []),
         `Validate the installed workflow with kxm gate validate --file .kxm/workflows/${bestPattern.id}.yaml and the project configuration with kxm init --dry-run before creating a run.`,
       ],
       shell,

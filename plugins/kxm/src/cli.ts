@@ -149,6 +149,7 @@ import {
   cmdConfigList,
   cmdCompletion,
   cmdCompletionInstall,
+  cmdPricesAcknowledge,
   cmdRoutingReport,
   cmdRoutingBenchmark,
   maybeOfferCompletionInstall,
@@ -348,7 +349,9 @@ async function dispatchAgentCliCommand(
   let client: HubClient | undefined;
   try {
     client = await ensureCliClient(runtime);
-    const output = await cmd.execute(client, args);
+    // A one-shot call keeps no inbox, so `peer inbox` reads this agent's open requests from
+    // the hub; with a stable KXM_AGENT_NAME those include ones queued while it was offline.
+    const output = await cmd.execute(client, args, { hubInbox: true });
     const payload = (output && typeof output === "object" ? output : { result: output }) as object;
     print(runtime.io, runtime.json, payload, JSON.stringify(output, null, 2));
     return 0;
@@ -416,7 +419,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       });
     });
 
-  addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of the project hub store with a hashed manifest (Runtime stores under the user state root are not included)"))
+  addGlobalOptions(program.command("backup").description("Create a verified SQLite backup of the project hub store and the Runtime stores under the user state root, with a hashed manifest"))
     .option("--out <dir>", "Directory to write backup and manifest")
     .action(async function backupAction(this: Command, options: { out?: string }) {
       result.code = await cmdBackup(runtimeFrom(ctx, this), options);
@@ -442,7 +445,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     });
   addGlobalOptions(runCmd.command("drive").description("Drive a run with live harness calls, or with the model-free simulation when --simulated is passed"))
     .argument("<runId>", "Run id")
-    .option("--simulated", "Use the model-free simulation producer")
+    .option("--simulated", "Use the model-free simulation producer instead of a live model")
     .option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement")
     .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)")
     .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean; wait?: boolean; timeoutMs?: string }) {
@@ -472,6 +475,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(tenantCmd.command("status").description("Read hub metadata and authoritative Runtime run state as one labeled view"))
     .action(async function tenantStatusAction(this: Command) {
       result.code = await cmdTenantStatus(runtimeFrom(ctx, this));
+    });
+
+  const pricesCmd = addGlobalOptions(program.command("prices").description("Stamp the local list-price catalog. Estimates stay unknown until today's stamp"));
+  pricesCmd.helpCommand("help", "Show prices help");
+  addGlobalOptions(pricesCmd.command("acknowledge").description("Stamp the existing .kxm/prices.yaml list as today's estimate without fetching vendor rates"))
+    .action(async function pricesAcknowledgeAction(this: Command) {
+      result.code = await cmdPricesAcknowledge(runtimeFrom(ctx, this));
     });
 
   const modelsCmd = addGlobalOptions(program.command("models").description("Manage model catalogs, roles, and route state"));
@@ -928,7 +938,7 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdGithubWatch(runtimeFrom(ctx, this), options);
     });
 
-  const improve = addGlobalOptions(program.command("improve").description("Propose coded-repeat candidates from this project's Runtime routing records and telemetry"));
+  const improve = addGlobalOptions(program.command("improve").description("Propose coded-repeat candidates from this project's Runtime routing records and telemetry. Proposals are not applied to the next run"));
   improve.helpCommand("help", "Show improve help");
   addGlobalOptions(improve.command("report", { isDefault: true }).description("Generate improvement report and candidates from routing records"))
     .option("--file <path>", "Read only this routing-record JSONL instead of the project's Runtime store and telemetry")

@@ -81,10 +81,10 @@ kxm workflow record run_12345 decision "Serialize the fixture setup" --stage-id 
 does not read project `.kxm/workflows/*.yaml`; validate those with
 `kxm init --dry-run --json`.
 
-`kxm gate signal` on a KXM run ID (`run_` plus 32 hex digits) goes to the
-Runtime and passes `--recovery-action` through; on a hub webhook run it posts a
-signed callback that needs `KXM_WORKFLOW_ID` and the definition's signal
-secret. Reuse `--delivery-id` to retry one unchanged callback.
+`kxm gate signal` on a run this project's Runtime store holds goes to the
+Runtime and passes `--recovery-action` through; on a hub webhook run, including
+one with the same `run_` + 32-hex shape, it posts a signed callback that needs
+`KXM_WORKFLOW_ID` and the definition's signal secret. Reuse `--delivery-id` to retry one unchanged callback.
 
 ```bash
 kxm gate validate --file workflows.json --json

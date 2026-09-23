@@ -31,6 +31,17 @@
       "minItems": 1,
       "maxItems": 64
     },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/backupFileRecord" },
+      "maxItems": 64
+    },
+    "complete": { "type": "boolean" },
+    "omitted": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 },
+      "maxItems": 64
+    },
     "manifestSha256": {
       "$ref": "common.schema.json#/$defs/sha256"
     }
@@ -82,6 +93,28 @@
         "integrity": {
           "const": "ok"
         }
+      },
+      "additionalProperties": false
+    },
+    "backupFileRecord": {
+      "type": "object",
+      "required": ["id", "sourcePath", "backupFile", "sha256", "bytes"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "sourcePath": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "backupFile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[a-zA-Z0-9_.-]+$"
+        },
+        "sha256": { "$ref": "common.schema.json#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 107374182400 }
       },
       "additionalProperties": false
     }

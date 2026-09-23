@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { isRouteAdmitted, listRoleBindings } from "./routes.ts";
+import { applyAuthoringWitness, captureWorktreeWitness } from "./worktree-witness.ts";
 import {
   buildFormalContextPacket,
   buildHandoffManifest,
@@ -12,7 +13,7 @@ import {
   type HandoffManifestV1,
 } from "./context-packet.ts";
 import { compileKxmWorkflow, type KxmCompiledPlan, type KxmCompiledStep } from "./engine-compile.ts";
-import { BUILTIN_HARNESSES, oneShotReadOnlyArgs, validateHarnessModelPair } from "./harness.ts";
+import { BUILTIN_HARNESSES, oneShotPermissionArgs, oneShotWriterArgs, validateHarnessModelPair } from "./harness.ts";
 import {
   effectiveRunDurationBudget,
   isTerminalRunStatus,
@@ -154,6 +155,8 @@ export interface KxmProducerRequest {
   readonly thinking?: string | undefined;
   readonly agentRole?: string | undefined;
   readonly harness?: string | undefined;
+  /** Live producers select an audited argv profile from this ceiling. */
+  readonly permission?: "read-only" | "edit" | undefined;
   readonly contextPacket?: FormalContextPacketV2 | undefined;
   readonly handoffManifest?: HandoffManifestV1 | undefined;
 }
@@ -1594,6 +1597,14 @@ function prepareDispatch(
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
     }
     resolvedRoute = routeResult;
+    const writeRefusal = unsupportedLiveWrite(
+      context.projectRoot,
+      step,
+      agentId,
+      resolvedRoute.selector,
+      loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.maxConcurrentRuns,
+    );
+    if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
   }
 
   const used = state.stepAttempts[stepId] ?? 0;
@@ -1826,6 +1837,7 @@ function birthMember(
       signal: controller.signal,
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
       thinking: input.stepAttempt <= 1 ? "low" : "medium",
+      permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       contextPacket,
       ...(resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}),
     },
@@ -1999,7 +2011,18 @@ async function drivePanel(
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
         kxmPanelDispatchSeams.beforeInvoke?.(member);
         if (!executingBound()) return { attemptId: member.attemptId, invoked: false, skipped: true };
+        const live = member.producerId !== "driver-simulated";
+        const writes = Object.values(member.step.repositories).some((access) => access === "write");
+        const before = live ? captureWorktreeWitness(context.projectRoot) : undefined;
         const produced = await invokeProducer(producer, member.request);
+        if (live && produced.result && before) {
+          const after = captureWorktreeWitness(context.projectRoot);
+          return {
+            attemptId: member.attemptId,
+            invoked: true,
+            produced: { ...produced, result: applyAuthoringWitness(produced.result, { writes, before, after }) },
+          };
+        }
         return { attemptId: member.attemptId, invoked: true, produced };
       } catch (error) {
         member.controller.abort();
@@ -2705,13 +2728,19 @@ export function kxmLiveRunPrerequisites(
     for (const agentId of agentIds) {
       const agent = bundle.agents.get(agentId);
       const harness = String(agent?.value.harness ?? bundle.project.value.defaultHarness ?? "pi");
-      if (!BUILTIN_HARNESSES.some((entry) => entry.id === harness && entry.oneShot) || !oneShotReadOnlyArgs(harness)) {
-        prerequisites.push({ reason: "step_unsupported", stepId, field: "harness", detail: `${agentId}: ${harness} has no supported read-only one-shot route; choose a supported harness in .kxm/agents/${agentId}.yaml or .kxm/project.yaml` });
+      const permission = Object.values(step.repositories).includes("write") ? "edit" : "read-only";
+      if (!BUILTIN_HARNESSES.some((entry) => entry.id === harness && entry.oneShot) || !oneShotPermissionArgs(harness, permission)) {
+        prerequisites.push({ reason: "step_unsupported", stepId, field: "harness", detail: `${agentId}: ${harness} has no audited ${permission} one-shot profile; use a supported workflow or execute this work directly in ${harness}, without substituting another harness` });
         continue;
       }
       const route = resolveProducerRoute(projectRoot, step, agentId);
       if ("error" in route) {
         prerequisites.push({ ...route.error, stepId, detail: `${agentId}: ${route.error.detail}; configure its model in .kxm/agents/${agentId}.yaml and admit the installed model with kxm routes admit --model <provider/model>` });
+        continue;
+      }
+      const writeRefusal = unsupportedLiveWrite(projectRoot, step, agentId, route.selector, envelope.projectLimits.maxConcurrentRuns);
+      if (writeRefusal) {
+        prerequisites.push({ ...writeRefusal, stepId });
         continue;
       }
       const compatible = validateHarnessModelPair(harness, route);
@@ -2793,11 +2822,102 @@ function unsupportedStep(
       return { reason: "step_unsupported", field: "repositories", detail: `invalid repository access '${access}' on ${repoId}` };
     }
   }
-  if (producerId !== "driver-simulated" && Object.values(step.repositories).some((access) => access === "write")) {
+  return undefined;
+}
+
+function readYamlRecord(path: string): Record<string, unknown> | undefined {
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = parse(readFileSync(path, "utf8")) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function agentHarness(projectRoot: string, agentId: string): string | undefined {
+  const harness = readYamlRecord(join(projectRoot, ".kxm", "agents", `${agentId}.yaml`))?.harness;
+  return typeof harness === "string" && harness.length > 0 ? harness : undefined;
+}
+
+function projectDefaultHarness(projectRoot: string): string {
+  const harness = readYamlRecord(join(projectRoot, ".kxm", "project.yaml"))?.defaultHarness;
+  return typeof harness === "string" && harness.length > 0 ? harness : "pi";
+}
+
+/**
+ * Live write steps run only on an audited writer profile, and only when the
+ * developer roster (when present) lists that harness and model as an edit writer.
+ * A missing roster is a fresh project: route admission is the other gate.
+ *
+ * The authoring witness fingerprints the one project checkout around each
+ * spawn, so it can only attribute a change to a lone writer. A write step with
+ * more than one assignment would run several writers there (and member n runs
+ * as allowedAgents[n], which the writer check below never sees), and a
+ * project that admits concurrent runs lets another run's writer edit the tree
+ * mid-attempt. Both hand off.
+ */
+function unsupportedLiveWrite(
+  projectRoot: string,
+  step: KxmCompiledStep,
+  agentId: string,
+  selector: string,
+  maxConcurrentRuns: number,
+): Omit<KxmRunHandoff, "stepId"> | undefined {
+  if (!Object.values(step.repositories).some((access) => access === "write")) return undefined;
+  if (step.assignments.maximum !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "assignments.maximum",
+      detail: "live write steps run a single assignment; the checkout witness cannot attribute edits between writers",
+    };
+  }
+  if (maxConcurrentRuns !== 1) {
+    return {
+      reason: "step_unsupported",
+      field: "limits.maxConcurrentRuns",
+      detail: "live write steps require limits.maxConcurrentRuns of 1; concurrent runs share one checkout",
+    };
+  }
+  const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
+  if (!oneShotWriterArgs(harness)) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: "live write steps are unsupported: the Runtime one-shot harness is read-only; run implementation directly in the selected harness (not --simulated), or choose a genuinely read-only workflow",
+      detail: `live write steps require an audited writer profile; ${harness} has none`,
+    };
+  }
+  const rosterPath = join(projectRoot, ".kxm", "roster.yaml");
+  if (!existsSync(rosterPath)) return undefined;
+  const roster = readYamlRecord(rosterPath);
+  if (!roster || roster.schema !== "kxm.developer-roster.v1") {
+    return { reason: "step_unsupported", field: "model", detail: "live write steps require a readable kxm.developer-roster.v1" };
+  }
+  const routes = roster.routes;
+  const lineup = roster.lineup;
+  const writerIds = lineup && typeof lineup === "object" && !Array.isArray(lineup)
+    ? (lineup as Record<string, unknown>).writer
+    : undefined;
+  if (!routes || typeof routes !== "object" || Array.isArray(routes) || !Array.isArray(writerIds)) {
+    return { reason: "step_unsupported", field: "model", detail: "developer roster has no writer lineup" };
+  }
+  const allowed = writerIds.some((id) => {
+    if (typeof id !== "string") return false;
+    const route = (routes as Record<string, unknown>)[id];
+    if (!route || typeof route !== "object" || Array.isArray(route)) return false;
+    const record = route as Record<string, unknown>;
+    if (record.harness !== harness || record.status !== "admitted") return false;
+    if (!Array.isArray(record.permissions) || !record.permissions.includes("edit")) return false;
+    const model = typeof record.model === "string" ? record.model : "";
+    const vendor = typeof record.vendor === "string" ? record.vendor : "";
+    return model === selector || (vendor.length > 0 && `${vendor}/${model}` === selector);
+  });
+  if (!allowed) {
+    return {
+      reason: "step_unsupported",
+      field: "model",
+      detail: `live write route ${selector} on ${harness} is not on the developer roster writer lineup`,
     };
   }
   return undefined;

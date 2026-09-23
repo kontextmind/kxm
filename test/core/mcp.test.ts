@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -412,6 +413,80 @@ test("MCP inbox rehydrates one unacked message record after process restart", as
   assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "restart reply complete");
   assert.equal([...mesh.hub.state.messages.values()].filter((message) => message.id === inbound.id).length, 1);
   await second.stop();
+});
+
+test("MCP inbox keeps an acknowledged, unanswered request across a restart under a durable agent name", async (context) => {
+  const mesh = await createTestMesh(context);
+  const peer = mesh.makeClient("durable-sender");
+  await peer.start(() => undefined);
+  async function startMcp() {
+    return await startMcpServer(context, spawnEnvFor(context, {
+      hubUrl: mesh.address.url,
+      authToken: mesh.token,
+      agentName: "claude-durable",
+      project: "test-project",
+    }), "durable-restart-test");
+  }
+  function channelEventsFor(server: Awaited<ReturnType<typeof startMcp>>, messageId: string) {
+    return server.notifications.filter((notification) =>
+      notification.method === "notifications/claude/channel" && JSON.stringify(notification).includes(messageId));
+  }
+
+  const first = await startMcp();
+  await first.tool("kxm_list");
+  const inbound = await peer.send({ target: "claude-durable", content: "answer this after your restart" });
+  await waitFor(() => channelEventsFor(first, inbound.id).length === 1);
+  // The first process acknowledged it, which moved the agent's consumer cursor past it.
+  assert.equal((await peer.getMessage(inbound.id)).status, "delivered");
+  await first.stop();
+
+  const second = await startMcp();
+  assert.match(JSON.stringify(second.value(await second.tool("kxm_inbox"))), new RegExp(inbound.id));
+  const durable = [...mesh.hub.state.agents.values()].filter((agent) => agent.name === "claude-durable");
+  assert.deepEqual(durable.map((agent) => agent.id), [inbound.to]);
+  await waitFor(() => channelEventsFor(second, inbound.id).length === 1);
+  const reply = second.value(await second.tool("kxm_reply", { messageId: inbound.id, content: "answered after restart" }));
+  assert.equal(reply.status, "replied");
+  assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "answered after restart");
+  assert.equal(channelEventsFor(second, inbound.id).length, 1);
+});
+
+test("MCP restart does not announce a request cancelled while its inbox read was in flight", async (context) => {
+  const mesh = await createTestMesh(context);
+  const peer = mesh.makeClient("cancel-race-sender");
+  await peer.start(() => undefined);
+  const spawnEnv = () => spawnEnvFor(context, {
+    hubUrl: mesh.address.url,
+    authToken: mesh.token,
+    agentName: "claude-cancel-race",
+    project: "test-project",
+  });
+  const first = await startMcpServer(context, spawnEnv(), "cancel-race-test");
+  await first.tool("kxm_list");
+  const inbound = await peer.send({ target: "claude-cancel-race", content: "cancel me while you restart" });
+  await waitFor(() => first.notifications.some((notification) => JSON.stringify(notification).includes(inbound.id)));
+  await first.stop();
+
+  // Hold the restarted session's inbox read until the sender has cancelled the request, so the
+  // list it receives still offers the request as delivered.
+  let held = false;
+  const holdInboxRead = (request: IncomingMessage, response: ServerResponse) => {
+    if (held || !/^\/v1\/agents\/[^/]+\/inbox$/.test(request.url ?? "")) return;
+    held = true;
+    const end = response.end.bind(response) as (...args: unknown[]) => ServerResponse;
+    response.end = ((...args: unknown[]) => {
+      void peer.cancel(inbound.id).catch(() => undefined).then(() => end(...args));
+      return response;
+    }) as typeof response.end;
+  };
+  mesh.hub.server.prependListener("request", holdInboxRead);
+  context.after(() => { mesh.hub.server.off("request", holdInboxRead); });
+
+  const second = await startMcpServer(context, spawnEnv(), "cancel-race-test");
+  assert.doesNotMatch(JSON.stringify(second.value(await second.tool("kxm_inbox"))), new RegExp(inbound.id));
+  assert.equal(held, true);
+  assert.equal((await peer.getMessage(inbound.id)).status, "cancelled");
+  assert.deepEqual(second.notifications.filter((notification) => JSON.stringify(notification).includes(inbound.id)), []);
 });
 
 test("isolated MCP spawn env points project dir, state, user config and hub URL at throwaway locations", (context) => {

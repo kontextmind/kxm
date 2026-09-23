@@ -16042,6 +16042,15 @@ var HubClient = class {
       }
     }));
   }
+  /** This agent's open inbound requests (queued or delivered), oldest first. A read: nothing
+   * is acknowledged. */
+  async listInbox() {
+    if (!this.agent) throw new Error("hub client is not registered");
+    const result = await this.request(
+      `/v1/agents/${encodeURIComponent(this.agent.id)}/inbox`
+    );
+    return result.messages;
+  }
   async getMessage(messageId) {
     const result = await this.request(`/v1/messages/${encodeURIComponent(messageId)}`);
     return result.message;
@@ -16700,7 +16709,10 @@ var AGENT_COMMANDS = [
         await reconcileInbox(client, context.inbox, context.notifiedInbox);
         return { messages: [...context.inbox.values()] };
       }
-      return { messages: [] };
+      if (context?.hubInbox) return { messages: await client.listInbox() };
+      throw new Error(
+        "kxm_inbox is not available in this session: it activates each inbound request as a turn, and that turn's final response is the reply"
+      );
     }
   },
   {
@@ -17282,8 +17294,13 @@ function enforceToolPolicy(commandName, env = process.env, options) {
 // plugins/kxm/src/inbox.ts
 async function deliverInboxNotification(messageId, delivered, notify) {
   if (delivered.has(messageId)) return false;
-  await notify();
   delivered.add(messageId);
+  try {
+    await notify();
+  } catch (error2) {
+    delivered.delete(messageId);
+    throw error2;
+  }
   return true;
 }
 
@@ -17332,38 +17349,49 @@ function sessionIdentity() {
     serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331"
   };
 }
-async function onHubEvent(event) {
+async function announce(message) {
+  const meta2 = {
+    message_id: message.id,
+    from_agent: message.fromName,
+    delivery: message.delivery
+  };
+  if (message.correlationId) meta2.correlation_id = message.correlationId;
+  await deliverInboxNotification(message.id, notifiedInbox, async () => {
+    await mcp.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: [
+          `Peer request from ${message.fromName}:`,
+          "",
+          message.content,
+          "",
+          `When complete, call kxm_reply with messageId ${message.id}.`
+        ].join("\n"),
+        meta: meta2
+      }
+    });
+  });
+}
+async function onHubEvent(client, event) {
   if (event.type === "cancelled" || event.type === "expired") {
     inbox.delete(event.message.id);
     notifiedInbox.delete(event.message.id);
     return;
   }
   if (event.type !== "message") return;
-  const client = meshClient;
-  if (!client) return;
   if (event.message.status === "queued") await client.acknowledge(event.message.id);
   inbox.set(event.message.id, event.message);
-  const meta2 = {
-    message_id: event.message.id,
-    from_agent: event.message.fromName,
-    delivery: event.message.delivery
-  };
-  if (event.message.correlationId) meta2.correlation_id = event.message.correlationId;
-  await deliverInboxNotification(event.message.id, notifiedInbox, async () => {
-    await mcp.notification({
-      method: "notifications/claude/channel",
-      params: {
-        content: [
-          `Peer request from ${event.message.fromName}:`,
-          "",
-          event.message.content,
-          "",
-          `When complete, call kxm_reply with messageId ${event.message.id}.`
-        ].join("\n"),
-        meta: meta2
-      }
-    });
-  });
+  await announce(event.message);
+}
+async function seedInbox(client) {
+  for (const message of await client.listInbox()) {
+    if (message.status === "delivered" && !inbox.has(message.id)) inbox.set(message.id, message);
+  }
+  await reconcileInbox(client, inbox, notifiedInbox);
+  for (const messageId of [...inbox.keys()]) {
+    const message = inbox.get(messageId);
+    if (message) await announce(message);
+  }
 }
 async function startClient(project, serverUrl, name, authToken) {
   const candidate = new HubClient({
@@ -17375,7 +17403,8 @@ async function startClient(project, serverUrl, name, authToken) {
     authToken
   });
   try {
-    await candidate.start(onHubEvent);
+    await candidate.start((event) => onHubEvent(candidate, event));
+    await seedInbox(candidate);
     meshClient = candidate;
     return candidate;
   } catch (error2) {

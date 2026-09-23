@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { DatabaseSync } from "./sqlite.ts";
+import { DatabaseSync, openReadOnlyDatabase } from "./sqlite.ts";
 import { KxmConfigError, validateCoordinator, validateDriveReceipt, validateIntakeMessage, validateRunEvent, kxmCanonicalJson, type JsonValue, type KxmConfigIssue, type KxmConfigOptions } from "./project-config.ts";
 import { kxmUserStateRoot } from "./bindings.ts";
 import { deriveKxmSyncEvent, kxmSyncEventBytes, KxmSyncRedactor } from "./sync-transform.ts";
@@ -59,13 +59,13 @@ export function kxmProjectRunEventsPath(projectRoot: string, env: NodeJS.Process
 /**
  * Whether this project's Runtime event store holds `runId`. Hub workflow runs and Runtime
  * runs share the `run_<32 hex>` shape, so a command addressed by run id asks the owning
- * store instead of guessing from the id. Read-only; a project whose Runtime never ran
- * owns no runs.
+ * store instead of guessing from the id. Read-only and leaves no sidecars, so a dry run
+ * can ask; a project whose Runtime never ran owns no runs.
  */
 export function projectRuntimeOwnsRun(projectRoot: string, runId: string, env: NodeJS.ProcessEnv): boolean {
   const path = kxmProjectRunEventsPath(projectRoot, env);
   if (!existsSync(path)) return false;
-  const database = new DatabaseSync(path, { readOnly: true });
+  const database = openReadOnlyDatabase(path);
   try {
     database.exec("PRAGMA busy_timeout = 5000");
     return database.prepare("SELECT 1 FROM runs WHERE run_id = ?").get(runId) !== undefined;

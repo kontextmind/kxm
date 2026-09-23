@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { stringify } from "yaml";
 import { openReadOnlyDatabase } from "../sqlite.ts";
 import { buildRetrospective, writeRetrospective } from "../retrospective.ts";
 import { redactSecrets } from "../redact.ts";
@@ -21,7 +22,7 @@ import {
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "../workflow.ts";
-import { discoverKxmProjectRoot, parseRestrictedYaml } from "../project-config.ts";
+import { discoverKxmProjectRoot, kxmWorkflowWriteIssues, parseRestrictedYaml } from "../project-config.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import type { WorkerOutcome } from "../envelope.ts";
@@ -228,7 +229,7 @@ export async function cmdWorkflowAdd(
       if (!template) {
         return refuse("workflow_template_unknown", `unknown template ${options.template}; choose ${Object.keys(WORKFLOW_TEMPLATES).join(", ")}`);
       }
-      content = { ...template, ...(options.description ? { description: options.description } : {}) };
+      content = { ...template, ...(options.description !== undefined ? { description: options.description } : {}) };
     } else if (!workflowId || options.pick) {
       const candidates: PickCandidate[] = Object.entries(WORKFLOW_TEMPLATES).map(([id, tmpl]) => ({
         id,
@@ -239,6 +240,7 @@ export async function cmdWorkflowAdd(
       if (scope === "local") {
         const globalDefs = listWorkflowDefinitions({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
         for (const gd of globalDefs) {
+          // Read the listed path when selected: globals may use `.yml`, not only `.yaml`.
           if (!candidates.some((c) => c.id === gd.id)) {
             candidates.push({ id: gd.id, description: gd.description, label: "global", payload: gd.filePath });
           }
@@ -269,9 +271,30 @@ export async function cmdWorkflowAdd(
       content = scaffoldWorkflowDefinition(options.description || `Workflow ${workflowId}`);
     }
 
-    const res = addWorkflowDefinition(workflowId!, content, {
+    const document = typeof content === "string" ? content : stringify(content);
+    // A local workflow is read by the project loader, which refuses the whole
+    // project over one bad file, so it is checked by that loader before it lands.
+    let repoRoot = runtime.cwd;
+    if (scope === "local") {
+      const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+      if (!projectRoot) {
+        return refuse("project_not_found", "local workflows belong to a KXM project; run kxm init at the repository root, or pass --scope global");
+      }
+      const issues = kxmWorkflowWriteIssues(projectRoot, workflowId!, document);
+      if (issues.length > 0) {
+        print(
+          runtime.io,
+          runtime.json,
+          { ok: false, command: "workflow add", error: "workflow_invalid", message: "with this workflow the project would not load, so nothing was written", issues },
+          `workflow add failed: with this workflow the project would not load, so nothing was written\n${issues.map((entry) => `  ${entry.file}: ${entry.code}: ${entry.message}`).join("\n")}`,
+        );
+        return 2;
+      }
+      repoRoot = projectRoot;
+    }
+    const res = addWorkflowDefinition(workflowId!, document, {
       scope,
-      repoRoot: runtime.cwd,
+      repoRoot,
       userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
       overwrite: options.overwrite,
       dryRun: runtime.dryRun,

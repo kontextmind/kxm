@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, relative } from "node:path";
 import test from "node:test";
@@ -36,7 +36,7 @@ import {
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import { PROMOTION_REQUIRED_EVALUATIONS } from "../../plugins/kxm/src/skills.ts";
 import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
-import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
+import { KxmRunEventStore, kxmProjectRunEventsPath, kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
 import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
 import { WORKFLOW_TEMPLATES } from "../../plugins/kxm/src/workflow-manager.ts";
 import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
@@ -311,13 +311,13 @@ test("cli completion install: executes cleanly with json and dry-run", async () 
   }
 });
 
-test("suggest: refuses live bug-fix execution without violating Claude-only routing", () => {
+test("suggest: refuses a Claude-only bug fix without verified harness authentication", () => {
   const suggestion = suggestWorkflowAndRoles("Fix a bug in an isolated worktree using Claude only");
   assert.equal(suggestion.workflowId, "bug-fix");
   assert.equal(suggestion.area, "software-engineering");
   assert.equal(suggestion.execution.supported, false);
-  if (suggestion.execution.supported) assert.fail("a writer cannot run through a read-only live profile");
-  assert.equal(suggestion.execution.error, "live_write_unsupported");
+  if (suggestion.execution.supported) assert.fail("a writer requires verified harness authentication");
+  assert.equal(suggestion.execution.error, "harness_unavailable");
   assert.deepEqual(suggestion.roles, []);
   assert.equal("createCommand" in suggestion.execution, false);
   assert.equal("driveCommand" in suggestion.execution, false);
@@ -648,7 +648,7 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
     // Real state for every command to plan against: a committed project with an
     // instruction file for `memory sync` to update (sync never creates one), a role,
     // a workflow, a tracked task, a skill candidate with passing evaluations, a
-    // hub store, and a verified backup of it.
+    // hub store, a Runtime run, and a verified backup of it.
     assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
     await seed(["init", "--project-id", "prj_01JDRYRUN0000000000000000", "--name", "Dry Run"]);
     // Task planning requires a route the live read-only Runtime can execute.
@@ -685,6 +685,17 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
       createdAt: "2026-09-23T00:00:00.000Z", updatedAt: "2026-09-23T00:00:00.000Z",
     }));
     hubStore.close();
+    const runtimeStore = new KxmRunEventStore(kxmProjectRunEventsPath(project, env));
+    try {
+      const at = "2026-09-23T00:00:00.000Z";
+      runtimeStore.insertRun({
+        runId: `run_${"0".repeat(32)}`, projectId: "prj_01JDRYRUN0000000000000000", homeRuntimeId: "rt_dry_run", workflowId: "default",
+        promptSha256: "0".repeat(64), status: "waiting", configRevision: "c", memoryRevision: "m", executorPolicyRevision: "e", toolPolicyRevision: "t",
+        createdAt: at, updatedAt: at,
+      });
+    } finally {
+      runtimeStore.close();
+    }
     await seed(["backup", "--out", join(root, "backup")]);
 
     const before = treeSnapshot(root);
@@ -750,7 +761,7 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
 });
 
 test("workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused", async () => {
-  const root = mkdtempSync(join(tmpdir(), "kxm-workflow-add-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-workflow-add-")));
   const project = join(root, "project");
   mkdirSync(project, { recursive: true });
   const env: NodeJS.ProcessEnv = {

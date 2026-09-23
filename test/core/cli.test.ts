@@ -14,6 +14,7 @@ import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { stringify } from "yaml";
 import { createTask, getTask, taskFilePath } from "../../plugins/kxm/src/task-manager.ts";
+import { createTestMesh } from "../helpers.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
@@ -462,8 +463,9 @@ test("KXM init creates and revalidates project configuration without legacy envi
     assert.equal(created.action, "created");
     assert.equal(created.mode, "ready");
     assert.match(created.configRevision, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(created.files.length, 7);
+    assert.equal(created.files.length, 8);
     assert(created.files.includes(".kxm/gates.yaml"));
+    assert(created.files.includes(".kxm/routes.yaml"));
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
     assert.equal(existsSync(join(cwd, "must-not-use")), false);
 
@@ -848,7 +850,7 @@ test("task run refuses unavailable live work before mutation and honors an execu
       assert.equal(failure.error, "run_execution_unavailable");
       assert.equal(failure.defaultHarness, "claude");
       assert.equal(failure.execution.status, "not_started");
-      assert(failure.execution.prerequisites.some((item) => item.field === "repositories" && item.detail.includes("read-only")));
+      assert(failure.execution.prerequisites.some((item) => item.field === "harness" && item.detail.includes("claude") && item.detail.includes("edit")));
       assert(failure.execution.prerequisites.some((item) => item.field === "gates.test.argv" && item.detail.includes(".kxm/gates.yaml")));
       assert.equal(readFileSync(taskFilePath(cwd, task.id), "utf8"), taskBefore);
     }
@@ -1679,6 +1681,39 @@ test("cli hub commands fall back to the persisted hub env project token", async 
   } finally {
     rmSync(stateHome, { recursive: true, force: true });
   }
+});
+
+test("kxm peer inbox lists a request queued for a durable CLI agent name", async (context) => {
+  const mesh = await createTestMesh(context);
+  const env = {
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "codex",
+  };
+  const inbox = async () => {
+    const io = capture();
+    const code = await runCli(["peer", "inbox", "--json"], env, io);
+    const out = io.read();
+    assert.equal(code, 0, `${out.stderr}\n${out.stdout}`);
+    return (JSON.parse(out.stdout) as { messages: Array<Record<string, unknown>> }).messages;
+  };
+
+  // The first call registers the name; a one-shot call leaves it offline when it exits.
+  assert.deepEqual(await inbox(), []);
+  const sender = mesh.makeClient("sender");
+  await sender.start(() => {});
+  const request = await sender.send({ target: "codex", content: "Review the retry loop", allowOffline: true });
+  assert.equal(request.status, "queued");
+
+  // The next call resumes the same agent and reads what was queued for it meanwhile.
+  const listed = await inbox();
+  assert.deepEqual(
+    listed.map((message) => [message.id, message.fromName, message.content, message.status]),
+    [[request.id, "sender", "Review the retry loop", "queued"]],
+  );
+  // Listing acknowledges nothing: the request is still queued for push delivery.
+  assert.equal((await sender.getMessage(request.id)).status, "queued");
 });
 
 test("cli agent commands never register with the persisted admin token", async () => {

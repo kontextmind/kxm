@@ -10,15 +10,28 @@
  * This module writes only current KXM project resources:
  *   - `.kxm/agents/<role-slug>.yaml`   (kxm.agent.v1)
  *   - `.kxm/workflows/<slug>.yaml`     (kxm.workflow.v1)
+ *   - admitted selectors appended to `.kxm/routes.yaml`
  * It never writes retired legacy authority (`.kxm/config`, retired
  * `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy
  * and does not use the kxm.role.v1 subsystem.
+ *
+ * Guide research ids are not dispatch ids. Only the admitted map below is
+ * written, and only when that harness is authenticated. Unmapped ids are skipped.
+ *
+ * Google candidates are unmapped on purpose. Google's route is the Pi
+ * `antigravity` provider, which only the KXM Pi extension registers. The
+ * Runtime's Pi one-shot runs with `--no-extensions`, and `pi auth check` never
+ * loads extensions, so a drive of an `antigravity/…` role fails at dispatch.
+ * Mapping Google to `agy` instead would contradict the routing decision. Add
+ * Google back only when drive can reach `antigravity` and a reviewed
+ * admission decision says so.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stringify } from "yaml";
-import { NATIVE_HARNESS_PROVIDERS, type HarnessInventory } from "./harness.ts";
+import { type HarnessInventory } from "./harness.ts";
+import { loadRoutePolicy } from "./routes.ts";
 
 export interface GuideCandidate {
   readonly vendor: string;
@@ -41,19 +54,15 @@ export interface GuideWorkflow {
   readonly stages: readonly GuideStage[];
 }
 
-/** Vendor prefix → native harness, using the guide's vendor spellings.
- * Everything else routes via Pi/OpenRouter. Native-vendor candidates never
- * fall back to OpenRouter when their native harness is unavailable: fail
- * closed instead of billing the same vendor through a second provider. */
-const NATIVE_VENDOR_HARNESS: Readonly<Record<string, string>> = Object.freeze({
-  anthropic: "claude",
-  openai: "codex",
-  "x-ai": "grok",
-  xai: "grok",
-  google: "agy",
-  moonshotai: "kimi",
-  moonshot: "kimi",
-  deepseek: "deepseek",
+/** Research id → the admitted harness/provider/model drive will actually accept.
+ * Anything absent is skipped, even when its harness is logged in. */
+const ADMITTED_GUIDE_BINDINGS: Readonly<Record<string, AgentBinding>> = Object.freeze({
+  "anthropic/claude-fable-5.1": { harness: "claude", provider: "anthropic", model: "fable" },
+  "anthropic/fable": { harness: "claude", provider: "anthropic", model: "fable" },
+  "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
+  "x-ai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
+  "xai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
+  "qwen/qwen3-coder-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" },
 });
 
 /** Guide candidates are ordered by preference; the first eligible wins. */
@@ -380,25 +389,17 @@ function authenticatedHarnesses(inventory: HarnessInventory): ReadonlySet<string
 }
 
 /**
- * Resolve a guide candidate to a dispatch binding, or undefined when no
- * candidate's harness is authenticated. Non-native vendors route through the
- * Pi OpenRouter provider (guide ids are already OpenRouter-style slugs).
+ * Resolve a guide candidate to an admitted dispatch binding, or undefined when
+ * no candidate is both on the admitted map and authenticated on its harness.
  */
 export function resolveCandidate(
   candidates: readonly GuideCandidate[],
   eligible: ReadonlySet<string>,
 ): AgentBinding | undefined {
   for (const candidate of candidates) {
-    const nativeHarness = NATIVE_VENDOR_HARNESS[candidate.vendor];
-    if (nativeHarness) {
-      if (eligible.has(nativeHarness)) {
-        return { harness: nativeHarness, provider: NATIVE_HARNESS_PROVIDERS[nativeHarness]!, model: candidate.model };
-      }
-      continue;
-    }
-    if (eligible.has("pi")) {
-      return { harness: "pi", provider: "openrouter", model: `${candidate.vendor}/${candidate.model}` };
-    }
+    const mapped = ADMITTED_GUIDE_BINDINGS[`${candidate.vendor}/${candidate.model}`];
+    if (!mapped || !eligible.has(mapped.harness)) continue;
+    return mapped;
   }
   return undefined;
 }
@@ -424,7 +425,7 @@ export function planGuideSetup(options: {
           workflow: workflow.slug,
           stage: stage.slug,
           role: stage.role,
-          reason: "no guide candidate has an authenticated harness (see `kxm harness list`)",
+          reason: "no admitted guide candidate has an authenticated harness (see `kxm harness list`)",
         });
         covered = false;
         continue;
@@ -465,6 +466,7 @@ function workflowDocument(workflow: GuideWorkflow): Record<string, unknown> {
       id: stage.slug,
       kind: "agent",
       agent: stage.role,
+      repositories: { control: isWriterRole(stage.role) ? "write" : "read" },
       maxAttempts: 2,
       on: {
         passed: last ? { target: "$terminal", terminalStatus: "completed" } : workflow.stages[index + 1]!.slug,
@@ -506,6 +508,24 @@ export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan)
     });
   }
   return files;
+}
+
+/** Append the plan's admitted selectors to `.kxm/routes.yaml`. Does not write role files. */
+export function mergeGuideRouteAdmission(projectRoot: string, plan: GuideSetupPlan): string[] {
+  const policy = loadRoutePolicy(projectRoot);
+  const added: string[] = [];
+  for (const binding of plan.agents.values()) {
+    const selector = `${binding.provider}/${binding.model}`;
+    if (policy.disabled.includes(selector) || policy.admitted.includes(selector)) continue;
+    policy.admitted.push(selector);
+    added.push(selector);
+  }
+  if (added.length === 0) return added;
+  policy.updatedAt = new Date().toISOString();
+  const path = join(projectRoot, ".kxm", "routes.yaml");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, stringify(policy), "utf8");
+  return added;
 }
 
 export interface WriteReport {

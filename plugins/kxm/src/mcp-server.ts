@@ -55,38 +55,59 @@ function sessionIdentity(): { projectDir: string; project: string; serverUrl: st
   };
 }
 
-async function onHubEvent(event: HubEvent): Promise<void> {
+/** Tell the session about an inbox request on the channel, at most once per process. */
+async function announce(message: MessageRecord): Promise<void> {
+  const meta: Record<string, string> = {
+    message_id: message.id,
+    from_agent: message.fromName,
+    delivery: message.delivery,
+  };
+  if (message.correlationId) meta.correlation_id = message.correlationId;
+  await deliverInboxNotification(message.id, notifiedInbox, async () => {
+    await mcp.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: [
+          `Peer request from ${message.fromName}:`,
+          "",
+          message.content,
+          "",
+          `When complete, call kxm_reply with messageId ${message.id}.`,
+        ].join("\n"),
+        meta,
+      },
+    });
+  });
+}
+
+async function onHubEvent(client: HubClient, event: HubEvent): Promise<void> {
   if (event.type === "cancelled" || event.type === "expired") {
     inbox.delete(event.message.id);
     notifiedInbox.delete(event.message.id);
     return;
   }
   if (event.type !== "message") return;
-  const client = meshClient;
-  if (!client) return;
   if (event.message.status === "queued") await client.acknowledge(event.message.id);
   inbox.set(event.message.id, event.message);
-  const meta: Record<string, string> = {
-    message_id: event.message.id,
-    from_agent: event.message.fromName,
-    delivery: event.message.delivery,
-  };
-  if (event.message.correlationId) meta.correlation_id = event.message.correlationId;
-  await deliverInboxNotification(event.message.id, notifiedInbox, async () => {
-    await mcp.notification({
-      method: "notifications/claude/channel",
-      params: {
-        content: [
-          `Peer request from ${event.message.fromName}:`,
-          "",
-          event.message.content,
-          "",
-          `When complete, call kxm_reply with messageId ${event.message.id}.`,
-        ].join("\n"),
-        meta,
-      },
-    });
-  });
+  await announce(event.message);
+}
+
+/** A durable KXM_AGENT_NAME resumes its agent id, but the event stream replays only requests
+ * that agent has not acknowledged. One an earlier process acknowledged and never answered is
+ * still open on the hub, so it is read back here and announced like a pushed request: this
+ * session has not been told about it. The inbox is reconciled before anything is announced,
+ * so a request cancelled or expired while the list was in flight is dropped, not announced;
+ * its event may have gone to a stream that was not connected yet. Queued requests are left
+ * to the stream, which acknowledges them in order. */
+async function seedInbox(client: HubClient): Promise<void> {
+  for (const message of await client.listInbox()) {
+    if (message.status === "delivered" && !inbox.has(message.id)) inbox.set(message.id, message);
+  }
+  await reconcileInbox(client, inbox, notifiedInbox);
+  for (const messageId of [...inbox.keys()]) {
+    const message = inbox.get(messageId);
+    if (message) await announce(message);
+  }
 }
 
 async function startClient(project: string, serverUrl: string, name: string, authToken: string): Promise<HubClient> {
@@ -99,7 +120,9 @@ async function startClient(project: string, serverUrl: string, name: string, aut
     authToken,
   });
   try {
-    await candidate.start(onHubEvent);
+    await candidate.start((event) => onHubEvent(candidate, event));
+    // A tool call waits for the seeded inbox: `starting` stays pending until this returns.
+    await seedInbox(candidate);
     meshClient = candidate;
     return candidate;
   } catch (error) {

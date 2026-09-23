@@ -7,12 +7,14 @@ import {
   GUIDE_WORKFLOWS,
   parseGuideSelection,
   planGuideSetup,
+  mergeGuideRouteAdmission,
   renderGuideSetupFiles,
   resolveCandidate,
   writeGuideSetupFiles,
 } from "../../plugins/kxm/src/init-guide-setup.ts";
-import type { HarnessInventory, HarnessStatus } from "../../plugins/kxm/src/harness.ts";
+import { validateHarnessModelPair, type HarnessInventory, type HarnessStatus } from "../../plugins/kxm/src/harness.ts";
 import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
+import { isRouteAdmitted } from "../../plugins/kxm/src/routes.ts";
 import { parse } from "yaml";
 
 function harnessStatus(id: string, authenticated: boolean | null, detected = true): HarnessStatus {
@@ -45,7 +47,7 @@ test("parseGuideSelection accepts numbers, slugs, all, and none", () => {
   assert.deepEqual(parseGuideSelection("99, nope"), []);
 });
 
-test("resolveCandidate prefers native harness in guide order and strips vendor prefix", () => {
+test("resolveCandidate prefers an admitted harness in guide order", () => {
   const eligible = new Set(["grok"]);
   const binding = resolveCandidate(
     [{ vendor: "anthropic", model: "claude-fable-5.1" }, { vendor: "x-ai", model: "grok-4.6" }],
@@ -59,24 +61,56 @@ test("resolveCandidate routes non-native vendors through pi/openrouter", () => {
   assert.deepEqual(binding, { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" });
 });
 
-test("resolveCandidate fails closed for native vendors instead of cross-billing", () => {
-  // deepseek has a native harness; with only pi authenticated it must not
-  // silently bill through the OpenRouter provider.
+test("resolveCandidate fails closed for unadmitted ids", () => {
   assert.equal(resolveCandidate([{ vendor: "deepseek", model: "deepseek-v4-pro-0813" }], new Set(["pi"])), undefined);
   assert.equal(resolveCandidate([{ vendor: "x-ai", model: "grok-4.6" }], new Set(["pi"])), undefined);
   assert.equal(resolveCandidate([{ vendor: "qwen", model: "qwen3-coder-plus" }], new Set()), undefined);
+  assert.equal(resolveCandidate([{ vendor: "anthropic", model: "claude-opus-5" }], new Set(["claude"])), undefined);
+});
+
+test("resolveCandidate skips Google: drive cannot reach antigravity and agy is not the decided route", () => {
+  const all = new Set(["pi", "claude", "codex", "grok", "agy", "kimi", "deepseek"]);
+  for (const model of ["gemini-3.8-flash", "gemini-3.8-flash-high"]) {
+    assert.equal(resolveCandidate([{ vendor: "google", model }], all), undefined, model);
+  }
+  // A Google candidate ahead of an admitted one falls through to it.
+  assert.deepEqual(
+    resolveCandidate([{ vendor: "google", model: "gemini-3.8-flash" }, { vendor: "qwen", model: "qwen3-coder-plus" }], new Set(["pi"])),
+    { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" },
+  );
+});
+
+test("guided setup writes and admits no Google route, and every binding passes the harness/model check", () => {
+  const plan = planGuideSetup({
+    inventory: inventory(["pi", "claude", "codex", "grok", "agy", "kimi", "deepseek"]),
+    selected: GUIDE_WORKFLOWS.map((workflow) => workflow.slug),
+  });
+  assert.ok(plan.agents.size > 0);
+  for (const [role, binding] of plan.agents) {
+    assert.notEqual(binding.provider, "antigravity", role);
+    assert.notEqual(binding.harness, "agy", role);
+    assert.deepEqual(validateHarnessModelPair(binding.harness, { provider: binding.provider, model: binding.model }), { valid: true }, role);
+  }
+  const root = mkdtempSync(join(tmpdir(), "kxm-guide-routes-"));
+  try {
+    const added = mergeGuideRouteAdmission(root, plan);
+    assert.ok(added.length > 0);
+    assert.deepEqual(added.filter((selector) => /^(antigravity|google)\//.test(selector)), []);
+    assert.equal(isRouteAdmitted(root, "antigravity/gemini-3.8-flash-high"), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("planGuideSetup skips workflows with uncovered stages and reports reasons", () => {
-  // claude only: build-feature stages without anthropic candidates
-  // (scaffold, backend-data, sdk-integration) are uncovered; stabilize's
-  // detective resolves via its anthropic claude-opus-5 candidate.
+  // claude only: build-feature stages without an admitted anthropic candidate
+  // stay uncovered. stabilize's detective candidates are research ids that are
+  // not admitted, so that workflow is skipped too.
   const plan = planGuideSetup({ inventory: inventory(["claude"]), selected: ["build-feature", "stabilize-flaky-tests"] });
   assert.ok(!plan.workflows.some((workflow) => workflow.slug === "build-feature"));
-  assert.ok(plan.workflows.some((workflow) => workflow.slug === "stabilize-flaky-tests"));
+  assert.ok(!plan.workflows.some((workflow) => workflow.slug === "stabilize-flaky-tests"));
   assert.ok(plan.skipped.some((skip) => skip.workflow === "build-feature" && skip.role === "scaffold-build-specialist"));
-  assert.ok(plan.agents.has("concurrency-flakiness-detective"));
-  assert.equal(plan.agents.get("concurrency-flakiness-detective")?.model, "claude-opus-5");
+  assert.equal(plan.agents.has("concurrency-flakiness-detective"), false);
 });
 
 test("rendered files load as a valid KXM project bundle", () => {
@@ -153,7 +187,7 @@ test("rendered files load as a valid KXM project bundle", () => {
     assert.equal(bundle.agents.has("lead-systems-planner"), true);
     const lead = bundle.agents.get("lead-systems-planner")?.value as { model?: { provider?: string; model?: string } };
     assert.equal(lead.model?.provider, "anthropic");
-    assert.equal(lead.model?.model, "claude-fable-5.1");
+    assert.equal(lead.model?.model, "fable");
 
     const workflow = bundle.workflows.get("build-feature");
     const workflowValue = workflow?.value as { steps?: unknown[] } | undefined;
@@ -175,7 +209,7 @@ test("rendered files load as a valid KXM project bundle", () => {
 test("writeGuideSetupFiles never overwrites existing files", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-guide-setup-"));
   try {
-    const plan = planGuideSetup({ inventory: inventory(["claude"]), selected: ["stabilize-flaky-tests", "maintain-documentation"] });
+    const plan = planGuideSetup({ inventory: inventory(["claude", "grok"]), selected: ["maintain-documentation"] });
     const files = renderGuideSetupFiles(root, plan);
     assert.ok(files.length > 0);
     const first = writeGuideSetupFiles(files);
@@ -197,4 +231,20 @@ test("guide agents are not written when no harness is authenticated", () => {
   assert.ok(plan.skipped.length > 0);
   const files = renderGuideSetupFiles(join("/tmp", "unused"), plan);
   assert.equal(files.length, 0);
+});
+
+test("mergeGuideRouteAdmission appends admitted selectors without writing role files", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-guide-routes-"));
+  try {
+    const plan = planGuideSetup({ inventory: inventory(["grok"]), selected: ["maintain-documentation"] });
+    assert.equal(plan.workflows.length, 0, "documentation-write is covered by grok, but the other stages are not");
+    const writer = planGuideSetup({ inventory: inventory(["claude", "grok"]), selected: ["maintain-documentation"] });
+    const added = mergeGuideRouteAdmission(root, writer);
+    assert.ok(added.includes("anthropic/fable"));
+    assert.ok(added.includes("xai/grok-4.6"));
+    assert.equal(isRouteAdmitted(root, "anthropic/fable"), true);
+    assert.equal(isRouteAdmitted(root, "xai/grok-4.6"), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

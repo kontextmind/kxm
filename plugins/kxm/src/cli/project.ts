@@ -194,36 +194,41 @@ export async function cmdBackup(runtime: Runtime, options: { out?: string | unde
   try {
     const backupOptions = {
       projectRoot: runtime.cwd,
+      env: runtime.env,
       ...(options.out ? { outDir: resolve(runtime.cwd, options.out) } : {}),
     };
     if (runtime.dryRun) {
       const plan = planBackup(backupOptions);
       printPlan(
         runtime,
-        { command: "backup", outDir: plan.outDir, stores: plan.stores },
+        { command: "backup", outDir: plan.outDir, stores: plan.stores, files: plan.files },
         [
-          ...plan.stores.map((store) => ({ action: "write" as const, target: join(plan.outDir, store.backupFile) })),
+          ...[...plan.stores, ...plan.files].map((entry) => ({ action: "write" as const, target: join(plan.outDir, entry.backupFile) })),
           { action: "write", target: join(plan.outDir, "manifest.json") },
         ],
-        `back up ${plan.stores.length} store(s) to ${plan.outDir} (sources are not opened, so their WAL is not checkpointed)`,
+        `back up ${plan.stores.length} store(s) and ${plan.files.length} file(s) to ${plan.outDir} (sources are not opened, so their WAL is not checkpointed)`,
       );
       return 0;
     }
     const { manifest, outDir } = createBackup(backupOptions);
+    const complete = manifest.complete === true;
     const payload = {
-      ok: true,
+      ok: complete,
       command: "backup",
       backupId: manifest.backupId,
       outDir,
       manifest,
     };
     const summary = [
-      `Created SQLite backup with ${manifest.stores.length} store(s):`,
+      complete
+        ? `Created SQLite backup with ${manifest.stores.length} store(s):`
+        : `Backup is incomplete (${manifest.omitted?.length ?? 0} omitted); not ok:`,
       ...manifest.stores.map((s) => `  - ${s.storeId}: ${s.sourcePath} -> ${s.backupFile} (schema v${s.schemaVersion}, ${s.bytes} bytes, sha256 ${s.sha256.slice(0, 12)}...)`),
+      ...(manifest.omitted ?? []).map((id) => `  - omitted ${id}`),
       `Manifest: ${join(outDir, "manifest.json")}`,
     ].join("\n");
     print(runtime.io, runtime.json, payload, summary);
-    return 0;
+    return complete ? 0 : 1;
   } catch (error) {
     if (error instanceof KxmConfigError) {
       print(runtime.io, runtime.json, { ok: false, command: "backup", error: "backup_failed", issues: error.issues }, `backup failed: ${error.message}`);
@@ -245,14 +250,18 @@ export async function cmdRestore(runtime: Runtime, manifestArg: string): Promise
           backupId: plan.backupId,
           manifestPath: plan.manifestPath,
           stores: plan.stores.map(({ storeId, targetPath, schemaVersion }) => ({ storeId, targetPath, schemaVersion })),
+          files: plan.files.map(({ id, targetPath }) => ({ id, targetPath })),
         },
-        plan.stores.flatMap((store) => [
-          { action: "write" as const, target: store.targetPath },
-          ...[`${store.targetPath}-wal`, `${store.targetPath}-shm`]
-            .filter((file) => existsSync(file))
-            .map((file) => ({ action: "delete" as const, target: file })),
-        ]),
-        `restore ${plan.stores.length} store(s) from ${plan.manifestPath}; digests verified against the manifest`,
+        [
+          ...plan.stores.flatMap((store) => [
+            { action: "write" as const, target: store.targetPath },
+            ...[`${store.targetPath}-wal`, `${store.targetPath}-shm`]
+              .filter((file) => existsSync(file))
+              .map((file) => ({ action: "delete" as const, target: file })),
+          ]),
+          ...plan.files.map((file) => ({ action: "write" as const, target: file.targetPath })),
+        ],
+        `restore ${plan.stores.length} store(s) and ${plan.files.length} file(s) from ${plan.manifestPath}; digests verified against the manifest`,
       );
       return 0;
     }
