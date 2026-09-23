@@ -55,14 +55,17 @@ export interface KxmHubConfig {
 
 export type ImprovementPromotionPolicy = "manual_pr" | "critic_quorum" | "auto_threshold";
 
+const IMPROVEMENT_PROMOTION_POLICIES: readonly ImprovementPromotionPolicy[] = ["manual_pr", "critic_quorum", "auto_threshold"];
+
+/** Normalized on load: every field is present and in range. */
 export interface KxmImprovementConfig {
   promotionPolicy: ImprovementPromotionPolicy;
-  telemetryHalfLifeDays?: number | undefined;
-  autoThreshold?: {
-    minRuns?: number | undefined;
-    minPassRate?: number | undefined;
-    minCostSavings?: number | undefined;
-  } | undefined;
+  telemetryHalfLifeDays: number;
+  autoThreshold: {
+    minRuns: number;
+    minPassRate: number;
+    minCostSavings: number;
+  };
 }
 
 export interface KxmShadowExecutionConfig {
@@ -195,6 +198,38 @@ function normalizeHubConfig(raw: unknown): KxmHubConfig {
   return { autoStart: autoStart === "off" || autoStart === "background" ? autoStart : DEFAULT_KXM_CONFIG.hub.autoStart };
 }
 
+function recordOf(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** `improvement.*` values fail closed to the defaults field by field, so a typo
+ * never turns review readiness into something else. None of these values can
+ * authorize a promotion; they only shape the readiness `kxm improve` reports. */
+function normalizeImprovementConfig(raw: unknown): KxmImprovementConfig {
+  const value = recordOf(raw);
+  const threshold = recordOf(value.autoThreshold);
+  const policy = value.promotionPolicy;
+  const halfLife = finiteNumber(value.telemetryHalfLifeDays);
+  const minRuns = finiteNumber(threshold.minRuns);
+  const minPassRate = finiteNumber(threshold.minPassRate);
+  const minCostSavings = finiteNumber(threshold.minCostSavings);
+  return {
+    promotionPolicy: IMPROVEMENT_PROMOTION_POLICIES.includes(policy as ImprovementPromotionPolicy)
+      ? policy as ImprovementPromotionPolicy
+      : "manual_pr",
+    telemetryHalfLifeDays: halfLife !== undefined && halfLife > 0 && halfLife <= 3650 ? halfLife : 14,
+    autoThreshold: {
+      minRuns: minRuns !== undefined && Number.isInteger(minRuns) && minRuns >= 1 && minRuns <= 1_000_000 ? minRuns : 10,
+      minPassRate: minPassRate !== undefined && minPassRate >= 0 && minPassRate <= 1 ? minPassRate : 0.95,
+      minCostSavings: minCostSavings !== undefined && minCostSavings >= 0 ? minCostSavings : 0.5,
+    },
+  };
+}
+
 export function loadKxmConfig(
   repoRoot = process.cwd(),
   options: { userConfigDir?: string } = {},
@@ -241,7 +276,7 @@ export function loadKxmConfig(
     dash: (mergedAll.dash as KxmDashConfig) ?? {},
     sync: (mergedAll.sync as KxmSyncTrackerConfig) ?? {},
     hub: normalizeHubConfig(mergedAll.hub),
-    improvement: (mergedAll.improvement as KxmImprovementConfig) ?? DEFAULT_KXM_CONFIG.improvement,
+    improvement: normalizeImprovementConfig(mergedAll.improvement),
     routing: (mergedAll.routing as KxmRoutingConfig) ?? DEFAULT_KXM_CONFIG.routing,
     telemetry: (mergedAll.telemetry as KxmTelemetryConfig) ?? DEFAULT_KXM_CONFIG.telemetry,
     loadedFrom: {

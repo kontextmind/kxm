@@ -94,6 +94,15 @@ test("config: loads defaults and resolves user/repo overrides", () => {
     assert.equal(reloaded2.routing.circuitBreaker?.mode, "quarantine");
     assert.equal(reloaded2.telemetry.federated, false);
 
+    // improvement.* fails closed: an unknown policy is manual_pr and an out-of-range half-life is 14 days.
+    setKxmConfigValue(sandbox.dir, "improvement.promotionPolicy", "auto_merge", { scope: "project" });
+    setKxmConfigValue(sandbox.dir, "improvement.telemetryHalfLifeDays", 0, { scope: "project" });
+    const normalized = loadKxmConfig(sandbox.dir, {
+      userConfigDir: join(sandbox.dir, "user-config"),
+    });
+    assert.equal(normalized.improvement.promotionPolicy, "manual_pr");
+    assert.equal(normalized.improvement.telemetryHalfLifeDays, 14);
+
     // Getter works for deep keys
     assert.equal(getKxmConfigValue(reloaded, "user.preferredModel"), "grok-4.6");
     assert.equal(getKxmConfigValue(reloaded, "dash.defaultScreen"), "workflows");

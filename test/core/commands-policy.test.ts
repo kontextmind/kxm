@@ -518,12 +518,22 @@ test("CLI subcommands and options parse thoroughly in dry-run mode", async () =>
   // Workflow agent subcommands with options
   for (const args of [
     ["workflow", "checkpoint", "--run-id", "r1", "--stage-id", "s1", "--status", "passed", "--summary", "checkpoint summary", "--evidence", '{"check":"pass"}', "--dry-run", "--json"],
-    ["workflow", "record", "--run-id", "r1", "--category", "bug", "--area", "implementation", "--severity", "info", "--summary", "fixed bug", "--dry-run", "--json"],
+    ["workflow", "record", "--run-id", "r1", "--category", "bug", "--area", "implementation", "--stage-id", "s1", "--severity", "info", "--summary", "fixed bug", "--dry-run", "--json"],
   ]) {
     const res = await runCli(args);
     assert.equal(res.exit, 0, `Command failed: ${args.join(" ")}`);
     assert.match(res.stdout, /"dryRun":true/);
+    if (args[1] === "record") assert.match(res.stdout, /"stageId":"s1"/);
   }
+
+  // Area is optional: three positionals are runId, category, and summary.
+  const positional = await runCli(["workflow", "record", "r1", "lesson", "Flaky test hid a race", "--stage-id", "s1", "--dry-run", "--json"]);
+  assert.equal(positional.exit, 0);
+  const positionalArgs = JSON.parse(positional.stdout).args as Record<string, unknown>;
+  assert.deepEqual(
+    { runId: positionalArgs.runId, category: positionalArgs.category, summary: positionalArgs.summary, stageId: positionalArgs.stageId, area: positionalArgs.area },
+    { runId: "r1", category: "lesson", summary: "Flaky test hid a race", stageId: "s1", area: undefined },
+  );
 });
 
 test("timingSafeStringCompare evaluates equality without timing leaks", () => {

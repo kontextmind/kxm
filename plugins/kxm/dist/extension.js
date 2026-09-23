@@ -15975,6 +15975,7 @@ import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as rea
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
 var KXM_CONFIG_SCHEMA = "kxm.config.v1";
+var IMPROVEMENT_PROMOTION_POLICIES = ["manual_pr", "critic_quorum", "auto_threshold"];
 var DEFAULT_KXM_CONFIG = {
   schema: KXM_CONFIG_SCHEMA,
   user: {
@@ -16048,6 +16049,30 @@ function normalizeHubConfig(raw) {
   const autoStart = raw?.autoStart;
   return { autoStart: autoStart === "off" || autoStart === "background" ? autoStart : DEFAULT_KXM_CONFIG.hub.autoStart };
 }
+function recordOf(raw) {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
+function normalizeImprovementConfig(raw) {
+  const value = recordOf(raw);
+  const threshold = recordOf(value.autoThreshold);
+  const policy = value.promotionPolicy;
+  const halfLife = finiteNumber(value.telemetryHalfLifeDays);
+  const minRuns = finiteNumber(threshold.minRuns);
+  const minPassRate = finiteNumber(threshold.minPassRate);
+  const minCostSavings = finiteNumber(threshold.minCostSavings);
+  return {
+    promotionPolicy: IMPROVEMENT_PROMOTION_POLICIES.includes(policy) ? policy : "manual_pr",
+    telemetryHalfLifeDays: halfLife !== void 0 && halfLife > 0 && halfLife <= 3650 ? halfLife : 14,
+    autoThreshold: {
+      minRuns: minRuns !== void 0 && Number.isInteger(minRuns) && minRuns >= 1 && minRuns <= 1e6 ? minRuns : 10,
+      minPassRate: minPassRate !== void 0 && minPassRate >= 0 && minPassRate <= 1 ? minPassRate : 0.95,
+      minCostSavings: minCostSavings !== void 0 && minCostSavings >= 0 ? minCostSavings : 0.5
+    }
+  };
+}
 function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   const userDir = userConfigDirectory(options.userConfigDir);
   const userConfigFile = join2(userDir, "config.yaml");
@@ -16085,7 +16110,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
     dash: mergedAll.dash ?? {},
     sync: mergedAll.sync ?? {},
     hub: normalizeHubConfig(mergedAll.hub),
-    improvement: mergedAll.improvement ?? DEFAULT_KXM_CONFIG.improvement,
+    improvement: normalizeImprovementConfig(mergedAll.improvement),
     routing: mergedAll.routing ?? DEFAULT_KXM_CONFIG.routing,
     telemetry: mergedAll.telemetry ?? DEFAULT_KXM_CONFIG.telemetry,
     loadedFrom: {

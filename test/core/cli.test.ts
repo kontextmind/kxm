@@ -1416,7 +1416,7 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     const stopDry = capture();
     assert.equal(await runCli(["hub", "--json", "--dry-run", "stop"], {}, stopDry, cwd), 0);
     const improve = capture();
-    assert.equal(await runCli(["improve", "--json", "--workspace", cwd, "--target", "project"], {}, improve, cwd), 0);
+    assert.equal(await runCli(["improve", "--json", "--workspace", cwd], { KXM_USER_CONFIG_DIR: cwd, KXM_STATE_HOME: cwd }, improve, cwd), 0);
     const improveResult = JSON.parse(improve.read().stdout) as { command: string; path: string; events: number };
     assert.equal(improveResult.command, "improve");
     assert.equal(improveResult.events, 0);

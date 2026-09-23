@@ -25,6 +25,7 @@ import {
   enforceToolPolicy,
 } from "./commands.ts";
 import { discoverKxmProjectRoot } from "./project-config.ts";
+import { JOURNAL_CATEGORIES } from "./workflow.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "./runtime-supervisor.ts";
 
 // Submodule imports
@@ -640,10 +641,15 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       };
       result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_checkpoint", options);
     });
-  addGlobalOptions(workflow.command("record [runId] [category] [area] [summary]").description("Record workflow journal knowledge"))
+  addGlobalOptions(workflow.command("record").description("Record workflow journal knowledge"))
+    .argument("[runId]", "Workflow run ID")
+    .argument("[category]", "Journal category (see --category)")
+    .argument("[area]", "Optional improvement area; with three positionals and no --summary, the third is the summary")
+    .argument("[summary]", "Entry summary")
     .option("--run-id <id>", "Workflow run ID")
-    .option("--category <category>", "plan, decision, contradiction, error, lesson")
-    .option("--area <area>", "harness, gates, implementation, workflow, documentation, security, other")
+    .option("--category <category>", JOURNAL_CATEGORIES.join(", "))
+    .option("--area <area>", "harness, gates, implementation, workflow, documentation, security, other (defaults to the stage area with --stage-id)")
+    .option("--stage-id <id>", "Stage the entry is about; the hub derives attempt and default area")
     .option("--severity <level>", "info, warning, error")
     .option("--summary <text>", "Entry summary")
     .option("--details <text>", "Detailed text")
@@ -651,12 +657,16 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .option("--related-entry-ids <ids...>", "Related entry IDs")
     .option("--payload <json>", "JSON payload")
     .action(async function recordAction(this: Command, runId?: string, category?: string, area?: string, summary?: string, opts?: Record<string, unknown>) {
+      // Area is optional: `record <runId> <category> <summary>` reads the third
+      // positional as the summary when neither a fourth positional nor --summary
+      // supplies one.
+      const areaIsSummary = area !== undefined && summary === undefined && opts?.summary === undefined;
       const options = {
         ...opts,
         ...(runId ? { runId } : {}),
         ...(category ? { category } : {}),
-        ...(area ? { area } : {}),
-        ...(summary ? { summary } : {}),
+        ...(area && !areaIsSummary ? { area } : {}),
+        ...(areaIsSummary ? { summary: area } : summary ? { summary } : {}),
       };
       result.code = await dispatchAgentCliCommand(runtimeFrom(ctx, this), "kxm_workflow_record", options);
     });
@@ -847,13 +857,12 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdGithubWatch(runtimeFrom(ctx, this), options);
     });
 
-  const improve = addGlobalOptions(program.command("improve").description("Propose CLI or project improvements from routing records and telemetry"));
+  const improve = addGlobalOptions(program.command("improve").description("Propose coded-repeat candidates from this project's Runtime routing records and telemetry"));
   improve.helpCommand("help", "Show improve help");
   addGlobalOptions(improve.command("report", { isDefault: true }).description("Generate improvement report and candidates from routing records"))
-    .option("--file <path>", "Telemetry JSONL file to read routing records from")
-    .option("--target <cli|project>", "Limit proposals to cli or project")
+    .option("--file <path>", "Read only this routing-record JSONL instead of the project's Runtime store and telemetry")
     .option("--out-dir <path>", "Directory for candidates (default .kxm/candidates)")
-    .action(async function improveReportAction(this: Command, options: { file?: string; target?: string; outDir?: string }) {
+    .action(async function improveReportAction(this: Command, options: { file?: string; outDir?: string }) {
       result.code = await cmdImprove(runtimeFrom(ctx, this), options);
     });
 

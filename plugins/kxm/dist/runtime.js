@@ -26548,6 +26548,13 @@ function parseRoutingRecordV2(value) {
   }
   return record2;
 }
+function computeDecayedWeight(recordedAt, halfLifeDays = 14, now = Date.now()) {
+  const ts = typeof recordedAt === "number" ? recordedAt : Date.parse(recordedAt);
+  if (!Number.isFinite(ts)) return 1;
+  const deltaMs = Math.max(0, now - ts);
+  const halfLifeMs = halfLifeDays * 24 * 60 * 60 * 1e3;
+  return Math.pow(2, -deltaMs / halfLifeMs);
+}
 
 // plugins/kxm/src/engine.ts
 var trustedProducers = /* @__PURE__ */ new WeakSet();
@@ -31120,8 +31127,11 @@ function classifyCandidateKind(stepId, agentRole) {
   }
   return "workflow-step";
 }
-function generateCandidateDiff(kind, stepId, agentRole, workflowHash) {
-  const safeSlug = stepId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "step";
+function candidateSlug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "step";
+}
+function generateCandidateDiff(kind, stepId, agentRole, workflowId) {
+  const safeSlug = candidateSlug(stepId);
   if (kind === "gate") {
     const diff2 = [
       "diff --git a/.kxm/gates.yaml b/.kxm/gates.yaml",
@@ -31169,56 +31179,96 @@ function generateCandidateDiff(kind, stepId, agentRole, workflowHash) {
       diff: diff2,
       declaredOutcome: `Governed reusable skill for ${stepId}`,
       measure: `Reduced prompt drift and consistent model guidance for ${stepId}`,
-      summary: `Promote repeated instructions for '${stepId}' (${agentRole}) to governed skill`
+      summary: `Consolidate repeated instructions for '${stepId}' (${agentRole}) into a governed skill (consolidation, not a coded step)`
     };
   }
-  const rel = `.kxm/workflows/${safeSlug}.yaml`;
+  const rel = `.kxm/workflows/${workflowId !== void 0 ? candidateSlug(workflowId) : safeSlug}.yaml`;
   const diff = [
     `diff --git a/${rel} b/${rel}`,
     `--- a/${rel}`,
     `+++ b/${rel}`,
-    "@@ -1,3 +1,6 @@",
-    " steps:",
-    `+  - id: ${stepId}`,
-    `+    kind: agent`,
-    `+    agent: ${agentRole}`,
+    "@@ -1,3 +1,3 @@",
+    `   - id: ${stepId}`,
+    "-    kind: agent",
+    `-    agent: ${agentRole}`,
+    "+    kind: gate",
+    `+    gate: ${safeSlug}`,
+    "diff --git a/.kxm/gates.yaml b/.kxm/gates.yaml",
+    "--- a/.kxm/gates.yaml",
+    "+++ b/.kxm/gates.yaml",
+    "@@ -1,2 +1,6 @@",
+    " schema: kxm.gate-registry.v1",
+    " gates:",
+    `+  ${safeSlug}:`,
+    "+    kind: command",
+    `+    argv: [node, scripts/${safeSlug}.mjs]`,
+    "+    timeoutMs: 600000",
     ""
   ].join("\n");
   return {
     diff,
-    declaredOutcome: `Dedicated workflow step with typed inputs and transitions for ${stepId}`,
-    measure: `Reduced manual coordination and faster stage transitions for ${stepId}`,
-    summary: `Automate repetitive step '${stepId}' (${agentRole}) in workflow`
+    declaredOutcome: `Coded gate replaces the model turn for ${stepId}; the operator writes scripts/${safeSlug}.mjs`,
+    measure: `Model cost and latency for ${stepId} drop to zero while its accepted rate holds`,
+    summary: `Replace the model turn for '${stepId}' (${agentRole}) with a coded gate step`
   };
+}
+function nonEmptyText(value) {
+  if (typeof value !== "string") return void 0;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : void 0;
+}
+function roundThree(value) {
+  return Number(value.toFixed(3));
 }
 function groupRoutingRecords(records, options = {}) {
   const minRecurrence = options.minRecurrence ?? 2;
   const minPassRate = options.minPassRate ?? 0.75;
+  const halfLifeDays = options.halfLifeDays ?? 14;
+  const now = options.now ?? Date.now();
+  const raws = records.map((record2) => record2);
+  const runKeys = raws.map((raw, index) => nonEmptyText(raw.runId) ?? nonEmptyText(raw.workflowRunId) ?? `record:${index}`);
+  const stepIds = raws.map((raw) => nonEmptyText(raw.stepId) ?? nonEmptyText(raw.stageId) ?? "unknown");
+  const retriesOf = (raw) => typeof raw.retries === "number" && Number.isFinite(raw.retries) ? raw.retries : 0;
+  const maxRetries = /* @__PURE__ */ new Map();
+  raws.forEach((raw, index) => {
+    const attemptKey = `${runKeys[index]}\0${stepIds[index]}`;
+    maxRetries.set(attemptKey, Math.max(maxRetries.get(attemptKey) ?? 0, retriesOf(raw)));
+  });
   const map = /* @__PURE__ */ new Map();
-  for (const r of records) {
-    const raw = r;
-    const providerMeta = raw.providerMetadata && typeof raw.providerMetadata === "object" ? raw.providerMetadata : {};
-    const workflowHash = raw.workflowDefinitionSha256 || providerMeta.workflowDefinitionSha256 || raw.workflowRunId || raw.runId || "standalone";
-    const stepId = raw.stepId || raw.stageId || "unknown";
-    const agentRole = raw.agentRole?.trim() || "agent";
-    const promptHash = raw.rolePromptSha256?.trim() || providerMeta.rolePromptSha256?.trim() || "none";
+  raws.forEach((raw, index) => {
+    const providerMeta = raw.providerMetadata && typeof raw.providerMetadata === "object" && !Array.isArray(raw.providerMetadata) ? raw.providerMetadata : {};
+    const workflowId = nonEmptyText(providerMeta.workflowId);
+    const workflowHash = workflowId ?? nonEmptyText(raw.workflowDefinitionSha256) ?? nonEmptyText(providerMeta.workflowDefinitionSha256) ?? nonEmptyText(raw.workflowRunId) ?? nonEmptyText(raw.runId) ?? "standalone";
+    const stepId = stepIds[index];
+    const agentRole = nonEmptyText(raw.agentRole) ?? "agent";
+    const promptHash = nonEmptyText(providerMeta.askSha256) ?? nonEmptyText(raw.rolePromptSha256) ?? "none";
+    const runKey = runKeys[index];
     const key = `${workflowHash}:${stepId}:${agentRole}:${promptHash}`;
     let group = map.get(key);
     if (!group) {
       group = {
+        key,
         workflowHash,
         stepId,
         agentRole,
         promptHash,
         costs: [],
         latencies: [],
-        passedCount: 0,
+        total: 0,
+        decided: 0,
+        passed: 0,
+        undecided: 0,
         reworkCount: 0,
-        evidenceRefs: /* @__PURE__ */ new Set(),
-        total: 0
+        weight: 0,
+        undated: 0,
+        writes: false,
+        decidedRuns: /* @__PURE__ */ new Set(),
+        askRuns: /* @__PURE__ */ new Map(),
+        evidenceRefs: /* @__PURE__ */ new Set()
       };
       map.set(key, group);
     }
+    if (group.workflowId === void 0 && workflowId !== void 0) group.workflowId = workflowId;
     group.total += 1;
     const cost = raw.costUsd;
     if (typeof cost === "number" && !Number.isNaN(cost) && cost >= 0) {
@@ -31230,64 +31280,107 @@ function groupRoutingRecords(records, options = {}) {
     }
     const verifierOutcome = raw.verifierOutcome;
     const finalOutcome = raw.finalOutcome;
-    if (verifierOutcome === "passed" || finalOutcome === "accepted" || finalOutcome === "completed") {
-      group.passedCount += 1;
+    const decided = verifierOutcome !== void 0 && verifierOutcome !== null || finalOutcome !== void 0 && finalOutcome !== null && finalOutcome !== "pending";
+    if (decided) {
+      group.decided += 1;
+      group.decidedRuns.add(runKey);
+      const ask = nonEmptyText(providerMeta.objectiveSha256) ?? "(unkeyed)";
+      let askRuns = group.askRuns.get(ask);
+      if (!askRuns) {
+        askRuns = /* @__PURE__ */ new Set();
+        group.askRuns.set(ask, askRuns);
+      }
+      askRuns.add(runKey);
+      const superseded = (maxRetries.get(`${runKey}\0${stepId}`) ?? 0) > retriesOf(raw);
+      if (!superseded && (verifierOutcome === "passed" || finalOutcome === "accepted" || finalOutcome === "completed")) {
+        group.passed += 1;
+      }
+    } else {
+      group.undecided += 1;
     }
     const retries = raw.retries;
     if (typeof retries === "number") {
       group.reworkCount += retries;
     }
+    const recordedAt = nonEmptyText(raw.recordedAt);
+    if (recordedAt === void 0 || !Number.isFinite(Date.parse(recordedAt))) group.undated += 1;
+    group.weight += computeDecayedWeight(recordedAt ?? "", halfLifeDays, now);
+    if (providerMeta.stepWrites === true) group.writes = true;
     const ref = raw.attemptId || raw.runId || raw.workflowRunId || raw.behavioralSha256;
     if (ref && group.evidenceRefs.size < 16) {
       group.evidenceRefs.add(ref);
     }
-  }
-  const rows = [];
+  });
+  const keyed = [];
   for (const group of map.values()) {
     const recurrence = group.total;
     const meanCost = group.costs.length > 0 ? Number((group.costs.reduce((a, b) => a + b, 0) / group.costs.length).toFixed(4)) : 0;
     const meanLatency = group.latencies.length > 0 ? Math.round(group.latencies.reduce((a, b) => a + b, 0) / group.latencies.length) : 0;
-    const verifyPassRate = recurrence > 0 ? Number((group.passedCount / recurrence).toFixed(3)) : 0;
-    const rework = group.reworkCount;
-    const isCandidate = recurrence >= minRecurrence && verifyPassRate >= minPassRate;
+    const verifyPassRate = group.decided > 0 ? roundThree(group.passed / group.decided) : 0;
+    const distinctRuns = group.decidedRuns.size;
+    const askRecurrence = Math.max(0, ...[...group.askRuns.values()].map((runs) => runs.size));
+    const passes = verifyPassRate >= minPassRate;
+    const isCandidate = askRecurrence >= minRecurrence && passes && !group.writes;
+    let excludedReason;
+    if (!isCandidate && passes) {
+      if (askRecurrence >= minRecurrence && group.writes) excludedReason = "writes-repository";
+      else if (distinctRuns >= minRecurrence && askRecurrence < minRecurrence) excludedReason = "ask-not-repeated";
+    }
     const candidateKind = isCandidate ? classifyCandidateKind(group.stepId, group.agentRole) : void 0;
     const safeSlug = group.stepId.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 16) || "step";
     const keyHash = createHash15("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
     const candidateId = isCandidate && candidateKind ? `cand_${candidateKind.replace(/-/g, "_")}_${safeSlug}_${keyHash}` : void 0;
-    rows.push({
-      workflowHash: group.workflowHash,
-      stepId: group.stepId,
-      agentRole: group.agentRole,
-      promptHash: group.promptHash,
-      recurrence,
-      meanCost,
-      meanLatency,
-      verifyPassRate,
-      rework,
-      evidenceRefs: [...group.evidenceRefs],
-      isCandidate,
-      ...candidateKind !== void 0 ? { candidateKind } : {},
-      ...candidateId !== void 0 ? { candidateId } : {}
+    keyed.push({
+      key: group.key,
+      row: {
+        workflowHash: group.workflowHash,
+        ...group.workflowId !== void 0 ? { workflowId: group.workflowId } : {},
+        stepId: group.stepId,
+        agentRole: group.agentRole,
+        promptHash: group.promptHash,
+        recurrence,
+        distinctRuns,
+        askRecurrence,
+        undecidedRecords: group.undecided,
+        meanCost,
+        meanLatency,
+        verifyPassRate,
+        rework: group.reworkCount,
+        weightedRecurrence: roundThree(group.weight),
+        undatedRecords: group.undated,
+        costSamples: group.costs.length,
+        writesRepository: group.writes,
+        evidenceRefs: [...group.evidenceRefs],
+        isCandidate,
+        ...excludedReason !== void 0 ? { excludedReason } : {},
+        ...candidateKind !== void 0 ? { candidateKind } : {},
+        ...candidateId !== void 0 ? { candidateId } : {}
+      }
     });
   }
-  return rows.sort((a, b) => {
+  return keyed.sort((left, right) => {
+    const a = left.row;
+    const b = right.row;
     if (a.isCandidate !== b.isCandidate) return a.isCandidate ? -1 : 1;
+    if (b.weightedRecurrence !== a.weightedRecurrence) return b.weightedRecurrence - a.weightedRecurrence;
     if (b.recurrence !== a.recurrence) return b.recurrence - a.recurrence;
-    return a.stepId.localeCompare(b.stepId);
-  });
+    return compareCodeUnitIds(a.stepId, b.stepId) || compareCodeUnitIds(left.key, right.key);
+  }).map((entry) => entry.row);
 }
 function buildImprovementReport(records, options = {}) {
   const projectRoot = options.projectRoot ? resolve9(options.projectRoot) : process.cwd();
   const candidatesDir = options.candidatesDir ? resolve9(options.candidatesDir) : join20(projectRoot, ".kxm", "candidates");
+  const promotionPolicy = options.promotionPolicy ?? "manual_pr";
   const groups = groupRoutingRecords(records, options);
   const candidates = [];
+  const promotion = [];
   for (const group of groups) {
     if (!group.isCandidate || !group.candidateKind || !group.candidateId) continue;
     const { diff, declaredOutcome, measure, summary } = generateCandidateDiff(
       group.candidateKind,
       group.stepId,
       group.agentRole,
-      group.workflowHash
+      group.workflowId
     );
     const diffFileName = `${group.candidateId}.diff`;
     const diffFilePath = join20(candidatesDir, diffFileName);
@@ -31321,13 +31414,26 @@ function buildImprovementReport(records, options = {}) {
     }
     candidates.push(candidate);
   }
+  const rowsByCandidate = new Map(groups.flatMap((row) => row.candidateId !== void 0 ? [[row.candidateId, row]] : []));
+  for (const candidate of candidates) {
+    const row = rowsByCandidate.get(candidate.id);
+    promotion.push({
+      candidateId: candidate.id,
+      ...evaluatePromotionPolicy(candidate, promotionPolicy, {
+        autoThreshold: options.autoThreshold,
+        ...row ? { costSamples: row.costSamples, distinctRuns: row.distinctRuns } : {}
+      })
+    });
+  }
   return {
     schema: IMPROVEMENT_REPORT_SCHEMA,
     createdAt: nowIso(),
     reviewDecision: "proposed",
     recordsCount: records.length,
     groups,
-    candidates
+    candidates,
+    promotionPolicy,
+    promotion
   };
 }
 function writeImprovementReport(improvementsDir, report, dryRun = false) {
@@ -31342,25 +31448,29 @@ function writeImprovementReport(improvementsDir, report, dryRun = false) {
 }
 function formatImprovementReport(report) {
   const lines = [
-    `Improvement Report (${report.recordsCount} record(s), ${report.groups.length} group(s), ${report.candidates.length} candidate(s))`,
+    `Improvement Report (${report.recordsCount} record(s), ${report.groups.length} group(s), ${report.candidates.length} candidate(s); promotion policy ${report.promotionPolicy})`,
     "",
-    "Workflow       Step         Role         Prompt       Recurrence  Cost ($)  Latency (ms)  Pass Rate  Rework  Candidate",
-    "-------------------------------------------------------------------------------------------------------------------------"
+    "Workflow       Step         Role         Prompt       Records  Runs  Asks  Weighted  Cost ($)  Latency (ms)  Accepted  Rework  Candidate",
+    "------------------------------------------------------------------------------------------------------------------------------------------"
   ];
   for (const g of report.groups) {
     const wf = g.workflowHash.slice(0, 12).padEnd(14);
     const step = g.stepId.slice(0, 11).padEnd(12);
     const role = g.agentRole.slice(0, 11).padEnd(12);
-    const prompt = g.promptHash.slice(0, 10).padEnd(12);
-    const rec = String(g.recurrence).padStart(10);
+    const prompt = g.promptHash.replace(/^sha256:/, "").slice(0, 10).padEnd(12);
+    const rec = String(g.recurrence).padStart(7);
+    const runs = String(g.distinctRuns).padStart(5);
+    const asks = String(g.askRecurrence).padStart(5);
+    const weighted = g.weightedRecurrence.toFixed(3).padStart(9);
     const cost = g.meanCost.toFixed(3).padStart(9);
     const lat = String(g.meanLatency).padStart(13);
-    const pass = `${(g.verifyPassRate * 100).toFixed(0)}%`.padStart(10);
+    const accepted = `${(g.verifyPassRate * 100).toFixed(0)}%`.padStart(9);
     const rework = String(g.rework).padStart(7);
-    const cand = g.isCandidate ? `yes (${g.candidateKind})` : "no";
-    lines.push(`${wf} ${step} ${role} ${prompt} ${rec} ${cost} ${lat} ${pass} ${rework}  ${cand}`);
+    const cand = g.isCandidate ? `yes (${g.candidateKind})` : g.excludedReason !== void 0 ? `no (${g.excludedReason})` : "no";
+    lines.push(`${wf} ${step} ${role} ${prompt} ${rec} ${runs} ${asks} ${weighted} ${cost} ${lat} ${accepted} ${rework}  ${cand}`);
   }
   if (report.candidates.length > 0) {
+    const readiness = new Map(report.promotion.map((entry) => [entry.candidateId, entry]));
     lines.push("");
     lines.push("Emitted Coded-Repeat Candidates:");
     for (const c of report.candidates) {
@@ -31368,47 +31478,42 @@ function formatImprovementReport(report) {
       lines.push(`    Outcome: ${c.declaredOutcome}`);
       lines.push(`    Measure: ${c.measure}`);
       lines.push(`    Proposed diff: ${c.proposedDiffPath}`);
+      const entry = readiness.get(c.id);
+      if (entry) {
+        lines.push(`    Promotion (${entry.policy}): ${entry.readyForReview ? "ready for review" : "not ready for review"}; ${entry.reason}`);
+      }
     }
+    lines.push("");
+    lines.push("Candidates are proposals: readiness never authorizes, and activation is a reviewed Git change.");
   }
   return lines.join("\n");
 }
-function evaluatePromotionPolicy(candidate, policy = "manual_pr", options) {
+function evaluatePromotionPolicy(candidate, policy = "manual_pr", options = {}) {
   if (policy === "manual_pr") {
-    return {
-      eligible: true,
-      policy,
-      authorized: false,
-      reason: "Manual PR review and signoff required by policy (fail-closed anti-privilege-escalation)"
-    };
+    return { policy, readyForReview: true, reason: `operator PR applying ${candidate.proposedDiffPath} required` };
   }
   if (policy === "critic_quorum") {
-    const approvals = options?.criticApprovals ?? [];
-    const hasQuorum = approvals.length >= 2;
-    return {
-      eligible: true,
-      policy,
-      authorized: hasQuorum,
-      reason: hasQuorum ? `Authorized by critic quorum (${approvals.join(", ")})` : `Requires dual critic quorum; current approvals: ${approvals.length}/2`
-    };
+    const receipts = new Set((options.criticReceipts ?? []).map((receipt) => receipt.trim()).filter((receipt) => receipt.length > 0));
+    return receipts.size >= 2 ? { policy, readyForReview: true, reason: "two critic receipts cited; operator PR still required" } : { policy, readyForReview: false, reason: `awaiting 2 distinct critic receipts (have ${receipts.size})` };
   }
   if (policy === "auto_threshold") {
-    const threshold = options?.autoThreshold ?? { minRuns: 10, minPassRate: 0.95 };
-    const recurrence = candidate.baselineMetrics.recurrence;
+    const minRuns = options.autoThreshold?.minRuns ?? 10;
+    const minPassRate = options.autoThreshold?.minPassRate ?? 0.95;
+    const minCostSavings = options.autoThreshold?.minCostSavings;
+    const runs = options.distinctRuns ?? candidate.baselineMetrics.recurrence;
     const passRate = candidate.baselineMetrics.verifyPassRate;
-    const meetsThreshold = recurrence >= threshold.minRuns && passRate >= threshold.minPassRate;
-    return {
-      eligible: true,
-      policy,
-      authorized: meetsThreshold,
-      reason: meetsThreshold ? `Authorized by auto-threshold (runs=${recurrence}>=${threshold.minRuns}, passRate=${passRate}>=${threshold.minPassRate})` : `Auto-threshold not met: runs=${recurrence}/${threshold.minRuns}, passRate=${passRate}/${threshold.minPassRate}`
-    };
+    const costSamples = options.costSamples ?? 0;
+    const meanCost = candidate.baselineMetrics.meanCost;
+    const costMet = minCostSavings === void 0 || costSamples > 0 && meanCost >= minCostSavings;
+    const ready = runs >= minRuns && passRate >= minPassRate && costMet;
+    const detail = [
+      `runs=${runs}/${minRuns}`,
+      `passRate=${passRate}/${minPassRate}`,
+      ...minCostSavings === void 0 ? [] : [`meanCost=${meanCost}/${minCostSavings} over ${costSamples} cost sample(s)`]
+    ].join(", ");
+    return ready ? { policy, readyForReview: true, reason: `auto-threshold met (${detail}); operator PR still required` } : { policy, readyForReview: false, reason: `auto-threshold not met (${detail})` };
   }
-  return {
-    eligible: false,
-    policy,
-    authorized: false,
-    reason: `Unknown promotion policy: ${String(policy)}`
-  };
+  return { policy, readyForReview: false, reason: "unknown promotion policy" };
 }
 
 // plugins/kxm/src/browser.ts
