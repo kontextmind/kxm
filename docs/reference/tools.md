@@ -161,7 +161,7 @@ Returns the message record with `status: "cancelled"`. Cancelling an already can
 
 Lists inbound requests that still need a reply. It takes no parameters.
 
-- **Claude Code:** returns `{ "messages": [...] }` from the session's inbox, which fills from the hub's event stream while the session is registered. Before returning, it re-reads each request and drops those already answered, cancelled or expired. This is pull mode; see [Pushed channel mode and pull mode](../../plugins/kxm/README.md#pushed-channel-mode-and-pull-mode).
+- **Claude Code:** returns `{ "messages": [...] }` from the session's inbox, which fills from the hub's event stream while the session is registered. A session that restarts under the same agent name also reads back the requests the previous session acknowledged but never answered. Before returning, it re-reads each request and drops those already answered, cancelled or expired. This is pull mode; see [Pushed channel mode and pull mode](../../plugins/kxm/README.md#pushed-channel-mode-and-pull-mode).
 - **Pi:** refuses. The extension turns each inbound request into a model turn itself, and that turn's final response is the reply, so listing would offer requests its own queue is about to activate.
 - **CLI:** `kxm peer inbox` reads the agent's open requests from the hub (`GET /v1/agents/<agentId>/inbox`), acknowledging nothing. Run it with a stable `KXM_AGENT_NAME` to see requests queued for that name while it was offline; the default `cli-<pid>` is a new agent on every call, so its list is empty.
 

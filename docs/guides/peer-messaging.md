@@ -37,7 +37,7 @@ stateDiagram-v2
 | State | Meaning |
 |---|---|
 | `queued` | Accepted and stored. Survives hub and agent restarts. The hub pushes it again each time the recipient reconnects, until the recipient acknowledges it. |
-| `delivered` | Acknowledged: by Pi when the model turn starts, by the Claude Code plugin on arrival. It is not pushed again after a reconnect. |
+| `delivered` | Acknowledged: by Pi when the model turn starts, by the Claude Code plugin on arrival. It is not pushed again after a reconnect; a Claude Code session that restarts under the same agent name reads it back from the hub. |
 | `replied`, `cancelled`, `expired` | Terminal. A later reply or cancel is refused. |
 | `error` | Declared in the protocol but never set by the hub. Treat it as reserved. |
 
@@ -288,7 +288,7 @@ Errors about `workflowContext` are covered in [Peer provenance and quorum gates]
 | Symptom | Cause | Fix |
 |---|---|---|
 | A request stays `queued` | The recipient is offline, busy with earlier work, or swapping its Pi session for a workflow run. | Check `kxm_list` and the recipient's log. Do not send a duplicate. |
-| A request stays `delivered` | The recipient's turn, tool, or provider call is still running, or a Claude Code session restarted after acknowledging it. | Wait, or cancel and send it again with a new idempotency key. |
+| A request stays `delivered` | The recipient's turn, tool, or provider call is still running, or the Claude Code session that acknowledged it came back under another agent name: `claude-<pid>` when `agent_name` is empty, or `<name>-<pid>` while the old session was still online. | Wait, or cancel and send it again with a new idempotency key. Keep the plugin's `agent_name` set, so a restarted session reads its requests back. |
 | `kxm_fanout` returns `pending` | The local wait ended before a reply. | Use the returned message IDs with `kxm_get`, or repeat the exact call. |
 | Claude Code never sees requests | Channel mode is off or blocked by policy. | Use `kxm_inbox` and `kxm_reply`. |
 | `kxm peer inbox` is always empty | `KXM_AGENT_NAME` is unset, so each call registers a new `cli-<pid>` agent that nobody has addressed. | Set `KXM_AGENT_NAME` to the name peers send to. |

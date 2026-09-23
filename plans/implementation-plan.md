@@ -497,6 +497,43 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **A restarted Claude Code session keeps the requests it acknowledged but never answered
+  (2026-09-23; found by reading the code, builds on the `kxm peer inbox` entry below).** The operator asked
+  Claude to implement this directly, so the runner path (`just assign`, `just witness`, two
+  critic PASS records, `just accept`) was not used and there is no assignment manifest,
+  witness receipt or acceptance record. The MCP server acknowledges each queued request on
+  arrival, and the ack advances the agent's consumer cursor; `flushPending` replays only
+  `seq > cursor`, and the MCP inbox is process memory. A session restarting under a durable
+  `KXM_AGENT_NAME` resumed its agent id but lost those requests from `kxm_inbox` and the
+  channel until they expired, though the hub still held them `delivered`. After it
+  registers, the server now reads its open requests with `HubClient.listInbox()`, adds each
+  `delivered` one to the inbox, reconciles the inbox (`reconcileInbox` re-reads each request
+  and drops terminal ones) and only then announces what is left, all before any tool call can
+  use the client; a failed read unregisters the candidate and fails the call (retried on the
+  next one). The reconcile keeps the seed from announcing a request cancelled or expired
+  while the list was in flight, whose event may have gone to a stream that was not connected
+  yet; an independent code-review subagent found that race. Queued requests are left to the
+  event stream, so acknowledgements stay in `seq` order. Decision: seeded requests also raise a channel event, once per process, because
+  `notifiedInbox` is per process and the server's instructions treat `kxm_inbox` as the
+  fallback when channels are off, so a pull-only seed would leave a channel session unaware
+  of them. `deliverInboxNotification` now claims the id before sending (and releases it on
+  failure), so the seed and the stream cannot both announce one request. The event handler
+  takes its client as an argument instead of reading `meshClient`, which is set only once
+  the seed is done. Reconcile semantics are unchanged: `kxm_inbox` still reconciles the
+  process inbox and does not re-read the hub. An in-process re-registration
+  (`recoverRegistration`) is not reseeded, because the inbox survives it. A restart that
+  lands on another name (`claude-<pid>`, or `<name>-<pid>` while the old session is still
+  online) still cannot see the old agent's requests (documented in peer messaging
+  troubleshooting). Against a hub without the inbox route every MCP tool call now fails
+  closed with `route_not_found`, not only `kxm peer inbox`. Gate: `npm run verify`, green
+  (1294 tests, 1288 pass, 0 fail, 6 skipped, on main after #307), no new npm script or CI job. Named tests, each failing with
+  its fix reverted: `MCP inbox keeps an acknowledged, unanswered request across a restart
+  under a durable agent name` (`test/core/mcp.test.ts`; it read `{"messages":[]}`), `MCP
+  restart does not announce a request cancelled while its inbox read was in flight`
+  (`test/core/mcp.test.ts`; it holds the hub's inbox response until the sender cancels) and
+  `concurrent MCP inbox notifications for one message announce it once`
+  (`test/core/inbox.test.ts`).
+
 - **`kxm role resume` routes by Runtime ownership, not run-id shape (2026-09-23; Still open
   item (b) of the docs-audit follow-ups, after the #304 entry below).** Inside a KXM
   project `cmdRoleResume` still sent every `run_` + 32-hex id to the Runtime, so a hub

@@ -90,7 +90,7 @@ stateDiagram-v2
 
 - The sender gets the message ID at once. The recipient may reply straight from `queued` without acknowledging first.
 - `error` is declared in the protocol, but the hub never sets it. Treat it as reserved.
-- Open messages survive a hub restart. When an agent reconnects under the same project and name, the hub rotates its key and pushes every `queued` message again with its original ID. A `delivered` message is not pushed again; it stays open until a reply, cancellation, or expiry. Clients suppress a second turn for an ID they already handle.
+- Open messages survive a hub restart. When an agent reconnects under the same project and name, the hub rotates its key and pushes every `queued` message again with its original ID. A `delivered` message is not pushed again; it stays open until a reply, cancellation, or expiry. The Claude Code MCP server reads its agent's `delivered` messages back from the hub when it registers, so a session restarted under the same name still lists and announces them. Clients suppress a second turn for an ID they already handle.
 - An idempotency key deduplicates an exact retry by the same sender. It does not stop the recipient from repeating a side effect, so handlers must be safe to repeat.
 - The default TTL is 24 hours (at most 7 days). Terminal messages are purged after the retention window, 7 days by default.
 - If a workflow coordinator's prompt expires before its run finishes, the run fails.
