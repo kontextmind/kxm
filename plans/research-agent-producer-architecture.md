@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-15"
+updated: "2026-09-23"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Open research on agent/producer/harness/writer boundaries; not an execution tracker."
@@ -15,8 +15,10 @@ tags: ["research", "producers"]
 related:
   - research-kxm-harness-strategy.md
   - implementation-plan.md
+  - plan-unified-kxm-milestones.md
   - plan-additional-providers-agy-kimi.md
   - plan-ssh-remote-execution.md
+  - research-a2a-cross-host.md
 depends_on: []
 blocked_by: []
 details:
@@ -30,10 +32,14 @@ Task: `task_f2d22a9993e4`
 Tracking: [`implementation-plan.md`](implementation-plan.md)
 
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
+[`plan-unified-kxm-milestones.md`](plan-unified-kxm-milestones.md)
+(proposed shared-capability scope);
 [`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md)
 (native harness and explicitly hosted provider routes);
 [`plan-ssh-remote-execution.md`](plan-ssh-remote-execution.md)
-(multi-host / SSH-connected agents).
+(multi-host / SSH-connected agents);
+[`research-a2a-cross-host.md`](research-a2a-cross-host.md)
+(cross-host / A2A research).
 
 ## Objective
 
