@@ -324,26 +324,35 @@ export function deriveKxmSyncEvent(event: KxmRunEvent, options: KxmSyncTransform
     // string and text() returned undefined) must be restored with a valid
     // placeholder, not left absent — the schema requires it and a missing
     // field aborts the caller's transaction with sync_event_invalid.
-    if (builder.payload[key] === undefined) {
+    const value = builder.payload[key];
+    // A scrubbed-required field that was removed entirely (text() returned
+    // undefined) or is empty/whitespace must be restored with a valid
+    // placeholder. For nested objects, MERGE the surviving fields from the
+    // builder with [redacted] for any field the original had that scrubbing
+    // removed — not just the top level.
+    const restoreNested = (built: unknown, orig: unknown): unknown => {
+      if (!isRecord(orig)) return built !== undefined ? built : "[redacted]";
+      const result: Picked = {};
+      const builtRecord = isRecord(built) ? built : {};
+      for (const [k, v] of Object.entries(orig)) {
+        const builtValue = builtRecord[k];
+        if (builtValue === undefined || (typeof builtValue === "string" && builtValue.trim().length === 0)) {
+          result[k] = isRecord(v) ? restoreNested(undefined, v) : "[redacted]";
+        } else {
+          result[k] = builtValue;
+        }
+      }
+      return result;
+    };
+    if (value === undefined) {
       const sourceValue = source[key];
       if (sourceValue !== undefined) {
-        degradedPayload[key] = isRecord(sourceValue) ? { id: "[redacted]" } : "[redacted]";
+        degradedPayload[key] = restoreNested(undefined, sourceValue);
       }
-      continue;
-    }
-    const value = builder.payload[key];
-    // A scrubbed-required field that is now empty or whitespace-only must carry
-    // a valid placeholder, not an invalid empty string that fails schema
-    // validation and aborts the caller's transaction.
-    if (typeof value === "string" && value.trim().length === 0) {
+    } else if (typeof value === "string" && value.trim().length === 0) {
       degradedPayload[key] = "[redacted]";
     } else if (isRecord(value)) {
-      const patched: Picked = {};
-      for (const [k, v] of Object.entries(value)) {
-        if (typeof v === "string" && v.trim().length === 0) patched[k] = "[redacted]";
-        else patched[k] = v;
-      }
-      degradedPayload[key] = patched;
+      degradedPayload[key] = restoreNested(value, source[key]);
     } else {
       degradedPayload[key] = value;
     }

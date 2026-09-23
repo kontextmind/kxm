@@ -17756,23 +17756,30 @@ function deriveKxmSyncEvent(event, options = {}) {
   if (syncEventSchemaErrors(full) === void 0) return full;
   const degradedPayload = { degraded: true };
   for (const key of CONTROL_FIELDS) {
-    if (builder.payload[key] === void 0) {
+    const value = builder.payload[key];
+    const restoreNested = (built, orig) => {
+      if (!isRecord(orig)) return built !== void 0 ? built : "[redacted]";
+      const result = {};
+      const builtRecord = isRecord(built) ? built : {};
+      for (const [k, v] of Object.entries(orig)) {
+        const builtValue = builtRecord[k];
+        if (builtValue === void 0 || typeof builtValue === "string" && builtValue.trim().length === 0) {
+          result[k] = isRecord(v) ? restoreNested(void 0, v) : "[redacted]";
+        } else {
+          result[k] = builtValue;
+        }
+      }
+      return result;
+    };
+    if (value === void 0) {
       const sourceValue = source[key];
       if (sourceValue !== void 0) {
-        degradedPayload[key] = isRecord(sourceValue) ? { id: "[redacted]" } : "[redacted]";
+        degradedPayload[key] = restoreNested(void 0, sourceValue);
       }
-      continue;
-    }
-    const value = builder.payload[key];
-    if (typeof value === "string" && value.trim().length === 0) {
+    } else if (typeof value === "string" && value.trim().length === 0) {
       degradedPayload[key] = "[redacted]";
     } else if (isRecord(value)) {
-      const patched = {};
-      for (const [k, v] of Object.entries(value)) {
-        if (typeof v === "string" && v.trim().length === 0) patched[k] = "[redacted]";
-        else patched[k] = v;
-      }
-      degradedPayload[key] = patched;
+      degradedPayload[key] = restoreNested(value, source[key]);
     } else {
       degradedPayload[key] = value;
     }
@@ -27807,6 +27814,16 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
   const contexts = /* @__PURE__ */ new Map();
+  const registerSyncCredentials = (context) => {
+    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    if (hubToken) context.eventStore.syncRedactor.register(hubToken);
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY")) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
+        const value = process.env[key]?.trim();
+        if (value) context.eventStore.syncRedactor.register(value);
+      }
+    }
+  };
   const contextFor = (projectRoot) => {
     if (!isAbsolute6(projectRoot)) {
       throw runtimeError("runtime_request_invalid", "projectRoot", "projectRoot must be an absolute path");
@@ -27815,6 +27832,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
     const existing = contexts.get(key);
     if (existing) return existing;
     const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot });
+    registerSyncCredentials(context);
     contexts.set(key, context);
     return context;
   };
@@ -28158,14 +28176,6 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now) {
     syncing = true;
     void (async () => {
       for (const context of [...contexts.values()]) {
-        const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
-        if (hubToken) context.eventStore.syncRedactor.register(hubToken);
-        for (const key of Object.keys(process.env)) {
-          if (key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY")) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
-            const value = process.env[key]?.trim();
-            if (value) context.eventStore.syncRedactor.register(value);
-          }
-        }
         try {
           const client = runtimeHubClientFor(context, process.env);
           if (!client) continue;

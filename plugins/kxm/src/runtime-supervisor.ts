@@ -490,6 +490,21 @@ async function startKxmRuntimeSupervisorInner(
   let activeRuntimeId = runtimeId;
 
   const contexts = new Map<string, KxmRuntimeContext>();
+  const registerSyncCredentials = (context: KxmRuntimeContext): void => {
+    // Register credentials on the store's redactor at context creation —
+    // BEFORE any event can be appended — so the very first outbox row is
+    // already scrubbed. Registering on the sync tick leaves a window where
+    // appended events retain credentials.
+    const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
+    if (hubToken) context.eventStore.syncRedactor.register(hubToken);
+    for (const key of Object.keys(process.env)) {
+      if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
+        const value = process.env[key]?.trim();
+        if (value) context.eventStore.syncRedactor.register(value);
+      }
+    }
+  };
+
   const contextFor = (projectRoot: string): KxmRuntimeContext => {
     if (!isAbsolute(projectRoot)) {
       throw runtimeError("runtime_request_invalid", "projectRoot", "projectRoot must be an absolute path");
@@ -498,6 +513,7 @@ async function startKxmRuntimeSupervisorInner(
     const existing = contexts.get(key);
     if (existing) return existing;
     const context = openKxmRuntimeContext(projectRoot, { homeRuntimeId: activeRuntimeId, stateRoot: paths.stateRoot });
+    registerSyncCredentials(context);
     contexts.set(key, context);
     return context;
   };
@@ -893,18 +909,7 @@ async function startKxmRuntimeSupervisorInner(
     syncing = true;
     void (async () => {
       for (const context of [...contexts.values()]) {
-        // Production redactor registration: known credentials are registered
-        // on the event STORE's redactor — the one deriveKxmSyncEvent actually
-        // uses — so values matching none of the built-in credential shapes are
-        // scrubbed from outbound sync events before the outbox row is written.
-        const hubToken = resolveClientHubAuthToken(process.env, defaultProjectName(context.projectRoot, process.env));
-        if (hubToken) context.eventStore.syncRedactor.register(hubToken);
-        for (const key of Object.keys(process.env)) {
-          if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
-            const value = process.env[key]?.trim();
-            if (value) context.eventStore.syncRedactor.register(value);
-          }
-        }
+
         try {
           const client = runtimeHubClientFor(context, process.env);
           if (!client) continue;
