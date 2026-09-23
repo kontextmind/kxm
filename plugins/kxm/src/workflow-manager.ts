@@ -235,11 +235,11 @@ export function listWorkflowDefinitions(options: {
   const localDefs = new Map<string, { def: Record<string, unknown>; filePath: string }>();
   if (scopeFilter !== "global" && existsSync(localDir)) {
     for (const entry of readdirSync(localDir)) {
-      if (entry.endsWith(".yaml") && kxmResourceIdentifier(entry.slice(0, -5))) {
+      const id = entry.endsWith(".yaml") ? entry.slice(0, -5) : entry.endsWith(".yml") ? entry.slice(0, -4) : undefined;
+      if (id && kxmResourceIdentifier(id)) {
         const filePath = join(localDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
-          const id = entry.slice(0, -5);
           localDefs.set(id, { def, filePath });
         }
       }
@@ -249,11 +249,11 @@ export function listWorkflowDefinitions(options: {
   const globalDefs = new Map<string, { def: Record<string, unknown>; filePath: string }>();
   if (scopeFilter !== "local" && existsSync(globalDir)) {
     for (const entry of readdirSync(globalDir)) {
-      if (entry.endsWith(".yaml") && kxmResourceIdentifier(entry.slice(0, -5))) {
+      const id = entry.endsWith(".yaml") ? entry.slice(0, -5) : entry.endsWith(".yml") ? entry.slice(0, -4) : undefined;
+      if (id && kxmResourceIdentifier(id)) {
         const filePath = join(globalDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
-          const id = entry.slice(0, -5);
           globalDefs.set(id, { def, filePath });
         }
       }

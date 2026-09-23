@@ -40,7 +40,8 @@ In an interactive terminal, `kxm init` then offers shell completion and workflow
 > If your tests do not run with `npm test`, change `gates.test.argv` in `.kxm/gates.yaml` now, before you commit.
 >
 > The starter settings are not repository detection. For a Claude project, set
-> `defaultHarness: claude` in `.kxm/project.yaml` and configure compatible agent models;
+> `defaultHarness: claude` in `.kxm/project.yaml`, update any explicit `harness` overrides
+> in `.kxm/agents/*.yaml`, and configure compatible agent models;
 > `kxm harness list` reports that project default. Claude's Runtime one-shot profile is
 > read-only: a Claude-only bug-fix suggestion or incompatible `task run`
 > refuses with prerequisites rather than substituting another writer. Implement

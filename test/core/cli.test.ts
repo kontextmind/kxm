@@ -12,7 +12,7 @@ import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
 import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import { createTask, getTask, taskFilePath } from "../../plugins/kxm/src/task-manager.ts";
 import { createTestMesh } from "../helpers.ts";
 
@@ -833,6 +833,12 @@ test("task run refuses unavailable live work before mutation and honors an execu
     initializeKxmProject(cwd, { projectId: "prj_01JTASKRUN0000000000000", projectName: "Task route" });
     const projectFile = join(cwd, ".kxm", "project.yaml");
     writeFileSync(projectFile, readFileSync(projectFile, "utf8").replace("defaultHarness: pi", "defaultHarness: claude"));
+    for (const agentId of ["coordinator", "implementer"]) {
+      const agentPath = join(cwd, ".kxm", "agents", `${agentId}.yaml`);
+      const agent = parse(readFileSync(agentPath, "utf8"));
+      delete agent.harness;
+      writeFileSync(agentPath, stringify(agent));
+    }
     const task = createTask(cwd, { title: "Inspect the bug", objective: "Inspect the bug without changing files" });
     const taskBefore = readFileSync(taskFilePath(cwd, task.id), "utf8");
     const env = { KXM_STATE_HOME: stateRoot };

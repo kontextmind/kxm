@@ -118,7 +118,7 @@ export async function cmdKxmInit(
     const starterGuidance = initialized.action === "created" || (initialized.action === "planned" && initialized.plan.mode === "create")
       ? [
           "defaultHarness: pi and the npm test gate are generic starter settings, not repository detection.",
-          "For Claude, set defaultHarness: claude in .kxm/project.yaml and configure compatible agent models.",
+          "For Claude, set defaultHarness: claude in .kxm/project.yaml, update any explicit harness overrides in .kxm/agents/*.yaml, and configure compatible agent models.",
           "For .NET or other non-npm repositories, set gates.test.argv in .kxm/gates.yaml to the repository's actual test runner before driving a workflow.",
         ]
       : [];

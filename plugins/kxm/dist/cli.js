@@ -30076,11 +30076,11 @@ function listWorkflowDefinitions(options = {}) {
   const localDefs = /* @__PURE__ */ new Map();
   if (scopeFilter !== "global" && existsSync21(localDir)) {
     for (const entry of readdirSync7(localDir)) {
-      if (entry.endsWith(".yaml") && kxmResourceIdentifier(entry.slice(0, -5))) {
+      const id = entry.endsWith(".yaml") ? entry.slice(0, -5) : entry.endsWith(".yml") ? entry.slice(0, -4) : void 0;
+      if (id && kxmResourceIdentifier(id)) {
         const filePath = join22(localDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
-          const id = entry.slice(0, -5);
           localDefs.set(id, { def, filePath });
         }
       }
@@ -30089,11 +30089,11 @@ function listWorkflowDefinitions(options = {}) {
   const globalDefs = /* @__PURE__ */ new Map();
   if (scopeFilter !== "local" && existsSync21(globalDir)) {
     for (const entry of readdirSync7(globalDir)) {
-      if (entry.endsWith(".yaml") && kxmResourceIdentifier(entry.slice(0, -5))) {
+      const id = entry.endsWith(".yaml") ? entry.slice(0, -5) : entry.endsWith(".yml") ? entry.slice(0, -4) : void 0;
+      if (id && kxmResourceIdentifier(id)) {
         const filePath = join22(globalDir, entry);
         const def = parseWorkflowFile(filePath);
         if (def) {
-          const id = entry.slice(0, -5);
           globalDefs.set(id, { def, filePath });
         }
       }
@@ -34148,7 +34148,7 @@ async function cmdKxmInit(runtime, options, postHooks) {
     });
     const starterGuidance = initialized.action === "created" || initialized.action === "planned" && initialized.plan.mode === "create" ? [
       "defaultHarness: pi and the npm test gate are generic starter settings, not repository detection.",
-      "For Claude, set defaultHarness: claude in .kxm/project.yaml and configure compatible agent models.",
+      "For Claude, set defaultHarness: claude in .kxm/project.yaml, update any explicit harness overrides in .kxm/agents/*.yaml, and configure compatible agent models.",
       "For .NET or other non-npm repositories, set gates.test.argv in .kxm/gates.yaml to the repository's actual test runner before driving a workflow."
     ] : [];
     const payload = {
