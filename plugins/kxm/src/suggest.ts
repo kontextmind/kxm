@@ -17,7 +17,7 @@ export type SuggestionExecution = {
   receiptCommand: string;
 } | {
   supported: false;
-  error: "harness_unavailable" | "live_write_unsupported";
+  error: "harness_unavailable" | "live_write_unsupported" | "workflow_already_exists";
   reason: string;
   nextSteps: string[];
 };
@@ -180,14 +180,16 @@ export function suggestWorkflowAndRoles(
     else roles.push({ agent: step.agent, harness: selected.id, role: step.id });
   }
   const shell = process.platform === "win32" ? "powershell" : "posix";
-  const quotedPrompt = `'${prompt.replace(/'/g, shell === "powershell" ? "''" : "'\\''")}'`;
+  const quotedPrompt = shell === "powershell"
+    ? `'${prompt.replace(/['\u2018-\u201b]/g, "$&$&")}'`
+    : `'${prompt.replace(/'/g, "'\\''")}'`;
   return {
     ...base,
     roles,
     execution: {
       supported: true,
       prerequisites: [
-        "Run kxm init in the target repository if it is not already a KXM project; install the suggested definition only if its flat ID is not already present.",
+        "Run kxm init in the target repository if needed, then install the exact template with the suggested command. If that workflow ID already exists, stop and review it; the commands below apply only to a newly installed template, not an existing definition with potentially different agents or permissions.",
         ...roles.map((role) => `Set harness: ${role.harness} in .kxm/agents/${role.agent}.yaml and select an admitted, authenticated model compatible with that harness; the recommendation does not change agent routing or models.`),
         `Validate the installed workflow with kxm gate validate --file .kxm/workflows/${bestPattern.id}.yaml and the project configuration with kxm init --dry-run before creating a run.`,
       ],

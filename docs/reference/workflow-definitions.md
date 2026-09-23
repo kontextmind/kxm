@@ -1,6 +1,6 @@
 # Workflow definition reference
 
-KXM has two kinds of workflow definition. A **webhook workflow definition** is JSON that the [hub](../glossary.md#hub) loads; a signed webhook starts a run, and one coordinator agent works through its ordered **stages**. A **Runtime workflow** is a `kxm.workflow.v1` YAML file in your project; `kxm run` starts it, and the local Runtime executes its **steps**. This page compares the two, documents every field of the JSON format, and summarizes the YAML format with links to its full reference.
+KXM has two kinds of workflow definition. A **webhook workflow definition** is JSON that the [hub](../glossary.md#hub) loads; a signed webhook starts a run, and one coordinator agent works through its ordered **stages**. A **Runtime workflow** is a `kxm.workflow.v1` YAML file in your project; `kxm run` creates a run, and `kxm runs drive` executes supported **steps**. This page compares the two, documents every field of the JSON format, and summarizes the YAML format with links to its full reference.
 
 ## Two workflow systems
 
@@ -10,12 +10,12 @@ KXM has two kinds of workflow definition. A **webhook workflow definition** is J
 | Location | Any JSON file named by `KXM_WEBHOOK_WORKFLOWS_FILE`, or inline in `KXM_WEBHOOK_WORKFLOWS` | `.kxm/workflows/<id>.yaml`, tracked in Git |
 | Loaded by | The hub, once at start | Every project load (`kxm init`, `kxm run`) |
 | Units | Stages, in order | Steps, connected by typed transitions |
-| Started by | A signed `POST /v1/webhooks/<id>`, or `kxm workflow start` | `kxm run <workflow> [prompt]` |
+| Started by | A signed `POST /v1/webhooks/<id>`, or `kxm workflow start` | Create with `kxm run <workflow> [prompt]`, execute with `kxm runs drive <runId> --wait` |
 | Who does the work | One coordinator agent, prompted with every stage, using the [workflow tools](tools.md#workflow-tools) | The Runtime: agent steps through a model producer, gate steps by running `.kxm/gates.yaml` commands |
 | Evidence | Keyed strings plus verified peer replies | Gate evidence the Runtime records itself |
 | External results | `kxm_workflow_wait`, then a signed signal | Recovery signals only; `wait` steps compile but are not matched yet |
 | Inspect with | `kxm_workflow_get`, `kxm workflow get`, `kxm dash` | `kxm runs status`, `kxm runs list` |
-| Validate with | `kxm gate validate` | `kxm init --dry-run`, `kxm run --dry-run` |
+| Validate with | `kxm gate validate` | `kxm gate validate --file <yaml>` (schema/transitions), `kxm init --dry-run` (project references), `kxm run --dry-run` (run prerequisites) |
 
 Both kinds of run have IDs of the form `run_<32 hex>`. The journal, checkpoints and waits belong to webhook runs only.
 
@@ -274,7 +274,7 @@ A Runtime workflow is a YAML file whose name is its ID. The [configuration file 
 | Agent steps | The model returns a JSON `outcome` from the step's declared keys; anything else becomes `failed`, so declare `failed` | [Transitions and outcomes](config-reference.md#transitions-and-outcomes) |
 | Not executed yet | Some valid fields make the Runtime hand the run off (`step_unsupported`, `gate_unsupported`, `limit_unsupported`) instead of executing | [Steps the Runtime does not execute yet](config-reference.md#steps-the-runtime-does-not-execute-yet) |
 
-`kxm workflow add --template <name>` writes a valid starting file from a built-in template (`implement-and-verify`, `dual-critic-review` or `spec-and-plan`). `kxm run <workflow>` creates a run and prints the commands that drive it with the model-free simulation (`kxm runs drive <runId> --simulated --wait`) or cancel it. See [`kxm run`](cli-reference.md#kxm-run) and [`kxm runs`](cli-reference.md#kxm-runs).
+`kxm workflow add bug-fix --template implement-and-verify` writes a valid starting file; `dual-critic-review` and `spec-and-plan` are also available. IDs are flat filename-derived slugs, not catalog paths such as `software-engineering/bug-fix`. Installation validates YAML/schema/transitions before writing, including under `--dry-run`. `kxm run <workflow>` creates a run and reports live prerequisites and separate `runs drive/status/receipt` commands. Current live one-shot profiles are read-only, so a writer template can validate but cannot execute live; `task run` refuses incompatible work before creating a run or changing the task. Simulation remains explicitly available and is not proof of implementation. See [`kxm run`](cli-reference.md#kxm-run) and [`kxm runs`](cli-reference.md#kxm-runs).
 
 ## Related
 

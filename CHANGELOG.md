@@ -6,6 +6,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Claude-only workflow recommendations now fail honestly when execution is unavailable.**
+  `suggest` honors explicit harness constraints, uses flat installable IDs and verified
+  read-only routes, refuses unchecked existing definitions, and never substitutes a
+  different writer. `workflow add` validates IDs and runner-compatible YAML before
+  writing; picked/imported dry runs leave configuration untouched. `gate validate
+  --file` accepts local YAML without changing webhook environment-source validation.
+  Run output distinguishes creation from execution and names live prerequisites and
+  `runs drive/status/receipt`; incompatible `task run` requests leave tasks unchanged.
+  Harness inventory reflects the project default, and initialization explains the
+  generic Pi/npm starter settings. Live writers remain unsupported by the read-only
+  one-shot profiles. See the [CLI reference](docs/reference/cli-reference.md#kxm-suggest).
+
 - **`kxm workflow add --template <name>` writes a valid first workflow.**
   `implement-and-verify` (the `implementer` agent, then the project's `test` gate; a
   failing gate sends the work back to `implement` at most twice), `dual-critic-review` (two

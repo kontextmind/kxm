@@ -15978,7 +15978,7 @@ function probeEntry(entry, runCommand, timeoutMs, platform, probe = {}) {
   return {
     id: entry.id,
     label: entry.label,
-    default: entry.default,
+    default: entry.id === (probe.defaultHarness ?? DEFAULT_HARNESS),
     mode: entry.mode,
     detected,
     authenticated,
@@ -15999,7 +15999,7 @@ function probeHarnesses(options = {}) {
   const runCommand = options.runCommand ?? defaultRunner(options.env ?? process.env);
   const platform = options.platform ?? process.platform;
   return {
-    defaultHarness: DEFAULT_HARNESS,
+    defaultHarness: options.defaultHarness ?? DEFAULT_HARNESS,
     harnesses: BUILTIN_HARNESSES.map((entry) => probeEntry(entry, runCommand, timeoutMs, platform, options))
   };
 }
@@ -16410,7 +16410,7 @@ function formatHarnessInventory(inventory) {
     ].join(" ");
   });
   return [
-    `default harness: ${inventory.defaultHarness} (omit agent harness: to use headless Pi)`,
+    `default harness: ${inventory.defaultHarness} (used when an agent omits harness:)`,
     "enable/disable = Git YAML (.kxm/agents, .kxm/models) or the harness's own plugin CLI",
     "governed kxm skills are not auto-updated",
     header,
@@ -28613,7 +28613,7 @@ function unsupportedStep(plan, step, producerId) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: "live write steps are unsupported until writer sandboxing witness passes"
+      detail: "live write steps are unsupported: the Runtime one-shot harness is read-only; run implementation directly in the selected harness (not --simulated), or choose a genuinely read-only workflow"
     };
   }
   return void 0;

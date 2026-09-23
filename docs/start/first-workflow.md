@@ -153,12 +153,16 @@ The hash is the project's configuration revision, the same one `kxm trust diff` 
 kxm run first "Plan a hello script"
 ```
 
-Expected output:
+Creation output includes:
 
 ```text
 run created: run_<id> (home rtm_<id>…, config sha256:<revision>…)
-drive it model-free: kxm runs drive run_<id> --simulated --wait (or cancel: kxm runs cancel run_<id>)
+No steps executed. Project default harness: pi; per-agent harness settings take precedence.
 ```
+
+The remaining output lists live prerequisites and the commands for `runs drive`,
+`runs status`, and `runs receipt`. A created run is not an executed workflow;
+the deliberate simulation below does not require a live authenticated model.
 
 `kxm run` starts the Runtime supervisor if it is not running. Check the new run, using the run ID from the output:
 

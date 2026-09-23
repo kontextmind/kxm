@@ -15976,7 +15976,7 @@ function probeEntry(entry, runCommand, timeoutMs, platform, probe = {}) {
   return {
     id: entry.id,
     label: entry.label,
-    default: entry.default,
+    default: entry.id === (probe.defaultHarness ?? DEFAULT_HARNESS),
     mode: entry.mode,
     detected,
     authenticated,
@@ -28056,7 +28056,7 @@ function unsupportedStep(plan, step, producerId) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: "live write steps are unsupported until writer sandboxing witness passes"
+      detail: "live write steps are unsupported: the Runtime one-shot harness is read-only; run implementation directly in the selected harness (not --simulated), or choose a genuinely read-only workflow"
     };
   }
   return void 0;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -56,6 +57,24 @@ test("suggest uses the probed Claude route exclusively for supported read-only w
   }
 });
 
+test("suggested creation command passes shell metacharacters and smart quotes as one literal prompt", () => {
+  const prompt = "Investigate an architecture spike using Claude only '‘’‚‛; echo INJECTED; # $HOME $(echo expanded) `echo expanded`\nnext line";
+  const suggestion = suggestWorkflowAndRoles(prompt, { availableHarnesses: inventory().harnesses });
+  if (!suggestion.execution.supported) assert.fail(suggestion.execution.reason);
+  const script = process.platform === "win32"
+    ? `$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); function kxm { ConvertTo-Json -Compress -InputObject @($args) }; ${suggestion.execution.createCommand}`
+    : `kxm() { printf '%s' "$4"; }; ${suggestion.execution.createCommand}`;
+  const result = process.platform === "win32"
+    ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")], { encoding: "utf8" })
+    : spawnSync("/bin/sh", ["-c", script], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  if (process.platform === "win32") {
+    assert.deepEqual(JSON.parse(result.stdout), ["run", suggestion.workflowId, prompt]);
+  } else {
+    assert.equal(result.stdout, prompt);
+  }
+});
+
 test("suggest refuses an unavailable required Claude harness instead of silently substituting Codex", () => {
   const availableHarnesses = inventory(false).harnesses;
   const constrained = suggestWorkflowAndRoles("Investigate an architecture spike using Claude only", { availableHarnesses });
@@ -69,6 +88,25 @@ test("suggest refuses an unavailable required Claude harness instead of silently
   const unconstrained = suggestWorkflowAndRoles("Investigate an architecture spike", { availableHarnesses });
   assert.equal(unconstrained.execution.supported, true);
   assert.deepEqual(unconstrained.roles.map((role) => role.harness), ["codex"]);
+});
+
+test("suggest refuses to drive an existing workflow whose routing has not been checked", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-suggest-existing-"));
+  try {
+    const file = join(root, ".kxm", "workflows", "architecture-spike.yml");
+    mkdirSync(join(root, ".kxm", "workflows"), { recursive: true });
+    const existing = "schema: kxm.workflow.v1\nsteps:\n  - id: inspect\n    kind: agent\n    agent: codex-reviewer\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n";
+    writeFileSync(file, existing);
+    const captured = captureRuntime(root);
+    assert.equal(await cmdSuggest(captured.runtime, ["Investigate an architecture spike using Claude only"], async () => inventory()), 1);
+    const result = JSON.parse(captured.read().stderr);
+    assert.equal(result.error, "workflow_already_exists");
+    assert.deepEqual(result.roles, []);
+    assert.equal("createCommand" in result.execution, false);
+    assert.equal(readFileSync(file, "utf8"), existing);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("suggest never treats missing, empty, unknown-auth, absent, or blocked inventory as universal availability", () => {

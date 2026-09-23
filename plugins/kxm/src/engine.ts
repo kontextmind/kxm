@@ -2694,7 +2694,7 @@ export function kxmLiveRunPrerequisites(
       if (transition.to === "step") pending.push(transition.target);
     }
     const unsupported = step.kind === "gate"
-      ? unsupportedGateStep(plan, step, envelope, { projectRoot })
+      ? unsupportedGateStep(plan, step, envelope, { projectRoot }) ?? starterGatePrerequisite(step, envelope.gates, projectRoot)
       : unsupportedStep(plan, step, "oneshot");
     if (unsupported) {
       prerequisites.push({ ...unsupported, stepId });
@@ -2721,6 +2721,23 @@ export function kxmLiveRunPrerequisites(
     }
   }
   return prerequisites;
+}
+
+function starterGatePrerequisite(step: KxmCompiledStep & { kind: "gate" }, gates: KxmPinnedGates, projectRoot: string): Omit<KxmRunHandoff, "stepId"> | undefined {
+  const definition = gates.definitions[step.gate];
+  if (!definition || definition.kind !== "command" || definition.argv.length !== 2 || definition.argv[0] !== "npm" || definition.argv[1] !== "test") return undefined;
+  let testScript: unknown;
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8"));
+    if (manifest && typeof manifest === "object" && "scripts" in manifest) {
+      const scripts = manifest.scripts;
+      if (scripts && typeof scripts === "object" && "test" in scripts) testScript = scripts.test;
+    }
+  } catch { /* A missing or unreadable manifest cannot satisfy the starter gate. */ }
+  if (typeof testScript !== "string" || testScript.trim().length === 0) {
+    return { reason: "gate_unsupported", field: `gates.${step.gate}.argv`, detail: `gate ${step.gate} runs npm test but this repository has no readable package.json with scripts.test; configure .kxm/gates.yaml gates.${step.gate}.argv for the repository's actual test runner before driving this workflow` };
+  }
+  return undefined;
 }
 
 function unsupportedLimit(envelope: Pick<KxmRunPlanEnvelope, "plan" | "projectLimits">): KxmRunHandoff | undefined {
@@ -2923,19 +2940,6 @@ function unsupportedGateStep(plan: KxmCompiledPlan, step: KxmCompiledStep & { ki
     return { reason: "step_unsupported", field: "expect", detail: "artifacts-exist gates cannot expect fail" };
   }
 
-  if (context && definition.kind === "command" && definition.argv.length === 2 && definition.argv[0] === "npm" && definition.argv[1] === "test") {
-    let testScript: unknown;
-    try {
-      const manifest: unknown = JSON.parse(readFileSync(join(context.projectRoot, "package.json"), "utf8"));
-      if (manifest && typeof manifest === "object" && "scripts" in manifest) {
-        const scripts = manifest.scripts;
-        if (scripts && typeof scripts === "object" && "test" in scripts) testScript = scripts.test;
-      }
-    } catch { /* A missing or unreadable manifest cannot satisfy the starter gate. */ }
-    if (typeof testScript !== "string" || testScript.trim().length === 0) {
-      return { reason: "gate_unsupported", field: `gates.${step.gate}.argv`, detail: `gate ${step.gate} runs npm test but this repository has no readable package.json with scripts.test; configure .kxm/gates.yaml gates.${step.gate}.argv for the repository's actual test runner before driving this workflow` };
-    }
-  }
   return undefined;
 }
 

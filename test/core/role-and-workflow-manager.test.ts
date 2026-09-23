@@ -591,6 +591,13 @@ test("workflow add picks the global definition instead of substituting the defau
       }
       assert.equal(readFileSync(installed.filePath, "utf8"), original);
     }
+    let error = "";
+    assert.equal(await runCliImpl(["workflow", "add", "local-review", "--pick", "global-review", "--description", "Custom"], env, {
+      stdout: () => {},
+      stderr: (text) => { error += text; },
+    }, root), 0, error);
+    assert.deepEqual(getWorkflowDefinition("local-review", { scope: "local", repoRoot: root })?.workflow, { ...source, description: "Custom" });
+    assert.equal(readFileSync(installed.filePath, "utf8"), original);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -7,10 +7,10 @@ import { stringify } from "yaml";
 import { runCli } from "../../plugins/kxm/src/cli.ts";
 import { WORKFLOW_TEMPLATES } from "../../plugins/kxm/src/workflow-manager.ts";
 
-async function validate(root: string, file: string, env: NodeJS.ProcessEnv = {}) {
+async function validate(root: string, file: string | undefined, env: NodeJS.ProcessEnv = {}) {
   let stdout = "";
   let stderr = "";
-  const code = await runCli(["gate", "validate", "--json", "--file", file], {
+  const code = await runCli(["gate", "validate", "--json", ...(file ? ["--file", file] : [])], {
     KXM_LOGS_DIR: join(root, "logs"), KXM_STATE_HOME: join(root, "state"), ...env,
   }, {
     stdout: (text) => { stdout += text; },
@@ -28,6 +28,9 @@ test("gate validate accepts installed workflow YAML and rejects obsolete roles a
     const valid = await validate(root, file);
     assert.equal(valid.code, 0, valid.output);
     assert.deepEqual(valid.payload.workflows, [{ id: "implement-and-verify", schema: "kxm.workflow.v1" }]);
+    const wrongSource = await validate(root, undefined, { KXM_WEBHOOK_WORKFLOWS_FILE: file });
+    assert.equal(wrongSource.code, 1, "the hub's environment source must remain webhook JSON, not local YAML");
+    assert.equal(wrongSource.payload.ok, false);
 
     const obsolete = structuredClone(template) as { steps: Array<Record<string, unknown>> };
     delete obsolete.steps[0]!.agent;
@@ -73,6 +76,9 @@ test("gate validate preserves webhook JSON secret validation without disclosing 
     assert.equal(valid.code, 0, valid.output);
     assert.equal(valid.payload.workflows[0].secretConfigured, true);
     assert.equal(valid.output.includes(secret), false);
+    const configured = await validate(root, undefined, { KXM_WEBHOOK_WORKFLOWS_FILE: file, KXM_WORKFLOW_SECRET: secret });
+    assert.equal(configured.code, 0, configured.output);
+    assert.equal(configured.payload.workflows[0].secretConfigured, true);
     const missing = await validate(root, file);
     assert.equal(missing.code, 1);
     assert.match(missing.payload.error, /secret/);

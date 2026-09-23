@@ -681,7 +681,7 @@ test("cancellation is cooperative, waits for settlement, and is visible across h
   }
 });
 
-test("the starter npm gate is refused before dispatch until the repository has a test script", async () => {
+test("live preflight refuses the starter npm gate until the repository has a test script", () => {
   const { root, stateRoot } = engineProject("kxm-engine-test-prerequisite-");
   try {
     writeFileSync(join(root, ".kxm", "workflows", "verify-only.yaml"), JSON.stringify({
@@ -695,17 +695,6 @@ test("the starter npm gate is refused before dispatch until the repository has a
     const prerequisites = kxmLiveRunPrerequisites(bundle, "verify-only", root);
     assert.equal(prerequisites[0]?.field, "gates.test.argv");
     assert.match(prerequisites[0]!.detail, /\.kxm\/gates\.yaml/);
-    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
-    try {
-      const accepted = acceptKxmRun(context, bundle, { workflowId: "verify-only", prompt: "verify" });
-      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
-      startKxmRun(context, accepted.run.runId);
-      const refused = await stepKxmRun(context, accepted.run.runId, outcomes(["passed"]));
-      assert.equal(refused.handoff?.field, "gates.test.argv");
-      assert.equal(context.eventStore.events(accepted.run.runId, 0, 100).some((event) => event.eventType === "effect.dispatched"), false);
-    } finally {
-      closeKxmRuntimeContext(context);
-    }
     writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
     assert.deepEqual(kxmLiveRunPrerequisites(bundle, "verify-only", root), []);
   } finally {

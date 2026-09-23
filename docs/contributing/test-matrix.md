@@ -59,8 +59,11 @@ to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 | Settlement from a structured result only; prose outcomes and undeclared outcomes end as `outcome_unknown` | `pi-producer.test.ts`, `engine.test.ts` |
 | Routing records carry `workflowId`, `askSha256`, `objectiveSha256` and `stepWrites`, and settle only `blocked` or `failed` | `route-admission.test.ts` |
 | Dispatch context: only committed, pinned memory and hash-verified promoted skills reach an agent; the rest is a `dispatch_context_*` gap | `engine.test.ts` ("dispatch context: agents receive only committed, pinned memory and verified skills; anything else is withheld with a gap and the step still completes") |
-| `kxm run` prints the simulated drive command for the new run | `cli.test.ts` ("kxm run prints the simulated drive command for the created run") |
+| Run creation reports no execution and concrete live prerequisites; task refusal leaves task/Runtime unchanged; project harness default is honored | `cli.test.ts`, `engine.test.ts`, `harness.test.ts` |
 | `kxm workflow add --template` writes workflows that validate and plan; an impossible gate outcome is refused | `cli-experience.test.ts` ("workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused") |
+| Flat workflow IDs and schema/compiler validation precede mutations; imported/picked local/global dry runs write nothing | `role-and-workflow-manager.test.ts`, `cli-experience.test.ts` |
+| Claude-only suggestions honor detected/authenticated routes, refuse live writers or existing unchecked definitions, and quote shell arguments literally | `suggest.test.ts`, `cli-experience.test.ts` |
+| Explicit local YAML validates with runner schema/transitions; webhook environment sources retain JSON/secret checks | `gate-validation.test.ts` |
 | `default.yaml` and the 13-step `fix.yaml` compile deterministically; back edges need budgets | `engine-compile.test.ts` |
 | Artifact gate: non-empty regular files pass; missing, empty, non-file and escaping paths fail | `artifacts-exist.test.ts` |
 | Vision gate: strict verdicts, admitted routes only, unreadable images fail closed | `vision-gate.test.ts` |

@@ -40,6 +40,16 @@ export async function cmdSuggest(
     // Native authentication probes may initialize state. A dry run must not invoke them.
     const inventory = runtime.dryRun ? undefined : await probeHarnesses({ env: runtime.env });
     const suggestion = suggestWorkflowAndRoles(prompt, { availableHarnesses: inventory?.harnesses });
+    if (suggestion.execution.supported && [".yaml", ".yml"].some((extension) =>
+      existsSync(join(runtime.cwd, ".kxm", "workflows", `${suggestion.workflowId}${extension}`)))) {
+      suggestion.roles = [];
+      suggestion.execution = {
+        supported: false,
+        error: "workflow_already_exists",
+        reason: `Workflow ${suggestion.workflowId} already exists; its agents and permissions may differ from the recommended template.`,
+        nextSteps: ["Review the existing definition and every agent's harness/model before running it, or install the recommended template under a fresh flat ID. No existing workflow is overwritten or recommended for execution."],
+      };
+    }
     const execution = suggestion.execution;
     const text = [
       `Suggested Workflow: ${suggestion.workflowId} (${suggestion.area})`,

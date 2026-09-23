@@ -21,7 +21,7 @@ import {
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "../workflow.ts";
-import { discoverKxmProjectRoot } from "../project-config.ts";
+import { discoverKxmProjectRoot, parseRestrictedYaml } from "../project-config.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import type { WorkerOutcome } from "../envelope.ts";
@@ -250,12 +250,15 @@ export async function cmdWorkflowAdd(
       }
       workflowId ??= picked.id;
       if (options.file === undefined) {
-        content = typeof picked.payload === "string"
+        const pickedContent = typeof picked.payload === "string"
           ? readFileSync(picked.payload, "utf8")
-          : {
-            ...picked.payload,
-            ...(options.description ? { description: options.description } : {}),
-          };
+          : picked.payload;
+        content = options.description !== undefined
+          ? {
+            ...(typeof pickedContent === "string" ? parseRestrictedYaml(pickedContent, String(picked.payload)) : pickedContent),
+            description: options.description,
+          }
+          : pickedContent;
       }
     }
 

@@ -481,7 +481,7 @@ export async function cmdValidate(runtime: Runtime, fileFlag?: string | undefine
     const raw = file ? readFileSync(file, "utf8") : inline!;
     // Local workflow mappings use the runner's restricted YAML/schema/compiler.
     // Webhook sources remain JSON arrays with their existing secret checks.
-    if (file && !raw.trimStart().startsWith("[")) {
+    if (explicitFile && file && !raw.trimStart().startsWith("[")) {
       const value = parseRestrictedYaml(raw, file);
       const issues = new KxmSchemaRegistry().validate("workflow", value, file);
       if (issues.length > 0) throw new KxmConfigError(issues);
