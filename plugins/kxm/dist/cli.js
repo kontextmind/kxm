@@ -18374,6 +18374,15 @@ var MAX_BODY_BYTES = 256 * 1024;
 var MAX_AGENT_HOST_CHARS = 64;
 var MAX_LEASE_TTL_MS = 10 * 6e4;
 var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
+var IMPROVEMENT_AREAS = [
+  "harness",
+  "gates",
+  "implementation",
+  "workflow",
+  "documentation",
+  "security",
+  "other"
+];
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -18467,6 +18476,114 @@ function validateTerminalReceipt(value) {
 
 // plugins/kxm/src/workflow.ts
 import { createHash as createHash2 } from "node:crypto";
+
+// plugins/kxm/src/redact.ts
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
+  /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
+  /\b1\/\/[A-Za-z0-9_-]+/g,
+  /\b1\/[A-Za-z0-9_-]{20,}/g,
+  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
+  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
+  /\b[A-Fa-f0-9]{64}\b/g
+];
+function redactSecrets(value) {
+  let result = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result = result.replace(pattern, "[redacted]");
+  }
+  return result;
+}
+function redactStringList(values, maxItems = 32) {
+  return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
+}
+
+// plugins/kxm/src/relevance.ts
+var RELEVANCE_STOPWORDS = Object.freeze(/* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "how",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "our",
+  "should",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your"
+]));
+function compareCodeUnitIds(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+// plugins/kxm/src/workflow.ts
+var JOURNAL_CATEGORIES = [
+  "plan",
+  "decision",
+  "contradiction",
+  "error",
+  "lesson",
+  "observation",
+  "hypothesis",
+  "experiment",
+  "state-change",
+  "skill-candidate"
+];
 var PROMOTABLE_JOURNAL_CATEGORIES = ["skill-candidate", "hypothesis", "experiment"];
 var WORKFLOW_TERMINAL_TARGET = "$terminal";
 function normalizeOutcomeValue(value, field) {
@@ -18487,6 +18604,97 @@ function journalPromotionState(entry) {
   if (!PROMOTABLE_JOURNAL_CATEGORIES.includes(entry.category)) return void 0;
   const records = entry.promotion ?? [];
   return records.length === 0 ? "proposed" : records[records.length - 1]?.to;
+}
+var SECURITY_SIGNAL_CLASSES = ["invalid_auth", "invalid_identity", "signal_mismatch"];
+var SIGNAL_CATEGORIES = ["error", "contradiction", "lesson", "skill-candidate"];
+var SIGNAL_SEVERITY_WEIGHT = { error: 3, warning: 2, info: 1 };
+var SIGNAL_CLASS = /^[a-z0-9_]{1,64}$/;
+var MAX_SIGNAL_IDS = 16;
+var MAX_SIGNAL_SUMMARY_KEY_CHARS = 160;
+function normalizeSignalSummary(summary) {
+  return summary.toLowerCase().replace(/\b[a-z]+_[0-9a-f]{8,}\b/g, "<id>").replace(/\b\d{4}-\d{2}-\d{2}t\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:z|[+-]\d{2}:?\d{2})?/g, "<ts>").replace(/\b[0-9a-f]{7,}\b/g, "<hex>").replace(/\d+/g, "#").replace(/\s+/g, " ").trim().slice(0, MAX_SIGNAL_SUMMARY_KEY_CHARS);
+}
+function round3(value) {
+  return Math.round(value * 1e3) / 1e3;
+}
+function signalKeyOf(entry, runs) {
+  const classRef = entry.evidence.find((ref) => ref.startsWith("class:"));
+  const signalClass = classRef?.slice("class:".length);
+  if (signalClass !== void 0 && SIGNAL_CLASS.test(signalClass) && signalClass !== "unknown") {
+    return { key: `${entry.category}|class:${signalClass}`, basis: "class", signalClass };
+  }
+  const run = runs.get(entry.runId);
+  if (entry.category === "error" && entry.stageId !== void 0 && run) {
+    return { key: `error|stage:${run.definitionId}/${entry.stageId}`, basis: "stage" };
+  }
+  return {
+    key: `${entry.category}|summary:${normalizeSignalSummary(redactSecrets(entry.summary))}`,
+    basis: "summary"
+  };
+}
+function runAttemptCost(run) {
+  let attempts = 0;
+  for (const stage of run.stages) attempts += stage.attempts;
+  return Math.max(1, attempts + (run.transitions?.length ?? 0));
+}
+function rankImprovementSignals(entries, runs, limit = 20) {
+  const resolvedContradictions = /* @__PURE__ */ new Set();
+  for (const entry of entries) {
+    if (entry.category !== "decision" && entry.category !== "lesson") continue;
+    for (const related of entry.relatedEntryIds) resolvedContradictions.add(`${entry.runId}\0${related}`);
+  }
+  const groups = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    if (!SIGNAL_CATEGORIES.includes(entry.category)) continue;
+    if (entry.category === "contradiction" && resolvedContradictions.has(`${entry.runId}\0${entry.id}`)) continue;
+    const promotionState = journalPromotionState(entry);
+    if (promotionState !== void 0 && promotionState !== "proposed") continue;
+    const { key, basis, signalClass } = signalKeyOf(entry, runs);
+    const group = groups.get(key);
+    if (group) group.entries.push(entry);
+    else groups.set(key, { basis, category: entry.category, ...signalClass !== void 0 ? { signalClass } : {}, entries: [entry] });
+  }
+  const areaRank = (area) => {
+    const index = IMPROVEMENT_AREAS.indexOf(area);
+    return index === -1 ? IMPROVEMENT_AREAS.length : index;
+  };
+  const signals = [];
+  for (const [key, group] of groups) {
+    const runIds = [...new Set(group.entries.map((entry) => entry.runId))].sort(compareCodeUnitIds);
+    const entryIds = group.entries.map((entry) => entry.id).sort(compareCodeUnitIds);
+    let severity = "info";
+    for (const entry of group.entries) {
+      if ((SIGNAL_SEVERITY_WEIGHT[entry.severity] ?? 0) > SIGNAL_SEVERITY_WEIGHT[severity]) severity = entry.severity;
+    }
+    const severityWeight = SIGNAL_SEVERITY_WEIGHT[severity];
+    const knownRuns = runIds.map((runId) => runs.get(runId)).filter((run) => run !== void 0);
+    const workflowCost = knownRuns.length > 0 ? knownRuns.reduce((total, run) => total + runAttemptCost(run), 0) / knownRuns.length : null;
+    const withEvidence = group.entries.filter((entry) => entry.evidence.length > 0).length;
+    const confidence = 0.5 + 0.5 * (withEvidence / group.entries.length);
+    const areaCounts = /* @__PURE__ */ new Map();
+    for (const entry of group.entries) areaCounts.set(entry.area, (areaCounts.get(entry.area) ?? 0) + 1);
+    const area = [...areaCounts].sort((left, right) => right[1] - left[1] || areaRank(left[0]) - areaRank(right[0]))[0][0];
+    const latest = [...group.entries].sort((left, right) => compareCodeUnitIds(left.createdAt, right.createdAt) || compareCodeUnitIds(left.id, right.id)).at(-1);
+    const security = area === "security" || group.signalClass !== void 0 && SECURITY_SIGNAL_CLASSES.includes(group.signalClass);
+    signals.push({
+      key,
+      basis: group.basis,
+      category: group.category,
+      area,
+      ...security ? { overrideTier: "security" } : {},
+      frequency: runIds.length,
+      runIds: runIds.slice(0, MAX_SIGNAL_IDS),
+      entryIds: entryIds.slice(0, MAX_SIGNAL_IDS),
+      severity,
+      severityWeight,
+      workflowCost,
+      costBasis: workflowCost === null ? "unknown" : "run-attempts",
+      confidence,
+      priority: round3(runIds.length * severityWeight * (workflowCost ?? 1) * confidence),
+      summary: redactSecrets(latest.summary)
+    });
+  }
+  return signals.sort((left, right) => (right.overrideTier === "security" ? 1 : 0) - (left.overrideTier === "security" ? 1 : 0) || right.priority - left.priority || right.frequency - left.frequency || compareCodeUnitIds(left.key, right.key)).slice(0, limit);
 }
 function object(value, name) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`);
@@ -18778,7 +18986,7 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         throw new Error(`stage ${stageId} maxAttempts must be an integer between 1 and 20`);
       }
       const area = stage.area ? requireString(stage.area, "stage.area", { max: 24 }) : void 0;
-      if (area && !["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
+      if (area && !IMPROVEMENT_AREAS.includes(area)) {
         throw new Error(`stage ${stageId} area is invalid`);
       }
       const requiredEvidence = stringArray(stage.requiredEvidence ?? [], "stage.requiredEvidence").map((requirement, requirementIndex) => canonicalWorkflowEvidenceKey(
@@ -20184,20 +20392,24 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "record",
     label: "Record workflow journal entry",
-    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    description: "Record a plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, or skill-candidate for continuous improvement. Pass stageId to bind the entry to that stage: the hub derives the attempt, and area defaults to the stage's declared area. Lessons and skill-candidates require evidence.",
     parameters: {
       type: "object",
       properties: {
         runId: { type: "string", description: "Active durable workflow run ID" },
         category: {
           type: "string",
-          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          enum: [...JOURNAL_CATEGORIES],
           description: "Category of journal entry"
         },
         area: {
           type: "string",
-          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
-          description: "System area"
+          enum: [...IMPROVEMENT_AREAS],
+          description: "System area; required unless stageId names a stage that declares an area"
+        },
+        stageId: {
+          type: "string",
+          description: "Stage the entry belongs to; the hub binds the attempt from the stage's state"
         },
         severity: {
           type: "string",
@@ -20220,13 +20432,14 @@ var AGENT_COMMANDS = [
           description: "Related previous journal entry IDs"
         }
       },
-      required: ["runId", "category", "area", "summary"],
+      required: ["runId", "category", "summary"],
       additionalProperties: false
     },
     async execute(client, args) {
       return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
         category: requiredString(args.category, "category"),
-        area: requiredString(args.area, "area"),
+        ...optionalString2(args.area) ? { area: optionalString2(args.area) } : {},
+        ...optionalString2(args.stageId) ? { stageId: optionalString2(args.stageId) } : {},
         ...optionalString2(args.severity) ? { severity: optionalString2(args.severity) } : {},
         summary: requiredString(args.summary, "summary"),
         ...optionalString2(args.details) ? { details: optionalString2(args.details) } : {},
@@ -20303,7 +20516,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "improve-report",
     label: "Summarize improvement report",
-    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    description: "Summarize workflow errors, contradictions, lessons, and skill candidates by improvement area, plus ranked cross-run signals: duplicates merged across runs and scored by frequency x severity x run-attempt cost x evidence confidence, security first, with redacted text.",
     parameters: {
       type: "object",
       properties: {},
@@ -20357,7 +20570,7 @@ var AGENT_COMMANDS = [
     group: "context",
     verb: "recall",
     label: "Recall context metadata",
-    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    description: "Search durable context records for a project by query. Ranks exact-phrase matches first, then token relevance, then id; returns bounded metadata with a numeric relevance per item, never summaries.",
     parameters: {
       type: "object",
       properties: {
@@ -23643,35 +23856,6 @@ function writeKxmLocalBindings(projectRoot, projectId, repositories, options = {
 
 // plugins/kxm/src/sync-transform.ts
 import { createHash as createHash8 } from "node:crypto";
-
-// plugins/kxm/src/redact.ts
-var SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
-  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
-  /\bghp_[A-Za-z0-9_]{20,}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
-  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
-  /\b1\/\/[A-Za-z0-9_-]+/g,
-  /\b1\/[A-Za-z0-9_-]{20,}/g,
-  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
-  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
-  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
-  /\b[A-Fa-f0-9]{64}\b/g
-];
-function redactSecrets(value) {
-  let result = value;
-  for (const pattern of SECRET_PATTERNS) {
-    result = result.replace(pattern, "[redacted]");
-  }
-  return result;
-}
-function redactStringList(values, maxItems = 32) {
-  return values.slice(0, maxItems).map((value) => redactSecrets(value).slice(0, 500));
-}
-
-// plugins/kxm/src/sync-transform.ts
 var KXM_DEFAULT_SYNC_POLICY = Object.freeze({
   prompts: "title-only",
   results: "bounded-summary",
@@ -27719,19 +27903,25 @@ function buildRetrospective(run, journal, exportedAt = (/* @__PURE__ */ new Date
   const byCategory = {};
   const byArea = {};
   const byClass = {};
+  const byErrorClass = {};
   for (const entry of entries) {
     increment(byCategory, entry.category);
     increment(byArea, entry.area);
     increment(byClass, classFromEvidence(entry.evidence));
+    if (entry.category === "error") increment(byErrorClass, classFromEvidence(entry.evidence));
   }
-  const recurringErrorClasses = Object.entries(byClass).map(([errorClass, count]) => ({ class: errorClass, count })).sort((left, right) => right.count - left.count || left.class.localeCompare(right.class));
+  const recurringErrorClasses = Object.entries(byErrorClass).map(([errorClass, count]) => ({ class: errorClass, count })).sort((left, right) => right.count - left.count || left.class.localeCompare(right.class));
   const resolvedContradictions = new Set(entries.filter((entry) => entry.category === "decision" || entry.category === "lesson").flatMap((entry) => entry.relatedEntryIds));
   const openContradictions = entries.filter((entry) => entry.category === "contradiction" && !resolvedContradictions.has(entry.id)).map((entry) => ({ id: entry.id, summary: entry.summary, area: entry.area }));
   const decisions = entries.filter((entry) => entry.category === "decision").map((entry) => ({ id: entry.id, summary: entry.summary, area: entry.area }));
-  const proposedImprovements = entries.filter((entry) => entry.category === "lesson" || entry.category === "error").slice(0, 12).map((entry) => ({
-    area: entry.area,
-    summary: entry.summary,
-    successMeasure: "reduce recurrence of this class in the next comparable run",
+  const proposedImprovements = rankImprovementSignals(
+    journal.filter((entry) => entry.runId === run.id && (entry.category === "error" || entry.category === "lesson")),
+    /* @__PURE__ */ new Map([[run.id, run]]),
+    12
+  ).map((signal) => ({
+    area: signal.area,
+    summary: signal.summary,
+    successMeasure: redactSecrets(`no recurrence of ${signal.key} in the next ${run.definitionId} run`),
     status: "proposed"
   }));
   const evidenceAudit = buildEvidenceAudit(run);

@@ -287,3 +287,98 @@ test("hub enforces journal evidence, new categories, and governed promotion", as
   assert.equal(second.status, 400);
   assert.equal(((await second.json() as { code: string }).code), "journal_promotion_invalid");
 });
+
+test("kxm_workflow_record binds stage provenance and the stage's area end to end, and hub-authored entries carry it too", async (context) => {
+  const { createTestMesh } = await import("../helpers.ts");
+  const { createHmac } = await import("node:crypto");
+  const { AGENT_COMMANDS_MAP } = await import("../../plugins/kxm/src/commands.ts");
+  const { HubHttpError } = await import("../../plugins/kxm/src/client.ts");
+  const { IMPROVEMENT_AREAS } = await import("../../plugins/kxm/src/protocol.ts");
+
+  // The tool schema is shared by MCP, Pi and the CLI.
+  const tool = AGENT_COMMANDS_MAP.get("kxm_workflow_record")!;
+  assert.deepEqual(tool.parameters.properties.category?.enum, [...JOURNAL_CATEGORIES]);
+  assert.deepEqual(tool.parameters.properties.area?.enum, [...IMPROVEMENT_AREAS]);
+  assert.ok(!(tool.parameters.required ?? []).includes("area"));
+  assert.ok(tool.parameters.properties.stageId);
+
+  const secret = "journal-stage-secret-with-entropy";
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [{
+      id: "journal-stage",
+      source: "generic",
+      project: "test-project",
+      target: "coordinator",
+      secret,
+      delivery: "followUp",
+      promptTemplate: "Handle {{task}}",
+      stages: [{ id: "gate", label: "Gate", instructions: "Run gate", area: "gates", requiredEvidence: ["result"], maxAttempts: 3 }],
+    }],
+  });
+  const coordinator = mesh.makeClient("coordinator");
+  await coordinator.start(async (event) => {
+    if (event.type === "message") await coordinator.acknowledge(event.message.id);
+  });
+  const payload = JSON.stringify({ task: "journal-stage" });
+  const trigger = await fetch(`${mesh.address.url}/v1/webhooks/journal-stage`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-kxm-delivery-id": "journal-stage-1",
+      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+    },
+    body: payload,
+  });
+  const runId = (await trigger.json() as { run: { id: string } }).run.id;
+
+  // Through the tool's own execute, a stage-bound entry with no area takes
+  // the stage's declared area, and the hub derives the active attempt.
+  const observation = await tool.execute(coordinator, {
+    runId,
+    category: "observation",
+    summary: "obs",
+    stageId: "gate",
+  }) as WorkflowJournalEntry;
+  assert.equal(observation.category, "observation");
+  assert.equal(observation.area, "gates");
+  assert.equal(observation.stageId, "gate");
+  assert.equal(observation.attempt, 1);
+
+  // The hub-authored error entry for a warning checkpoint carries the stage
+  // and the attempt that checkpoint consumed.
+  await coordinator.checkpointWorkflow(runId, { stageId: "gate", status: "warning", summary: "gate flaked" });
+  const hubError = (await coordinator.getWorkflow(runId)).journal.find((entry) => entry.category === "error");
+  assert.equal(hubError?.stageId, "gate");
+  assert.equal(hubError?.attempt, 1);
+  assert.equal(hubError?.area, "gates");
+
+  // A finished stage binds the last attempt it consumed (2), not attempts+1 (3).
+  const passed = await coordinator.checkpointWorkflow(runId, {
+    stageId: "gate",
+    status: "passed",
+    summary: "gate passed",
+    evidence: { result: "ok" },
+  });
+  assert.equal(passed.completed, true);
+  const lesson = await tool.execute(coordinator, {
+    runId,
+    category: "lesson",
+    summary: "retry the gate once before failing it",
+    evidence: ["receipt:journal-stage-1/gate"],
+    stageId: "gate",
+  }) as WorkflowJournalEntry;
+  assert.equal(lesson.stageId, "gate");
+  assert.equal(lesson.attempt, 2);
+  assert.equal(lesson.area, "gates");
+
+  // Neither an area nor a stage to take one from.
+  await assert.rejects(
+    () => tool.execute(coordinator, { runId, category: "observation", summary: "unbound" }),
+    (error: unknown) => {
+      assert.ok(error instanceof HubHttpError);
+      assert.equal(error.statusCode, 400);
+      assert.equal(error.code, "invalid_improvement_area");
+      return true;
+    },
+  );
+});

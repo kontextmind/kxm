@@ -11,6 +11,7 @@ import {
   DEFAULT_RATE_LIMIT_MAX,
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_STALE_AFTER_MS,
+  IMPROVEMENT_AREAS,
   MAX_AGENT_HOST_CHARS,
   MAX_BODY_BYTES,
   MAX_CONTENT_CHARS,
@@ -45,6 +46,7 @@ import { timingSafeStringCompare } from "./commands.ts";
 import { arbitrate, explainContextItem, journalEntryToContextItem, memoryRecordToContextItem, rolePolicy } from "./arbiter.ts";
 import { loadAuthoredMemory } from "./memory.ts";
 import { contextItemAuditMetadata, CONTEXT_AUTHORITIES, CONTEXT_CONFIDENCES, type ContextAuthority, type ContextConfidence, type ContextItem } from "./context.ts";
+import { rankRecall, relevanceTokens } from "./relevance.ts";
 import { NativeStateProvider } from "./state.ts";
 import { SkillLifecycle } from "./skills.ts";
 import { compileKnowledgeWiki, lintKnowledgeWiki, type WikiSourcePool } from "./wiki.ts";
@@ -56,8 +58,11 @@ import {
   checkpointRun,
   improvementReport,
   applyJournalPromotion,
+  JOURNAL_CATEGORIES,
+  journalAttemptFor,
   journalEvidenceRequired,
   parseJournalCategory,
+  rankImprovementSignals,
   renderWorkflowPrompt,
   resumeWorkflowFromSignal,
   valueAtPath,
@@ -1004,7 +1009,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       "Execute these stages in order:",
       stageList,
       "",
-      "At every stage, record material plans, decisions, contradictions, errors, and lessons with kxm_workflow_record.",
+      `At every stage, record material knowledge with kxm_workflow_record in one of these categories: ${JOURNAL_CATEGORIES.join(", ")}. Pass the stageId the entry belongs to; the hub binds the attempt and, when you omit area, uses the stage's declared area.`,
       "Keep repository-local configuration in .kxm/config, logs in .kxm/logs, and durable workflow artifacts in .kxm/assets; never commit runtime logs, state, or secrets.",
       "Complete each stage with kxm_workflow_checkpoint. Supply evidence as an object whose keys exactly match the stage's required evidence keys. Unrelated keys never satisfy a requirement. A warning or failure must be corrected and checkpointed again until it passes or the attempt limit is reached.",
       "For a peer-evidence requirement, send or fan out with workflowContext containing this run ID, the exact stage ID, requirement key, and current 1-based attempt. At checkpoint, cite only the returned message IDs under evidenceRefs; the hub derives producer and reply provenance.",
@@ -1100,6 +1105,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         evidence: [`wait-created:${waiting.createdAt}`, `wait-expired:${waiting.expiresAt}`],
         relatedEntryIds: [],
         createdAt: timestamp,
+        ...(stage ? { stageId: stage.id, attempt: stage.attempts + 1 } : {}),
       };
       const definition = webhookWorkflows.get(transition.definitionId);
       const ttlMs = parseBoundedInteger(
@@ -1180,6 +1186,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           (candidate) => candidate.messageId === message.id && candidate.status === "running",
         );
         if (run) {
+          const expiredStage = run.stages.find((candidate) => candidate.id === run.currentStage);
           run.status = "failed";
           delete run.currentStage;
           run.updatedAt = nowIso();
@@ -1196,6 +1203,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             evidence: [`message:${message.id}`],
             relatedEntryIds: [],
             createdAt: run.updatedAt,
+            ...(expiredStage ? { stageId: expiredStage.id, attempt: expiredStage.attempts + 1 } : {}),
           };
           store.saveJournalEntry(entry);
           counters.journalEntries += 1;
@@ -1403,6 +1411,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             evidence: workflowEvidenceStrings(evidence),
             relatedEntryIds: [],
             createdAt: receivedAt,
+            stageId: stage.id,
+            attempt: stage.attempts,
           };
         } else if (result.degraded) {
           const stage = transition.stages.find((candidate) => candidate.id === result.stageId)!;
@@ -1420,6 +1430,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             ],
             relatedEntryIds: [],
             createdAt: receivedAt,
+            stageId: stage.id,
+            attempt: stage.attempts,
           };
         }
         if (transition.status === "running") {
@@ -1697,6 +1709,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             ],
             relatedEntryIds: [],
             createdAt: timestamp,
+            stageId,
+            attempt: result.approval.attempt,
           };
           store.saveWorkflowTransition(transition, undefined, entry);
           publishOps(transition.project, "workflows");
@@ -1778,9 +1792,18 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           ...(skillLifecycle ? { skillLifecycle } : {}),
         });
         counters.contextRequests += 1;
+        // Sizes, never the task text (Q-J). The caller still receives its own
+        // audit, request included, in the response below.
+        const assembledRequest = outcome.audit.request;
         logger({
           event: "context_packet_assembled",
-          ...outcome.audit.request,
+          project: assembledRequest.project,
+          role: assembledRequest.role,
+          ...(assembledRequest.workflowRunId !== undefined ? { workflowRunId: assembledRequest.workflowRunId } : {}),
+          ...(assembledRequest.stageId !== undefined ? { stageId: assembledRequest.stageId } : {}),
+          taskChars: assembledRequest.task.length,
+          taskTokens: outcome.audit.relevance.taskTokens,
+          matchedCandidates: outcome.audit.relevance.matchedCandidates,
           selectedIds: outcome.audit.selectedIds,
           provenanceSummary: outcome.audit.provenanceSummary,
           estimatedTokens: outcome.audit.estimatedTokens,
@@ -1796,21 +1819,30 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (method === "POST" && contextRecallMatch) {
         const body = await readJson(request);
         const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
-        const query = requireString(body.query ?? "", "query", { max: 500, allowEmpty: true }).toLowerCase();
+        const query = requireString(body.query ?? "", "query", { max: 500, allowEmpty: true });
         const kinds = Array.isArray(body.kinds)
           ? body.kinds.filter((kind: unknown): kind is string => typeof kind === "string")
           : undefined;
         const limit = parseBoundedInteger(body.limit, "limit", 25, 1, 100);
         const { pool } = projectContextPool(callerProject);
-        const recalled = pool
+        const live = pool
           .filter((item) => item.status !== "superseded" && item.status !== "rejected")
-          .filter((item) => kinds === undefined || kinds.includes(item.kind))
-          .filter((item) => query === "" || item.summary.toLowerCase().includes(query) || (item.stateKey ?? "").toLowerCase().includes(query))
-          .sort((left, right) => left.id.localeCompare(right.id))
-          .slice(0, limit);
+          .filter((item) => kinds === undefined || kinds.includes(item.kind));
+        // Exact-phrase hits, then any-token BM25 hits, then id.
+        const recalled = rankRecall(query, live, limit);
         counters.contextRequests += 1;
-        logger({ event: "context_recall", project: callerProject, query, limit, results: recalled.length });
-        json(response, 200, { items: recalled.map(contextItemAuditMetadata), unresolvedGaps: recalled.length === 0 ? ["no matching context records"] : [] });
+        logger({
+          event: "context_recall",
+          project: callerProject,
+          queryChars: query.length,
+          queryTokens: new Set(relevanceTokens(query)).size,
+          limit,
+          results: recalled.length,
+        });
+        json(response, 200, {
+          items: recalled.map(({ item, relevance }) => ({ ...contextItemAuditMetadata(item), relevance })),
+          unresolvedGaps: recalled.length === 0 ? ["no matching context records"] : [],
+        });
         return;
       }
 
@@ -1964,7 +1996,13 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           nowIso(),
         );
         store.saveJournalEntry(updated);
-        publishOps(entry.runId, "workflows");
+        // Publish to the run's project (not its id) and refresh a terminal
+        // run's exported retrospective with the new promotion state.
+        const promotedRun = workflowRuns.get(entry.runId);
+        if (promotedRun) {
+          publishOps(promotedRun.project, "workflows");
+          exportTerminalRetrospective(promotedRun);
+        }
         logger({
           event: "journal_promotion_recorded",
           journalEntryId: entry.id,
@@ -2102,6 +2140,9 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             : undefined,
         );
         const checkpointStage = transition.stages.find((candidate) => candidate.id === stageId)!;
+        // The attempt this checkpoint consumed. A self-edge transition re-enters
+        // the stage and resets its counter, so prefer the transition record.
+        const checkpointAttempt = result.transition?.attempt ?? checkpointStage.attempts;
         if (result.transition) {
           const transitionEntry: WorkflowJournalEntry = {
             id: newId("journal"),
@@ -2114,6 +2155,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             evidence: result.transition.evidenceKeys.map((key) => `requirement:${key}`),
             relatedEntryIds: [],
             createdAt: timestamp,
+            stageId,
+            attempt: checkpointAttempt,
           };
           store.saveWorkflowTransition(transition, undefined, transitionEntry);
           counters.journalEntries += 1;
@@ -2130,6 +2173,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             evidence: [`class:transition_budget_exhausted`, `stage:${stageId}`],
             relatedEntryIds: [],
             createdAt: timestamp,
+            stageId,
+            attempt: checkpointAttempt,
           };
           store.saveWorkflowTransition(transition, undefined, exhaustEntry);
           counters.journalEntries += 1;
@@ -2147,6 +2192,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             evidence: workflowEvidenceStrings(evidence),
             relatedEntryIds: [],
             createdAt: transition.updatedAt,
+            stageId,
+            attempt: checkpointAttempt,
           };
         } else if (result.degraded) {
           entry = {
@@ -2163,6 +2210,8 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             ],
             relatedEntryIds: [],
             createdAt: transition.updatedAt,
+            stageId,
+            attempt: checkpointAttempt,
           };
         }
         store.saveWorkflowTransition(transition, undefined, entry);
@@ -2208,10 +2257,25 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           );
         }
         const category = parseJournalCategory(body.category);
-        const area = requireString(body.area, "area", { max: 24 }) as ImprovementArea;
-        if (!["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
-          throw new ProtocolError(400, "invalid improvement area", "invalid_improvement_area");
+        // Stage provenance first: the stage supplies the default area, and
+        // the hub (never the caller) derives the attempt from its state.
+        let stage: WorkflowStageState | undefined;
+        if (body.stageId !== undefined && body.stageId !== null) {
+          const requestedStageId = requireString(body.stageId, "stageId", { max: 128 });
+          stage = run.stages.find((candidate) => candidate.id === requestedStageId);
+          if (!stage) {
+            throw new ProtocolError(400, `stageId ${requestedStageId} is not part of this workflow run`, "invalid_journal_relation");
+          }
         }
+        const area = (body.area == null ? stage?.area : requireString(body.area, "area", { max: 24 })) as ImprovementArea | undefined;
+        if (area === undefined || !IMPROVEMENT_AREAS.includes(area)) {
+          throw new ProtocolError(
+            400,
+            "area is required unless stageId names a stage that declares an area",
+            "invalid_improvement_area",
+          );
+        }
+        const attempt = stage ? journalAttemptFor(stage) : undefined;
         const severity = requireString(body.severity ?? "info", "severity", { max: 16 });
         if (severity !== "info" && severity !== "warning" && severity !== "error") {
           throw new ProtocolError(400, "severity must be info, warning, or error", "invalid_journal_severity");
@@ -2232,16 +2296,6 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             "journal_evidence_required",
           );
         }
-        let stageId: string | undefined;
-        let attempt: number | undefined;
-        if (body.stageId !== undefined && body.stageId !== null) {
-          stageId = requireString(body.stageId, "stageId", { max: 128 });
-          const stage = run.stages.find((candidate) => candidate.id === stageId);
-          if (!stage) {
-            throw new ProtocolError(400, `stageId ${stageId} is not part of this workflow run`, "invalid_journal_relation");
-          }
-          attempt = stage.attempts + 1;
-        }
         const entry: WorkflowJournalEntry = {
           id: newId("journal"),
           runId: run.id,
@@ -2254,11 +2308,13 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
           evidence,
           relatedEntryIds,
           createdAt: nowIso(),
-          ...(stageId !== undefined ? { stageId } : {}),
+          ...(stage !== undefined ? { stageId: stage.id } : {}),
           ...(attempt !== undefined ? { attempt } : {}),
         };
         store.saveJournalEntry(entry);
         counters.journalEntries += 1;
+        // A late entry on a terminal run refreshes its exported retrospective.
+        exportTerminalRetrospective(run);
         logger({
           event: "workflow_journal_recorded",
           workflowRunId: run.id,
@@ -2274,13 +2330,18 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
       if (method === "GET" && url.pathname === "/v1/improvements") {
         const agent = requireAgent(request);
         requireProjectAuth(request, agent.project);
-        const visibleRuns = new Set(
+        const projectRuns = new Map(
           [...workflowRuns.values()]
             .filter((run) => run.project === agent.project)
-            .map((run) => run.id),
+            .map((run) => [run.id, run] as const),
         );
+        const visibleRuns = new Set(projectRuns.keys());
         const entries = [...journal.values()].filter((entry) => visibleRuns.has(entry.runId));
-        json(response, 200, { reports: improvementReport(entries), entries: entries.length });
+        json(response, 200, {
+          reports: improvementReport(entries),
+          signals: rankImprovementSignals(entries, projectRuns),
+          entries: entries.length,
+        });
         return;
       }
 
@@ -2737,6 +2798,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
         publishOps(message.project, "messages");
         const workflowRun = [...workflowRuns.values()].find((run) => run.messageId === message.id);
         if (workflowRun?.status === "running") {
+          const settledStage = workflowRun.stages.find((candidate) => candidate.id === workflowRun.currentStage);
           workflowRun.status = "failed";
           delete workflowRun.currentStage;
           workflowRun.updatedAt = message.repliedAt;
@@ -2753,6 +2815,7 @@ export function createMeshHub(options: MeshHubOptions = {}): MeshHub {
             evidence: [`message:${message.id}`],
             relatedEntryIds: [],
             createdAt: message.repliedAt,
+            ...(settledStage ? { stageId: settledStage.id, attempt: settledStage.attempts + 1 } : {}),
           };
           store.saveJournalEntry(entry);
           counters.journalEntries += 1;

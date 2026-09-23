@@ -14545,8 +14545,117 @@ var MAX_CONTENT_CHARS = 32e3;
 var MAX_AGENT_HOST_CHARS = 64;
 var MAX_LEASE_TTL_MS = 10 * 6e4;
 var DEFAULT_LEASE_TTL_MS = 5 * 6e4;
+var IMPROVEMENT_AREAS = [
+  "harness",
+  "gates",
+  "implementation",
+  "workflow",
+  "documentation",
+  "security",
+  "other"
+];
+
+// plugins/kxm/src/redact.ts
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
+  /\bghp_[A-Za-z0-9_]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
+  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
+  /\b1\/\/[A-Za-z0-9_-]+/g,
+  /\b1\/[A-Za-z0-9_-]{20,}/g,
+  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
+  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
+  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
+  /\b[A-Fa-f0-9]{64}\b/g
+];
+function redactSecrets(value) {
+  let result2 = value;
+  for (const pattern of SECRET_PATTERNS) {
+    result2 = result2.replace(pattern, "[redacted]");
+  }
+  return result2;
+}
+
+// plugins/kxm/src/relevance.ts
+var RELEVANCE_STOPWORDS = Object.freeze(/* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "how",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "our",
+  "should",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your"
+]));
 
 // plugins/kxm/src/workflow.ts
+var JOURNAL_CATEGORIES = [
+  "plan",
+  "decision",
+  "contradiction",
+  "error",
+  "lesson",
+  "observation",
+  "hypothesis",
+  "experiment",
+  "state-change",
+  "skill-candidate"
+];
 function canonicalWorkflowEvidenceKey(value) {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
 }
@@ -15418,20 +15527,24 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "record",
     label: "Record workflow journal entry",
-    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    description: "Record a plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, or skill-candidate for continuous improvement. Pass stageId to bind the entry to that stage: the hub derives the attempt, and area defaults to the stage's declared area. Lessons and skill-candidates require evidence.",
     parameters: {
       type: "object",
       properties: {
         runId: { type: "string", description: "Active durable workflow run ID" },
         category: {
           type: "string",
-          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          enum: [...JOURNAL_CATEGORIES],
           description: "Category of journal entry"
         },
         area: {
           type: "string",
-          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
-          description: "System area"
+          enum: [...IMPROVEMENT_AREAS],
+          description: "System area; required unless stageId names a stage that declares an area"
+        },
+        stageId: {
+          type: "string",
+          description: "Stage the entry belongs to; the hub binds the attempt from the stage's state"
         },
         severity: {
           type: "string",
@@ -15454,13 +15567,14 @@ var AGENT_COMMANDS = [
           description: "Related previous journal entry IDs"
         }
       },
-      required: ["runId", "category", "area", "summary"],
+      required: ["runId", "category", "summary"],
       additionalProperties: false
     },
     async execute(client, args) {
       return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
         category: requiredString(args.category, "category"),
-        area: requiredString(args.area, "area"),
+        ...optionalString(args.area) ? { area: optionalString(args.area) } : {},
+        ...optionalString(args.stageId) ? { stageId: optionalString(args.stageId) } : {},
         ...optionalString(args.severity) ? { severity: optionalString(args.severity) } : {},
         summary: requiredString(args.summary, "summary"),
         ...optionalString(args.details) ? { details: optionalString(args.details) } : {},
@@ -15537,7 +15651,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "improve-report",
     label: "Summarize improvement report",
-    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    description: "Summarize workflow errors, contradictions, lessons, and skill candidates by improvement area, plus ranked cross-run signals: duplicates merged across runs and scored by frequency x severity x run-attempt cost x evidence confidence, security first, with redacted text.",
     parameters: {
       type: "object",
       properties: {},
@@ -15591,7 +15705,7 @@ var AGENT_COMMANDS = [
     group: "context",
     verb: "recall",
     label: "Recall context metadata",
-    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    description: "Search durable context records for a project by query. Ranks exact-phrase matches first, then token relevance, then id; returns bounded metadata with a numeric relevance per item, never summaries.",
     parameters: {
       type: "object",
       properties: {
@@ -16254,30 +16368,6 @@ function findKxmRepoRoot(fromUrl = import.meta.url) {
   throw new Error(
     `kxm: cannot locate the KXM repo root from ${fileURLToPath(fromUrl)} (walked ${MAX_WALK_DEPTH} levels looking for ${ROOT_MARKERS[0]})`
   );
-}
-
-// plugins/kxm/src/redact.ts
-var SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
-  /\bsk-ant-[A-Za-z0-9_-]{8,}\b/g,
-  /\bghp_[A-Za-z0-9_]{20,}\b/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]+\b/gi,
-  /\bya29\.[A-Za-z0-9._~+/-]+=*/g,
-  /\b1\/\/[A-Za-z0-9_-]+/g,
-  /\b1\/[A-Za-z0-9_-]{20,}/g,
-  /("?(?:access_token|refresh_token|id_token|sessionKey|session_key|claude_oauth_token|anthropicApiKey)"?\s*[:=]\s*")[^"]*(")/gi,
-  /\bKXM_[A-Z0-9_]*(TOKEN|SECRET|KEY)[A-Z0-9_]*=\S+/gi,
-  /\b(GITHUB_TOKEN|GH_TOKEN|KXM_AUTH_TOKEN|KXM_WORKFLOW_SIGNAL_SECRET|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_API_KEY)=\S+/gi,
-  /\b[A-Fa-f0-9]{64}\b/g
-];
-function redactSecrets(value) {
-  let result2 = value;
-  for (const pattern of SECRET_PATTERNS) {
-    result2 = result2.replace(pattern, "[redacted]");
-  }
-  return result2;
 }
 
 // plugins/kxm/src/hub-autostart.ts

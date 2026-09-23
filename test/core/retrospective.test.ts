@@ -83,6 +83,11 @@ test("retrospective export is deterministic, redacted, and review-gated", () => 
     assert.equal(first.reviewDecision, "proposed");
     assert.equal(first.openContradictions.length, 1);
     assert.ok(first.recurringErrorClasses.some((entry) => entry.class === "command_not_found" && entry.count === 1));
+    // Only error entries count toward recurring error classes.
+    assert.deepEqual(first.recurringErrorClasses, [{ class: "command_not_found", count: 1 }]);
+    // Proposed improvements are ranked error and lesson signals.
+    assert.equal(first.proposedImprovements.length, 1);
+    assert.ok(first.proposedImprovements[0]!.successMeasure.includes("error|class:command_not_found"));
     assert.doesNotMatch(JSON.stringify(first), /sk-abcdefghijkl/);
     const markdown = renderRetrospectiveMarkdown(first);
     assert.match(markdown, /Review decision: proposed/);

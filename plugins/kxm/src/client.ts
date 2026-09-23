@@ -7,6 +7,7 @@ import {
   canonicalWorkflowEvidenceKey,
   type ImprovementArea,
   type ImprovementAreaReport,
+  type ImprovementSignal,
   type JournalCategory,
   type WorkflowCheckpointStatus,
   type WorkflowEvidenceInput,
@@ -26,7 +27,15 @@ export interface ContextRequestAudit {
   candidateCount: number;
   excludedSuperseded: number;
   unresolvedGaps: string[];
+  /** Numbers only: distinct task tokens, eligible candidates sharing a task
+   * token, and each selected item's rounded relevance (index-aligned with
+   * selectedIds). */
+  relevance: { taskTokens: number; matchedCandidates: number; selected: number[] };
 }
+
+/** One recall result: bounded metadata plus the item's rounded relevance to
+ * the query. Never includes the summary. */
+export type ContextRecallItem = ContextItemAuditMetadata & { relevance: number };
 
 export interface ContextExplanation {
   found: boolean;
@@ -422,13 +431,15 @@ export class HubClient {
     runId: string,
     input: {
       category: JournalCategory;
-      area: ImprovementArea;
+      /** Required unless stageId names a stage that declares an area. */
+      area?: ImprovementArea;
       severity?: "info" | "warning" | "error";
       summary: string;
       details?: string;
       evidence?: string[];
       relatedEntryIds?: string[];
-      /** Stage the entry is recorded against; binds run/stage/attempt provenance. */
+      /** Stage the entry is recorded against; binds run/stage/attempt
+       * provenance. The hub derives the attempt; callers never supply one. */
       stageId?: string;
     },
   ): Promise<WorkflowJournalEntry> {
@@ -439,7 +450,7 @@ export class HubClient {
     return result.entry;
   }
 
-  async improvementReport(): Promise<{ reports: ImprovementAreaReport[]; entries: number }> {
+  async improvementReport(): Promise<{ reports: ImprovementAreaReport[]; signals: ImprovementSignal[]; entries: number }> {
     return await this.request("/v1/improvements");
   }
 
@@ -462,7 +473,7 @@ export class HubClient {
     query?: string;
     kinds?: ContextItemKind[];
     limit?: number;
-  }): Promise<{ items: ContextItemAuditMetadata[]; unresolvedGaps: string[] }> {
+  }): Promise<{ items: ContextRecallItem[]; unresolvedGaps: string[] }> {
     return await this.request("/v1/context/recall", { method: "POST", body: JSON.stringify(input) });
   }
 
