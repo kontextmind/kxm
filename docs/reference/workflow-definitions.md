@@ -49,7 +49,7 @@ Keep the file out of `.kxm/config/workflows/`: any JSON there counts as legacy c
 | Field | Type and limits | Default | Effect |
 |---|---|---|---|
 | `id` | String, 64 characters, unique | Required | The URL segment in `/v1/webhooks/<id>` and the name `kxm workflow start` takes |
-| `source` | `jira`, `github` or `generic` | `generic` | Recorded on each run; does not change how requests are read |
+| `source` | `jira`, `github` or `generic` | `generic` | Recorded on each run. A `jira` or `github` definition also accepts its provider's body-only signature and delivery header; a `generic` one accepts only the KXM sender contract |
 | `project` | String, 128 characters | Required | Hub project the run and its coordinator belong to |
 | `target` | Agent name or ID, 80 characters | Required | The coordinator. It must have registered at least once before a run starts; it may be offline |
 | `secretEnv` | Environment variable name | Use this or `secret` | Variable holding the start secret, read when the definitions are parsed |
@@ -148,7 +148,7 @@ Every transition taken is journaled as a `state-change` entry.
 
 `kxm_workflow_wait` parks the active stage in `waiting` under a `signalKey` until a signed callback arrives or the wait expires (1 second to 30 days, default 24 hours; expiry fails the run). The coordinator can then reply to release its turn.
 
-The callback is `POST /v1/webhooks/<id>/runs/<runId>/signals/<signalKey>`, signed with HMAC-SHA256 of the raw body using the signal secret (or the start secret), with a delivery ID header. Its body carries `status`, `summary` and `evidence`. Evidence keys `workflow.run`, `workflow.stage` and `workflow.signal`, when present, must match the route (`workflow_signal_context_mismatch`). The signal checkpoints the stage with its status; if work remains, the hub sends the coordinator a resume message. See the [HTTP API](http-api.md#webhooks-and-signals) for headers and deduplication.
+The callback is `POST /v1/webhooks/<id>/runs/<runId>/signals/<signalKey>`, signed under the [KXM sender contract](../guides/webhook-workflows.md#kxm-sender-contract) with the signal secret (or the start secret), bound to its timestamp, delivery ID, run and signal key. Its body carries `status`, `summary` and `evidence`. Evidence keys `workflow.run`, `workflow.stage` and `workflow.signal`, when present, must match the route (`workflow_signal_context_mismatch`). The signal checkpoints the stage with its status; if work remains, the hub sends the coordinator a resume message. See the [HTTP API](http-api.md#webhooks-and-signals) for headers and deduplication.
 
 When `autoResumeLimit` is set and a stage's attempts reach it without passing, the stage escalates instead of retrying: it waits for signal key `audit_escalation` for 24 hours and records a `kxm.terminal-receipt.v1` receipt. A signed `audit_escalation` signal, or `kxm role resume`, resumes it. Anyone holding the signal secret can clear an escalation.
 

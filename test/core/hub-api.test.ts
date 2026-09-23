@@ -16,7 +16,7 @@ import {
 } from "../../plugins/kxm/src/external-effects.ts";
 import { createMeshHub } from "../../plugins/kxm/src/hub.ts";
 import { MAX_BODY_BYTES, type AgentRecord } from "../../plugins/kxm/src/protocol.ts";
-import type { WebhookWorkflowDefinition } from "../../plugins/kxm/src/workflow.ts";
+import { workflowWebhookHeaders, type WebhookWorkflowDefinition } from "../../plugins/kxm/src/workflow.ts";
 import { createTestMesh, responseJson, waitFor } from "../helpers.ts";
 
 interface RawIdentity {
@@ -734,6 +734,8 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   assert.equal(mesh.hub.state.messages.get(acceptedBody.run.messageId)?.workflowRunId, runId);
   await waitFor(() => inbound?.includes("PROD-42") ?? false);
   assert.match(inbound!, /kxm_workflow_record/);
+  assert.match(inbound!, /YAML directly under \.kxm\/ /);
+  assert.doesNotMatch(inbound!, /configuration in \.kxm\/config/, "the prompt must not steer agents into the refused legacy layout");
   assert.equal((await sendWebhook("jira-delivery-42")).status, 200);
   assert.equal((await coordinator.listWorkflows()).length, 1);
   await assert.rejects(() => observer.getWorkflow(runId), (error: unknown) => {
@@ -810,6 +812,137 @@ test("signed Jira webhooks start durable workflows, deduplicate retries, journal
   assert.equal((await coordinator.getWorkflow(runId)).run.status, "completed");
 });
 
+test("a captured workflow-start webhook cannot start a second run under a new delivery ID or a different body", async (context) => {
+  const secret = "replay-start-secret-with-entropy";
+  const stages = [{ id: "work", label: "Work", instructions: "Work", requiredEvidence: [], maxAttempts: 1 }];
+  const workflow = { project: "test-project", target: "coordinator", secret, delivery: "followUp" as const, promptTemplate: "Handle {{task}}", stages };
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [
+      { id: "kxm-start", source: "generic", ...workflow },
+      { id: "github-start", source: "github", ...workflow },
+    ],
+  });
+  const coordinator = mesh.makeClient("coordinator");
+  await coordinator.start(async (event) => {
+    if (event.type === "message") await coordinator.acknowledge(event.message.id);
+  });
+  const payload = JSON.stringify({ task: "replay" });
+  const other = JSON.stringify({ task: "different" });
+  const post = async (definitionId: string, headers: Record<string, string>, body = payload) => {
+    const response = await fetch(`${mesh.address.url}/v1/webhooks/${definitionId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body,
+    });
+    return { status: response.status, body: await responseJson(response) };
+  };
+  const bodySignature = (body: string) => `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+
+  // KXM senders sign the delivery ID, timestamp, and definition with the body.
+  const captured = workflowWebhookHeaders({ secret, scope: { definitionId: "kxm-start" }, deliveryId: "kxm-1", body: payload });
+  const first = await post("kxm-start", captured);
+  assert.equal(first.status, 202);
+  const runId = first.body.runId as string;
+  assert.deepEqual(await post("kxm-start", captured), { status: 200, body: { duplicate: true, runId, status: "running" } });
+  const renamed = await post("kxm-start", { ...captured, "x-kxm-delivery-id": "kxm-2" });
+  assert.deepEqual([renamed.status, renamed.body.code], [401, "webhook_signature_invalid"]);
+  const stale = await post("kxm-start", workflowWebhookHeaders({
+    secret,
+    scope: { definitionId: "kxm-start" },
+    deliveryId: "kxm-3",
+    body: payload,
+    nowMs: Date.now() - 301_000,
+  }));
+  assert.deepEqual([stale.status, stale.body.code], [401, "webhook_timestamp_expired"]);
+  const bodyOnly = await post("kxm-start", { "x-kxm-delivery-id": "kxm-4", "x-hub-signature-256": bodySignature(payload) });
+  assert.deepEqual([bodyOnly.status, bodyOnly.body.code], [401, "webhook_signature_missing"]);
+  const reused = await post(
+    "kxm-start",
+    workflowWebhookHeaders({ secret, scope: { definitionId: "kxm-start" }, deliveryId: "kxm-1", body: other }),
+    other,
+  );
+  assert.deepEqual([reused.status, reused.body.code], [409, "webhook_delivery_conflict"]);
+
+  // GitHub signs only the body, so that body may start one run under one delivery ID.
+  assert.equal((await post("github-start", { "x-github-delivery": "gh-1", "x-hub-signature-256": bodySignature(payload) })).status, 202);
+  const replayed = await post("github-start", { "x-github-delivery": "gh-2", "x-hub-signature-256": bodySignature(payload) });
+  assert.deepEqual([replayed.status, replayed.body.code], [409, "webhook_payload_replayed"]);
+  const providerReuse = await post("github-start", { "x-github-delivery": "gh-1", "x-hub-signature-256": bodySignature(other) }, other);
+  assert.deepEqual([providerReuse.status, providerReuse.body.code], [409, "webhook_delivery_conflict"]);
+  assert.equal((await coordinator.listWorkflows()).length, 2);
+});
+
+test("a captured signal callback cannot be replayed under a new delivery ID, against another run, or outside its timestamp window", async (context) => {
+  const secret = "signal-replay-start-secret";
+  const signalSecret = "signal-replay-callback-secret";
+  const mesh = await createTestMesh(context, {
+    webhookWorkflows: [{
+      id: "signal-replay",
+      source: "generic",
+      project: "test-project",
+      target: "coordinator",
+      secret,
+      signalSecret,
+      delivery: "followUp",
+      promptTemplate: "Handle {{task}}",
+      stages: [{ id: "checks", label: "Checks", instructions: "Wait for CI", requiredEvidence: [], maxAttempts: 3 }],
+    }],
+  });
+  const coordinator = mesh.makeClient("coordinator");
+  await coordinator.start(async (event) => {
+    if (event.type === "message") await coordinator.acknowledge(event.message.id);
+  });
+  const startWaitingRun = async (task: string): Promise<string> => {
+    const body = JSON.stringify({ task });
+    const response = await fetch(`${mesh.address.url}/v1/webhooks/signal-replay`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...workflowWebhookHeaders({ secret, scope: { definitionId: "signal-replay" }, deliveryId: `start-${task}`, body }),
+      },
+      body,
+    });
+    const runId = (await responseJson(response)).runId as string;
+    await coordinator.waitForWorkflowSignal(runId, { stageId: "checks", signalKey: "ci", summary: "CI is running" });
+    return runId;
+  };
+  const runA = await startWaitingRun("a");
+  const runB = await startWaitingRun("b");
+  const failed = JSON.stringify({ status: "failed", summary: "CI failed" });
+  const signal = async (runId: string, headers: Record<string, string>) => {
+    const response = await fetch(`${mesh.address.url}/v1/webhooks/signal-replay/runs/${runId}/signals/ci`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: failed,
+    });
+    return [response.status, (await responseJson(response)).code];
+  };
+  const scopeA = { definitionId: "signal-replay", runId: runA, signalKey: "ci" };
+  const captured = workflowWebhookHeaders({ secret: signalSecret, scope: scopeA, deliveryId: "ci-1", body: failed });
+  assert.equal((await signal(runA, captured))[0], 202);
+  assert.deepEqual(await signal(runA, { ...captured, "x-kxm-delivery-id": "ci-2" }), [401, "webhook_signature_invalid"]);
+  assert.deepEqual(await signal(runB, captured), [401, "webhook_signature_invalid"]);
+  assert.deepEqual(
+    await signal(runA, workflowWebhookHeaders({
+      secret: signalSecret,
+      scope: scopeA,
+      deliveryId: "ci-3",
+      body: failed,
+      nowMs: Date.now() - 301_000,
+    })),
+    [401, "webhook_timestamp_expired"],
+  );
+  assert.deepEqual(
+    await signal(runA, {
+      "x-kxm-delivery-id": "ci-4",
+      "x-hub-signature-256": `sha256=${createHmac("sha256", signalSecret).update(failed).digest("hex")}`,
+    }),
+    [401, "webhook_signature_missing"],
+  );
+  assert.equal((await coordinator.getWorkflow(runA)).run.stages[0]!.attempts, 1);
+  assert.equal((await coordinator.getWorkflow(runB)).run.status, "waiting");
+});
+
 test("webhook workflows reject unsigned deliveries and unknown coordinators", async (context) => {
   const secret = "unknown-target-secret-value";
   const mesh = await createTestMesh(context, {
@@ -837,8 +970,7 @@ test("webhook workflows reject unsigned deliveries and unknown coordinators", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "unknown",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "unknown-target" }, deliveryId: "unknown", body: payload }),
     },
     body: payload,
   });
@@ -872,8 +1004,7 @@ test("a coordinator that settles before passing checkpoints fails the run and re
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "premature-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "premature" }, deliveryId: "premature-1", body: payload }),
     },
     body: payload,
   });
@@ -973,15 +1104,18 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
   await coordinator.reply(startedBody.run.messageId, "Waiting for CI callback");
   assert.equal((await coordinator.getWorkflow(runId)).run.status, "waiting");
 
-  const signal = (signalKey: string, deliveryId: string, body: string, signature?: string) => fetch(
+  const signal = (signalKey: string, deliveryId: string, body: string, signingSecret = signalSecret) => fetch(
     `${mesh.address.url}/v1/webhooks/external-signals/runs/${runId}/signals/${signalKey}`,
     {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-github-delivery": deliveryId,
-        "x-hub-signature-256": signature
-          ?? `sha256=${createHmac("sha256", signalSecret).update(body).digest("hex")}`,
+        ...workflowWebhookHeaders({
+          secret: signingSecret,
+          scope: { definitionId: "external-signals", runId, signalKey },
+          deliveryId,
+          body,
+        }),
       },
       body,
     },
@@ -991,13 +1125,8 @@ test("signed external signals resume, retry, deduplicate, and complete a settled
     summary: "CI passed",
     evidence: { "github.check:ci": "https://ci.example/pr/42" },
   });
-  assert.equal((await signal("github-pr-42-checks", "bad-signature", passedChecks, "sha256=bad")).status, 401);
-  assert.equal((await signal(
-    "github-pr-42-checks",
-    "start-secret-cannot-signal",
-    passedChecks,
-    `sha256=${createHmac("sha256", secret).update(passedChecks).digest("hex")}`,
-  )).status, 401);
+  assert.equal((await signal("github-pr-42-checks", "bad-signature", passedChecks, "not-the-callback-secret")).status, 401);
+  assert.equal((await signal("github-pr-42-checks", "start-secret-cannot-signal", passedChecks, secret)).status, 401);
   assert.equal((await signal("wrong-key", "wrong-key", passedChecks)).status, 409);
   for (const [contextKey, invalidValue] of [
     ["workflow.run", "run_wrong"],
@@ -1137,8 +1266,7 @@ test("an expired external signal wait fails durably and records the timeout", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "timeout-start",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "external-timeout" }, deliveryId: "timeout-start", body: payload }),
     },
     body: payload,
   });
@@ -1184,8 +1312,7 @@ test("webhook prompts queue for a known offline coordinator and deliver after id
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "offline-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "offline" }, deliveryId: "offline-1", body: payload }),
     },
     body: payload,
   });

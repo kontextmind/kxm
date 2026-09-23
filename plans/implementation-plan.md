@@ -497,6 +497,63 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Docs-audit fixes: webhook replay, agent admin-token fallback, agent hop propagation,
+  three small items (2026-09-23; audit against main after #287, #293, #294 and in-flight
+  #298/#299, reproduced on a real hub in an isolated state root).** The operator asked
+  Claude to implement these directly, so the runner path (`just assign`, `just witness`,
+  two critic PASS records, `just accept`) was not used and there is no assignment
+  manifest, witness receipt or acceptance record.
+  **(1) Webhook replay.** The start and signal HMACs covered only the body: a captured
+  request replayed under a new `x-kxm-delivery-id` started a new run (or checkpointed a
+  later wait with the same signal key, on any run), and a reused delivery id returned 200
+  with the existing run even when the body differed. KXM's own sender contract
+  (`kxm-webhook-v1`, `workflowWebhookHeaders` in `workflow.ts`) now signs the timestamp,
+  delivery id, definition, run and signal key with the body under `x-kxm-signature`, with a
+  300-second skew window. It is required for every `generic` start and every signal callback;
+  a body-only signature there is refused (`webhook_signature_missing`), with no fallback.
+  Jira and GitHub cannot sign more than the body, so for those sources the hub reads only
+  the provider's own delivery header and lets a signed body start one run under one delivery
+  id (`webhook_payload_replayed`). A reused delivery id with a different body is 409
+  `webhook_delivery_conflict` on every source, and a duplicate start returns only
+  `duplicate`, `runId` and `status`, not the run record. Senders moved in the same change:
+  `kxm workflow start`, `kxm gate signal`, `kxm gate github watch`,
+  `examples/workflow-signal.ts`, `scripts/smoke-multi-pi.mjs`; `docs/guides/webhook-workflows.md`
+  documents the contract, and the pages that described the body-only contract, the Pi admin
+  fallback and hop-0 agents (HTTP API, workflow definitions, glossary, trust model,
+  configuration, tools, peer messaging, Pi workers, Pi quickstart, deploy, troubleshooting)
+  describe the new behaviour. **(2) Admin-token
+  fallback.** With `KXM_AUTH_TOKEN` unset, the Pi extension registered with the persisted
+  hub admin token, or the one hub auto-start had just resolved, and so did the CLI agent
+  surface (`kxm peer …` and the `kxm workflow` agent verbs, which Codex-style agents use).
+  Both now use `resolveAgentHubAuthToken`, as the MCP server does: `KXM_AUTH_TOKEN` or this
+  project's saved project token, never the admin token. Pi reports a user-directed error and
+  stays offline; the CLI exits 2 with `project_token_missing`. Operator surfaces
+  (`kxm dash`, Runtime presence and sync) keep `resolveClientHubAuthToken`. **(3) Hop
+  limit.** Agent tools always sent hop 0, so forwarding chains never reached
+  `hop_limit_reached`. `kxm_send` and `kxm_fanout` now send one hop past the inbound request
+  the session is handling, under that chain's `maxHops`. For Pi that is the active inbound
+  request; for the MCP server it is every open inbox request, taking the furthest one so an
+  unrelated arrival cannot reset a loop. Explicit `hops`/`maxHops` remain hub-validated.
+  **(4)** The workflow prompt no longer tells agents to use `.kxm/config`, which the loader
+  refuses (`legacy_state_unsupported`). `kxm gate signal` and `kxm workflow wait` inside a
+  KXM project now route to the Runtime only when the project's Runtime store holds the run
+  id (`projectRuntimeOwnsRun`); hub and Runtime ids share the `run_` + 32-hex shape, so a
+  hub run id used to go to the Runtime and fail `run_unknown`. `kxm peer inbox` is not
+  fixed (Still open). Gate: `npm run verify`, green (1277 tests, 1271 pass, 0 fail, 6
+  skipped), no new npm script or CI job. Named tests,
+  each failing with its fix reverted: `a captured workflow-start webhook cannot start a
+  second run under a new delivery ID or a different body` and `a captured signal callback
+  cannot be replayed under a new delivery ID, against another run, or outside its timestamp
+  window` (`test/core/hub-api.test.ts`); `Pi extension never registers with the persisted
+  admin token` and `Pi tools send one hop past the active inbound request, so the hub hop
+  limit bounds a forwarding chain` (`test/core/extension.test.ts`); `MCP tools send one hop
+  past the open inbound requests, so the hub hop limit bounds a forwarding chain`
+  (`test/core/mcp.test.ts`); `cli agent commands never register with the persisted admin
+  token` (`test/core/cli.test.ts`, replacing the test that pinned the fallback); `kxm workflow
+  wait and signal bind to the Runtime only for a run its store owns`
+  (`test/core/commands-policy.test.ts`, replacing the id-shape test). The prompt wording is
+  asserted in the existing Jira workflow test.
+
 - **Routing rules checked against the code; two bugs fixed, four questions left to the
   operator (2026-09-23; memo [reviews/routing-rule-drift.md](reviews/routing-rule-drift.md)).**
   Six findings from drafting the harness-routing doc were verified with file and line against
@@ -2824,6 +2881,18 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - Routing v2 unmetered labelling for Nous subscription-proxy usage: included subscription quota consumed and extra billed amount remain unknown unless actually reported.
 - Persisted Nous catalog via Pi `publish` is deferred.
 - **Claude experiment outcome (2026-09-07):** installed CLI 2.1.261 local mocked Messages streaming and model passthrough, dummy API-key and bearer auth, and unknown-tool rejection passed; no real tools executed. Official Nous implementation provides native Messages only for `anthropic/*`; Qwen is chat/completions, so direct Claude→Nous→Qwen is unsupported by the documented route ([hermes_cli/providers.py](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/providers.py), observed 2026-09-07). Anthropic via Nous was not live-tested because the authenticated native subscription is preferred. No adapter/translation layer or role admission was built. Mocked env bearer support does not prove OAuth credential interchangeability.
+
+- **Left open by the 2026-09-23 docs-audit fixes.** (a) `kxm peer inbox` from the CLI
+  always returns `[]`, and so does the Pi extension's `kxm_inbox` tool: `kxm_inbox`
+  reads only an in-memory map the caller passes, and the hub has no read route for an
+  agent's open inbound messages (delivery is push-only over `/v1/events`). A fix needs
+  that route, which is an API addition, not a trivial fix, and must not let Pi's tool
+  race its own activation queue. (b) `kxm role resume` still routes by run-id shape;
+  it should use `projectRuntimeOwnsRun` like `gate signal` and `workflow wait`. (c) A
+  CLI-based agent (`kxm peer send` from Codex) has no active inbound request in
+  process, so its forwards still start a new hop chain. (d) Jira and GitHub deliveries
+  carry no signed timestamp; the one-run-per-signed-body rule bounds their replay, and
+  a replayed identical delivery still answers as a duplicate.
 
 ### Plan hygiene (periodic, not every turn)
 

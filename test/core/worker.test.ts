@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { createHmac } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { recoveryEnvelopePath, workerStateKey } from "../../plugins/kxm/src/recovery.ts";
+import { workflowWebhookHeaders } from "../../plugins/kxm/src/workflow.ts";
 import { createTestMesh, removeTempDir, waitFor, workerLogs } from "../helpers.ts";
 
 const inheritedWorkspaceKeys = [
@@ -385,8 +385,7 @@ test("hub, extension, and supervisor complete the real pre-ack route and destina
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-kxm-delivery-id": "integrated-session-route-delivery",
-        "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+        ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "integrated-session-route" }, deliveryId: "integrated-session-route-delivery", body: body }),
       },
       body,
     });

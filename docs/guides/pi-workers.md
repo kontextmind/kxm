@@ -60,7 +60,7 @@ would start worker
 ```
 
 > [!IMPORTANT]
-> Set `KXM_AUTH_TOKEN` to the project token in the worker's environment. When it is unset, the Pi extension falls back to the hub credential persisted on this machine, which is the admin token for a hub that `kxm hub start` or Pi auto-start created.
+> Set `KXM_AUTH_TOKEN` to the project token in the worker's environment. When it is unset, the Pi extension uses only the project token saved for this project on this machine. It never falls back to the saved admin token, so without a project token the worker's Pi session stays offline and says so.
 
 | Flag | Environment variable | Effect |
 |---|---|---|

@@ -51,6 +51,29 @@ export function projectRuntimeKey(projectRoot: string): string {
   return createHash("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
 }
 
+/** The project's Runtime event store, derived exactly as the Runtime derives it. */
+export function kxmProjectRunEventsPath(projectRoot: string, env: NodeJS.ProcessEnv): string {
+  return join(kxmRuntimePaths({ env }).projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
+}
+
+/**
+ * Whether this project's Runtime event store holds `runId`. Hub workflow runs and Runtime
+ * runs share the `run_<32 hex>` shape, so a command addressed by run id asks the owning
+ * store instead of guessing from the id. Read-only; a project whose Runtime never ran
+ * owns no runs.
+ */
+export function projectRuntimeOwnsRun(projectRoot: string, runId: string, env: NodeJS.ProcessEnv): boolean {
+  const path = kxmProjectRunEventsPath(projectRoot, env);
+  if (!existsSync(path)) return false;
+  const database = new DatabaseSync(path, { readOnly: true });
+  try {
+    database.exec("PRAGMA busy_timeout = 5000");
+    return database.prepare("SELECT 1 FROM runs WHERE run_id = ?").get(runId) !== undefined;
+  } finally {
+    database.close();
+  }
+}
+
 function checkedParent(path: string, description: string): void {
   const parent = dirname(path);
   if (!existsSync(parent)) mkdirSync(parent, { recursive: true, mode: 0o700 });

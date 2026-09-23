@@ -6,7 +6,7 @@ import { AGENT_COMMANDS, enforceToolPolicy } from "./commands.ts";
 import { HubClient, HubHttpError } from "./client.ts";
 import { loadKxmConfig } from "./config.ts";
 import { ensureHubRunning, hubAutoStartMode } from "./hub-autostart.ts";
-import { readHubEnvRecord } from "./hub-env.ts";
+import { AgentProjectTokenMissingError, resolveAgentHubAuthToken } from "./hub-env.ts";
 import { defaultProjectName } from "./project-name.ts";
 import { nousFactoryWork, type NousRegistrationReport } from "./nous-pi.ts";
 import {
@@ -685,13 +685,11 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     removeMatchingLegacyRecoveryContext();
     const purpose = process.env.KXM_AGENT_PURPOSE ?? "General-purpose coding agent";
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-    let autoStartToken: string | undefined;
     try {
       const config = loadKxmConfig(ctx.cwd);
       if (hubAutoStartMode(config) === "background") {
         const ensured = await ensureHubRunning({ config, cwd: ctx.cwd });
         if (ensured.status === "started") {
-          autoStartToken = ensured.authToken;
           ctx.ui.notify(
             `kxm hub started in the background (pid ${ensured.pid}); logs: ${ensured.logPath}`
               + (ensured.authTokenSource === "generated" ? "; new admin token generated and persisted to user state" : ""),
@@ -704,23 +702,29 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     } catch (error) {
       ctx.ui.notify(`kxm hub auto-start failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
     }
-    // Authenticate with the explicit env token first, then the token resolved
-    // by auto-start, then the credential persisted for this machine's hubs.
-    const envAuthToken = process.env.KXM_AUTH_TOKEN?.trim();
-    let hubAuthToken = envAuthToken || autoStartToken;
+    // An agent session registers with KXM_AUTH_TOKEN or this project's saved project
+    // token only. The hub admits its admin token to any project missing from its token
+    // map, so neither the persisted admin token nor the one auto-start resolved may
+    // stand in for a project token.
+    let hubAuthToken: string | undefined;
+    try {
+      hubAuthToken = resolveAgentHubAuthToken(process.env, project);
+    } catch (error) {
+      ctx.ui.notify(`kxm could not read persisted hub credentials: ${error instanceof Error ? error.message : String(error)}`, "error");
+      await applySessionChrome(ctx, event, true);
+      return;
+    }
     if (!hubAuthToken) {
-      try {
-        hubAuthToken = readHubEnvRecord()?.authToken?.trim() || undefined;
-      } catch (error) {
-        ctx.ui.notify(`kxm could not read persisted hub credentials: ${error instanceof Error ? error.message : String(error)}`, "warning");
-      }
+      ctx.ui.notify(new AgentProjectTokenMissingError(project).message, "error");
+      await applySessionChrome(ctx, event, true);
+      return;
     }
     client = new HubClient({
       serverUrl,
       name,
       purpose,
       project,
-      ...(hubAuthToken ? { authToken: hubAuthToken } : {}),
+      authToken: hubAuthToken,
       ...(model ? { model } : {}),
     });
     notify = (message, type) => ctx.ui.notify(message, type);
@@ -893,9 +897,11 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
         if (!policy.allowed) {
           throw new Error(`tool_policy_denied: ${policy.detail ?? policy.error}`);
         }
+        // A request sent while handling the active inbound request continues its hop chain.
+        const handling = activeInbound ? [activeInbound] : [];
         return result(
           await workflowCall(() =>
-            cmd.execute(requireClient(), (params ?? {}) as Record<string, unknown>, { signal }),
+            cmd.execute(requireClient(), (params ?? {}) as Record<string, unknown>, { signal, handling }),
           ),
         );
       },

@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { openReadOnlyDatabase } from "../sqlite.ts";
@@ -16,12 +16,14 @@ import {
 import {
   canonicalWorkflowEvidenceKey,
   parseWorkflowDefinitions,
+  workflowWebhookHeaders,
   type WorkflowEvidenceInput,
   type WorkflowJournalEntry,
   type WorkflowRun,
 } from "../workflow.ts";
 import { discoverKxmProjectRoot } from "../project-config.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
+import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import type { WorkerOutcome } from "../envelope.ts";
 import {
   print,
@@ -67,19 +69,22 @@ export async function postWorkflowStart(input: {
     ? { ...input.payload, event: input.event }
     : input.payload;
   const body = JSON.stringify(payload);
-  const signature = `sha256=${createHmac("sha256", input.secret).update(body).digest("hex")}`;
   const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}/v1/webhooks/${encodeURIComponent(input.definitionId)}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-hub-signature-256": signature,
-      "x-kxm-delivery-id": input.deliveryId,
+      ...workflowWebhookHeaders({
+        secret: input.secret,
+        scope: { definitionId: input.definitionId },
+        deliveryId: input.deliveryId,
+        body,
+      }),
       ...(input.event ? { "x-github-event": input.event } : {}),
     },
     body,
   });
   const responseText = (await response.text()).slice(0, 8_000);
-  let parsed: { run?: { id?: string }; duplicate?: boolean } = {};
+  let parsed: { runId?: string; duplicate?: boolean } = {};
   try {
     parsed = JSON.parse(responseText);
   } catch {
@@ -88,7 +93,7 @@ export async function postWorkflowStart(input: {
   if (!response.ok) throw new Error(`workflow_start_http_${response.status}`);
   return {
     status: response.status,
-    ...(parsed.run?.id ? { runId: parsed.run.id } : {}),
+    ...(parsed.runId ? { runId: parsed.runId } : {}),
     duplicate: parsed.duplicate === true,
   };
 }
@@ -536,7 +541,7 @@ export async function cmdSignal(runtime: Runtime, runId: string, signalKey: stri
   }
   const worker = gateOf(runtime, "signal");
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+  if (projectRoot && projectRuntimeOwnsRun(projectRoot, runId, runtime.env)) {
     if (runtime.dryRun) {
       printWorker(runtime, worker, { ok: true, command: "signal", dryRun: true, runId, signalKey, status, summary, evidence }, "would post signal to KXM run");
       return 0;

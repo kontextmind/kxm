@@ -18,7 +18,7 @@ import { Command, CommanderError } from "commander";
 import { readInstalledKxmVersion } from "./kxm-update.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { HubClient } from "./client.ts";
-import { resolveClientHubAuthToken } from "./hub-env.ts";
+import { AgentProjectTokenMissingError, resolveAgentHubAuthToken } from "./hub-env.ts";
 import { defaultProjectName } from "./project-name.ts";
 import {
   AGENT_COMMANDS_MAP,
@@ -27,6 +27,7 @@ import {
 import { discoverKxmProjectRoot } from "./project-config.ts";
 import { JOURNAL_CATEGORIES } from "./workflow.ts";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "./runtime-supervisor.ts";
+import { projectRuntimeOwnsRun } from "./runtime-store.ts";
 
 // Submodule imports
 import {
@@ -234,14 +235,17 @@ async function ensureCliClient(runtime: Runtime): Promise<HubClient> {
   const project = defaultProjectName(runtime.cwd, runtime.env);
   const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
   const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
-  const authToken = resolveClientHubAuthToken(runtime.env, project);
+  // These commands act as a peer agent, so they take the agent credential: never the
+  // persisted admin token, which the hub accepts for any project without its own token.
+  const authToken = resolveAgentHubAuthToken(runtime.env, project);
+  if (!authToken) throw new AgentProjectTokenMissingError(project);
   const client = new HubClient({
     serverUrl,
     name,
     project,
     purpose,
     fetchImpl: runtime.fetchImpl,
-    ...(authToken ? { authToken } : {}),
+    authToken,
   });
   await client.start(() => {});
   return client;
@@ -308,11 +312,12 @@ async function dispatchAgentCliCommand(
     }
   }
 
-  // Handle KXM run binding for workflow wait
+  // A workflow wait on a run this project's Runtime owns goes to the Runtime; any other
+  // run id, including a hub workflow run of the same shape, goes to the hub.
   if (toolName === "kxm_workflow_wait") {
     const runId = typeof args.runId === "string" ? args.runId : undefined;
     const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-    if (runId && projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+    if (runId && projectRoot && projectRuntimeOwnsRun(projectRoot, runId, runtime.env)) {
       if (runtime.dryRun) {
         print(runtime.io, runtime.json, { ok: true, command: "workflow wait", runId, dryRun: true }, `would wait for signal on KXM run ${runId}`);
         return 0;
@@ -349,6 +354,15 @@ async function dispatchAgentCliCommand(
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof AgentProjectTokenMissingError) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, error: error.code, project: error.project, nextAction: "export_kxm_auth_token", detail: message },
+        message,
+      );
+      return 2;
+    }
     print(runtime.io, runtime.json, { ok: false, error: "command_failed", detail: message }, `command failed: ${message}`);
     return 1;
   } finally {

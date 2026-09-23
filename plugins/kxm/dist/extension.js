@@ -14799,7 +14799,9 @@ var HubClient = class {
               options.workflowContext
             )
           } : {},
-          ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
+          ...options.ttlMs ? { ttlMs: options.ttlMs } : {},
+          ...options.hops !== void 0 ? { hops: options.hops } : {},
+          ...options.maxHops !== void 0 ? { maxHops: options.maxHops } : {}
         });
         const completed = await this.awaitResponse(
           message.id,
@@ -15106,6 +15108,13 @@ async function hubJsonRequest(options, path, init, headers) {
 }
 
 // plugins/kxm/src/commands.ts
+function forwardedHops(handling) {
+  if (!handling?.length) return void 0;
+  return {
+    hops: Math.max(...handling.map((message) => message.hops)) + 1,
+    maxHops: Math.min(...handling.map((message) => message.maxHops))
+  };
+}
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -15235,12 +15244,13 @@ var AGENT_COMMANDS = [
       required: ["target", "content"],
       additionalProperties: false
     },
-    async execute(client, args) {
+    async execute(client, args, context) {
       const delivery = optionalString(args.delivery);
       const correlationId = optionalString(args.correlationId);
       const idempotencyKey = optionalString(args.idempotencyKey);
       const workflowContext = optionalWorkflowContext(args.workflowContext);
       const message = await client.send({
+        ...forwardedHops(context?.handling),
         target: requiredString(args.target, "target"),
         content: requiredString(args.content, "content"),
         ...delivery ? { delivery } : {},
@@ -15318,6 +15328,7 @@ var AGENT_COMMANDS = [
       const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
       return {
         responses: await client.fanout({
+          ...forwardedHops(context?.handling),
           targets,
           content: requiredString(args.content, "content"),
           ...optionalString(args.correlationId) ? { correlationId: optionalString(args.correlationId) } : {},
@@ -16370,6 +16381,24 @@ function resolveHubCredentials(options = {}) {
     written: needsPersist === true
   };
 }
+function resolveAgentHubAuthToken(env, project) {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  const tokens = readHubEnvRecord(env)?.projectTokens;
+  if (!tokens || !Object.hasOwn(tokens, project)) return void 0;
+  return tokens[project]?.trim() || void 0;
+}
+var AgentProjectTokenMissingError = class extends Error {
+  code = "project_token_missing";
+  project;
+  constructor(project) {
+    super(
+      `kxm has no project token for project ${project} on this machine. Set KXM_AUTH_TOKEN to that project's token, or add ${project} to the hub KXM_PROJECT_TOKENS (list every existing project too, because that variable replaces the saved map). An agent never uses the hub admin token.`
+    );
+    this.name = "AgentProjectTokenMissingError";
+    this.project = project;
+  }
+};
 
 // plugins/kxm/src/repo-root.ts
 import { existsSync as existsSync5 } from "node:fs";
@@ -38060,13 +38089,11 @@ function piMeshExtension(pi) {
     removeMatchingLegacyRecoveryContext();
     const purpose = process.env.KXM_AGENT_PURPOSE ?? "General-purpose coding agent";
     const model = ctx2.model ? `${ctx2.model.provider}/${ctx2.model.id}` : void 0;
-    let autoStartToken;
     try {
       const config2 = loadKxmConfig(ctx2.cwd);
       if (hubAutoStartMode(config2) === "background") {
         const ensured = await ensureHubRunning({ config: config2, cwd: ctx2.cwd });
         if (ensured.status === "started") {
-          autoStartToken = ensured.authToken;
           ctx2.ui.notify(
             `kxm hub started in the background (pid ${ensured.pid}); logs: ${ensured.logPath}` + (ensured.authTokenSource === "generated" ? "; new admin token generated and persisted to user state" : ""),
             "info"
@@ -38078,21 +38105,25 @@ function piMeshExtension(pi) {
     } catch (error2) {
       ctx2.ui.notify(`kxm hub auto-start failed: ${error2 instanceof Error ? error2.message : String(error2)}`, "warning");
     }
-    const envAuthToken = process.env.KXM_AUTH_TOKEN?.trim();
-    let hubAuthToken = envAuthToken || autoStartToken;
+    let hubAuthToken;
+    try {
+      hubAuthToken = resolveAgentHubAuthToken(process.env, project);
+    } catch (error2) {
+      ctx2.ui.notify(`kxm could not read persisted hub credentials: ${error2 instanceof Error ? error2.message : String(error2)}`, "error");
+      await applySessionChrome(ctx2, event, true);
+      return;
+    }
     if (!hubAuthToken) {
-      try {
-        hubAuthToken = readHubEnvRecord()?.authToken?.trim() || void 0;
-      } catch (error2) {
-        ctx2.ui.notify(`kxm could not read persisted hub credentials: ${error2 instanceof Error ? error2.message : String(error2)}`, "warning");
-      }
+      ctx2.ui.notify(new AgentProjectTokenMissingError(project).message, "error");
+      await applySessionChrome(ctx2, event, true);
+      return;
     }
     client = new HubClient({
       serverUrl,
       name,
       purpose,
       project,
-      ...hubAuthToken ? { authToken: hubAuthToken } : {},
+      authToken: hubAuthToken,
       ...model ? { model } : {}
     });
     notify = (message, type) => ctx2.ui.notify(message, type);
@@ -38248,9 +38279,10 @@ function piMeshExtension(pi) {
         if (!policy.allowed) {
           throw new Error(`tool_policy_denied: ${policy.detail ?? policy.error}`);
         }
+        const handling = activeInbound ? [activeInbound] : [];
         return result(
           await workflowCall(
-            () => cmd.execute(requireClient(), params ?? {}, { signal })
+            () => cmd.execute(requireClient(), params ?? {}, { signal, handling })
           )
         );
       }

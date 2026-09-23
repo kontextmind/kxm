@@ -219,7 +219,9 @@ var HubClient = class {
               options.workflowContext
             )
           } : {},
-          ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
+          ...options.ttlMs ? { ttlMs: options.ttlMs } : {},
+          ...options.hops !== void 0 ? { hops: options.hops } : {},
+          ...options.maxHops !== void 0 ? { maxHops: options.maxHops } : {}
         });
         const completed = await this.awaitResponse(
           message.id,

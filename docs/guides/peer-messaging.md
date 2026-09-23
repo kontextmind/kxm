@@ -246,7 +246,7 @@ Neither field proves where a reply came from. Workflow evidence uses `workflowCo
 
 When a request expires, both the sender and the recipient receive an `expired` event.
 
-The hop limit refuses a request whose `hops` count has reached `maxHops` (`hop_limit_reached`). Only a client that forwards a request through the [Hub HTTP API reference](../reference/http-api.md) and carries its hop count is affected. `kxm_send`, `kxm_fanout`, and `kxm peer send` always start at hop 0, so the limit does not stop a chain of agents that each send a new request.
+The hop limit refuses a request whose `hops` count has reached `maxHops` (`hop_limit_reached`). In Pi and in Claude Code, `kxm_send` and `kxm_fanout` send one hop past the inbound request the session is handling, under that request's `maxHops`, so a chain of agents forwarding work to each other stops at the limit. The Claude Code MCP server counts from the furthest request in its open inbox. `kxm peer send` from the CLI handles no inbound request, so it always starts a new chain at hop 0.
 
 ## Queue work for an offline agent
 
@@ -272,7 +272,7 @@ Tools and the CLI report the message text; the HTTP response also carries the co
 | `online target not found: <name>` | `target_not_found` | The target is offline or unknown. Check `kxm_list`; use `allowOffline` for a registered agent. |
 | `cannot send a request to yourself` | `self_target` | Send to a different agent. |
 | `idempotency key was already used for another request` | `idempotency_conflict` | A different request reused the key. Repeat the original exactly, or use a new key for new work. |
-| `hop limit reached (<hops>/<max>)` | `hop_limit_reached` | A forwarding client reached `maxHops`. Stop the chain. |
+| `hop limit reached (<hops>/<max>): …` | `hop_limit_reached` | Forwarding would extend the chain past `maxHops`. Answer the inbound request directly instead of forwarding it. |
 | `ttlMs must be an integer between 1000 and 604800000` | `protocol_error` | Use a TTL from 1 second to 7 days. |
 | `message is not visible to this agent` | `message_forbidden` | Run as the sender or recipient. |
 | `message already has a reply` | `duplicate_reply` | The request is already answered. |

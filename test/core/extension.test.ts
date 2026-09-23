@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -10,6 +9,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piMeshExtension, { bindingForMessage, workflowRunIdForMessage } from "../../plugins/kxm/src/extension.ts";
 import { recoveryEnvelopePath, workerStateKey } from "../../plugins/kxm/src/recovery.ts";
 import { SESSION_BRIEF_SKIP_LABEL } from "../../plugins/kxm/src/session-work.ts";
+import { HUB_ENV_SCHEMA, writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
+import { workflowWebhookHeaders } from "../../plugins/kxm/src/workflow.ts";
 import { createTestMesh, waitFor } from "../helpers.ts";
 import { isolateSessionEnvironment } from "../helpers/session-env.ts";
 
@@ -309,8 +310,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "extension-delivery-7",
-      "x-hub-signature": `sha256=${createHmac("sha256", webhookSecret).update(workflowPayload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: webhookSecret, scope: { definitionId: "extension-workflow" }, deliveryId: "extension-delivery-7", body: workflowPayload }),
     },
     body: workflowPayload,
   });
@@ -475,8 +475,7 @@ test("fresh Pi session receives a durable workflow recovery turn", async (contex
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "recovery-delivery-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "recovery-workflow" }, deliveryId: "recovery-delivery-1", body: body }),
     },
     body,
   });
@@ -553,8 +552,7 @@ test("fresh tool-timeout recovery relies on one durable inbound replay", async (
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "tool-timeout-recovery-delivery-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "tool-timeout-recovery-workflow" }, deliveryId: "tool-timeout-recovery-delivery-1", body: body }),
     },
     body,
   });
@@ -674,8 +672,7 @@ test("Pi extension preserves workflow work after a settled provider error and al
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "provider-recovery-delivery-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "provider-recovery-workflow" }, deliveryId: "provider-recovery-delivery-1", body: body }),
     },
     body,
   });
@@ -989,8 +986,7 @@ test("supervised Pi routes a workflow prompt before acknowledgement and replays 
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "session-isolation-delivery",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "session-isolation" }, deliveryId: "session-isolation-delivery", body: body }),
     },
     body,
   });
@@ -1462,6 +1458,82 @@ test("Pi extension session readiness keeps a single hub registration across star
   await shutdownExtension(fake);
 });
 
+test("Pi tools send one hop past the active inbound request, so the hub hop limit bounds a forwarding chain", async (context) => {
+  const mesh = await createTestMesh(context);
+  const upstream = mesh.makeClient("hop-upstream");
+  const downstream = mesh.makeClient("hop-downstream");
+  const forwarded: Array<{ hops: number; maxHops: number }> = [];
+  await upstream.start(() => undefined);
+  await downstream.start((event) => {
+    if (event.type === "message") forwarded.push(event.message);
+  });
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-pi-hops-"));
+  const fake = fakePi();
+  context.after(async () => {
+    await shutdownExtension(fake);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+  swapSessionEnv(context, {
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "pi-hop-relay",
+    KXM_SESSION_BRIEF: "off",
+  });
+  piMeshExtension(fake.api);
+  await fake.emit("session_start", { reason: "startup" }, sessionCtx(cwd, recordingUi().ui));
+  await waitFor(async () => (await upstream.listAgents()).some((agent) => agent.name === "pi-hop-relay"));
+  const forward = (callId: string) => fake.tools.get("kxm_send")!.execute(callId, { target: "hop-downstream", content: callId });
+
+  // Three hops into a five-hop chain, the relay forwards as hop four.
+  await upstream.send({ target: "pi-hop-relay", content: "relay this", hops: 3, maxHops: 5 });
+  await waitFor(() => fake.sent.length === 1);
+  await fake.emit("message_start", { message: fake.sent[0]!.message });
+  await forward("forwarded");
+  await waitFor(() => forwarded.length === 1);
+  assert.deepEqual([forwarded[0]!.hops, forwarded[0]!.maxHops], [4, 5]);
+  await fake.emit("agent_end", { messages: [{ role: "assistant", content: "relayed" }] });
+  await fake.emit("agent_settled");
+
+  // At hop four of five, one more forward is refused.
+  await upstream.send({ target: "pi-hop-relay", content: "relay again", hops: 4, maxHops: 5 });
+  await waitFor(() => fake.sent.length === 2);
+  await fake.emit("message_start", { message: fake.sent[1]!.message });
+  await assert.rejects(() => forward("one-too-many"), /hop limit reached \(5\/5\).*code=hop_limit_reached/);
+  assert.equal(forwarded.length, 1);
+});
+
+test("Pi extension never registers with the persisted admin token", async (context) => {
+  const adminToken = "kxm_admin_pi-must-not-use-this";
+  const mesh = await createTestMesh(context, { authToken: adminToken });
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-pi-admin-fallback-"));
+  const fake = fakePi();
+  context.after(async () => {
+    await shutdownExtension(fake);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+  swapSessionEnv(context, {
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "pi-admin-fallback",
+  });
+  writeHubEnvRecord({
+    schema: HUB_ENV_SCHEMA,
+    createdAt: "2026-09-23T00:00:00.000Z",
+    authToken: adminToken,
+    projectTokens: { "other-project": "other-project-token" },
+  }, process.env);
+
+  piMeshExtension(fake.api);
+  const refused = recordingUi();
+  await fake.emit("session_start", { reason: "startup" }, sessionCtx(cwd, refused.ui));
+  const refusal = refused.notices.find((notice) => notice.type === "error");
+  assert.match(refusal?.message ?? "", /no project token for project test-project/);
+  assert.match(refusal?.message ?? "", /Set KXM_AUTH_TOKEN/);
+  assert.doesNotMatch(JSON.stringify(refused.notices), new RegExp(`${adminToken}|other-project-token`));
+  assert.equal([...mesh.hub.state.agents.values()].some((agent) => agent.name === "pi-admin-fallback"), false);
+});
+
 test("Pi extension session readiness reports offline chrome and reapplies /kxm", async (context) => {
   const port = await closedLoopbackPort();
   const cwd = mkdtempSync(join(tmpdir(), "kxm-session-offline-"));
@@ -1472,6 +1544,7 @@ test("Pi extension session readiness reports offline chrome and reapplies /kxm",
   });
   swapSessionEnv(context, {
     KXM_SERVER_URL: `http://127.0.0.1:${port}`,
+    KXM_AUTH_TOKEN: "offline-project-token",
     KXM_PROJECT: "test-project",
     KXM_AGENT_NAME: "pi-session-offline",
   });

@@ -11,7 +11,7 @@ import {
 } from "../../plugins/kxm/src/arbiter.ts";
 import { parseContextItem, type ContextItem } from "../../plugins/kxm/src/context.ts";
 import { rankRecall, relevanceTokens, scoreRelevance } from "../../plugins/kxm/src/relevance.ts";
-import type { WorkflowJournalEntry } from "../../plugins/kxm/src/workflow.ts";
+import { workflowWebhookHeaders, type WorkflowJournalEntry } from "../../plugins/kxm/src/workflow.ts";
 
 function poolItem(overrides: Record<string, unknown> = {}): ContextItem {
   return parseContextItem({
@@ -338,7 +338,6 @@ test("explain traces lineage and sources without raw bodies", () => {
 
 test("hub context surfaces: role packets, recall, state, episodes, explain, parity", async (context) => {
   const { createTestMesh } = await import("../helpers.ts");
-  const { createHmac } = await import("node:crypto");
   const secret = "context-hub-secret-with-entropy";
   const mesh = await createTestMesh(context, {
     webhookWorkflows: [{
@@ -361,8 +360,7 @@ test("hub context surfaces: role packets, recall, state, episodes, explain, pari
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "context-hub-1",
-      "x-hub-signature": `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: secret, scope: { definitionId: "context-hub" }, deliveryId: "context-hub-1", body: payload }),
     },
     body: payload,
   });

@@ -18475,7 +18475,7 @@ function validateTerminalReceipt(value) {
 }
 
 // plugins/kxm/src/workflow.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash2, createHmac } from "node:crypto";
 
 // plugins/kxm/src/redact.ts
 var SECRET_PATTERNS = [
@@ -19123,6 +19123,37 @@ function parseOutcomeMap(stageId, raw) {
   }
   return map;
 }
+var WORKFLOW_WEBHOOK_SIGNATURE_VERSION = "kxm-webhook-v1";
+function workflowWebhookSignedMaterial(scope, timestamp, deliveryId, body) {
+  const fields = [
+    WORKFLOW_WEBHOOK_SIGNATURE_VERSION,
+    scope.runId === void 0 ? "start" : "signal",
+    timestamp,
+    deliveryId,
+    scope.definitionId,
+    scope.runId ?? "",
+    scope.signalKey ?? ""
+  ];
+  if (fields.some((field) => /[\r\n]/.test(field))) {
+    throw new ProtocolError(400, "webhook signature fields must not contain line breaks", "webhook_signature_field_invalid");
+  }
+  return Buffer.concat([
+    Buffer.from(`${fields.join("\n")}
+`, "utf8"),
+    typeof body === "string" ? Buffer.from(body, "utf8") : Buffer.from(body)
+  ]);
+}
+function workflowWebhookSignature(secret, scope, timestamp, deliveryId, body) {
+  return `sha256=${createHmac("sha256", secret).update(workflowWebhookSignedMaterial(scope, timestamp, deliveryId, body)).digest("hex")}`;
+}
+function workflowWebhookHeaders(input) {
+  const timestamp = String(Math.floor((input.nowMs ?? Date.now()) / 1e3));
+  return {
+    "x-kxm-delivery-id": input.deliveryId,
+    "x-kxm-timestamp": timestamp,
+    "x-kxm-signature": workflowWebhookSignature(input.secret, input.scope, timestamp, input.deliveryId, input.body)
+  };
+}
 function resolveOutcomeRule(stage, outcomeKey) {
   const raw = stage.on?.[outcomeKey];
   return raw === void 0 ? void 0 : normalizeOutcomeValue(raw, `stage ${stage.id} on.${outcomeKey}`);
@@ -19552,7 +19583,9 @@ var HubClient = class {
               options.workflowContext
             )
           } : {},
-          ...options.ttlMs ? { ttlMs: options.ttlMs } : {}
+          ...options.ttlMs ? { ttlMs: options.ttlMs } : {},
+          ...options.hops !== void 0 ? { hops: options.hops } : {},
+          ...options.maxHops !== void 0 ? { maxHops: options.maxHops } : {}
         });
         const completed2 = await this.awaitResponse(
           message.id,
@@ -19946,6 +19979,24 @@ function resolveClientHubAuthToken(env, project) {
   const record = readHubEnvRecord(env);
   return record?.projectTokens?.[project]?.trim() || record?.authToken?.trim() || void 0;
 }
+function resolveAgentHubAuthToken(env, project) {
+  const envToken = env.KXM_AUTH_TOKEN?.trim();
+  if (envToken) return envToken;
+  const tokens = readHubEnvRecord(env)?.projectTokens;
+  if (!tokens || !Object.hasOwn(tokens, project)) return void 0;
+  return tokens[project]?.trim() || void 0;
+}
+var AgentProjectTokenMissingError = class extends Error {
+  code = "project_token_missing";
+  project;
+  constructor(project) {
+    super(
+      `kxm has no project token for project ${project} on this machine. Set KXM_AUTH_TOKEN to that project's token, or add ${project} to the hub KXM_PROJECT_TOKENS (list every existing project too, because that variable replaces the saved map). An agent never uses the hub admin token.`
+    );
+    this.name = "AgentProjectTokenMissingError";
+    this.project = project;
+  }
+};
 function resolveClientAdminAuthToken(env = process.env) {
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
@@ -19971,6 +20022,13 @@ import { createHash as createHash4, randomUUID as randomUUID2, timingSafeEqual }
 import { chmodSync, existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, unlinkSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname3, join as join5, resolve as resolve2 } from "node:path";
+function forwardedHops(handling) {
+  if (!handling?.length) return void 0;
+  return {
+    hops: Math.max(...handling.map((message) => message.hops)) + 1,
+    maxHops: Math.min(...handling.map((message) => message.maxHops))
+  };
+}
 function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new Error(`${name} is required`);
   return value.trim();
@@ -20100,12 +20158,13 @@ var AGENT_COMMANDS = [
       required: ["target", "content"],
       additionalProperties: false
     },
-    async execute(client, args) {
+    async execute(client, args, context) {
       const delivery = optionalString2(args.delivery);
       const correlationId = optionalString2(args.correlationId);
       const idempotencyKey = optionalString2(args.idempotencyKey);
       const workflowContext = optionalWorkflowContext(args.workflowContext);
       const message = await client.send({
+        ...forwardedHops(context?.handling),
         target: requiredString(args.target, "target"),
         content: requiredString(args.content, "content"),
         ...delivery ? { delivery } : {},
@@ -20183,6 +20242,7 @@ var AGENT_COMMANDS = [
       const targets = Array.isArray(args.targets) ? args.targets.map((t) => requiredString(t, "target")) : [];
       return {
         responses: await client.fanout({
+          ...forwardedHops(context?.handling),
           targets,
           content: requiredString(args.content, "content"),
           ...optionalString2(args.correlationId) ? { correlationId: optionalString2(args.correlationId) } : {},
@@ -22985,8 +23045,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join50 = objectValue(step.join);
-    const minimumPassed = join50 && typeof join50.minimumPassed === "number" ? join50.minimumPassed : void 0;
+    const join49 = objectValue(step.join);
+    const minimumPassed = join49 && typeof join49.minimumPassed === "number" ? join49.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -23530,7 +23590,7 @@ function planKxmInitialization(start = process.cwd(), options = {}) {
 
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash13, createHmac, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+import { createHash as createHash13, createHmac as createHmac2, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync16, lstatSync as lstatSync6, mkdirSync as mkdirSync11, readFileSync as readFileSync14, renameSync as renameSync5, rmSync as rmSync5, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname11, isAbsolute as isAbsolute6, join as join15 } from "node:path";
 
@@ -23538,25 +23598,6 @@ import { dirname as dirname11, isAbsolute as isAbsolute6, join as join15 } from 
 import { createHash as createHash10, randomUUID as randomUUID4 } from "node:crypto";
 import { existsSync as existsSync10, lstatSync as lstatSync4, mkdirSync as mkdirSync6, readFileSync as readFileSync8, realpathSync as realpathSync3, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname7, join as join9, resolve as resolve7 } from "node:path";
-
-// plugins/kxm/src/bindings.ts
-import { spawnSync as spawnSync3 } from "node:child_process";
-import { createHash as createHash7, randomUUID as randomUUID3 } from "node:crypto";
-import {
-  chmodSync as chmodSync2,
-  closeSync,
-  existsSync as existsSync8,
-  fsyncSync,
-  lstatSync as lstatSync2,
-  mkdirSync as mkdirSync4,
-  openSync,
-  readFileSync as readFileSync6,
-  realpathSync as realpathSync2,
-  renameSync as renameSync2,
-  rmSync as rmSync2,
-  writeFileSync as writeFileSync4
-} from "node:fs";
-import { homedir as homedir3 } from "node:os";
 
 // plugins/kxm/src/sqlite.ts
 import { existsSync as existsSync7 } from "node:fs";
@@ -23607,6 +23648,23 @@ function openReadOnlyDatabase(path4) {
 }
 
 // plugins/kxm/src/bindings.ts
+import { spawnSync as spawnSync3 } from "node:child_process";
+import { createHash as createHash7, randomUUID as randomUUID3 } from "node:crypto";
+import {
+  chmodSync as chmodSync2,
+  closeSync,
+  existsSync as existsSync8,
+  fsyncSync,
+  lstatSync as lstatSync2,
+  mkdirSync as mkdirSync4,
+  openSync,
+  readFileSync as readFileSync6,
+  realpathSync as realpathSync2,
+  renameSync as renameSync2,
+  rmSync as rmSync2,
+  writeFileSync as writeFileSync4
+} from "node:fs";
+import { homedir as homedir3 } from "node:os";
 import { dirname as dirname5, isAbsolute as isAbsolute3, join as join7, parse, relative as relative2, resolve as resolve5, sep as sep2 } from "node:path";
 var MAX_BINDING_RECORD_BYTES = 256 * 1024;
 var BINDING_LABEL = "Runtime-local repository bindings";
@@ -24409,6 +24467,20 @@ function projectRuntimeKey(projectRoot) {
   const folded = process.platform === "win32" ? canonical2.toLocaleLowerCase("en-US") : canonical2;
   return createHash10("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
 }
+function kxmProjectRunEventsPath(projectRoot, env) {
+  return join9(kxmRuntimePaths({ env }).projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
+}
+function projectRuntimeOwnsRun(projectRoot, runId, env) {
+  const path4 = kxmProjectRunEventsPath(projectRoot, env);
+  if (!existsSync10(path4)) return false;
+  const database = new DatabaseSync(path4, { readOnly: true });
+  try {
+    database.exec("PRAGMA busy_timeout = 5000");
+    return database.prepare("SELECT 1 FROM runs WHERE run_id = ?").get(runId) !== void 0;
+  } finally {
+    database.close();
+  }
+}
 var KXM_REGISTRY_SCHEMA_VERSION = 1;
 var REGISTRY_TABLES = {
   supervisor: ["singleton_id", "runtime_id", "pid", "port", "token_hash", "started_at", "heartbeat_at", "state"],
@@ -24875,7 +24947,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join50 = compileJoin(step, id, sink);
+  const join49 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
@@ -24903,7 +24975,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join50
+    join: join49
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -24953,15 +25025,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join50 = objectValue2(step.join);
-  if (!join50) return { strategy: "all" };
-  const declared = stringValue2(join50.strategy);
+  const join49 = objectValue2(step.join);
+  if (!join49) return { strategy: "all" };
+  const declared = stringValue2(join49.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join50.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join49.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join50.cancelRemaining === "boolean" ? { cancelRemaining: join50.cancelRemaining } : {}
+    ...typeof join49.cancelRemaining === "boolean" ? { cancelRemaining: join49.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -27026,7 +27098,7 @@ async function probeSupervisor(port, expectedRuntimeId, token, timeoutMs = 750) 
   }
 }
 function hashKxmTokenProof(token, nonce) {
-  return createHmac("sha256", token).update(`kxm-runtime-token-proof\0${nonce}`, "utf8").digest("hex");
+  return createHmac2("sha256", token).update(`kxm-runtime-token-proof\0${nonce}`, "utf8").digest("hex");
 }
 async function attachKxmSupervisor(options = {}) {
   const paths = kxmRuntimePaths(options.stateRoot !== void 0 ? { stateRoot: options.stateRoot } : { ...options.env ? { env: options.env } : {} });
@@ -28639,7 +28711,7 @@ async function cmdRoleResume(runtime, runId, ruling) {
 }
 
 // plugins/kxm/src/cli/workflows.ts
-import { createHmac as createHmac3, randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 import { existsSync as existsSync21, readFileSync as readFileSync20 } from "node:fs";
 import { join as join22, resolve as resolve17 } from "node:path";
 
@@ -28880,7 +28952,7 @@ function writeRetrospective(outDir, doc) {
 }
 
 // plugins/kxm/src/github-watch.ts
-import { createHmac as createHmac2, randomUUID as randomUUID7 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 async function fetchWithTimeout(fetchImpl, input, init, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
@@ -28928,7 +29000,6 @@ function mapCheckConclusion(runs, required = []) {
 }
 async function postWorkflowSignal(input) {
   const body = JSON.stringify({ status: input.status, summary: input.summary, evidence: input.evidence });
-  const signature = `sha256=${createHmac2("sha256", input.signalSecret).update(body).digest("hex")}`;
   const endpoint = [
     input.serverUrl.replace(/\/$/, ""),
     "v1/webhooks",
@@ -28942,8 +29013,12 @@ async function postWorkflowSignal(input) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-hub-signature-256": signature,
-      "x-kxm-delivery-id": input.deliveryId
+      ...workflowWebhookHeaders({
+        secret: input.signalSecret,
+        scope: { definitionId: input.definitionId, runId: input.runId, signalKey: input.signalKey },
+        deliveryId: input.deliveryId,
+        body
+      })
     },
     body
   }, input.timeoutMs ?? 15e3);
@@ -29373,13 +29448,16 @@ function localWorkflowSnapshot(dataPath, runId) {
 async function postWorkflowStart(input) {
   const payload = input.event && input.payload["event"] === void 0 ? { ...input.payload, event: input.event } : input.payload;
   const body = JSON.stringify(payload);
-  const signature = `sha256=${createHmac3("sha256", input.secret).update(body).digest("hex")}`;
   const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}/v1/webhooks/${encodeURIComponent(input.definitionId)}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-hub-signature-256": signature,
-      "x-kxm-delivery-id": input.deliveryId,
+      ...workflowWebhookHeaders({
+        secret: input.secret,
+        scope: { definitionId: input.definitionId },
+        deliveryId: input.deliveryId,
+        body
+      }),
       ...input.event ? { "x-github-event": input.event } : {}
     },
     body
@@ -29393,7 +29471,7 @@ async function postWorkflowStart(input) {
   if (!response.ok) throw new Error(`workflow_start_http_${response.status}`);
   return {
     status: response.status,
-    ...parsed.run?.id ? { runId: parsed.run.id } : {},
+    ...parsed.runId ? { runId: parsed.runId } : {},
     duplicate: parsed.duplicate === true
   };
 }
@@ -29798,7 +29876,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
   }
   const worker = gateOf(runtime, "signal");
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-  if (projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+  if (projectRoot && projectRuntimeOwnsRun(projectRoot, runId, runtime.env)) {
     if (runtime.dryRun) {
       printWorker(runtime, worker, { ok: true, command: "signal", dryRun: true, runId, signalKey, status, summary, evidence }, "would post signal to KXM run");
       return 0;
@@ -45756,7 +45834,7 @@ import { spawnSync as spawnSync8 } from "node:child_process";
 import { createHash as createHash16 } from "node:crypto";
 import { existsSync as existsSync40, mkdtempSync as mkdtempSync3, readFileSync as readFileSync37, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { join as join48, resolve as resolve31 } from "node:path";
+import { join as join47, resolve as resolve31 } from "node:path";
 import { createInterface as createInterface3 } from "node:readline";
 
 // plugins/kxm/src/improve.ts
@@ -46167,12 +46245,9 @@ function evaluatePromotionPolicy(candidate, policy = "manual_pr", options = {}) 
 
 // plugins/kxm/src/improve-sources.ts
 import { existsSync as existsSync35 } from "node:fs";
-import { join as join43, resolve as resolve28 } from "node:path";
+import { resolve as resolve28 } from "node:path";
 var ENGINE_EVENTS_SQL = "SELECT run_id, sequence, event_type, payload FROM events WHERE event_type IN ('routing.attempt.recorded','step.entered','run.status_changed') ORDER BY run_id, sequence";
 var SIMULATED_HARNESS = "driver-simulated";
-function kxmProjectRunEventsPath(projectRoot, env) {
-  return join43(kxmRuntimePaths({ env }).projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
-}
 function parsePayload(text) {
   try {
     const value = JSON.parse(text);
@@ -46313,7 +46388,7 @@ function loadRoutingSources(options) {
 // plugins/kxm/src/modes.ts
 var import_yaml16 = __toESM(require_dist(), 1);
 import { existsSync as existsSync36, readFileSync as readFileSync34 } from "node:fs";
-import { join as join44 } from "node:path";
+import { join as join43 } from "node:path";
 var DEFAULT_MODES_CONFIG = Object.freeze({
   schema: "kxm.modes.v1",
   majorModes: {
@@ -46376,7 +46451,7 @@ function loadModesConfig(projectRoot) {
   if (!projectRoot) {
     return DEFAULT_MODES_CONFIG;
   }
-  const modesPath = join44(projectRoot, ".kxm", "modes.yaml");
+  const modesPath = join43(projectRoot, ".kxm", "modes.yaml");
   if (!existsSync36(modesPath)) {
     return DEFAULT_MODES_CONFIG;
   }
@@ -46467,7 +46542,7 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
     estimatedTokens: estimateTokens(baseSystemPromptChars)
   });
   for (const relPath of resolved.contextFiles) {
-    const fullPath = join44(projectRoot, relPath);
+    const fullPath = join43(projectRoot, relPath);
     let chars = 0;
     if (existsSync36(fullPath)) {
       try {
@@ -46605,7 +46680,7 @@ ${divider}
 import { spawnSync as spawnSync7 } from "node:child_process";
 import { existsSync as existsSync37, mkdirSync as mkdirSync28, readFileSync as readFileSync35, readdirSync as readdirSync13, rmSync as rmSync12, statSync as statSync5 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
-import { join as join45, resolve as resolve29 } from "node:path";
+import { join as join44, resolve as resolve29 } from "node:path";
 var MAX_SSH_OUTPUT_BYTES = 50 * 1024;
 var MAX_SSH_OUTPUT_LINES = 2e3;
 var DEFAULT_SOCKET_DIR = ".kxm/run/ssh-sockets";
@@ -46631,7 +46706,7 @@ function truncateSshOutput(raw) {
   return { text, truncated };
 }
 function parseSshConfig(configPath) {
-  const targetPath = configPath ?? join45(homedir8(), ".ssh", "config");
+  const targetPath = configPath ?? join44(homedir8(), ".ssh", "config");
   if (!existsSync37(targetPath)) {
     return [];
   }
@@ -46721,7 +46796,7 @@ function ensureSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
 }
 function buildSshArgs(options) {
   const socketDir = ensureSocketDir(options.socketDir ?? DEFAULT_SOCKET_DIR);
-  const controlPath = join45(socketDir, "%C");
+  const controlPath = join44(socketDir, "%C");
   const persist = options.controlPersist ?? DEFAULT_CONTROL_PERSIST;
   const args = [
     "-o",
@@ -46746,7 +46821,7 @@ function buildSshArgs(options) {
 }
 function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync7) {
   const resolvedDir = ensureSocketDir(socketDir);
-  const controlPath = join45(resolvedDir, "%C");
+  const controlPath = join44(resolvedDir, "%C");
   try {
     const result = execFn("ssh", ["-O", "check", "-o", `ControlPath=${controlPath}`, host], {
       encoding: "utf-8"
@@ -46758,7 +46833,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync7) {
   const resolvedDir = ensureSocketDir(socketDir);
-  const controlPath = join45(resolvedDir, "%C");
+  const controlPath = join44(resolvedDir, "%C");
   try {
     const result = execFn("ssh", ["-O", "stop", "-o", `ControlPath=${controlPath}`, host], {
       encoding: "utf-8"
@@ -47205,7 +47280,7 @@ complete -c kxm -n "__fish_seen_subcommand_from goal" -a "create list get"
 // plugins/kxm/src/completion-install.ts
 import { existsSync as existsSync38, mkdirSync as mkdirSync29, readFileSync as readFileSync36, writeFileSync as writeFileSync25 } from "node:fs";
 import { homedir as homedir9 } from "node:os";
-import { basename as basename9, delimiter, dirname as dirname23, isAbsolute as isAbsolute9, join as join46, resolve as resolve30 } from "node:path";
+import { basename as basename9, delimiter, dirname as dirname23, isAbsolute as isAbsolute9, join as join45, resolve as resolve30 } from "node:path";
 var COMPLETION_MARKER = "# kxm completion";
 var PATH_MARKER = "# kxm path";
 function detectShell(env = process.env, platform = process.platform) {
@@ -47227,25 +47302,25 @@ function completionScriptPath(shell, options = {}) {
   const env = options.env ?? process.env;
   const explicit = options.configDir ?? env.KXM_USER_CONFIG_DIR?.trim();
   const base = explicit && explicit.length > 0 ? resolve30(explicit) : resolve30(effectiveHome(options), ".config", "kxm");
-  return join46(base, "completions", `kxm.${shell}`);
+  return join45(base, "completions", `kxm.${shell}`);
 }
 function bashRcCandidate(options) {
   const home = effectiveHome(options);
-  const candidates = [join46(home, ".bashrc"), join46(home, ".bash_profile")];
+  const candidates = [join45(home, ".bashrc"), join45(home, ".bash_profile")];
   const existing = candidates.find((candidate) => existsSync38(candidate));
   return existing ?? candidates[0];
 }
 function zshRcCandidate(options) {
   const env = options.env ?? process.env;
   const home = effectiveHome(options);
-  if (env.ZDOTDIR?.trim()) return join46(resolve30(env.ZDOTDIR.trim()), ".zshrc");
-  return join46(home, ".zshrc");
+  if (env.ZDOTDIR?.trim()) return join45(resolve30(env.ZDOTDIR.trim()), ".zshrc");
+  return join45(home, ".zshrc");
 }
 function fishCompletionTarget(shell, options) {
   const env = options.env ?? process.env;
   const home = effectiveHome(options);
-  if (env.XDG_CONFIG_HOME?.trim()) return join46(resolve30(env.XDG_CONFIG_HOME.trim()), "fish", "completions", "kxm.fish");
-  return join46(home, ".config", "fish", "completions", "kxm.fish");
+  if (env.XDG_CONFIG_HOME?.trim()) return join45(resolve30(env.XDG_CONFIG_HOME.trim()), "fish", "completions", "kxm.fish");
+  return join45(home, ".config", "fish", "completions", "kxm.fish");
 }
 function completionRcTarget(shell, options = {}) {
   if (shell === "fish") {
@@ -47333,7 +47408,7 @@ function kxmBinDir(env = process.env) {
   const argv1 = env.KXM_ENTRY ?? process.argv[1];
   if (argv1 && isAbsolute9(argv1)) {
     const dir = dirname23(argv1);
-    if (existsSync38(join46(dir, process.platform === "win32" ? "kxm.cmd" : "kxm"))) return dir;
+    if (existsSync38(join45(dir, process.platform === "win32" ? "kxm.cmd" : "kxm"))) return dir;
   }
   const pathEnv = env.PATH ?? "";
   for (const part of pathEnv.split(delimiter)) {
@@ -47372,7 +47447,7 @@ ${line}
 // plugins/kxm/src/init-guide-setup.ts
 var import_yaml17 = __toESM(require_dist(), 1);
 import { existsSync as existsSync39, mkdirSync as mkdirSync30, writeFileSync as writeFileSync26 } from "node:fs";
-import { dirname as dirname24, join as join47 } from "node:path";
+import { dirname as dirname24, join as join46 } from "node:path";
 var NATIVE_VENDOR_HARNESS = Object.freeze({
   anthropic: "claude",
   openai: "codex",
@@ -47771,13 +47846,13 @@ function renderGuideSetupFiles(projectRoot, plan) {
     const stage = roleStages.get(role);
     if (!stage) continue;
     files.push({
-      path: join47(projectRoot, ".kxm", "agents", `${role}.yaml`),
+      path: join46(projectRoot, ".kxm", "agents", `${role}.yaml`),
       content: (0, import_yaml17.stringify)(agentDocument(role, stage, binding))
     });
   }
   for (const workflow of plan.workflows) {
     files.push({
-      path: join47(projectRoot, ".kxm", "workflows", `${workflow.slug}.yaml`),
+      path: join46(projectRoot, ".kxm", "workflows", `${workflow.slug}.yaml`),
       content: (0, import_yaml17.stringify)(workflowDocument(workflow))
     });
   }
@@ -47855,7 +47930,7 @@ function applyKxmPackageUpdate(runtime, notice) {
       detail: `release v${notice.latest} has no sha256 digest for ${name}; refusing to install`
     };
   }
-  const releaseDir = mkdtempSync3(join48(tmpdir2(), "kxm-pkg-update-"));
+  const releaseDir = mkdtempSync3(join47(tmpdir2(), "kxm-pkg-update-"));
   try {
     const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset);
     if (runtime.dryRun) {
@@ -48228,7 +48303,7 @@ async function cmdImprove(runtime, options = {}) {
     print(runtime.io, runtime.json, { ok: false, command: "improve", error: "config_invalid", detail: message }, `config_invalid: ${message}`);
     return 1;
   }
-  const candidatesDir = options.outDir ? resolve31(runtime.cwd, options.outDir) : join48(root, ".kxm", "candidates");
+  const candidatesDir = options.outDir ? resolve31(runtime.cwd, options.outDir) : join47(root, ".kxm", "candidates");
   const report2 = buildImprovementReport(loaded.records, {
     candidatesDir,
     projectRoot: root,
@@ -48237,7 +48312,7 @@ async function cmdImprove(runtime, options = {}) {
     autoThreshold: config.improvement.autoThreshold,
     halfLifeDays: config.improvement.telemetryHalfLifeDays
   });
-  const reportDir = join48(runtime.dirs.assets, "improvements");
+  const reportDir = join47(runtime.dirs.assets, "improvements");
   const reportPath = writeImprovementReport(reportDir, report2, runtime.dryRun);
   const text = [
     "Sources:",
@@ -48526,7 +48601,7 @@ async function cmdRoutingReport(runtime, options) {
   let catalog;
   if (includeEquivalentListCost) {
     try {
-      const pricesPath = options.prices ? resolve31(runtime.cwd, options.prices) : join48(runtime.dirs.workspace, "prices.yaml");
+      const pricesPath = options.prices ? resolve31(runtime.cwd, options.prices) : join47(runtime.dirs.workspace, "prices.yaml");
       catalog = loadPriceCatalog(pricesPath);
     } catch {
     }
@@ -48754,14 +48829,15 @@ async function ensureCliClient(runtime) {
   const project = defaultProjectName(runtime.cwd, runtime.env);
   const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
   const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
-  const authToken = resolveClientHubAuthToken(runtime.env, project);
+  const authToken = resolveAgentHubAuthToken(runtime.env, project);
+  if (!authToken) throw new AgentProjectTokenMissingError(project);
   const client = new HubClient({
     serverUrl,
     name,
     project,
     purpose,
     fetchImpl: runtime.fetchImpl,
-    ...authToken ? { authToken } : {}
+    authToken
   });
   await client.start(() => {
   });
@@ -48822,7 +48898,7 @@ async function dispatchAgentCliCommand(runtime, toolName, rawArgs) {
   if (toolName === "kxm_workflow_wait") {
     const runId = typeof args.runId === "string" ? args.runId : void 0;
     const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-    if (runId && projectRoot && /^run_[a-f0-9]{32}$/i.test(runId)) {
+    if (runId && projectRoot && projectRuntimeOwnsRun(projectRoot, runId, runtime.env)) {
       if (runtime.dryRun) {
         print(runtime.io, runtime.json, { ok: true, command: "workflow wait", runId, dryRun: true }, `would wait for signal on KXM run ${runId}`);
         return 0;
@@ -48857,6 +48933,15 @@ async function dispatchAgentCliCommand(runtime, toolName, rawArgs) {
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof AgentProjectTokenMissingError) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, error: error.code, project: error.project, nextAction: "export_kxm_auth_token", detail: message },
+        message
+      );
+      return 2;
+    }
     print(runtime.io, runtime.json, { ok: false, error: "command_failed", detail: message }, `command failed: ${message}`);
     return 1;
   } finally {

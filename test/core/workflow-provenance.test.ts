@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
 import { request as httpRequest, type ClientRequest } from "node:http";
 import test, { type TestContext } from "node:test";
 import type { HubClient } from "../../plugins/kxm/src/client.ts";
@@ -10,6 +10,7 @@ import {
   checkpointRun,
   parseWorkflowDefinitions,
   verifyWorkflowEvidenceReferences,
+  workflowWebhookHeaders,
   type WebhookWorkflowDefinition,
   type WorkflowRun,
   type WorkflowStageState,
@@ -239,8 +240,7 @@ async function startProvenanceMesh(
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": `${definition.id}-delivery`,
-      "x-hub-signature": `sha256=${createHmac("sha256", definition.secret).update(payload).digest("hex")}`,
+      ...workflowWebhookHeaders({ secret: definition.secret, scope: { definitionId: definition.id }, deliveryId: `${definition.id}-delivery`, body: payload }),
     },
     body: payload,
   });
@@ -1047,8 +1047,12 @@ test("peer evidence captured before a wait survives a signed callback checkpoint
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-kxm-delivery-id": "ci-main-passed",
-        "x-hub-signature-256": `sha256=${createHmac("sha256", SIGNAL_SECRET).update(signalBody).digest("hex")}`,
+        ...workflowWebhookHeaders({
+          secret: SIGNAL_SECRET,
+          scope: { definitionId: definition.id, runId: run.id, signalKey: "ci-main" },
+          deliveryId: "ci-main-passed",
+          body: signalBody,
+        }),
       },
       body: signalBody,
     },
@@ -1137,8 +1141,12 @@ test("a signed callback can use prior admin approval but cannot approve degradat
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-kxm-delivery-id": "ci-degraded-passed",
-      "x-hub-signature-256": `sha256=${createHmac("sha256", SIGNAL_SECRET).update(signalBody).digest("hex")}`,
+      ...workflowWebhookHeaders({
+        secret: SIGNAL_SECRET,
+        scope: { definitionId: definition.id, runId: run.id, signalKey: "ci-degraded" },
+        deliveryId: "ci-degraded-passed",
+        body: signalBody,
+      }),
     },
     body: signalBody,
   });
