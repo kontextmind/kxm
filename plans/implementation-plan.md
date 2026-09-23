@@ -1809,6 +1809,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   user state root lists that store in the manifest, and that restoring it into a fresh root
   brings the outbox back — the current round-trip test only ever puts stores inside
   `projectRoot`, which is why the gap survived.
+  **Consequence for P6, so the row is not read as more than it is:** the v6→v7 bump's deployed
+  witness covers the **brake** (kxm-dev-svr, 2026-09-23: the real pre-bump `run-events.db` copy,
+  46/46 acked, refused by the v7 build with `runtime_schema_outdated … is schema version 6; this
+  build requires 7`) and **fresh creation** (a new store at v7 with `attempt_count`/`refused_code`
+  /`refused_at` and both partial indexes). It does **not** cover a deployed backup/restore
+  round-trip of the event store, because the command cannot enumerate it. Do not mark the P6
+  deployed restore witness passed for the event store until this gap is closed; the v7
+  round-trip is proven only by the suite (`restore ceilings track every store's own schema
+  version` plus the e6 round-trip).
 
 - **Recorded gap, not scheduled (2026-09-20, found while fixing S3):**
   `producerPolicy.acceptedStatuses` compiles to `["passed"]` in
