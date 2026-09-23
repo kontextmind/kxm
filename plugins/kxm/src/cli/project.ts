@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { createBackup, restoreBackup } from "../database.ts";
+import { createBackup, planBackup, planRestore, restoreBackup } from "../database.ts";
 import { refreshModelInventory } from "../model-inventory.ts";
 import { listInventoryModels, listRoleBindings, loadRoutePolicy, setRouteState, updateRouteState } from "../routes.ts";
 import {
@@ -43,7 +43,7 @@ import {
 } from "../kxm-update.ts";
 import { loadKxmUpdateConfig } from "../kxm-update-config.ts";
 import type { InstallKindReport, InstallProbe } from "../kxm-install-kind.ts";
-import { print, type CliIo, type CliSpawnResult, type Runtime } from "./types.ts";
+import { print, printPlan, refuseDryRun, type CliIo, type CliSpawnResult, type Runtime } from "./types.ts";
 
 export const kxmDriveCliSeams: {
   ensureSupervisor?: typeof ensureKxmSupervisor;
@@ -181,10 +181,24 @@ export async function cmdKxmInit(
 
 export async function cmdBackup(runtime: Runtime, options: { out?: string | undefined }): Promise<number> {
   try {
-    const { manifest, outDir } = createBackup({
+    const backupOptions = {
       projectRoot: runtime.cwd,
       ...(options.out ? { outDir: resolve(runtime.cwd, options.out) } : {}),
-    });
+    };
+    if (runtime.dryRun) {
+      const plan = planBackup(backupOptions);
+      printPlan(
+        runtime,
+        { command: "backup", outDir: plan.outDir, stores: plan.stores },
+        [
+          ...plan.stores.map((store) => ({ action: "write" as const, target: join(plan.outDir, store.backupFile) })),
+          { action: "write", target: join(plan.outDir, "manifest.json") },
+        ],
+        `back up ${plan.stores.length} store(s) to ${plan.outDir} (sources are not opened, so their WAL is not checkpointed)`,
+      );
+      return 0;
+    }
+    const { manifest, outDir } = createBackup(backupOptions);
     const payload = {
       ok: true,
       command: "backup",
@@ -211,6 +225,26 @@ export async function cmdBackup(runtime: Runtime, options: { out?: string | unde
 
 export async function cmdRestore(runtime: Runtime, manifestArg: string): Promise<number> {
   try {
+    if (runtime.dryRun) {
+      const plan = planRestore(resolve(runtime.cwd, manifestArg), { projectRoot: runtime.cwd });
+      printPlan(
+        runtime,
+        {
+          command: "restore",
+          backupId: plan.backupId,
+          manifestPath: plan.manifestPath,
+          stores: plan.stores.map(({ storeId, targetPath, schemaVersion }) => ({ storeId, targetPath, schemaVersion })),
+        },
+        plan.stores.flatMap((store) => [
+          { action: "write" as const, target: store.targetPath },
+          ...[`${store.targetPath}-wal`, `${store.targetPath}-shm`]
+            .filter((file) => existsSync(file))
+            .map((file) => ({ action: "delete" as const, target: file })),
+        ]),
+        `restore ${plan.stores.length} store(s) from ${plan.manifestPath}; digests verified against the manifest`,
+      );
+      return 0;
+    }
     const result = restoreBackup(resolve(runtime.cwd, manifestArg), {
       projectRoot: runtime.cwd,
     });
@@ -281,10 +315,23 @@ export async function cmdKxmTrust(runtime: Runtime, check: boolean, options: { b
   }
 }
 
+/** The supervisor a run read talks to. Normally it is started on demand; under
+ * `--dry-run` a read may only attach, because starting the Runtime is a change. */
+async function readSupervisor(runtime: Runtime, command: string): Promise<Awaited<ReturnType<typeof ensureKxmSupervisor>> | number> {
+  if (!runtime.dryRun) return await (kxmDriveCliSeams.ensureSupervisor ?? ensureKxmSupervisor)({ env: runtime.env });
+  const attached = await attachKxmSupervisor({ env: runtime.env });
+  return attached ?? refuseDryRun(runtime.io, runtime.json, command, "the Runtime supervisor is not running and --dry-run will not start it");
+}
+
 export const RUN_ENGINE_PHASE = "pre-3a";
 export const RUN_ENGINE_NOTICE = "runs remain created until the run engine lands; no steps execute yet";
 
-export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
+/** Where `kxm run <workflow>` would create its run, or the exit code of the
+ * refusal it already printed. Reads only; shared with `task run --dry-run`. */
+export function resolveKxmRunTarget(
+  runtime: Runtime,
+  workflow: string | undefined,
+): { projectRoot: string; workflowId: string; configRevision: string } | number {
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
@@ -297,33 +344,38 @@ export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, 
     print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required" }, "usage: kxm run <workflow> [prompt]");
     return 2;
   }
+  const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+  if (!projectRoot) {
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required" }, "kxm run requires a KXM project (run kxm init first)");
+    return 1;
+  }
+  const bundle = loadKxmProject(projectRoot, {});
+  if (!bundle.workflows.has(workflow)) {
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow }, `workflow ${workflow} does not exist in this project`);
+    return 1;
+  }
+  return { projectRoot, workflowId: workflow, configRevision: bundle.configRevision };
+}
+
+export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
   try {
-    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-    if (!projectRoot) {
-      print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required" }, "kxm run requires a KXM project (run kxm init first)");
-      return 1;
-    }
-    const bundle = loadKxmProject(projectRoot, {});
-    if (!bundle.workflows.has(workflow)) {
-      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow }, `workflow ${workflow} does not exist in this project`);
-      return 1;
-    }
+    const target = resolveKxmRunTarget(runtime, workflow);
+    if (typeof target === "number") return target;
+    const { projectRoot } = target;
     if (runtime.dryRun) {
       print(runtime.io, runtime.json, {
         ok: true,
         command: "run",
         dryRun: true,
-        projectRoot,
-        workflowId: workflow,
-        configRevision: bundle.configRevision,
-      }, `run plan: workflow ${workflow} at ${bundle.configRevision.slice(0, 19)}… (no run created)`);
+        ...target,
+      }, `run plan: workflow ${target.workflowId} at ${target.configRevision.slice(0, 19)}… (no run created)`);
       return 0;
     }
     const supervisor = await ensureKxmSupervisor({ env: runtime.env });
     const prompt = promptParts.join(" ").trim();
     const acceptance = await kxmRuntimeRequest(supervisor, "POST", "/v1/runs", {
       projectRoot,
-      workflowId: workflow,
+      workflowId: target.workflowId,
       prompt,
     });
     const run = acceptance.run as { runId: string; homeRuntimeId: string; status: string; configRevision: string };
@@ -408,7 +460,8 @@ export async function cmdKxmRunStatus(runtime: Runtime, runId: string): Promise<
       print(runtime.io, runtime.json, { ok: false, command: "runs status", error: "project_required" }, "kxm runs status requires a KXM project (run kxm init first)");
       return 1;
     }
-    const supervisor = await (kxmDriveCliSeams.ensureSupervisor ?? ensureKxmSupervisor)({ env: runtime.env });
+    const supervisor = await readSupervisor(runtime, "runs status");
+    if (typeof supervisor === "number") return supervisor;
     const result = await (kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest)(supervisor, "GET", `/v1/runs/${encodeURIComponent(runId)}?projectRoot=${encodeURIComponent(projectRoot)}`);
     const run = result.run as { runId: string; status: string; workflowId: string; configRevision: string; updatedAt: string };
     const drive = result.drive as KxmStatusDrive | undefined;
@@ -570,7 +623,8 @@ export async function cmdKxmRunList(runtime: Runtime): Promise<number> {
     }
     const bundle = loadKxmProject(projectRoot, {});
     const projectId = String(bundle.project.value.id);
-    const supervisor = await ensureKxmSupervisor({ env: runtime.env });
+    const supervisor = await readSupervisor(runtime, "runs list");
+    if (typeof supervisor === "number") return supervisor;
     const result = await kxmRuntimeRequest(supervisor, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(projectRoot)}`);
     const runs = (result.runs ?? []) as Array<{ runId: string; status: string; workflowId: string; createdAt: string; projectionError?: string }>;
     print(
@@ -845,7 +899,8 @@ export async function cmdKxmRunReceipt(runtime: Runtime, runId: string, options:
       print(runtime.io, runtime.json, { ok: false, command: "runs receipt", error: "project_required" }, "kxm runs receipt requires a KXM project (run kxm init first)");
       return 1;
     }
-    const supervisor = await (kxmDriveCliSeams.ensureSupervisor ?? ensureKxmSupervisor)({ env: runtime.env });
+    const supervisor = await readSupervisor(runtime, "runs receipt");
+    if (typeof supervisor === "number") return supervisor;
     const result = await (kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest)(
       supervisor,
       "GET",

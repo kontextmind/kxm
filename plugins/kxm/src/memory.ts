@@ -245,10 +245,10 @@ export function createMemoryNote(
     body?: string | undefined;
     sourceRef?: string | undefined;
     runId?: string | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { record: MemoryRecord; path: string } {
   const { candidatesDir } = memoryDirectories(repoRoot);
-  mkdirSync(candidatesDir, { recursive: true });
 
   const scope: MemoryScope = options.scope ?? "project";
   if (!VALID_SCOPES.has(scope)) {
@@ -277,6 +277,8 @@ export function createMemoryNote(
   };
 
   const targetPath = join(candidatesDir, `${id}.md`);
+  if (options.dryRun) return { record, path: targetPath };
+  mkdirSync(candidatesDir, { recursive: true });
   writeFileSync(targetPath, formatMemoryRecord(record), "utf8");
   return { record, path: targetPath };
 }
@@ -316,7 +318,8 @@ export function formatHarnessMemoryBlock(records: MemoryRecord[]): string {
   return contentLines.join("\n");
 }
 
-export function updateHarnessDocument(filePath: string, block: string, defaultHeader: string): boolean {
+/** Returns whether the projection block changed the file; `dryRun` answers without writing. */
+export function updateHarnessDocument(filePath: string, block: string, defaultHeader: string, dryRun = false): boolean {
   let original = "";
   if (existsSync(filePath)) {
     original = readFileSync(filePath, "utf8");
@@ -340,13 +343,13 @@ export function updateHarnessDocument(filePath: string, block: string, defaultHe
   }
 
   if (updated !== original) {
-    writeFileSync(filePath, updated, "utf8");
+    if (!dryRun) writeFileSync(filePath, updated, "utf8");
     return true;
   }
   return false;
 }
 
-export function syncHarnessMemory(repoRoot: string): { updated: string[]; created: string[] } {
+export function syncHarnessMemory(repoRoot: string, options: { dryRun?: boolean } = {}): { updated: string[]; created: string[] } {
   const root = resolve(repoRoot);
   const records = loadAuthoredMemory(root);
   const block = formatHarnessMemoryBlock(records);
@@ -358,7 +361,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; create
   const agentsPath = join(root, "AGENTS.md");
   const agentsHeader = "# AGENTS\n\nFollow project instructions.\n";
   const agentsExisted = existsSync(agentsPath);
-  if (updateHarnessDocument(agentsPath, block, agentsHeader)) {
+  if (updateHarnessDocument(agentsPath, block, agentsHeader, options.dryRun)) {
     if (agentsExisted) updated.push("AGENTS.md");
     else created.push("AGENTS.md");
   }
@@ -367,7 +370,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; create
   const claudePath = join(root, "CLAUDE.md");
   const claudeHeader = `# KXM (Claude)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nYou are the **planner / architecture critic** unless the human explicitly asks\nyou to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) — a starting\nrotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;\nuse a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are\nartifacts, not hub \`peer-reply\` evidence.\n`;
   const claudeExisted = existsSync(claudePath);
-  if (updateHarnessDocument(claudePath, block, claudeHeader)) {
+  if (updateHarnessDocument(claudePath, block, claudeHeader, options.dryRun)) {
     if (claudeExisted) updated.push("CLAUDE.md");
     else created.push("CLAUDE.md");
   }
@@ -376,7 +379,7 @@ export function syncHarnessMemory(repoRoot: string): { updated: string[]; create
   const geminiPath = join(root, "GEMINI.md");
   const geminiHeader = `# KXM (Gemini / Antigravity)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nGoogle goes through the \`antigravity\` **Pi provider** (Tracking \u2192 Decided,\n2026-09-15); \`agy\` stays a harness catalog/helper entry, not the admission path.\nCurrent admissions come from Tracking and \`kxm harness list\`. Starting rotation\nremains Grok.\n`;
   const geminiExisted = existsSync(geminiPath);
-  if (updateHarnessDocument(geminiPath, block, geminiHeader)) {
+  if (updateHarnessDocument(geminiPath, block, geminiHeader, options.dryRun)) {
     if (geminiExisted) updated.push("GEMINI.md");
     else created.push("GEMINI.md");
   }
