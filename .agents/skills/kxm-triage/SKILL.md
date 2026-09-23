@@ -1,6 +1,6 @@
 ---
 name: kxm-triage
-description: Work the KontextMind review queue. Use when asked to triage the mind, review drafts, promote or skip learnings, resolve drift/contradiction/gap/loop items, or call km_review.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Works the KontextMind review queue with km_review. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:

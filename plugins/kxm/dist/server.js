@@ -14815,6 +14815,15 @@ function toAgentRecord(agent, staleAfterMs, now) {
   return { ...agent, ...agentPresenceView(agent, staleAfterMs, now) };
 }
 var MAX_SYNC_BATCH_EVENTS = 100;
+var IMPROVEMENT_AREAS = [
+  "harness",
+  "gates",
+  "implementation",
+  "workflow",
+  "documentation",
+  "security",
+  "other"
+];
 var ProtocolError = class extends Error {
   statusCode;
   code;
@@ -15642,6 +15651,151 @@ import { createHash as createHash3, randomUUID as randomUUID2, timingSafeEqual }
 
 // plugins/kxm/src/workflow.ts
 import { createHash as createHash2 } from "node:crypto";
+
+// plugins/kxm/src/relevance.ts
+var RELEVANCE_STOPWORDS = Object.freeze(/* @__PURE__ */ new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "been",
+  "but",
+  "by",
+  "can",
+  "could",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "had",
+  "has",
+  "have",
+  "how",
+  "if",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "our",
+  "should",
+  "so",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "to",
+  "was",
+  "we",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your"
+]));
+var RELEVANCE_K1 = 1.2;
+var RELEVANCE_B = 0.75;
+var MIN_TOKEN_CHARS = 2;
+var MAX_TOKEN_CHARS = 64;
+function foldPlural(token) {
+  if (new RegExp("^\\p{N}+$", "u").test(token)) return token;
+  if (token.length > 4 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
+  if (token.length > 4 && token.endsWith("sses")) return token.slice(0, -2);
+  if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us") && !token.endsWith("is")) {
+    return token.slice(0, -1);
+  }
+  return token;
+}
+function relevanceTokens(text2) {
+  const tokens = [];
+  for (const raw of text2.normalize("NFKC").toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (raw.length < MIN_TOKEN_CHARS || raw.length > MAX_TOKEN_CHARS) continue;
+    if (RELEVANCE_STOPWORDS.has(raw)) continue;
+    tokens.push(foldPlural(raw));
+  }
+  return tokens;
+}
+function scoreRelevance(query, documents) {
+  const scores = documents.map(() => 0);
+  const terms = [...new Set(relevanceTokens(query))];
+  if (terms.length === 0 || documents.length === 0) return scores;
+  const indexed = documents.map((document) => {
+    const tokens = relevanceTokens(document);
+    const frequencies = /* @__PURE__ */ new Map();
+    for (const token of tokens) frequencies.set(token, (frequencies.get(token) ?? 0) + 1);
+    return { length: tokens.length, frequencies };
+  });
+  const count = indexed.length;
+  let totalLength = 0;
+  for (const document of indexed) totalLength += document.length;
+  const averageLength = totalLength > 0 ? totalLength / count : 1;
+  const inverseFrequency = /* @__PURE__ */ new Map();
+  for (const term of terms) {
+    let documentFrequency = 0;
+    for (const document of indexed) {
+      if (document.frequencies.has(term)) documentFrequency += 1;
+    }
+    inverseFrequency.set(term, Math.log(1 + (count - documentFrequency + 0.5) / (documentFrequency + 0.5)));
+  }
+  indexed.forEach((document, index) => {
+    let score = 0;
+    for (const term of terms) {
+      const frequency = document.frequencies.get(term) ?? 0;
+      if (frequency === 0) continue;
+      const lengthNorm = 1 - RELEVANCE_B + RELEVANCE_B * (document.length / averageLength);
+      score += inverseFrequency.get(term) * (frequency * (RELEVANCE_K1 + 1) / (frequency + RELEVANCE_K1 * lengthNorm));
+    }
+    scores[index] = score;
+  });
+  return scores;
+}
+function roundRelevance(score) {
+  return Math.round(score * 1e3) / 1e3;
+}
+function contextItemRelevanceText(item) {
+  return item.stateKey !== void 0 ? `${item.summary} ${item.stateKey}` : item.summary;
+}
+function compareCodeUnitIds(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function rankRecall(query, items, limit) {
+  const needle = query.toLowerCase();
+  const scores = scoreRelevance(query, items.map(contextItemRelevanceText));
+  const ranked = [];
+  items.forEach((item, index) => {
+    const score = scores[index] ?? 0;
+    const phraseHit = needle === "" || item.summary.toLowerCase().includes(needle) || (item.stateKey ?? "").toLowerCase().includes(needle);
+    if (phraseHit || score > 0) ranked.push({ item, score, phraseHit });
+  });
+  ranked.sort(
+    (left, right) => (right.phraseHit ? 1 : 0) - (left.phraseHit ? 1 : 0) || right.score - left.score || compareCodeUnitIds(left.item.id, right.item.id)
+  );
+  return ranked.slice(0, limit).map(({ item, score }) => ({ item, relevance: roundRelevance(score) }));
+}
+
+// plugins/kxm/src/workflow.ts
 var JOURNAL_CATEGORIES = [
   "plan",
   "decision",
@@ -15731,17 +15885,8 @@ function applyJournalPromotion(entry, decision, decidedAt) {
   return { ...entry, promotion: [...entry.promotion ?? [], record] };
 }
 function improvementReport(entries) {
-  const areas = [
-    "harness",
-    "gates",
-    "implementation",
-    "workflow",
-    "documentation",
-    "security",
-    "other"
-  ];
   const severityWeight = { error: 3, warning: 2, info: 1 };
-  return areas.map((area) => {
+  return IMPROVEMENT_AREAS.map((area) => {
     const matching = entries.filter((entry) => entry.area === area);
     const priorities = [...matching].filter((entry) => entry.category === "error" || entry.category === "contradiction" || entry.category === "lesson" || entry.category === "skill-candidate").sort((left, right) => severityWeight[right.severity] - severityWeight[left.severity]).slice(0, 10);
     return {
@@ -15753,6 +15898,97 @@ function improvementReport(entries) {
       priorities
     };
   }).filter((report) => report.total > 0);
+}
+var SECURITY_SIGNAL_CLASSES = ["invalid_auth", "invalid_identity", "signal_mismatch"];
+var SIGNAL_CATEGORIES = ["error", "contradiction", "lesson", "skill-candidate"];
+var SIGNAL_SEVERITY_WEIGHT = { error: 3, warning: 2, info: 1 };
+var SIGNAL_CLASS = /^[a-z0-9_]{1,64}$/;
+var MAX_SIGNAL_IDS = 16;
+var MAX_SIGNAL_SUMMARY_KEY_CHARS = 160;
+function normalizeSignalSummary(summary) {
+  return summary.toLowerCase().replace(/\b[a-z]+_[0-9a-f]{8,}\b/g, "<id>").replace(/\b\d{4}-\d{2}-\d{2}t\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:z|[+-]\d{2}:?\d{2})?/g, "<ts>").replace(/\b[0-9a-f]{7,}\b/g, "<hex>").replace(/\d+/g, "#").replace(/\s+/g, " ").trim().slice(0, MAX_SIGNAL_SUMMARY_KEY_CHARS);
+}
+function round3(value) {
+  return Math.round(value * 1e3) / 1e3;
+}
+function signalKeyOf(entry, runs) {
+  const classRef = entry.evidence.find((ref) => ref.startsWith("class:"));
+  const signalClass = classRef?.slice("class:".length);
+  if (signalClass !== void 0 && SIGNAL_CLASS.test(signalClass) && signalClass !== "unknown") {
+    return { key: `${entry.category}|class:${signalClass}`, basis: "class", signalClass };
+  }
+  const run = runs.get(entry.runId);
+  if (entry.category === "error" && entry.stageId !== void 0 && run) {
+    return { key: `error|stage:${run.definitionId}/${entry.stageId}`, basis: "stage" };
+  }
+  return {
+    key: `${entry.category}|summary:${normalizeSignalSummary(redactSecrets(entry.summary))}`,
+    basis: "summary"
+  };
+}
+function runAttemptCost(run) {
+  let attempts = 0;
+  for (const stage of run.stages) attempts += stage.attempts;
+  return Math.max(1, attempts + (run.transitions?.length ?? 0));
+}
+function rankImprovementSignals(entries, runs, limit = 20) {
+  const resolvedContradictions = /* @__PURE__ */ new Set();
+  for (const entry of entries) {
+    if (entry.category !== "decision" && entry.category !== "lesson") continue;
+    for (const related of entry.relatedEntryIds) resolvedContradictions.add(`${entry.runId}\0${related}`);
+  }
+  const groups = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    if (!SIGNAL_CATEGORIES.includes(entry.category)) continue;
+    if (entry.category === "contradiction" && resolvedContradictions.has(`${entry.runId}\0${entry.id}`)) continue;
+    const promotionState = journalPromotionState(entry);
+    if (promotionState !== void 0 && promotionState !== "proposed") continue;
+    const { key, basis, signalClass } = signalKeyOf(entry, runs);
+    const group = groups.get(key);
+    if (group) group.entries.push(entry);
+    else groups.set(key, { basis, category: entry.category, ...signalClass !== void 0 ? { signalClass } : {}, entries: [entry] });
+  }
+  const areaRank = (area) => {
+    const index = IMPROVEMENT_AREAS.indexOf(area);
+    return index === -1 ? IMPROVEMENT_AREAS.length : index;
+  };
+  const signals = [];
+  for (const [key, group] of groups) {
+    const runIds = [...new Set(group.entries.map((entry) => entry.runId))].sort(compareCodeUnitIds);
+    const entryIds = group.entries.map((entry) => entry.id).sort(compareCodeUnitIds);
+    let severity = "info";
+    for (const entry of group.entries) {
+      if ((SIGNAL_SEVERITY_WEIGHT[entry.severity] ?? 0) > SIGNAL_SEVERITY_WEIGHT[severity]) severity = entry.severity;
+    }
+    const severityWeight = SIGNAL_SEVERITY_WEIGHT[severity];
+    const knownRuns = runIds.map((runId) => runs.get(runId)).filter((run) => run !== void 0);
+    const workflowCost = knownRuns.length > 0 ? knownRuns.reduce((total, run) => total + runAttemptCost(run), 0) / knownRuns.length : null;
+    const withEvidence = group.entries.filter((entry) => entry.evidence.length > 0).length;
+    const confidence = 0.5 + 0.5 * (withEvidence / group.entries.length);
+    const areaCounts = /* @__PURE__ */ new Map();
+    for (const entry of group.entries) areaCounts.set(entry.area, (areaCounts.get(entry.area) ?? 0) + 1);
+    const area = [...areaCounts].sort((left, right) => right[1] - left[1] || areaRank(left[0]) - areaRank(right[0]))[0][0];
+    const latest = [...group.entries].sort((left, right) => compareCodeUnitIds(left.createdAt, right.createdAt) || compareCodeUnitIds(left.id, right.id)).at(-1);
+    const security = area === "security" || group.signalClass !== void 0 && SECURITY_SIGNAL_CLASSES.includes(group.signalClass);
+    signals.push({
+      key,
+      basis: group.basis,
+      category: group.category,
+      area,
+      ...security ? { overrideTier: "security" } : {},
+      frequency: runIds.length,
+      runIds: runIds.slice(0, MAX_SIGNAL_IDS),
+      entryIds: entryIds.slice(0, MAX_SIGNAL_IDS),
+      severity,
+      severityWeight,
+      workflowCost,
+      costBasis: workflowCost === null ? "unknown" : "run-attempts",
+      confidence,
+      priority: round3(runIds.length * severityWeight * (workflowCost ?? 1) * confidence),
+      summary: redactSecrets(latest.summary)
+    });
+  }
+  return signals.sort((left, right) => (right.overrideTier === "security" ? 1 : 0) - (left.overrideTier === "security" ? 1 : 0) || right.priority - left.priority || right.frequency - left.frequency || compareCodeUnitIds(left.key, right.key)).slice(0, limit);
 }
 function object(value, name) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object`);
@@ -15840,6 +16076,19 @@ function workflowEvidenceStrings(evidence) {
 }
 function activeWorkflowAttempt(stage) {
   return stage.attempts + 1;
+}
+function journalAttemptFor(stage) {
+  switch (stage.status) {
+    case "in_progress":
+    case "waiting":
+      return stage.attempts + 1;
+    case "pending":
+      return stage.attempts > 0 ? stage.attempts : void 0;
+    case "passed":
+    case "warning":
+    case "failed":
+      return Math.max(1, stage.attempts);
+  }
 }
 function validIsoTimestamp(value) {
   if (!value) return void 0;
@@ -16155,7 +16404,7 @@ function parseWorkflowDefinitions(raw, environment = process.env, onWarning) {
         throw new Error(`stage ${stageId} maxAttempts must be an integer between 1 and 20`);
       }
       const area = stage.area ? requireString(stage.area, "stage.area", { max: 24 }) : void 0;
-      if (area && !["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
+      if (area && !IMPROVEMENT_AREAS.includes(area)) {
         throw new Error(`stage ${stageId} area is invalid`);
       }
       const requiredEvidence = stringArray(stage.requiredEvidence ?? [], "stage.requiredEvidence").map((requirement, requirementIndex) => canonicalWorkflowEvidenceKey(
@@ -16993,7 +17242,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "run",
     label: "Get workflow run",
-    description: "Get a workflow's stages and journal of plans, decisions, contradictions, errors, and lessons.",
+    description: "Get a workflow's stages and its learning journal (plans, decisions, contradictions, errors, lessons, and the other journal categories).",
     parameters: {
       type: "object",
       properties: {
@@ -17067,20 +17316,24 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "record",
     label: "Record workflow journal entry",
-    description: "Record a plan, decision, contradiction, error, or lesson for continuous improvement.",
+    description: "Record a plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, or skill-candidate for continuous improvement. Pass stageId to bind the entry to that stage: the hub derives the attempt, and area defaults to the stage's declared area. Lessons and skill-candidates require evidence.",
     parameters: {
       type: "object",
       properties: {
         runId: { type: "string", description: "Active durable workflow run ID" },
         category: {
           type: "string",
-          enum: ["plan", "decision", "contradiction", "error", "lesson"],
+          enum: [...JOURNAL_CATEGORIES],
           description: "Category of journal entry"
         },
         area: {
           type: "string",
-          enum: ["harness", "gates", "implementation", "workflow", "documentation", "security", "other"],
-          description: "System area"
+          enum: [...IMPROVEMENT_AREAS],
+          description: "System area; required unless stageId names a stage that declares an area"
+        },
+        stageId: {
+          type: "string",
+          description: "Stage the entry belongs to; the hub binds the attempt from the stage's state"
         },
         severity: {
           type: "string",
@@ -17103,13 +17356,14 @@ var AGENT_COMMANDS = [
           description: "Related previous journal entry IDs"
         }
       },
-      required: ["runId", "category", "area", "summary"],
+      required: ["runId", "category", "summary"],
       additionalProperties: false
     },
     async execute(client, args) {
       return await client.recordWorkflowEntry(requiredString(args.runId, "runId"), {
         category: requiredString(args.category, "category"),
-        area: requiredString(args.area, "area"),
+        ...optionalString2(args.area) ? { area: optionalString2(args.area) } : {},
+        ...optionalString2(args.stageId) ? { stageId: optionalString2(args.stageId) } : {},
         ...optionalString2(args.severity) ? { severity: optionalString2(args.severity) } : {},
         summary: requiredString(args.summary, "summary"),
         ...optionalString2(args.details) ? { details: optionalString2(args.details) } : {},
@@ -17186,7 +17440,7 @@ var AGENT_COMMANDS = [
     group: "workflow",
     verb: "improve-report",
     label: "Summarize improvement report",
-    description: "Summarize workflow errors, contradictions, and lessons by improvement area.",
+    description: "Summarize workflow errors, contradictions, lessons, and skill candidates by improvement area, plus ranked cross-run signals: duplicates merged across runs and scored by frequency x severity x run-attempt cost x evidence confidence, security first, with redacted text.",
     parameters: {
       type: "object",
       properties: {},
@@ -17240,7 +17494,7 @@ var AGENT_COMMANDS = [
     group: "context",
     verb: "recall",
     label: "Recall context metadata",
-    description: "Search durable context records for a project by query; returns bounded metadata only.",
+    description: "Search durable context records for a project by query. Ranks exact-phrase matches first, then token relevance, then id; returns bounded metadata with a numeric relevance per item, never summaries.",
     parameters: {
       type: "object",
       properties: {
@@ -17563,7 +17817,14 @@ function parseContextRequest(value) {
   return request;
 }
 function validateContextPacketContents(request, packet) {
-  const items = [...packet.currentState, ...packet.knowledge, ...packet.episodes, ...packet.skills, ...packet.contradictions];
+  const items = [
+    ...packet.currentState,
+    ...packet.knowledge,
+    ...packet.evidence,
+    ...packet.episodes,
+    ...packet.skills,
+    ...packet.contradictions
+  ];
   if (items.length > MAX_CONTEXT_ITEMS) {
     throw new ProtocolError(400, `context packet exceeds ${MAX_CONTEXT_ITEMS} items`, "context_limits_exceeded");
   }
@@ -17585,12 +17846,12 @@ function validateContextPacketContents(request, packet) {
     }
   }
 }
+function contextItemCharacters(item) {
+  return item.summary.length + item.id.length + item.kind.length + (item.provenance.sourceRef?.length ?? 0);
+}
 function estimateContextTokens(items) {
   let characters = 0;
-  for (const item of items) {
-    characters += item.summary.length + item.id.length + item.kind.length;
-    if (item.provenance.sourceRef) characters += item.provenance.sourceRef.length;
-  }
+  for (const item of items) characters += contextItemCharacters(item);
   return Math.ceil(characters / 4);
 }
 function authorityRank(authority) {
@@ -17635,7 +17896,7 @@ var ROLE_POLICIES = [
   {
     role: "repro",
     label: "Reproduction specialist",
-    kinds: ["episode", "knowledge"],
+    kinds: ["episode", "knowledge", "evidence"],
     journalCategories: ["error", "lesson", "observation", "contradiction"],
     budgetTokens: 8e3
   },
@@ -17656,7 +17917,7 @@ var ROLE_POLICIES = [
   {
     role: "implementer",
     label: "Implementer",
-    kinds: ["knowledge", "state", "skill", "episode"],
+    kinds: ["knowledge", "state", "skill", "episode", "evidence"],
     journalCategories: ["plan", "decision", "lesson", "state-change"],
     budgetTokens: 16e3
   },
@@ -17728,28 +17989,39 @@ function arbitrate(requestInput, pool, options = {}) {
     const rank = kindRank.get(item.kind);
     return rank === void 0 ? requestedKinds.length : rank;
   };
-  const ordered = [...candidates].sort(
-    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || (left.project === request.project ? 0 : 1) - (right.project === request.project ? 0 : 1) || kindPreference(left) - kindPreference(right) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || left.id.localeCompare(right.id)
+  const allowedKinds = new Set(requestedKinds);
+  const inertProposal = (item) => item.kind === "state" && item.status !== void 0 && item.status !== "current" || item.kind === "skill" && item.status === "proposed";
+  const eligible = candidates.filter((item) => contradictions.has(item.id) || allowedKinds.has(item.kind) && !inertProposal(item));
+  const scoreList = scoreRelevance(request.task, eligible.map(contextItemRelevanceText));
+  const scores = /* @__PURE__ */ new Map();
+  eligible.forEach((item, index) => scores.set(item, scoreList[index] ?? 0));
+  const scoreOf = (item) => scores.get(item) ?? 0;
+  const when = (item) => {
+    const parsed = Date.parse(item.observedAt ?? item.validFrom ?? "");
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const ordered = [...eligible].sort(
+    (left, right) => (contradictions.has(right.id) ? 1 : 0) - (contradictions.has(left.id) ? 1 : 0) || (left.project === request.project ? 0 : 1) - (right.project === request.project ? 0 : 1) || (scoreOf(right) > 0 ? 1 : 0) - (scoreOf(left) > 0 ? 1 : 0) || kindPreference(left) - kindPreference(right) || scoreOf(right) - scoreOf(left) || CONFIDENCE_RANK[right.confidence] - CONFIDENCE_RANK[left.confidence] || AUTHORITY_WEIGHT[right.authority] - AUTHORITY_WEIGHT[left.authority] || when(right) - when(left) || compareCodeUnitIds(left.id, right.id)
   );
-  const kindAllowed = (item) => (request.includeKinds ?? policy.kinds).includes(item.kind) || contradictions.has(item.id);
   const selected = [];
   const unresolvedGaps = [];
+  let characters = 0;
+  let deferredForBudget = 0;
   for (const item of ordered) {
     if (selected.length >= MAX_CONTEXT_ITEMS) {
       unresolvedGaps.push("context item limit reached; refine the task or kinds");
       break;
     }
-    if (!kindAllowed(item)) continue;
-    const nextTokens = estimateContextTokens([...selected, item]);
-    if (nextTokens > budget) {
-      if (selected.length === 0) {
-        unresolvedGaps.push(`budget of ${budget} tokens cannot fit any selected context`);
-        break;
-      }
-      unresolvedGaps.push(`budget of ${budget} tokens reached; ${ordered.length - selected.length} candidates deferred`);
-      break;
+    const itemCharacters = contextItemCharacters(item);
+    if (Math.ceil((characters + itemCharacters) / 4) > budget) {
+      deferredForBudget += 1;
+      continue;
     }
+    characters += itemCharacters;
     selected.push(item);
+  }
+  if (deferredForBudget > 0) {
+    unresolvedGaps.push(selected.length === 0 ? `budget of ${budget} tokens cannot fit any selected context` : `budget of ${budget} tokens reached; ${deferredForBudget} candidates deferred`);
   }
   if (candidates.length === 0) {
     unresolvedGaps.push("no context records exist for this project yet");
@@ -17759,6 +18031,7 @@ function arbitrate(requestInput, pool, options = {}) {
     workingState: options.workingState ?? {},
     currentState: bySection("state").filter((item) => item.status === "current" || item.status === void 0),
     knowledge: bySection("knowledge"),
+    evidence: bySection("evidence"),
     episodes: bySection("episode"),
     skills: bySection("skill").filter((item) => item.status !== "proposed"),
     contradictions: selected.filter((item) => contradictions.has(item.id)),
@@ -17783,7 +18056,12 @@ function arbitrate(requestInput, pool, options = {}) {
       budgetTokens: budget,
       candidateCount: candidates.length,
       excludedSuperseded,
-      unresolvedGaps
+      unresolvedGaps,
+      relevance: {
+        taskTokens: new Set(relevanceTokens(request.task)).size,
+        matchedCandidates: scoreList.filter((score) => score > 0).length,
+        selected: selected.map((item) => roundRelevance(scoreOf(item)))
+      }
     }
   };
 }
@@ -17800,10 +18078,9 @@ function journalEntryToContextItem(entry, project) {
     },
     authority: entry.category === "decision" || entry.category === "plan" ? "evidence" : "evidence",
     confidence: entry.severity === "error" ? "probable" : "probable",
-    ...entry.stageId !== void 0 ? { observedAt: entry.createdAt } : {},
+    observedAt: entry.createdAt,
     evidenceRefs: entry.evidence.filter((ref) => ref.length > 0 && ref.length <= 200).slice(0, 16)
   };
-  if (entry.stageId !== void 0) item.observedAt = entry.createdAt;
   if (kind === "skill") item.status = "proposed";
   return parseContextItem(item);
 }
@@ -18923,19 +19200,25 @@ function buildRetrospective(run, journal, exportedAt = (/* @__PURE__ */ new Date
   const byCategory = {};
   const byArea = {};
   const byClass = {};
+  const byErrorClass = {};
   for (const entry of entries) {
     increment(byCategory, entry.category);
     increment(byArea, entry.area);
     increment(byClass, classFromEvidence(entry.evidence));
+    if (entry.category === "error") increment(byErrorClass, classFromEvidence(entry.evidence));
   }
-  const recurringErrorClasses = Object.entries(byClass).map(([errorClass, count]) => ({ class: errorClass, count })).sort((left, right) => right.count - left.count || left.class.localeCompare(right.class));
+  const recurringErrorClasses = Object.entries(byErrorClass).map(([errorClass, count]) => ({ class: errorClass, count })).sort((left, right) => right.count - left.count || left.class.localeCompare(right.class));
   const resolvedContradictions = new Set(entries.filter((entry) => entry.category === "decision" || entry.category === "lesson").flatMap((entry) => entry.relatedEntryIds));
   const openContradictions = entries.filter((entry) => entry.category === "contradiction" && !resolvedContradictions.has(entry.id)).map((entry) => ({ id: entry.id, summary: entry.summary, area: entry.area }));
   const decisions = entries.filter((entry) => entry.category === "decision").map((entry) => ({ id: entry.id, summary: entry.summary, area: entry.area }));
-  const proposedImprovements = entries.filter((entry) => entry.category === "lesson" || entry.category === "error").slice(0, 12).map((entry) => ({
-    area: entry.area,
-    summary: entry.summary,
-    successMeasure: "reduce recurrence of this class in the next comparable run",
+  const proposedImprovements = rankImprovementSignals(
+    journal.filter((entry) => entry.runId === run.id && (entry.category === "error" || entry.category === "lesson")),
+    /* @__PURE__ */ new Map([[run.id, run]]),
+    12
+  ).map((signal) => ({
+    area: signal.area,
+    summary: signal.summary,
+    successMeasure: redactSecrets(`no recurrence of ${signal.key} in the next ${run.definitionId} run`),
     status: "proposed"
   }));
   const evidenceAudit = buildEvidenceAudit(run);
@@ -20841,7 +21124,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       "Execute these stages in order:",
       stageList,
       "",
-      "At every stage, record material plans, decisions, contradictions, errors, and lessons with kxm_workflow_record.",
+      `At every stage, record material knowledge with kxm_workflow_record in one of these categories: ${JOURNAL_CATEGORIES.join(", ")}. Pass the stageId the entry belongs to; the hub binds the attempt and, when you omit area, uses the stage's declared area.`,
       "Keep repository-local configuration in .kxm/config, logs in .kxm/logs, and durable workflow artifacts in .kxm/assets; never commit runtime logs, state, or secrets.",
       "Complete each stage with kxm_workflow_checkpoint. Supply evidence as an object whose keys exactly match the stage's required evidence keys. Unrelated keys never satisfy a requirement. A warning or failure must be corrected and checkpointed again until it passes or the attempt limit is reached.",
       "For a peer-evidence requirement, send or fan out with workflowContext containing this run ID, the exact stage ID, requirement key, and current 1-based attempt. At checkpoint, cite only the returned message IDs under evidenceRefs; the hub derives producer and reply provenance.",
@@ -20869,7 +21152,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
       `Evidence: ${workflowEvidenceStrings(evidence).join(", ") || "none supplied"}`,
       "",
       nextInstruction,
-      "Review the run with kxm_workflow_get and keep recording material plans, decisions, contradictions, errors, and lessons.",
+      "Review the run with kxm_workflow_get and keep recording material learning with kxm_workflow_record (any of its ten categories; pass stageId for stage-bound entries).",
       "Do not claim the workflow is complete until the checkpoint response reports completed=true."
     ].join("\n"), "workflow resume prompt", { max: MAX_CONTENT_CHARS });
     const seq = store.nextAgentSequence(run.targetAgentId);
@@ -20923,7 +21206,8 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
         summary: `External workflow signal timed out: ${waiting.signalKey}`,
         evidence: [`wait-created:${waiting.createdAt}`, `wait-expired:${waiting.expiresAt}`],
         relatedEntryIds: [],
-        createdAt: timestamp
+        createdAt: timestamp,
+        ...stage ? { stageId: stage.id, attempt: stage.attempts + 1 } : {}
       };
       const definition = webhookWorkflows2.get(transition.definitionId);
       const ttlMs = parseBoundedInteger(
@@ -21002,6 +21286,7 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
           (candidate) => candidate.messageId === message.id && candidate.status === "running"
         );
         if (run) {
+          const expiredStage = run.stages.find((candidate) => candidate.id === run.currentStage);
           run.status = "failed";
           delete run.currentStage;
           run.updatedAt = nowIso();
@@ -21017,7 +21302,8 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
             summary: "Workflow coordinator prompt expired before completion",
             evidence: [`message:${message.id}`],
             relatedEntryIds: [],
-            createdAt: run.updatedAt
+            createdAt: run.updatedAt,
+            ...expiredStage ? { stageId: expiredStage.id, attempt: expiredStage.attempts + 1 } : {}
           };
           store.saveJournalEntry(entry);
           counters.journalEntries += 1;
@@ -21253,7 +21539,9 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
             summary: `${stage.label}: ${summary}`,
             evidence: workflowEvidenceStrings(evidence),
             relatedEntryIds: [],
-            createdAt: receivedAt
+            createdAt: receivedAt,
+            stageId: stage.id,
+            attempt: stage.attempts
           };
         } else if (result.degraded) {
           const stage = transition.stages.find((candidate) => candidate.id === result.stageId);
@@ -21270,7 +21558,9 @@ data: ${JSON.stringify({ type: "ops", project, topic, at: nowIso() })}
               ...(stage.degradedRequirements ?? []).map((requirement) => `requirement:${requirement}`)
             ],
             relatedEntryIds: [],
-            createdAt: receivedAt
+            createdAt: receivedAt,
+            stageId: stage.id,
+            attempt: stage.attempts
           };
         }
         if (transition.status === "running") {
@@ -21538,7 +21828,9 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
               `approved-min:${result.approval.approvedMinProducers}`
             ],
             relatedEntryIds: [],
-            createdAt: timestamp
+            createdAt: timestamp,
+            stageId,
+            attempt: result.approval.attempt
           };
           store.saveWorkflowTransition(transition, void 0, entry);
           publishOps(transition.project, "workflows");
@@ -21571,9 +21863,16 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           ...skillLifecycle ? { skillLifecycle } : {}
         });
         counters.contextRequests += 1;
+        const assembledRequest = outcome.audit.request;
         logger({
           event: "context_packet_assembled",
-          ...outcome.audit.request,
+          project: assembledRequest.project,
+          role: assembledRequest.role,
+          ...assembledRequest.workflowRunId !== void 0 ? { workflowRunId: assembledRequest.workflowRunId } : {},
+          ...assembledRequest.stageId !== void 0 ? { stageId: assembledRequest.stageId } : {},
+          taskChars: assembledRequest.task.length,
+          taskTokens: outcome.audit.relevance.taskTokens,
+          matchedCandidates: outcome.audit.relevance.matchedCandidates,
           selectedIds: outcome.audit.selectedIds,
           provenanceSummary: outcome.audit.provenanceSummary,
           estimatedTokens: outcome.audit.estimatedTokens,
@@ -21588,14 +21887,25 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
       if (method === "POST" && contextRecallMatch) {
         const body = await readJson(request);
         const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
-        const query = requireString(body.query ?? "", "query", { max: 500, allowEmpty: true }).toLowerCase();
+        const query = requireString(body.query ?? "", "query", { max: 500, allowEmpty: true });
         const kinds = Array.isArray(body.kinds) ? body.kinds.filter((kind) => typeof kind === "string") : void 0;
         const limit = parseBoundedInteger(body.limit, "limit", 25, 1, 100);
         const { pool } = projectContextPool2(callerProject);
-        const recalled = pool.filter((item) => item.status !== "superseded" && item.status !== "rejected").filter((item) => kinds === void 0 || kinds.includes(item.kind)).filter((item) => query === "" || item.summary.toLowerCase().includes(query) || (item.stateKey ?? "").toLowerCase().includes(query)).sort((left, right) => left.id.localeCompare(right.id)).slice(0, limit);
+        const live = pool.filter((item) => item.status !== "superseded" && item.status !== "rejected").filter((item) => kinds === void 0 || kinds.includes(item.kind));
+        const recalled = rankRecall(query, live, limit);
         counters.contextRequests += 1;
-        logger({ event: "context_recall", project: callerProject, query, limit, results: recalled.length });
-        json(response, 200, { items: recalled.map(contextItemAuditMetadata), unresolvedGaps: recalled.length === 0 ? ["no matching context records"] : [] });
+        logger({
+          event: "context_recall",
+          project: callerProject,
+          queryChars: query.length,
+          queryTokens: new Set(relevanceTokens(query)).size,
+          limit,
+          results: recalled.length
+        });
+        json(response, 200, {
+          items: recalled.map(({ item, relevance }) => ({ ...contextItemAuditMetadata(item), relevance })),
+          unresolvedGaps: recalled.length === 0 ? ["no matching context records"] : []
+        });
         return;
       }
       const contextStateMatch = url.pathname.match(/^\/v1\/context\/state$/);
@@ -21731,7 +22041,11 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           nowIso()
         );
         store.saveJournalEntry(updated);
-        publishOps(entry.runId, "workflows");
+        const promotedRun = workflowRuns.get(entry.runId);
+        if (promotedRun) {
+          publishOps(promotedRun.project, "workflows");
+          exportTerminalRetrospective(promotedRun);
+        }
         logger({
           event: "journal_promotion_recorded",
           journalEntryId: entry.id,
@@ -21857,6 +22171,7 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           typeof body.outcome === "string" && body.outcome.trim() ? requireString(body.outcome, "outcome", { max: 64 }) : void 0
         );
         const checkpointStage = transition.stages.find((candidate) => candidate.id === stageId);
+        const checkpointAttempt = result.transition?.attempt ?? checkpointStage.attempts;
         if (result.transition) {
           const transitionEntry = {
             id: newId("journal"),
@@ -21868,7 +22183,9 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
             summary: `typed transition ${result.transition.fromStage} -> ${result.transition.toStage} (${result.transition.outcome})`,
             evidence: result.transition.evidenceKeys.map((key) => `requirement:${key}`),
             relatedEntryIds: [],
-            createdAt: timestamp
+            createdAt: timestamp,
+            stageId,
+            attempt: checkpointAttempt
           };
           store.saveWorkflowTransition(transition, void 0, transitionEntry);
           counters.journalEntries += 1;
@@ -21884,7 +22201,9 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
             summary: `transition budget exhausted at ${stageId} (outcome ${body.outcome ?? status}); run failed safely`,
             evidence: [`class:transition_budget_exhausted`, `stage:${stageId}`],
             relatedEntryIds: [],
-            createdAt: timestamp
+            createdAt: timestamp,
+            stageId,
+            attempt: checkpointAttempt
           };
           store.saveWorkflowTransition(transition, void 0, exhaustEntry);
           counters.journalEntries += 1;
@@ -21901,7 +22220,9 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
             summary: `${checkpointStage.label}: ${summary}`,
             evidence: workflowEvidenceStrings(evidence),
             relatedEntryIds: [],
-            createdAt: transition.updatedAt
+            createdAt: transition.updatedAt,
+            stageId,
+            attempt: checkpointAttempt
           };
         } else if (result.degraded) {
           entry = {
@@ -21917,7 +22238,9 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
               ...(checkpointStage.degradedRequirements ?? []).map((requirement) => `requirement:${requirement}`)
             ],
             relatedEntryIds: [],
-            createdAt: transition.updatedAt
+            createdAt: transition.updatedAt,
+            stageId,
+            attempt: checkpointAttempt
           };
         }
         store.saveWorkflowTransition(transition, void 0, entry);
@@ -21958,10 +22281,23 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           );
         }
         const category = parseJournalCategory(body.category);
-        const area = requireString(body.area, "area", { max: 24 });
-        if (!["harness", "gates", "implementation", "workflow", "documentation", "security", "other"].includes(area)) {
-          throw new ProtocolError(400, "invalid improvement area", "invalid_improvement_area");
+        let stage;
+        if (body.stageId !== void 0 && body.stageId !== null) {
+          const requestedStageId = requireString(body.stageId, "stageId", { max: 128 });
+          stage = run.stages.find((candidate) => candidate.id === requestedStageId);
+          if (!stage) {
+            throw new ProtocolError(400, `stageId ${requestedStageId} is not part of this workflow run`, "invalid_journal_relation");
+          }
         }
+        const area = body.area == null ? stage?.area : requireString(body.area, "area", { max: 24 });
+        if (area === void 0 || !IMPROVEMENT_AREAS.includes(area)) {
+          throw new ProtocolError(
+            400,
+            "area is required unless stageId names a stage that declares an area",
+            "invalid_improvement_area"
+          );
+        }
+        const attempt = stage ? journalAttemptFor(stage) : void 0;
         const severity = requireString(body.severity ?? "info", "severity", { max: 16 });
         if (severity !== "info" && severity !== "warning" && severity !== "error") {
           throw new ProtocolError(400, "severity must be info, warning, or error", "invalid_journal_severity");
@@ -21982,16 +22318,6 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
             "journal_evidence_required"
           );
         }
-        let stageId;
-        let attempt;
-        if (body.stageId !== void 0 && body.stageId !== null) {
-          stageId = requireString(body.stageId, "stageId", { max: 128 });
-          const stage = run.stages.find((candidate) => candidate.id === stageId);
-          if (!stage) {
-            throw new ProtocolError(400, `stageId ${stageId} is not part of this workflow run`, "invalid_journal_relation");
-          }
-          attempt = stage.attempts + 1;
-        }
         const entry = {
           id: newId("journal"),
           runId: run.id,
@@ -22004,11 +22330,12 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           evidence,
           relatedEntryIds,
           createdAt: nowIso(),
-          ...stageId !== void 0 ? { stageId } : {},
+          ...stage !== void 0 ? { stageId: stage.id } : {},
           ...attempt !== void 0 ? { attempt } : {}
         };
         store.saveJournalEntry(entry);
         counters.journalEntries += 1;
+        exportTerminalRetrospective(run);
         logger({
           event: "workflow_journal_recorded",
           workflowRunId: run.id,
@@ -22023,11 +22350,16 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
       if (method === "GET" && url.pathname === "/v1/improvements") {
         const agent = requireAgent(request);
         requireProjectAuth(request, agent.project);
-        const visibleRuns = new Set(
-          [...workflowRuns.values()].filter((run) => run.project === agent.project).map((run) => run.id)
+        const projectRuns = new Map(
+          [...workflowRuns.values()].filter((run) => run.project === agent.project).map((run) => [run.id, run])
         );
+        const visibleRuns = new Set(projectRuns.keys());
         const entries = [...journal.values()].filter((entry) => visibleRuns.has(entry.runId));
-        json(response, 200, { reports: improvementReport(entries), entries: entries.length });
+        json(response, 200, {
+          reports: improvementReport(entries),
+          signals: rankImprovementSignals(entries, projectRuns),
+          entries: entries.length
+        });
         return;
       }
       if (method === "POST" && url.pathname === "/v1/agents/register") {
@@ -22445,6 +22777,7 @@ data: ${JSON.stringify({ agent: publicAgent(current, staleAfterMs) })}
         publishOps(message.project, "messages");
         const workflowRun = [...workflowRuns.values()].find((run) => run.messageId === message.id);
         if (workflowRun?.status === "running") {
+          const settledStage = workflowRun.stages.find((candidate) => candidate.id === workflowRun.currentStage);
           workflowRun.status = "failed";
           delete workflowRun.currentStage;
           workflowRun.updatedAt = message.repliedAt;
@@ -22460,7 +22793,8 @@ data: ${JSON.stringify({ agent: publicAgent(current, staleAfterMs) })}
             summary: "Coordinator settled before all required workflow checkpoints passed",
             evidence: [`message:${message.id}`],
             relatedEntryIds: [],
-            createdAt: message.repliedAt
+            createdAt: message.repliedAt,
+            ...settledStage ? { stageId: settledStage.id, attempt: settledStage.attempts + 1 } : {}
           };
           store.saveJournalEntry(entry);
           counters.journalEntries += 1;

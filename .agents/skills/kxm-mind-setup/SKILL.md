@@ -1,6 +1,6 @@
 ---
-name: kxm-setup
-description: Connect a machine or repo to KontextMind — serve, login, init, doctor. Use when asked to install kxm, start the local server, OAuth login, stamp MCP/hooks/AGENTS.md, run kontext doctor, or wire an agent to the mind.
+name: kxm-mind-setup
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Connects a machine to a KontextMind server with the kontext CLI. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:
@@ -11,9 +11,9 @@ metadata:
   suite: kxm
 ---
 
-# kxm-setup
+# kxm-mind-setup
 
-Beacon after the server is up — `km_status` with `skill: "kxm-setup"`.
+Beacon after the server is up — `km_status` with `skill: "kxm-mind-setup"`.
 
 ## Zero-install server
 

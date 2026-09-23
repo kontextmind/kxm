@@ -1,6 +1,6 @@
 ---
 name: kxm-protocol
-description: KontextMind contracts — km_ tool shapes, KM-Session evidence trailers, trust modes, secret gates, webhooks, authz. Use when implementing or debugging protocol, trailers, OAuth, RLS, consistency, or threat-model questions.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Explains KontextMind km_ tool contracts, KM-Session trailers, trust modes, and secret gates. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:

@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import { fileURLToPath } from "node:url";
+import { mintSessionToken, persistSessionTokenToDisk } from "../../plugins/kxm/src/commands.ts";
+import { HUB_ENV_SCHEMA, writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
 import { createTestMesh, waitFor } from "../helpers.ts";
+import { isolatedMcpEnv, type IsolatedMcpEnvOptions } from "../helpers/mcp-spawn.ts";
 
 type RpcResponse = {
   id?: number;
@@ -11,31 +18,44 @@ type RpcResponse = {
   error?: { code: number; message: string };
 };
 
-test("bundled MCP server initializes and publishes the mesh tool catalog", async (context) => {
-  const child = spawn(process.execPath, ["plugins/kxm/dist/mcp-server.js"], {
-    cwd: process.cwd(),
+/** Spawn environment for one test: isolated from the developer's state, removed afterwards. */
+function spawnEnvFor(context: TestContext, options: IsolatedMcpEnvOptions = {}) {
+  const spawnEnv = isolatedMcpEnv(options);
+  context.after(spawnEnv.cleanup);
+  return spawnEnv;
+}
+
+/** Start dist/mcp-server.js over stdio with an isolated environment and complete the MCP
+ * handshake. Every spawn in this file goes through here. */
+async function startMcpServer(
+  context: TestContext,
+  spawnEnv: { env: NodeJS.ProcessEnv; cwd: string },
+  clientName = "kxm-mcp-test",
+) {
+  const child = spawn(process.execPath, [resolve("plugins/kxm/dist/mcp-server.js")], {
+    cwd: spawnEnv.cwd,
+    env: spawnEnv.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
   const lines = createInterface({ input: child.stdout });
+  const notifications: Array<Record<string, unknown>> = [];
+  const pending = new Map<number, { resolve(value: RpcResponse): void; reject(error: Error): void }>();
   let nextId = 1;
   let stderr = "";
-  const pending = new Map<number, { resolve(value: RpcResponse): void; reject(error: Error): void }>();
-
   child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderr += chunk;
-  });
-
+  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
   lines.on("line", (line) => {
-    const response = JSON.parse(line) as RpcResponse;
-    if (typeof response.id !== "number") return;
-    const waiter = pending.get(response.id);
+    const message = JSON.parse(line) as RpcResponse & { method?: string };
+    if (typeof message.id !== "number") {
+      notifications.push(message as Record<string, unknown>);
+      return;
+    }
+    const waiter = pending.get(message.id);
     if (!waiter) return;
-    pending.delete(response.id);
-    if (response.error) waiter.reject(new Error(response.error.message));
-    else waiter.resolve(response);
+    pending.delete(message.id);
+    if (message.error) waiter.reject(new Error(message.error.message));
+    else waiter.resolve(message);
   });
-
   child.once("exit", (code) => {
     for (const waiter of pending.values()) {
       waiter.reject(new Error(`MCP server exited with ${String(code)}: ${stderr}`));
@@ -43,31 +63,56 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
     pending.clear();
   });
 
-  context.after(() => {
+  let stopped = false;
+  async function stop(): Promise<void> {
+    if (stopped) return;
+    stopped = true;
     lines.close();
-    if (!child.killed) child.kill();
-  });
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
+    child.kill();
+    await exited;
+  }
+  context.after(stop);
 
   function request(method: string, params: Record<string, unknown>): Promise<RpcResponse> {
     const id = nextId++;
-    const response = new Promise<RpcResponse>((resolve, reject) => pending.set(id, { resolve, reject }));
+    const response = new Promise<RpcResponse>((resolveResponse, reject) => pending.set(id, { resolve: resolveResponse, reject }));
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     return response;
+  }
+
+  function tool(name: string, args: Record<string, unknown> = {}): Promise<RpcResponse> {
+    return request("tools/call", { name, arguments: args });
+  }
+
+  function text(response: RpcResponse): string {
+    const content = response.result?.content as Array<{ type: string; text: string }>;
+    return content[0]!.text;
+  }
+
+  function value(response: RpcResponse): Record<string, unknown> {
+    return JSON.parse(text(response)) as Record<string, unknown>;
   }
 
   const initialized = await request("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
-    clientInfo: { name: "pi-mesh-test", version: "1.0.0" },
+    clientInfo: { name: clientName, version: "1.0.0" },
   });
-  assert.equal(initialized.result?.protocolVersion, "2025-06-18");
-  assert.deepEqual(initialized.result?.capabilities, {
+  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+  return { child, initialized, notifications, request, tool, text, value, stop, stderr: () => stderr };
+}
+
+test("bundled MCP server initializes and publishes the mesh tool catalog", async (context) => {
+  const server = await startMcpServer(context, spawnEnvFor(context), "pi-mesh-test");
+  assert.equal(server.initialized.result?.protocolVersion, "2025-06-18");
+  assert.deepEqual(server.initialized.result?.capabilities, {
     experimental: { "claude/channel": {} },
     tools: {},
   });
 
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-  const listed = await request("tools/list", {});
+  const listed = await server.request("tools/list", {});
   const tools = listed.result?.tools as Array<{
     name: string;
     description: string;
@@ -111,7 +156,7 @@ test("bundled MCP server initializes and publishes the mesh tool catalog", async
     properties: { messageIds: { maxItems: number } };
   };
   assert.equal(evidenceRefValue.properties.messageIds.maxItems, 16);
-  assert.equal(stderr, "");
+  assert.equal(server.stderr(), "");
 });
 
 test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channel delivery", async (context) => {
@@ -155,66 +200,15 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
     }
   });
 
-  const child = spawn(process.execPath, ["plugins/kxm/dist/mcp-server.js"], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      KXM_SERVER_URL: mesh.address.url,
-      KXM_AUTH_TOKEN: mesh.token,
-      KXM_AGENT_NAME: "claude-under-test",
-      KXM_AGENT_PURPOSE: "MCP integration test",
-      KXM_PROJECT: "test-project",
-    },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const lines = createInterface({ input: child.stdout });
-  let nextId = 1;
-  let stderr = "";
-  const notifications: Array<Record<string, unknown>> = [];
-  const pending = new Map<number, { resolve(value: RpcResponse): void; reject(error: Error): void }>();
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderr += chunk;
-  });
-  lines.on("line", (line) => {
-    const message = JSON.parse(line) as RpcResponse & { method?: string; params?: Record<string, unknown> };
-    if (typeof message.id !== "number") {
-      notifications.push(message as Record<string, unknown>);
-      return;
-    }
-    const waiter = pending.get(message.id);
-    if (!waiter) return;
-    pending.delete(message.id);
-    if (message.error) waiter.reject(new Error(message.error.message));
-    else waiter.resolve(message);
-  });
-  context.after(() => {
-    lines.close();
-    if (!child.killed) child.kill();
-  });
-
-  function request(method: string, params: Record<string, unknown>): Promise<RpcResponse> {
-    const id = nextId++;
-    const response = new Promise<RpcResponse>((resolve, reject) => pending.set(id, { resolve, reject }));
-    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-    return response;
-  }
-
-  function tool(name: string, args: Record<string, unknown> = {}): Promise<RpcResponse> {
-    return request("tools/call", { name, arguments: args });
-  }
-
-  function toolValue(response: RpcResponse): Record<string, unknown> {
-    const content = response.result?.content as Array<{ type: string; text: string }>;
-    return JSON.parse(content[0]!.text) as Record<string, unknown>;
-  }
-
-  await request("initialize", {
-    protocolVersion: "2025-06-18",
-    capabilities: {},
-    clientInfo: { name: "live-test", version: "1.0.0" },
-  });
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+  const server = await startMcpServer(context, spawnEnvFor(context, {
+    hubUrl: mesh.address.url,
+    authToken: mesh.token,
+    agentName: "claude-under-test",
+    project: "test-project",
+    extra: { KXM_AGENT_PURPOSE: "MCP integration test" },
+  }), "live-test");
+  const { notifications, tool } = server;
+  const toolValue = server.value;
 
   const listed = toolValue(await tool("kxm_list"));
   assert.match(JSON.stringify(listed), /reviewer/);
@@ -377,94 +371,21 @@ test("bundled MCP tools cover outbound, inbound, reply, cancellation, and channe
   const invalid = await tool("kxm_send", { content: "missing target" });
   assert.equal(invalid.result?.isError, true);
   assert.match(JSON.stringify(invalid.result), /target is required/);
-  assert.equal(stderr, "");
+  assert.equal(server.stderr(), "");
 });
 
 test("MCP inbox rehydrates one unacked message record after process restart", async (context) => {
   const mesh = await createTestMesh(context);
   const peer = mesh.makeClient("restart-sender");
   await peer.start(() => undefined);
-  const activeProcesses: Array<{ stop(): Promise<void> }> = [];
-  context.after(async () => {
-    await Promise.allSettled(activeProcesses.map((process) => process.stop()));
-  });
-
   async function startMcp() {
-    const child = spawn(process.execPath, ["plugins/kxm/dist/mcp-server.js"], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        KXM_SERVER_URL: mesh.address.url,
-        KXM_AUTH_TOKEN: mesh.token,
-        KXM_AGENT_NAME: "claude-restart-test",
-        KXM_AGENT_PURPOSE: "MCP restart integration test",
-        KXM_PROJECT: "test-project",
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const lines = createInterface({ input: child.stdout });
-    const notifications: Array<Record<string, unknown>> = [];
-    const pending = new Map<number, { resolve(value: RpcResponse): void; reject(error: Error): void }>();
-    let nextId = 1;
-    let stderr = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
-    lines.on("line", (line) => {
-      const message = JSON.parse(line) as RpcResponse & { method?: string };
-      if (typeof message.id !== "number") {
-        notifications.push(message as Record<string, unknown>);
-        return;
-      }
-      const waiter = pending.get(message.id);
-      if (!waiter) return;
-      pending.delete(message.id);
-      if (message.error) waiter.reject(new Error(message.error.message));
-      else waiter.resolve(message);
-    });
-    child.once("exit", (code) => {
-      for (const waiter of pending.values()) {
-        waiter.reject(new Error(`MCP restart test process exited with ${String(code)}: ${stderr}`));
-      }
-      pending.clear();
-    });
-
-    function request(method: string, params: Record<string, unknown>): Promise<RpcResponse> {
-      const id = nextId++;
-      const response = new Promise<RpcResponse>((resolve, reject) => pending.set(id, { resolve, reject }));
-      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-      return response;
-    }
-
-    function tool(name: string, args: Record<string, unknown> = {}): Promise<RpcResponse> {
-      return request("tools/call", { name, arguments: args });
-    }
-
-    function value(response: RpcResponse): Record<string, unknown> {
-      const content = response.result?.content as Array<{ text: string }>;
-      return JSON.parse(content[0]!.text) as Record<string, unknown>;
-    }
-
-    await request("initialize", {
-      protocolVersion: "2025-06-18",
-      capabilities: {},
-      clientInfo: { name: "restart-test", version: "1.0.0" },
-    });
-    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-
-    let stopped = false;
-    const processHandle = {
-      async stop(): Promise<void> {
-        if (stopped) return;
-        stopped = true;
-        lines.close();
-        if (child.exitCode !== null) return;
-        const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
-        child.kill();
-        await exited;
-      },
-    };
-    activeProcesses.push(processHandle);
-    return { notifications, tool, value, stop: processHandle.stop };
+    return await startMcpServer(context, spawnEnvFor(context, {
+      hubUrl: mesh.address.url,
+      authToken: mesh.token,
+      agentName: "claude-restart-test",
+      project: "test-project",
+      extra: { KXM_AGENT_PURPOSE: "MCP restart integration test" },
+    }), "restart-test");
   }
 
   const first = await startMcp();
@@ -492,4 +413,202 @@ test("MCP inbox rehydrates one unacked message record after process restart", as
   assert.equal((await peer.awaitResponse(inbound.id, 2_000)).reply?.content, "restart reply complete");
   assert.equal([...mesh.hub.state.messages.values()].filter((message) => message.id === inbound.id).length, 1);
   await second.stop();
+});
+
+test("isolated MCP spawn env points project dir, state, user config and hub URL at throwaway locations", (context) => {
+  const leaked = {
+    CLAUDE_PROJECT_DIR: process.cwd(),
+    KXM_SESSION_TOKEN: "leaked-session-token",
+    KXM_ATTEMPT_TOKEN: "leaked-attempt-token",
+    KXM_PROJECT_TOKENS: JSON.stringify({ leaked: "leaked-project-token" }),
+    KXM_AUTH_TOKEN: "leaked-auth-token",
+  };
+  const previous = Object.fromEntries(Object.keys(leaked).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, leaked);
+  context.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const plain = spawnEnvFor(context);
+  assert.equal(plain.cwd, plain.env.KXM_PROJECT_DIR);
+  for (const path of [plain.cwd, plain.env.KXM_STATE_HOME!, plain.env.KXM_USER_CONFIG_DIR!]) {
+    assert.ok(path.startsWith(tmpdir()), `${path} is under the OS temp dir`);
+    assert.equal(existsSync(path), true);
+  }
+  assert.equal(existsSync(join(plain.cwd, ".kxm")), false);
+  assert.equal(plain.env.KXM_SERVER_URL, "http://127.0.0.1:1");
+  for (const key of Object.keys(leaked)) assert.equal(plain.env[key], undefined, `${key} is not inherited`);
+
+  const project = spawnEnvFor(context, { withKxmDir: true, authToken: "explicit-token" });
+  assert.ok(project.cwd.startsWith(tmpdir()));
+  assert.equal(existsSync(join(project.cwd, ".kxm")), true);
+  assert.equal(existsSync(join(dirname(project.cwd), ".kxm")), false, "only the throwaway project dir gets .kxm");
+  assert.equal(project.env.KXM_AUTH_TOKEN, "explicit-token");
+});
+
+test("every test that spawns dist/mcp-server.js uses the isolated spawn helper", () => {
+  const testDir = fileURLToPath(new URL(".", import.meta.url));
+  const spawners = readdirSync(testDir)
+    .filter((file) => file.endsWith(".ts"))
+    .filter((file) => /spawn\([^)]*mcp-server\.js/.test(readFileSync(join(testDir, file), "utf8")));
+  assert.ok(spawners.includes("mcp.test.ts"), "the scan sees this file's spawn");
+  assert.ok(spawners.includes("commands-drift.test.ts"), "the scan sees the drift test's spawn");
+  for (const file of spawners) {
+    assert.match(
+      readFileSync(join(testDir, file), "utf8"),
+      /import\s*\{[^}]*\bisolatedMcpEnv\b[^}]*\}\s*from\s*"\.\.\/helpers\/mcp-spawn\.ts"/,
+      `${file} spawns dist/mcp-server.js without isolatedMcpEnv`,
+    );
+  }
+});
+
+test("MCP server never registers with the persisted admin token", async (context) => {
+  const adminToken = "kxm_admin_mcp-must-not-use-this";
+  const mesh = await createTestMesh(context, { authToken: adminToken });
+  const spawnEnv = spawnEnvFor(context, {
+    hubUrl: mesh.address.url,
+    project: "test-project",
+    agentName: "claude-admin-fallback",
+  });
+  writeHubEnvRecord({
+    schema: HUB_ENV_SCHEMA,
+    createdAt: "2026-09-23T00:00:00.000Z",
+    authToken: adminToken,
+    projectTokens: { "other-project": "other-project-token" },
+  }, spawnEnv.env);
+  const server = await startMcpServer(context, spawnEnv);
+
+  const listed = await server.tool("kxm_list");
+  assert.equal(listed.result?.isError, true);
+  const text = server.text(listed);
+  assert.match(text, /no project token for project test-project/);
+  assert.match(text, /Ask the user/);
+  assert.doesNotMatch(text, new RegExp(adminToken));
+  assert.doesNotMatch(text, /other-project-token/);
+  assert.equal([...mesh.hub.state.agents.values()].some((agent) => agent.name === "claude-admin-fallback"), false);
+});
+
+test("MCP tool call asks the user to start the hub when it is unreachable", async (context) => {
+  const server = await startMcpServer(context, spawnEnvFor(context, {
+    authToken: "unreachable-project-token",
+    project: "test-project",
+  }));
+  const listed = await server.tool("kxm_list");
+  assert.equal(listed.result?.isError, true);
+  const text = server.text(listed);
+  assert.match(text, /http:\/\/127\.0\.0\.1:1\b/);
+  assert.match(text, /Ask the user/);
+  assert.match(text, /kxm hub start/);
+  assert.match(text, /\/plugin configure kxm@kxm/);
+  assert.doesNotMatch(text, /unreachable-project-token/);
+});
+
+test("MCP policy error for an expired disk token asks the user to clear it and never mentions --issue", async (context) => {
+  const spawnEnv = spawnEnvFor(context, { project: "test-project" });
+  const expired = mintSessionToken({ preset: "operator", expiresAt: new Date(Date.now() - 60_000).toISOString() });
+  persistSessionTokenToDisk(expired, { userConfigDir: spawnEnv.env.KXM_USER_CONFIG_DIR });
+  const server = await startMcpServer(context, spawnEnv);
+
+  const listed = await server.tool("kxm_list");
+  assert.equal(listed.result?.isError, true);
+  const text = server.text(listed);
+  assert.match(text, /^tool_policy_denied: Session token on disk is malformed or expired\./);
+  assert.match(text, /kxm session token --clear/);
+  assert.match(text, /No active session token found/);
+  assert.doesNotMatch(text, /--issue/);
+  assert.doesNotMatch(text, /shows its expiry/);
+  assert.equal(text.includes(expired), false);
+});
+
+test("MCP policy error for an invalid KXM_SESSION_TOKEN asks the user to fix the launch environment", async (context) => {
+  const expired = mintSessionToken({ preset: "operator", expiresAt: new Date(Date.now() - 60_000).toISOString() });
+  const server = await startMcpServer(context, spawnEnvFor(context, {
+    project: "test-project",
+    extra: { KXM_SESSION_TOKEN: expired },
+  }));
+
+  const listed = await server.tool("kxm_list");
+  assert.equal(listed.result?.isError, true);
+  const text = server.text(listed);
+  assert.match(text, /^tool_policy_denied: KXM_SESSION_TOKEN is malformed or expired\./);
+  assert.match(text, /unset or replace KXM_SESSION_TOKEN/);
+  assert.doesNotMatch(text, /session token --clear/);
+  assert.doesNotMatch(text, /--issue/);
+  assert.equal(text.includes(expired), false);
+});
+
+test("second MCP session with the same agent name registers with a pid suffix", async (context) => {
+  const projectToken = "duplicate-name-project-token";
+  const mesh = await createTestMesh(context, { projectTokens: { "test-project": projectToken } });
+  const options = { hubUrl: mesh.address.url, authToken: projectToken, project: "test-project", agentName: "claude" };
+  const first = await startMcpServer(context, spawnEnvFor(context, options));
+  assert.notEqual(first.value(await first.tool("kxm_list")), undefined);
+  const second = await startMcpServer(context, spawnEnvFor(context, options));
+  const listed = await second.tool("kxm_list");
+  assert.notEqual(listed.result?.isError, true, second.text(listed));
+
+  const substitute = `claude-${second.child.pid}`;
+  const online = [...mesh.hub.state.agents.values()]
+    .filter((agent) => agent.project === "test-project" && agent.online)
+    .map((agent) => agent.name)
+    .sort();
+  assert.deepEqual(online, ["claude", substitute].sort());
+  assert.equal(first.stderr(), "");
+  assert.equal(
+    second.stderr(),
+    `kxm: agent name claude is already active in project test-project; this session registers as ${substitute}\n`,
+  );
+});
+
+test("MCP server registers with the hub before any tool call in a KXM project", async (context) => {
+  const adminToken = "kxm_admin_presence-admin-token";
+  const projectToken = "presence-project-token";
+  const mesh = await createTestMesh(context, { authToken: adminToken, projectTokens: { "test-project": projectToken } });
+  const peer = mesh.makeClient("presence-peer", { token: projectToken });
+  await peer.start(() => undefined);
+  const record = {
+    schema: HUB_ENV_SCHEMA,
+    createdAt: "2026-09-23T00:00:00.000Z",
+    // The hub expects the project token for test-project, so a session that picked the
+    // admin token here would fail to register.
+    authToken: adminToken,
+    projectTokens: { "test-project": projectToken },
+  };
+
+  const outside = spawnEnvFor(context, { hubUrl: mesh.address.url, project: "test-project", agentName: "claude-outside" });
+  writeHubEnvRecord(record, outside.env);
+  await startMcpServer(context, outside);
+  const inside = spawnEnvFor(context, {
+    hubUrl: mesh.address.url,
+    project: "test-project",
+    agentName: "claude-presence",
+    withKxmDir: true,
+  });
+  writeHubEnvRecord(record, inside.env);
+  const server = await startMcpServer(context, inside);
+
+  await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "claude-presence"), 3_000);
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
+  assert.equal((await peer.listAgents()).some((agent) => agent.name === "claude-outside"), false);
+
+  // A client that goes away closes stdin; the session leaves the hub instead of staying online.
+  const exited = new Promise<number | null>((resolveExit) => server.child.once("exit", resolveExit));
+  server.child.stdin.end();
+  assert.equal(await exited, 0);
+  assert.equal((await peer.listAgents()).some((agent) => agent.name === "claude-presence"), false);
+});
+
+test("MCP instructions point at kxm_context and stay under 800 characters", async (context) => {
+  const server = await startMcpServer(context, spawnEnvFor(context));
+  const instructions = server.initialized.result?.instructions;
+  assert.equal(typeof instructions, "string");
+  const text = instructions as string;
+  assert.ok(text.length < 800, `instructions are ${text.length} characters`);
+  assert.match(text, /call kxm_context with your role and task before planning/);
+  assert.match(text, /continue without KXM and tell the user the next step it names/);
+  assert.match(text, /ten categories \(plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate\)/);
+  assert.match(text, /stageId/);
 });

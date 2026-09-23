@@ -118,6 +118,7 @@ test("validateContextPacketContents fails closed on cross-project and unrequeste
     workingState: {},
     currentState: [item()],
     knowledge: [],
+    evidence: [],
     episodes: [],
     skills: [],
     contradictions: [],
@@ -130,6 +131,12 @@ test("validateContextPacketContents fails closed on cross-project and unrequeste
   const foreign = item({ id: "ctx_foreign", project: "other-project" });
   assert.throws(
     () => validateContextPacketContents(request, { ...packet, currentState: [foreign] }),
+    /cross-project/,
+  );
+  // The evidence section is validated like every other section.
+  const foreignEvidence = item({ id: "ctx_foreign_ev", project: "other-project" });
+  assert.throws(
+    () => validateContextPacketContents(request, { ...packet, evidence: [foreignEvidence] }),
     /cross-project/,
   );
 

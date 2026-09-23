@@ -17,6 +17,8 @@ import {
   groupByBehavior,
   generateRoutingReport,
   formatRoutingReport,
+  type RoutingRecord,
+  type RoutingRecordV2,
 } from "../routing.ts";
 import { loadPriceCatalog, type PriceCatalog } from "../prices.ts";
 import {
@@ -24,6 +26,11 @@ import {
   formatImprovementReport,
   writeImprovementReport,
 } from "../improve.ts";
+import {
+  loadRoutingSources,
+  type LoadedRoutingSources,
+  type RoutingSourceSummary,
+} from "../improve-sources.ts";
 import {
   loadModesConfig,
   resolveActiveMode,
@@ -514,26 +521,77 @@ export async function cmdArtifactsExist(runtime: Runtime, pathFlag: string): Pro
   return 0;
 }
 
-export async function cmdImprove(runtime: Runtime, options: { file?: string | undefined; target?: string | undefined; outDir?: string | undefined } = {}): Promise<number> {
-  const file = options.file ? resolve(runtime.cwd, options.file) : telemetryPath(runtime.dirs.logs);
-  const routingRecords = existsSync(file)
-    ? readRoutingRecords(file).map((entry) => entry.routing)
-    : [];
+const IMPROVE_SOURCE_UNREADABLE = "improve_source_unreadable";
+
+/** Load routing sources, or print the unreadable-source failure (exit 1). */
+function loadRoutingSourcesOrReport(runtime: Runtime, command: string, file?: string | undefined): LoadedRoutingSources | undefined {
+  try {
+    return loadRoutingSources({
+      cwd: runtime.cwd,
+      env: runtime.env,
+      logsDir: runtime.dirs.logs,
+      ...(file !== undefined ? { file } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const detail = message.startsWith(`${IMPROVE_SOURCE_UNREADABLE}: `) ? message.slice(IMPROVE_SOURCE_UNREADABLE.length + 2) : message;
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, command, error: IMPROVE_SOURCE_UNREADABLE, detail },
+      `${IMPROVE_SOURCE_UNREADABLE}: ${detail}`,
+    );
+    return undefined;
+  }
+}
+
+function formatRoutingSource(source: RoutingSourceSummary): string {
+  const counts = (["records", "skippedInvalid", "excludedSimulated", "undecided", "duplicatesDropped"] as const)
+    .filter((key) => source[key] !== undefined)
+    .map((key) => `${key}=${source[key]}`);
+  return `  ${source.kind.padEnd(9)} ${source.path} (exists=${source.exists}, ${counts.join(", ")})`;
+}
+
+export async function cmdImprove(runtime: Runtime, options: { file?: string | undefined; outDir?: string | undefined } = {}): Promise<number> {
+  const loaded = loadRoutingSourcesOrReport(runtime, "improve", options.file);
+  if (!loaded) return 1;
+  const root = loaded.projectRoot ?? runtime.cwd;
+
+  let config: ReturnType<typeof loadKxmConfig>;
+  try {
+    const userConfigDir = runtime.env.KXM_USER_CONFIG_DIR?.trim();
+    config = loadKxmConfig(root, userConfigDir ? { userConfigDir } : {});
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    print(runtime.io, runtime.json, { ok: false, command: "improve", error: "config_invalid", detail: message }, `config_invalid: ${message}`);
+    return 1;
+  }
 
   const candidatesDir = options.outDir
     ? resolve(runtime.cwd, options.outDir)
-    : join(runtime.cwd, ".kxm", "candidates");
+    : join(root, ".kxm", "candidates");
 
-  const report = buildImprovementReport(routingRecords, {
+  const report = buildImprovementReport(loaded.records, {
     candidatesDir,
-    projectRoot: runtime.cwd,
+    projectRoot: root,
     dryRun: runtime.dryRun,
+    promotionPolicy: config.improvement.promotionPolicy,
+    autoThreshold: config.improvement.autoThreshold,
+    halfLifeDays: config.improvement.telemetryHalfLifeDays,
   });
 
   const reportDir = join(runtime.dirs.assets, "improvements");
   const reportPath = writeImprovementReport(reportDir, report, runtime.dryRun);
 
-  const text = formatImprovementReport(report);
+  const text = [
+    "Sources:",
+    ...loaded.sources.map(formatRoutingSource),
+    loaded.projectRoot !== undefined
+      ? `Project root: ${loaded.projectRoot}`
+      : `Runtime store not read: no KXM project at ${runtime.cwd}`,
+    "",
+    formatImprovementReport(report),
+  ].join("\n");
   print(runtime.io, runtime.json, {
     ok: true,
     command: "improve",
@@ -545,6 +603,8 @@ export async function cmdImprove(runtime: Runtime, options: { file?: string | un
     candidatesCount: report.candidates.length,
     candidates: report.candidates,
     report,
+    sources: loaded.sources,
+    projectRoot: loaded.projectRoot ?? null,
   }, text);
   return 0;
 }
@@ -821,8 +881,20 @@ export async function cmdRoutingReport(
   runtime: Runtime,
   options: { file?: string | undefined; equivalentListCost?: boolean | undefined; listPrices?: boolean | undefined; prices?: string | undefined },
 ): Promise<number> {
-  const file = options.file ?? telemetryPath(runtime.dirs.logs);
-  const records = readRoutingRecords(file).map((entry) => entry.routing);
+  let file: string;
+  let records: Array<RoutingRecord | RoutingRecordV2>;
+  let sources: RoutingSourceSummary[] | undefined;
+  if (options.file !== undefined) {
+    file = options.file;
+    records = readRoutingRecords(file).map((entry) => entry.routing);
+  } else {
+    // The project's Runtime store (when cwd is in a KXM project), then telemetry.
+    const loaded = loadRoutingSourcesOrReport(runtime, "routing report");
+    if (!loaded) return 1;
+    file = telemetryPath(runtime.dirs.logs);
+    records = loaded.records;
+    sources = loaded.sources;
+  }
   const includeEquivalentListCost = Boolean(options.equivalentListCost || options.listPrices);
 
   let catalog: PriceCatalog | undefined;
@@ -838,7 +910,7 @@ export async function cmdRoutingReport(
   const report = generateRoutingReport(records, { catalog, includeEquivalentListCost });
 
   if (records.length === 0) {
-    print(runtime.io, runtime.json, { ok: true, command: "routing report", file, configurations: [], report }, "no routing records in telemetry");
+    print(runtime.io, runtime.json, { ok: true, command: "routing report", file, ...(sources ? { sources } : {}), configurations: [], report }, "no routing records in telemetry");
     return 0;
   }
 
@@ -853,7 +925,7 @@ export async function cmdRoutingReport(
   print(
     runtime.io,
     runtime.json,
-    { ok: true, command: "routing report", file, configurations, report },
+    { ok: true, command: "routing report", file, ...(sources ? { sources } : {}), configurations, report },
     text,
   );
   return 0;

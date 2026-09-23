@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { resolve } from "node:path";
+import { createInterface } from "node:readline";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
@@ -8,6 +11,7 @@ import {
   getPiToolDefinitions,
 } from "../../plugins/kxm/src/commands.ts";
 import piMeshExtension from "../../plugins/kxm/src/extension.ts";
+import { isolatedMcpEnv } from "../helpers/mcp-spawn.ts";
 
 function fakePi() {
   const tools = new Map<string, unknown>();
@@ -126,4 +130,45 @@ test("Every command declares a valid group and verb mapping to CLI subcommands",
     contextCommands.map((c) => c.verb),
     ["get", "recall", "state", "episode", "promote"],
   );
+});
+
+test("the MCP server publishes AGENT_COMMANDS plus exactly the hook-only tools", async (context) => {
+  // No hook-only tool ships: the failed-tool journal hook stays out until its live Claude Code
+  // witness passes. A hook-only tool must be named kxm_hook_* and listed after AGENT_COMMANDS.
+  const hookOnlyTools: string[] = [];
+  const spawnEnv = isolatedMcpEnv();
+  const child = spawn(process.execPath, [resolve("plugins/kxm/dist/mcp-server.js")], {
+    cwd: spawnEnv.cwd,
+    env: spawnEnv.env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  context.after(() => {
+    child.kill();
+    spawnEnv.cleanup();
+  });
+  const responses = new Map<number, (value: { result?: { tools?: Array<{ name: string }> } }) => void>();
+  createInterface({ input: child.stdout }).on("line", (line) => {
+    const message = JSON.parse(line) as { id?: number; result?: { tools?: Array<{ name: string }> } };
+    if (typeof message.id === "number") responses.get(message.id)?.(message);
+  });
+  const request = (id: number, method: string, params: Record<string, unknown>) =>
+    new Promise<{ result?: { tools?: Array<{ name: string }> } }>((resolveResponse) => {
+      responses.set(id, resolveResponse);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+
+  await request(1, "initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "drift-test", version: "1.0.0" },
+  });
+  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+  const listed = (await request(2, "tools/list", {})).result?.tools?.map((tool) => tool.name);
+
+  const agentNames = AGENT_COMMANDS.map((command) => command.name);
+  assert.deepEqual(listed, [...agentNames, ...hookOnlyTools]);
+  const hookNames = listed!.filter((name) => !agentNames.includes(name));
+  assert.deepEqual(hookNames, hookOnlyTools);
+  for (const name of hookNames) assert.match(name, /^kxm_hook_/);
+  assert.equal(agentNames.some((name) => name.startsWith("kxm_hook_")), false);
 });

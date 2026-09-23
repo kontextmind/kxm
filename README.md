@@ -213,6 +213,9 @@ The hub routes messages; it does not merge contexts, choose tasks, or bypass too
 | Install, configure, and use every KXM surface | [KXM Handbook](docs/kxm-handbook.md) |
 | Complete a Pi-to-Pi or Pi-to-Claude setup | [Getting started](docs/getting-started.md) |
 | Configure the hub or an agent | [Configuration reference](docs/configuration.md) |
+| Look up any `kxm` command, option, or output | [CLI reference](docs/cli-reference.md) |
+| Write project, workflow, agent, role, route, or price files | [Configuration file reference](docs/config-reference.md) |
+| Choose a native harness or OpenRouter for the same model | [Native harness or OpenRouter](docs/harness-routing.md) |
 | Understand components and message flow | [Architecture](docs/architecture.md) |
 | Learn about agent skills | [Agent Skills](docs/agent-skills.md) |
 | Run the hub responsibly | [Operations guide](docs/operations.md) |

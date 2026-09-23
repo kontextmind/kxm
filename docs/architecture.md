@@ -93,7 +93,7 @@ The hub validates and authenticates requests, stores agents and messages, pushes
 
 **Source of truth.** Semantics are defined by the protocol and schema types (`src/protocol.ts`, `src/workflow.ts`), the hub's durable state (`.kxm/state/kxm.db`: agents, messages, workflow runs, journal), and reviewed workspace configuration in git (`.kxm/config`). The `kxm` CLI, the Pi extension, and the Claude MCP server are **clients** of that state. When a client's behaviour differs from the hub's or a definition's contract, the contract is authoritative and the client is the defect. One deliberate locality limitation remains: `kxm workflow list` / `get` read the local SQLite file rather than the configured hub, so they only describe runs when the operator is on the hub host. Start, signal, and GitHub watch now resolve credentials from the selected active definition and use the start secret as the documented callback fallback.
 
-Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and exact keyed evidence requirements. Local evidence can be accumulated when a coordinator enters a durable `waiting` state; a separately signed and deduplicated external result must complete the remaining named requirements before it can advance the stage. A separate journal preserves plans, decisions, contradictions, errors, and lessons for reviewed continuous improvement.
+Signed webhook workflows add a durable run and coordinator message in one request. The stable provider delivery ID prevents duplicate Jira or GitHub retries. Ordered checkpoints enforce attempt limits and exact keyed evidence requirements. Local evidence can be accumulated when a coordinator enters a durable `waiting` state; a separately signed and deduplicated external result must complete the remaining named requirements before it can advance the stage. A separate journal preserves plans, decisions, contradictions, errors, lessons, and the other journal categories, each optionally bound to its stage and attempt, for reviewed continuous improvement.
 
 Peer-policy requirements add an evidence plane beside caller-authored strings.
 At run creation, configured eligible agent selectors resolve to stable producer
@@ -219,7 +219,8 @@ workflow state / journal / provenance  →  context engine
   ├─ episodes (journal-derived learning records)
   ├─ knowledge wiki (compiled, source-linked view)
   ├─ skill lifecycle (candidates → protected eval → promote/quarantine)
-  └─ role-aware arbiter (per-role packets under token budgets)
+  └─ role-aware arbiter (task-relevance ranked, per-role packets under token budgets;
+     also feeds Runtime dispatch with committed, pinned memory and promoted skills)
 ```
 
 Key invariants:
@@ -227,6 +228,8 @@ Key invariants:
 - **Workflow state remains authoritative.** Journal entries are evidence, not policy.
 - **Authority never increases through derivation.** A deterministic grant floor per origin (human/workflow → policy, git → instruction, peer/tool/external/derived → evidence) is enforced at parse time.
 - **Project isolation.** Every context request is project-scoped; cross-project content fails closed.
+- **Deterministic selection.** The arbiter ranks by lexical task relevance (BM25 with a fixed stopword list) inside fixed structural keys; no model, clock or randomness decides what a packet holds.
+- **Committed context only at dispatch.** A Runtime-dispatched agent receives project memory and promoted skills only when they are committed, clean, and match the run's pinned memory revision; otherwise they are withheld with a gap and dispatch continues without them. Dispatch reads no hub source.
 - **Promotion is control-plane work.** Agents may propose state and skill candidates; only authorized, evidence-bound decisions promote them.
 
 ### Provider boundary

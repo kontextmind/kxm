@@ -1,6 +1,6 @@
 ---
 name: kxm-query
-description: Query KontextMind knowledge — decisions, process, learnings — with provenance. Use when asked what we know or decided about X, how we test/release/debug, to search or read the mind, run km_search/km_read/km_list/km_graph/km_chat, or pull an evidence pack.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Searches and reads a KontextMind mind with km_search and km_read. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:

@@ -19,6 +19,27 @@ because it is in the file: an unknown `hub.autoStart` fails closed to the
 default, and an unset `defaults.harness` means Pi rather than the first harness
 in the catalog.
 
+### Improvement settings (`improvement.*`)
+
+`kxm improve` reads these keys from the project it runs in (and the user scope) and
+reports them in its output. They are normalized field by field whenever the
+configuration loads, so a typo falls back to the default instead of changing what the
+report says:
+
+| Key | Default | Accepted values; anything else becomes the default |
+|---|---:|---|
+| `improvement.promotionPolicy` | `manual_pr` | `manual_pr`, `critic_quorum`, or `auto_threshold` |
+| `improvement.telemetryHalfLifeDays` | `14` | A number greater than 0 and at most 3650 |
+| `improvement.autoThreshold.minRuns` | `10` | An integer from 1 to 1,000,000 |
+| `improvement.autoThreshold.minPassRate` | `0.95` | A number from 0 to 1 |
+| `improvement.autoThreshold.minCostSavings` | `0.5` | A number of at least 0 |
+
+None of these values can authorize or activate anything. The policy only selects which
+review-readiness rule `kxm improve` reports for each candidate, and every policy ends at
+an operator PR. The half-life weights report rows (`weightedRecurrence`) and never
+decides whether a group is a candidate. See
+[Continuous improvement](continuous-improvement.md#coded-repeats-kxm-improve).
+
 Project identity and repository bindings are separate, Git-tracked files under
 `.kxm/` (`project.yaml`, `roster.yaml`, `routes.yaml`, `gates.yaml`, `prices.yaml`,
 `roles/`, `workflows/`). They are configuration reviewed in a PR, not personal
@@ -94,6 +115,8 @@ rewrites it.
 | `KXM_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window; minimum 100 milliseconds |
 | `KXM_WEBHOOK_WORKFLOWS` | None | Inline JSON array of signed webhook workflow definitions |
 | `KXM_WEBHOOK_WORKFLOWS_FILE` | None | Path to the workflow-definition JSON file |
+
+The hub's structured log (`KXM_LOG_PATH`) records the size of a context request, not its text: `context_packet_assembled` carries `taskChars`, `taskTokens` (distinct words after stopword removal) and `matchedCandidates` beside the selected ids, provenance summary and token estimate, and `context_recall` carries `queryChars`, `queryTokens`, `limit` and `results`. The task and query text appear only in the caller's own response.
 
 The hub refuses a non-loopback bind without `KXM_AUTH_TOKEN`. Use a long random administrative token even when project tokens are configured, because administrative endpoints such as `/metrics` require it outside loopback.
 
@@ -190,7 +213,8 @@ read from source; it does not invent defaults.
 | Agent stale threshold | 30 seconds |
 | Client request timeout | 15 seconds |
 | Default message TTL | 24 hours |
-| Default `kxm_await` timeout | 30 minutes |
+| `kxm_await` wait | 60 seconds (default and maximum) |
+| Default `kxm_fanout` local wait | 30 minutes |
 | Default workflow signal wait | 24 hours |
 | Workflow signal wait range | 1 second to 30 days |
 
@@ -302,12 +326,14 @@ The current hub command groups are `agent`, `session`, `workflow`, `gate`, `hub`
 | `kxm dash` | Open the read-only SSE observer dashboard; non-TTY output is one ANSI-free snapshot |
 | `kxm hub start` | Start the KXM hub in the foreground |
 | `kxm hub stop` | Request managed hub and worker shutdown |
-| `kxm improve` | Bucket `.kxm/logs/telemetry.jsonl` events into a proposed-only improvement report; does not read the workflow journal |
+| `kxm improve` | Propose coded-repeat candidates from routing records: the current project's Runtime event store (read-only) and `.kxm/logs/telemetry.jsonl`, or only the file named by `--file`. Prints the sources it read, writes proposed candidates under `.kxm/candidates/`, and reports promotion readiness under `improvement.promotionPolicy`; nothing is applied and no policy authorizes. Does not read the workflow journal |
 | `kxm context get \| recall \| state \| episode \| promote \| explain \| wiki-compile \| wiki-lint` | Context operating system: role-aware packets, metadata search, temporal state, episodes, evidence-backed lineage (`explain`), wiki compile/lint |
 | `kxm skills` | Governed skill candidate lifecycle |
 | `kxm memory sync` | Regenerate the read-only project-memory block — authored facts from `.kxm/memory/` only — between `<!-- kxm:memory:start -->` and `<!-- kxm:memory:end -->` in whichever of `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` already exist in the current directory. Text outside the markers is never rewritten; a file without markers gets the block appended. Each file must hold exactly one start marker followed by exactly one end marker, or neither: an orphan marker, an end before its start, or a second block makes sync exit 1 naming the file and the problem, and **no file is written**, the well-formed ones included. Missing files are reported as `missing` and **not created** — which harness a project uses is its own choice — and with none present sync exits 1 without writing. `--json` reports `updated`, `unchanged` and `missing` |
 
-Improvement telemetry is classified as `project` whenever a project or workflow identity is present, and as `cli` for unscoped operator behavior. Set `KXM_IMPROVE_TARGET=cli` or `KXM_IMPROVE_TARGET=project` only when an operator needs to override that generic classification; this changes report bucketing, not workflow state.
+Telemetry events carry a `target` label: `project` whenever a project or workflow identity is present, and `cli` for unscoped operator behavior. `KXM_IMPROVE_TARGET=cli` or `KXM_IMPROVE_TARGET=project` overrides that label when an event is written. No report reads the label, and `kxm improve` has no `--target` option.
+
+Journal entries recorded with `kxm workflow record` or `kxm_workflow_record` take one of ten categories (`plan`, `decision`, `contradiction`, `error`, `lesson`, `observation`, `hypothesis`, `experiment`, `state-change`, `skill-candidate`). `--stage-id` binds the entry to a stage; the hub derives the attempt, and the area defaults to the stage's declared area. The journal covers hub webhook runs only; a `kxm run` id is refused with `workflow_not_found`.
 
 The gate group contains exactly the five implemented gates listed above. Names declared in a workspace `gates.json` that do not map to one of them (for example `quality`, `git-commit`, `jira-fetch`) are records with no runner; there is no `kxm gate run <name>`.
 

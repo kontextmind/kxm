@@ -1,6 +1,6 @@
 ---
 name: kxm-insights
-description: KontextMind workflow intelligence — loop patterns, knowledge gaps, and evidence-backed recommendations. Use when asked for insights, what the mind observed, loops, gaps, or km_insights list/dismiss.
+description: KontextMind knowledge plane only, the separate kontext CLI and km_ tools, not KXM or this plugin's kxm_* tools. Lists and dismisses KontextMind insights with km_insights. Use only when the user names KontextMind, the kontext CLI, or a km_ tool.
 license: Apache-2.0
 compatibility: Any agent that can run a shell or MCP client. No vendor-only tools.
 metadata:

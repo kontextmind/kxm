@@ -2,85 +2,181 @@
   "id": "kxm-agent-skills-suite",
   "version": "1.0.0",
   "name": "KXM Agent Skills Suite",
-  "description": "Comprehensive suite of agent skills covering all KXM top-level commands",
+  "description": "KXM command skills that own every top-level kxm command, browser automation skills, and the separate KontextMind knowledge-plane skills",
   "skills": [
     {
       "name": "kxm",
       "path": "./skills/kxm",
       "ownedCommands": [],
-      "intent": "Select the right suite skill; state universal safety rules and portable CLI convention"
+      "intent": "Find the right KXM skill or kxm_* tool for a request and follow the universal safety rules"
     },
     {
       "name": "kxm-project-setup",
       "path": "./skills/kxm-project-setup",
       "ownedCommands": ["init", "trust", "config", "completion"],
-      "intent": "Initialize, review permission changes, configure, and add shell completion"
+      "intent": "Set up KXM in a repository, review permission changes, run a first workflow, configure, and add shell completion"
     },
     {
       "name": "kxm-harness-auth",
       "path": "./skills/kxm-harness-auth",
-      "ownedCommands": ["harness", "auth", "update", "runtime", "agent"],
-      "intent": "Inspect authenticated harness capability and operate supported runtimes/workers without inventing fallback"
+      "ownedCommands": ["harness", "auth", "update", "runtime", "agent", "models", "routes", "ssh"],
+      "intent": "Check harness installs and auth, update, run the Runtime supervisor, refresh models, admit routes, and use SSH workers"
     },
     {
       "name": "kxm-hub-ops",
       "path": "./skills/kxm-hub-ops",
-      "ownedCommands": ["hub", "backup", "restore"],
-      "intent": "Run and protect the local hub and its durable SQLite state"
+      "ownedCommands": ["hub", "backup", "restore", "tenant"],
+      "intent": "Start, inspect, bind, and stop the hub, read tenant status, and back up or restore its SQLite state"
     },
     {
       "name": "kxm-session",
       "path": "./skills/kxm-session",
       "ownedCommands": ["session", "dash", "studio"],
-      "intent": "Resume/inspect operator work and use only the UI capabilities each harness actually supports"
+      "intent": "Read session and hub status at the start of a session and open dashboard or studio screens"
     },
     {
       "name": "kxm-peer",
       "path": "./skills/kxm-peer",
       "ownedCommands": ["peer"],
-      "intent": "Discover, send, poll/await, cancel, fan out, inbox, and reply safely"
+      "intent": "Delegate to, fan out to, await, and answer other KXM agents safely"
     },
     {
       "name": "kxm-workflow",
       "path": "./skills/kxm-workflow",
       "ownedCommands": ["workflow", "gate"],
-      "intent": "Operate webhook workflows, waits/signals, evidence checkpoints, provenance, and deterministic gates"
+      "intent": "Work inside a durable workflow run by recording journal entries, passing checkpoints, and waiting on signed callbacks"
     },
     {
       "name": "kxm-definitions",
       "path": "./skills/kxm-definitions",
       "ownedCommands": ["role"],
-      "intent": "Manage role and workflow definitions through their configuration authority without permission expansion"
+      "intent": "Inspect or edit role definitions, role hosts, and model rosters without granting writer admission"
     },
     {
       "name": "kxm-runs",
       "path": "./skills/kxm-runs",
       "ownedCommands": ["run", "runs"],
-      "intent": "Create and inspect local KXM runs while preserving current execution-status boundaries"
+      "intent": "Create, drive, inspect, and cancel local KXM runs, or smoke-test a workflow model-free"
     },
     {
       "name": "kxm-context-memory",
       "path": "./skills/kxm-context-memory",
-      "ownedCommands": ["context", "memory"],
-      "intent": "Query role-aware context and manage Git-authored memory proposals without treating proposals as authority"
+      "ownedCommands": ["context", "memory", "explain"],
+      "intent": "Recall what the project knows or decided, explain a context footprint, and record Git memory candidates"
     },
     {
       "name": "kxm-skill-lifecycle",
       "path": "./skills/kxm-skill-lifecycle",
       "ownedCommands": ["skills"],
-      "intent": "Govern candidate/evaluate/promote/quarantine/reject/verify lifecycle; distinguish this from bundled skills"
+      "intent": "Turn a repeated practice into a governed skill candidate and record its evaluations"
     },
     {
       "name": "kxm-routing-improve",
       "path": "./skills/kxm-routing-improve",
       "ownedCommands": ["routing", "improve"],
-      "intent": "Inspect real route quality/cost and propose reviewed improvements without auto-routing or underquoting"
+      "intent": "Find what KXM learned, what keeps repeating, and what a model route cost, as reviewed proposals"
     },
     {
       "name": "kxm-tasks",
       "path": "./skills/kxm-tasks",
       "ownedCommands": ["suggest", "goal", "task"],
-      "intent": "Recommend workflows and manage goals/tasks with explicit SCM/tracker boundaries"
+      "intent": "Pick a workflow for a request and plan work as goals and tasks with explicit SCM and tracker boundaries"
+    },
+    {
+      "name": "kxm-browser-session",
+      "path": "./skills/kxm-browser-session",
+      "ownedCommands": [],
+      "intent": "Start, attach to, inspect, and release a remote Steel browser session"
+    },
+    {
+      "name": "kxm-browser-takeover",
+      "path": "./skills/kxm-browser-takeover",
+      "ownedCommands": [],
+      "intent": "Hand a browser session to a human for MFA, login, CAPTCHA, or sensitive consent, then resume"
+    },
+    {
+      "name": "kxm-browser-auth",
+      "path": "./skills/kxm-browser-auth",
+      "ownedCommands": [],
+      "intent": "Use stored credentials and authenticated browser profiles safely"
+    },
+    {
+      "name": "kxm-browser-explore",
+      "path": "./skills/kxm-browser-explore",
+      "ownedCommands": [],
+      "intent": "Explore a website, inspect its DOM, and map a user flow with agent-browser"
+    },
+    {
+      "name": "kxm-browser-verify",
+      "path": "./skills/kxm-browser-verify",
+      "ownedCommands": [],
+      "intent": "Reproduce a UI bug, gather evidence, and write a durable Playwright test"
+    },
+    {
+      "name": "kxm-browser-diagnostics",
+      "path": "./skills/kxm-browser-diagnostics",
+      "ownedCommands": [],
+      "intent": "Diagnose Steel connectivity, CDP errors, and timeouts, and clean up orphaned browser sessions"
+    },
+    {
+      "name": "kxm-browser-annotate",
+      "path": "./skills/kxm-browser-annotate",
+      "ownedCommands": [],
+      "intent": "Capture page sections, attach structured annotations, and hand the changes to an agent"
+    },
+    {
+      "name": "kxm-mind",
+      "path": "./skills/kxm-mind",
+      "ownedCommands": [],
+      "intent": "Route a KontextMind knowledge-plane request, not a KXM one, to the matching knowledge-plane skill"
+    },
+    {
+      "name": "kxm-query",
+      "path": "./skills/kxm-query",
+      "ownedCommands": [],
+      "intent": "Search and read a KontextMind mind with provenance when the user names KontextMind"
+    },
+    {
+      "name": "kxm-harvest",
+      "path": "./skills/kxm-harvest",
+      "ownedCommands": [],
+      "intent": "Draft redacted session learnings into a KontextMind mind when the user names KontextMind"
+    },
+    {
+      "name": "kxm-triage",
+      "path": "./skills/kxm-triage",
+      "ownedCommands": [],
+      "intent": "Work the KontextMind review queue when the user names KontextMind"
+    },
+    {
+      "name": "kxm-work",
+      "path": "./skills/kxm-work",
+      "ownedCommands": [],
+      "intent": "Read or update KontextMind tracker work state and handoffs when the user names KontextMind"
+    },
+    {
+      "name": "kxm-insights",
+      "path": "./skills/kxm-insights",
+      "ownedCommands": [],
+      "intent": "List or dismiss KontextMind insights when the user names KontextMind"
+    },
+    {
+      "name": "kxm-projects",
+      "path": "./skills/kxm-projects",
+      "ownedCommands": [],
+      "intent": "Manage KontextMind mind repositories and members when the user names KontextMind"
+    },
+    {
+      "name": "kxm-protocol",
+      "path": "./skills/kxm-protocol",
+      "ownedCommands": [],
+      "intent": "Explain KontextMind protocol contracts, trailers, trust modes, and authorization"
+    },
+    {
+      "name": "kxm-mind-setup",
+      "path": "./skills/kxm-mind-setup",
+      "ownedCommands": [],
+      "intent": "Connect a machine to a KontextMind server with the kontext CLI when the user names KontextMind"
     }
   ]
 }
