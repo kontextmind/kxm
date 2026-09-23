@@ -11,6 +11,8 @@ import {
   getTask,
   updateTaskStatus,
   syncTaskWithTracker,
+  goalFilePath,
+  taskFilePath,
   type TaskStatus,
   type TrackerType,
 } from "../task-manager.ts";
@@ -22,8 +24,8 @@ import {
   generateStudioLayout,
 } from "../studio-layout.ts";
 import { readSessionTokenFromDisk } from "../commands.ts";
-import { print, type Runtime } from "./types.ts";
-import { cmdKxmRun } from "./project.ts";
+import { print, printPlan, type Runtime } from "./types.ts";
+import { cmdKxmRun, resolveKxmRunTarget } from "./project.ts";
 
 export async function cmdSuggest(runtime: Runtime, promptParts: string[]): Promise<number> {
   try {
@@ -74,7 +76,11 @@ export async function cmdGoalCreate(
       area: options.area,
       successMetrics: options.metric,
       targetDate: options.targetDate,
-    });
+    }, { dryRun: runtime.dryRun });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "goal create", goal }, [{ action: "write", target: goalFilePath(runtime.cwd, goal.id) }], `create goal ${goal.title} (the id is assigned when it is created)`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -118,7 +124,11 @@ export async function cmdTaskCreate(
       trackerSync: options.tracker && options.issue
         ? { tracker: options.tracker as TrackerType, issueKey: options.issue }
         : undefined,
-    });
+    }, { dryRun: runtime.dryRun });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "task create", task }, [{ action: "write", target: taskFilePath(runtime.cwd, task.id) }], `create task ${task.title} [${task.status}] (the id is assigned when it is created)`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,
@@ -187,6 +197,21 @@ export async function cmdTaskRun(runtime: Runtime, taskId: string): Promise<numb
       return 1;
     }
     const workflow = task.assignedWorkflow ?? "default";
+    if (runtime.dryRun) {
+      const target = resolveKxmRunTarget(runtime, workflow);
+      if (typeof target === "number") return target;
+      const started = updateTaskStatus(runtime.cwd, taskId, "in_progress", { dryRun: true });
+      printPlan(
+        runtime,
+        { command: "task run", taskId, ...target, status: started.status },
+        [
+          { action: "request", target: "POST kxm-runtime /v1/runs (starts the Runtime supervisor if it is not running)" },
+          { action: "write", target: taskFilePath(runtime.cwd, taskId) },
+        ],
+        `run workflow ${workflow} for task ${taskId}, then mark it ${started.status}`,
+      );
+      return 0;
+    }
     const exitCode = await cmdKxmRun(runtime, workflow, [task.objective]);
     if (exitCode === 0) {
       updateTaskStatus(runtime.cwd, taskId, "in_progress");
@@ -201,7 +226,11 @@ export async function cmdTaskRun(runtime: Runtime, taskId: string): Promise<numb
 
 export async function cmdTaskSync(runtime: Runtime, taskId: string): Promise<number> {
   try {
-    const synced = syncTaskWithTracker(runtime.cwd, taskId);
+    const synced = syncTaskWithTracker(runtime.cwd, taskId, { dryRun: runtime.dryRun });
+    if (runtime.dryRun) {
+      printPlan(runtime, { command: "task sync", task: synced }, [{ action: "write", target: taskFilePath(runtime.cwd, taskId) }], `mark task ${taskId} synced with ${synced.trackerSync?.tracker} #${synced.trackerSync?.issueKey}`);
+      return 0;
+    }
     print(
       runtime.io,
       runtime.json,

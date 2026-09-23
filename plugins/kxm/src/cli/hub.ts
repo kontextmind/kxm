@@ -6,7 +6,7 @@ import { defaultProjectName } from "../project-name.ts";
 import { hasClientHubCredential, resolveClientHubAuthToken } from "../hub-env.ts";
 import { agentWorker, type Worker } from "../envelope.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "../tui.ts";
-import { formatSessionBriefText, loadSessionBriefAsync, type SessionHubStatus } from "../session-work.ts";
+import { formatSessionBriefText, loadSessionBriefAsync, readCachedSessionBrief, type SessionHubStatus } from "../session-work.ts";
 import {
   HUB_BINDING_SCHEMA,
   HubBindingError,
@@ -47,11 +47,13 @@ import {
 import { createSession, loadNamedWorkers, rosterNames, sessionAssetDirs, workflowAssetDirs, writeSession } from "../session.ts";
 import {
   print,
+  printPlan,
   printWorker,
   hostMode,
   workspaceEnv,
   spawnScript,
   processExists,
+  type PlannedChange,
   type Runtime,
 } from "./types.ts";
 
@@ -140,7 +142,7 @@ export async function refreshKxmUpdateNotice(
   }
   const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
   const notice = noticeFromVersions(installed, fetched.latest, resolved, fetched.error, fetched.asset);
-  writeUpdateCache(runtime.dirs.state, notice);
+  if (!runtime.dryRun) writeUpdateCache(runtime.dirs.state, notice);
   return notice;
 }
 
@@ -556,6 +558,12 @@ export async function cmdSessionStatus(runtime: Runtime): Promise<number> {
 }
 
 export async function cmdAuthToken(runtime: Runtime, options: { status?: boolean | undefined; clear?: boolean | undefined; issue?: boolean | undefined } = {}): Promise<number> {
+  const tokenFile = sessionTokenPath(runtime.env.KXM_USER_CONFIG_DIR);
+  if (options.clear && runtime.dryRun) {
+    const present = existsSync(tokenFile);
+    printPlan(runtime, { command: "auth token", cleared: present }, present ? [{ action: "delete", target: tokenFile }] : [], present ? "clear the session token from disk" : "no session token file to clear");
+    return 0;
+  }
   if (options.clear) {
     const cleared = clearSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
     print(
@@ -615,18 +623,19 @@ export async function cmdAuthToken(runtime: Runtime, options: { status?: boolean
     return 1;
   }
 
+  const existingToken = options.issue ? undefined : readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
+  if (runtime.dryRun && !existingToken) {
+    // The token is only worth printing once it is on disk; a dry run never is.
+    printPlan(runtime, { command: "auth token" }, [{ action: "write", target: tokenFile }], "issue an operator session token and persist it");
+    return 0;
+  }
+
   let token: string;
-  if (options.issue) {
+  if (existingToken) {
+    token = existingToken.token;
+  } else {
     token = mintSessionToken({ preset: "operator" });
     persistSessionTokenToDisk(token, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
-  } else {
-    const existing = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
-    if (existing) {
-      token = existing.token;
-    } else {
-      token = mintSessionToken({ preset: "operator" });
-      persistSessionTokenToDisk(token, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
-    }
   }
 
   print(runtime.io, runtime.json, { ok: true, command: "auth token", token }, token);
@@ -635,11 +644,17 @@ export async function cmdAuthToken(runtime: Runtime, options: { status?: boolean
 
 export async function cmdSessionBrief(runtime: Runtime, options: { status?: boolean | undefined; token?: boolean | undefined } = {}): Promise<number> {
   const existing = readSessionTokenFromDisk({ userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
-  const sessionToken = existing ? existing.token : mintSessionToken({ preset: "operator" });
-  if (!existing) {
+  // A dry run neither mints nor persists a token; it names the file it would write.
+  const planned: PlannedChange[] = existing ? [] : [{ action: "write", target: sessionTokenPath(runtime.env.KXM_USER_CONFIG_DIR) }];
+  const sessionToken = existing?.token ?? (runtime.dryRun ? undefined : mintSessionToken({ preset: "operator" }));
+  if (!existing && sessionToken) {
     persistSessionTokenToDisk(sessionToken, { userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
   }
   if (options.token) {
+    if (!sessionToken) {
+      printPlan(runtime, { command: "session brief" }, planned, "issue an operator session token and persist it");
+      return 0;
+    }
     print(runtime.io, runtime.json, { ok: true, command: "session brief", sessionToken }, sessionToken);
     return 0;
   }
@@ -668,8 +683,18 @@ export async function cmdSessionBrief(runtime: Runtime, options: { status?: bool
 
   const brief = await loadSessionBriefAsync(runtime.dirs.workdir, env, undefined, hub, {
     fetchImpl: runtime.fetchImpl,
-    sessionToken,
+    ...(sessionToken ? { sessionToken } : {}),
+    writeCache: !runtime.dryRun,
   });
+
+  if (runtime.dryRun) {
+    if (!readCachedSessionBrief(runtime.dirs.state)) planned.push({ action: "write", target: join(runtime.dirs.state, "session-brief.json") });
+    print(runtime.io, runtime.json, { ...brief, dryRun: true, planned }, [
+      options.status ? brief.statusLine : formatSessionBriefText(brief),
+      ...planned.map((change) => `dry run: would ${change.action} ${change.target}`),
+    ].join("\n"));
+    return 0;
+  }
 
   if (options.status) {
     print(runtime.io, runtime.json, brief, brief.statusLine);

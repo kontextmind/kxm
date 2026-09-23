@@ -10319,7 +10319,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve7.call(this, root, ref);
+      let _sch = resolve8.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -10346,7 +10346,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve7(root, ref) {
+    function resolve8(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -11171,7 +11171,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve7(baseURI, relativeURI, options) {
+    function resolve8(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -11533,7 +11533,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve7,
+      resolve: resolve8,
       resolveComponent,
       equal,
       serialize,
@@ -14524,7 +14524,7 @@ var require_dist2 = __commonJS({
 
 // plugins/kxm/src/extension.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { existsSync as existsSync11, mkdirSync as mkdirSync9, readFileSync as readFileSync14, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync12, mkdirSync as mkdirSync9, readFileSync as readFileSync14, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "node:fs";
 import { dirname as dirname7, join as join15 } from "node:path";
 
 // plugins/kxm/src/commands.ts
@@ -14847,7 +14847,7 @@ var HubClient = class {
       if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
       const message = await this.getMessage(messageId);
       if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
-      await new Promise((resolve7, reject) => {
+      await new Promise((resolve8, reject) => {
         const onAbort = () => {
           signal?.removeEventListener("abort", onAbort);
           clearTimeout(timer);
@@ -14855,7 +14855,7 @@ var HubClient = class {
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
-          resolve7();
+          resolve8();
         }, Math.min(500, Math.max(1, deadline - Date.now())));
         signal?.addEventListener("abort", onAbort, { once: true });
         if (signal?.aborted) onAbort();
@@ -14910,7 +14910,7 @@ var HubClient = class {
       } catch (error2) {
         if (this.stopped || error2 instanceof Error && error2.name === "AbortError") return;
       }
-      if (!this.stopped) await new Promise((resolve7) => setTimeout(resolve7, this.options.reconnectMs));
+      if (!this.stopped) await new Promise((resolve8) => setTimeout(resolve8, this.options.reconnectMs));
     }
   }
   headers(includeIdentity = true) {
@@ -18281,7 +18281,7 @@ function closeServerGracefully(server) {
   server.close();
 }
 function startCallbackServer(expectedState) {
-  return new Promise((resolve7, reject) => {
+  return new Promise((resolve8, reject) => {
     let settled = false;
     let timeout;
     let resolveCode;
@@ -18360,7 +18360,7 @@ function startCallbackServer(expectedState) {
         finish(() => rejectCode(new Error("OAuth callback timed out waiting for browser login")));
         close();
       }, OAUTH_CALLBACK_TIMEOUT_MS);
-      resolve7({ server, waitForCode: () => codePromise, cleanup });
+      resolve8({ server, waitForCode: () => codePromise, cleanup });
     });
   });
 }
@@ -18979,8 +18979,8 @@ var AssistantMessageEventStream = class {
   finalResultPromise;
   resolveFinalResult;
   constructor() {
-    this.finalResultPromise = new Promise((resolve7) => {
-      this.resolveFinalResult = resolve7;
+    this.finalResultPromise = new Promise((resolve8) => {
+      this.resolveFinalResult = resolve8;
     });
   }
   push(event) {
@@ -19010,8 +19010,8 @@ var AssistantMessageEventStream = class {
       } else if (this.done) {
         return;
       } else {
-        const next = await new Promise((resolve7) => {
-          this.waiting.push(resolve7);
+        const next = await new Promise((resolve8) => {
+          this.waiting.push(resolve8);
         });
         if (next.done) return;
         if (next.value) yield next.value;
@@ -20330,8 +20330,8 @@ var AssistantMessageEventStream2 = class {
   finalResultPromise;
   resolveFinalResult;
   constructor() {
-    this.finalResultPromise = new Promise((resolve7) => {
-      this.resolveFinalResult = resolve7;
+    this.finalResultPromise = new Promise((resolve8) => {
+      this.resolveFinalResult = resolve8;
     });
   }
   push(event) {
@@ -20361,8 +20361,8 @@ var AssistantMessageEventStream2 = class {
       } else if (this.done) {
         return;
       } else {
-        const next = await new Promise((resolve7) => {
-          this.waiting.push(resolve7);
+        const next = await new Promise((resolve8) => {
+          this.waiting.push(resolve8);
         });
         if (next.done) return;
         if (next.value) yield next.value;
@@ -33420,7 +33420,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve7) => setTimeout(resolve7, pollInterval));
+        await new Promise((resolve8) => setTimeout(resolve8, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -33437,7 +33437,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve7, reject) => {
+    return new Promise((resolve8, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -33515,7 +33515,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve7(parseResult.data);
+            resolve8(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -33776,12 +33776,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve7, reject) => {
+    return new Promise((resolve8, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve7, interval);
+      const timeoutId = setTimeout(resolve8, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -34872,7 +34872,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve7) => setTimeout(resolve7, pollInterval));
+      await new Promise((resolve8) => setTimeout(resolve8, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -35490,8 +35490,8 @@ function makePromptStream() {
     try {
       while (true) {
         while (queue.length === 0 && !done && !failure) {
-          await new Promise((resolve7) => {
-            wake = resolve7;
+          await new Promise((resolve8) => {
+            wake = resolve8;
           });
         }
         if (failure) throw failure;
@@ -35512,8 +35512,8 @@ function makePromptStream() {
   }
   return {
     stream: gen(),
-    push: (msg) => failure || done ? Promise.reject(failure ?? new Error("prompt stream closed")) : new Promise((resolve7, reject) => {
-      queue.push({ msg, resolve: resolve7, reject });
+    push: (msg) => failure || done ? Promise.reject(failure ?? new Error("prompt stream closed")) : new Promise((resolve8, reject) => {
+      queue.push({ msg, resolve: resolve8, reject });
       kick();
     }),
     end: () => {
@@ -35924,8 +35924,8 @@ function buildMcpServers(tools, queryCtx) {
         queryCtx.pendingResults.delete(toolCallId);
         return result2;
       }
-      return new Promise((resolve7) => {
-        queryCtx.pendingToolCalls.set(toolCallId, { toolName: tool.name, resolve: resolve7 });
+      return new Promise((resolve8) => {
+        queryCtx.pendingToolCalls.set(toolCallId, { toolName: tool.name, resolve: resolve8 });
       });
     }
   }));
@@ -36431,16 +36431,19 @@ async function consumeWorkerRecoveryEnvelope(client, stateDir, agentName, projec
 // plugins/kxm/src/session-work.ts
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync as existsSync9, mkdirSync as mkdirSync8, readFileSync as readFileSync12, renameSync as renameSync4, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync10, mkdirSync as mkdirSync8, readFileSync as readFileSync12, renameSync as renameSync4, writeFileSync as writeFileSync6 } from "node:fs";
 import { join as join13 } from "node:path";
 
 // plugins/kxm/src/local-snapshot.ts
-import { existsSync as existsSync7, readdirSync, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync8, readdirSync, readFileSync as readFileSync10 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { isAbsolute as isAbsolute3, join as join11, resolve as resolve6 } from "node:path";
+import { isAbsolute as isAbsolute3, join as join11, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/sqlite.ts
+import { existsSync as existsSync7 } from "node:fs";
 import { createRequire as createRequire2 } from "node:module";
+import { resolve as resolve6 } from "node:path";
+import { pathToFileURL } from "node:url";
 var requireFromHere = createRequire2(import.meta.url);
 function loadNative() {
   try {
@@ -36477,6 +36480,12 @@ var DatabaseSync = class {
     this.inner.close();
   }
 };
+function openReadOnlyDatabase(path) {
+  if (existsSync7(`${path}-wal`)) return new DatabaseSync(path, { readOnly: true });
+  const uri = pathToFileURL(resolve6(path));
+  uri.searchParams.set("immutable", "1");
+  return new DatabaseSync(uri.href, { readOnly: true });
+}
 
 // plugins/kxm/src/telemetry.ts
 import { appendFileSync, mkdirSync as mkdirSync6, readFileSync as readFileSync9 } from "node:fs";
@@ -36639,34 +36648,34 @@ function readOpenMessageMetadata(database) {
 function resolveKxmSnapshotPaths(cwd, env = process.env) {
   const stateDir = env.KXM_STATE_DIR?.trim() || join11(cwd, ".kxm", "state");
   const configured = env.KXM_DATA_PATH?.trim();
-  const dataPath = configured ? resolve6(cwd, configured) : join11(stateDir, "kxm.db");
+  const dataPath = configured ? resolve7(cwd, configured) : join11(stateDir, "kxm.db");
   return { dataPath, stateDir };
 }
 function resolveKxmStateRoot(stateDir, options) {
-  if (options?.kxmStateRoot && existsSync7(options.kxmStateRoot)) {
-    return resolve6(options.kxmStateRoot);
+  if (options?.kxmStateRoot && existsSync8(options.kxmStateRoot)) {
+    return resolve7(options.kxmStateRoot);
   }
-  if (existsSync7(join11(stateDir, "runtime", "registry.db")) || existsSync7(join11(stateDir, "runtime", "projects"))) {
+  if (existsSync8(join11(stateDir, "runtime", "registry.db")) || existsSync8(join11(stateDir, "runtime", "projects"))) {
     return stateDir;
   }
   const env = options?.env ?? process.env;
   const explicit = env.KXM_STATE_HOME?.trim() || env.KXM_USER_STATE_DIR?.trim() || env.KXM_STATE_ROOT?.trim();
-  if (explicit && isAbsolute3(explicit) && existsSync7(resolve6(explicit))) {
-    return resolve6(explicit);
+  if (explicit && isAbsolute3(explicit) && existsSync8(resolve7(explicit))) {
+    return resolve7(explicit);
   }
   let base;
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
     base = localAppData && isAbsolute3(localAppData) ? localAppData : join11(homedir6(), "AppData", "Local");
-    base = resolve6(base, "KXM");
+    base = resolve7(base, "KXM");
   } else if (process.platform === "darwin") {
-    base = resolve6(homedir6(), "Library", "Application Support", "KXM");
+    base = resolve7(homedir6(), "Library", "Application Support", "KXM");
   } else {
     const xdgState = env.XDG_STATE_HOME?.trim();
     base = xdgState && isAbsolute3(xdgState) ? xdgState : join11(homedir6(), ".local", "state");
-    base = resolve6(base, "kxm");
+    base = resolve7(base, "kxm");
   }
-  if (existsSync7(base)) return base;
+  if (existsSync8(base)) return base;
   return void 0;
 }
 function loadLocalMeshSnapshot(dataPath, stateDir, options) {
@@ -36677,9 +36686,9 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   let legacyRuns = [];
   let legacyRunTotal = 0;
   let plans = [];
-  if (existsSync7(dataPath)) {
+  if (existsSync8(dataPath)) {
     hasLegacy = true;
-    const database = new DatabaseSync(dataPath, { readOnly: true });
+    const database = openReadOnlyDatabase(dataPath);
     try {
       database.exec("PRAGMA busy_timeout = 5000");
       agents = readJsonRows(database, "SELECT record FROM agents");
@@ -36701,10 +36710,10 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     const registryDbPath = join11(runtimeDir, "registry.db");
     const projectsDir = join11(runtimeDir, "projects");
     const projectKeys = /* @__PURE__ */ new Set();
-    if (existsSync7(registryDbPath)) {
+    if (existsSync8(registryDbPath)) {
       hasKxm = true;
       try {
-        const regDb = new DatabaseSync(registryDbPath, { readOnly: true });
+        const regDb = openReadOnlyDatabase(registryDbPath);
         try {
           regDb.exec("PRAGMA busy_timeout = 5000");
           const pRows = regDb.prepare("SELECT project_key FROM projects").all();
@@ -36717,7 +36726,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       } catch {
       }
     }
-    if (existsSync7(projectsDir)) {
+    if (existsSync8(projectsDir)) {
       try {
         for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
           if (entry.isDirectory()) {
@@ -36729,10 +36738,10 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     }
     for (const key of projectKeys) {
       const eventDbPath = join11(projectsDir, key, "run-events.db");
-      if (existsSync7(eventDbPath)) {
+      if (existsSync8(eventDbPath)) {
         hasKxm = true;
         try {
-          const eventDb = new DatabaseSync(eventDbPath, { readOnly: true });
+          const eventDb = openReadOnlyDatabase(eventDbPath);
           try {
             eventDb.exec("PRAGMA busy_timeout = 5000");
             const runRows = eventDb.prepare(`
@@ -36759,7 +36768,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     }
   }
   const pids = [];
-  if (existsSync7(stateDir)) {
+  if (existsSync8(stateDir)) {
     for (const file of readdirSync(stateDir).filter((name) => name.endsWith(".pid"))) {
       try {
         const record2 = JSON.parse(readFileSync10(join11(stateDir, file), "utf8"));
@@ -36802,7 +36811,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
     source = "legacy";
   }
   const telemetryFile = join11(stateDir, "telemetry.jsonl");
-  const spend = existsSync7(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
+  const spend = existsSync8(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
   return {
     source,
     agents: agents.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
@@ -36817,13 +36826,13 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
 }
 
 // plugins/kxm/src/kxm-update.ts
-import { existsSync as existsSync8, readFileSync as readFileSync11, writeFileSync as writeFileSync5, mkdirSync as mkdirSync7 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync11, writeFileSync as writeFileSync5, mkdirSync as mkdirSync7 } from "node:fs";
 import { join as join12 } from "node:path";
 var KXM_UPDATE_CACHE = "update-check.json";
 var CACHE_TTL_MS = 6 * 60 * 60 * 1e3;
 function readUpdateCache(stateDir, now = Date.now()) {
   const path = join12(stateDir, KXM_UPDATE_CACHE);
-  if (!existsSync8(path)) return void 0;
+  if (!existsSync9(path)) return void 0;
   try {
     const row = JSON.parse(readFileSync11(path, "utf8"));
     if (typeof row.checkedAt !== "number" || !row.notice || now - row.checkedAt > CACHE_TTL_MS) return void 0;
@@ -36994,7 +37003,7 @@ function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, ses
 function readCachedSessionBrief(stateDir) {
   const file = join13(stateDir, "session-brief.json");
   try {
-    if (!existsSync9(file)) return void 0;
+    if (!existsSync10(file)) return void 0;
     const raw = readFileSync12(file, "utf8");
     const parsed = JSON.parse(raw);
     if (parsed && parsed.schema === "kxm.session-brief.v1" && typeof parsed.generatedAt === "string") {
@@ -37021,7 +37030,7 @@ function writeCachedSessionBrief(stateDir, brief) {
 function estimateSessionCost(stateDir) {
   try {
     const telemetryFile = join13(stateDir, "telemetry.jsonl");
-    if (!existsSync9(telemetryFile)) return void 0;
+    if (!existsSync10(telemetryFile)) return void 0;
     const records = readRoutingRecords(telemetryFile);
     if (records.length === 0) return void 0;
     let totalCost = 0;
@@ -37125,7 +37134,7 @@ function loadSessionBrief(cwd, env = process.env, current, hub, options = {}) {
       options.sessionToken
     );
   }
-  writeCachedSessionBrief(paths.stateDir, brief);
+  if (options.writeCache !== false) writeCachedSessionBrief(paths.stateDir, brief);
   return brief;
 }
 async function loadSessionBriefAsync(cwd, env = process.env, current, hub, options = {}) {
@@ -37196,11 +37205,11 @@ function kxmSlashCompletions(prefix) {
 }
 
 // plugins/kxm/src/workflow-tui.ts
-import { existsSync as existsSync10, readFileSync as readFileSync13 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync13 } from "node:fs";
 import { join as join14 } from "node:path";
 function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
   const dbPath = join14(repoConfigDirectory(repoRoot), "state", "kxm.db");
-  if (!existsSync10(dbPath)) return void 0;
+  if (!existsSync11(dbPath)) return void 0;
   let db;
   try {
     db = new DatabaseSync(dbPath, { readOnly: true });
@@ -37237,7 +37246,7 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
     try {
       const logsDir = join14(repoConfigDirectory(repoRoot), "logs");
       const telemFile = telemetryPath(logsDir);
-      if (existsSync10(telemFile)) {
+      if (existsSync11(telemFile)) {
         const records = readRoutingRecords(telemFile);
         const routingRunId = (routing) => "runId" in routing ? routing.runId : routing.workflowRunId;
         let matching = records.filter((r) => routingRunId(r.routing) === runId);
@@ -38149,7 +38158,7 @@ function piMeshExtension(pi) {
         let memText = res.status === 0 && res.stdout ? res.stdout.trim() : "";
         if (!memText) {
           const script = join15(cwd, "scripts", "kxm.mjs");
-          if (existsSync11(script)) {
+          if (existsSync12(script)) {
             const scriptRes = spawnSync2(process.execPath, [script, "memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
             if (scriptRes.status === 0 && scriptRes.stdout) memText = scriptRes.stdout.trim();
           }

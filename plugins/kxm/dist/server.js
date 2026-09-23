@@ -14783,7 +14783,7 @@ import { createHash as createHash5, createHmac } from "node:crypto";
 import { existsSync as existsSync6 } from "node:fs";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
-import { dirname as dirname5, join as join6, resolve as resolve6 } from "node:path";
+import { dirname as dirname6, join as join6, resolve as resolve6 } from "node:path";
 
 // plugins/kxm/src/protocol.ts
 import { randomUUID } from "node:crypto";
@@ -18216,7 +18216,7 @@ function boundedRefs(value, field) {
 var import_yaml4 = __toESM(require_dist(), 1);
 import { createHash as createHash4 } from "node:crypto";
 import { existsSync as existsSync4, mkdirSync as mkdirSync2, readdirSync as readdirSync3, readFileSync as readFileSync3, renameSync, rmSync, statSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join4 } from "node:path";
+import { dirname as dirname4, join as join4 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
 var SKILL_EVALUATION_SCHEMA = "kxm.skill-evaluation.v1";
 var SKILL_DECISION_SCHEMA = "kxm.skill-decision.v1";
@@ -18304,10 +18304,22 @@ var SkillLifecycle = class {
   root;
   now;
   allowOptimizationEvals;
+  dryRun;
+  /** What a `dryRun` lifecycle would have written or moved, in order. */
+  planned = [];
   constructor(root, options = {}) {
     this.root = root;
     this.now = options.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
     this.allowOptimizationEvals = options.allowOptimizationEvals === true;
+    this.dryRun = options.dryRun === true;
+  }
+  write(file, content) {
+    if (this.dryRun) {
+      this.planned.push({ action: "write", target: file });
+      return;
+    }
+    mkdirSync2(dirname4(file), { recursive: true });
+    writeFileSync2(file, content);
   }
   dir(state) {
     return join4(this.root, state === "candidate" ? "candidates" : `${state}s`.replace("rejecteds", "rejected").replace("promoteds", "promoted"));
@@ -18320,15 +18332,14 @@ var SkillLifecycle = class {
     return { dir, metadata: join4(dir, "metadata.json"), skill: join4(dir, "SKILL.md") };
   }
   appendHistory(id, record) {
-    mkdirSync2(join4(this.root, "history"), { recursive: true });
     const line = `${JSON.stringify(record)}
 `;
     if (existsSync4(this.historyFile(id))) {
       const existing = readFileSync3(this.historyFile(id), "utf8");
       const lines = existing.split("\n").filter((entry) => entry.trim());
-      writeFileSync2(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
+      this.write(this.historyFile(id), [...lines.slice(-499), line.trim()].join("\n") + "\n");
     } else {
-      writeFileSync2(this.historyFile(id), line);
+      this.write(this.historyFile(id), line);
     }
   }
   history(id) {
@@ -18348,6 +18359,10 @@ var SkillLifecycle = class {
     const toDir = join4(this.dir(to), id);
     if (!existsSync4(fromDir)) {
       throw new SkillLifecycleError("skill_not_found", `skill ${id} not found in ${from}`);
+    }
+    if (this.dryRun) {
+      this.planned.push({ action: "move", target: `${fromDir} -> ${toDir}` });
+      return;
     }
     mkdirSync2(this.dir(to), { recursive: true });
     if (existsSync4(toDir)) rmSync(toDir, { recursive: true, force: true });
@@ -18392,7 +18407,7 @@ var SkillLifecycle = class {
     if (!harness) throw new SkillLifecycleError("invalid_skill_compatibility", "compatibility.harness is required");
     const contentSha256 = skillContentSha256(content);
     const id = skillIdFor(name, contentSha256);
-    const { dir, metadata, skill } = this.paths("candidate", id);
+    const { metadata, skill } = this.paths("candidate", id);
     if (existsSync4(metadata)) {
       throw new SkillLifecycleError(
         "skill_candidate_exists",
@@ -18412,9 +18427,8 @@ var SkillLifecycle = class {
       createdAt: this.now(),
       ...input.supersedes ? { supersedes: input.supersedes } : {}
     };
-    mkdirSync2(dir, { recursive: true });
-    writeFileSync2(skill, content);
-    writeFileSync2(metadata, `${JSON.stringify(record, null, 2)}
+    this.write(skill, content);
+    this.write(metadata, `${JSON.stringify(record, null, 2)}
 `);
     this.appendHistory(id, { schema: "kxm.skill-history-event.v1", event: "candidate_created", by: createdBy, supersedes: input.supersedes, at: record.createdAt });
     return record;
@@ -18503,18 +18517,15 @@ var SkillLifecycle = class {
     };
     const candidatePaths = this.paths("candidate", candidateId);
     const promotedPaths = this.paths("promoted", candidateId);
-    mkdirSync2(promotedPaths.dir, { recursive: true });
     const skillContent = readFileSync3(candidatePaths.skill, "utf8");
     const metadataContent = readFileSync3(candidatePaths.metadata, "utf8");
-    writeFileSync2(promotedPaths.skill, skillContent);
-    writeFileSync2(promotedPaths.metadata, metadataContent);
-    const patchesDir = join4(this.root, "patches");
-    mkdirSync2(patchesDir, { recursive: true });
-    const patchPath = join4(patchesDir, `${candidateId}.patch`);
+    this.write(promotedPaths.skill, skillContent);
+    this.write(promotedPaths.metadata, metadataContent);
+    const patchPath = join4(this.root, "patches", `${candidateId}.patch`);
     const relSkillPath = `.kxm/skills/promoted/${candidateId}/SKILL.md`;
     const relMetaPath = `.kxm/skills/promoted/${candidateId}/metadata.json`;
     const patch = `${createUnifiedPatch(relSkillPath, skillContent)}${createUnifiedPatch(relMetaPath, metadataContent)}`;
-    writeFileSync2(patchPath, patch, "utf8");
+    this.write(patchPath, patch);
     this.appendHistory(candidateId, record);
     return { ...metadata, patch, patchPath };
   }
@@ -19034,7 +19045,7 @@ import {
   unlinkSync,
   writeFileSync as writeFileSync4
 } from "node:fs";
-import { basename as basename3, dirname as dirname4, join as join5, resolve as resolve4 } from "node:path";
+import { basename as basename3, dirname as dirname5, join as join5, resolve as resolve4 } from "node:path";
 
 // plugins/kxm/src/sqlite.ts
 import { createRequire } from "node:module";
@@ -19081,7 +19092,7 @@ function databaseError(code, file, message) {
   return new KxmConfigError([issue2]);
 }
 function checkedParent(path, description) {
-  const parent = dirname4(path);
+  const parent = dirname5(path);
   if (!existsSync5(parent)) mkdirSync4(parent, { recursive: true, mode: 448 });
   const stat = lstatSync2(parent, { throwIfNoEntry: false });
   if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
@@ -20362,7 +20373,7 @@ function createMeshHub(options = {}) {
   const logger = options.logger ?? (() => void 0);
   const hubNow = options.now ?? (() => Date.now());
   const assetsDir2 = options.assetsDir;
-  const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve6(dirname5(dirname5(options.dataPath))) : process.cwd());
+  const hubRepoRoot = options.repoRoot ?? (options.dataPath && options.dataPath !== ":memory:" ? resolve6(dirname6(dirname6(options.dataPath))) : process.cwd());
   const store = new MeshStore(options.dataPath);
   const agents = store.agents;
   const messages = store.messages;
@@ -22570,11 +22581,11 @@ data: ${JSON.stringify({ agent: publicAgent(current, staleAfterMs) })}
 
 // plugins/kxm/src/server.ts
 import { mkdirSync as mkdirSync6, readFileSync as readFileSync5 } from "node:fs";
-import { dirname as dirname7, join as join7, resolve as resolve7 } from "node:path";
+import { dirname as dirname8, join as join7, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/logger.ts
 import { appendFileSync, existsSync as existsSync7, mkdirSync as mkdirSync5, renameSync as renameSync3, statSync as statSync2, unlinkSync as unlinkSync2 } from "node:fs";
-import { dirname as dirname6 } from "node:path";
+import { dirname as dirname7 } from "node:path";
 var LOG_LEVEL_PRIORITY = {
   debug: 10,
   info: 20,
@@ -22680,7 +22691,7 @@ function createLogger(options) {
         currentSize = 0;
       }
       try {
-        mkdirSync5(dirname6(filePath), { recursive: true });
+        mkdirSync5(dirname7(filePath), { recursive: true });
         appendFileSync(filePath, line, { encoding: "utf8", mode: 384 });
         currentSize += lineBytes;
       } catch {
@@ -22743,7 +22754,7 @@ var rateLimitWindowMs = Number.parseInt(
   process.env.KXM_RATE_LIMIT_WINDOW_MS ?? String(DEFAULT_RATE_LIMIT_WINDOW_MS),
   10
 );
-for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname7(logPath)]) {
+for (const directory of [configDir, logsDir, assetsDir, stateDir, dirname8(logPath)]) {
   mkdirSync6(directory, { recursive: true });
 }
 var structuredLog = createLogger({
