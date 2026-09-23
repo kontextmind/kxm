@@ -353,6 +353,8 @@ The complete variable reference, limits, and examples are in
 
 ## Complete CLI guide
 
+This section summarizes the most-used commands. The [CLI reference](cli-reference.md) documents every command and subcommand with its options, JSON output, and examples.
+
 Global options can appear on the root or a command group:
 
 ```text

@@ -36,11 +36,15 @@ function otherWorktrees(): string[] {
   const result = spawnSync("git", ["worktree", "list", "--porcelain"], { encoding: "utf8" });
   if (result.status !== 0) return [];
   const root = resolve(".");
+  const separator = process.platform === "win32" ? "\\" : "/";
   return result.stdout
     .split("\n")
     .filter((line) => line.startsWith("worktree "))
     .map((line) => resolve(line.slice("worktree ".length).trim()))
-    .filter((path) => path !== root);
+    // An ancestor worktree (the main checkout, seen from a nested session
+    // worktree) contains every file here; only worktrees nested below this
+    // root are another tree's business.
+    .filter((path) => path !== root && !root.startsWith(`${path}${separator}`));
 }
 
 function markdownFiles(dir: string): string[] {
