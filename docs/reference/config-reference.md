@@ -459,7 +459,9 @@ Commands: `kxm init` creates `coordinator` (`claude`, `anthropic/fable`) and
 `implementer` (`grok`, `xai/grok-4.6`) and admits both selectors in
 `.kxm/routes.yaml`; an interactive `kxm init` can add workflow-guide agents for
 reviewed harness/model pairs whose harness is authenticated, and admits their
-selectors too; `kxm run` and the Runtime read them; `kxm trust` diffs them.
+selectors too, but skips Google guide candidates because the Runtime cannot
+reach the `antigravity` Pi provider yet; `kxm run` and the Runtime read them;
+`kxm trust` diffs them.
 
 ## `.kxm/models/<id>.yaml` (`kxm.model.v1`)
 

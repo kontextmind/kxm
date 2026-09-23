@@ -47716,8 +47716,6 @@ var ADMITTED_GUIDE_BINDINGS = Object.freeze({
   "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
   "x-ai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
   "xai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
-  "google/gemini-3.8-flash": { harness: "pi", provider: "antigravity", model: "gemini-3.8-flash-high" },
-  "google/gemini-3.8-flash-high": { harness: "pi", provider: "antigravity", model: "gemini-3.8-flash-high" },
   "qwen/qwen3-coder-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" }
 });
 var GUIDE_WORKFLOWS = [

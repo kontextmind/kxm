@@ -70,7 +70,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 ### Changed
 
 - **The rotation surface drive uses is the one setup writes.** Guide setup appends only
-  reviewed selectors to `.kxm/routes.yaml` and routes Google through Pi `antigravity`.
+  reviewed selectors to `.kxm/routes.yaml`. It skips Google guide candidates: Google's
+  route is the Pi `antigravity` provider, which a Runtime drive cannot reach yet, so a
+  Google role falls to its next reviewed candidate or is not written.
 
 - **CLI and Studio stop reporting work they did not do.** Drive help no longer
   describes the default as a model-free simulation. A Studio mutation with no handler returns 501 and `mappedToCli: false`.

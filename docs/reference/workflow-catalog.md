@@ -26,7 +26,7 @@ The catalog is a four-level taxonomy: **Area → Workflow → Stage → Role**. 
 - **Selection is per role.** Areas are navigation only; they never pool unrelated roles into one ranking. Model, harness, platform, modality and required tools are routing attributes, not areas.
 - **Gates stay deterministic.** Where a role is a critic next to a gate, the gate (tests, type checks, linters) decides pass or fail, and the model reviews what a gate cannot check.
 
-An interactive `kxm init` offers to install the Software Engineering workflows when at least one harness is signed in. For each role it picks the first candidate whose harness is installed and signed in, and writes one agent file per role and one `kxm.workflow.v1` file per workflow you choose. Existing files are kept. Set `KXM_SKIP_GUIDE_SETUP_PROMPT=1` to skip the offer.
+An interactive `kxm init` offers to install the Software Engineering workflows when at least one harness is signed in. For each role it picks the first candidate that is on KXM's reviewed harness/model map and whose harness is installed and signed in (Google candidates are skipped for now), and writes one agent file per role and one `kxm.workflow.v1` file per workflow you choose. Existing files are kept. Set `KXM_SKIP_GUIDE_SETUP_PROMPT=1` to skip the offer.
 
 ### Cost bands (dated candidates)
 
