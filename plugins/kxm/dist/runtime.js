@@ -18326,20 +18326,30 @@ function restoreDatabaseFile(backupPath, targetPath, storeId, expectedSchemaVers
     integrity: "ok"
   };
 }
+var KXM_BACKUP_CEILINGS = {
+  "hub-store": 5,
+  registry: 1,
+  "binding-store": 1,
+  events: 7
+};
+function kxmBackupCeiling(storeId) {
+  if (storeId.startsWith("events:")) return KXM_BACKUP_CEILINGS.events;
+  return KXM_BACKUP_CEILINGS[storeId] ?? KXM_BACKUP_CEILINGS["hub-store"];
+}
 function discoverProjectStores(projectRoot, options = {}) {
   const root = resolve3(projectRoot);
   const stores = [];
   const hubPath = options.hubDataPath ? resolve3(options.hubDataPath) : join4(root, ".kxm", "state", "kxm.db");
   if (existsSync4(hubPath)) {
-    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: 5 });
+    stores.push({ storeId: "hub-store", sourcePath: hubPath, maxSupportedVersion: kxmBackupCeiling("hub-store") });
   }
   const registryPath = join4(root, ".kxm", "runtime", "registry.db");
   if (existsSync4(registryPath)) {
-    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: 1 });
+    stores.push({ storeId: "registry", sourcePath: registryPath, maxSupportedVersion: kxmBackupCeiling("registry") });
   }
   const bindingsPath = join4(root, ".kxm", "runtime", "bindings.db");
   if (existsSync4(bindingsPath)) {
-    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: 1 });
+    stores.push({ storeId: "binding-store", sourcePath: bindingsPath, maxSupportedVersion: kxmBackupCeiling("binding-store") });
   }
   const eventsDir = join4(root, ".kxm", "runtime", "events");
   if (existsSync4(eventsDir)) {
@@ -18350,7 +18360,7 @@ function discoverProjectStores(projectRoot, options = {}) {
         stores.push({
           storeId: `events:${key}`,
           sourcePath: join4(eventsDir, entry.name),
-          maxSupportedVersion: 6
+          maxSupportedVersion: kxmBackupCeiling(`events:${key}`)
         });
       }
     }
@@ -18437,12 +18447,7 @@ function restoreBackup(manifestPathOrDir, options = {}) {
         `backup file ${store.backupFile} sha256 ${actualSha256} does not match manifest hash ${store.sha256}`
       );
     }
-    let maxSupported = 5;
-    if (store.storeId === "registry" || store.storeId === "binding-store") {
-      maxSupported = 1;
-    } else if (store.storeId.startsWith("events:")) {
-      maxSupported = 7;
-    }
+    const maxSupported = kxmBackupCeiling(store.storeId);
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
@@ -31288,6 +31293,7 @@ export {
   IMPROVEMENT_REPORT_SCHEMA,
   IMPROVEMENT_REPORT_V1_SCHEMA,
   KXM_ABSENT_MEMORY_REVISION,
+  KXM_BACKUP_CEILINGS,
   KXM_DRIVE_RECEIPT_SCHEMA,
   KXM_EVENT_STORE_SCHEMA_VERSION,
   KXM_EVENT_STORE_TABLE_NAMES,
@@ -31366,6 +31372,7 @@ export {
   isKxmRuntimeContextClosed,
   isTransactionContention,
   isWindowsHarnessShim,
+  kxmBackupCeiling,
   kxmDeclaredExecutorIds,
   kxmDeclaredRepositoryIds,
   kxmEventBase,

@@ -16,6 +16,8 @@ import {
   backupDatabaseFile,
   restoreDatabaseFile,
   discoverProjectStores,
+  kxmBackupCeiling,
+  KXM_BACKUP_CEILINGS,
   type DatabaseSchemaSpec,
 } from "../../plugins/kxm/src/database.ts";
 import {
@@ -548,3 +550,42 @@ test("openDatabase and restoreDatabaseFile fail closed on invalid shapes, newer 
   }
 });
 
+
+test("restore ceilings track every store's own schema version", () => {
+  // A ceiling left behind when a store's schema is bumped refuses that store's
+  // own fresh backup — the failure is silent until an operator reaches for a
+  // restore. Both backup discovery and restore read this one table, so pinning
+  // it here pins both paths; the old arrangement kept two copies and one drifted.
+  assert.equal(KXM_BACKUP_CEILINGS["hub-store"], HUB_STORE_SCHEMA_VERSION);
+  assert.equal(KXM_BACKUP_CEILINGS.registry, KXM_REGISTRY_SCHEMA_VERSION);
+  assert.equal(KXM_BACKUP_CEILINGS.events, KXM_EVENT_STORE_SCHEMA_VERSION);
+
+  // Per-project event stores are named `events:<key>`, and each one carries the
+  // outbox — including rows a hub refused. They share the one events ceiling.
+  assert.equal(kxmBackupCeiling("events:6d41c43d522ab74d11f95432"), KXM_EVENT_STORE_SCHEMA_VERSION);
+  assert.equal(kxmBackupCeiling("binding-store"), 1);
+  // An id this build does not know keeps the ceiling restore has always defaulted to.
+  assert.equal(kxmBackupCeiling("something-new"), KXM_BACKUP_CEILINGS["hub-store"]);
+
+  // Discovery must hand out the same numbers restore will enforce, or the
+  // manifest and the restore disagree about the same file.
+  const env = setupTestEnv();
+  try {
+    const projectRoot = env.dir;
+    const eventsDir = join(projectRoot, ".kxm", "runtime", "events");
+    mkdirSync(join(projectRoot, ".kxm", "state"), { recursive: true });
+    mkdirSync(eventsDir, { recursive: true });
+    new MeshStore(join(projectRoot, ".kxm", "state", "kxm.db")).close();
+    new KxmRuntimeRegistry(join(projectRoot, ".kxm", "runtime", "registry.db")).close();
+    new KxmRunEventStore(join(eventsDir, "key_001.db")).close();
+    const discovered = discoverProjectStores(projectRoot);
+    assert.equal(discovered.find((store) => store.storeId === "hub-store")?.maxSupportedVersion, HUB_STORE_SCHEMA_VERSION);
+    assert.equal(discovered.find((store) => store.storeId === "registry")?.maxSupportedVersion, KXM_REGISTRY_SCHEMA_VERSION);
+    for (const store of discovered.filter((candidate) => candidate.storeId.startsWith("events:"))) {
+      assert.equal(store.maxSupportedVersion, KXM_EVENT_STORE_SCHEMA_VERSION, `${store.storeId} ceiling`);
+    }
+    assert.ok(discovered.length > 0, "the fixture exposes at least one store");
+  } finally {
+    env.cleanup();
+  }
+});
