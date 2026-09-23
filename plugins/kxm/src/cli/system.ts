@@ -63,6 +63,7 @@ import {
   type InstallProbe,
 } from "../kxm-install-kind.ts";
 import {
+  installedKxmVersion,
   fetchLatestKxmVersion,
   kxmReleaseAssetName,
   noticeFromVersions,
@@ -296,16 +297,22 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
   warnIgnoredProjectUpdateYaml(runtime);
   const probe = installProbeFrom(runtime);
   const classified = classifyInstallRoot(probe);
-  const current = readInstalledKxmVersion(findKxmRepoRoot(import.meta.url));
+  // The version of the install being updated, taken from the root that was just
+  // classified — not from whichever directory the operator stood in. A
+  // `readInstalledKxmVersion(resolve("."))` in the notice path turned
+  // `cd ~ && kxm update --kxm` into an uncaught ENOENT on `$HOME/package.json`,
+  // and would happily compare a stranger project's version wherever one did
+  // exist. Unreadable is now a stated refusal.
+  const current = installedKxmVersion(classified.root) ?? installedKxmVersion(findKxmRepoRoot(import.meta.url));
   let notice: KxmUpdateNotice;
   let kindReport = classified;
   if (classified.kind === "source") {
     if (options.check) {
-      const message = `kxm ${current} (running from source at ${classified.root})`;
+      const message = `kxm ${current ?? "unknown"} (running from source at ${classified.root})`;
       print(runtime.io, runtime.json, {
         ok: true,
         command: "update check",
-        current,
+        current: current ?? "unknown",
         available: false,
         auto: false,
         source: "github",
@@ -327,15 +334,15 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
       return 2;
     }
     notice = {
-      current,
+      current: current ?? "unknown",
       available: false,
       auto: false,
       source: "github",
-      message: `kxm ${current} (running from source)`,
+      message: `kxm ${current ?? "unknown"} (running from source)`,
     };
   } else {
     try {
-      notice = await refreshKxmUpdateNotice(runtime);
+      notice = await refreshKxmUpdateNotice(runtime, undefined, current);
     } catch (error) {
       if (error instanceof KxmUpdateConfigError) {
         print(runtime.io, runtime.json, { ok: false, command: "update", error: error.code, ...installKindPayload(classified) }, error.message);

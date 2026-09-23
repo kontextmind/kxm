@@ -93,7 +93,17 @@ export function installProbeFrom(runtime: Runtime): InstallProbe {
 
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
-import { tryFindKxmRepoRoot } from "../repo-root.ts";
+import { findKxmRepoRoot, tryFindKxmRepoRoot } from "../repo-root.ts";
+import { installedKxmVersion } from "../kxm-update.ts";
+
+/** The install root derived from the loaded module; `unknown` never crashes a caller. */
+function moduleInstallRoot(): string {
+  try {
+    return findKxmRepoRoot(import.meta.url);
+  } catch {
+    return dirname(fileURLToPath(import.meta.url));
+  }
+}
 import { homedir } from "node:os";
 
 export function warnIgnoredProjectUpdateYaml(runtime: Runtime): void {
@@ -103,11 +113,33 @@ export function warnIgnoredProjectUpdateYaml(runtime: Runtime): void {
   runtime.io.stderr(`kxm: ignoring .kxm/update.yaml in ${runtime.dirs.workdir}; update settings are read only from ${userFile}\n`);
 }
 
-export async function refreshKxmUpdateNotice(runtime: Runtime, config?: KxmUpdateConfig): Promise<KxmUpdateNotice> {
+export async function refreshKxmUpdateNotice(
+  runtime: Runtime,
+  config?: KxmUpdateConfig,
+  current?: string,
+): Promise<KxmUpdateNotice> {
   const resolved = config ?? loadKxmUpdateConfig(runtime.env);
-  const current = readInstalledKxmVersion(resolve("."));
+  // The version being compared is the one **running**, taken from the install
+  // root. Reading it from the caller's directory made `cd ~ && kxm update --kxm`
+  // die with a raw ENOENT on `$HOME/package.json` — and silently compared a
+  // stranger's version wherever the operator happened to stand and a
+  // package.json did exist. Callers that already resolved it pass it in.
+  const installed = current
+    ?? installedKxmVersion(findKxmRepoRoot(import.meta.url))
+    ?? installedKxmVersion(moduleInstallRoot());
+  if (installed === undefined) {
+    // No version to compare against: say nothing rather than crash a hub start
+    // over an update notice.
+    return {
+      current: "unknown",
+      available: false,
+      auto: false,
+      source: resolved.source,
+      message: `kxm update check skipped: the installed version is unreadable at ${moduleInstallRoot()}`,
+    };
+  }
   const fetched = await fetchLatestKxmVersion(resolved.source, runtime.env, runtime.fetchImpl);
-  const notice = noticeFromVersions(current, fetched.latest, resolved, fetched.error, fetched.asset);
+  const notice = noticeFromVersions(installed, fetched.latest, resolved, fetched.error, fetched.asset);
   writeUpdateCache(runtime.dirs.state, notice);
   return notice;
 }
