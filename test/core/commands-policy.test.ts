@@ -523,8 +523,14 @@ test("inbox reconciliation and reply handle terminal statuses and error branches
   assert.equal(listed.messages.length, 1);
   assert.equal(listed.messages[0].id, "msg_active");
 
-  const emptyInbox = await inboxCmd.execute(mockClient as any, {}) as { messages: any[] };
-  assert.deepEqual(emptyInbox.messages, []);
+  // A caller that keeps no inbox of its own (the CLI) lists what the hub holds for it.
+  const hubClient = { async listInbox() { return [{ id: "msg_hub", status: "queued" }]; } };
+  const hubListed = await inboxCmd.execute(hubClient as any, {}, { hubInbox: true }) as { messages: any[] };
+  assert.deepEqual(hubListed.messages.map((message) => message.id), ["msg_hub"]);
+
+  // A caller with no inbox source (Pi, whose own queue activates inbound requests) is refused
+  // rather than shown an empty list, and the hub is not read: mockClient has no listInbox.
+  await assert.rejects(inboxCmd.execute(mockClient as any, {}), /kxm_inbox is not available in this session/);
 
   // kxm_reply deletes from context inbox
   const mockReplyClient = {

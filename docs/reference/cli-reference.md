@@ -2397,18 +2397,21 @@ kxm peer fanout --targets reviewer critic --content "Independent review of PR 42
 kxm peer inbox
 ```
 
-List inbound peer requests. From the CLI this always returns `{"messages":[]}`: the inbox lives in a long-running harness session, which a one-shot CLI call does not have. Use `kxm dash --screen inbox` to see pending requests.
+List the inbound peer requests addressed to this agent that still need a reply, oldest first, read from the hub (`GET /v1/agents/<agentId>/inbox`). Only a stable `KXM_AGENT_NAME` has an inbox: a registered name that is offline keeps its agent ID, so a later call as the same name lists what peers queued for it with `peer send --allow-offline`. The default `cli-<pid>` is a new agent on every call, and its list is always empty. Answer each request with `peer reply` under the same name.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--payload` | `<json>` | none | JSON payload |
 
+- Reads only. Listing acknowledges nothing, so a request stays `queued` for push delivery. Output key: `messages`, each a full message record (`id`, `fromName`, `content`, `status` `queued` or `delivered`, `expiresAt`).
+- The call registers the name while it runs, so it exits 1 (`command_failed`, `agent name already active in project`) when another session holds that name online.
+
 ```bash
-kxm peer inbox --json
+KXM_AGENT_NAME=codex kxm peer inbox --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","messages":[]}
+{"schema":"kxm.cli-result.v1","messages":[{"id":"msg_1f0c…","project":"kxm","from":"agt_9d2e…","fromName":"reviewer","to":"agt_4b7a…","toName":"codex","content":"Review the retry loop in src/sync.ts","delivery":"followUp","hops":0,"maxHops":5,"seq":1,"createdAt":"2026-09-23T21:40:00.000Z","expiresAt":"2026-09-24T21:40:00.000Z","status":"queued"}]}
 ```
 
 ### `kxm peer reply`
@@ -3555,7 +3558,6 @@ These are behaviors of the current build that differ from what the help text or 
 - The `default` workflow that `kxm init` writes sets `limits.maxAgentTimeMs`, so `kxm runs drive` hands every run of it off with `run_handoff_required` (`limit_unsupported`). Use a `kxm workflow add --template` workflow, or remove the limit, to drive a first run.
 - `kxm routing benchmark` prints constant placeholder figures.
 - `kxm task sync` does not contact GitHub or Jira.
-- `kxm peer inbox` always returns an empty list from the CLI.
 - `kxm context` subcommands crash with a stack trace when the hub is unreachable, and they ignore the persisted hub credential.
 - `kxm completion <shell>` generates a command list that includes a nonexistent `plan` command, omits `models`, `routes`, `explain`, and `ssh`, lists a nonexistent `goal get`, and omits `runs drive`, `runs receipt`, `runtime sync-retry`, and `improve report`.
 - `kxm backup` JSON shows `manifestSha256` redacted.

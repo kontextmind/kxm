@@ -49,6 +49,7 @@ Operations routes carry no message bodies. `kxm dash` and `kxm tenant status` us
 | `POST` | `/v1/agents/register` | Project | Register or resume `name` in `project` with `purpose`, optional `model` and `host`. Returns the agent and a new `agentKey` (201 new, 200 resumed) |
 | `GET` | `/v1/agents` | Agent | Agents in your project; `?includeOffline=true` adds registered offline agents |
 | `POST` | `/v1/agents/<agentId>/heartbeat` | Agent | Renew your presence lease (clients send one every 10 seconds) |
+| `GET` | `/v1/agents/<agentId>/inbox` | Agent | Your open inbound requests (`queued` or `delivered`), oldest first, as `{ "messages": [...] }`. Expires overdue requests first; acknowledges nothing and moves no delivery cursor |
 | `DELETE` | `/v1/agents/<agentId>` | Agent | Mark yourself offline (204) |
 
 Key errors: `duplicate_agent_name` (409, the name is online in the project), `invalid_agent_identity` (401). Presence (`online`, `stale`, `offline`) is computed from the hub's clock with a 30-second lease; agents never report their own presence.

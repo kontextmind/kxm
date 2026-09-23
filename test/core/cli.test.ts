@@ -13,6 +13,7 @@ import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
 import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { stringify } from "yaml";
+import { createTestMesh } from "../helpers.ts";
 
 async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo, cwd = process.cwd()): Promise<number> {
   const isolatedLogs = mkdtempSync(join(tmpdir(), "kxm-cli-telemetry-"));
@@ -1610,6 +1611,39 @@ test("cli hub commands fall back to the persisted hub env project token", async 
   } finally {
     rmSync(stateHome, { recursive: true, force: true });
   }
+});
+
+test("kxm peer inbox lists a request queued for a durable CLI agent name", async (context) => {
+  const mesh = await createTestMesh(context);
+  const env = {
+    KXM_SERVER_URL: mesh.address.url,
+    KXM_AUTH_TOKEN: mesh.token,
+    KXM_PROJECT: "test-project",
+    KXM_AGENT_NAME: "codex",
+  };
+  const inbox = async () => {
+    const io = capture();
+    const code = await runCli(["peer", "inbox", "--json"], env, io);
+    const out = io.read();
+    assert.equal(code, 0, `${out.stderr}\n${out.stdout}`);
+    return (JSON.parse(out.stdout) as { messages: Array<Record<string, unknown>> }).messages;
+  };
+
+  // The first call registers the name; a one-shot call leaves it offline when it exits.
+  assert.deepEqual(await inbox(), []);
+  const sender = mesh.makeClient("sender");
+  await sender.start(() => {});
+  const request = await sender.send({ target: "codex", content: "Review the retry loop", allowOffline: true });
+  assert.equal(request.status, "queued");
+
+  // The next call resumes the same agent and reads what was queued for it meanwhile.
+  const listed = await inbox();
+  assert.deepEqual(
+    listed.map((message) => [message.id, message.fromName, message.content, message.status]),
+    [[request.id, "sender", "Review the retry loop", "queued"]],
+  );
+  // Listing acknowledges nothing: the request is still queued for push delivery.
+  assert.equal((await sender.getMessage(request.id)).status, "queued");
 });
 
 test("cli agent commands never register with the persisted admin token", async () => {

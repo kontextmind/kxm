@@ -42,9 +42,11 @@ reading of its heartbeat lease: `online` holds the lease, `stale` has passed
 peer the hub has retired. Offline peers are listed only with
 `--include-offline`. The host label is a reading aid, never a permission.
 
-`kxm peer inbox` from a one-shot CLI call always returns an empty list,
-because the inbox lives in a long-running harness session. Use `kxm_inbox` in
-that session or `kxm dash --screen inbox`.
+`kxm peer inbox` lists the requests addressed to the CLI agent's own name, so
+run it with a stable `KXM_AGENT_NAME` and answer each with `kxm peer reply`
+under that name. The default `cli-<pid>` is a new agent on every call, and its
+inbox is always empty. In Claude Code, `kxm_inbox` lists the session's inbox; a
+Pi session receives each request as a turn instead, and its `kxm_inbox` refuses.
 
 ## Examples
 

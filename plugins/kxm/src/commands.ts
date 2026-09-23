@@ -72,8 +72,12 @@ export interface SessionTokenPayload {
 
 export interface CommandExecutionContext {
   signal?: AbortSignal | undefined;
+  /** An event-fed inbox the caller keeps (the MCP server); `kxm_inbox` reconciles it. */
   inbox?: Map<string, MessageRecord> | undefined;
   notifiedInbox?: Set<string> | undefined;
+  /** The caller keeps no inbox and reads its open requests from the hub (a one-shot CLI
+   * call). A caller with neither this nor `inbox` activates inbound requests itself (Pi). */
+  hubInbox?: boolean | undefined;
   /** Inbound requests this session is handling: the Pi extension's active request, the MCP
    * server's open inbox. A request sent meanwhile is one more hop along their chain. */
   handling?: readonly Pick<MessageRecord, "hops" | "maxHops">[] | undefined;
@@ -452,7 +456,12 @@ export const AGENT_COMMANDS: readonly AgentCommand[] = [
         await reconcileInbox(client, context.inbox, context.notifiedInbox);
         return { messages: [...context.inbox.values()] };
       }
-      return { messages: [] };
+      if (context?.hubInbox) return { messages: await client.listInbox() };
+      // Listing would offer requests this session's own activation queue is about to hand
+      // it as turns, and an empty list would hide them, so it refuses.
+      throw new Error(
+        "kxm_inbox is not available in this session: it activates each inbound request as a turn, and that turn's final response is the reply",
+      );
     },
   },
   {
