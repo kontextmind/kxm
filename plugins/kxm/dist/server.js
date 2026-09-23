@@ -17303,8 +17303,8 @@ var AGENT_COMMANDS = [
         summary: { type: "string", description: "Promotion summary" },
         authority: {
           type: "string",
-          enum: ["policy", "instruction", "evidence", "hypothesis"],
-          description: "Authority class"
+          enum: ["evidence", "hypothesis"],
+          description: "Authority class; an agent's proposal is peer origin, so evidence at most"
         },
         confidence: {
           type: "string",
@@ -18082,6 +18082,9 @@ var NativeStateProvider = class {
     if (change?.schema !== "kxm.state-change-proposal.v1") {
       throw new ProtocolError(400, "invalid state change proposal schema", "invalid_state_proposal");
     }
+    if (change.origin !== "peer" && change.origin !== "human") {
+      throw new ProtocolError(400, "state change proposal origin must be peer or human", "invalid_state_proposal");
+    }
     const project = requireNonEmpty(change.project, "proposal project");
     const key = requireNonEmpty(change.key, "proposal key");
     const evidenceRefs = boundedRefs(change.evidenceRefs, "proposal evidenceRefs");
@@ -18091,7 +18094,7 @@ var NativeStateProvider = class {
       project,
       summary: change.summary,
       provenance: {
-        sourceType: change.proposedBy.startsWith("agent_") ? "peer" : "human",
+        sourceType: change.origin,
         sourceRef: `proposed-by:${change.proposedBy}`
       },
       authority: change.authority,
@@ -20481,12 +20484,12 @@ function createMeshHub(options = {}) {
       if (agent.project !== project) {
         throw new ProtocolError(403, "context requests are limited to the agent's project", "context_isolation_violation");
       }
-      return { project, caller: agent.id };
+      return { project, caller: agent.id, credential: "agent" };
     }
     requireAdminAuth(request);
     const callerHeader = request.headers["x-kxm-caller-id"];
     const caller = typeof callerHeader === "string" && callerHeader.trim() ? callerHeader.trim() : "kxm-admin";
-    return { project, caller };
+    return { project, caller, credential: "admin" };
   }
   function requireAdminAuth(request) {
     if (!authToken2 && isLoopback(host2)) return;
@@ -21593,7 +21596,17 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
       const contextStateProposeMatch = url.pathname.match(/^\/v1\/context\/state\/propose$/);
       if (method === "POST" && contextStateProposeMatch) {
         const body = await readJson(request);
-        const { project: callerProject, caller: callerId } = contextCallerProject(request, body.project);
+        const { project: callerProject, caller: callerId, credential } = contextCallerProject(request, body.project);
+        if (credential === "admin") requireConfiguredAdminAuth(request, "human-origin state proposals");
+        if (body.proposedBy !== void 0 && body.proposedBy !== callerId) {
+          logger({ event: "security_alert", alert: "state_proposer_mismatch", project: callerProject, callerId, credential });
+          throw new ProtocolError(
+            403,
+            "proposedBy must name the authenticated caller",
+            "state_proposer_mismatch"
+          );
+        }
+        const origin = credential === "agent" ? "peer" : "human";
         const proposalId = await stateProvider.propose({
           schema: "kxm.state-change-proposal.v1",
           project: callerProject,
@@ -21602,11 +21615,12 @@ data: ${JSON.stringify({ type: "ops", project, topic: "agents", at: nowIso() })}
           authority: parseContextAuthority(body.authority),
           confidence: parseContextConfidence(body.confidence),
           evidenceRefs: boundedStringList(body.evidenceRefs, "evidenceRefs", 32),
-          proposedBy: typeof body.proposedBy === "string" && body.proposedBy.trim() ? body.proposedBy.trim() : callerId
+          proposedBy: callerId,
+          origin
         });
         counters.contextRequests += 1;
         publishOps(callerProject, "workflows");
-        logger({ event: "context_state_proposed", project: callerProject, proposalId, proposedBy: callerId });
+        logger({ event: "context_state_proposed", project: callerProject, proposalId, proposedBy: callerId, origin });
         json(response, 201, { proposalId });
         return;
       }
