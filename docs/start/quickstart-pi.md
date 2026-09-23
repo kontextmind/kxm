@@ -72,7 +72,7 @@ rc file, and, when the kxm bin directory is not already on `PATH`, adds a
 After the completion offer, an interactive `kxm init` also offers to set up
 workflow-guide agents and workflows for the harnesses you have installed and
 authenticated. Accepting lists the software-engineering workflows from
-[`workflow-guide.md`](workflow-guide.md); pick by number or slug (`all` works
+[`workflow-guide.md`](../reference/workflow-catalog.md); pick by number or slug (`all` works
 too). kxm resolves each role's first guide candidate whose harness is
 authenticated and writes only current KXM project resources —
 `.kxm/agents/<role>.yaml` (`kxm.agent.v1`) and `.kxm/workflows/<slug>.yaml`
@@ -224,13 +224,13 @@ Avoid assigning two agents to edit the same files in one checkout. Use separate 
 
 ## Next steps
 
-- Use the wiki-ready [KXM Handbook](kxm-handbook.md) for the complete CLI, Pi, Claude, workflow, gate, and recovery reference.
-- Adjust names, project isolation, and network settings in [Configuration](configuration.md).
-- Learn the request lifecycle in [Architecture](architecture.md).
-- Read [Operations](operations.md) before binding beyond localhost.
-- Review the [Test matrix](test-matrix.md) for verified features and example coverage.
-- Start a long-lived coordinator from Jira with [Webhook workflows](webhook-workflows.md).
-- Use [Troubleshooting](troubleshooting.md) if an agent does not appear or a request does not arrive.
+- Use the wiki-ready [KXM Handbook](../kxm-handbook.md) for the complete CLI, Pi, Claude, workflow, gate, and recovery reference.
+- Adjust names, project isolation, and network settings in [Configuration](../reference/configuration.md).
+- Learn the request lifecycle in [Architecture](../concepts/architecture.md).
+- Read [Operations](../operations/deploy.md) before binding beyond localhost.
+- Review the [Test matrix](../contributing/test-matrix.md) for verified features and example coverage.
+- Start a long-lived coordinator from Jira with [Webhook workflows](../guides/webhook-workflows.md).
+- Use [Troubleshooting](../operations/troubleshooting.md) if an agent does not appear or a request does not arrive.
 
 ## Try the v0.5 context features
 

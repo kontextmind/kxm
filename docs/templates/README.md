@@ -1,6 +1,6 @@
 # KXM Documentation Templates & Workflow Integration Guide
 
-This directory contains standardized Markdown documentation templates adapted for KXM multi-agent orchestration, the 5-layer memory architecture, and the workflow taxonomy defined in [`docs/workflow-guide.md`](../workflow-guide.md).
+This directory contains standardized Markdown documentation templates adapted for KXM multi-agent orchestration, the 5-layer memory architecture, and the workflow taxonomy defined in [`docs/workflow-guide.md`](../reference/workflow-catalog.md).
 
 ## Core Principles
 
@@ -40,7 +40,7 @@ This directory contains standardized Markdown documentation templates adapted fo
 
 ## Workflow Guide Integration Matrix
 
-The 11 templates map directly across the 7 Areas and 22 Workflows in [`docs/workflow-guide.md`](../workflow-guide.md):
+The 11 templates map directly across the 7 Areas and 22 Workflows in [`docs/workflow-guide.md`](../reference/workflow-catalog.md):
 
 ```mermaid
 flowchart TD

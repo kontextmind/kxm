@@ -2,7 +2,7 @@
 
 This guide helps you choose how KXM runs a model. Some vendors have their own harness: `claude`, `codex`, `grok`, `agy`, `kimi` and `deepseek`. Other routes go through Pi with a provider prefix, such as `openrouter/…` or `nous-portal/…`, or through one of the vendor-plan providers Pi also hosts. Many models can be reached both ways, and this guide covers that case too.
 
-It explains how to pick a route and how to check which route KXM actually used. Field-by-field meanings of the files named here are in [config-reference.md](config-reference.md). This guide does not list what is admitted today. That list lives in **Tracking → Decided** in [`plans/implementation-plan.md`](../plans/implementation-plan.md#tracking-working-tree-not-a-release) and in `kxm harness list` (`AGENTS.md:31-33`, `AGENTS.md:88-92`).
+It explains how to pick a route and how to check which route KXM actually used. Field-by-field meanings of the files named here are in [config-reference.md](config-reference.md). This guide does not list what is admitted today. That list lives in **Tracking → Decided** in [`plans/implementation-plan.md`](../../plans/implementation-plan.md#tracking-working-tree-not-a-release) and in `kxm harness list` (`AGENTS.md:31-33`, `AGENTS.md:88-92`).
 
 The command output in this guide was captured on 2026-09-23 on one operator machine, from a source checkout. Your output will differ. In a source checkout, `node scripts/kxm.mjs` is the same program as `kxm`.
 

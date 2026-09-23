@@ -7,7 +7,7 @@ This page is the plugin reference. For the whole path from an empty repository t
 ## Requirements
 
 - Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, on the `PATH` that Claude Code uses. The plugin's MCP server and its hook both run `node`.
-- A running KXM hub that Claude Code can reach. The operator starts it with [`kxm hub start`](../../docs/cli-reference.md#kxm-hub-start).
+- A running KXM hub that Claude Code can reach. The operator starts it with [`kxm hub start`](../../docs/reference/cli-reference.md#kxm-hub-start).
 - A project token for this project on that hub. See [Which token to use](#which-token-to-use).
 - The `kxm` CLI, to create projects and run the hub. The plugin does not install it:
 
@@ -17,7 +17,7 @@ This page is the plugin reference. For the whole path from an empty repository t
 
 The plugin's hook and MCP server run from the plugin's own bundled files, so they do not need `kxm` on `PATH`.
 
-`kxm init` writes no Git ignore rules. Add `.kxm/state/` and `.kxm/logs/` to `.gitignore` yourself, and commit the rest of `.kxm/`. [Workspace layout](../../docs/config-reference.md#workspace-layout-tracked-ignored-and-state) lists what to track.
+`kxm init` writes no Git ignore rules. Add `.kxm/state/` and `.kxm/logs/` to `.gitignore` yourself, and commit the rest of `.kxm/`. [Workspace layout](../../docs/reference/config-reference.md#workspace-layout-tracked-ignored-and-state) lists what to track.
 
 ## Install
 
@@ -66,7 +66,7 @@ The MCP server also receives `KXM_PROJECT_DIR`, set to the directory Claude Code
 
 The plugin acts as an agent of one hub project and authenticates with that project's token. It never uses the hub admin token.
 
-- On the machine that runs the hub, leave `auth_token` blank. The MCP server then uses the project token the hub saved for this project in `hub-env.json` under the user state root (`KXM_STATE_HOME`, or the platform default listed in [State outside the project](../../docs/config-reference.md#state-outside-the-project)). It uses only that entry, never the admin token saved beside it.
+- On the machine that runs the hub, leave `auth_token` blank. The MCP server then uses the project token the hub saved for this project in `hub-env.json` under the user state root (`KXM_STATE_HOME`, or the platform default listed in [State outside the project](../../docs/reference/config-reference.md#state-outside-the-project)). It uses only that entry, never the admin token saved beside it.
 - On any other machine, enter this project's token at `/plugin configure kxm@kxm`. Get it from whoever runs the hub, through your password manager.
 - Never enter the hub admin token. It is the operator's credential. The hub accepts it for any project that has no token of its own, so an agent holding it could act in projects it was never given.
 - Without a project token, every `kxm_*` tool fails with `KXM has no project token for project <p> on this machine`, and the MCP server does not contact the hub.
@@ -98,7 +98,7 @@ The plugin registers one SessionStart hook: `node ${CLAUDE_PLUGIN_ROOT}/dist/cla
 4. Where to start: `kxm_context` with your role and task before planning, `kxm_workflow_get <runId>` for an assigned run, and `kxm_inbox` then `kxm_reply` for peer requests.
 5. When the hub is off or unknown: that `kxm_*` tools will fail until you start it with `kxm hub start`.
 6. When the KXM session token is invalid: the fix, which is `kxm session token --clear` for a token file, or unsetting or replacing `KXM_SESSION_TOKEN` in the environment Claude Code was launched from. See [Troubleshooting](#troubleshooting).
-7. The project memory brief, verbatim: the active facts in `.kxm/memory/`, the same text [`kxm memory brief`](../../docs/cli-reference.md#kxm-memory-brief) prints.
+7. The project memory brief, verbatim: the active facts in `.kxm/memory/`, the same text [`kxm memory brief`](../../docs/reference/cli-reference.md#kxm-memory-brief) prints.
 
 Items 1 to 6 are capped at 1,500 characters. The memory brief follows them in full. If the whole context exceeds Claude Code's 10,000-character hook limit, Claude Code saves it to a file and shows a preview; the status lines come first, so they stay in the preview.
 
@@ -110,7 +110,7 @@ Items 1 to 6 are capped at 1,500 characters. The memory brief follows them in fu
 
 ### Skills
 
-The plugin ships the KXM Agent Skills. The `kxm` skill teaches Claude when and how to use the tools below safely and points to the rest of the suite. See [Agent Skills](../../docs/agent-skills.md) for the full list.
+The plugin ships the KXM Agent Skills. The `kxm` skill teaches Claude when and how to use the tools below safely and points to the rest of the suite. See [Agent Skills](../../docs/guides/agent-skills.md) for the full list.
 
 ## MCP tools
 
@@ -131,7 +131,7 @@ Every tool acts as this session's agent (`agent_name`) in the hub project.
 
 ### Workflows
 
-These tools work on durable hub workflows, the ones started by signed webhooks or `kxm workflow start` (see [Webhook workflows](../../docs/webhook-workflows.md)). Runs created with `kxm run` are Runtime runs; inspect those with `kxm runs status` in a terminal.
+These tools work on durable hub workflows, the ones started by signed webhooks or `kxm workflow start` (see [Webhook workflows](../../docs/guides/webhook-workflows.md)). Runs created with `kxm run` are Runtime runs; inspect those with `kxm runs status` in a terminal.
 
 | Tool | What it does |
 |---|---|
@@ -142,7 +142,7 @@ These tools work on durable hub workflows, the ones started by signed webhooks o
 | `kxm_workflow_wait` | Parks the active stage until a signed external callback (CI, review, merge, Jira) checkpoints it and resumes the coordinator. |
 | `kxm_improvement_report` | Summarizes errors, contradictions, lessons and skill candidates by improvement area, with ranked cross-run signals. |
 
-Workflow authors can require replies from a snapshotted set of eligible peers. The coordinator passes exact `workflowContext` to `kxm_send` or `kxm_fanout` and later cites the returned message IDs in `evidenceRefs`; the hub derives provenance and counts unique producers. Evidence strings, correlation IDs and idempotency keys do not satisfy a peer policy. See [Peer provenance and quorum gates](../../docs/provenance-gates.md).
+Workflow authors can require replies from a snapshotted set of eligible peers. The coordinator passes exact `workflowContext` to `kxm_send` or `kxm_fanout` and later cites the returned message IDs in `evidenceRefs`; the hub derives provenance and counts unique producers. Evidence strings, correlation IDs and idempotency keys do not satisfy a peer policy. See [Peer provenance and quorum gates](../../docs/guides/provenance-gates.md).
 
 ### Context
 
@@ -152,7 +152,7 @@ Workflow authors can require replies from a snapshotted set of eligible peers. T
 | `kxm_recall` | Searches durable context records by query and returns bounded metadata with a relevance score, never summaries. |
 | `kxm_state` | Reads the current value of one temporal state key, or its value as of an ISO-8601 timestamp. |
 | `kxm_episode` | Reads episodic learning (errors, lessons, observations, experiments) from workflow journals, optionally for one run. |
-| `kxm_promote` | Proposes a change to one authoritative state key, backed by evidence references. It only proposes: the hub returns a proposal ID, and an operator applies it with [`kxm context promote`](../../docs/cli-reference.md#kxm-context-promote). |
+| `kxm_promote` | Proposes a change to one authoritative state key, backed by evidence references. It only proposes: the hub returns a proposal ID, and an operator applies it with [`kxm context promote`](../../docs/reference/cli-reference.md#kxm-context-promote). |
 
 ## Pushed channel mode and pull mode
 
@@ -197,7 +197,7 @@ Once an install has the new plugin code, after a version bump or the reinstall a
 
 ## Troubleshooting
 
-Tool errors and the SessionStart brief name the fix, addressed to you. Run the commands below in your own terminal rather than through Claude, and never paste tokens into Claude. [Troubleshooting](../../docs/troubleshooting.md) covers the hub and workers.
+Tool errors and the SessionStart brief name the fix, addressed to you. Run the commands below in your own terminal rather than through Claude, and never paste tokens into Claude. [Troubleshooting](../../docs/operations/troubleshooting.md) covers the hub and workers.
 
 ### The `kxm_*` tools do not appear
 
@@ -220,7 +220,7 @@ The MCP server found neither an `auth_token` nor a token the hub saved for `<p>`
 
 ### `tool_policy_denied: Session token on disk is malformed or expired`
 
-The same fix applies to `Session token file on disk could not be read`. A KXM session token file in your KXM user configuration directory blocks every `kxm_*` tool. Run [`kxm session token --clear`](../../docs/cli-reference.md#kxm-session-token); it prints `Session token cleared from disk.` `kxm session token --status` prints `No active session token found in env or disk` for such a file even though the file still blocks the tools, so it cannot confirm this problem. Do not use `--issue`: it prints the token and only re-arms it for 24 hours. With no token file and no `KXM_SESSION_TOKEN`, the MCP server applies no session policy.
+The same fix applies to `Session token file on disk could not be read`. A KXM session token file in your KXM user configuration directory blocks every `kxm_*` tool. Run [`kxm session token --clear`](../../docs/reference/cli-reference.md#kxm-session-token); it prints `Session token cleared from disk.` `kxm session token --status` prints `No active session token found in env or disk` for such a file even though the file still blocks the tools, so it cannot confirm this problem. Do not use `--issue`: it prints the token and only re-arms it for 24 hours. With no token file and no `KXM_SESSION_TOKEN`, the MCP server applies no session policy.
 
 ### `tool_policy_denied: KXM_SESSION_TOKEN is malformed or expired`
 
@@ -270,6 +270,6 @@ The bundles include their dependencies, so marketplace installs need no post-ins
 ## More documentation
 
 - [KXM Handbook](../../docs/kxm-handbook.md): installation, configuration, Claude channel and pull modes, workflows, gates and recovery.
-- [Getting started](../../docs/getting-started.md) and [Operations](../../docs/operations.md): task-focused guides.
-- [CLI reference](../../docs/cli-reference.md): every `kxm` command, with options and output.
-- [Configuration reference](../../docs/config-reference.md): every `.kxm` file, the workspace layout, and state outside the project.
+- [Getting started](../../docs/start/quickstart-pi.md) and [Operations](../../docs/operations/deploy.md): task-focused guides.
+- [CLI reference](../../docs/reference/cli-reference.md): every `kxm` command, with options and output.
+- [Configuration reference](../../docs/reference/config-reference.md): every `.kxm` file, the workspace layout, and state outside the project.

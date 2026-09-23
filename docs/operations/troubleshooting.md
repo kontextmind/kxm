@@ -119,7 +119,7 @@ The same npm-shim miss can appear for `pi` on Windows.
 - Check whether a live agent already uses the same name in the same project.
 - Restart Pi after changing environment variables.
 - For an exact development load, use `pi --no-extensions -e ./plugins/kxm/src/extension.ts`. Add every required provider extension with another `-e`; otherwise Pi discovery is intentionally disabled.
-- For long-lived workers, set the reviewed `KXM_WORKER_EXTENSION_PATHS` and `KXM_WORKER_SKILL_PATHS` described in [Configuration](configuration.md#long-lived-worker-settings). Invalid paths fail before supervision instead of entering a restart loop.
+- For long-lived workers, set the reviewed `KXM_WORKER_EXTENSION_PATHS` and `KXM_WORKER_SKILL_PATHS` described in [Configuration](../reference/configuration.md#long-lived-worker-settings). Invalid paths fail before supervision instead of entering a restart loop.
 
 ### Pi update fails looking for `refs/heads/master`
 
@@ -144,7 +144,7 @@ CLI matches source.
 `pi install git:github.com/kontextmind/kxm@main` installs the Pi extension
 and Agent Skill, not a global operator command. Install the versioned `.tgz`
 release asset through the authenticated `gh release download` flow in
-[Getting started](getting-started.md#1-install), or run
+[Getting started](../start/quickstart-pi.md#1-install), or run
 `node scripts/kxm.mjs` from a clone after `npm ci`. `npx kxm` and a
 global `git+https` npm install are not supported installation paths.
 

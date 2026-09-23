@@ -1,6 +1,6 @@
 # KXM CLI reference
 
-This page documents every command and subcommand the `kxm` operator CLI registers in KXM 0.7.1 (`@kontextmind/kxm`). For each command it states what the command does, which files and services it reads and writes, whether it needs a running hub or the KXM Runtime supervisor, what `--json` returns, and the exit codes and refusal codes you are likely to see. It supersedes the "Complete CLI guide" section of the [KXM Handbook](kxm-handbook.md). Environment variables are described in [Configuration](configuration.md); this page names them only where a command reads them directly.
+This page documents every command and subcommand the `kxm` operator CLI registers in KXM 0.7.1 (`@kontextmind/kxm`). For each command it states what the command does, which files and services it reads and writes, whether it needs a running hub or the KXM Runtime supervisor, what `--json` returns, and the exit codes and refusal codes you are likely to see. It supersedes the "Complete CLI guide" section of the [KXM Handbook](../kxm-handbook.md). Environment variables are described in [Configuration](configuration.md); this page names them only where a command reads them directly.
 
 Output shown under examples was captured from KXM 0.7.1 run from a source checkout, inside a throwaway Git repository, with `HOME`, `KXM_STATE_HOME`, `KXM_USER_CONFIG_DIR`, and the XDG directories pointed at a temporary directory, no harness CLIs on `PATH`, and (where a hub was needed) a disposable hub on a random loopback port. Paths are shortened to `/work/proj` (the project), `/work/kxm` (the KXM checkout), `/state` (the user state root), and `~/.config/kxm` (the user config directory); session tokens are replaced with `<token>`, the machine's host name with `host.local`, and long JSON is trimmed with `...`. Every command either plans under `--dry-run` without changing anything or refuses the flag (see [Dry runs](#dry-runs)); the dry-run examples were captured from the current source tree, with a digest of the throwaway tree taken before and after to confirm that nothing was written. An example captioned "Not run" was not executed for this reference because it starts a long-lived process, writes durable state, stores credentials, or calls an external service; its output is not shown.
 
@@ -21,7 +21,7 @@ Output shown under examples was captured from KXM 0.7.1 run from a source checko
 
 ## Invoking the CLI
 
-An installed CLI is on `PATH` as `kxm`. Install it from the versioned release tarball as described in the [KXM Handbook](kxm-handbook.md#install-the-kxm-operator-cli).
+An installed CLI is on `PATH` as `kxm`. Install it from the versioned release tarball as described in the [KXM Handbook](../kxm-handbook.md#install-the-kxm-operator-cli).
 
 ```bash
 kxm --help

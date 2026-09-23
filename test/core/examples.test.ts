@@ -36,7 +36,7 @@ test("provenance example and command-first guide share one runnable topology", (
   assert.deepEqual(policy?.eligibleAgents, ["reviewer-claude", "reviewer-grok"]);
   assert.equal(policy?.degradation?.minProducers, 1);
 
-  const guide = readFileSync("docs/provenance-gates.md", "utf8");
+  const guide = readFileSync("docs/guides/provenance-gates.md", "utf8");
   assert.match(guide, /\{"provenance-demo":"replace-with-the-project-token"\}/);
   assert.match(guide, /--name coordinator --project provenance-demo/);
   assert.match(guide, /--name reviewer-claude --project provenance-demo/);

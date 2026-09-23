@@ -46341,7 +46341,7 @@ var DEFAULT_MODES_CONFIG = Object.freeze({
     browser: {
       description: "Web application exploration, screenshotting, and UI testing",
       baseTools: ["read", "bash"],
-      contextFiles: ["docs/browser-automation.md"],
+      contextFiles: ["docs/guides/browser-automation.md"],
       thinkingLevel: "medium",
       model: "grok/grok-4.6"
     }
@@ -48481,7 +48481,7 @@ Set up workflow-guide agents and workflows for authenticated harnesses (${harnes
 `);
     return;
   }
-  const lines = ["", "Workflow-guide software-engineering workflows (docs/workflow-guide.md):"];
+  const lines = ["", "Workflow-guide software-engineering workflows (docs/reference/workflow-catalog.md):"];
   GUIDE_WORKFLOWS.forEach((workflow, index) => {
     lines.push(`  ${index + 1}) ${workflow.slug.padEnd(32)} ${workflow.summary}`);
   });

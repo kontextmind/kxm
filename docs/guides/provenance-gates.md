@@ -117,7 +117,7 @@ the workflow. Names are resolved once at run creation; later configuration edits
 do not rewrite an active run's eligible-producer snapshot.
 
 The complete command-first example is
-[`examples/provenance-workflow.json`](../examples/provenance-workflow.json).
+[`examples/provenance-workflow.json`](../../examples/provenance-workflow.json).
 It uses project `provenance-demo`, coordinator `coordinator`, and the two
 eligible reviewers `reviewer-claude` and `reviewer-grok`.
 

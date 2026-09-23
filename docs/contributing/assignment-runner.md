@@ -16,7 +16,7 @@ policy.
 ## 1. Overview and role rotation
 
 Developer orchestration on this runner uses a role-based rotation backed by
-trusted policy in [`.kxm/roster.yaml`](../.kxm/roster.yaml). Roles, harnesses,
+trusted policy in [`.kxm/roster.yaml`](../../.kxm/roster.yaml). Roles, harnesses,
 and models are admitted with strict permission and vendor boundaries:
 
 | Role | Admitted route | Vendor | Permission | Purpose |

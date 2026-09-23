@@ -119,21 +119,21 @@ When authentication challenges (MFA, CAPTCHA, SSO) are encountered:
 
 ## Knowledge base
 
-- [How are credentials retrieved without exposing them to the model?](kb/how-credentials-retrieved-safely.md)
-- [How do I capture a UI section and annotate changes for an agent?](kb/how-to-capture-and-annotate-section.md)
-- [How do I connect Playwright to the existing Steel session?](kb/how-to-connect-playwright-to-steel.md)
-- [How do I recover an expired session or remove an orphaned browser?](kb/how-to-recover-expired-session-or-orphan.md)
-- [How does an agent resume after MFA?](kb/how-to-resume-after-mfa.md)
-- [How do I take over a browser session to log in?](kb/how-to-take-over-session.md)
-- [Why did authentication disappear?](kb/why-authentication-disappeared.md)
-- [Why did automation open a different browser?](kb/why-automation-opened-different-browser.md)
-- [Why can I view a session but not control it?](kb/why-session-viewer-cannot-control.md)
+- [How are credentials retrieved without exposing them to the model?](../kb/how-credentials-retrieved-safely.md)
+- [How do I capture a UI section and annotate changes for an agent?](../kb/how-to-capture-and-annotate-section.md)
+- [How do I connect Playwright to the existing Steel session?](../kb/how-to-connect-playwright-to-steel.md)
+- [How do I recover an expired session or remove an orphaned browser?](../kb/how-to-recover-expired-session-or-orphan.md)
+- [How does an agent resume after MFA?](../kb/how-to-resume-after-mfa.md)
+- [How do I take over a browser session to log in?](../kb/how-to-take-over-session.md)
+- [Why did authentication disappear?](../kb/why-authentication-disappeared.md)
+- [Why did automation open a different browser?](../kb/why-automation-opened-different-browser.md)
+- [Why can I view a session but not control it?](../kb/why-session-viewer-cannot-control.md)
 
 ## Prompt templates
 
-- [Starting browser work](prompts/browser-start.md)
-- [Exploring an application](prompts/browser-explore.md)
-- [Requesting human takeover](prompts/browser-takeover.md)
-- [Diagnosing and recovering a failed session](prompts/browser-diagnose-recover.md)
-- [Reproducing a UI bug and writing a Playwright test](prompts/browser-repro-fix.md)
-- [Capturing UI section annotations](prompts/browser-annotate-feedback.md)
+- [Starting browser work](../prompts/browser-start.md)
+- [Exploring an application](../prompts/browser-explore.md)
+- [Requesting human takeover](../prompts/browser-takeover.md)
+- [Diagnosing and recovering a failed session](../prompts/browser-diagnose-recover.md)
+- [Reproducing a UI bug and writing a Playwright test](../prompts/browser-repro-fix.md)
+- [Capturing UI section annotations](../prompts/browser-annotate-feedback.md)

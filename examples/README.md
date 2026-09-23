@@ -2,7 +2,7 @@
 
 These examples demonstrate the transport without requiring an AI model. Run them from the repository root after `npm ci`.
 
-The [`.kxm/workflows/default.yaml`](../.kxm/workflows/default.yaml) workspace configuration is a production-oriented definition for a long-lived coordinator. It covers reproduction, single-agent or three-agent planning, plan review, implementation, local and repository gates, documentation, push/watch retries, merge, Jira update, and continuous improvement. Follow [Webhook workflows](../docs/webhook-workflows.md) to configure it.
+The [`.kxm/workflows/default.yaml`](../.kxm/workflows/default.yaml) workspace configuration is a production-oriented definition for a long-lived coordinator. It covers reproduction, single-agent or three-agent planning, plan review, implementation, local and repository gates, documentation, push/watch retries, merge, Jira update, and continuous improvement. Follow [Webhook workflows](../docs/guides/webhook-workflows.md) to configure it.
 
 The [`workflow-signal.ts`](workflow-signal.ts) sender demonstrates the signed callback that resumes a coordinator after CI, review, merge, or Jira work completes. The webhook guide documents its required environment and arguments.
 
@@ -12,7 +12,7 @@ one exact run, stage, requirement, and attempt, while demonstrating an optional
 admin-approved one-peer degradation. Its tested topology is project
 `provenance-demo`, coordinator `coordinator`, and reviewers `reviewer-claude`
 and `reviewer-grok`. Follow
-[Peer provenance and quorum gates](../docs/provenance-gates.md) for the complete
+[Peer provenance and quorum gates](../docs/guides/provenance-gates.md) for the complete
 runbook and trust boundary.
 
 The [`runtime`](kxm/README.md) directory is a machine-validated planned-contract

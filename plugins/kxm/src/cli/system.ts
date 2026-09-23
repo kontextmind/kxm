@@ -853,7 +853,7 @@ export async function maybeOfferGuideSetup(runtime: Runtime): Promise<void> {
     runtime.io.stdout(`skipped; set ${GUIDE_SETUP_OPT_OUT_ENV}=1 to suppress this offer, or re-run on a fresh project\n`);
     return;
   }
-  const lines = ["", "Workflow-guide software-engineering workflows (docs/workflow-guide.md):"];
+  const lines = ["", "Workflow-guide software-engineering workflows (docs/reference/workflow-catalog.md):"];
   GUIDE_WORKFLOWS.forEach((workflow, index) => {
     lines.push(`  ${index + 1}) ${workflow.slug.padEnd(32)} ${workflow.summary}`);
   });

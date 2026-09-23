@@ -347,13 +347,13 @@ When exact extension or skill paths are supplied, automatic discovery is
 disabled only for that category. Review those paths as executable dependencies.
 
 The complete variable reference, limits, and examples are in
-[Configuration](configuration.md).
+[Configuration](reference/configuration.md).
 
 ---
 
 ## Complete CLI guide
 
-This section summarizes the most-used commands. The [CLI reference](cli-reference.md) documents every command and subcommand with its options, JSON output, and examples.
+This section summarizes the most-used commands. The [CLI reference](reference/cli-reference.md) documents every command and subcommand with its options, JSON output, and examples.
 
 Global options can appear on the root or a command group:
 
@@ -452,7 +452,7 @@ proposed JSON and diff files under `.kxm/candidates/` (not with `--dry-run`), an
 each gets a promotion readiness line under `improvement.promotionPolicy`. Readiness
 never authorizes: the command does not modify code, configuration, gates, or the
 workflow journal, and activation is a reviewed Git change. See
-[Continuous improvement](continuous-improvement.md#coded-repeats-kxm-improve).
+[Continuous improvement](guides/continuous-improvement.md#coded-repeats-kxm-improve).
 
 ### Context commands
 
@@ -1134,7 +1134,7 @@ Common causes:
 | Degradation returns 503 | Hub has no configured administrative credential |
 | Shared workflow memory appears | Worker is using the upgrade-compatible isolation `off` default; restart explicitly with `--session-isolation workflow` |
 
-See [Troubleshooting](troubleshooting.md) for error-specific recovery.
+See [Troubleshooting](operations/troubleshooting.md) for error-specific recovery.
 
 ---
 
@@ -1170,12 +1170,12 @@ See [Troubleshooting](troubleshooting.md) for error-specific recovery.
 
 ## Related pages
 
-- [Getting started](getting-started.md)
-- [Configuration reference](configuration.md)
-- [Architecture](architecture.md)
-- [Operations guide](operations.md)
-- [Webhook workflows](webhook-workflows.md)
-- [Peer provenance and quorum gates](provenance-gates.md)
-- [Troubleshooting](troubleshooting.md)
-- [Test matrix](test-matrix.md)
+- [Getting started](start/quickstart-pi.md)
+- [Configuration reference](reference/configuration.md)
+- [Architecture](concepts/architecture.md)
+- [Operations guide](operations/deploy.md)
+- [Webhook workflows](guides/webhook-workflows.md)
+- [Peer provenance and quorum gates](guides/provenance-gates.md)
+- [Troubleshooting](operations/troubleshooting.md)
+- [Test matrix](contributing/test-matrix.md)
 - [Changelog](../CHANGELOG.md)

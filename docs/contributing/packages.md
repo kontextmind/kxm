@@ -53,7 +53,7 @@ runner. Installation and CI still resolve through `npm ci` and Node 22.19.0/24,
 because the hub, the CLI, and Pi's extension host are Node runtimes and
 `npm ci` is what the current CI legs execute. Moving the installer itself to Bun
 is a separate change with its own CI evidence; see
-[`plans/implementation-plan.md`](../plans/implementation-plan.md) **Still open**.
+[`plans/implementation-plan.md`](../../plans/implementation-plan.md) **Still open**.
 
 ## Rules that keep the shape
 
@@ -87,5 +87,5 @@ These are gates, not preferences:
 ## Related
 
 - [Terminal components](tui-components.md) — the kit and its surface contract
-- [Architecture](architecture.md) — component boundaries
-- [Configuration](configuration.md) — what is settings versus shipped code
+- [Architecture](../concepts/architecture.md) — component boundaries
+- [Configuration](../reference/configuration.md) — what is settings versus shipped code

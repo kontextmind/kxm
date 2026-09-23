@@ -38,13 +38,13 @@ None of these values can authorize or activate anything. The policy only selects
 review-readiness rule `kxm improve` reports for each candidate, and every policy ends at
 an operator PR. The half-life weights report rows (`weightedRecurrence`) and never
 decides whether a group is a candidate. See
-[Continuous improvement](continuous-improvement.md#coded-repeats-kxm-improve).
+[Continuous improvement](../guides/continuous-improvement.md#coded-repeats-kxm-improve).
 
 Project identity and repository bindings are separate, Git-tracked files under
 `.kxm/` (`project.yaml`, `roster.yaml`, `routes.yaml`, `gates.yaml`, `prices.yaml`,
 `roles/`, `workflows/`). They are configuration reviewed in a PR, not personal
 settings, and no panel or editor grants writer admission by editing them. See
-[Terminal components](tui-components.md) for the surface that renders them.
+[Terminal components](../contributing/tui-components.md) for the surface that renders them.
 
 ## KXM local project settings
 
@@ -345,7 +345,7 @@ Global flags: `--json`, `--dry-run`, `--workspace`. Project-root `kxm init` disc
 
 Configure either `KXM_WEBHOOK_WORKFLOWS` or `KXM_WEBHOOK_WORKFLOWS_FILE`, never both. A definition selects a provider source, project, coordinator, event and payload filters, prompt template, and ordered stages. Use `secretEnv` to resolve the workflow-start HMAC secret from another environment variable. Use the optional `signalSecretEnv` for a separate callback secret; otherwise external signals use the workflow-start secret. Do not store either secret in JSON.
 
-See [Webhook workflows](webhook-workflows.md) for the base schema and the complete Jira configuration under `.kxm/workflows`. See [Peer provenance and quorum gates](provenance-gates.md) for `evidencePolicies`, `workflowContext`, `evidenceRefs`, and explicit degradation.
+See [Webhook workflows](../guides/webhook-workflows.md) for the base schema and the complete Jira configuration under `.kxm/workflows`. See [Peer provenance and quorum gates](../guides/provenance-gates.md) for `evidencePolicies`, `workflowContext`, `evidenceRefs`, and explicit degradation.
 
 ## Delivery modes
 
@@ -355,7 +355,7 @@ See [Webhook workflows](webhook-workflows.md) for the base schema and the comple
 | `steer` | An active blocker requires a course change | Deliver at the next decision boundary |
 | `nextTurn` | Information should wait for a later turn | Queue context without immediate work |
 
-`followUp` is the safe default. Load values through your shell, supervisor, container platform, or secret manager using the variables documented on this page and in the [KXM Handbook](kxm-handbook.md). Never commit real tokens.
+`followUp` is the safe default. Load values through your shell, supervisor, container platform, or secret manager using the variables documented on this page and in the [KXM Handbook](../kxm-handbook.md). Never commit real tokens.
 
 ## Nous providers (opt-in)
 

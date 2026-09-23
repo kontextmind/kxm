@@ -122,7 +122,7 @@ export KXM_AGENT_PURPOSE="Plans work and coordinates handoffs"
 pi
 ```
 
-In Pi, run `/kxm hub`. For a second agent or Claude Code, follow [Getting started](docs/getting-started.md).
+In Pi, run `/kxm hub`. For a second agent or Claude Code, follow [Getting started](docs/start/quickstart-pi.md).
 
 ## Command-first operation
 
@@ -181,7 +181,7 @@ Use `--dry-run --json` to inspect mutation plans without exposing configured
 token or secret values. Terminal workflows export proposed Markdown and JSON
 retrospectives automatically; review them before adopting any improvement as
 policy. Provenance quorum degradation is a separate admin-only operation; use
-the [provenance runbook](docs/provenance-gates.md#degrade-only-through-an-explicit-admin-decision)
+the [provenance runbook](docs/guides/provenance-gates.md#degrade-only-through-an-explicit-admin-decision)
 only for a workflow whose evidence policy declares a lower minimum.
 
 ## What is included?
@@ -211,20 +211,20 @@ The hub routes messages; it does not merge contexts, choose tasks, or bypass too
 | If you want to… | Read |
 |---|---|
 | Install, configure, and use every KXM surface | [KXM Handbook](docs/kxm-handbook.md) |
-| Complete a Pi-to-Pi or Pi-to-Claude setup | [Getting started](docs/getting-started.md) |
-| Configure the hub or an agent | [Configuration reference](docs/configuration.md) |
-| Look up any `kxm` command, option, or output | [CLI reference](docs/cli-reference.md) |
-| Write project, workflow, agent, role, route, or price files | [Configuration file reference](docs/config-reference.md) |
-| Choose a native harness or OpenRouter for the same model | [Native harness or OpenRouter](docs/harness-routing.md) |
-| Understand components and message flow | [Architecture](docs/architecture.md) |
-| Learn about agent skills | [Agent Skills](docs/agent-skills.md) |
-| Run the hub responsibly | [Operations guide](docs/operations.md) |
-| Fix connection or delivery problems | [Troubleshooting](docs/troubleshooting.md) |
-| See which behaviors and examples are verified | [Test matrix](docs/test-matrix.md) |
-| Start work from Jira or another webhook | [Webhook workflows](docs/webhook-workflows.md) |
-| Require verified replies from eligible peers | [Peer provenance and quorum gates](docs/provenance-gates.md) |
-| Improve the harness and delivery process from evidence | [Continuous improvement](docs/continuous-improvement.md) |
-| Navigate Area → Workflow → Stage → Role taxonomy | [Workflow guide](docs/workflow-guide.md) |
+| Complete a Pi-to-Pi or Pi-to-Claude setup | [Getting started](docs/start/quickstart-pi.md) |
+| Configure the hub or an agent | [Configuration reference](docs/reference/configuration.md) |
+| Look up any `kxm` command, option, or output | [CLI reference](docs/reference/cli-reference.md) |
+| Write project, workflow, agent, role, route, or price files | [Configuration file reference](docs/reference/config-reference.md) |
+| Choose a native harness or OpenRouter for the same model | [Native harness or OpenRouter](docs/reference/harness-routing.md) |
+| Understand components and message flow | [Architecture](docs/concepts/architecture.md) |
+| Learn about agent skills | [Agent Skills](docs/guides/agent-skills.md) |
+| Run the hub responsibly | [Operations guide](docs/operations/deploy.md) |
+| Fix connection or delivery problems | [Troubleshooting](docs/operations/troubleshooting.md) |
+| See which behaviors and examples are verified | [Test matrix](docs/contributing/test-matrix.md) |
+| Start work from Jira or another webhook | [Webhook workflows](docs/guides/webhook-workflows.md) |
+| Require verified replies from eligible peers | [Peer provenance and quorum gates](docs/guides/provenance-gates.md) |
+| Improve the harness and delivery process from evidence | [Continuous improvement](docs/guides/continuous-improvement.md) |
+| Navigate Area → Workflow → Stage → Role taxonomy | [Workflow guide](docs/reference/workflow-catalog.md) |
 | Develop or submit a change | [Contributing](CONTRIBUTING.md) |
 | Report a vulnerability | [Security policy](SECURITY.md) |
 | Review user-facing changes | [Changelog](CHANGELOG.md) |
@@ -249,7 +249,7 @@ Pushed Claude channel delivery is a research-preview feature. Community channels
 claude --dangerously-load-development-channels plugin:kxm
 ```
 
-Without channel mode, ordinary MCP tools still work; use `kxm_inbox` and `kxm_reply` for inbound requests. See [Getting started](docs/getting-started.md#connect-claude-code) for the complete flow.
+Without channel mode, ordinary MCP tools still work; use `kxm_inbox` and `kxm_reply` for inbound requests. See [Getting started](docs/start/quickstart-pi.md#connect-claude-code) for the complete flow.
 
 ## Production boundaries
 
@@ -263,7 +263,7 @@ The codebase is structured, typed, persisted, tested, packaged, and CI-gated. Th
 - The hub does not coordinate filesystem ownership; use separate worktrees or a single-writer rule.
 - A non-loopback deployment requires authentication, TLS termination, process supervision, and network access controls.
 
-The [operations guide](docs/operations.md) explains backup, recovery, monitoring, upgrade, and the safe deployment envelope.
+The [operations guide](docs/operations/deploy.md) explains backup, recovery, monitoring, upgrade, and the safe deployment envelope.
 
 ## Package standards
 

@@ -201,13 +201,13 @@ Workflow session isolation is a context-routing and accidental-cross-run safety 
 
 The generated runtimes are committed because installed packages must work without a development toolchain or runtime TypeScript stripping. Edit the source, run `npm run build`, and commit the source and corresponding files under `dist/`.
 
-The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`, `context`, `skills`) plus root `init` are defined in `src/cli.ts`. If `kxm --help` prints a former flat command list instead of these Commander groups, treat it as a stale-`dist` symptom; see [Troubleshooting](troubleshooting.md).
+The command groups described in this document (`agent`, `session`, `workflow`, `gate`, `hub`, `dash`, `improve`, `context`, `skills`) plus root `init` are defined in `src/cli.ts`. If `kxm --help` prints a former flat command list instead of these Commander groups, treat it as a stale-`dist` symptom; see [Troubleshooting](../operations/troubleshooting.md).
 
 Peer-policy fields are additive to SQLite schema version 2 because agents,
 messages, and workflow runs are stored as JSON records. Existing schema-v2
 databases and legacy workflow history remain readable; legacy evidence cannot
 satisfy a newly declared peer policy. Back up the database before upgrading as
-described in [Operations](operations.md).
+described in [Operations](../operations/deploy.md).
 
 ## Context operating system (v0.5)
 

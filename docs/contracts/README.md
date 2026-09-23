@@ -8,8 +8,8 @@
 > open. Operator tracking for the KXM rename, `kxm dash`, hub CLI, and
 > harness YAML lives in the
 > [implementation plan](../../plans/implementation-plan.md#tracking-working-tree-not-a-release).
-> For current hub execution behavior, use [Architecture](../architecture.md) and
-> [Configuration](../configuration.md).
+> For current hub execution behavior, use [Architecture](../concepts/architecture.md) and
+> [Configuration](../reference/configuration.md).
 
 KXM is a convention-over-configuration, local-first orchestration and
 context platform. One local Runtime owns execution; an optional multi-project

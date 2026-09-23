@@ -49,7 +49,7 @@ commands for RTK independently of `rtk.ts`.
 - For KXM development loads, prefer the working tree:
   `pi --no-extensions -e ./plugins/kxm/src/extension.ts`. Add every required
   provider extension with another `-e`; otherwise Pi discovery is disabled.
-  See [Troubleshooting](troubleshooting.md#pi-shows-huboff).
+  See [Troubleshooting](../../docs/operations/troubleshooting.md#pi-shows-huboff).
 - Refresh this page when `pi list` or
   `%USERPROFILE%\.pi\agent\extensions\` changes.
 

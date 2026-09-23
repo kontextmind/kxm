@@ -21,7 +21,7 @@ The hub stores a SHA-256 payload hash and the rendered coordinator prompt, not t
 
 ## Configure the Jira example
 
-The included [`jira-development.json`](../.kxm/workflows/default.yaml) workspace configuration models this path:
+The included [`jira-development.json`](../../.kxm/workflows/default.yaml) workspace configuration models this path:
 
 1. Jira issue enters **In Progress**.
 2. Reproduce the defect and create deterministic evidence.

@@ -4,7 +4,7 @@ Audience: maintainers and integrators who draw a KXM surface — the live screen
 a configuration panel, or a host adapter for another harness.
 
 The kit is the workspace package
-[`packages/core/tui`](../packages/core/tui) (`@kontextmind/tui`),
+[`packages/core/tui`](../../packages/core/tui) (`@kontextmind/tui`),
 also published on the product as `@kontextmind/kxm/tui`. It is one declarative
 surface model, one renderer, one input decoder, one contribution registry, and
 thin host adapters, so every surface keys, colours, and fails the same way. See
@@ -51,7 +51,7 @@ needs selecting and an absent one that needs fetching, without the renderer
 knowing the difference.
 
 Bounds are protocol limits, not suggestions
-([`KXM_TUI_LIMITS`](../packages/core/tui/src/types/surface.ts)). An oversized
+([`KXM_TUI_LIMITS`](../../packages/core/tui/src/types/surface.ts)). An oversized
 or malformed published surface is refused with structured issues and drawn with
 an error notice, so a broken file is still repairable from the panel.
 
@@ -87,7 +87,7 @@ republishes, so anything on screen is a value that exists on disk.
 | `h` / `?` | help |
 
 The reducer is pure
-([`reduceKxmTuiInput`](../packages/core/tui/src/tui/panel.ts)) and returns
+([`reduceKxmTuiInput`](../../packages/core/tui/src/tui/panel.ts)) and returns
 effects; the component layer runs them. That is the same contract that keeps
 `kxm dash` navigation testable, and it is why no key handling needs a terminal.
 
@@ -106,7 +106,7 @@ effects; the component layer runs them. That is the same contract that keeps
 
 Selectable values come from reference sources, not from a model's memory: the
 harness catalog in
-[`harness.ts`](../plugins/kxm/src/harness.ts), admitted routes in
+[`harness.ts`](../../plugins/kxm/src/harness.ts), admitted routes in
 `.kxm/routes.yaml`, the model inventory and price catalog, gate ids in
 `.kxm/gates.yaml`, role ids in `.kxm/roles/`, and workflow ids in
 `.kxm/workflows/`.
@@ -125,7 +125,7 @@ harness catalog in
 ## Related
 
 - [Packages and workspaces](packages.md) — the layout convention and its gate
-- [Configuration](configuration.md) — the settings a config surface edits
-- [Architecture](architecture.md) — component boundaries
+- [Configuration](../reference/configuration.md) — the settings a config surface edits
+- [Architecture](../concepts/architecture.md) — component boundaries
 - [Test matrix](test-matrix.md) — where a behaviour is proven
-- [KXM contracts](contracts/README.md) — schemas behind the reference files
+- [KXM contracts](../contracts/README.md) — schemas behind the reference files

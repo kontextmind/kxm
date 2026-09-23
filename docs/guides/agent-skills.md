@@ -4,7 +4,7 @@ This document describes the skills bundled in `plugins/kxm/skills`. They
 document the existing CLI and MCP tools. They do **not** land unified YAML
 role/project/workflow authority, admit new writers, or replace trusted
 `.kxm/roster.yaml` policy. For per-command flags, output, and exit codes, see
-the [KXM CLI reference](cli-reference.md); skills do not repeat it.
+the [KXM CLI reference](../reference/cli-reference.md); skills do not repeat it.
 
 The suite has three groups, all declared in `plugins/kxm/skill-suite.json`:
 
@@ -37,7 +37,7 @@ none.
 
 ## Browser automation skills
 
-KXM includes dedicated skills for remote browser automation on self-hosted Steel (DOKS), exploratory navigation via `agent-browser`, testing with `Playwright`, and visual feedback. They own no `kxm` command. See [Browser Automation Guide](browser-automation.md) and [ADR-0002](adr/ADR-0002-browser-automation-steel-doks.md).
+KXM includes dedicated skills for remote browser automation on self-hosted Steel (DOKS), exploratory navigation via `agent-browser`, testing with `Playwright`, and visual feedback. They own no `kxm` command. See [Browser Automation Guide](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
 
 | Feature area | Skill | Purpose |
 |---|---|---|
@@ -159,8 +159,8 @@ can own several command groups.
 Separately, `kxm skills` manages community or experimental candidates through
 create/evaluate/promote/reject/verify. Those governed skills are distinct from
 this bundled suite. Telemetry cannot auto-promote a skill. See
-[Skill candidate lifecycle](skills.md) for the full lifecycle, and
-[Repository work delivery](skills/repo-work-delivery.md) for converting a
+[Skill candidate lifecycle](governed-skills.md) for the full lifecycle, and
+[Repository work delivery](../contributing/repo-work-delivery.md) for converting a
 repository request into a delivery prompt.
 
 ## Development and maintenance

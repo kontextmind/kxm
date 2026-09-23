@@ -103,5 +103,5 @@ A prompt produced with this skill includes:
 
 ## Related
 
-- [Agent Skills](../agent-skills.md) — bundled command-suite skills
-- [Skill candidate lifecycle](../skills.md) — governed `kxm skills` candidates
+- [Agent Skills](../guides/agent-skills.md) — bundled command-suite skills
+- [Skill candidate lifecycle](../guides/governed-skills.md) — governed `kxm skills` candidates

@@ -18,7 +18,7 @@ kxm hub start
 ```
 
 These operator commands assume the packed release CLI installation from
-[Getting started](getting-started.md#1-install). From a
+[Getting started](../start/quickstart-pi.md#1-install). From a
 source clone, use `npm run hub` instead.
 
 When `KXM_AUTH_TOKEN` is not set, `kxm hub start` loads the persisted hub
@@ -49,7 +49,7 @@ of a dead wrapper, waits for exit, and removes the stale claim. Malformed or
 foreign PID claims stay fail-closed; remove those only after verifying no
 hub process is running.
 
-Run each long-lived coordinator with `kxm agent worker --name <stable-name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. Enforce role ownership with the Pi tool allowlist: omit `bash`, `edit`, and `write` from read-only reviewers, even if their prompt also says not to edit. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. Use `--fresh-start` for a clean first session that may still resume after a later provider failure; reserve `--no-continue` for a worker that must never resume. For release verification, configure the [exact extension and skill sets](configuration.md#long-lived-worker-settings), including every required provider extension; configured categories disable discovery and fail closed on invalid paths. `kxm hub stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. A final provider error leaves the inbound hub message delivered, gracefully restarts Pi, rotates to an unused fallback model, and preserves the session; Pi's own automatic retries always finish first. A tool that exceeds `KXM_WORKER_TOOL_TIMEOUT_MS` follows the same durable restart path without changing models. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
+Run each long-lived coordinator with `kxm agent worker --name <stable-name> --project <project> [--model <provider/model>] [--fallback-models <provider/model,...>] [--tools <name,...>]` under a separate service-manager unit. Use distinct worktrees for concurrent writers, explicit CPU and memory limits, and restart throttling outside the built-in bounded backoff. Enforce role ownership with the Pi tool allowlist: omit `bash`, `edit`, and `write` from read-only reviewers, even if their prompt also says not to edit. The worker launches Pi RPC mode and retains the most recent session unless configured otherwise. Use `--fresh-start` for a clean first session that may still resume after a later provider failure; reserve `--no-continue` for a worker that must never resume. For release verification, configure the [exact extension and skill sets](../reference/configuration.md#long-lived-worker-settings), including every required provider extension; configured categories disable discovery and fail closed on invalid paths. `kxm hub stop` writes a generation-matched control request; the worker asks Pi RPC to abort, waits for confirmation and state flush, and only force-stops the process tree after the bounded drain deadline. A final provider error leaves the inbound hub message delivered, gracefully restarts Pi, rotates to an unused fallback model, and preserves the session; Pi's own automatic retries always finish first. A tool that exceeds `KXM_WORKER_TOOL_TIMEOUT_MS` follows the same durable restart path without changing models. If `--continue` reports an invalid tool-result session, the worker retries once fresh, journals a redacted recovery envelope, and injects a bounded resume instruction for the durable run and stage. Do not copy `pi-agent-*.log` into journals or retrospectives.
 
 ### Workflow-specific Pi sessions
 
@@ -165,7 +165,7 @@ browser ──HTTPS──▶ reverse proxy + Authentik ──▶ portal (users, 
 1. **Service account, not root.** Run the hub and Runtime under a dedicated unprivileged
    account. Workflow session isolation is a routing and cross-run safety mechanism, not a
    sandbox against a hostile same-OS process (see
-   [architecture.md](architecture.md)); a model with shell access can reach anything its
+   [architecture.md](../concepts/architecture.md)); a model with shell access can reach anything its
    own account can reach, so untrusted workers need separate accounts or containers.
 2. **Stable paths, declared explicitly** rather than inherited from a home directory:
    `KXM_WORKSPACE_DIR`, `KXM_STATE_DIR`, `KXM_DATA_PATH`, `KXM_LOG_PATH`, and
@@ -503,8 +503,8 @@ clock) has lapsed. Orphaned is view state; nothing is migrated.
 
 ## Hub Q&A / knowledge base
 
-- [What is all stored on the hub?](kb/qa-what-the-hub-stores.md)
-- [Storage engine — SQLite vs DuckDB](kb/qa-sqlite-vs-duckdb.md)
-- [Hub on a public host — multiple users and projects?](kb/qa-hub-on-a-public-host.md)
-- [Authentik at the edge: why the hub owns no browser identity](kb/qa-authentik-authentication.md)
-- [Extension install → kxm CLI bootstrap + hub auto-connect](kb/qa-extension-install-and-hub-bootstrap.md)
+- [What is all stored on the hub?](../concepts/data-and-storage.md)
+- [Storage engine — SQLite vs DuckDB](../adr/ADR-0003-sqlite-only-store.md)
+- [Hub on a public host — multiple users and projects?](../kb/qa-hub-on-a-public-host.md)
+- [Authentik at the edge: why the hub owns no browser identity](../adr/ADR-0004-edge-identity-authentik.md)
+- [Extension install → kxm CLI bootstrap + hub auto-connect](../../plans/history/qa-extension-install-and-hub-bootstrap.md)

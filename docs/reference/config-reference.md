@@ -14,7 +14,7 @@ Related pages:
 - [Harness routing](harness-routing.md) explains when to run a model through its
   native harness and when to reach the same model through OpenRouter on Pi. This
   page documents the fields; that guide covers the decision.
-- [Operations](operations.md) covers backup and restore of every path below.
+- [Operations](../operations/deploy.md) covers backup and restore of every path below.
 
 ## At a glance
 
@@ -1020,7 +1020,7 @@ report them; review them in the pull request diff.
 ## `.kxm/roster.yaml` (`kxm.developer-roster.v1`)
 
 The developer roster for `scripts/assignment-run.mjs` (the `just` assignment
-recipes; see [Assignment runner](assignment-runner.md)). It applies to the KXM
+recipes; see [Assignment runner](../contributing/assignment-runner.md)). It applies to the KXM
 source repository itself: the loader in `scripts/roster-policy.mjs` reads the
 copy committed at `HEAD` of the repository that contains the script, and
 refuses unless the worktree is clean, `HEAD` is an ancestor of
@@ -1526,13 +1526,13 @@ Both directories are written by commands, not configured by hand.
   (`kxm.skill-candidate.v1`), plus `history/<id>.jsonl`. Written by
   `kxm skills create|evaluate|promote|reject`; `kxm skills verify` detects
   out-of-band edits to promoted skills. Promoted skills are hashed into the
-  memory revision pinned on each run. See [Skills](skills.md).
+  memory revision pinned on each run. See [Skills](../guides/governed-skills.md).
 - `.kxm/candidates/` holds improvement candidates (`<id>.json`,
   `kxm.candidate.v1`, with a proposed diff file) written by `kxm improve`
   (`--out-dir` relocates them; `--dry-run` writes none). The report itself goes to
   `<workspace>/assets/improvements/`. A candidate is a proposal: its diff has
   placeholder hunks, nothing applies it, and its promotion readiness never
-  authorizes. See [Continuous improvement](continuous-improvement.md#coded-repeats-kxm-improve).
+  authorizes. See [Continuous improvement](../guides/continuous-improvement.md#coded-repeats-kxm-improve).
 
 ## Webhook workflow definitions
 
@@ -1574,7 +1574,7 @@ such as `.kxm/assets/webhooks/workflows.json` works.
 | `stages[].area` | `harness`, `gates`, `implementation`, `workflow`, `documentation`, `security`, or `other` | Optional |
 | `stages[].on` | Map of outcome to a stage ID, `$terminal`, or `{target, maxTransitions}` | Optional |
 | `stages[].maxTransitions` | Integer, 1 to 100 | Optional |
-| `stages[].evidencePolicies.<requirement>` | `{kind: peer-reply, minProducers (1 to 8), eligibleAgents (1 to 16), acceptedStatuses: [replied], degradation: {minProducers}}` | Optional; see [Peer provenance and quorum gates](provenance-gates.md) |
+| `stages[].evidencePolicies.<requirement>` | `{kind: peer-reply, minProducers (1 to 8), eligibleAgents (1 to 16), acceptedStatuses: [replied], degradation: {minProducers}}` | Optional; see [Peer provenance and quorum gates](../guides/provenance-gates.md) |
 
 Rules that differ from `kxm.workflow.v1`: a forward transition may only target
 the next stage; `$terminal` takes no `terminalStatus`; an evidence policy key
@@ -1655,7 +1655,7 @@ Commands: `kxm gate validate [--file <path>]` parses the active source without
 printing secrets (exit 2 when no source or both variables are set); the hub
 loads it on `kxm hub start`; `kxm workflow start`, `kxm gate signal`, and
 `kxm gate github watch` resolve each definition's secret variables. See
-[Webhook workflows](webhook-workflows.md).
+[Webhook workflows](../guides/webhook-workflows.md).
 
 ## Claude Code plugin settings
 
@@ -1676,7 +1676,7 @@ The manifest also registers one `SessionStart` hook,
 `node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start`, with a 5-second
 timeout. It runs only inside a KXM project, reads this project's state only,
 never mints a token or writes a file, and always exits 0. See the
-[plugin README](../plugins/kxm/README.md) for what it adds to the session.
+[plugin README](../../plugins/kxm/README.md) for what it adds to the session.
 
 ## Updater settings (`kxm.update.v1`)
 
@@ -1735,7 +1735,7 @@ The ignore rules the KXM repository itself uses, adapted for a project:
 `KXM_WORKSPACE_DIR`, `KXM_LOGS_DIR`, `KXM_ASSETS_DIR`, `KXM_STATE_DIR`, and
 related variables move `logs/`, `assets/`, and `state/`. They do not move the
 configuration files, which always live under `<project root>/.kxm/`. See
-[Configuration](configuration.md) and [Operations](operations.md).
+[Configuration](configuration.md) and [Operations](../operations/deploy.md).
 
 ### State outside the project
 
