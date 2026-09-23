@@ -634,6 +634,21 @@ test("E3 Gate: unknown cost is never ranked cheaper than metered cost", () => {
   assert.equal(report.rows[0]?.model, "model-metered");
   assert.equal(report.rows[1]?.model, "model-unknown");
   assert.equal(report.rows[1]?.flagged, true);
+
+  // A route that is only partly unknown is still unknown: unmetered or cheap metered
+  // attempts beside an unknown one make $0 (or $0.05) a lower bound, not a price.
+  const partial = (model: string, attempt: string, cost: Pick<RoutingRecordV2, "costBasis" | "costUsd">): RoutingRecordV2 => ({
+    ...records[0]!, requestedModel: model, effectiveModel: model, attemptId: attempt, behavioralSha256: model.slice(-1).repeat(64), costUsd: undefined, ...cost,
+  });
+  const mixed = generateRoutingReport([
+    records[0]!,
+    partial("model-partial-z", "att-z1", { costBasis: "unmetered" }),
+    partial("model-partial-z", "att-z2", { costBasis: "unknown" }),
+    partial("model-partial-w", "att-w1", { costBasis: "metered", costUsd: 0.10 }),
+    partial("model-partial-w", "att-w2", { costBasis: "unknown" }),
+  ]);
+  assert.equal(mixed.rows[0]?.model, "model-metered");
+  assert.deepEqual(mixed.rows.slice(1).map((row) => row.flagged), [true, true]);
 });
 
 test("E3 Gate: Report formatting and snapshot test", () => {

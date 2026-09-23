@@ -78,6 +78,9 @@ export const PI_ALLOWED_PROVIDERS = Object.freeze(["openrouter", "nous-portal", 
 /** Native-vendor Pi providers own one braked vendor. Aggregators are not listed here. */
 export const PI_NATIVE_VENDOR_PROVIDERS = Object.freeze({ antigravity: "google" });
 
+/** Aggregator spellings of braked vendors in `provider/vendor/model` ids (roster policy aliases). */
+const PI_VENDOR_SEGMENT_ALIASES = Object.freeze({ "x-ai": "xai", moonshotai: "moonshot", "google-ai": "google" });
+
 /** Gemini kebab ids for antigravity two-segment models (`antigravity/gemini-...`). */
 export const PI_ANTIGRAVITY_MODEL_ID = /^gemini-[a-z0-9.-]+$/;
 
@@ -1550,6 +1553,11 @@ export function preflightRequest(request) {
     }
     if (request.role === "writer" && (request.model !== PI_ADMITTED_WRITER || request.permission !== "edit")) {
       throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3-coder-plus with edit permission; other models need reviewed route admission");
+    }
+    const segment = piProviderOf(piModelId(request.model));
+    const vendor = segment && Object.hasOwn(PI_VENDOR_SEGMENT_ALIASES, segment) ? PI_VENDOR_SEGMENT_ALIASES[segment] : segment;
+    if (vendor && NATIVE_PI_BRAKE_PROVIDERS.includes(vendor)) {
+      throw failClosed(`pi brake: ${vendor} has a native harness; refusing to bill it through ${provider}`);
     }
   }
   if (harness === "claude") {

@@ -138,9 +138,13 @@ before starting the workflow:
 ```powershell
 $env:KXM_AUTH_TOKEN = "replace-with-the-project-token"
 kxm agent worker --name coordinator --project provenance-demo --session-isolation workflow
-kxm agent worker --name reviewer-claude --project provenance-demo --model anthropic/claude-opus-4-6 --session-isolation workflow
-kxm agent worker --name reviewer-grok --project provenance-demo --model xai/grok-4.6 --session-isolation workflow
+kxm agent worker --name reviewer-claude --project provenance-demo --model openrouter/qwen/qwen3-coder-plus --session-isolation workflow
+kxm agent worker --name reviewer-grok --project provenance-demo --model openrouter/z-ai/glm-5.3-flash --session-isolation workflow
 ```
+
+The reviewer ids are names, not routes. Workers are Pi, and Pi may not run a model whose
+vendor has its own harness, so these two independent reviewers use admitted Pi routes from
+different vendors rather than Claude and Grok.
 
 In an operator terminal, supply the workflow-start secret and create a run:
 
