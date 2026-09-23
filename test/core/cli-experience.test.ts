@@ -36,7 +36,7 @@ import {
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import { PROMOTION_REQUIRED_EVALUATIONS } from "../../plugins/kxm/src/skills.ts";
 import { DatabaseSync } from "../../plugins/kxm/src/sqlite.ts";
-import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
+import { KxmRunEventStore, kxmProjectRunEventsPath, kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
 import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
 import { WORKFLOW_TEMPLATES } from "../../plugins/kxm/src/workflow-manager.ts";
 
@@ -651,7 +651,7 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
     // Real state for every command to plan against: a committed project with an
     // instruction file for `memory sync` to update (sync never creates one), a role,
     // a workflow, a tracked task, a skill candidate with passing evaluations, a
-    // hub store, and a verified backup of it.
+    // hub store, a Runtime run, and a verified backup of it.
     assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", project]).status, 0);
     await seed(["init", "--project-id", "prj_01JDRYRUN0000000000000000", "--name", "Dry Run"]);
     writeFileSync(join(project, "AGENTS.md"), "# Dry Run\n");
@@ -681,6 +681,17 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
       createdAt: "2026-09-23T00:00:00.000Z", updatedAt: "2026-09-23T00:00:00.000Z",
     }));
     hubStore.close();
+    const runtimeStore = new KxmRunEventStore(kxmProjectRunEventsPath(project, env));
+    try {
+      const at = "2026-09-23T00:00:00.000Z";
+      runtimeStore.insertRun({
+        runId: `run_${"0".repeat(32)}`, projectId: "prj_01JDRYRUN0000000000000000", homeRuntimeId: "rt_dry_run", workflowId: "default",
+        promptSha256: "0".repeat(64), status: "waiting", configRevision: "c", memoryRevision: "m", executorPolicyRevision: "e", toolPolicyRevision: "t",
+        createdAt: at, updatedAt: at,
+      });
+    } finally {
+      runtimeStore.close();
+    }
     await seed(["backup", "--out", join(root, "backup")]);
 
     const before = treeSnapshot(root);
