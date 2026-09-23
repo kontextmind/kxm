@@ -60,7 +60,7 @@ kubectl -n arc-runners get ephemeralrunners,pods
 ```
 
 The normal capacity policy keeps one warm runner, bursts to eight, and requests
-two CPUs per runner so the DOKS node-pool autoscaler can add capacity instead of
+three CPUs per runner so the DOKS node-pool autoscaler can add capacity instead of
 packing CPU-bound jobs onto already busy nodes. If repository jobs remain queued
 while the listener is assigned zero jobs, verify the runner group's selected
 repository and public-repository access. If ARC has pending pods, inspect node
