@@ -21,7 +21,7 @@ type WorkflowJobs = Record<
     if?: unknown;
     "runs-on"?: unknown;
     "timeout-minutes"?: unknown;
-    steps?: Array<{ run?: string }>;
+    steps?: Array<{ name?: string; if?: unknown; run?: string }>;
   }
 >;
 
@@ -115,7 +115,7 @@ function assertApprovedCiJobDefinitions(jobs: CiJobs | undefined) {
   assert.equal(jobs.docs?.name, "Docs lint");
 }
 
-test("CI required jobs are unconditional, two linux Validate names match the ruleset, plugin pin and PR-only cancel stay", () => {
+test("CI required jobs stay named while expensive steps are skipped for docs-only changes", () => {
   const doc = parse(ciText) as {
     concurrency?: { "cancel-in-progress"?: string };
     jobs?: CiJobs;
@@ -156,6 +156,21 @@ test("CI required jobs are unconditional, two linux Validate names match the rul
   assert.equal(expanded.length, 2);
   assert.equal(1 + 1 + expanded.length + 1, 5);
   assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
+
+  const validateSteps = doc.jobs?.validate?.steps ?? [];
+  assert.equal(validateSteps[0]?.name, "Skip code validation for documentation-only changes");
+  assert.equal(validateSteps[0]?.if, "needs.changes.outputs.code != 'true'");
+  for (const step of validateSteps.slice(1)) {
+    assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
+  }
+
+  const pluginSteps = doc.jobs?.plugin?.steps ?? [];
+  assert.equal(pluginSteps[0]?.name, "Skip plugin validation for documentation-only changes");
+  assert.equal(pluginSteps[0]?.if, "needs.changes.outputs.code != 'true'");
+  for (const step of pluginSteps.slice(1)) {
+    assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
+  }
+
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
   const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");
   assert.match(validateRuns, /npm run validate:ci/);
