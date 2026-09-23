@@ -33641,26 +33641,27 @@ function formatHarnessMemoryBlock(records) {
   return contentLines.join("\n");
 }
 var HARNESS_INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];
-function updateHarnessDocument(filePath, block, dryRun = false) {
-  const original = readFileSync24(filePath, "utf8");
-  let updated;
-  if (original.includes(MEMORY_MARKER_START) && original.includes(MEMORY_MARKER_END)) {
-    const startIdx = original.indexOf(MEMORY_MARKER_START);
-    const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
-    updated = original.slice(0, startIdx) + block + original.slice(endIdx);
-  } else {
+function memoryMarkerProblem(text) {
+  const starts = text.split(MEMORY_MARKER_START).length - 1;
+  const ends = text.split(MEMORY_MARKER_END).length - 1;
+  if (starts > 1 || ends > 1) return `has ${starts} ${MEMORY_MARKER_START} and ${ends} ${MEMORY_MARKER_END} markers, not one block`;
+  if (starts > ends) return `has ${MEMORY_MARKER_START} with no ${MEMORY_MARKER_END}`;
+  if (ends > starts) return `has ${MEMORY_MARKER_END} with no ${MEMORY_MARKER_START}`;
+  if (text.indexOf(MEMORY_MARKER_END) < text.indexOf(MEMORY_MARKER_START)) return `has ${MEMORY_MARKER_END} before ${MEMORY_MARKER_START}`;
+  return void 0;
+}
+function withMemoryBlock(original, block) {
+  const startIdx = original.indexOf(MEMORY_MARKER_START);
+  if (startIdx === -1) {
     const head = original.trimEnd();
-    updated = head ? `${head}
+    return head ? `${head}
 
 ${block}
 ` : `${block}
 `;
   }
-  if (updated !== original) {
-    if (!dryRun) writeFileSync18(filePath, updated, "utf8");
-    return true;
-  }
-  return false;
+  const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
+  return original.slice(0, startIdx) + block + original.slice(endIdx);
 }
 function syncHarnessMemory(repoRoot, options = {}) {
   const root = resolve22(repoRoot);
@@ -33671,11 +33672,27 @@ function syncHarnessMemory(repoRoot, options = {}) {
       `none of ${HARNESS_INSTRUCTION_FILES.join(", ")} exists in ${root}; sync updates the instruction files a project already has and does not create them`
     );
   }
+  const documents = present.map((name) => {
+    const original = readFileSync24(join28(root, name), "utf8");
+    return { name, original, problem: memoryMarkerProblem(original) };
+  });
+  const malformed = documents.filter((doc) => doc.problem !== void 0);
+  if (malformed.length > 0) {
+    throw new Error(
+      `${malformed.map((doc) => `${doc.name} ${doc.problem}`).join("; ")}; wrote no file. Keep exactly one ${MEMORY_MARKER_START} followed by one ${MEMORY_MARKER_END} in each file, or delete both so sync appends a fresh block`
+    );
+  }
   const block = formatHarnessMemoryBlock(loadAuthoredMemory(root));
   const updated = [];
   const unchanged = [];
-  for (const name of present) {
-    (updateHarnessDocument(join28(root, name), block, options.dryRun) ? updated : unchanged).push(name);
+  for (const { name, original } of documents) {
+    const next = withMemoryBlock(original, block);
+    if (next === original) {
+      unchanged.push(name);
+    } else {
+      if (!options.dryRun) writeFileSync18(join28(root, name), next, "utf8");
+      updated.push(name);
+    }
   }
   return { updated, unchanged, missing };
 }

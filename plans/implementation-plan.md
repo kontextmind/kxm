@@ -1304,6 +1304,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   project's decision, not a side effect. This repository's own `CLAUDE.md`/`GEMINI.md`
   prose is now hand-maintained; only their marked blocks are generated. Named test:
   `E5b: memory sync into a fresh project creates no harness file and rewrites only its own block`.
+  **Corrected 2026-09-23 (markers):** sync replaced from the first start marker to the
+  first end marker whenever both strings appeared anywhere in the file. An orphan start
+  got a fresh block appended, and the next sync then deleted the project's text between
+  the orphan and that block's end; an end before its start duplicated text; a second
+  block stayed stale. Sync now checks every present file before writing any: a file
+  without exactly one start followed by exactly one end marker (or neither, which
+  appends) fails the whole sync, naming the file and the problem, and no file is
+  written. Named test:
+  `E5b: memory sync refuses malformed memory markers, naming the file, and writes no file`.
 - **E5 memory floor fixes (issue #100):** Turned three prose memory rules into
   enforceable code per Decision D12. Rule 1: state promotion requires a configured
   admin token with no loopback bypass and records the real caller, rejecting
