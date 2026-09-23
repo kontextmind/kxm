@@ -357,11 +357,14 @@ test("G1 store brake refuses v2 files and missing gate tables", () => {
     const db = new DatabaseSync(outdated);
     db.exec("PRAGMA user_version = 2");
     db.close();
-    assert.throws(() => new KxmRunEventStore(outdated), /runtime_schema_outdated[\s\S]*older than 4[\s\S]*no migration lane/);
+    assert.throws(
+      () => new KxmRunEventStore(outdated),
+      /runtime_schema_outdated[\s\S]*is schema version 2; this build requires/,
+    );
 
     const shaped = join(directory, "v3.db");
     const store = new KxmRunEventStore(shaped);
-    assert.equal(KXM_EVENT_STORE_SCHEMA_VERSION, 4);
+    assert.equal(KXM_EVENT_STORE_SCHEMA_VERSION, 7);
     store.close();
     sql(shaped, (database) => database.exec("DROP TABLE gate_attempts"));
     assert.throws(() => new KxmRunEventStore(shaped), /runtime_schema_shape_invalid[\s\S]*gate_attempts/);

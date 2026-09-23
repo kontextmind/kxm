@@ -20,6 +20,7 @@ import {
   ensureKxmSupervisor,
   kxmRuntimeRequest,
   kxmSupervisorStatus,
+  type KxmProjectSyncStatus,
 } from "../runtime-supervisor.ts";
 import { kxmRuntimePaths, runtimeError } from "../runtime-store.ts";
 import { assembleTenantStatus, formatTenantStatus } from "../tenant-status.ts";
@@ -748,11 +749,37 @@ export async function cmdKxmRuntime(runtime: Runtime, action: string): Promise<n
       return 0;
     }
     if (action === "status") {
+      // Liveness alone was not enough to answer "is my outbox draining?" — the
+      // supervisor ran clean while 23 rows sat refused by the hub. The sync block
+      // is that answer, read from the process that actually pushes.
       const status = kxmSupervisorStatus(paths);
-      print(runtime.io, runtime.json, { ok: true, command: "runtime status", ...status }, status.running
-        ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}`
-        : "runtime supervisor is not running");
+      const sync = status.running ? await readKxmSupervisorSync(runtime) : undefined;
+      print(runtime.io, runtime.json, { ok: true, command: "runtime status", ...status, ...(sync ? { sync } : {}) }, [
+        status.running
+          ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}`
+          : "runtime supervisor is not running",
+        ...formatKxmSyncStatus(sync),
+      ].join("\n"));
       return status.running ? 0 : 1;
+    }
+    if (action === "sync-retry") {
+      const supervisor = await attachKxmSupervisor({ env: runtime.env });
+      if (!supervisor) {
+        print(runtime.io, runtime.json, { ok: false, command: "runtime sync-retry", error: "runtime_not_running" }, "runtime supervisor is not running");
+        return 1;
+      }
+      const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+      if (!projectRoot) {
+        print(runtime.io, runtime.json, { ok: false, command: "runtime sync-retry", error: "project_required" }, "kxm runtime sync-retry requires a KXM project (run kxm init first)");
+        return 1;
+      }
+      if (runtime.dryRun) {
+        print(runtime.io, runtime.json, { ok: true, command: "runtime sync-retry", projectRoot, dryRun: true }, "would re-queue rows the hub durably refused");
+        return 0;
+      }
+      const result = await kxmRuntimeRequest(supervisor, "POST", "/v1/sync/retry", { projectRoot });
+      print(runtime.io, runtime.json, { ok: true, command: "runtime sync-retry", ...result }, `re-queued ${String(result.retried ?? 0)} refused outbox rows for ${String(result.projectId ?? projectRoot)}`);
+      return 0;
     }
     if (action === "stop") {
       const status = kxmSupervisorStatus(paths);
@@ -779,6 +806,33 @@ export async function cmdKxmRuntime(runtime: Runtime, action: string): Promise<n
     print(runtime.io, runtime.json, { ok: false, command: "runtime", error: "runtime_io_failed" }, "runtime failed because a local operation did not complete");
     return 1;
   }
+}
+
+/** What the running supervisor last saw from the hub, or why it could not say. */
+async function readKxmSupervisorSync(runtime: Runtime): Promise<KxmProjectSyncStatus[] | undefined> {
+  const supervisor = await attachKxmSupervisor({ env: runtime.env });
+  if (!supervisor) return undefined;
+  try {
+    const response = await kxmRuntimeRequest(supervisor, "GET", "/v1/sync/status");
+    return response.projects as unknown as KxmProjectSyncStatus[];
+  } catch {
+    return undefined;
+  }
+}
+
+function formatKxmSyncStatus(sync: KxmProjectSyncStatus[] | undefined): string[] {
+  if (sync === undefined) return ["sync: the supervisor did not answer /v1/sync/status"];
+  if (sync.length === 0) return ["sync: no project registered with this Runtime yet"];
+  return sync.map((project) => {
+    const codes = project.outbox.refusals.map((refusal) => `${refusal.code} x${refusal.count}`).join(", ");
+    const counts = `pending ${project.outbox.pending}, acked ${project.outbox.acked}, refused ${project.outbox.refused}`;
+    const tail = project.state === "refusing"
+      ? ` (${codes || "see log"}) — fix the hub, then: kxm runtime sync-retry`
+      : project.state === "blocked"
+        ? ` — last error: ${project.lastError ?? "unreachable"}${project.nextAttemptAt ? `; next attempt ${project.nextAttemptAt}` : ""}`
+        : "";
+    return `sync ${project.projectId}: ${project.state} (${counts})${tail}`;
+  });
 }
 
 export async function cmdKxmRunReceipt(runtime: Runtime, runId: string, options: { all?: boolean } = {}): Promise<number> {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -38,7 +38,7 @@ import {
 } from "../../plugins/kxm/src/runtime-supervisor.ts";
 import { loadKxmProject, KxmConfigError, syncEventSchemaErrors } from "../../plugins/kxm/src/project-config.ts";
 import { createMeshHub } from "../../plugins/kxm/src/hub.ts";
-import { RuntimeHubClient } from "../../plugins/kxm/src/client.ts";
+import { HubHttpError, RuntimeHubClient } from "../../plugins/kxm/src/client.ts";
 import { deriveKxmSyncEvent, KXM_DEFAULT_SYNC_POLICY_REVISION, type KxmSyncEvent } from "../../plugins/kxm/src/sync-transform.ts";
 
 function cleanup(...paths: string[]): void {
@@ -776,7 +776,7 @@ test("outbox rows are sync-safe and the hub accepts each project-run-sequence ex
       () => new KxmRunEventStore(outdated),
       new RegExp(`runtime_schema_outdated[\\s\\S]*is schema version 5; this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}`),
     );
-    assert.equal(KXM_EVENT_STORE_SCHEMA_VERSION, 6);
+    assert.equal(KXM_EVENT_STORE_SCHEMA_VERSION, 7);
     assert(KXM_EVENT_STORE_TABLE_NAMES.includes("outbox"));
 
     const bundle = loadKxmProject(root);
@@ -839,7 +839,7 @@ test("outbox rows are sync-safe and the hub accepts each project-run-sequence ex
       assert.equal(presence.host, "box-b");
 
       const pushed = await syncKxmOutbox(context.eventStore, client);
-      assert.deepEqual(pushed, { pushed: 3, acked: 3, conflicts: 0, rejected: 0 });
+      assert.deepEqual(pushed, { pushed: 3, acked: 3, refused: 0, refusals: [], unconfirmed: 0, blocked: false });
       assert.deepEqual(context.eventStore.pendingOutbox(), [], "acknowledged rows advance the cursor");
       assert(context.eventStore.outboxForRun(runId).every((row) => row.ackedAt !== undefined));
 
@@ -916,6 +916,225 @@ test("outbox rows are sync-safe and the hub accepts each project-run-sequence ex
     }
   } finally {
     await hub.close();
+    cleanup(root, stateRoot);
+  }
+});
+
+test("a hub that durably refuses a row takes it out of the pending queue and says why", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-refusal-");
+  const alerts: Array<Record<string, unknown>> = [];
+  const authToken = "refusal-test-token";
+  const hub = createMeshHub({ port: 0, authToken, rateLimit: false, logger: (entry) => alerts.push(entry as unknown as Record<string, unknown>) });
+  const bundle = loadKxmProject(root);
+  const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JREFUSE00000000000000" });
+  try {
+    const { url } = await hub.start();
+    const accept = (prompt: string): string => {
+      const runId = acceptKxmRun(context, bundle, { workflowId: "default", prompt }).run.runId;
+      cancelKxmRun(context, runId, { reason: prompt });
+      return runId;
+    };
+
+    // The identity mistake this gate remembers: a push sent under a label the
+    // project does not use. The hub takes the claim, and every later push of
+    // that project id is refused by the pin — which is why the label on the wire
+    // has to be the one the sync events carry.
+    const mislabeledRun = accept("run claimed under the wrong label");
+    const mislabeled = new RuntimeHubClient({ serverUrl: url, project: "@kontextmind/kxm", authToken, runtimeId: context.homeRuntimeId });
+    const claimed = await syncKxmOutbox(context.eventStore, mislabeled);
+    assert.equal(claimed.acked, context.eventStore.outboxForRun(mislabeledRun).length);
+    assert.equal(context.eventStore.pendingOutbox().length, 0, "a claimed run acks normally");
+
+    // A second, never-seen run now syncs under the identity the Runtime really
+    // uses, and the hub refuses every one of its rows: re-sending cannot help.
+    const refusedRun = accept("run the hub will not take");
+    const correct = new RuntimeHubClient({ serverUrl: url, project: context.projectId, authToken, runtimeId: context.homeRuntimeId });
+    const rows = context.eventStore.outboxForRun(refusedRun).length;
+    const pass = await syncKxmOutbox(context.eventStore, correct);
+    assert.equal(pass.blocked, false, "a refusal is an answer, not a transport failure");
+    assert.equal(pass.pushed, rows);
+    assert.equal(pass.acked, 0);
+    assert.equal(pass.refused, rows);
+    assert.deepEqual(pass.refusals.map((refusal) => refusal.code), Array(rows).fill("sync_project_mismatch"));
+    assert.deepEqual(pass.refusals.map((refusal) => refusal.runId), Array(rows).fill(refusedRun));
+
+    // Pending drains; the refused rows are still there, labelled with the hub's
+    // own reason. This is the difference between "stuck" and "waiting for an
+    // operator", and it is what the status surface reads.
+    assert.deepEqual(context.eventStore.pendingOutbox(), [], "a refused row is not waiting for a retry");
+    const held = context.eventStore.outboxForRun(refusedRun);
+    assert.equal(held.length, rows);
+    assert(held.every((row) => row.refusedCode === "sync_project_mismatch" && row.refusedAt !== undefined && row.ackedAt === undefined));
+    assert.deepEqual(context.eventStore.outboxStatus(), {
+      pending: 0,
+      acked: rows,
+      refused: rows,
+      lastAttemptAt: held[0]!.attemptedAt,
+      refusals: [{ code: "sync_project_mismatch", count: rows }],
+    });
+
+    // The alert-storm gate: the next pass has nothing to send, so the hub is not
+    // asked again and raises nothing new. Before this, the same 23 rows were
+    // re-pushed every ten seconds forever and every pass was a security alert.
+    const alertsSoFar = alerts.filter((entry) => entry.event === "security_alert").length;
+    assert(alertsSoFar > 0, "the hub did raise the refusals");
+    const quiet = await syncKxmOutbox(context.eventStore, correct);
+    assert.deepEqual(quiet, { pushed: 0, acked: 0, refused: 0, refusals: [], unconfirmed: 0, blocked: false });
+    assert.equal(alerts.filter((entry) => entry.event === "security_alert").length, alertsSoFar, "a refused row is not re-pushed");
+
+    // An operator who has corrected the hub-side claim can put the rows back.
+    assert.equal(context.eventStore.retryRefusedOutbox(), rows);
+    assert.equal(context.eventStore.pendingOutbox().length, rows);
+    assert(context.eventStore.outboxForRun(refusedRun).every((row) => row.refusedCode === undefined && row.attemptCount === 0),
+      "a revived row starts with a fresh attempt budget");
+  } finally {
+    await hub.close();
+    closeKxmRuntimeContext(context);
+    cleanup(root, stateRoot);
+  }
+});
+
+test("one row the hub cannot carry is refused on its own instead of parking the queue behind it", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-oversize-");
+  const bundle = loadKxmProject(root);
+  const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: "rtm_01JOVERSIZE00000000000" });
+  try {
+    const runId = acceptKxmRun(context, bundle, { workflowId: "default", prompt: "oversize probe" }).run.runId;
+    cancelKxmRun(context, runId, { reason: "done" });
+    const rows = context.eventStore.outboxForRun(runId);
+    assert.equal(rows.length, 3);
+
+    let calls = 0;
+    const alwaysTooBig: typeof stub.pushSyncEvents = async (events) => {
+      calls += 1;
+      if (events.length > 1) throw new HubHttpError(413, "a sync batch holds at most 1 events", "sync_batch_too_large");
+      const event = events[0] as KxmSyncEvent;
+      if (event.sequence === 2) throw new HubHttpError(413, "request body is too large", "payload_too_large");
+      return {
+        results: [{ projectId: event.projectId, runId: event.runId, sequence: event.sequence, outcome: "accepted" as const }],
+        cursors: [],
+      };
+    };
+    const stub = { pushSyncEvents: alwaysTooBig } as unknown as RuntimeHubClient;
+
+    const pass = await syncKxmOutbox(context.eventStore, stub, { batchSize: 8 });
+    assert.equal(pass.blocked, false, "an oversized row is an answer, not a dead hub");
+    assert.equal(pass.acked, 2, "the rows behind it go through");
+    assert.deepEqual(pass.refusals, [{ runId, sequence: 2, code: "sync_row_too_large" }]);
+    assert.deepEqual(context.eventStore.pendingOutbox().map((row) => row.sequence), [], "the queue drains past the row that cannot be carried");
+    assert(calls >= 4, "the batch was isolated row by row");
+  } finally {
+    closeKxmRuntimeContext(context);
+    cleanup(root, stateRoot);
+  }
+});
+
+test("the supervisor sync tick pushes under the identity its own sync events carry", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-tick-");
+  const authToken = "tick-test-token";
+  const hub = createMeshHub({ port: 0, authToken, rateLimit: false });
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    const { url } = await hub.start();
+    supervisor = await startKxmRuntimeSupervisor({
+      stateRoot,
+      env: { KXM_SERVER_URL: url, KXM_AUTH_TOKEN: authToken, KXM_RUNTIME_SYNC_INTERVAL_MS: "250" },
+    });
+    const handle = {
+      runtimeId: supervisor.runtimeId,
+      port: supervisor.port,
+      token: readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!,
+      started: true,
+    };
+    const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "default",
+      prompt: "driven by the tick",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+
+    type SyncStatus = { state: string; outbox: { pending: number; acked: number; refused: number }; hubUrl?: string; lastError?: string };
+    const syncStatus = async (): Promise<SyncStatus[]> => {
+      const response = await kxmRuntimeRequest(handle, "GET", "/v1/sync/status");
+      return response.projects as unknown as SyncStatus[];
+    };
+    await waitFor(async () => ((await syncStatus())[0]?.outbox.acked ?? 0) > 0, 10_000);
+    const [status] = await syncStatus();
+    assert(status, "the tick reports on the project it synced");
+    assert.equal(status.state, "ok");
+    assert.equal(status.outbox.pending, 0);
+    assert.equal(status.outbox.refused, 0);
+    assert.equal(status.hubUrl, url);
+
+    // The join the ops snapshot depends on: presence and run facts have to land
+    // under one project label, which is the id in project.yaml. A second label on
+    // the wire splits them and pins the project id against every later push.
+    const snapshot = await fetch(`${url}/v1/ops/snapshot?project=${encodeURIComponent("prj_01JRUNTIMETEST0000000000")}`, {
+      headers: { authorization: `Bearer ${authToken}` },
+    });
+    assert.equal(snapshot.status, 200, "the hub holds this Runtime's runs under its own project id");
+    const view = await snapshot.json() as { homeRuntimes: Array<Record<string, unknown>> };
+    const home = view.homeRuntimes.find((entry) => entry.runtimeId === supervisor!.runtimeId);
+    assert(home, "the home Runtime is listed");
+    assert.equal(home.orphaned, false, "its presence lease is live under the same label");
+    assert((home.runs as Array<Record<string, unknown>>).some((run) => run.runId === runId));
+
+    const logged = readFileSync(join(kxmRuntimePaths({ stateRoot }).runtimeDir, "logs", "kxm-runtime.jsonl"), "utf8");
+    assert.match(logged, /"event":"runtime_sync_state"/);
+    assert.match(logged, /"state":"ok"/);
+  } finally {
+    if (supervisor) await supervisor.stop();
+    await hub.close();
+    cleanup(root, stateRoot);
+  }
+});
+
+test("a hub this Runtime cannot reach is reported by the sync status, not swallowed", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-blocked-");
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startKxmRuntimeSupervisor({
+      stateRoot,
+      // A port nothing listens on: the honest version of "supervisor runs clean".
+      env: { KXM_SERVER_URL: "http://127.0.0.1:1", KXM_AUTH_TOKEN: "blocked-test-token", KXM_RUNTIME_SYNC_INTERVAL_MS: "250" },
+    });
+    const handle = {
+      runtimeId: supervisor.runtimeId,
+      port: supervisor.port,
+      token: readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!,
+      started: true,
+    };
+    const acceptance = await kxmRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "default",
+      prompt: "no hub to talk to",
+    });
+    const runId = (acceptance.run as { runId: string }).runId;
+
+    type SyncStatus = { state: string; lastError?: string; nextAttemptAt?: string; consecutiveFailures?: number; outbox: { pending: number } };
+    await waitFor(async () => (await kxmRuntimeRequest(handle, "GET", "/v1/sync/status")).projects !== undefined, 10_000);
+    let status: SyncStatus | undefined;
+    await waitFor(async () => {
+      status = ((await kxmRuntimeRequest(handle, "GET", "/v1/sync/status")).projects as unknown as SyncStatus[])[0];
+      return status?.state === "blocked";
+    }, 10_000);
+    const blocked = status as SyncStatus;
+    assert(blocked.lastError, "the failure carries a reason an operator can read");
+    assert(blocked.outbox.pending > 0, "the rows are still held locally — a dead hub loses nothing");
+    assert((blocked.consecutiveFailures ?? 0) >= 1);
+    assert(blocked.nextAttemptAt !== undefined && Date.parse(blocked.nextAttemptAt) > Date.now() - 1000, "the tick backs off instead of hammering");
+
+    // Nothing pending silently: the stalled state is in the supervisor's log too.
+    await waitFor(() => {
+      const logged = readFileSync(join(kxmRuntimePaths({ stateRoot }).runtimeDir, "logs", "kxm-runtime.jsonl"), "utf8");
+      return /"event":"runtime_sync_stalled"/.test(logged) && logged.includes(runId) === false && /"state":"blocked"/.test(logged);
+    }, 5_000);
+
+    // The revive endpoint is reachable and honest about an empty refusal set.
+    const retried = await kxmRuntimeRequest(handle, "POST", "/v1/sync/retry", { projectRoot: root });
+    assert.equal(retried.retried, 0);
+  } finally {
+    if (supervisor) await supervisor.stop();
     cleanup(root, stateRoot);
   }
 });

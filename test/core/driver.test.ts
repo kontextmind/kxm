@@ -480,7 +480,7 @@ test("two runtimes synchronize independent offline runs and a conflicting shared
   for (const [context, client, runId] of [[contextA, runtimeA, runA], [contextB, runtimeB, runB]] as const) {
     const total = context.eventStore.outboxForRun(runId).length;
     const pushed = await syncKxmOutbox(context.eventStore, client);
-    assert.deepEqual(pushed, { pushed: total, acked: total, conflicts: 0, rejected: 0 });
+    assert.deepEqual(pushed, { pushed: total, acked: total, refused: 0, refusals: [], unconfirmed: 0, blocked: false });
     assert.deepEqual(context.eventStore.pendingOutbox(), [], "acknowledged rows advance the cursor");
     cursors.set(runId, total);
   }

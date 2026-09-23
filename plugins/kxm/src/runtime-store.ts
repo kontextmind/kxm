@@ -561,7 +561,7 @@ export interface KxmCommandRecord {
   recordedAt: string;
 }
 
-export const KXM_EVENT_STORE_SCHEMA_VERSION = 6;
+export const KXM_EVENT_STORE_SCHEMA_VERSION = 7;
 export const KXM_DRIVE_RECEIPT_SCHEMA = "kxm.drive-receipt.v1";
 export const DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
 
@@ -597,7 +597,9 @@ const EVENT_STORE_TABLES = {
     "schema", "record",
   ],
   project_controls: ["project_id", "paused", "reason", "updated_at", "actor", "schema", "record"],
-  outbox: ["seq", "run_id", "sequence", "sync_event", "attempted_at", "acked_at"],
+  outbox: [
+    "seq", "run_id", "sequence", "sync_event", "attempted_at", "attempt_count", "acked_at", "refused_code", "refused_at",
+  ],
 } as const;
 
 /**
@@ -798,23 +800,52 @@ CREATE TABLE IF NOT EXISTS outbox (
   sequence INTEGER NOT NULL,
   sync_event TEXT NOT NULL,
   attempted_at TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
   acked_at TEXT,
+  refused_code TEXT,
+  refused_at TEXT,
   UNIQUE (run_id, sequence)
 ) STRICT;
-CREATE INDEX outbox_pending ON outbox(seq) WHERE acked_at IS NULL;
+CREATE INDEX outbox_pending ON outbox(seq) WHERE acked_at IS NULL AND refused_code IS NULL;
+CREATE INDEX outbox_refused ON outbox(seq) WHERE refused_code IS NOT NULL;
 `;
 
 /**
  * One outbox row: the already-derived `kxm.sync-event.v1` bytes plus retry
  * transport metadata. The local source payload is never kept here.
+ *
+ * A row sits in exactly one of three states: **pending** (retryable — neither
+ * `ackedAt` nor `refusedCode` is set), **acked** (the hub holds it), or
+ * **refused** (the hub answered in a way that re-sending the same bytes cannot
+ * change: a used sequence, a project claimed by another label, a schema
+ * refusal). Refused rows leave the pending queue so they can neither block the
+ * rows behind them nor re-alert the hub on every tick, and stay inspectable
+ * until an operator clears the refusal with `retryRefusedOutbox`.
  */
 export interface KxmOutboxRow {
   seq: number;
   runId: string;
   sequence: number;
   syncEvent: string;
+  attemptCount: number;
   attemptedAt?: string;
   ackedAt?: string;
+  refusedCode?: string;
+  refusedAt?: string;
+}
+
+/** The outbox read model behind `kxm runtime status` and the supervisor's sync endpoint. */
+export interface KxmOutboxStatus {
+  /** Rows the sync loop may still push. */
+  pending: number;
+  /** Rows the hub has acknowledged. */
+  acked: number;
+  /** Rows the hub durably refused, retried only by an operator. */
+  refused: number;
+  lastAttemptAt?: string;
+  oldestPendingSeq?: number;
+  /** Refused rows grouped by the hub's own code, busiest first. */
+  refusals: Array<{ code: string; count: number }>;
 }
 
 /** One persisted coordinator identity (`kxm.coordinator.v1`). */
@@ -1029,26 +1060,38 @@ export class KxmRunEventStore {
       .run(event.runId, event.sequence, kxmSyncEventBytes(syncEvent));
   }
 
-  /** Unacknowledged outbox rows after `afterSeq`, in outbox order, oldest first. */
+  /**
+   * Retryable outbox rows after `afterSeq`, in outbox order, oldest first.
+   * Acked and durably refused rows are never returned: a refused row is not
+   * waiting for a retry, it is waiting for an operator.
+   */
   pendingOutbox(limit = 100, afterSeq = 0): KxmOutboxRow[] {
     const rows = this.database.prepare(`
-      SELECT seq, run_id, sequence, sync_event, attempted_at, acked_at
-      FROM outbox WHERE acked_at IS NULL AND seq > ? ORDER BY seq ASC LIMIT ?
+      SELECT seq, run_id, sequence, sync_event, attempt_count, attempted_at, acked_at, refused_code, refused_at
+      FROM outbox WHERE acked_at IS NULL AND refused_code IS NULL AND seq > ? ORDER BY seq ASC LIMIT ?
     `).all(afterSeq, limit) as OutboxSqlRow[];
     return rows.map(outboxFromRow);
   }
 
-  /** Every outbox row of one run, acknowledged or not, in sequence order. */
+  /** Every outbox row of one run, in any state, in sequence order. */
   outboxForRun(runId: string): KxmOutboxRow[] {
     const rows = this.database.prepare(`
-      SELECT seq, run_id, sequence, sync_event, attempted_at, acked_at
+      SELECT seq, run_id, sequence, sync_event, attempt_count, attempted_at, acked_at, refused_code, refused_at
       FROM outbox WHERE run_id = ? ORDER BY sequence ASC
     `).all(runId) as OutboxSqlRow[];
     return rows.map(outboxFromRow);
   }
 
+  /**
+   * Count one attempt against each row. Refused rows are never re-counted: they
+   * are out of the queue, and a tick that reaches them again would mean the
+   * refusal was cleared (which resets the count).
+   */
   markOutboxAttempted(seqs: readonly number[], at: string): void {
-    const statement = this.database.prepare("UPDATE outbox SET attempted_at = ? WHERE seq = ? AND acked_at IS NULL");
+    const statement = this.database.prepare(`
+      UPDATE outbox SET attempted_at = ?, attempt_count = attempt_count + 1
+      WHERE seq = ? AND acked_at IS NULL AND refused_code IS NULL
+    `);
     this.transaction(() => {
       for (const seq of seqs) statement.run(at, seq);
     });
@@ -1056,12 +1099,74 @@ export class KxmRunEventStore {
 
   /** Advance the cursor: the hub holds these rows now. Returns rows newly acked. */
   ackOutbox(seqs: readonly number[], at: string): number {
-    const statement = this.database.prepare("UPDATE outbox SET acked_at = ? WHERE seq = ? AND acked_at IS NULL");
+    const statement = this.database.prepare("UPDATE outbox SET acked_at = ?, refused_code = NULL, refused_at = NULL WHERE seq = ? AND acked_at IS NULL");
     return this.transaction(() => {
       let changed = 0;
       for (const seq of seqs) changed += Number(statement.run(at, seq).changes);
       return changed;
     });
+  }
+
+  /**
+   * Record a durable hub refusal: the answer will not change if the same bytes
+   * are sent again. Returns rows newly moved out of the pending queue.
+   */
+  refuseOutbox(refusals: readonly { seq: number; code: string }[], at: string): number {
+    const statement = this.database.prepare(`
+      UPDATE outbox SET refused_code = ?, refused_at = ?
+      WHERE seq = ? AND acked_at IS NULL AND refused_code IS NULL
+    `);
+    return this.transaction(() => {
+      let changed = 0;
+      for (const refusal of refusals) changed += Number(statement.run(refusal.code, at, refusal.seq).changes);
+      return changed;
+    });
+  }
+
+  /**
+   * Operator revive: put refused rows back in the pending queue with a fresh
+   * attempt budget. Used after the hub-side state is corrected — the Runtime
+   * must not decide on its own that a refusal has become retryable.
+   */
+  retryRefusedOutbox(): number {
+    return Number(this.database.prepare(`
+      UPDATE outbox SET refused_code = NULL, refused_at = NULL, attempted_at = NULL, attempt_count = 0
+      WHERE acked_at IS NULL AND refused_code IS NOT NULL
+    `).run().changes);
+  }
+
+  /**
+   * The outbox as one read model: what is still retryable, what the hub holds,
+   * and what the hub refused with which codes. This is what makes a stalled
+   * sync answerable without opening SQLite.
+   */
+  outboxStatus(): KxmOutboxStatus {
+    const counts = this.database.prepare(`
+      SELECT
+        COALESCE(SUM(acked_at IS NULL AND refused_code IS NULL), 0) AS pending,
+        COALESCE(SUM(acked_at IS NOT NULL), 0) AS acked,
+        COALESCE(SUM(acked_at IS NULL AND refused_code IS NOT NULL), 0) AS refused,
+        MAX(attempted_at) AS last_attempt_at
+      FROM outbox
+    `).get() as { pending: number; acked: number; refused: number; last_attempt_at: string | null };
+    const refusals = (this.database.prepare(`
+      SELECT refused_code AS code, COUNT(*) AS count
+      FROM outbox WHERE acked_at IS NULL AND refused_code IS NOT NULL
+      GROUP BY refused_code ORDER BY count DESC, code ASC
+    `).all() as Array<{ code: string; count: number }>);
+    const oldest = this.database.prepare(`
+      SELECT seq FROM outbox WHERE acked_at IS NULL AND refused_code IS NULL ORDER BY seq ASC LIMIT 1
+    `).get() as { seq: number } | undefined;
+    return {
+      pending: counts.pending,
+      acked: counts.acked,
+      refused: counts.refused,
+      ...(counts.last_attempt_at !== null ? { lastAttemptAt: counts.last_attempt_at } : {}),
+      ...(oldest ? { oldestPendingSeq: oldest.seq } : {}),
+      // Mapped, not spread: node:sqlite rows are null-prototype objects, and this
+      // read model is handed straight to the CLI and the supervisor's JSON answer.
+      refusals: refusals.map((refusal) => ({ code: refusal.code, count: refusal.count })),
+    };
   }
 
   events(runId: string, afterSequence = 0, limit = 200): KxmRunEvent[] {
@@ -1678,8 +1783,11 @@ type OutboxSqlRow = {
   run_id: string;
   sequence: number;
   sync_event: string;
+  attempt_count: number;
   attempted_at: string | null;
   acked_at: string | null;
+  refused_code: string | null;
+  refused_at: string | null;
 };
 
 function outboxFromRow(row: OutboxSqlRow): KxmOutboxRow {
@@ -1688,8 +1796,11 @@ function outboxFromRow(row: OutboxSqlRow): KxmOutboxRow {
     runId: row.run_id,
     sequence: row.sequence,
     syncEvent: row.sync_event,
+    attemptCount: row.attempt_count,
     ...(row.attempted_at !== null ? { attemptedAt: row.attempted_at } : {}),
     ...(row.acked_at !== null ? { ackedAt: row.acked_at } : {}),
+    ...(row.refused_code !== null ? { refusedCode: row.refused_code } : {}),
+    ...(row.refused_at !== null ? { refusedAt: row.refused_at } : {}),
   };
 }
 
