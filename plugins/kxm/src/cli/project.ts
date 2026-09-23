@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { createBackup, planBackup, planRestore, restoreBackup } from "../database.ts";
+import { applyRestorePlan, createBackup, databaseError, planBackup, planRestore, type RestorePlan } from "../database.ts";
+import { readLiveHubClaim } from "../hub-autostart.ts";
 import { refreshModelInventory } from "../model-inventory.ts";
 import { listInventoryModels, listRoleBindings, loadRoutePolicy, setRouteState, updateRouteState } from "../routes.ts";
 import {
@@ -181,23 +182,30 @@ export async function cmdKxmInit(
   }
 }
 
-export async function cmdBackup(runtime: Runtime, options: { out?: string | undefined }): Promise<number> {
+/** The checkout backup and restore act for, found as the Runtime finds it, so the
+ * project's event store key is the one the Runtime derives. */
+function backupProjectRoot(runtime: Runtime): string {
+  return discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+}
+
+export async function cmdBackup(runtime: Runtime, options: { out?: string | undefined; allProjects?: boolean | undefined }): Promise<number> {
   try {
     const backupOptions = {
-      projectRoot: runtime.cwd,
+      projectRoot: backupProjectRoot(runtime),
       env: runtime.env,
+      ...(options.allProjects === true ? { allProjects: true } : {}),
       ...(options.out ? { outDir: resolve(runtime.cwd, options.out) } : {}),
     };
     if (runtime.dryRun) {
       const plan = planBackup(backupOptions);
       printPlan(
         runtime,
-        { command: "backup", outDir: plan.outDir, stores: plan.stores, files: plan.files },
+        { command: "backup", scope: plan.scope, outDir: plan.outDir, stores: plan.stores, files: plan.files },
         [
           ...[...plan.stores, ...plan.files].map((entry) => ({ action: "write" as const, target: join(plan.outDir, entry.backupFile) })),
           { action: "write", target: join(plan.outDir, "manifest.json") },
         ],
-        `back up ${plan.stores.length} store(s) and ${plan.files.length} file(s) to ${plan.outDir} (sources are not opened, so their WAL is not checkpointed)`,
+        `back up ${plan.stores.length} store(s) and ${plan.files.length} file(s) (${plan.scope} scope) to ${plan.outDir} (sources are not opened, so their WAL is not checkpointed)`,
       );
       return 0;
     }
@@ -212,7 +220,7 @@ export async function cmdBackup(runtime: Runtime, options: { out?: string | unde
     };
     const summary = [
       complete
-        ? `Created SQLite backup with ${manifest.stores.length} store(s):`
+        ? `Created SQLite backup with ${manifest.stores.length} store(s) (${manifest.scope ?? "project"} scope):`
         : `Backup is incomplete (${manifest.omitted?.length ?? 0} omitted); not ok:`,
       ...manifest.stores.map((s) => `  - ${s.storeId}: ${s.sourcePath} -> ${s.backupFile} (schema v${s.schemaVersion}, ${s.bytes} bytes, sha256 ${s.sha256.slice(0, 12)}...)`),
       ...(manifest.omitted ?? []).map((id) => `  - omitted ${id}`),
@@ -230,16 +238,63 @@ export async function cmdBackup(runtime: Runtime, options: { out?: string | unde
   }
 }
 
-export async function cmdRestore(runtime: Runtime, manifestArg: string): Promise<number> {
+/**
+ * Refuse while anything holds the stores a restore would overwrite. Replacing a
+ * SQLite file under an open connection loses the writer's next commit or corrupts
+ * the store, and the supervisor holds the registry and every project's event store
+ * open. Reads only: the registry is opened read-only and the hub claim is a file,
+ * so the check is the same under --dry-run.
+ */
+function assertRestoreTargetsStopped(runtime: Runtime, plan: RestorePlan): void {
+  const paths = kxmRuntimePaths({ env: runtime.env });
+  let supervisor: ReturnType<typeof kxmSupervisorStatus>;
   try {
+    supervisor = kxmSupervisorStatus(paths, { readOnly: true });
+  } catch (error) {
+    // Fail closed, but name the way out: a registry too broken to read is also one a
+    // restore may be meant to replace.
+    throw databaseError(
+      "restore_runtime_unverified",
+      paths.registryDb,
+      `cannot read the Runtime registry to check whether the supervisor is running (${error instanceof Error ? error.message : String(error)}); stop the Runtime, move the registry aside, and restore again`,
+    );
+  }
+  if (supervisor.running) {
+    throw databaseError(
+      "restore_runtime_running",
+      paths.registryDb,
+      `the Runtime supervisor is running (pid ${String(supervisor.pid)}); stop it with \`kxm runtime stop\` and keep it stopped until the restore finishes`,
+    );
+  }
+  for (const store of plan.stores) {
+    if (store.storeId !== "hub-store") continue;
+    const claim = readLiveHubClaim(dirname(store.targetPath));
+    if (claim) {
+      throw databaseError(
+        "restore_hub_running",
+        store.targetPath,
+        `a hub (pid ${String(claim.pid)}) is running on ${store.targetPath}; stop it with \`kxm hub stop\` before restoring`,
+      );
+    }
+  }
+}
+
+export async function cmdRestore(runtime: Runtime, manifestArg: string, options: { allProjects?: boolean | undefined } = {}): Promise<number> {
+  try {
+    const plan = planRestore(resolve(runtime.cwd, manifestArg), {
+      projectRoot: backupProjectRoot(runtime),
+      env: runtime.env,
+      ...(options.allProjects === true ? { allProjects: true } : {}),
+    });
+    assertRestoreTargetsStopped(runtime, plan);
     if (runtime.dryRun) {
-      const plan = planRestore(resolve(runtime.cwd, manifestArg), { projectRoot: runtime.cwd });
       printPlan(
         runtime,
         {
           command: "restore",
           backupId: plan.backupId,
           manifestPath: plan.manifestPath,
+          ...(plan.scope !== undefined ? { scope: plan.scope } : {}),
           stores: plan.stores.map(({ storeId, targetPath, schemaVersion }) => ({ storeId, targetPath, schemaVersion })),
           files: plan.files.map(({ id, targetPath }) => ({ id, targetPath })),
         },
@@ -256,14 +311,13 @@ export async function cmdRestore(runtime: Runtime, manifestArg: string): Promise
       );
       return 0;
     }
-    const result = restoreBackup(resolve(runtime.cwd, manifestArg), {
-      projectRoot: runtime.cwd,
-    });
+    const result = applyRestorePlan(plan);
     const payload = {
       ok: true,
       command: "restore",
       backupId: result.backupId,
       manifestPath: result.manifestPath,
+      ...(plan.scope !== undefined ? { scope: plan.scope } : {}),
       restoredStores: result.restoredStores,
     };
     const summary = [
