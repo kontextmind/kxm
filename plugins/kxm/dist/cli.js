@@ -32780,7 +32780,7 @@ async function cmdKxmRuntime(runtime, action) {
       const sync = status.running ? await readKxmSupervisorSync(runtime) : void 0;
       print(runtime.io, runtime.json, { ok: true, command: "runtime status", ...status, ...sync ? { sync } : {} }, [
         status.running ? `runtime supervisor running: ${status.runtimeId} pid ${status.pid} on 127.0.0.1:${status.port}` : "runtime supervisor is not running",
-        ...formatKxmSyncStatus(sync)
+        ...formatKxmSyncStatus(sync, status.running)
       ].join("\n"));
       return status.running ? 0 : 1;
     }
@@ -32839,8 +32839,9 @@ async function readKxmSupervisorSync(runtime) {
     return void 0;
   }
 }
-function formatKxmSyncStatus(sync) {
-  if (sync === void 0) return ["sync: the supervisor did not answer /v1/sync/status"];
+function formatKxmSyncStatus(sync, running) {
+  if (!running) return [];
+  if (sync === void 0) return ["sync: the supervisor is running but did not answer /v1/sync/status"];
   if (sync.length === 0) return ["sync: no project registered with this Runtime yet"];
   return sync.map((project) => {
     const codes = project.outbox.refusals.map((refusal) => `${refusal.code} x${refusal.count}`).join(", ");

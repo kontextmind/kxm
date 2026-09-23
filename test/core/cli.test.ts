@@ -723,6 +723,9 @@ test("kxm run creates, lists, shows, and cancels a run offline with an auto-star
     const runtimeStatusIo = capture();
     assert.equal(await runCli(["runtime", "status", "--json"], env, runtimeStatusIo, cwd), 0);
     assert.match(runtimeStatusIo.read().stdout, /"running":true/);
+    // A running supervisor must answer the sync question too: "is my outbox
+    // draining?" is the reason that block exists.
+    assert.match(runtimeStatusIo.read().stdout, /"sync":/, "runtime status carries the sync block");
 
     const stopIo = capture();
     assert.equal(await runCli(["runtime", "stop", "--json"], env, stopIo, cwd), 0);
@@ -1074,6 +1077,14 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
 
     const stoppedStatusIo = capture();
     assert.equal(await runCli(["runtime", "status", "--json"], env, stoppedStatusIo, cwd), 1);
+
+    // Liveness and sync are different questions, and the stopped case must not
+    // answer the second one with a failure it never had.
+    const stoppedTextIo = capture();
+    assert.equal(await runCli(["runtime", "status"], env, stoppedTextIo, cwd), 1);
+    assert.match(stoppedTextIo.read().stdout, /runtime supervisor is not running/);
+    assert.doesNotMatch(stoppedTextIo.read().stdout, /sync:/,
+      "a supervisor that was never up is not one that failed to answer");
 
     const stopNotRunningIo = capture();
     assert.equal(await runCli(["runtime", "stop", "--json"], env, stopNotRunningIo, cwd), 0);
