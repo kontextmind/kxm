@@ -308,18 +308,21 @@ export function addRole(
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
     overwrite?: boolean | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { id: string; filePath: string; scope: "global" | "local" } {
   const scope = options.scope ?? "local";
   const repoRoot = options.repoRoot ?? process.cwd();
-  const dir = ensureRolesDirectory(scope, repoRoot, options.userConfigDir);
+  const dir = options.dryRun
+    ? rolesDirectory(scope, repoRoot, options.userConfigDir)
+    : ensureRolesDirectory(scope, repoRoot, options.userConfigDir);
   const filePath = join(dir, `${role.id}.yaml`);
 
   if (existsSync(filePath) && !options.overwrite) {
     throw new Error(`role_already_exists: role '${role.id}' already exists at ${filePath}`);
   }
 
-  writeFileSync(filePath, stringify(role), "utf8");
+  if (!options.dryRun) writeFileSync(filePath, stringify(role), "utf8");
   return { id: role.id, filePath, scope };
 }
 
@@ -329,6 +332,7 @@ export function removeRole(
     scope?: "global" | "local" | undefined;
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { id: string; removed: boolean; filePath: string; scope: "global" | "local" } {
   const scope = options.scope ?? "local";
@@ -340,6 +344,7 @@ export function removeRole(
     throw new Error(`role_not_found: role '${roleId}' not found in ${scope} directory (${filePath})`);
   }
 
+  if (options.dryRun) return { id: roleId, removed: false, filePath, scope };
   rmSync(filePath);
   return { id: roleId, removed: true, filePath, scope };
 }
@@ -351,6 +356,7 @@ export function modifyRole(
     scope?: "global" | "local" | undefined;
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { id: string; role: KxmRoleDefinition; filePath: string; scope: "global" | "local" } {
   const target = getRole(roleId, { scope: options.scope, repoRoot: options.repoRoot, userConfigDir: options.userConfigDir });
@@ -367,10 +373,12 @@ export function modifyRole(
 
   const scope = options.scope ?? target.scope;
   const repoRoot = options.repoRoot ?? process.cwd();
-  const dir = ensureRolesDirectory(scope, repoRoot, options.userConfigDir);
+  const dir = options.dryRun
+    ? rolesDirectory(scope, repoRoot, options.userConfigDir)
+    : ensureRolesDirectory(scope, repoRoot, options.userConfigDir);
   const filePath = join(dir, `${roleId}.yaml`);
 
-  writeFileSync(filePath, stringify(updated), "utf8");
+  if (!options.dryRun) writeFileSync(filePath, stringify(updated), "utf8");
   return { id: roleId, role: updated, filePath, scope };
 }
 
@@ -562,17 +570,19 @@ export function saveRoleHostsConfig(
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
     format?: "yaml" | "json" | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { filePath: string; scope: "global" | "local" } {
   const scope = options.scope ?? "local";
   const repoRoot = options.repoRoot ?? process.cwd();
   const dir = scope === "global" ? userConfigDirectory(options.userConfigDir) : repoConfigDirectory(repoRoot);
+  const format = options.format ?? "yaml";
+  const filePath = join(dir, format === "json" ? "role-hosts.json" : "role-hosts.yaml");
+  if (options.dryRun) return { filePath, scope };
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
 
-  const format = options.format ?? "yaml";
-  const filePath = join(dir, format === "json" ? "role-hosts.json" : "role-hosts.yaml");
   const payload: RoleHostsConfig = {
     schema: KXM_ROLE_HOSTS_SCHEMA,
     seats: config.seats ?? {},
@@ -594,6 +604,7 @@ export function setRoleSeatHost(
     repoRoot?: string | undefined;
     userConfigDir?: string | undefined;
     format?: "yaml" | "json" | undefined;
+    dryRun?: boolean | undefined;
   } = {},
 ): { filePath: string; seatId: string; binding: RoleSeatBinding; scope: "global" | "local" } {
   const scope = options.scope ?? "local";
@@ -624,6 +635,7 @@ export function setRoleSeatHost(
     repoRoot: options.repoRoot,
     userConfigDir: options.userConfigDir,
     format: options.format,
+    dryRun: options.dryRun,
   });
 
   return { filePath: saved.filePath, seatId, binding, scope };

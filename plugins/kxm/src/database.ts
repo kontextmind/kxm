@@ -649,11 +649,20 @@ export function discoverProjectStores(projectRoot: string, options: { hubDataPat
   return stores;
 }
 
-export function createBackup(options: {
+export interface BackupPlan {
+  projectRoot: string;
+  outDir: string;
+  createdAt: string;
+  stores: Array<{ storeId: string; sourcePath: string; backupFile: string }>;
+}
+
+/** Which stores a backup would copy and where, without opening any of them.
+ * Opening a source for backup checkpoints its WAL, so the plan stays at paths. */
+export function planBackup(options: {
   projectRoot?: string;
   outDir?: string;
   hubDataPath?: string;
-} = {}): { manifest: BackupManifest; outDir: string } {
+} = {}): BackupPlan {
   const projectRoot = options.projectRoot ? resolve(options.projectRoot) : process.cwd();
   const stores = discoverProjectStores(projectRoot, {
     ...(options.hubDataPath !== undefined ? { hubDataPath: options.hubDataPath } : {}),
@@ -663,35 +672,43 @@ export function createBackup(options: {
     throw databaseError("backup_no_stores", projectRoot, "no existing SQLite stores found to backup");
   }
 
-  const now = new Date();
-  const timestamp = now.toISOString().replace(/[:.]/g, "-");
-  const backupId = `bk_${randomBytes(8).toString("hex")}`;
+  const createdAt = new Date().toISOString();
+  const timestamp = createdAt.replace(/[:.]/g, "-");
   const outDir = options.outDir ? resolve(options.outDir) : join(projectRoot, ".kxm", "backups", `backup-${timestamp}`);
-
-  if (!existsSync(outDir)) {
-    mkdirSync(outDir, { recursive: true, mode: 0o700 });
-  }
-
-  const backedUpStores: BackupStoreRecord[] = [];
   const usedFilenames = new Set<string>();
-
-  for (const store of stores) {
+  const planned = stores.map((store) => {
     let filename = basename(store.sourcePath);
     if (usedFilenames.has(filename)) {
       const sanitizedId = store.storeId.replace(/[^a-zA-Z0-9_.-]/g, "_");
       filename = `${sanitizedId}-${filename}`;
     }
     usedFilenames.add(filename);
+    return { storeId: store.storeId, sourcePath: store.sourcePath, backupFile: filename };
+  });
+  return { projectRoot, outDir, createdAt, stores: planned };
+}
 
-    const targetFile = join(outDir, filename);
-    const record = backupDatabaseFile(store.sourcePath, targetFile, store.storeId);
-    backedUpStores.push(record);
+export function createBackup(options: {
+  projectRoot?: string;
+  outDir?: string;
+  hubDataPath?: string;
+} = {}): { manifest: BackupManifest; outDir: string } {
+  const { projectRoot, outDir, createdAt, stores } = planBackup(options);
+  const backupId = `bk_${randomBytes(8).toString("hex")}`;
+
+  if (!existsSync(outDir)) {
+    mkdirSync(outDir, { recursive: true, mode: 0o700 });
+  }
+
+  const backedUpStores: BackupStoreRecord[] = [];
+  for (const store of stores) {
+    backedUpStores.push(backupDatabaseFile(store.sourcePath, join(outDir, store.backupFile), store.storeId));
   }
 
   const manifest: BackupManifest = {
     schema: "kxm.backup-manifest.v1",
     backupId,
-    createdAt: now.toISOString(),
+    createdAt,
     projectRoot,
     stores: backedUpStores,
   };
@@ -707,10 +724,19 @@ export function createBackup(options: {
   return { manifest, outDir };
 }
 
-export function restoreBackup(
+export interface RestorePlan {
+  manifestPath: string;
+  backupId: string;
+  stores: Array<{ storeId: string; backupFilePath: string; targetPath: string; schemaVersion: number; maxSupportedVersion: number }>;
+}
+
+/** Everything restore checks before it overwrites anything: the manifest, each
+ * backup file's digest, and each store's schema against this build's ceiling
+ * (from the manifest). Reads files; opens no database. */
+export function planRestore(
   manifestPathOrDir: string,
   options: { projectRoot?: string } = {},
-): RestoreResult {
+): RestorePlan {
   let manifestPath = resolve(manifestPathOrDir);
   const stat = lstatSync(manifestPath, { throwIfNoEntry: false });
   if (!stat) {
@@ -737,8 +763,7 @@ export function restoreBackup(
     throw databaseError("restore_manifest_invalid", manifestPath, "manifest is not a valid kxm.backup-manifest.v1 document");
   }
 
-  const restoredStores: RestoreStoreRecord[] = [];
-
+  const stores: RestorePlan["stores"] = [];
   for (const store of manifest.stores) {
     const backupFilePath = join(manifestDir, store.backupFile);
     if (!existsSync(backupFilePath)) {
@@ -754,27 +779,41 @@ export function restoreBackup(
       );
     }
 
-    const maxSupported = kxmBackupCeiling(store.storeId);
+    const maxSupportedVersion = kxmBackupCeiling(store.storeId);
+    if (store.schemaVersion > maxSupportedVersion) {
+      throw databaseError(
+        "runtime_schema_newer",
+        backupFilePath,
+        `backup store ${store.storeId} schema version ${store.schemaVersion} is newer than supported maximum ${maxSupportedVersion}`,
+      );
+    }
 
     let targetPath = store.sourcePath;
     if (options.projectRoot && manifest.projectRoot && targetPath.startsWith(manifest.projectRoot)) {
       const rel = targetPath.slice(manifest.projectRoot.length).replace(/^[\\/]+/, "");
       targetPath = join(resolve(options.projectRoot), rel);
     }
-
-    const result = restoreDatabaseFile(
-      backupFilePath,
-      targetPath,
-      store.storeId,
-      store.schemaVersion,
-      maxSupported,
-    );
-    restoredStores.push(result);
+    stores.push({ storeId: store.storeId, backupFilePath, targetPath, schemaVersion: store.schemaVersion, maxSupportedVersion });
   }
 
+  return { manifestPath, backupId: manifest.backupId, stores };
+}
+
+export function restoreBackup(
+  manifestPathOrDir: string,
+  options: { projectRoot?: string } = {},
+): RestoreResult {
+  const plan = planRestore(manifestPathOrDir, options);
+  const restoredStores = plan.stores.map((store) => restoreDatabaseFile(
+    store.backupFilePath,
+    store.targetPath,
+    store.storeId,
+    store.schemaVersion,
+    store.maxSupportedVersion,
+  ));
   return {
-    manifestPath,
-    backupId: manifest.backupId,
+    manifestPath: plan.manifestPath,
+    backupId: plan.backupId,
     restoredStores,
   };
 }
