@@ -1468,7 +1468,8 @@ Front matter may not contain control-plane fields: `permissions`, `tools`,
 `allow`, `deny`, `grants`, `approval`, `policy`, `scopes`, `credentials`,
 `secrets`, `token`, `apiKey`, or `password`. The text after the front matter is
 the body. One malformed authored file makes `kxm memory brief` and
-`kxm memory sync` fail, including the Claude Code plugin's session-start hook.
+`kxm memory sync` fail. The Claude Code plugin's session-start hook still
+runs; it leaves out the memory brief and keeps the status sections.
 
 ```markdown
 ---
@@ -1643,14 +1644,17 @@ declares `userConfig` fields that Claude Code asks each user for. The plugin's
 | `userConfig` field | Environment variable | Required, default | Notes |
 |---|---|---|---|
 | `server_url` | `KXM_SERVER_URL` | Required, `http://127.0.0.1:7331` | The MCP server also falls back to that URL when empty |
-| `auth_token` | `KXM_AUTH_TOKEN` | Optional; marked sensitive | When empty, the MCP server uses the persisted hub credential (`hub-env.json`), preferring a project token for this project |
-| `agent_name` | `KXM_AGENT_NAME` | Required, `claude` | When empty, `claude-<pid>` |
+| `auth_token` | `KXM_AUTH_TOKEN` | Optional; marked sensitive | Use the project token, never the admin token. When empty, the MCP server uses only this project's saved project token from the hub credential file (`hub-env.json`) and never falls back to the admin token; with neither, tool calls fail with a message naming the fix |
+| `agent_name` | `KXM_AGENT_NAME` | Required, `claude` | When empty, `claude-<pid>`. If another live session already holds the name, the server registers once more as `<name>-<pid>` |
 | `agent_purpose` | `KXM_AGENT_PURPOSE` | Required, `Claude Code implementation and review agent` | |
 | `project` | `KXM_PROJECT` | Optional | When empty, the `name` in `package.json` at the project directory, else the directory name |
 | (not a user field) | `KXM_PROJECT_DIR` | Set from `${CLAUDE_PROJECT_DIR}` | Used to derive the default project |
 
-The manifest also registers a `SessionStart` hook that runs
-`kxm session brief --status` and `kxm memory brief`.
+The manifest also registers one `SessionStart` hook,
+`node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start`, with a 5-second
+timeout. It runs only inside a KXM project, reads this project's state only,
+never mints a token or writes a file, and always exits 0. See the
+[plugin README](../plugins/kxm/README.md) for what it adds to the session.
 
 ## Updater settings (`kxm.update.v1`)
 

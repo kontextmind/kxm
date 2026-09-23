@@ -213,7 +213,8 @@ read from source; it does not invent defaults.
 | Agent stale threshold | 30 seconds |
 | Client request timeout | 15 seconds |
 | Default message TTL | 24 hours |
-| Default `kxm_await` timeout | 30 minutes |
+| `kxm_await` wait | 60 seconds (default and maximum) |
+| Default `kxm_fanout` local wait | 30 minutes |
 | Default workflow signal wait | 24 hours |
 | Workflow signal wait range | 1 second to 30 days |
 

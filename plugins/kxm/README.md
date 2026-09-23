@@ -108,10 +108,6 @@ Items 1 to 6 are capped at 1,500 characters. The memory brief follows them in fu
 
 **Time-bounded, and it never fails a session.** Claude Code stops the hook after 5 seconds. Within that, reading the hook input waits at most 300 ms, the health probe at most 300 ms, and each SQLite read gives up on a locked database after 250 ms. The hook always exits 0. If anything goes wrong it prints nothing, and the session starts without the brief.
 
-### Tool-failure journaling
-
-The plugin also registers a PostToolUseFailure hook. When a tool call fails, Claude Code passes the tool name, the tool use ID and the error to the MCP server's hook-only `kxm_hook_tool_failure` tool. If this session is working on exactly one workflow run that reached it as a peer request, the server journals an `error` entry to that run with the failure class and the tool name, and tells Claude not to record it again. The error text is classified, never stored. Interrupts, failures outside a workflow run, and failures while the MCP server is not connected to the hub record nothing. The hook never returns an error and never blocks the session.
-
 ### Skills
 
 The plugin ships the KXM Agent Skills. The `kxm` skill teaches Claude when and how to use the tools below safely and points to the rest of the suite. See [Agent Skills](../../docs/agent-skills.md) for the full list.
@@ -157,12 +153,6 @@ Workflow authors can require replies from a snapshotted set of eligible peers. T
 | `kxm_state` | Reads the current value of one temporal state key, or its value as of an ISO-8601 timestamp. |
 | `kxm_episode` | Reads episodic learning (errors, lessons, observations, experiments) from workflow journals, optionally for one run. |
 | `kxm_promote` | Proposes a change to one authoritative state key, backed by evidence references. It only proposes: the hub returns a proposal ID, and an operator applies it with [`kxm context promote`](../../docs/cli-reference.md#kxm-context-promote). |
-
-### Hook-only
-
-| Tool | What it does |
-|---|---|
-| `kxm_hook_tool_failure` | Called by the plugin's PostToolUseFailure hook to journal failure metadata (see [Tool-failure journaling](#tool-failure-journaling)). Claude should not call it. |
 
 ## Pushed channel mode and pull mode
 
