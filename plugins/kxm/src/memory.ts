@@ -316,27 +316,23 @@ export function formatHarnessMemoryBlock(records: MemoryRecord[]): string {
   return contentLines.join("\n");
 }
 
-export function updateHarnessDocument(filePath: string, block: string, defaultHeader: string): boolean {
-  let original = "";
-  if (existsSync(filePath)) {
-    original = readFileSync(filePath, "utf8");
-  }
+/** Instruction files `kxm memory sync` projects memory into. Sync never creates one:
+ * which harness a project uses is the project's choice, and a file KXM wrote would
+ * carry KXM's words instead of the project's. */
+const HARNESS_INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] as const;
 
-  let updated = "";
+/** Replace the marker-delimited block, or append one when the file has none. Nothing
+ * outside the markers is rewritten. */
+export function updateHarnessDocument(filePath: string, block: string): boolean {
+  const original = readFileSync(filePath, "utf8");
+  let updated: string;
   if (original.includes(MEMORY_MARKER_START) && original.includes(MEMORY_MARKER_END)) {
     const startIdx = original.indexOf(MEMORY_MARKER_START);
     const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
     updated = original.slice(0, startIdx) + block + original.slice(endIdx);
-  } else if (original.length > 0) {
-    // If "## Do not" exists, insert before it; else append to end
-    const doNotIdx = original.indexOf("## Do not");
-    if (doNotIdx !== -1) {
-      updated = `${original.slice(0, doNotIdx).trimEnd()}\n\n${block}\n\n${original.slice(doNotIdx)}`;
-    } else {
-      updated = `${original.trimEnd()}\n\n${block}\n`;
-    }
   } else {
-    updated = `${defaultHeader.trimEnd()}\n\n${block}\n`;
+    const head = original.trimEnd();
+    updated = head ? `${head}\n\n${block}\n` : `${block}\n`;
   }
 
   if (updated !== original) {
@@ -346,40 +342,21 @@ export function updateHarnessDocument(filePath: string, block: string, defaultHe
   return false;
 }
 
-export function syncHarnessMemory(repoRoot: string): { updated: string[]; created: string[] } {
+export function syncHarnessMemory(repoRoot: string): { updated: string[]; unchanged: string[]; missing: string[] } {
   const root = resolve(repoRoot);
-  const records = loadAuthoredMemory(root);
-  const block = formatHarnessMemoryBlock(records);
+  const present = HARNESS_INSTRUCTION_FILES.filter((name) => existsSync(join(root, name)));
+  const missing = HARNESS_INSTRUCTION_FILES.filter((name) => !present.includes(name));
+  if (present.length === 0) {
+    throw new Error(
+      `none of ${HARNESS_INSTRUCTION_FILES.join(", ")} exists in ${root}; sync updates the instruction files a project already has and does not create them`,
+    );
+  }
 
+  const block = formatHarnessMemoryBlock(loadAuthoredMemory(root));
   const updated: string[] = [];
-  const created: string[] = [];
-
-  // 1. AGENTS.md
-  const agentsPath = join(root, "AGENTS.md");
-  const agentsHeader = "# AGENTS\n\nFollow project instructions.\n";
-  const agentsExisted = existsSync(agentsPath);
-  if (updateHarnessDocument(agentsPath, block, agentsHeader)) {
-    if (agentsExisted) updated.push("AGENTS.md");
-    else created.push("AGENTS.md");
+  const unchanged: string[] = [];
+  for (const name of present) {
+    (updateHarnessDocument(join(root, name), block) ? updated : unchanged).push(name);
   }
-
-  // 2. CLAUDE.md
-  const claudePath = join(root, "CLAUDE.md");
-  const claudeHeader = `# KXM (Claude)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nYou are the **planner / architecture critic** unless the human explicitly asks\nyou to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) — a starting\nrotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;\nuse a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are\nartifacts, not hub \`peer-reply\` evidence.\n`;
-  const claudeExisted = existsSync(claudePath);
-  if (updateHarnessDocument(claudePath, block, claudeHeader)) {
-    if (claudeExisted) updated.push("CLAUDE.md");
-    else created.push("CLAUDE.md");
-  }
-
-  // 3. GEMINI.md
-  const geminiPath = join(root, "GEMINI.md");
-  const geminiHeader = `# KXM (Gemini / Antigravity)\n\nFollow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:\n[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).\n\nGoogle goes through the \`antigravity\` **Pi provider** (Tracking \u2192 Decided,\n2026-09-15); \`agy\` stays a harness catalog/helper entry, not the admission path.\nCurrent admissions come from Tracking and \`kxm harness list\`. Starting rotation\nremains Grok.\n`;
-  const geminiExisted = existsSync(geminiPath);
-  if (updateHarnessDocument(geminiPath, block, geminiHeader)) {
-    if (geminiExisted) updated.push("GEMINI.md");
-    else created.push("GEMINI.md");
-  }
-
-  return { updated, created };
+  return { updated, unchanged, missing };
 }

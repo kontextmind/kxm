@@ -33439,34 +33439,20 @@ function formatHarnessMemoryBlock(records) {
   contentLines.push(MEMORY_MARKER_END);
   return contentLines.join("\n");
 }
-function updateHarnessDocument(filePath, block, defaultHeader) {
-  let original = "";
-  if (existsSync24(filePath)) {
-    original = readFileSync23(filePath, "utf8");
-  }
-  let updated = "";
+var HARNESS_INSTRUCTION_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];
+function updateHarnessDocument(filePath, block) {
+  const original = readFileSync23(filePath, "utf8");
+  let updated;
   if (original.includes(MEMORY_MARKER_START) && original.includes(MEMORY_MARKER_END)) {
     const startIdx = original.indexOf(MEMORY_MARKER_START);
     const endIdx = original.indexOf(MEMORY_MARKER_END) + MEMORY_MARKER_END.length;
     updated = original.slice(0, startIdx) + block + original.slice(endIdx);
-  } else if (original.length > 0) {
-    const doNotIdx = original.indexOf("## Do not");
-    if (doNotIdx !== -1) {
-      updated = `${original.slice(0, doNotIdx).trimEnd()}
-
-${block}
-
-${original.slice(doNotIdx)}`;
-    } else {
-      updated = `${original.trimEnd()}
-
-${block}
-`;
-    }
   } else {
-    updated = `${defaultHeader.trimEnd()}
+    const head = original.trimEnd();
+    updated = head ? `${head}
 
 ${block}
+` : `${block}
 `;
   }
   if (updated !== original) {
@@ -33477,51 +33463,20 @@ ${block}
 }
 function syncHarnessMemory(repoRoot) {
   const root = resolve21(repoRoot);
-  const records = loadAuthoredMemory(root);
-  const block = formatHarnessMemoryBlock(records);
+  const present = HARNESS_INSTRUCTION_FILES.filter((name) => existsSync24(join28(root, name)));
+  const missing = HARNESS_INSTRUCTION_FILES.filter((name) => !present.includes(name));
+  if (present.length === 0) {
+    throw new Error(
+      `none of ${HARNESS_INSTRUCTION_FILES.join(", ")} exists in ${root}; sync updates the instruction files a project already has and does not create them`
+    );
+  }
+  const block = formatHarnessMemoryBlock(loadAuthoredMemory(root));
   const updated = [];
-  const created = [];
-  const agentsPath = join28(root, "AGENTS.md");
-  const agentsHeader = "# AGENTS\n\nFollow project instructions.\n";
-  const agentsExisted = existsSync24(agentsPath);
-  if (updateHarnessDocument(agentsPath, block, agentsHeader)) {
-    if (agentsExisted) updated.push("AGENTS.md");
-    else created.push("AGENTS.md");
+  const unchanged = [];
+  for (const name of present) {
+    (updateHarnessDocument(join28(root, name), block) ? updated : unchanged).push(name);
   }
-  const claudePath = join28(root, "CLAUDE.md");
-  const claudeHeader = `# KXM (Claude)
-
-Follow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:
-[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).
-
-You are the **planner / architecture critic** unless the human explicitly asks
-you to implement. Default writer is native Grok CLI (\`grok --model grok-4.6\`) \u2014 a starting
-rotation, not a sole writer. If \`grok\` is logged out, never bill Grok through another harness;
-use a relief route Tracking **admits**, or stop and name the limits hit. Your reviews are
-artifacts, not hub \`peer-reply\` evidence.
-`;
-  const claudeExisted = existsSync24(claudePath);
-  if (updateHarnessDocument(claudePath, block, claudeHeader)) {
-    if (claudeExisted) updated.push("CLAUDE.md");
-    else created.push("CLAUDE.md");
-  }
-  const geminiPath = join28(root, "GEMINI.md");
-  const geminiHeader = `# KXM (Gemini / Antigravity)
-
-Follow [\`AGENTS.md\`](AGENTS.md). Official phase tracking:
-[\`plans/implementation-plan.md\`](plans/implementation-plan.md#tracking-working-tree-not-a-release).
-
-Google goes through the \`antigravity\` **Pi provider** (Tracking \u2192 Decided,
-2026-09-15); \`agy\` stays a harness catalog/helper entry, not the admission path.
-Current admissions come from Tracking and \`kxm harness list\`. Starting rotation
-remains Grok.
-`;
-  const geminiExisted = existsSync24(geminiPath);
-  if (updateHarnessDocument(geminiPath, block, geminiHeader)) {
-    if (geminiExisted) updated.push("GEMINI.md");
-    else created.push("GEMINI.md");
-  }
-  return { updated, created };
+  return { updated, unchanged, missing };
 }
 
 // plugins/kxm/src/skills.ts
@@ -34231,11 +34186,17 @@ async function cmdMemoryNote(runtime, fact, options) {
 async function cmdMemorySync(runtime) {
   try {
     const result = syncHarnessMemory(runtime.cwd);
+    const lines = [
+      ...result.updated.length > 0 ? [`updated: ${result.updated.join(", ")}`] : [],
+      ...result.unchanged.length > 0 ? [`unchanged: ${result.unchanged.join(", ")}`] : [],
+      ...result.missing.length > 0 ? [`not present, not created: ${result.missing.join(", ")}`] : []
+    ];
     print(
       runtime.io,
       runtime.json,
       { ok: true, command: "memory sync", ...result },
-      `Synced project memory across AGENTS.md, CLAUDE.md, and GEMINI.md`
+      `Synced project memory
+${lines.join("\n")}`
     );
     return 0;
   } catch (error) {
@@ -48175,7 +48136,7 @@ function createProgram(ctx, result) {
   addGlobalOptions(memory.command("note").description("Record an evidence-based memory candidate (promoted via PR)")).argument("<fact>", "Summary of the observed fact or learning").option("--scope <scope>", "Scope: agent, project, run, or operator (default: project)").option("--kind <kind>", "Kind: decision, architecture, convention, policy, learning (default: learning)").option("--body <text>", "Detailed markdown context for the fact").action(async function memoryNoteAction(fact, options) {
     result.code = await cmdMemoryNote(runtimeFrom(ctx, this), fact, options);
   });
-  addGlobalOptions(memory.command("sync").description("Regenerate memory projection blocks across AGENTS.md, CLAUDE.md, and GEMINI.md")).action(async function memorySyncAction() {
+  addGlobalOptions(memory.command("sync").description("Regenerate the memory block in whichever of AGENTS.md, CLAUDE.md, and GEMINI.md exist; never creates them")).action(async function memorySyncAction() {
     result.code = await cmdMemorySync(runtimeFrom(ctx, this));
   });
   const routing = addGlobalOptions(program2.command("routing").description("Model/harness routing telemetry and behavioral comparisons"));

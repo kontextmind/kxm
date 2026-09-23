@@ -358,11 +358,16 @@ export async function cmdMemoryNote(
 export async function cmdMemorySync(runtime: Runtime): Promise<number> {
   try {
     const result = syncHarnessMemory(runtime.cwd);
+    const lines = [
+      ...(result.updated.length > 0 ? [`updated: ${result.updated.join(", ")}`] : []),
+      ...(result.unchanged.length > 0 ? [`unchanged: ${result.unchanged.join(", ")}`] : []),
+      ...(result.missing.length > 0 ? [`not present, not created: ${result.missing.join(", ")}`] : []),
+    ];
     print(
       runtime.io,
       runtime.json,
       { ok: true, command: "memory sync", ...result },
-      `Synced project memory across AGENTS.md, CLAUDE.md, and GEMINI.md`,
+      `Synced project memory\n${lines.join("\n")}`,
     );
     return 0;
   } catch (error) {
