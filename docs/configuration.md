@@ -253,10 +253,12 @@ $coordinatorTools = @(
   "kxm_workflow_record", "kxm_improvement_report"
 ) -join ","
 kxm agent worker --name coordinator --project product `
-  --model antigravity/claude-sonnet-4-6 `
-  --fallback-models xai/grok-4.6 --tools $coordinatorTools `
+  --model antigravity/gemini-3.8-flash-high `
+  --fallback-models openrouter/qwen/qwen3-coder-plus --tools $coordinatorTools `
   --session-isolation workflow --fresh-start
 ```
+
+The worker is Pi-only, so the primary model and every fallback pass the same native-vendor brake as assignment before Pi starts: a model whose vendor has its own harness (Anthropic, OpenAI, xAI, Moonshot, Google, DeepSeek) is refused with `pi_native_impersonation_blocked` whether it is named directly (`xai/…`), through that vendor's own Pi provider (`openai-codex/…`, `kimi-coding/…`, `claude-bridge/…`), or behind an aggregator (`openrouter/x-ai/…`). The one Google exception is the decided `antigravity/gemini-*` route. Which routes are *admitted* is still Tracking's call; the brake only refuses.
 
 With workflow isolation enabled, the hub stamps every internal workflow prompt, callback resume, timeout notification, and authorized peer-evidence request with a canonical `workflowRunId`. Before acknowledging a queued message, the Pi extension compares that hub-owned binding with the active worker scope. A mismatch is left `queued`; the extension atomically requests a route change and shuts down cleanly. Only after the child closes does the supervisor start one replacement Pi RPC child with `--session-dir .kxm/state/pi-sessions/<workerKey>/default` or `.../runs/<runId>`. This gives the stable default work and each `{agent, workflowRunId}` an independent Pi JSONL history without concurrent writers. Correlation IDs alone never select a workflow session. Binding manifests and requests are identity-, supervisor-generation-, child-incarnation-, timestamp-, and schema-checked, and malformed manifests are quarantined before a safe default binding is created.
 

@@ -14987,6 +14987,22 @@ var PI_NATIVE_BRAKE_PROVIDERS = Object.freeze([
   "google",
   "deepseek"
 ]);
+var PI_VENDOR_OWNED_PROVIDERS = Object.freeze({
+  "openai-codex": "openai",
+  moonshotai: "moonshot",
+  "moonshotai-cn": "moonshot",
+  "kimi-coding": "moonshot",
+  "google-vertex": "google",
+  // Claude subscription via the Agent SDK: experiment-only, never a product route.
+  "claude-bridge": "anthropic",
+  // The decided Google route, for Gemini ids only (see PI_ANTIGRAVITY_MODEL_ID).
+  antigravity: "google"
+});
+var PI_VENDOR_SEGMENT_ALIASES = Object.freeze({
+  "x-ai": "xai",
+  moonshotai: "moonshot",
+  "google-ai": "google"
+});
 function reportedModelId(value) {
   return typeof value === "string" && /^[a-z0-9][a-z0-9._:/-]{0,199}$/i.test(value) ? value : void 0;
 }

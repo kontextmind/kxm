@@ -817,9 +817,10 @@ export function generateRoutingReport(
       return a.reworkRate - b.reworkRate;
     }
 
-    // 2. Cost: unknown is never ranked cheapest
-    const aCostUnknown = a.costPerAcceptedUsd === null && a.unknownCostAttempts > 0 && a.meteredCostUsd === 0;
-    const bCostUnknown = b.costPerAcceptedUsd === null && b.unknownCostAttempts > 0 && b.meteredCostUsd === 0;
+    // 2. Cost: unknown is never ranked cheapest. Any unknown-cost attempt makes the
+    // route's cost a lower bound (unmetered or metered attempts beside it do not price it).
+    const aCostUnknown = a.unknownCostAttempts > 0;
+    const bCostUnknown = b.unknownCostAttempts > 0;
     if (aCostUnknown && !bCostUnknown) return 1;
     if (!aCostUnknown && bCostUnknown) return -1;
 
