@@ -1792,10 +1792,14 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (`database.ts`) looks for `registry.db`, `bindings.db` and event stores under
   `<projectRoot>/.kxm/runtime/…`, but the Runtime writes them to the **user state root**:
   `$S/runtime/registry.db` and `$S/runtime/projects/<projectKey>/run-events.db`. Observed on
-  kxm-dev-svr: `kxm backup` on a project with a live 46-row outbox returned
-  `backup_no_stores`, and on the repo project it would back up **only** the hub store — so the
-  manifest passes verification while omitting every run event, drive receipt, gate record and
-  outbox row (including the `refused_code` state P6 just added). `docs/operations.md` already
+  kxm-dev-svr, on the real project, with the supervisor's own hub live: `kxm backup --json`
+  answered **`ok: true`** with a manifest holding exactly one store —
+  `hub-store` (176 KB) — while the same box held `registry.db` (20 KB) and
+  `projects/6d41c43d…/run-events.db` (303 KB, 46 outbox rows, including the 23 this slice exists
+  because of). A second project with no in-project hub answered `backup_no_stores`. So the
+  verified, hashed manifest passes while omitting every run event, drive receipt, gate record and
+  outbox row — including the `refused_code` state P6 just added — and the operator sees `ok`.
+  `docs/operations.md` already
   tells operators to copy the whole state tree, so the file-level recipe is honest; the
   **command** claims "all stores" and does not mean it. Not scheduled here because the fix is a
   scope decision, not a bug fix: it must decide whether one command backs up two roots (the
