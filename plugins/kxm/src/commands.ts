@@ -833,8 +833,8 @@ export const AGENT_COMMANDS: readonly AgentCommand[] = [
         summary: { type: "string", description: "Promotion summary" },
         authority: {
           type: "string",
-          enum: ["policy", "instruction", "evidence", "hypothesis"],
-          description: "Authority class",
+          enum: ["evidence", "hypothesis"],
+          description: "Authority class; an agent's proposal is peer origin, so evidence at most",
         },
         confidence: {
           type: "string",

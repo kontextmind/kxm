@@ -241,6 +241,7 @@ test("state provider seam carries the v1 proposal schema", () => {
     confidence: "verified",
     evidenceRefs: ["ctx_ev1"],
     proposedBy: "agent_repro",
+    origin: "peer",
   };
   assert.equal(proposal.schema, "kxm.state-change-proposal.v1");
   const provider: StateProvider = {
