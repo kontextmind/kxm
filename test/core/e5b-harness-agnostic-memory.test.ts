@@ -22,6 +22,7 @@ import {
 } from "../../plugins/kxm/src/memory.ts";
 import { computeKxmMemoryRevision } from "../../plugins/kxm/src/runtime-service.ts";
 import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
+import { makeGitRoot } from "../helpers/git-root.ts";
 import { committedProject } from "../helpers/project.ts";
 import { removeTempDir } from "../helpers.ts";
 
@@ -147,11 +148,12 @@ test("E5b: kxm memory sync generates marker-delimited blocks across AGENTS.md, C
     const claudePath = join(dir, "CLAUDE.md");
     writeFileSync(claudePath, "# Claude\n\nPlanner instructions.\n");
 
+    const geminiPath = join(dir, "GEMINI.md");
+    writeFileSync(geminiPath, "# Gemini\n");
+
     // 1. Initial sync with no authored memory
     const syncRes1 = syncHarnessMemory(dir);
-    assert.ok(syncRes1.updated.includes("AGENTS.md"));
-    assert.ok(syncRes1.updated.includes("CLAUDE.md"));
-    assert.ok(syncRes1.created.includes("GEMINI.md"));
+    assert.deepEqual(syncRes1.updated, ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
 
     const agents1 = readFileSync(agentsPath, "utf8");
     assert.ok(agents1.includes(MEMORY_MARKER_START));
@@ -163,8 +165,6 @@ test("E5b: kxm memory sync generates marker-delimited blocks across AGENTS.md, C
     assert.ok(claude1.includes(MEMORY_MARKER_END));
     assert.ok(claude1.includes("*No active project memory.*"));
 
-    const geminiPath = join(dir, "GEMINI.md");
-    assert.ok(existsSync(geminiPath));
     const gemini1 = readFileSync(geminiPath, "utf8");
     assert.ok(gemini1.includes(MEMORY_MARKER_START));
     assert.ok(gemini1.includes("*No active project memory.*"));
@@ -203,6 +203,77 @@ test("E5b: kxm memory sync generates marker-delimited blocks across AGENTS.md, C
   }
 });
 
+test("E5b: memory sync into a fresh project creates no harness file and rewrites only its own block", () => {
+  const home = mkdtempSync(join(tmpdir(), "kxm-e5b-fresh-home-"));
+  const dir = mkdtempSync(join(tmpdir(), "kxm-e5b-fresh-"));
+  const env = {
+    ...process.env,
+    HOME: home,
+    KXM_STATE_HOME: join(home, "state"),
+    KXM_USER_CONFIG_DIR: join(home, "config"),
+    XDG_CONFIG_HOME: join(home, "xdg-config"),
+    XDG_STATE_HOME: join(home, "xdg-state"),
+    XDG_DATA_HOME: join(home, "xdg-data"),
+    XDG_CACHE_HOME: join(home, "xdg-cache"),
+  };
+  const sync = () => spawnSync(process.execPath, [resolve(repoRoot, "scripts/kxm.mjs"), "memory", "sync", "--json"], {
+    cwd: dir,
+    env,
+    encoding: "utf8",
+  });
+  const claudePath = join(dir, "CLAUDE.md");
+  try {
+    makeGitRoot(dir);
+
+    // With no instruction file, sync refuses instead of authoring one.
+    const refused = sync();
+    assert.equal(refused.status, 1, refused.stdout);
+    assert.match(refused.stderr, /does not create them/);
+    for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) assert.equal(existsSync(join(dir, name)), false, name);
+
+    // The project's own file gains one appended block and nothing else. Exact equality is
+    // the leak check: any header copied from this repository would break it.
+    const userHead = "# Acme app\n\nUse the staging database for manual checks.\n";
+    writeFileSync(claudePath, userHead);
+    const first = sync();
+    assert.equal(first.status, 0, first.stderr);
+    const firstResult = JSON.parse(first.stdout) as { updated: string[]; unchanged: string[]; missing: string[] };
+    assert.deepEqual(
+      { updated: firstResult.updated, unchanged: firstResult.unchanged, missing: firstResult.missing },
+      { updated: ["CLAUDE.md"], unchanged: [], missing: ["AGENTS.md", "GEMINI.md"] },
+    );
+    assert.equal(existsSync(join(dir, "AGENTS.md")), false);
+    assert.equal(existsSync(join(dir, "GEMINI.md")), false);
+    const emptyBlock = `${MEMORY_MARKER_START}\n## Project memory (read-only projection)\n\n*No active project memory.*\n${MEMORY_MARKER_END}`;
+    assert.equal(readFileSync(claudePath, "utf8"), `${userHead}\n${emptyBlock}\n`);
+
+    // A later sync replaces only the marked block; user text after it survives byte for byte.
+    const userTail = "\n## Local notes\n\nKeep this paragraph.\n";
+    writeFileSync(claudePath, `${readFileSync(claudePath, "utf8")}${userTail}`);
+    const memDir = join(dir, ".kxm", "memory");
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, "staging.md"), formatMemoryRecord({
+      schema: MEMORY_SCHEMA,
+      id: "mem_staging_db",
+      scope: "project",
+      kind: "convention",
+      summary: "Manual checks run against the staging database",
+      provenance: { sourceType: "human" },
+      authority: "instruction",
+      confidence: "verified",
+      lifecycle: "active",
+      evidenceRefs: [],
+    }));
+    const second = sync();
+    assert.equal(second.status, 0, second.stderr);
+    const factBlock = `${MEMORY_MARKER_START}\n## Project memory (read-only projection)\n\n`
+      + `- **[project]** [convention] Manual checks run against the staging database (\`mem_staging_db\`)\n${MEMORY_MARKER_END}`;
+    assert.equal(readFileSync(claudePath, "utf8"), `${userHead}\n${factBlock}\n${userTail}`);
+  } finally {
+    removeTempDir(dir, home);
+  }
+});
+
 test("E5b: gate - no fact in any harness view is absent from the authored set", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-e5b-views-"));
   try {
@@ -236,6 +307,7 @@ test("E5b: gate - no fact in any harness view is absent from the authored set", 
     };
     writeFileSync(join(memDir, "fact1.md"), formatMemoryRecord(fact1));
     writeFileSync(join(memDir, "fact2.md"), formatMemoryRecord(fact2));
+    for (const viewFile of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) writeFileSync(join(dir, viewFile), `# ${viewFile}\n`);
 
     // Sync views
     syncHarnessMemory(dir);

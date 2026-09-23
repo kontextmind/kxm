@@ -398,16 +398,21 @@ export async function cmdMemorySync(runtime: Runtime): Promise<number> {
       printPlan(
         runtime,
         { command: "memory sync", ...result },
-        [...result.created, ...result.updated].map((file) => ({ action: "write", target: join(runtime.cwd, file) })),
-        "regenerate project memory blocks in AGENTS.md, CLAUDE.md, and GEMINI.md",
+        result.updated.map((file) => ({ action: "write", target: join(runtime.cwd, file) })),
+        "regenerate the project memory block in the instruction files this project already has",
       );
       return 0;
     }
+    const lines = [
+      ...(result.updated.length > 0 ? [`updated: ${result.updated.join(", ")}`] : []),
+      ...(result.unchanged.length > 0 ? [`unchanged: ${result.unchanged.join(", ")}`] : []),
+      ...(result.missing.length > 0 ? [`not present, not created: ${result.missing.join(", ")}`] : []),
+    ];
     print(
       runtime.io,
       runtime.json,
       { ok: true, command: "memory sync", ...result },
-      `Synced project memory across AGENTS.md, CLAUDE.md, and GEMINI.md`,
+      `Synced project memory\n${lines.join("\n")}`,
     );
     return 0;
   } catch (error) {
