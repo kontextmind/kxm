@@ -16015,7 +16015,7 @@ function probeEntry(entry, runCommand, timeoutMs, platform, probe = {}) {
   return {
     id: entry.id,
     label: entry.label,
-    default: entry.default,
+    default: entry.id === (probe.defaultHarness ?? DEFAULT_HARNESS),
     mode: entry.mode,
     detected,
     authenticated,

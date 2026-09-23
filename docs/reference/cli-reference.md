@@ -91,7 +91,7 @@ kxm -V
 - The `command` field is not always the words you typed: `hub stop` and `session stop` report `stop`, `session token` reports `auth token`, `routes admit` and `routes disable` report `routes admitted` and `routes disabled`, `models inventory-refresh` reports `models inventory refresh`, `workflow export` reports `retrospective export`, `gate degrade` reports `workflow degrade`, `gate signal` and `workflow signal` report `signal`, `gate github watch` reports `github watch`, `agent worker` reports `worker`, and `improve report` reports `improve`.
 - A result with `ok: false` is written to stderr in both text and JSON mode; everything else goes to stdout. `runtime status` is the exception: when the supervisor is down it prints `ok: true, running: false` on stdout and exits 1.
 - `peer` subcommands and `workflow checkpoint|record|wait` print the hub's result object as returned, tagged with `schema` but without `ok` or `command`. Their failures print `{"ok":false,"error":"command_failed","detail":"..."}`. Text mode prints the same JSON.
-- Several error paths ignore `--json` and print one plain line on stderr: argument checks in `agent worker`, `session start`, `workflow start`, `gate degrade`, `gate signal`, and `gate github watch`; every error from `config`, `role`, `workflow definitions|add|remove|modify` (except the `workflow add` refusals listed under it, which honor `--json`), `goal`, `task`, `memory`, `skills` (other than `skills create --dry-run`), `suggest`, `studio`, and `completion`. Check the exit code before parsing stdout.
+- Several error paths ignore `--json` and print one plain line on stderr: argument checks in `agent worker`, `session start`, `workflow start`, `gate degrade`, `gate signal`, and `gate github watch`; errors from `config`, `role`, `workflow definitions|remove|modify`, `goal`, `task` outside run admission, `memory`, `skills` (other than `skills create --dry-run`), `studio`, and `completion`. `suggest` and `workflow add` failures honor `--json`. Check the exit code before parsing stdout.
 - Every `context` subcommand exits 1 with a Node.js stack trace and no JSON when the hub cannot be reached.
 - Output is redacted. Values of environment variables whose names contain `TOKEN`, `SECRET`, `KEY`, or `PASSWORD` are replaced with `[redacted]`, and 64-character hex strings are replaced unless they appear in a known digest field such as `configRevision` or `sha256`. `session brief` and `auth token` print the session token itself; treat their output as a credential.
 
@@ -173,6 +173,8 @@ kxm init [--name <name>] [--project-id <id>] [--repository <id=absolute-path>]..
 
 Creates, validates, repairs, resumes, or joins a KXM project at the Git root that contains the current directory. A new project gets a minimal configuration: one coordinator agent, one implementer agent, a `test` command gate, and a `default` plan-implement-verify workflow. An existing project is validated without rewriting. Conflict-free template updates to non-authority fields are applied; authority changes, overlapping edits, and provenance-free or legacy state stay planning-only. `init` does not start a hub or the Runtime.
 
+The starter `defaultHarness: pi` and `npm test` gate are generic settings, not repository detection. Creation and create-planning output include `guidance`: for Claude, set `defaultHarness: claude` in `.kxm/project.yaml`, update any explicit `harness` overrides in `.kxm/agents/*.yaml`, and configure compatible agent models; for .NET or other non-npm repositories, set `.kxm/gates.yaml` → `gates.test.argv` to the repository's actual test command. Preflight reports an actionable prerequisite for `npm test` without a readable `package.json` test script; `task run` refuses it before creating a run.
+
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--name` | `<name>` | Git root directory name | Project display name for a new project |
@@ -184,7 +186,7 @@ Creates, validates, repairs, resumes, or joins a KXM project at the Git root tha
 - Needs a Git repository. Does not need a hub or the Runtime.
 - Writes `.kxm/project.yaml`, `.kxm/agents/coordinator.yaml`, `.kxm/agents/implementer.yaml`, `.kxm/gates.yaml`, `.kxm/repo/repo.yaml`, `.kxm/workflows/default.yaml`, and `.kxm/template-provenance.yaml`, using a `.kxm-init-transaction` directory at the Git root while a create or repair is in flight. Repository bindings are written under the user state root, never into Git. `--dry-run` writes nothing.
 - On an interactive terminal without `--json` or `--dry-run`, a successful create or join offers to install shell completion (suppress with `KXM_SKIP_COMPLETION_PROMPT=1`) and to write workflow-guide agents (suppress with `KXM_SKIP_GUIDE_SETUP_PROMPT=1`). Guided setup keeps a role only when one of its guide candidates is on a fixed map of reviewed harness/model pairs and that harness is authenticated; it writes the agent and workflow files, appends those selectors to `.kxm/routes.yaml`, and skips every other candidate. Google candidates are not on the map and are always skipped, because the Runtime's Pi one-shot cannot reach Google's `antigravity` Pi provider yet (see [Harness routing](harness-routing.md#google-through-the-antigravity-pi-provider)).
-- JSON keys: `action` (`planned`, `created`, `joined`, `repaired`, `resumed`, or `validated`), `mode`, `inspectedFrom`, `projectRoot`, `changesRequired`, `legacyInputs`, `issues`, `configRevision`, `files`, `plannedOnly`, and, when relevant, `localBindingFile`, `bindingsChanged`, `repairPlan`, `resumePending`, `transactionKind`.
+- JSON keys: `action` (`planned`, `created`, `joined`, `repaired`, `resumed`, or `validated`), `mode`, `inspectedFrom`, `projectRoot`, `changesRequired`, `legacyInputs`, `issues`, `configRevision`, `files`, `plannedOnly`, and, when relevant, `guidance`, `localBindingFile`, `bindingsChanged`, `repairPlan`, `resumePending`, `transactionKind`.
 - Exit 0 for every completed action and every dry-run plan. Exit 1 when the result is planning-only (legacy state, blocked repair, partial state without provenance) or for `initialization_failed` (with `issues`) and `initialization_io_failed`. A planning-only text result prints the reason and then one `<file>: <code>: <message>` line per validation issue, for example `.kxm/workflows/first.yaml: gate_outcome_impossible: ...`.
 
 Preview what a new project would contain:
@@ -882,8 +884,9 @@ Probes the built-in harness catalog (`pi`, `claude`, `kimi`, `codex`, `deepseek`
 
 No command-specific options.
 
-- Reads only. No hub needed. Always exits 0.
+- Reads only. No hub needed. In a KXM project, `defaultHarness` and the inventory's default marker reflect `.kxm/project.yaml`; outside a project they default to Pi. Invalid project configuration must be repaired before the project default can be resolved.
 - JSON keys: `defaultHarness`, `harnesses` (each with `id`, `label`, `default`, `mode`, `detected`, `authenticated`, `dispatch` (`status`, `supported`, `reason`), `canUpdate` (`self`, `extensions`, `models`), `issues`).
+- Errors: `harness_list_failed` with configuration `issues`, or `harness_list_io_failed` (exit 1); both honor `--json` and write to stderr without claiming a fallback project default.
 - `dispatch` is `yes` only when the harness is detected, has an audited read-only one-shot profile, and is authenticated. Otherwise the first failing check gives the reason: `not_detected`, `no_headless_mode`, `permission_profile_unaudited` (a detected `deepseek`), `not_authenticated`, or the auth issue when login state is unknown (`auth_context_required` for Pi, `auth_unknown`, `auth_unparsed`, or another `auth_*` code).
 
 Captured with no harness CLIs on `PATH`:
@@ -893,7 +896,7 @@ kxm harness list
 ```
 
 ```text
-default harness: pi (omit agent harness: to use headless Pi)
+default harness: pi (used when an agent omits harness:)
 enable/disable = Git YAML (.kxm/agents, .kxm/models) or the harness's own plugin CLI
 governed kxm skills are not auto-updated
 id        default  detected  auth     dispatch                   updates
@@ -1383,12 +1386,12 @@ dry run: resume workflow run wf_dry_run (stage: review)
 kxm run <workflow> [prompt...]
 ```
 
-Create a KXM run (offline-first; `kxm runs drive <runId> --simulated` executes it model-free). The run is immutable and pins the project's `homeRuntimeId`, config revision, and executor and tool policy revisions. Run events record only the SHA-256 of the prompt; the full prompt text is kept in a local sidecar file, `run-events.db.run-prompts.json`, next to the project's Runtime event store and written with mode 0600, and a dispatch refuses the run (`run_prompt_mismatch`) if that text no longer matches the hash. The Runtime supervisor is started first if it is not running. No steps execute until the run is driven (see [`kxm runs drive`](#kxm-runs-drive)); the text output's second line prints the command that drives the new run model-free and the one that cancels it.
+Create a KXM run without executing steps. The run pins the project's `homeRuntimeId`, config revision, and executor and tool policy revisions. Events store the prompt's SHA-256; its full text is kept in a local mode-0600 sidecar, `run-events.db.run-prompts.json`, and dispatch refuses a hash mismatch (`run_prompt_mismatch`). The Runtime supervisor starts if needed. Output explicitly reports no execution, live prerequisites, and separate drive/status/receipt commands. Use `kxm runs drive <runId> --wait` for supported live one-shot calls; no hub or Pi worker is required. `--simulated` is a model-free experiment, not evidence that implementation ran. Local runs are inspected with `kxm runs`, not the webhook-only `kxm workflow get`.
 
 - Arguments: `<workflow>`, Workflow id to run (a file under `.kxm/workflows/`); `[prompt...]`, Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file).
 - No command-specific options. Refuses `--workspace` (exit 2).
 - Needs a KXM project. Starts and uses the Runtime; no hub needed. Honors `--dry-run`, which validates the project and prints the plan without starting the supervisor.
-- JSON keys: `phase`, `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`). Dry run: `projectRoot`, `workflowId`, `configRevision`. The JSON result does not carry the drive command.
+- JSON keys: `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`), and `execution` (`status: not_started`, `mode: live`, `defaultHarness`, `authentication: not_checked`, `prerequisites`, `nextSteps`). Dry run: `projectRoot`, `workflowId`, `configRevision`, `defaultHarness`, `prerequisites`. The obsolete `phase: pre-3a` field is no longer returned.
 - Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `run_failed` with `issues` (any invalid file in the project fails the load, for example `gate_outcome_impossible`), `run_io_failed` (exit 1).
 - The `default` workflow that `kxm init` writes does not set `limits.maxAgentTimeMs`, so it can be driven. A workflow that sets that limit is created, but `kxm runs drive` refuses it with `run_handoff_required` (`limit_unsupported`); projects from older `kxm init` templates carry it on `default`.
 
@@ -1416,7 +1419,12 @@ kxm run default "Fix the flaky login test"
 
 ```text
 run created: run_a80e84c98f514299b82f0157f4537ea3 (home rtm_1a42e069…, config sha256:b45f8f51a506…)
-drive it model-free: kxm runs drive run_a80e84c98f514299b82f0157f4537ea3 --simulated --wait (or cancel: kxm runs cancel run_a80e84c98f514299b82f0157f4537ea3)
+No steps executed. Project default harness: pi; per-agent harness settings take precedence.
+Live prerequisite (...): ...
+Live execution uses one-shot harness calls; no hub or Pi worker is required. Check installation/authentication with kxm harness list.
+Resolve the prerequisites above, then execute: kxm runs drive run_a80e84c98f514299b82f0157f4537ea3 --wait
+Inspect: kxm runs status run_a80e84c98f514299b82f0157f4537ea3 --json; receipt: kxm runs receipt run_a80e84c98f514299b82f0157f4537ea3 --json; cancel: kxm runs cancel run_a80e84c98f514299b82f0157f4537ea3
+These are local Runtime runs, not webhook workflows; use kxm runs, not kxm workflow get.
 ```
 
 ## `kxm runs`
@@ -1965,6 +1973,8 @@ kxm workflow add [workflowId] [--template <name> | --file <path> | --pick [selec
 
 Add a workflow definition to global or local configuration. With `--template <name>`, the named built-in template is written under the workflow ID. Without a workflow ID, or with `--pick`, you choose from the built-in templates and, for local scope, existing global definitions; a global definition with a template's ID is not offered. The choice is written under its own ID with its content: the template, or a copy of the global definition's file, with `--description` replacing its description. With `--file`, the YAML file is copied as-is once it passes the local check below. Otherwise a one-step scaffold is written: one `implementer` agent step with write access to `control` that ends the run `completed` on `passed` and `failed` on `failed`.
 
+IDs are flat, portable lowercase slugs, at most 64 characters: use `bug-fix`, not `software-engineering/bug-fix`. Paths, traversal, and reserved platform names fail before writing. Imported definitions must use `kxm.workflow.v1`, with `agent` rather than legacy `role` steps and no top-level `id`; installation validates the runner's restricted YAML, schema, and transitions before creating directories or replacing a file. `--pick` copies a selected global definition, honors `--description`, and preserves an explicit destination ID. A global definition is not silently replaced with a scaffold.
+
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--file` | `<path>` | none | Path to YAML workflow definition file |
@@ -1977,8 +1987,8 @@ Add a workflow definition to global or local configuration. With `--template <na
 - Templates: `implement-and-verify` runs the `implementer` agent, then the project's `test` gate, and a failing gate (`implementation-failure`) sends the work back to `implement` at most twice. `dual-critic-review` adds two review steps between them, both run as the `coordinator` agent with read access; point `review-arch` and `review-cli` at your own agents for independent critics. `spec-and-plan` plans and then reviews the plan, both as `coordinator`, reading the repository only.
 - The templates and the scaffold are valid `kxm.workflow.v1` definitions that use only what `kxm init` creates: the `coordinator` and `implementer` agents, the `control` repository, and the `test` gate. Each was checked with `kxm init --json` and `kxm run <id> --dry-run` for this page. A new file under `.kxm/workflows/` is a permission expansion that `kxm trust check` asks you to review before you commit it.
 - Writes `<scope dir>/workflows/<id>.yaml`. `kxm run` loads only `.kxm/workflows/`, so a `--scope global` definition is not runnable until it is copied into a project. `--dry-run` plans the write and writes nothing.
-- Local scope belongs to a KXM project: the file lands in the project root's `.kxm/workflows/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new document in place of any file of that ID, using the parser, schema and bundle rules `kxm run` uses. If the project would not load, the command refuses with `workflow_invalid`, lists each issue and writes nothing, also under `--dry-run`. So `--file` or a picked global definition with a top-level `id` or a `role:` step, the shape `workflow add` wrote through 0.7.92, is refused, and `--overwrite` replaces a file left in that shape. Global scope is not checked, because no loader reads it.
-- Refusals exit 2 and honor `--json`: `workflow_template_unknown` (the text names the three templates), `workflow_id_required` (no workflow ID), `workflow_add_conflict` (`--template` combined with `--file` or `--pick`), `project_not_found`, and `workflow_invalid` (with `issues`, each `{phase, code, file, message}`). An existing definition without `--overwrite` exits 1 with a plain `workflow add failed: workflow_already_exists: ...` line, also under `--dry-run`.
+- Local scope belongs to a KXM project: the file lands in the project root's `.kxm/workflows/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new document in place of any file of that ID, using the parser, schema and bundle rules `kxm run` uses. If the project would not load, the command refuses with `workflow_invalid`, lists each issue and writes nothing, also under `--dry-run`. So `--file` or a picked global definition with a top-level `id` or a `role:` step, the shape `workflow add` wrote through 0.7.92, is refused, and `--overwrite` replaces a file left in that shape. Global definitions receive ID, schema and transition checks, but have no project references to validate.
+- Refusals exit 2 and honor `--json`: `workflow_template_unknown` (the text names the three templates), `workflow_id_required` (no workflow ID), `workflow_add_conflict` (`--template` combined with `--file` or `--pick`), `project_not_found`, and `workflow_invalid` (with `issues`, each `{phase, code, file, message}`). Other input, file and overwrite failures exit 1 with `workflow_add_failed` and `message`. No failure writes the destination, and dry runs do not create missing local, global, or runtime directories.
 - JSON keys: `workflowId`, `id`, `filePath`, `scope`.
 
 Start a first workflow from a template:
@@ -2071,16 +2081,22 @@ Validates workflow definitions and operates evidence gates. The group has exactl
 kxm gate validate [--file <path>]
 ```
 
-Parse workflow definitions without printing secrets, using the same single source the hub loads: `--file`, else `KXM_WEBHOOK_WORKFLOWS_FILE`, else inline `KXM_WEBHOOK_WORKFLOWS`.
+Validate workflow definitions without printing secrets. An explicit `--file` accepts a local `kxm.workflow.v1` YAML/JSON mapping or a webhook JSON array. Local mappings use the runner's restricted YAML parser, schema, and transition compiler; use `kxm init --dry-run` to also validate project references. Without `--file`, `KXM_WEBHOOK_WORKFLOWS_FILE` or inline `KXM_WEBHOOK_WORKFLOWS` remain webhook-only JSON sources, exactly as the hub loads them.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--file` | `<path>` | configured source | Workflow definition file |
 
-- Each definition's `secretEnv` must name a set variable holding at least 16 characters (likewise `signalSecretEnv` when declared); otherwise parsing fails, for example with `workflow.secret must be a string`.
+- For webhook definitions, each `secretEnv` must name a set variable holding at least 16 characters (likewise `signalSecretEnv` when declared); otherwise parsing fails.
 - Reads definitions; appends telemetry. No hub needed.
-- JSON keys: `source`, `file`, `workflows` (`id`, `secretConfigured`, `signalSecretConfigured`), `warnings`; `outcome` is `warning` when warnings exist.
+- JSON keys: `source`, `file`, `workflows`, `warnings`; local entries contain `id` and `schema`, while webhook entries contain `id`, `secretConfigured`, and `signalSecretConfigured`. `outcome` is `warning` when warnings exist.
 - Exit 2 for `workflow_source_required` or `ambiguous_workflow_source` (both variables set); exit 1 for `file_not_found` or a parse error.
+
+Validate an installed local template:
+
+```bash
+kxm gate validate --file .kxm/workflows/bug-fix.yaml
+```
 
 ```bash
 KXM_WORKFLOW_SECRET="$SECRET" kxm gate validate --file workflows.json
@@ -2523,19 +2539,20 @@ Workflow: default
 kxm task run <taskId>
 ```
 
-Launch a workflow run driven by this task: runs `kxm run <workflow> <objective>` with the task's assigned workflow (default `default`), then sets the task status to `in_progress` when that succeeds.
+Prepare a local run from a task's objective and assigned workflow, or the project's `defaultWorkflow` when none is assigned. Read-only live preflight reports unsupported steps, limits, gates, harnesses, or model routes before creating a run. Unsupported work exits 1 with `run_execution_unavailable`, `defaultHarness`, and `execution.prerequisites`; neither the task nor Runtime is mutated. In particular, Claude-only writer work receives the read-only harness limitation instead of a dead-end created run.
 
-- Output, requirements, and errors are those of [`kxm run`](#kxm-run), including the `--workspace` refusal.
-- Mutates the task file. `--dry-run` validates the project and the workflow as `kxm run --dry-run` does, then plans the run request and the task file write without making either; the status stays unchanged. Dry-run JSON keys: `taskId`, `projectRoot`, `workflowId`, `configRevision`, `status` (the status it would set), `dryRun`, `planned`.
+- On compatible configuration, output is that of [`kxm run`](#kxm-run): creation only, `execution.status: not_started`, and explicit live drive/status/receipt commands. Authentication is checked on dispatch, not certified by creation. Task status is not changed to `in_progress` merely because a run exists.
+- `--dry-run` applies the same live preflight and plans only the run request, with no task write or process start. JSON includes `taskId`, the unchanged task `status`, `projectRoot`, `workflowId`, `configRevision`, `defaultHarness`, `prerequisites`, `execution`, `dryRun`, and `planned`.
+
+For a task assigned a configured, supported read-only workflow, a dry-run excerpt is:
 
 ```bash
 kxm task run task_4f79c0833e41 --dry-run
 ```
 
 ```text
-dry run: run workflow default for task task_4f79c0833e41, then mark it in_progress
+dry run: create workflow architecture-spike for task task_4f79c0833e41; task status stays todo until work actually starts
   would request POST kxm-runtime /v1/runs (starts the Runtime supervisor if it is not running)
-  would write /work/proj/.kxm/tasks/task_4f79c0833e41.yaml
 ```
 
 ### `kxm task sync`
@@ -2617,30 +2634,20 @@ kxm goal list
 kxm suggest <prompt...>
 ```
 
-Recommends a workflow, area, roles, and skills for a prompt or issue description using keyword matching and the detected harnesses. The suggested workflow ID comes from a built-in catalog and may not exist in your project; check with `kxm workflow definitions` before running the suggested command.
+Recommends a flat workflow ID backed by a shipped template, with category metadata and explicit execution prerequisites. The install command creates a definition only; it does not create or drive a run.
 
-- Arguments: `<prompt...>`, the task description.
-- No command-specific options. Probes harnesses as `harness list` does; reads nothing else. No hub needed.
-- Suggested skills are always KXM command skills shipped in `plugins/kxm/skills` (for example `kxm-workflow`, `kxm-runs`, `kxm-peer`, `kxm-context-memory`), never the KontextMind knowledge-plane skills.
-- JSON keys: `prompt`, `workflowId`, `area`, `confidence`, `reasons`, `suggestedSkills`, `roles` (`planner`, `writer`, `critics`, `verifier`), `suggestedCommand`.
+- Explicit `Claude only`, `Claude-only`, or `only Claude Code` constraints exclude other harnesses. A missing, unauthenticated, or unsupported required harness produces `harness_unavailable`; KXM never silently substitutes Grok or Codex.
+- A write workflow requires an audited writer profile for the selected harness. Only Pi and Grok currently have one; Claude-only bug fixes produce `live_write_unsupported` with direct-Claude implementation guidance, never a Grok substitution. No misleading create/drive command is emitted for an unsupported profile.
+- For supported work, every suggested agent binding uses the selected detected, authenticated, dispatch-ready harness. Configure its compatible admitted model, install the exact template, validate project configuration, then use the separate create/live-drive/status/receipt commands. Writers also require single-assignment/single-run admission, any configured developer-roster writer approval, and the repository's actual verification gate. An already-present recommended workflow ID produces `workflow_already_exists`; KXM will not assume its agents or permissions match the template.
+- Arguments: `<prompt...>`; no command-specific options. No hub needed. `--dry-run` skips native authentication probes to avoid their side effects and does not claim verified availability.
+- JSON keys: `prompt`, `workflowId`, `template`, `area`, `confidence`, `reasons`, `suggestedSkills`, `roles` (an array of `{agent, harness, role}`), `suggestedCommand` (installation only), and `execution`. Supported execution includes `prerequisites`, `shell`, `createCommand`, `driveCommand`, `statusCommand`, and `receiptCommand`; refusal includes `error`, `reason`, and `nextSteps`, sets `ok: false`, and exits 1.
 
 ```bash
-kxm suggest "Add retry with backoff to the payment webhook handler"
+kxm suggest "Fix a bug in an isolated worktree using Claude only" --json
 ```
 
 ```text
-Suggested Workflow: software-engineering/feature-implementation (software-engineering)
-Confidence: 65%
-Reasons: Matched keywords: add
-Suggested Skills: kxm-workflow, kxm-peer, kxm-context-memory
-Roles:
-  Planner:     claude (fable)
-  Writer:      grok (grok-4.6)
-  Critics:     claude:fable, codex:gpt-5.6-sol
-  Verifier:    npm run verify
-
-Execute with:
-  kxm run software-engineering/feature-implementation "Add retry with backoff to the payment webhook handler"
+{"ok":false,"workflowId":"bug-fix","template":"implement-and-verify","roles":[],"suggestedCommand":"kxm workflow add bug-fix --template implement-and-verify","error":"live_write_unsupported",...}
 ```
 
 ## `kxm explain`

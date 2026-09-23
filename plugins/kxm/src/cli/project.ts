@@ -16,6 +16,7 @@ import { initializeKxmProject } from "../init.ts";
 import { diffKxmProjectAgainstRevision, formatKxmPermissionDiff } from "../permission.ts";
 import { readKxmLocalBindings, kxmUserStateRoot } from "../bindings.ts";
 import { loadKxmProject } from "../project-config.ts";
+import { kxmLiveRunPrerequisites, type KxmRunHandoff } from "../engine.ts";
 import {
   attachKxmSupervisor,
   ensureKxmSupervisor,
@@ -115,6 +116,13 @@ export async function cmdKxmInit(
       localStateRoot: kxmUserStateRoot({ env: runtime.env }),
       dryRun: runtime.dryRun,
     });
+    const starterGuidance = initialized.action === "created" || (initialized.action === "planned" && initialized.plan.mode === "create")
+      ? [
+          "defaultHarness: pi and the npm test gate are generic starter settings, not repository detection.",
+          "For Claude, set defaultHarness: claude in .kxm/project.yaml, update any explicit harness overrides in .kxm/agents/*.yaml, and configure compatible agent models.",
+          "For .NET or other non-npm repositories, set gates.test.argv in .kxm/gates.yaml to the repository's actual test runner before driving a workflow.",
+        ]
+      : [];
     const payload = {
       ok: initialized.action !== "planned" || runtime.dryRun,
       command: "init",
@@ -128,9 +136,10 @@ export async function cmdKxmInit(
       ...(initialized.resumePending === undefined ? {} : { resumePending: initialized.resumePending }),
       ...(initialized.transactionKind === undefined ? {} : { transactionKind: initialized.transactionKind }),
       plannedOnly: initialized.action === "planned",
+      ...(starterGuidance.length > 0 ? { guidance: starterGuidance } : {}),
     };
     const finishInit = (code: number, text: string): number => {
-      print(runtime.io, runtime.json, payload, text);
+      print(runtime.io, runtime.json, payload, [text, ...starterGuidance].join("\n"));
       return code;
     };
     if (initialized.action === "created") {
@@ -388,11 +397,16 @@ async function readSupervisor(runtime: Runtime, command: string): Promise<Awaite
   return attached ?? refuseDryRun(runtime.io, runtime.json, command, "the Runtime supervisor is not running and --dry-run will not start it");
 }
 
-export const RUN_ENGINE_PHASE = "pre-3a";
-
-/** The next step `kxm run` prints for the run it just created. */
-export function runEngineNotice(runId: string): string {
-  return `drive it model-free: kxm runs drive ${runId} --simulated --wait (or cancel: kxm runs cancel ${runId})`;
+/** Creation is not execution; local runs are driven and inspected in the runs namespace. */
+export function runEngineNotice(runId: string, defaultHarness: string, prerequisites: readonly KxmRunHandoff[]): string {
+  return [
+    `No steps executed. Project default harness: ${defaultHarness}; per-agent harness settings take precedence.`,
+    ...prerequisites.map((item) => `Live prerequisite${item.stepId ? ` (${item.stepId})` : ""}: ${item.detail}`),
+    "Live execution uses one-shot harness calls; no hub or Pi worker is required. Check installation/authentication with kxm harness list.",
+    `${prerequisites.length > 0 ? "Resolve the prerequisites above, then execute" : "Execute"}: kxm runs drive ${runId} --wait`,
+    `Inspect: kxm runs status ${runId} --json; receipt: kxm runs receipt ${runId} --json; cancel: kxm runs cancel ${runId}`,
+    "These are local Runtime runs, not webhook workflows; use kxm runs, not kxm workflow get.",
+  ].join("\n");
 }
 
 /** Where `kxm run <workflow>` would create its run, or the exit code of the
@@ -400,7 +414,8 @@ export function runEngineNotice(runId: string): string {
 export function resolveKxmRunTarget(
   runtime: Runtime,
   workflow: string | undefined,
-): { projectRoot: string; workflowId: string; configRevision: string } | number {
+  forTask = false,
+): { projectRoot: string; workflowId: string; configRevision: string; defaultHarness: string; prerequisites: KxmRunHandoff[] } | number {
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
@@ -409,7 +424,7 @@ export function resolveKxmRunTarget(
     }, "kxm run discovers the authoritative project from the current directory; --workspace is not supported");
     return 2;
   }
-  if (!workflow) {
+  if (!workflow && !forTask) {
     print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required" }, "usage: kxm run <workflow> [prompt]");
     return 2;
   }
@@ -419,16 +434,26 @@ export function resolveKxmRunTarget(
     return 1;
   }
   const bundle = loadKxmProject(projectRoot, {});
-  if (!bundle.workflows.has(workflow)) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow }, `workflow ${workflow} does not exist in this project`);
+  const workflowId = workflow ?? String(bundle.project.value.defaultWorkflow ?? "default");
+  if (!bundle.workflows.has(workflowId)) {
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow: workflowId }, `workflow ${workflowId} does not exist in this project`);
     return 1;
   }
-  return { projectRoot, workflowId: workflow, configRevision: bundle.configRevision };
+  const defaultHarness = String(bundle.project.value.defaultHarness ?? "pi");
+  const prerequisites = kxmLiveRunPrerequisites(bundle, workflowId, projectRoot);
+  if (forTask && prerequisites.length > 0) {
+    print(runtime.io, runtime.json, {
+      ok: false, command: "task run", error: "run_execution_unavailable", workflowId, defaultHarness,
+      execution: { status: "not_started", mode: "live", prerequisites },
+    }, `task run refused; no run created or task changed (default harness: ${defaultHarness}).\n${prerequisites.map((item) => `${item.stepId ?? workflowId}: ${item.detail}`).join("\n")}`);
+    return 1;
+  }
+  return { projectRoot, workflowId, configRevision: bundle.configRevision, defaultHarness, prerequisites };
 }
 
-export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[]): Promise<number> {
+export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[], forTask = false): Promise<number> {
   try {
-    const target = resolveKxmRunTarget(runtime, workflow);
+    const target = resolveKxmRunTarget(runtime, workflow, forTask);
     if (typeof target === "number") return target;
     const { projectRoot } = target;
     if (runtime.dryRun) {
@@ -451,11 +476,23 @@ export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, 
     print(runtime.io, runtime.json, {
       ok: true,
       command: "run",
-      phase: RUN_ENGINE_PHASE,
+      execution: {
+        status: "not_started",
+        mode: "live",
+        defaultHarness: target.defaultHarness,
+        authentication: "not_checked",
+        prerequisites: target.prerequisites,
+        nextSteps: {
+          harnesses: "kxm harness list",
+          drive: `kxm runs drive ${run.runId} --wait`,
+          status: `kxm runs status ${run.runId} --json`,
+          receipt: `kxm runs receipt ${run.runId} --json`,
+        },
+      },
       idempotent: acceptance.idempotent === true,
       run,
       supervisor: { runtimeId: supervisor.runtimeId, port: supervisor.port, started: supervisor.started },
-    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)\n${runEngineNotice(run.runId)}`);
+    }, `run ${run.status}: ${run.runId} (home ${run.homeRuntimeId.slice(0, 12)}…, config ${run.configRevision.slice(0, 19)}…)\n${runEngineNotice(run.runId, target.defaultHarness, target.prerequisites)}`);
     return 0;
   } catch (error) {
     if (error instanceof KxmConfigError) {
@@ -782,9 +819,20 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
 }
 
 export async function cmdHarnessList(runtime: Runtime): Promise<number> {
-  const inventory = await probeHarnessesAsync({ env: runtime.env });
-  print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
-  return 0;
+  try {
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
+    const defaultHarness = projectRoot ? String(loadKxmProject(projectRoot).project.value.defaultHarness ?? "pi") : undefined;
+    const inventory = await probeHarnessesAsync({ env: runtime.env, defaultHarness });
+    print(runtime.io, runtime.json, { ok: true, command: "harness list", ...inventory }, formatHarnessInventory(inventory));
+    return 0;
+  } catch (error) {
+    if (error instanceof KxmConfigError) {
+      print(runtime.io, runtime.json, { ok: false, command: "harness list", error: "harness_list_failed", issues: error.issues }, `harness list failed: ${error.message}`);
+      return 1;
+    }
+    print(runtime.io, runtime.json, { ok: false, command: "harness list", error: "harness_list_io_failed" }, "harness list failed because a local operation did not complete");
+    return 1;
+  }
 }
 
 export async function selectInventoryModel(runtime: Runtime, requested?: string | undefined): Promise<string | undefined> {

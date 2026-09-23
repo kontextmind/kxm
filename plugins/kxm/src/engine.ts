@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { isRouteAdmitted, listRoleBindings } from "./routes.ts";
-import { oneShotWriterArgs } from "./harness.ts";
 import { applyAuthoringWitness, captureWorktreeWitness } from "./worktree-witness.ts";
 import {
   buildFormalContextPacket,
@@ -14,6 +13,7 @@ import {
   type HandoffManifestV1,
 } from "./context-packet.ts";
 import { compileKxmWorkflow, type KxmCompiledPlan, type KxmCompiledStep } from "./engine-compile.ts";
+import { BUILTIN_HARNESSES, oneShotPermissionArgs, oneShotWriterArgs, validateHarnessModelPair } from "./harness.ts";
 import {
   effectiveRunDurationBudget,
   isTerminalRunStatus,
@@ -2693,7 +2693,83 @@ function armRunDurationBudgetTimer(context: KxmRuntimeContext, runId: string): (
   };
 }
 
-function unsupportedLimit(envelope: KxmRunPlanEnvelope): KxmRunHandoff | undefined {
+/** Read-only admission guidance for a live run, using the same policies as dispatch. */
+export function kxmLiveRunPrerequisites(
+  bundle: KxmProjectBundle,
+  workflowId: string,
+  projectRoot: string,
+): KxmRunHandoff[] {
+  const workflow = bundle.workflows.get(workflowId);
+  if (!workflow) throw runtimeError("run_workflow_unknown", workflowId, `workflow ${workflowId} does not exist in this project`);
+  const plan = compileKxmWorkflow({ id: workflowId, value: workflow.value, logicalPath: workflow.logicalPath });
+  const envelope = { plan, projectLimits: kxmProjectAdmissionLimits(bundle), gates: pinnedGatesForCompiledPlan(plan, bundle, projectRoot) };
+  const prerequisites: KxmRunHandoff[] = [];
+  const limit = unsupportedLimit(envelope);
+  if (limit) prerequisites.push(limit);
+  const visited = new Set<string>();
+  const pending = [plan.entryStepId];
+  while (pending.length > 0) {
+    const stepId = pending.pop()!;
+    if (visited.has(stepId)) continue;
+    visited.add(stepId);
+    const step = plan.steps[stepId]!;
+    for (const transition of Object.values(step.transitions)) {
+      if (transition.to === "step") pending.push(transition.target);
+    }
+    const unsupported = step.kind === "gate"
+      ? unsupportedGateStep(plan, step, envelope, { projectRoot }) ?? starterGatePrerequisite(step, envelope.gates, projectRoot)
+      : unsupportedStep(plan, step, "oneshot");
+    if (unsupported) {
+      prerequisites.push({ ...unsupported, stepId });
+      continue;
+    }
+    if (step.kind !== "agent" && step.kind !== "moa") continue;
+    const agentIds = step.assignments.allowedAgents.length > 0 ? step.assignments.allowedAgents : [step.agent];
+    for (const agentId of agentIds) {
+      const agent = bundle.agents.get(agentId);
+      const harness = String(agent?.value.harness ?? bundle.project.value.defaultHarness ?? "pi");
+      const permission = Object.values(step.repositories).includes("write") ? "edit" : "read-only";
+      if (!BUILTIN_HARNESSES.some((entry) => entry.id === harness && entry.oneShot) || !oneShotPermissionArgs(harness, permission)) {
+        prerequisites.push({ reason: "step_unsupported", stepId, field: "harness", detail: `${agentId}: ${harness} has no audited ${permission} one-shot profile; use a supported workflow or execute this work directly in ${harness}, without substituting another harness` });
+        continue;
+      }
+      const route = resolveProducerRoute(projectRoot, step, agentId);
+      if ("error" in route) {
+        prerequisites.push({ ...route.error, stepId, detail: `${agentId}: ${route.error.detail}; configure its model in .kxm/agents/${agentId}.yaml and admit the installed model with kxm routes admit --model <provider/model>` });
+        continue;
+      }
+      const writeRefusal = unsupportedLiveWrite(projectRoot, step, agentId, route.selector, envelope.projectLimits.maxConcurrentRuns);
+      if (writeRefusal) {
+        prerequisites.push({ ...writeRefusal, stepId });
+        continue;
+      }
+      const compatible = validateHarnessModelPair(harness, route);
+      if (!compatible.valid) {
+        prerequisites.push({ reason: "step_unsupported", stepId, field: "model", detail: `${agentId}: ${compatible.message ?? `${harness} cannot run ${route.selector}`}; configure a model supported by ${harness} in .kxm/agents/${agentId}.yaml` });
+      }
+    }
+  }
+  return prerequisites;
+}
+
+function starterGatePrerequisite(step: KxmCompiledStep & { kind: "gate" }, gates: KxmPinnedGates, projectRoot: string): Omit<KxmRunHandoff, "stepId"> | undefined {
+  const definition = gates.definitions[step.gate];
+  if (!definition || definition.kind !== "command" || definition.argv.length !== 2 || definition.argv[0] !== "npm" || definition.argv[1] !== "test") return undefined;
+  let testScript: unknown;
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8"));
+    if (manifest && typeof manifest === "object" && "scripts" in manifest) {
+      const scripts = manifest.scripts;
+      if (scripts && typeof scripts === "object" && "test" in scripts) testScript = scripts.test;
+    }
+  } catch { /* A missing or unreadable manifest cannot satisfy the starter gate. */ }
+  if (typeof testScript !== "string" || testScript.trim().length === 0) {
+    return { reason: "gate_unsupported", field: `gates.${step.gate}.argv`, detail: `gate ${step.gate} runs npm test but this repository has no readable package.json with scripts.test; configure .kxm/gates.yaml gates.${step.gate}.argv for the repository's actual test runner before driving this workflow` };
+  }
+  return undefined;
+}
+
+function unsupportedLimit(envelope: Pick<KxmRunPlanEnvelope, "plan" | "projectLimits">): KxmRunHandoff | undefined {
   if (envelope.plan.limits.maxAgentTimeMs !== undefined) {
     return { reason: "limit_unsupported", field: "limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
   }
@@ -2847,7 +2923,7 @@ function unsupportedLiveWrite(
   return undefined;
 }
 
-function unsupportedGateStep(plan: KxmCompiledPlan, step: KxmCompiledStep & { kind: "gate" }, envelope: KxmRunPlanEnvelope, context?: { projectRoot: string }): Omit<KxmRunHandoff, "stepId"> | undefined {
+function unsupportedGateStep(plan: KxmCompiledPlan, step: KxmCompiledStep & { kind: "gate" }, envelope: Pick<KxmRunPlanEnvelope, "gates">, context?: { projectRoot: string }): Omit<KxmRunHandoff, "stepId"> | undefined {
   if (!step.gate) return { reason: "step_unsupported", field: "gate", detail: "gate step is missing gate id" };
   if (envelope.gates.registry === null) {
     return { reason: "step_unsupported", field: "gate", detail: `step ${step.id} refers to a gate but registry is null` };

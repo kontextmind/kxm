@@ -28,6 +28,7 @@ import {
   stepKxmRun,
   verifyKxmAttemptCapability,
   kxmPanelDispatchSeams,
+  kxmLiveRunPrerequisites,
   type KxmProducer,
   type KxmProducerRequest,
 } from "../../plugins/kxm/src/engine.ts";
@@ -675,6 +676,27 @@ test("cancellation is cooperative, waits for settlement, and is visible across h
       closeKxmRuntimeContext(other);
       closeKxmRuntimeContext(context);
     }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live preflight refuses the starter npm gate until the repository has a test script", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-test-prerequisite-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "verify-only.yaml"), JSON.stringify({
+      schema: "kxm.workflow.v1", coordinator: "coordinator",
+      steps: [{
+        id: "verify", kind: "gate", gate: "test", expect: "pass", repositories: { control: "write" },
+        on: { passed: { target: "$terminal", terminalStatus: "completed" }, "implementation-failure": { target: "$terminal", terminalStatus: "failed" } },
+      }],
+    }));
+    const bundle = loadKxmProject(root);
+    const prerequisites = kxmLiveRunPrerequisites(bundle, "verify-only", root);
+    assert.equal(prerequisites[0]?.field, "gates.test.argv");
+    assert.match(prerequisites[0]!.detail, /\.kxm\/gates\.yaml/);
+    writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+    assert.deepEqual(kxmLiveRunPrerequisites(bundle, "verify-only", root), []);
   } finally {
     removeTempDir(root, stateRoot);
   }
@@ -3993,6 +4015,7 @@ steps:
         terminalStatus: failed
 `);
     const bundle = loadKxmProject(root);
+    assert(kxmLiveRunPrerequisites(bundle, "write-step", root).some((entry) => entry.field === "harness" && entry.detail.includes("claude")));
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
       const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "Test live write" });
@@ -4102,6 +4125,7 @@ steps:
         terminalStatus: failed
 `);
     const bundle = loadKxmProject(root);
+    assert.deepEqual(kxmLiveRunPrerequisites(bundle, "write-step", root), []);
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
       const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "write a file" });
