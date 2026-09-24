@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-17"
-updated: "2026-09-23"
+updated: "2026-09-24"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Web research with options, trade-offs and recommendations for agent-to-agent communication across hosts and the surrounding control plane: context, memory, restarts, discovery, coordination, tasks, plans, steering, improvement, wiki, MCP apps, telemetry, secrets, per-account hosting and agent lifecycle. Reconciled against Tracking on 2026-09-20; schedules nothing."
@@ -24,6 +24,7 @@ related:
   - ../docs/contracts/architecture.md
   - ../docs/contracts/synchronization.md
   - history/agent-communication-envelopes-draft.md
+  - research-jev-system-one.md
 depends_on: []
 blocked_by: []
 details:

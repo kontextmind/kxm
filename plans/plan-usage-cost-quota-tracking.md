@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-15"
+updated: "2026-09-24"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Technical reference for account-scoped quota observations and extensions to existing usage, price and budget contracts."
@@ -16,6 +16,7 @@ related:
   - implementation-plan.md
   - plan-unified-kxm-milestones.md
   - plan-additional-providers-agy-kimi.md
+  - research-jev-system-one.md
 depends_on: []
 blocked_by: []
 details:
