@@ -40,11 +40,13 @@ blocked_by: []
 - **Security action open:** during edge discovery, the `app.kxmd.io` TLS private key (`/etc/caddy/domains/app.kxmd.io.key` in VM 230) was printed into the planning transcript. Re-issue that certificate and key.
 - Pending operator inputs, needed before Phase 2 step 2: create Authentik service account `kxm-provisioner` with the scoped role and export `AUTHENTIK_TOKEN`; confirm or create DNS for `hub-onesm.kxmd.dev`.
 - How to continue on kxm-dev-svr: use a **separate** clone, never `/home/sysadmin/source/kxm` (it backs the live services):
+
   ```bash
   git clone https://github.com/kontextmind/kxm ~/work/kxm
   cd ~/work/kxm
   git switch handoff/2026-09-24
   ```
+
   Then open the handoff doc and execute from Phase 0. On kxm-dev-svr, Phase 0's pipeline host is that Linux box itself, not WSL: run the Phase 0 step 3 script with `SRC=~/work/kxm`, in a second clone `~/src/kxm-pipeline`. `kxm-dev-svr` has Node 22.23.2 under `/home/sysadmin/.local/share/pi-node`. Install Node 24 via nvm for the Nightly leg.
 
 ## Local pipeline + CI pause, grok-4.7 writer, Mesh cutover, runner grouping, SQLite concurrency witness, kxm-dev-svr hub link, learning cycle, tenant architecture records
@@ -52,6 +54,7 @@ blocked_by: []
 ### Context
 
 The operator asked, in order, for these, all in the KXM repo at `C:/projects/kxm`:
+
 - continue the recorded gap "developer assignment-runner records do not group", using KXM workflows;
 - move the writer to `grok-4.7`;
 - run the self-improvement learning cycle;
@@ -61,6 +64,7 @@ The operator asked, in order, for these, all in the KXM repo at `C:/projects/kxm
 - write down a revised tenant architecture.
 
 When this plan is done:
+
 - every code change has landed through the repo's gates;
 - CI test workflows are paused and replaced by a local WSL pipeline;
 - this Windows machine is bound to the kxm-dev-svr hub across reboots;
@@ -126,6 +130,7 @@ Independent of the other phases. Runs first so every later PR has a gate.
    - Then `source ~/.nvm/nvm.sh && nvm install 24 && nvm install 22.19.0`. These match the CI legs (Node 22.19.0, 24) and Nightly (24).
 2. **Clone:** `git clone /mnt/c/projects/kxm ~/src/kxm`. It's a local clone, so no network auth is needed. Always run on the WSL filesystem, never `/mnt/c`.
 3. **Write `~/bin/kxm-pipeline`** (WSL home, not in the repo; mode 755). It takes one arg, a ref reachable from `/mnt/c/projects/kxm` or a worktree path plus branch:
+
    ```bash
    #!/usr/bin/env bash
    set -euo pipefail
@@ -153,6 +158,7 @@ Independent of the other phases. Runs first so every later PR has a gate.
    } 2>&1 | tee "$LOG"
    echo "PIPELINE PASS $SHA $LOG"
    ```
+
    These are the exact commands of `ci.yml` (Validate on both Node legs, Plugin validation) and `nightly.yml` (coverage floors, check, generated, pack), with no new npm script. `Real Pi smoke` is live spend and dispatch-only, so it stays manual and out of the pipeline.
 4. **Baseline:** `~/bin/kxm-pipeline main`. If it is red, record the failing test names and commands in Tracking → Still open as "WSL baseline failures (2026-09-24)". From then on, a candidate passes when it adds **no new** failure versus that list. Do not fix baseline failures in this plan.
 5. **Pause CI:**
@@ -188,12 +194,14 @@ Independent of Phase 0 content. Must merge before Phases 3–5, because the runn
 #### Phase 2 — Public tenant hub edge for `kxm-dev-svr` (supersedes the earlier SSH-tunnel draft; the operator rejected Tailscale/LAN-only access)
 
 Operator decisions (2026-09-24), recorded as Decided entries 10–13:
+
 - **10. kxmd domains only.** No new KXM surface uses `*.theneuro.me`. Tracking's S5 row says `kxm-admin.host.theneuro.me`, but the live Studio edge is `https://studio.kxmd.dev` (`/etc/caddy/workspaces/kxm-admin.caddy`). Correct the row. Moving the other workspace sites off `*.host.theneuro.me` is dev-vm-platform backlog.
 - **11. Hub hostname** `https://hub-<tenant>.kxmd.dev`, covered by the existing `*.kxmd.dev` cert. The first tenant slug is `onesm`. Backlog for kxmd-portal: the tenant slug is editable from the portal, and a rename updates the Caddy site, the Authentik provider external host, and the clients' bound URL. The portal also gets a tenant switcher for users who belong to several tenants.
 - **12. Transport:** the HTTPS edge is primary. SSH (`ssh <workspace>.kxmd.sh`, the public gateway at 99.62.5.214, user `akadmin`, ed25519) stays backlog. Its trigger is a measured edge-latency problem or the hub moving onto its tenant VM. Today the gateway reaches workspace VMs, not the Proxmox host, and this machine has no `id_ed25519`.
 - **13. Authentik objects are created by the agent** using a **scoped** Authentik token. The operator creates a service account `kxm-provisioner` with a role that has add/view/change on proxy providers, applications, groups, users and outposts, plus add policy bindings, and exports `AUTHENTIK_TOKEN` in the agent shell. App passwords go straight into the credential store and are never printed.
 
 Edge facts, read 2026-09-24 through `ssh kxm-dev-svr` + `sudo -n qm guest exec`:
+
 - Proxmox host `kxm-dev-svr`: vlan50 `10.31.0.2`, vmbr0 `192.168.68.54`, tailscale0 `100.123.122.113`.
 - The hub runs **on the host** (`kxm-hub.service`, `127.0.0.1:7331`, user `sysadmin`, `KXM_STATE_HOME=/home/sysadmin/.local/state/kxm`), next to `kxm-runtime.service` and `kxm-studio.service`. Studio binds `10.31.0.2:4242`.
 - Edge Caddy is VM 230 `dvp-caddy`, binding `10.30.40.10`; WAN 80/443 forward to it. Sites live in `/etc/caddy/workspaces/*.caddy` and are imported by `/etc/caddy/Caddyfile`. The global options set `admin off`.
@@ -204,6 +212,7 @@ Edge facts, read 2026-09-24 through `ssh kxm-dev-svr` + `sudo -n qm guest exec`:
 - **Revised Decision 6 (header relay):** the client sends `Authorization: Basic base64(<service-account>:<app-password>)` for Authentik, and the hub bearer in `X-Kxm-Hub-Authorization: Bearer <project token>`. After auth, Caddy sets upstream `Authorization` from `X-Kxm-Hub-Authorization` and deletes that header. Caddy relays the client's own bearer and never injects a token.
 
 Steps:
+
 1. **Hub listen (host):**
    - add the systemd drop-in `/etc/systemd/system/kxm-hub.service.d/listen.conf` with `[Service]` / `Environment=KXM_HOST=0.0.0.0`;
    - list the Caddy VM's IPv4s with `sudo qm guest cmd 230 network-get-interfaces`;
@@ -220,39 +229,41 @@ Steps:
    - add the provider to the outpost;
    - create service account `agent-ilo-asus`, not expiring, in `onesm-users`, with an app password.
 3. **Caddy site (VM 230):** write `/etc/caddy/workspaces/kxm-hub-onesm.caddy`:
+
    ```caddy
    https://hub-onesm.kxmd.dev {
-   	bind 10.30.40.10
-   	tls /etc/caddy/kxmd.dev.crt /etc/caddy/kxmd.dev.key
-   	request_header -X-Authentik-*
-   	handle /outpost.goauthentik.io/* {
-   		reverse_proxy 10.30.30.20:9000
-   	}
-   	handle /v1/webhooks/* {
-   		request_header -Authorization
-   		request_header -X-Kxm-Hub-Authorization
-   		reverse_proxy 10.31.0.2:7331
-   	}
-   	handle {
-   		forward_auth 10.30.30.20:9000 {
-   			uri /outpost.goauthentik.io/auth/caddy?original_url={http.request.uri}
-   			copy_headers X-Authentik-Groups
-   		}
-   		@not_tenant not header_regexp X-Authentik-Groups (^|,)(onesm-owners|onesm-admins|onesm-users)(,|$)
-   		respond @not_tenant "forbidden" 403
-   		request_header Authorization {http.request.header.X-Kxm-Hub-Authorization}
-   		request_header -X-Kxm-Hub-Authorization
-   		request_header -X-Authentik-*
-   		request_header -X-Kxm-Caller-Id
-   		reverse_proxy 10.31.0.2:7331 {
-   			flush_interval -1
-   			transport http {
-   				read_timeout 3600s
-   			}
-   		}
-   	}
+    bind 10.30.40.10
+    tls /etc/caddy/kxmd.dev.crt /etc/caddy/kxmd.dev.key
+    request_header -X-Authentik-*
+    handle /outpost.goauthentik.io/* {
+     reverse_proxy 10.30.30.20:9000
+    }
+    handle /v1/webhooks/* {
+     request_header -Authorization
+     request_header -X-Kxm-Hub-Authorization
+     reverse_proxy 10.31.0.2:7331
+    }
+    handle {
+     forward_auth 10.30.30.20:9000 {
+      uri /outpost.goauthentik.io/auth/caddy?original_url={http.request.uri}
+      copy_headers X-Authentik-Groups
+     }
+     @not_tenant not header_regexp X-Authentik-Groups (^|,)(onesm-owners|onesm-admins|onesm-users)(,|$)
+     respond @not_tenant "forbidden" 403
+     request_header Authorization {http.request.header.X-Kxm-Hub-Authorization}
+     request_header -X-Kxm-Hub-Authorization
+     request_header -X-Authentik-*
+     request_header -X-Kxm-Caller-Id
+     reverse_proxy 10.31.0.2:7331 {
+      flush_interval -1
+      transport http {
+       read_timeout 3600s
+      }
+     }
+    }
    }
    ```
+
    Validate with `caddy validate --config /etc/caddy/Caddyfile`, then `systemctl restart caddy`. `admin off` makes reload impossible; the restart blips every edge site for about 1 s. Webhook routes skip Authentik because GitHub/Jira calls carry HMAC, not Authentik credentials. DNS: `hub-onesm.kxmd.dev` must resolve to the WAN IP. Check `Resolve-DnsName hub-onesm.kxmd.dev`; if it has no record, add an A/CNAME matching `studio.kxmd.dev` at the kxmd.dev DNS provider (operator step, unverified provider).
 4. **Edge witness, all over the public URL:**
    - no auth → 401;
@@ -299,6 +310,7 @@ Steps:
 #### Phase 3 — Runner slice T1 `runner-routing-export` (after Phase 1)
 
 Runs in parallel with Phase 4. Boundary: `scripts/assignment-run.mjs, scripts/assignment-run.d.mts, test/core/improve.test.ts, docs/contributing/assignment-runner.md, plans/implementation-plan.md`. Deliverables:
+
 - "`routing-export` CLI and `exportAssignmentRoutingRecords` per Slice spec T1";
 - "named test in test/core/improve.test.ts";
 - "Tracking gap moved to landed; assignment-runner.md routing-record line corrected".
@@ -328,7 +340,7 @@ Problem: `kxm improve` groups by `providerMetadata.workflowId`, `stepId`/`stageI
    - write `JSON.stringify({ schema, task_id, records: records.length, skipped }) + "\n"` to `io.stderr`;
    - `exitCode = 0`.
    - On error: `failure = observationFailure(error)`; stderr `${failure.runnerCode}: assignment routing export refused\n`; `exitCode = 1`; `throw failure`.
-   - Append ` | routing-export --task-dir <absolute-path>` to `CLI_USAGE`.
+   - Append `| routing-export --task-dir <absolute-path>` to `CLI_USAGE`.
    - No `just` recipe: `harness-run.test.ts` pins the recipe set.
 3. In `scripts/assignment-run.d.mts`, declare `ROUTING_EXPORT_SCHEMA` and `exportAssignmentRoutingRecords(request: { taskDir: string }, deps?: …)` in the same style as the `changeReport` declaration. The return type has `skipped[].reason` as the union `"acceptance_record_invalid" | "no_routing_record" | "routing_record_invalid" | "manifest_invalid"`.
 4. **Test** in `test/core/improve.test.ts`: `assignment routing export resolves outcomes from accepted.json and groups repeated briefs for kxm improve`. Import `exportAssignmentRoutingRecords` the same way `test/core/harness-run.test.ts` imports script modules.
@@ -357,6 +369,7 @@ Problem: `kxm improve` groups by `providerMetadata.workflowId`, `stepId`/`stageI
 #### Phase 4 — Runner slice T3 `mesh-cutover` (after Phase 1)
 
 Runs in parallel with Phase 3. Boundary: `plugins/kxm/src/**, packages/core/tui/src/**, test/**, examples/**, scripts/smoke-multi-pi.mjs, docs/contributing/development.md, docs/guides/provenance-gates.md, .kxm/assets/run-provenance-workflow.ps1, AGENTS.md, plugins/kxm/dist/**, plans/implementation-plan.md`. Deliverables:
+
 - "identifier rename map applied with no aliases";
 - "four schema ids moved to kxm.* with old ids refused and one refusal test";
 - "prose and temp prefixes cleaned";
@@ -539,5 +552,3 @@ Follows `skill://kxm-routing-improve`. Everything here is a proposal; apply noth
 - If the Phase 1 merge breaks the product `.kxm` loader (a test loads this repo's `.kxm` and pins `xai/grok-4.6`), update that fixture to `xai/grok-4.7`. Do not re-admit 4.6.
 - If an allowlisted brake line in Phase 4 needs a token outside the given regex, extend the per-file line regex for that file only. Never allowlist a whole file.
 - The operator may pull H1–H6 (Phase 7) into execution later. This plan only records them.
-
-

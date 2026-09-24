@@ -255,6 +255,7 @@ Legend for the test column: **named** is an existing or plan-named test; **propo
 You are the KXM planner (Claude Fable, high effort). Work read-only in C:/projects/kxm with Read/Glob/Grep. Do not edit files. Put your entire deliverable in your final answer as markdown.
 
 ## Priority order (higher wins every conflict; cite the winning source per decision)
+
 1. **Current session plan and decisions (2026-09-24)** in `plans/handoff/2026-09-24-session-handoff.md`. Its "Decisions" 1–9 and Phases 0–7 are authoritative. They cover:
    - CI test pause with a local WSL pipeline;
    - the grok-4.7 writer;
@@ -271,6 +272,7 @@ You are the KXM planner (Claude Fable, high effort). Work read-only in C:/projec
 5. `plans/history/**` is archive. Read it only to resolve provenance. Never revive a task from it unless a higher source still names it.
 
 ## What to produce (final answer, markdown, these sections in order)
+
 1. **Authority.** One paragraph: the unified plan replaces every file listed under "Remove"; `AGENTS.md` keeps pointing at `plans/implementation-plan.md` as the single tracker.
 2. **Decided (deduplicated).** Each entry has date, one-line decision and source file:section. Drop entries that a higher-priority decision supersedes, and list each drop in section 6 with the superseding source.
 3. **Unified queue.** An ordered table of every still-actionable task across all sources, merged and deduplicated. Columns: `#`, Deliver, Source(s), Depends on, Trigger/unblocked by, Proof, One named test (or "deployment witness"/"none — docs"). The session plan's Phases 0–7 come first, in their order. Next come the remaining queue items that are not superseded (S5 interactive login witness, P0/P1/P4…). Then H1–H6 from the session plan's Phase 7. Then everything else, grouped by trigger. Merge duplicates, e.g. usage/quota tracking plus the budgets/failover work, or role governance plus roster failover.
@@ -286,8 +288,8 @@ You are the KXM planner (Claude Fable, high effort). Work read-only in C:/projec
 8. **Contradictions found.** Any conflict between sources not already settled by priority, with the resolution you applied.
 
 ## Rules
+
 - Verify "landed/done" claims against `### Landed in this tree` and `git log`, which you can read through Grep of CHANGELOG.md and plans. Do not mark something done that you cannot cite.
 - KXM naming only. No Mesh aliases. Work is not backwards-compatible.
 - Do not invent new features. Every queue row must trace to a source.
 - Be exhaustive over sources and concise per row.
-
