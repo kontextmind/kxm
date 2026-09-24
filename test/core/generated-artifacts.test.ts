@@ -21,10 +21,12 @@ const {
   GENERATED_ARTIFACTS: artifacts,
   STATIC_GENERATED_ARTIFACTS: staticArtifacts,
   computeGeneratedArtifacts,
+  findLockfileDrift,
 } = await import(pathToFileURL(checker).href) as {
   GENERATED_ARTIFACTS: readonly string[];
   STATIC_GENERATED_ARTIFACTS: readonly string[];
   computeGeneratedArtifacts: (root?: string) => readonly string[];
+  findLockfileDrift: (root?: string) => string[];
 };
 const { emitCodexArtifacts, CODEX_COMMANDS_BLOCK } = await import(pathToFileURL(emitter).href) as {
   emitCodexArtifacts: (root?: string) => {
@@ -302,5 +304,41 @@ test("emit refuses .agents/skills ancestor symlink before mutating the external 
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(external, { recursive: true, force: true });
+  }
+});
+
+test("check:generated refuses a node_modules that drifted from package-lock.json", () => {
+  // The bundles embed dependency bytes and paths. A tree that drifted from the
+  // lock therefore builds artifacts that pass on that machine and fail in CI,
+  // which installs from the lock on every leg — so the local gate would be
+  // certifying a bundle nobody else can reproduce. Exactly this happened: a
+  // drifted `node_modules` shipped a `cli.js` through a green `npm run verify`
+  // and CI rejected it with an unactionable one-line diff.
+  const fixture = mkdtempSync(join(tmpdir(), "kxm-lock-drift-"));
+  try {
+    mkdirSync(join(fixture, "node_modules", "kept"), { recursive: true });
+    writeFileSync(join(fixture, "node_modules", "kept", "package.json"), JSON.stringify({ name: "kept", version: "1.4.0" }));
+    mkdirSync(join(fixture, "node_modules", "drifted"), { recursive: true });
+    writeFileSync(join(fixture, "node_modules", "drifted", "package.json"), JSON.stringify({ name: "drifted", version: "9.9.9" }));
+    writeFileSync(join(fixture, "package-lock.json"), JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "": { name: "fixture", version: "0.0.0" },
+        "node_modules/kept": { version: "1.4.0" },
+        "node_modules/drifted": { version: "1.0.0" },
+        "node_modules/not-installed": { version: "3.1.0" },
+        "node_modules/platform-optional": { version: "5.0.0", optional: true },
+        "plugins/kxm": { version: "0.0.0", link: true },
+      },
+    }));
+    assert.deepEqual(findLockfileDrift(fixture), [
+      "drifted: lock 1.0.0, installed 9.9.9",
+      "not-installed@3.1.0 is not installed",
+    ], "version drift and a missing non-optional package; optional and linked entries are not drift");
+
+    // And this repository, because that is the rule the gate exists to hold.
+    assert.deepEqual(findLockfileDrift(process.cwd()), [], "installed tree differs from package-lock.json — run npm ci");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
   }
 });

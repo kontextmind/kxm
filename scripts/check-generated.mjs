@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,55 @@ export const STATIC_GENERATED_ARTIFACTS = Object.freeze([
   "CLAUDE.md",
   "GEMINI.md",
 ]);
+
+/**
+ * Packages whose installed version differs from `package-lock.json`.
+ *
+ * The generated bundles embed dependency **bytes and paths**, so a
+ * `node_modules` that has drifted from the lock produces artifacts that pass
+ * this check locally and fail in CI — which installs from the lock on every
+ * leg. That asymmetry is worse than a broken build: it lets a machine ship a
+ * bundle nobody else can reproduce. Refuse before the build, naming the
+ * packages, instead of reporting a diff the developer cannot act on.
+ *
+ * @param {string} [repository]
+ * @returns {string[]}
+ */
+export function findLockfileDrift(repository = process.cwd()) {
+  const root = resolve(repository);
+  if (!existsSync(resolve(root, "node_modules"))) return [];
+  const lockPath = resolve(root, "package-lock.json");
+  if (!existsSync(lockPath)) return [];
+  let lock;
+  try {
+    lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  } catch {
+    return ["package-lock.json is unreadable"];
+  }
+  const packages = lock?.packages;
+  if (!packages || typeof packages !== "object") return [];
+  const drifted = [];
+  for (const [key, entry] of Object.entries(packages)) {
+    if (!key.startsWith("node_modules/")) continue; // the root importer and workspaces
+    if (entry?.link) continue; // a symlinked workspace, not an installed version
+    const name = key.split("node_modules/").pop();
+    const manifest = resolve(root, key, "package.json");
+    if (!existsSync(manifest)) {
+      if (!entry.optional) drifted.push(`${name}@${entry.version} is not installed`);
+      continue;
+    }
+    let installed;
+    try {
+      installed = JSON.parse(readFileSync(manifest, "utf8")).version;
+    } catch {
+      installed = undefined;
+    }
+    if (installed !== entry.version) {
+      drifted.push(`${name}: lock ${entry.version}, installed ${installed ?? "unreadable"}`);
+    }
+  }
+  return drifted;
+}
 
 /**
  * Compute the generated artifact list from the committed suite manifest.
@@ -64,6 +113,16 @@ export function checkGeneratedArtifacts(repository = process.cwd()) {
   const topLevel = runGit(requestedRoot, ["rev-parse", "--show-toplevel"]).stdout.trim();
   const root = resolve(topLevel);
   const artifacts = computeGeneratedArtifacts(root);
+
+  const drifted = findLockfileDrift(root);
+  if (drifted.length > 0) {
+    const shown = drifted.slice(0, 8).map((line) => `  ${line}`).join("\n");
+    throw new Error(
+      `node_modules does not match package-lock.json (${drifted.length} package(s)); `
+      + "the generated bundles embed dependency bytes, so CI — which runs npm ci — will rebuild them differently.\n"
+      + `${shown}${drifted.length > 8 ? "\n  …" : ""}\nRun: npm ci`,
+    );
+  }
 
   const missing = artifacts.filter((path) => !existsSync(resolve(root, path)));
   if (missing.length > 0) {
