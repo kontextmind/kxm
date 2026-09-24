@@ -46,12 +46,11 @@ impl BRIEF CWD=".":
 
 # plan a unit, read-only, independent of the writer: just plan brief.md
 plan BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"fable",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"opus",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # review architecture and permissions, read-only: just review-arch brief.md
 review-arch BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"fable",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
-
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"opus",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 # review CLI surface and docs, read-only, different provider: just review-cli brief.md
 review-cli BRIEF CWD=".":
     @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-cli",harness:"codex",model:"gpt-5.6-sol",effort:"low",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -

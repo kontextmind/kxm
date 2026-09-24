@@ -28,6 +28,16 @@ routes:
     permissions:
     - read-only
     status: admitted
+  opus-claude:
+    harness: claude
+    model: opus
+    vendor: anthropic
+    roles:
+    - planner
+    - reviewer-arch
+    permissions:
+    - read-only
+    status: admitted
   sol-codex:
     harness: codex
     model: gpt-5.6-sol
@@ -42,13 +52,15 @@ lineup:
   - grok-native
   - qwen-openrouter-pi
   planner:
+  - opus-claude
   - fable-claude
   reviewer-arch:
+  - opus-claude
   - fable-claude
   reviewer-cli:
   - sol-codex
 required_critics:
-  review-arch: fable-claude
+  review-arch: opus-claude
   review-cli: sol-codex
 model_origins:
   openrouter/qwen/qwen3-coder-plus:
