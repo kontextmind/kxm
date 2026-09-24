@@ -35052,7 +35052,7 @@ function formatKxmSyncStatus(sync, running) {
   return sync.map((project) => {
     const codes = project.outbox.refusals.map((refusal) => `${refusal.code} x${refusal.count}`).join(", ");
     if (project.storeReadable === false) {
-      return `sync ${project.projectId}: blocked (its store is not readable by this build) \u2014 ${project.lastError ?? "unknown reason"}`;
+      return `sync ${project.projectId}: blocked (this build cannot open the project) \u2014 ${project.lastError ?? "unknown reason"}`;
     }
     const counts = `pending ${project.outbox.pending}, acked ${project.outbox.acked}, refused ${project.outbox.refused}`;
     const tail = project.state === "refusing" ? ` (${codes || "see log"}) \u2014 fix the hub, then: kxm runtime sync-retry` : project.state === "blocked" ? ` \u2014 last error: ${project.lastError ?? "unreachable"}${project.nextAttemptAt ? `; next attempt ${project.nextAttemptAt}` : ""}` : "";
