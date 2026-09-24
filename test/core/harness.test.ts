@@ -1034,16 +1034,26 @@ test("probeHarnessesAsync replays the same fail-closed policy without spawnSync"
 
 test("async inventory probes yield to sibling timers instead of blocking spawnSync", { skip: process.platform === "win32", timeout: 5000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-async-probe-"));
+  // A /bin/sh fixture answers immediately: no node cold start and no artificial delay
+  // racing the probe timeout. Only builtins run, so the isolated PATH needs nothing else.
   writeFileSync(
     join(dir, "claude"),
-    `#!${process.execPath}\nsetTimeout(() => {\n  if (process.argv[2] === "--version") process.stdout.write("fixture-cli\\n");\n  else process.stdout.write('{"loggedIn":false}\\n');\n}, 120);\n`,
+    `#!/bin/sh\nif [ "$1" = "--version" ]; then printf 'fixture-cli\\n'; else printf '{"loggedIn":false}\\n'; fi\n`,
     { mode: 0o700 },
   );
-  let progressed = false;
-  const timer = setTimeout(() => { progressed = true; }, 20);
+  // Barrier, not a timer guess: count event-loop turns while the probe is pending. A
+  // spawnSync regression settles the probe through microtasks alone, so zero turns pass.
+  let settled = false;
+  let turns = 0;
+  const turn = () => {
+    if (settled) return;
+    turns += 1;
+    setImmediate(turn);
+  };
+  setImmediate(turn);
   try {
-    const inventory = await probeHarnessesAsync({ env: { PATH: dir }, timeoutMs: 3000 });
-    assert.equal(progressed, true, "auth/capability probes must not block the event loop");
+    const inventory = await probeHarnessesAsync({ env: { PATH: dir }, timeoutMs: 3000 }).finally(() => { settled = true; });
+    assert.ok(turns > 0, "auth/capability probes must not block the event loop");
     assert.equal(status(inventory, "claude").detected, true);
     assert.equal(status(inventory, "claude").authenticated, false);
     for (const id of BUILTIN_HARNESS_IDS) {
@@ -1051,7 +1061,7 @@ test("async inventory probes yield to sibling timers instead of blocking spawnSy
       assert.equal(status(inventory, id).detected, false, `${id} must not be reachable from the isolated PATH`);
     }
   } finally {
-    clearTimeout(timer);
+    settled = true;
     rmSync(dir, { recursive: true, force: true });
   }
 });

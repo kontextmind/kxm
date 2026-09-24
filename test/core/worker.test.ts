@@ -1378,10 +1378,35 @@ test("long-lived worker does not treat unrelated auth failures as unresumable se
 test("long-lived worker ignores stale RPC responses and confirms abort during active kxm_await", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "kxm-worker-drain-"));
   const rpc = join(workdir, "rpc.cjs");
+  // Ordering is driven by the fixture, never by wall-clock timers: it announces the active
+  // kxm_await and a stale pre-request abort response, then asks the worker to stop through
+  // its own operator control file, so the drain window never covers a cold start. On the
+  // abort request it sends two stale responses in sequence, each only after the worker logged
+  // ignoring the previous one, then confirms one event-loop turn later. The second round lands
+  // in a later worker poll than any stdin shutdown issued with the request, so a worker that
+  // accepted a stale response or closed stdin early has already delivered EOF, and the fixture
+  // exits 7 unconfirmed.
   writeFileSync(rpc, [
+    "const fs = require('node:fs'); const path = require('node:path');",
     "let input = ''; let confirmed = false;",
+    "const stale = JSON.stringify({ id: 'stale-abort', type: 'response', command: 'abort', success: true }) + '\\n';",
     "process.stdout.write(JSON.stringify({ type: 'tool_execution_start', toolName: 'kxm_await' }) + '\\n');",
-    "process.stdout.write(JSON.stringify({ id: 'stale-abort', type: 'response', command: 'abort', success: true }) + '\\n');",
+    "process.stdout.write(stale);",
+    "const stateDir = process.env.KXM_STATE_DIR;",
+    "const record = JSON.parse(fs.readFileSync(path.join(stateDir, 'worker-' + process.env.KXM_WORKER_IDENTITY_KEY + '.pid'), 'utf8'));",
+    "fs.writeFileSync(path.join(stateDir, record.controlFile), JSON.stringify({ startedAt: record.startedAt, generation: record.generation }));",
+    "const structuredLog = path.join(process.env.KXM_LOGS_DIR, 'kxm-worker-' + process.env.KXM_WORKER_IDENTITY_KEY + '.jsonl');",
+    "const confirm = (id) => { confirmed = true; process.stdout.write('CURRENT_ABORT_CONFIRMED\\n'); process.stdout.write(JSON.stringify({ id, type: 'response', command: 'abort', success: true }) + '\\n'); };",
+    "const staleRound = (round, id) => {",
+    "  const staleId = 'stale-drain-' + round;",
+    "  process.stdout.write(JSON.stringify({ id: staleId, type: 'response', command: 'abort', success: true }) + '\\n');",
+    "  const wait = () => {",
+    "    if (!fs.readFileSync(structuredLog, 'utf8').includes('\"responseId\":\"' + staleId + '\"')) setImmediate(wait);",
+    "    else if (round < 2) staleRound(round + 1, id);",
+    "    else setImmediate(() => confirm(id));",
+    "  };",
+    "  wait();",
+    "};",
     "process.stdin.setEncoding('utf8');",
     "process.stdin.on('data', (value) => {",
     "  input += value; let newline;",
@@ -1389,7 +1414,7 @@ test("long-lived worker ignores stale RPC responses and confirms abort during ac
     "    const line = input.slice(0, newline); input = input.slice(newline + 1);",
     "    const request = JSON.parse(line); if (request.type !== 'abort') continue;",
     "    process.stdout.write(JSON.stringify({ type: 'agent_event', event: 'await_still_active' }) + '\\n');",
-    "    setTimeout(() => { confirmed = true; process.stdout.write('CURRENT_ABORT_CONFIRMED\\n'); process.stdout.write(JSON.stringify({ id: request.id, type: 'response', command: 'abort', success: true }) + '\\n'); }, 80);",
+    "    staleRound(1, request.id);",
     "  }",
     "});",
     "process.stdin.on('end', () => process.exit(confirmed ? 0 : 7));",
@@ -1414,7 +1439,8 @@ test("long-lived worker ignores stale RPC responses and confirms abort during ac
         KXM_WORKER_MAX_RESTARTS: "0",
         KXM_WORKER_CONTINUE: "false",
         KXM_WORKER_DRAIN_MS: "1000",
-        KXM_WORKER_STOP_AFTER_MS: "150",
+        // Hang backstop only: the stop must come from the fixture's control request.
+        KXM_WORKER_STOP_AFTER_MS: "20000",
         KXM_WORKDIR: workdir,
       }),
       stdio: ["ignore", "pipe", "pipe"],
@@ -1425,9 +1451,14 @@ test("long-lived worker ignores stale RPC responses and confirms abort during ac
     });
     await new Promise((resolve) => child.once("exit", resolve));
     assert.match(stdout, /"event":"worker_drain_wait"/);
-    assert.match(stdout, /"event":"worker_stopping"/);
+    assert.match(stdout, /"event":"worker_stopping"[^\n]*"signal":"operator"/);
     assert.match(stdout, /"event":"worker_abort_requested"/);
     assert.match(stdout, /"event":"worker_drain_confirmed"/);
+    const ignored = stdout.indexOf('"event":"worker_abort_response_ignored"');
+    assert.ok(stdout.indexOf('"event":"worker_abort_requested"') < ignored, "the in-drain stale response arrives after the request");
+    assert.match(stdout, /"event":"worker_abort_response_ignored"[^\n]*"responseId":"stale-drain-2"/);
+    assert.ok(ignored < stdout.indexOf('"event":"worker_drain_confirmed"'), "only the current request id confirms the drain");
+    assert.match(stdout, /"event":"worker_exited"[^\n]*"code":0,/, "the fixture confirmed before its stdin closed");
     assert.doesNotMatch(stdout, /"toolName":"kxm_await"/);
     assert.doesNotMatch(stdout, /CURRENT_ABORT_CONFIRMED/);
     const agentLog = readFileSync(workerFile(workdir, "product", "drainer", "agent-log"), "utf8");

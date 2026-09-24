@@ -497,6 +497,43 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **The CLI honors Claude-only workflow and execution contracts (2026-09-23; #314, fixes
+  #303).** #314 changed CLI contracts without a Tracking entry; this entry was added after
+  the merge, from the PR and commit `d79653c`, by the 2026-09-24 audit of the day's merges.
+  **Changed:** `kxm run` no longer emits the obsolete `phase: pre-3a` (`RUN_ENGINE_PHASE`
+  is gone from `engine.ts`); creation returns `execution.status: not_started` with the live
+  prerequisites and the `runs drive`/`runs status`/`runs receipt` next steps. Creating a run
+  is not executing it, and nothing starts paid model execution after creation. `kxm suggest`
+  (`suggest.ts`) fails closed with structured, actionable errors when harness
+  authentication or capability is unavailable, honors an explicit Claude-only constraint,
+  recommends flat installable workflow IDs, prints the install, create and execute commands
+  separately, quotes the prompt shell-literally for PowerShell and POSIX, refuses an existing
+  workflow whose routing is unchecked, and never substitutes Grok or invents model
+  availability. A writer recommendation needs audited writer admission: live writers exist
+  for Pi/Grok, not Claude, and Claude's Runtime profile stays read-only. `workflow add`
+  (`cli/workflows.ts`, `workflow-manager.ts`) validates the ID, the restricted YAML, schema
+  and transitions, and the prospective local-project references through the runner
+  schema/compiler before writing; a refusal exits 2 with a structured error
+  (`workflow_template_unknown`, `workflow_invalid`), dry runs stay mutation-free, and global
+  `.yaml`/`.yml` copies, explicit destination IDs and description overrides are preserved.
+  `gate validate --file` runs local workflow YAML through the same runner checks and keeps
+  the webhook JSON/environment-source and secret checks. Task preflight (`cli/tasks.ts`)
+  refuses incompatible work before it creates a run or changes task state. `kxm init` and the
+  system inventory (`cli/project.ts`, `cli/system.ts`, `harness.ts`) explain the generic
+  Pi/npm settings and per-agent harness overrides and report the project's actual default
+  harness. **Gate:** existing `npm run verify` on Ubuntu Node 22.21.0 at merge-base
+  `7880eed`, green (1309 passed, 10 skipped, 0 failed); CI validate legs green (Linux Node
+  22.19.0 and Node 24, plugin validation, docs lint, change classification). The Windows
+  full-suite attempt timed out on symlink/permission, cleanup-lock and POSIX-path fixtures,
+  so there is no Windows full-suite claim. New test files `test/core/gate-validation.test.ts`
+  and `test/core/suggest.test.ts`; `cli.ts` and the existing CLI, engine, harness and
+  role/workflow-manager suites changed with it. `docs/reference/cli-reference.md`,
+  `docs/contributing/test-matrix.md`, `docs/reference/workflow-definitions.md`,
+  `docs/start/first-workflow.md`, `docs/start/quickstart-claude-code.md` and `CHANGELOG.md`
+  are updated. **Not done:** a Claude writer sandbox, automatic paid execution after run
+  creation, inferred .NET test commands and a web-preview deployment pipeline were out of
+  scope.
+
 - **`kxm role add --pick <global-id>` copies the global role, and a local `role add` writes
   only a role the project loader accepts, at the project root (2026-09-23).** In local scope
   global candidates carried the `listRoles` summary as their payload, but the pick used a
@@ -2740,6 +2777,20 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   never by widening a bound. Until then a lone red in these names is a load
   artifact to re-run through `npm test`, not a product failure — but say so in the
   PR instead of silently re-rolling.
+  The same class surfaced two more instances in a loaded macOS full-suite run
+  (2026-09-24, `--test-concurrency=4`): `async inventory probes yield to sibling
+  timers instead of blocking spawnSync` (`harness.test.ts`) and `long-lived worker
+  ignores stale RPC responses and confirms abort during active kxm_await`
+  (`worker.test.ts`). Both now have barrier fixes in this tree. This is the trigger
+  firing for the worker transport test. The probe test counts event-loop turns while
+  the probe is pending, where a spawnSync regression yields zero, and its `/bin/sh`
+  fixture answers without a node cold start or the 120 ms delay. The worker test's
+  fixture asks for the stop through the worker's control file once `kxm_await` is
+  announced, rather than a 150 ms stop timer, so the 1000 ms drain window no longer
+  covers a cold start. It confirms the abort only after the worker logs the new
+  `worker_abort_response_ignored` event (`scripts/kxm-worker.mjs`) for two in-drain
+  stale responses, which replaces the 80 ms delay. The admission and supervisor
+  instances above remain open.
 
 - **Intake contract follow-ups from the astra review (owner: workflow/runtime
   maintainer; trigger: the M2 dispatch consumer, or any touch of event-store

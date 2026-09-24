@@ -923,6 +923,8 @@ function start() {
         abortRequestId = undefined;
         log("worker_drain_confirmed");
         child?.stdin.end();
+      } else if (stopping && abortRequestId && response?.type === "response" && response.command === "abort") {
+        log("worker_abort_response_ignored", typeof response.id === "string" ? { responseId: response.id.slice(0, 128) } : {});
       }
       if (!stopping) observeRpcEvent(response);
     } catch {
