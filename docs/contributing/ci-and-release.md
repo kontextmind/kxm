@@ -24,10 +24,11 @@ flowchart LR
   MAIN -->|"daily 04:00 UTC"| NIGHT[Nightly<br/>complete suite]
 ```
 
-All workflows live in `.github/workflows/`. Every job runs on the organization's
-ARC runner scale set, and `test/core/ci-contract.test.ts` pins the
-runner selector, job names, coverage floors and release triggers. Change a
-workflow and that test together.
+All workflows live in `.github/workflows/`. Linux jobs run on the organization's
+ARC runner scale set. Validate also runs two Windows legs on GitHub-hosted
+`windows-latest`. `test/core/ci-contract.test.ts` pins the runner selectors, job
+names, coverage floors and release triggers. Change a workflow and that test
+together.
 
 ## What runs where
 
@@ -64,11 +65,14 @@ Three differences matter when a check fails on one side only:
 
 ### Validate matrix and required checks
 
-The Validate job runs on Node 22.19.0 and Node 24, on Linux, with a
-three-minute job timeout. The branch ruleset
-requires the job names `Validate (linux, Node 22.19.0)` and
-`Validate (linux, Node 24)`, so renaming the job or the matrix means updating
-the ruleset in the same change. A newer push cancels an older pull request run;
+The Validate job runs on Node 22.19.0 and Node 24, on Linux and Windows. Linux
+uses the ARC scale set `kontextmind-doks` with a three-minute job timeout.
+Windows uses GitHub-hosted `windows-latest` with a fifteen-minute timeout so
+`npm ci` can finish. The branch ruleset requires the job names
+`Validate (linux, Node 22.19.0)` and `Validate (linux, Node 24)` only; the
+Windows names are reported but not required, so a Windows-only failure does not
+block merge. Renaming a required Linux job or the matrix means updating the
+ruleset in the same change. A newer push cancels an older pull request run;
 runs on `main` are never cancelled.
 
 ### CI jobs stay queued while a runner is online
@@ -106,9 +110,11 @@ autoscaler. Do not relabel `km-gh-rn01` or push an empty commit as a routing
 workaround.
 
 > [!NOTE]
-> Windows legs are paused, not removed. Windows stays a supported target, and
-> Windows-specific fixtures (for example the `pi.cmd` worker launch in
-> `test/core/worker.test.ts`) run when you test on Windows locally.
+> Windows Validate uses GitHub-hosted `windows-latest`, not a self-hosted
+> homelab runner and not the ARC scale set. Do not add a `kontextmind-doks`
+> label to a Windows runner. Nightly complete coverage and release stay on
+> Linux. Windows-specific fixtures (for example the `pi.cmd` worker launch in
+> `test/core/worker.test.ts`) also run in the hosted Windows Validate legs.
 
 ### The docs-only classifier
 

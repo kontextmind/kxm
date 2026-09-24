@@ -102,7 +102,12 @@ type CiJobs = Record<
     "runs-on"?: unknown;
     "timeout-minutes"?: unknown;
     steps?: Array<{ name?: string; if?: unknown; run?: string }>;
-    strategy?: { matrix?: { node?: unknown[]; runner?: Array<{ name?: string }> } };
+    strategy?: {
+      matrix?: {
+        node?: unknown[];
+        runner?: Array<{ name?: string; labels?: unknown; timeout?: unknown }>;
+      };
+    };
   }
 >;
 
@@ -138,11 +143,14 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
   const runners = doc.jobs?.validate?.strategy?.matrix?.runner ?? [];
   assert.equal(doc.jobs?.changes?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.docs?.["runs-on"], ARC_RUNNER);
-  assert.equal(doc.jobs?.validate?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.validate?.["runs-on"], "${{ matrix.runner.labels }}");
+  assert.equal(doc.jobs?.validate?.["timeout-minutes"], "${{ matrix.runner.timeout }}");
   assert.equal(doc.jobs?.plugin?.["runs-on"], ARC_RUNNER);
   assert.deepEqual(nodes.map(String), ["22.19.0", "24"]);
-  assert.deepEqual(runners, [{ name: "linux" }]);
-  assert.equal(runners.some((r) => r.name === "windows"), false);
+  assert.deepEqual(runners, [
+    { name: "linux", labels: ARC_RUNNER, timeout: 3 },
+    { name: "windows", labels: "windows-latest", timeout: 15 },
+  ]);
   const expanded = runners.flatMap((runner) =>
     nodes.map((node) =>
       nameTemplate
@@ -153,9 +161,11 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
   assert.deepEqual(new Set(expanded), new Set([
     "Validate (linux, Node 22.19.0)",
     "Validate (linux, Node 24)",
+    "Validate (windows, Node 22.19.0)",
+    "Validate (windows, Node 24)",
   ]));
-  assert.equal(expanded.length, 2);
-  assert.equal(1 + 1 + expanded.length + 1, 5);
+  assert.equal(expanded.length, 4);
+  assert.equal(1 + 1 + expanded.length + 1, 7);
   assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
 
   const validateSteps = doc.jobs?.validate?.steps ?? [];
@@ -181,7 +191,7 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
   const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");
   assert.match(validateRuns, /npm run validate:pr/);
   assert.doesNotMatch(validateRuns, /npm run validate:ci/);
-  assert.equal(doc.jobs?.validate?.["timeout-minutes"], 3);
+  assert.equal(doc.jobs?.validate?.["timeout-minutes"], "${{ matrix.runner.timeout }}");
   assert.match(ciText, /@anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /npm install --no-save --ignore-scripts @anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /node node_modules\/@anthropic-ai\/claude-code\/install\.cjs/);
@@ -237,23 +247,31 @@ test("PR template asks for slice issue and verify, not a local plugin checkbox",
   assert.doesNotMatch(template, /npm pack --dry-run/);
 });
 
-test("all workflow selectors are the ARC scale set and old labels fail closed", () => {
+test("Linux workflow selectors are the ARC scale set and old labels fail closed", () => {
   const ci = parse(ciText) as WorkflowDoc;
   const release = parse(releaseText) as WorkflowDoc;
   const smoke = parse(smokeText) as WorkflowDoc;
   const nightly = parse(nightlyText) as WorkflowDoc;
-  assertArcScaleSetSelectors([ci, release, smoke, nightly]);
+  assert.equal(ci.jobs?.validate?.["runs-on"], "${{ matrix.runner.labels }}");
+  const linuxCi = structuredClone(ci);
+  assert.ok(linuxCi.jobs?.validate);
+  delete linuxCi.jobs.validate;
+  assertArcScaleSetSelectors([linuxCi, release, smoke, nightly]);
   assertSmokeEqualityGate(smoke);
   for (const text of [ciText, releaseText, smokeText, nightlyText]) {
-    assert.doesNotMatch(text, /self-hosted/);
+    assert.doesNotMatch(text, /runs-on:[^\n]*self-hosted/);
     assert.doesNotMatch(text, /ubuntu-latest/);
     assert.doesNotMatch(text, /km-gh-rn01/);
     assert.doesNotMatch(text, /\[[^\]]*doks[^\]]*\]/);
     assert.doesNotMatch(text, /runs-on:\s*\$\{\{\s*vars\./);
   }
-  const mutatedCi = structuredClone(ci);
-  assert.ok(mutatedCi.jobs?.validate);
-  mutatedCi.jobs.validate["runs-on"] = ["self-hosted", "Linux", "X64", "doks"];
+  assert.match(ciText, /labels: windows-latest/);
+  assert.doesNotMatch(releaseText, /windows-latest/);
+  assert.doesNotMatch(smokeText, /windows-latest/);
+  assert.doesNotMatch(nightlyText, /windows-latest/);
+  const mutatedCi = structuredClone(linuxCi);
+  assert.ok(mutatedCi.jobs?.docs);
+  mutatedCi.jobs.docs["runs-on"] = ["self-hosted", "Linux", "X64", "doks"];
   assert.throws(() => assertArcScaleSetSelectors([mutatedCi, release, smoke, nightly]));
   const mutatedSmoke = structuredClone(smoke);
   assert.ok(mutatedSmoke.jobs?.smoke);
