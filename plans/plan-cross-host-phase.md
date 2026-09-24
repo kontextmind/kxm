@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-22"
-updated: "2026-09-22"
+updated: "2026-09-24"
 authority: "instruction"
 confidence: "verified"
 summary: "Revised delivery plan for the cross-host A2A phase (P0–P6), replanned against delivered S0–S5 by Claude Fable at the operator's direction. P0 witnesses the existing transport cross-host; P1–P3 build presence, queued delivery and fenced leases; P4 stays behind its trigger; P5 is the sync-event outbox; P6 closes the Phase 8 gate."
@@ -18,6 +18,7 @@ related:
   - research-a2a-cross-host.md
   - ../docs/contracts/synchronization.md
   - ../docs/contracts/architecture.md
+  - research-jev-system-one.md
 depends_on: []
 blocked_by: []
 ---
