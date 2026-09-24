@@ -8,13 +8,13 @@ import { buildArgv } from "./harness-run.mjs";
 
 // Launch intent only: these labels are not observed model identity or admission.
 export function nativeCriticLaunch(harness) {
-  if (!["fable", "astra"].includes(harness)) {
-    throw new Error("usage: native-critic.mjs <fable|astra> <prompt>");
+  if (!["fable", "astra", "opus"].includes(harness)) {
+    throw new Error("usage: native-critic.mjs <fable|astra|opus> <prompt>");
   }
-  const model = harness === "fable" ? "fable" : "gpt-6-astra";
-  const command = harness === "fable" ? "claude" : "codex";
-  const args = harness === "fable"
-    ? ["-p", "--model", model, "--output-format", "json", "--no-session-persistence", "--tools", "Read,Glob,Grep", "--setting-sources", "user"]
+  const model = harness === "fable" ? "fable" : harness === "opus" ? "opus" : "gpt-6-astra";
+  const command = harness === "fable" || harness === "opus" ? "claude" : "codex";
+  const args = harness === "fable" || harness === "opus"
+    ? ["-p", "--model", model, "--effort", "medium", "--output-format", "json", "--no-session-persistence", "--tools", "Read,Glob,Grep", "--setting-sources", "user"]
     : buildArgv({ harness: "codex", model, effort: "low", permission: "read-only", prompt_file: "-" });
   return { model, command, args };
 }
@@ -36,7 +36,7 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   const client = new HubClient({ serverUrl, authToken: env.KXM_AUTH_TOKEN, name: `${harness}-critic`, purpose: "independent CLI critic", project: env.KXM_PROJECT || ".kxm", model });
   const prompt = promptParts.join(" ");
-  const agent = await client.start(() => {});
+  const agent = await client.start(() => { });
   const result = await new Promise((resolve) => {
     const child = spawn(command, args, { env, stdio: ["pipe", "pipe", "pipe"], shell: false });
     let stdout = "", stderr = "";

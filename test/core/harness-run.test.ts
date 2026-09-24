@@ -1177,66 +1177,66 @@ const inputHarnesses: Array<{
   auth: () => Record<string, unknown>;
   assignment: { stdout: string };
 }> = [
-  {
-    harness: "agy",
-    role: "writer",
-    model: "gemini-3.8-flash-low",
-    permission: "edit",
-    auth: agyAuth,
-    assignment: {
-      stdout: `${JSON.stringify({
-        conversation_id: "agy-rel",
-        status: "SUCCESS",
-        response: "ok",
-        usage: { input_tokens: 1, output_tokens: 1, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 2 },
-      })}\n`,
+    {
+      harness: "agy",
+      role: "writer",
+      model: "gemini-3.8-flash-low",
+      permission: "edit",
+      auth: agyAuth,
+      assignment: {
+        stdout: `${JSON.stringify({
+          conversation_id: "agy-rel",
+          status: "SUCCESS",
+          response: "ok",
+          usage: { input_tokens: 1, output_tokens: 1, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 2 },
+        })}\n`,
+      },
     },
-  },
-  {
-    harness: "grok",
-    role: "writer",
-    model: "grok-4.6",
-    permission: "edit",
-    auth: grokAuth,
-    assignment: {
-      stdout: `${JSON.stringify({ result: "ok", modelUsage: { "grok-4.6-build": { inputTokens: 1, outputTokens: 1 } } })}\n`,
+    {
+      harness: "grok",
+      role: "writer",
+      model: "grok-4.6",
+      permission: "edit",
+      auth: grokAuth,
+      assignment: {
+        stdout: `${JSON.stringify({ result: "ok", modelUsage: { "grok-4.6-build": { inputTokens: 1, outputTokens: 1 } } })}\n`,
+      },
     },
-  },
-  {
-    harness: "claude",
-    role: "planner",
-    model: "fable",
-    permission: "read-only",
-    auth: claudeAuth,
-    assignment: { stdout: `${JSON.stringify(claudeFablePayload)}\n` },
-  },
-  {
-    harness: "codex",
-    role: "reviewer-cli",
-    model: "gpt-5.6-sol",
-    permission: "read-only",
-    auth: codexAuth,
-    assignment: {
-      stdout: [
-        JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "review notes" } }),
-        JSON.stringify({ type: "turn.completed", usage: { input_tokens: 4, output_tokens: 6 } }),
-      ].join("\n"),
+    {
+      harness: "claude",
+      role: "planner",
+      model: "fable",
+      permission: "read-only",
+      auth: claudeAuth,
+      assignment: { stdout: `${JSON.stringify(claudeFablePayload)}\n` },
     },
-  },
-  {
-    harness: "pi",
-    role: "experiment",
-    model: "openrouter/nous-research/deephermes-3-mistral-24b-preview",
-    permission: "read-only",
-    auth: piAuth,
-    assignment: {
-      stdout: [
-        piLine({ type: "session", id: "s" }),
-        piLine(piAssistantEnd()),
-      ].join(""),
+    {
+      harness: "codex",
+      role: "reviewer-cli",
+      model: "gpt-5.6-sol",
+      permission: "read-only",
+      auth: codexAuth,
+      assignment: {
+        stdout: [
+          JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "review notes" } }),
+          JSON.stringify({ type: "turn.completed", usage: { input_tokens: 4, output_tokens: 6 } }),
+        ].join("\n"),
+      },
     },
-  },
-];
+    {
+      harness: "pi",
+      role: "experiment",
+      model: "openrouter/nous-research/deephermes-3-mistral-24b-preview",
+      permission: "read-only",
+      auth: piAuth,
+      assignment: {
+        stdout: [
+          piLine({ type: "session", id: "s" }),
+          piLine(piAssistantEnd()),
+        ].join(""),
+      },
+    },
+  ];
 
 test("missing brief fails closed before any spawn for each harness", async () => {
   const dir = tempDir();
@@ -1499,8 +1499,8 @@ const FORWARDING_PATTERN = /just(?:\s+[^\n]+)?\s+(assign|witness|accept|attribut
 test("just transport recipes use evidence-informed effort defaults and never mint assignment proof", () => {
   const just = readFileSync(resolve("justfile"), "utf8");
   assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.6",effort:"medium"/);
-  assert.match(just, /role:"planner",harness:"claude",model:"fable",effort:"medium"/);
-  assert.match(just, /role:"reviewer-arch",harness:"claude",model:"fable",effort:"medium"/);
+  assert.match(just, /role:"planner",harness:"claude",model:"opus",effort:"medium"/);
+  assert.match(just, /role:"reviewer-arch",harness:"claude",model:"opus",effort:"medium"/);
   assert.match(just, /role:"reviewer-cli",harness:"codex",model:"gpt-5\.6-sol",effort:"low"/);
   assert.doesNotMatch(just, /effort:"high"/);
   assert.doesNotMatch(just, /Normal assignment workflow/);
@@ -2845,37 +2845,37 @@ test("observed exit without stdio close is not missing completion", { timeout: 1
     const kills: string[] = [];
     const result = await Promise.race([
       runHarness({
-      schema: REQUEST_SCHEMA,
-      harness: "grok",
-      role: "writer",
-      model: "grok-4.6",
-      permission: "edit",
-      prompt_file: prompt,
-      output_dir: join(dir, "out"),
-    } as never, {
-      platform: process.platform,
-      env: { PATH: "/tmp/kxm-harness-bin" },
-      existsSync: (path: string) => String(path).includes("grok"),
-      spawnSync: () => grokAuth(),
-      killGraceMs: 25,
-      spawn: () => {
-        const child = fakeChild({ hang: true, keepPipesOpen: true });
-        child.kill = (signal?: string) => {
-          kills.push(String(signal));
-          return true;
-        };
-        queueMicrotask(() => {
-          child.stdout.write(`${JSON.stringify({
-            result: "drained",
-            modelUsage: { "grok-4.6-build": { inputTokens: 3, outputTokens: 1 } },
-          })}\n`);
-          child.emit("exit", 0, null);
-        });
-        return child;
-      },
-      observedAt: "2026-09-05",
-      now: () => 1_000,
-    }),
+        schema: REQUEST_SCHEMA,
+        harness: "grok",
+        role: "writer",
+        model: "grok-4.6",
+        permission: "edit",
+        prompt_file: prompt,
+        output_dir: join(dir, "out"),
+      } as never, {
+        platform: process.platform,
+        env: { PATH: "/tmp/kxm-harness-bin" },
+        existsSync: (path: string) => String(path).includes("grok"),
+        spawnSync: () => grokAuth(),
+        killGraceMs: 25,
+        spawn: () => {
+          const child = fakeChild({ hang: true, keepPipesOpen: true });
+          child.kill = (signal?: string) => {
+            kills.push(String(signal));
+            return true;
+          };
+          queueMicrotask(() => {
+            child.stdout.write(`${JSON.stringify({
+              result: "drained",
+              modelUsage: { "grok-4.6-build": { inputTokens: 3, outputTokens: 1 } },
+            })}\n`);
+            child.emit("exit", 0, null);
+          });
+          return child;
+        },
+        observedAt: "2026-09-05",
+        now: () => 1_000,
+      }),
       new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error("helper did not settle after observed exit")), 800);
       }),

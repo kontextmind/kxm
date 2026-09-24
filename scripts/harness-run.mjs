@@ -153,7 +153,7 @@ export const ROUTES = Object.freeze({
     provider: "anthropic",
     roles: Object.freeze(["planner", "reviewer-arch"]),
     permissions: Object.freeze(["read-only"]),
-    models: Object.freeze(["fable"]),
+    models: Object.freeze(["fable", "opus"]),
     efforts: Object.freeze(["low", "medium", "high", "xhigh", "max"]),
     auth: Object.freeze({ args: ["auth", "status"], loginHint: "claude auth login" }),
   },

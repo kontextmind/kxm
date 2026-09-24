@@ -259,9 +259,9 @@ test("active KXM schemas, examples, and roster.yaml remain the live formats", ()
   assert.deepEqual(roster.lineup.writer, ["grok-native", "qwen-openrouter-pi"]);
   assert.equal(roster.routes["grok-native"]?.status, "admitted");
   assert.equal(roster.routes["qwen-openrouter-pi"]?.status, "admitted");
-  assert.equal(roster.required_critics["review-arch"], "fable-claude");
+  assert.equal(roster.required_critics["review-arch"], "opus-claude");
   assert.equal(roster.required_critics["review-cli"], "sol-codex");
-  assert.equal(roster.routes["fable-claude"]?.model, "fable");
+  assert.equal(roster.routes["opus-claude"]?.model, "opus");
   assert.equal(roster.routes["sol-codex"]?.model, "gpt-5.6-sol");
 
   const primary = parseRestrictedYaml(readFileSync("examples/project/.kxm/models/primary.yaml"), "primary.yaml");
