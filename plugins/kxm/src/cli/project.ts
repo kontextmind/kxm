@@ -1003,7 +1003,11 @@ function formatKxmSyncStatus(sync: KxmProjectSyncStatus[] | undefined, running: 
     // empty outbox. Saying "pending 0" there would send the operator looking
     // somewhere else while every row in the project sits unreachable.
     if (project.storeReadable === false) {
-      return `sync ${project.projectId}: blocked (its store is not readable by this build) — ${project.lastError ?? "unknown reason"}`;
+      // "cannot open this project", not "its store is unreadable": what the
+      // supervisor actually sees is whatever `openKxmRuntimeContext` refused —
+      // an out-of-date event store *or* a project config a newer brake rejects.
+      // Witnessed on kxm-dev-svr on 0.7.94, where it was the workflow config.
+      return `sync ${project.projectId}: blocked (this build cannot open the project) — ${project.lastError ?? "unknown reason"}`;
     }
     const counts = `pending ${project.outbox.pending}, acked ${project.outbox.acked}, refused ${project.outbox.refused}`;
     const tail = project.state === "refusing"
