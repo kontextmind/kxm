@@ -15,7 +15,9 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# CI jobs run on the ARC scale set kontextmind-doks (1..4 ephemeral pods).
+# Linux jobs run on the ARC scale set kontextmind-doks (1..4 ephemeral pods).
+# Validate also runs Windows on GitHub-hosted windows-latest; those legs are
+# not required by protect-main.
 jobs:
   changes:
     name: Classify changes
@@ -84,22 +86,28 @@ jobs:
   validate:
     name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
     needs: changes
-    runs-on: kontextmind-doks
-    # This is the merge-safety gate, not the exhaustive suite. Keep the
-    # started-job duration within the operator's three-minute budget; the
-    # complete suite and coverage floors run in nightly.yml.
-    timeout-minutes: 3
+    runs-on: ${{ matrix.runner.labels }}
+    # Linux merge-safety stays on a three-minute budget. Windows hosted images
+    # need longer for npm ci; they are not protect-main required checks.
+    # The complete suite and coverage floors run in nightly.yml (Linux only).
+    timeout-minutes: ${{ matrix.runner.timeout }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
         node: [22.19.0, 24]
-        # Linux runs on the ARC scale set. Windows legs are paused by
-        # operator decision on 2026-09-05, not removed as a supported
-        # target. Job names are pinned by the protect-main ruleset, so change
-        # name and ruleset together. Resuming Windows reintroduces a
-        # per-runner selector and a ruleset update.
+        # Linux: ARC scale set kontextmind-doks. Windows: GitHub-hosted
+        # windows-latest (not the homelab VM, not a repository runner).
+        # protect-main required names stay Validate (linux, Node 22.19.0|24).
         runner:
           - name: linux
+            labels: kontextmind-doks
+            timeout: 3
+          - name: windows
+            labels: windows-latest
+            timeout: 15
 
     steps:
       - name: Skip code validation for documentation-only changes
@@ -129,9 +137,9 @@ jobs:
         if: needs.changes.outputs.code == 'true' && steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Both PRs and main run the bounded merge-safety gate. The exhaustive
-      # suite, coverage instrumentation, docs lint, and package dry-run live in
-      # nightly.yml. Historical Windows coverage evidence remains in Tracking.
+      # Both PRs and main run the bounded merge-safety gate on every matrix
+      # cell. The exhaustive suite, coverage instrumentation, docs lint, and
+      # package dry-run live in nightly.yml (Linux).
       - name: Run the three-minute validation gate
         if: needs.changes.outputs.code == 'true'
         run: npm run validate:pr

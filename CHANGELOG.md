@@ -81,6 +81,12 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Windows Validate legs run again on GitHub-hosted `windows-latest`.** The PR gate
+  still requires only `Validate (linux, Node 22.19.0)` and `Validate (linux, Node 24)`
+  on ARC `kontextmind-doks`. Windows Node 22.19.0 and 24 report `validate:pr` but are
+  not protect-main required checks. Nightly complete coverage and release stay on
+  Linux. See [CI and release](docs/contributing/ci-and-release.md).
+
 - **The rotation surface drive uses is the one setup writes.** Guide setup appends only
   reviewed selectors to `.kxm/routes.yaml`. It skips Google guide candidates: Google's
   route is the Pi `antigravity` provider, which a Runtime drive cannot reach yet, so a
