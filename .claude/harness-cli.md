@@ -14,6 +14,12 @@ are corrected from `plugins/kxm/src/vnext-harness.ts` and helper argv (M5
 docs). Codex flags were re-audited against official online docs and installed
 CLI **0.153.4 on 2026-09-10**; that does not refresh the other rows. Re-probe
 after any CLI update; these surfaces change without notice.
+The `claude` and `codex` rows were re-probed on 2026-09-24 against the installed CLIs:
+`claude` 2.1.281 with `-p`, `--model opus` (`claude-opus-5-5`, firstParty),
+`--output-format json`, `--no-session-persistence`, `--tools Read` and `--safe-mode`;
+`codex` 0.156.1 with `exec`, `-m gpt-6-astra`, `-c model_reasoning_effort=...`,
+`--sandbox read-only`, `--ignore-user-config`, `-c approval_policy="never"`, `--json` and a
+stdin `-` prompt; the other rows were not re-audited.
 Installed ≠ auth-verified ≠ helper-eligible.
 
 ## Installed vs auth-verified
@@ -21,8 +27,8 @@ Installed ≠ auth-verified ≠ helper-eligible.
 | CLI | Installed (this host) | Auth-verified | Helper-eligible |
 |---|---|---|---|
 | `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter or Nous Portal may be `ready`; native-lab prefixes are braked | OpenRouter or Nous Portal, after JSONL usage parse |
-| `claude` | 2.1.261 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
-| `codex` | 0.153.4 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
+| `claude` | 2.1.281 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
+| `codex` | 0.156.1 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
 | `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.6`) |
 | `kimi` | 0.40.1 | oauth via `kimi provider list` | **no** — unverified helper dispatch |
 | `gemini` | 0.56.0 | **unknown** (installed only) | **no** — deprecated individual-tier CLI; catalog stays |
