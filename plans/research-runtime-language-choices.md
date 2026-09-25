@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-14"
-updated: "2026-09-23"
+updated: "2026-09-25"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Evidence-led choices for TS orchestration, optional Python tooling and bounded Rust helpers within the unified milestones."
@@ -19,6 +19,7 @@ related:
   - research-additional-forks.md
   - research-kxm-harness-strategy.md
   - research-memory-studio-forks.md
+  - plan-python-migration.md
 depends_on: []
 blocked_by: []
 details:
