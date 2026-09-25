@@ -1129,6 +1129,268 @@ function createKxmTuiPanelComponent(options) {
   return new KxmTuiPanelComponent(options);
 }
 
+// packages/core/tui/src/tui/optimizer.ts
+function evaluatePlanOptimizations(tasks) {
+  const proposals = [];
+  const byStage = /* @__PURE__ */ new Map();
+  for (const task of tasks) {
+    const list = byStage.get(task.stageId) ?? [];
+    list.push(task);
+    byStage.set(task.stageId, list);
+  }
+  for (const [stageId, stageTasks] of byStage) {
+    if (stageTasks.length >= 2) {
+      const independent = stageTasks.filter((t) => t.dependencies.length === 0 || t.dependencies.every((dep) => !stageTasks.some((st) => st.id === dep)));
+      if (independent.length >= 2) {
+        proposals.push({
+          id: `opt_fanout_${stageId}`,
+          category: "concurrency",
+          title: `Parallelize ${independent.length} tasks in stage "${stageId}"`,
+          description: `Tasks [${independent.map((t) => t.id).join(", ")}] have zero mutual dependencies and can execute concurrently via kxm_fanout.`,
+          targetTaskIds: independent.map((t) => t.id),
+          projectedTimeSavingsSeconds: Math.round(independent.length * 15),
+          projectedCostSavingsPercent: 0,
+          selected: true
+        });
+      }
+    }
+  }
+  for (const task of tasks) {
+    const isFrontier = /claude-3-5-sonnet|claude-3-opus|gpt-4o|gpt-5/i.test(task.model);
+    if (isFrontier && (task.category === "docs" || /doc|readme|markdown/i.test(task.title))) {
+      proposals.push({
+        id: `opt_cost_${task.id}`,
+        category: "cost",
+        title: `Downscale model for documentation task "${task.title}"`,
+        description: `Task "${task.id}" is documentation-focused. Routing to a high-throughput lightweight model saves significant token budget.`,
+        targetTaskIds: [task.id],
+        projectedTimeSavingsSeconds: 5,
+        projectedCostSavingsPercent: 65,
+        suggestedHarness: "pi",
+        suggestedModel: "qwen/qwen3-coder-plus",
+        selected: true
+      });
+    } else if (isFrontier && (task.category === "lint" || /lint|format|style/i.test(task.title))) {
+      proposals.push({
+        id: `opt_lint_${task.id}`,
+        category: "cost",
+        title: `Downscale model for formatting/lint task "${task.title}"`,
+        description: `Task "${task.id}" performs deterministic formatting/linting. Use a fast local/tier-1 helper.`,
+        targetTaskIds: [task.id],
+        projectedTimeSavingsSeconds: 8,
+        projectedCostSavingsPercent: 80,
+        suggestedHarness: "pi",
+        suggestedModel: "google/gemini-2.5-flash",
+        selected: true
+      });
+    }
+  }
+  const totalTimeSavings = proposals.reduce((acc, p) => acc + p.projectedTimeSavingsSeconds, 0);
+  const totalCostSavings = proposals.length > 0 ? Math.round(proposals.reduce((acc, p) => acc + p.projectedCostSavingsPercent, 0) / proposals.length) : 0;
+  return {
+    proposals,
+    totalProjectedTimeSavingsSeconds: totalTimeSavings,
+    totalProjectedCostSavingsPercent: totalCostSavings
+  };
+}
+function applyPlanOptimizations(tasks, proposals) {
+  const selected = proposals.filter((p) => p.selected);
+  if (selected.length === 0) return { tasks: [...tasks], appliedCount: 0 };
+  const modelOverrides = /* @__PURE__ */ new Map();
+  for (const proposal of selected) {
+    if (proposal.category === "cost" && proposal.suggestedModel) {
+      for (const targetId of proposal.targetTaskIds) {
+        modelOverrides.set(targetId, {
+          ...proposal.suggestedHarness ? { harness: proposal.suggestedHarness } : {},
+          model: proposal.suggestedModel
+        });
+      }
+    }
+  }
+  const updated = tasks.map((task) => {
+    const override = modelOverrides.get(task.id);
+    if (!override) return task;
+    return {
+      ...task,
+      ...override.harness ? { harness: override.harness } : {},
+      ...override.model ? { model: override.model } : {}
+    };
+  });
+  return {
+    tasks: updated,
+    appliedCount: selected.length
+  };
+}
+
+// packages/core/tui/src/tui/history.ts
+function filterHistoryEvents(events, options = {}) {
+  const category = options.category ?? "all";
+  const query = options.query?.trim().toLowerCase();
+  return events.filter((ev) => {
+    if (category !== "all" && ev.category !== category) return false;
+    if (!query) return true;
+    const matchTarget = `${ev.id} ${ev.title} ${ev.stageId ?? ""} ${ev.taskId ?? ""} ${ev.role ?? ""} ${ev.model ?? ""} ${ev.journalSummary ?? ""}`.toLowerCase();
+    return matchTarget.includes(query);
+  });
+}
+function renderWorkflowHistoryMarkdown(runId, events) {
+  const totalSpend = events.reduce((acc, ev) => acc + (ev.costUsd ?? 0), 0);
+  const passedCount = events.filter((ev) => ev.status === "passed").length;
+  const failedCount = events.filter((ev) => ev.status === "failed").length;
+  let mdContent = `# KXM Workflow Retrospective: ${runId}
+
+`;
+  mdContent += `**Total Events:** ${events.length} (Passed: ${passedCount}, Failed: ${failedCount})
+`;
+  mdContent += `**Total Spend:** $${totalSpend.toFixed(4)} USD
+
+`;
+  mdContent += `## Chronological Event Journal
+
+`;
+  mdContent += `| Timestamp | Category | Title | Status | Role / Model | Duration | Spend |
+`;
+  mdContent += `|---|---|---|---|---|---|---|
+`;
+  for (const ev of events) {
+    const elapsed = ev.durationMs !== void 0 ? `${(ev.durationMs / 1e3).toFixed(1)}s` : "-";
+    const spend = ev.costUsd !== void 0 ? `$${ev.costUsd.toFixed(4)}` : "-";
+    const roleModel = ev.role ? `${ev.role} (${ev.harness ?? "-"}/${ev.model ?? "-"})` : "-";
+    mdContent += `| ${ev.timestamp} | ${ev.category} | ${ev.title} | ${ev.status} | ${roleModel} | ${elapsed} | ${spend} |
+`;
+  }
+  mdContent += `
+## Produced Artifacts & Proofs
+
+`;
+  for (const ev of events) {
+    if (ev.artifacts && ev.artifacts.length > 0) {
+      mdContent += `### ${ev.title} (${ev.id})
+`;
+      for (const art of ev.artifacts) {
+        mdContent += `- \`${art}\`
+`;
+      }
+    }
+  }
+  return mdContent;
+}
+function formatWorkflowHistoryJsonl(runId, events) {
+  return events.map((ev) => JSON.stringify({
+    schema: "kxm.workflow-history-event.v1",
+    runId,
+    ...ev
+  })).join("\n") + "\n";
+}
+
+// packages/core/tui/src/tui/queue.ts
+function reorderQueuedTasks(tasks, fromIndex, toIndex) {
+  if (fromIndex < 0 || fromIndex >= tasks.length || toIndex < 0 || toIndex >= tasks.length || fromIndex === toIndex) {
+    return { success: false, tasks, warning: "invalid_indices" };
+  }
+  const target = tasks[fromIndex];
+  if (target.status === "in_flight" || target.status === "completed") {
+    return {
+      success: false,
+      tasks,
+      warning: `cannot move ${target.status} task "${target.id}"`
+    };
+  }
+  const draft = [...tasks];
+  const [removed] = draft.splice(fromIndex, 1);
+  draft.splice(toIndex, 0, removed);
+  const idToIndex = /* @__PURE__ */ new Map();
+  for (let i = 0; i < draft.length; i++) {
+    idToIndex.set(draft[i].id, i);
+  }
+  for (let i = 0; i < draft.length; i++) {
+    const task = draft[i];
+    for (const depId of task.dependencies) {
+      const depIndex = idToIndex.get(depId);
+      if (depIndex !== void 0 && depIndex > i) {
+        return {
+          success: false,
+          tasks,
+          warning: `Prerequisite violation: "${task.id}" depends on "${depId}", which is scheduled later at position ${depIndex + 1}`
+        };
+      }
+    }
+  }
+  return {
+    success: true,
+    tasks: draft
+  };
+}
+
+// packages/core/tui/src/tui/roleBudget.ts
+function evaluateRoleBudget(config, state, projectedCostUsd = 0) {
+  const projectedRunSpend = state.currentRunSpendUsd + projectedCostUsd;
+  if (config.runSpendCapUsd !== void 0 && projectedRunSpend > config.runSpendCapUsd) {
+    if (config.onExhausted === "cascade_to_roster" && config.fallbackModel) {
+      return {
+        status: "exhausted",
+        nextAction: "cascade",
+        fallbackModel: config.fallbackModel,
+        fallbackHarness: config.fallbackHarness ?? "pi",
+        warning: `Role "${config.roleId}" reached run spend cap ($${config.runSpendCapUsd.toFixed(2)}); rolling over to ${config.fallbackModel}`
+      };
+    }
+    if (config.onExhausted === "borrow_from_pool" && (config.emergencyPoolLimitUsd ?? 0) > state.borrowedFromPoolUsd) {
+      return {
+        status: "exhausted",
+        nextAction: "borrow",
+        warning: `Role "${config.roleId}" borrowing from project emergency buffer`
+      };
+    }
+    return {
+      status: "exhausted",
+      nextAction: config.onExhausted === "pause_for_approval" ? "pause" : "fail_closed",
+      warning: `Role "${config.roleId}" exhausted run spend cap ($${config.runSpendCapUsd.toFixed(2)})`
+    };
+  }
+  if (config.monthlySpendCapUsd !== void 0 && state.currentMonthlySpendUsd + projectedCostUsd > config.monthlySpendCapUsd) {
+    if (config.onExhausted === "cascade_to_roster" && config.fallbackModel) {
+      return {
+        status: "exhausted",
+        nextAction: "cascade",
+        fallbackModel: config.fallbackModel,
+        fallbackHarness: config.fallbackHarness ?? "pi",
+        warning: `Role "${config.roleId}" reached monthly budget limit ($${config.monthlySpendCapUsd.toFixed(2)})`
+      };
+    }
+    return {
+      status: "exhausted",
+      nextAction: "pause",
+      warning: `Role "${config.roleId}" reached monthly budget cap ($${config.monthlySpendCapUsd.toFixed(2)})`
+    };
+  }
+  if (config.runSpendCapUsd && projectedRunSpend / config.runSpendCapUsd >= 0.85) {
+    return {
+      status: "near_limit",
+      nextAction: "proceed",
+      warning: `Role "${config.roleId}" is at ${Math.round(projectedRunSpend / config.runSpendCapUsd * 100)}% of run budget`
+    };
+  }
+  return {
+    status: "ok",
+    nextAction: "proceed"
+  };
+}
+
+// packages/core/tui/src/tui/modelSelector.ts
+function filterModelOptions(models, query, providerFilter) {
+  const q = query?.trim().toLowerCase();
+  const prov = providerFilter?.trim().toLowerCase();
+  return models.filter((m) => {
+    if (prov && m.provider.toLowerCase() !== prov && m.harness.toLowerCase() !== prov) {
+      return false;
+    }
+    if (!q) return true;
+    const matchTarget = `${m.id} ${m.selector} ${m.name} ${m.provider} ${m.harness}`.toLowerCase();
+    return matchTarget.includes(q);
+  });
+}
+
 // packages/core/tui/src/services/registry.ts
 function describe(error) {
   if (error instanceof Error && error.message) return error.message.split(/\r?\n/u)[0].slice(0, KXM_TUI_LIMITS.detailMax);
@@ -1356,7 +1618,126 @@ async function runKxmTuiPanel(input) {
   return stopped && input.abort?.aborted ? 130 : 0;
 }
 
+// packages/core/tui/src/adapters/omp.ts
+function resolveKxmTheme(theme) {
+  if ("headerBg" in theme && typeof theme.headerBg === "function") {
+    return theme;
+  }
+  return createKxmTuiThemeFromPi(theme);
+}
+function createKxmTuiOmpOverlay(options) {
+  let closed = false;
+  let mode = options.initialMode ?? "expanded";
+  let autoDispatch = Boolean(options.autoDispatch);
+  const theme = resolveKxmTheme(options.theme);
+  const panel = new KxmTuiPanelComponent({
+    registry: options.registry,
+    theme,
+    title: options.title,
+    ...options.goal ? { breadcrumb: `Goal: ${options.goal}` } : {},
+    helpLines: [
+      "[Ctrl+O/F2] Toggle Fold  [h] History  [a] Toggle Auto  [o] Optimize  [Shift+\u2191/\u2193] Reorder"
+    ],
+    requestRender: () => options.tui.requestRender(),
+    onQuit: () => {
+      if (closed) return;
+      closed = true;
+      panel.dispose();
+      options.done?.(true);
+    },
+    ...options.width === void 0 ? {} : { getWidth: options.width }
+  });
+  function renderCollapsed(width) {
+    const goalText = options.goal ? `Goal: ${options.goal}` : options.title;
+    const modeBadge = autoDispatch ? theme.accent("[AUTO: ON]") : theme.dim("[STEP MODE]");
+    const hint = theme.dim("[Ctrl+O to Expand]");
+    const content = ` [KXM] ${goalText} \u2500\u2500 ${modeBadge} \u2500\u2500 ${hint}`;
+    const pad = Math.max(0, width - content.length);
+    return [content + " ".repeat(pad)];
+  }
+  function handleInput(data) {
+    if (closed) return;
+    if (data === "" || data === "\x1BOQ" || data === "\x1B[12~") {
+      mode = mode === "collapsed" ? "expanded" : "collapsed";
+      options.tui.requestRender();
+      return;
+    }
+    if (mode === "collapsed") {
+      if (data === "\r" || data === " " || data === "o" || data === "O") {
+        mode = "expanded";
+        options.tui.requestRender();
+      }
+      return;
+    }
+    if (data === "a" || data === "A") {
+      autoDispatch = !autoDispatch;
+      options.onToggleAutoDispatch?.(autoDispatch);
+      options.tui.requestRender();
+      return;
+    }
+    if (data === "h" || data === "H") {
+      mode = mode === "history" ? "expanded" : "history";
+      options.tui.requestRender();
+      return;
+    }
+    if (data === "o" || data === "O") {
+      mode = "optimizer";
+      options.onRunOptimizer?.();
+      options.tui.requestRender();
+      return;
+    }
+    if ((data === "x" || data === "X") && mode === "history") {
+      options.onExportHistory?.("both");
+      options.tui.requestRender();
+      return;
+    }
+    if (data === "\x1B" && mode !== "expanded") {
+      mode = "expanded";
+      options.tui.requestRender();
+      return;
+    }
+    panel.handleInput(data);
+    options.tui.requestRender();
+  }
+  return {
+    getMode: () => mode,
+    setMode: (nextMode) => {
+      mode = nextMode;
+      options.tui.requestRender();
+    },
+    isAutoDispatch: () => autoDispatch,
+    toggleAutoDispatch: () => {
+      autoDispatch = !autoDispatch;
+      options.onToggleAutoDispatch?.(autoDispatch);
+      options.tui.requestRender();
+    },
+    render: (width) => {
+      if (mode === "collapsed") {
+        return renderCollapsed(width);
+      }
+      return panel.render(width);
+    },
+    handleInput,
+    invalidate: () => panel.invalidate(),
+    dispose: () => {
+      if (closed) return;
+      closed = true;
+      panel.dispose();
+      options.done?.(true);
+    }
+  };
+}
+
 // packages/core/tui/src/adapters/pi.ts
+var createKxmTuiPiOverlay = createKxmTuiOmpOverlay;
+function renderPiWorkflowWidget(options) {
+  const filled = Math.min(10, Math.max(0, Math.round(options.progressPercent / 100 * 10)));
+  const bar = `[${"\u2588".repeat(filled)}${"\u2591".repeat(10 - filled)}] ${options.progressPercent}%`;
+  const mode = options.autoDispatch ? "AUTO" : "STEP";
+  const line1 = `[KXM] Goal: ${options.goal} \u2500\u2500 Stage: ${options.stage} (${bar}) [${mode}]`;
+  const line2 = options.activeTask ? `  Active: ${options.activeTask}` : `  Waiting for next dispatch (use /kxm progress)`;
+  return [line1, line2];
+}
 function createKxmTuiPiPanel(options) {
   let closed = false;
   const panel = new KxmTuiPanelComponent({
@@ -1384,6 +1765,86 @@ function createKxmTuiPiPanel(options) {
     invalidate: () => panel.invalidate()
   };
 }
+
+// packages/core/tui/src/adapters/claude.ts
+function formatClaudeTaskHud(options, compact = false) {
+  const percent = options.totalTasks > 0 ? Math.round(options.completedTasks / options.totalTasks * 100) : 0;
+  const filled = Math.round(percent / 100 * 10);
+  const bar = `[${"\u2588".repeat(filled)}${"\u2591".repeat(10 - filled)}] ${percent}%`;
+  const modeTag = options.autoDispatch ? "[AUTO]" : "[STEP]";
+  const attemptTag = options.attempt && options.attempt > 1 ? ` (Attempt ${options.attempt}/${options.maxAttempts ?? 3})` : "";
+  const timeTag = options.elapsedSeconds !== void 0 ? ` \u23F1 ${options.elapsedSeconds}s` : "";
+  if (compact) {
+    return `[KXM ${modeTag}] ${options.goal} \u2500\u2500 Stage ${options.stageIndex}/${options.totalStages} ${bar}${attemptTag}${timeTag}`;
+  }
+  const activeTask = options.activeTaskTitle ? `
+\u2502  Active Task: ${options.activeTaskTitle}${attemptTag} [${options.activeRole ?? "agent"} (${options.activeModel ?? "default"})]` : "";
+  return [
+    `\u250C\u2500\u2500 KXM TASK HUD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510`,
+    `\u2502  Goal: ${options.goal}`,
+    `\u2502  Stage ${options.stageIndex}/${options.totalStages}: ${options.stageName}  \u2502 Progress: ${bar}${timeTag} \u2502 Mode: ${modeTag}${activeTask}`,
+    `\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518`
+  ].join("\n");
+}
+function formatClaudeUpcomingQueue(tasks) {
+  if (tasks.length === 0) return "No upcoming tasks in queue.";
+  const lines = ["### KXM Upcoming Task Queue:"];
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    const deps = t.dependencies.length > 0 ? ` (Requires: ${t.dependencies.join(", ")})` : " (Ready)";
+    lines.push(`${i + 1}. [${t.status.toUpperCase()}] **${t.title}** (\`${t.id}\`)`);
+    lines.push(`   Role: \`${t.role}\` [${t.harness}/${t.model}]${deps}`);
+  }
+  return lines.join("\n");
+}
+function formatClaudeOptimizerReport(result) {
+  if (result.proposals.length === 0) {
+    return "Plan Optimizer: No pending optimization proposals.";
+  }
+  const lines = [
+    `### KXM Plan Optimizer Proposals:`,
+    `Total Projected Savings: -${result.totalProjectedTimeSavingsSeconds}s execution time, -${result.totalProjectedCostSavingsPercent}% token cost`,
+    ""
+  ];
+  for (const p of result.proposals) {
+    const icon = p.category === "concurrency" ? "\u26A1" : "\u{1F4B0}";
+    lines.push(`${icon} **${p.title}** (\`${p.id}\`)`);
+    lines.push(`   ${p.description}`);
+    if (p.suggestedModel) {
+      lines.push(`   Suggested Routing: \`${p.suggestedHarness ?? "pi"}/${p.suggestedModel}\``);
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
+function formatClaudeRoleBudget(config, state) {
+  const runCap = config.runSpendCapUsd !== void 0 ? `$${config.runSpendCapUsd.toFixed(2)}` : "Unmetered";
+  const monthlyCap = config.monthlySpendCapUsd !== void 0 ? `$${config.monthlySpendCapUsd.toFixed(2)}` : "Unmetered";
+  const currentRun = `$${state.currentRunSpendUsd.toFixed(4)}`;
+  const currentMonthly = `$${state.currentMonthlySpendUsd.toFixed(2)}`;
+  return [
+    `Role: ${config.roleId} (${config.type})`,
+    `Run Spend: ${currentRun} / ${runCap}`,
+    `Monthly Spend: ${currentMonthly} / ${monthlyCap}`,
+    `On Exhausted: ${config.onExhausted}${config.fallbackModel ? ` (Fallback: ${config.fallbackModel})` : ""}`
+  ].join(" \u2502 ");
+}
+function formatClaudeWorkflowHistory(runId, events) {
+  return renderWorkflowHistoryMarkdown(runId, events);
+}
+
+// packages/core/tui/src/adapters/historyExport.ts
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+function exportWorkflowHistory(runId, events, destinationDir) {
+  mkdirSync(destinationDir, { recursive: true });
+  const sanitizedRunId = runId.replaceAll(/[^a-zA-Z0-9_-]/g, "_");
+  const mdPath = join(destinationDir, `retrospective-${sanitizedRunId}.md`);
+  const jsonlPath = join(destinationDir, `history-${sanitizedRunId}.jsonl`);
+  writeFileSync(mdPath, renderWorkflowHistoryMarkdown(runId, events), "utf8");
+  writeFileSync(jsonlPath, formatWorkflowHistoryJsonl(runId, events), "utf8");
+  return { mdPath, jsonlPath };
+}
 export {
   KXM_TUI_ABORT_ACTION,
   KXM_TUI_CLEAR_ACTION,
@@ -1400,11 +1861,14 @@ export {
   KXM_TUI_STEP_STATES,
   KxmTuiPanelComponent,
   alignRight,
+  applyPlanOptimizations,
   assertKxmTuiSurface,
   checkedKxmTuiSections,
   createDefaultKxmTuiTheme,
   createKxmTuiAnsiTheme,
+  createKxmTuiOmpOverlay,
   createKxmTuiPanelComponent,
+  createKxmTuiPiOverlay,
   createKxmTuiPiPanel,
   createKxmTuiRegistry,
   createKxmTuiThemeFromPi,
@@ -1413,11 +1877,22 @@ export {
   currentSection,
   decodeKxmTuiInput,
   deleteBackward,
+  evaluatePlanOptimizations,
+  evaluateRoleBudget,
+  exportWorkflowHistory,
   fieldIsEditable,
+  filterHistoryEvents,
+  filterModelOptions,
   firstSelectableFieldIndex,
   fitText,
   focusedFieldIsEditable,
   formatAge,
+  formatClaudeOptimizerReport,
+  formatClaudeRoleBudget,
+  formatClaudeTaskHud,
+  formatClaudeUpcomingQueue,
+  formatClaudeWorkflowHistory,
+  formatWorkflowHistoryJsonl,
   groupedKxmTuiChoices,
   initialKxmTuiPanelState,
   insertAt,
@@ -1432,6 +1907,9 @@ export {
   renderKxmTuiPanel,
   renderKxmTuiPanelFrame,
   renderKxmTuiPanelText,
+  renderPiWorkflowWidget,
+  renderWorkflowHistoryMarkdown,
+  reorderQueuedTasks,
   runKxmTuiPanel,
   validateKxmTuiSurface,
   visibleChoices,

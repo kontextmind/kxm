@@ -2012,3 +2012,52 @@ test("kxm explain inspects prompt context footprint and projected cost", async (
   assert.equal(parsed.command, "explain");
   assert.equal(parsed.majorMode, "planner");
 });
+
+test("kxm plugin install installs for discovered harnesses and honors flags in dry-run and live modes", async () => {
+  const dryRunAll = capture();
+  assert.equal(await runCli(["plugin", "install", "--dry-run", "--json"], {}, dryRunAll), 0);
+  const allParsed = JSON.parse(dryRunAll.read().stdout) as {
+    ok: boolean;
+    command: string;
+    dryRun?: boolean;
+    results: Array<{ harness: string; status: string; command: string; args: string[] }>;
+  };
+  assert.equal(allParsed.ok, true);
+  assert.equal(allParsed.command, "plugin install");
+  assert.equal(allParsed.dryRun, true);
+  const dryHarnesses = allParsed.results.map((r) => r.harness);
+  assert.ok(dryHarnesses.includes("pi") || dryHarnesses.includes("omp") || dryHarnesses.includes("claude"));
+
+  const dryRunOmp = capture();
+  assert.equal(await runCli(["plugin", "install", "--omp", "--dry-run", "--json"], {}, dryRunOmp), 0);
+  const ompParsed = JSON.parse(dryRunOmp.read().stdout) as {
+    ok: boolean;
+    results: Array<{ harness: string; status: string; command: string }>;
+  };
+  assert.equal(ompParsed.ok, true);
+  assert.equal(ompParsed.results.length, 1);
+  assert.equal(ompParsed.results[0]?.harness, "omp");
+  assert.equal(ompParsed.results[0]?.status, "would");
+
+  const dryRunClaude = capture();
+  assert.equal(await runCli(["plugin", "install", "--claude", "--dry-run"], {}, dryRunClaude), 0);
+  assert.match(dryRunClaude.read().stdout, /claude: would/);
+
+  const dryRunPi = capture();
+  assert.equal(await runCli(["plugin", "install", "--pi", "--dry-run"], {}, dryRunPi), 0);
+  assert.match(dryRunPi.read().stdout, /pi: would/);
+
+  // Mock spawnSync to test execution paths
+  const spawned: Array<{ command: string; args: readonly string[] }> = [];
+  const mockIo: CliIo = {
+    stdout: () => {},
+    stderr: () => {},
+    spawnSync: (command, args) => {
+      spawned.push({ command, args });
+      return { status: 0, stdout: "ok", stderr: "" };
+    },
+  };
+  const executed = await runCliImplementation(["plugin", "install", "--omp"], {}, mockIo);
+  assert.equal(executed, 0);
+  assert.ok(spawned.some((s) => s.command === "omp" && s.args[0] === "plugin" && s.args[1] === "install"));
+});

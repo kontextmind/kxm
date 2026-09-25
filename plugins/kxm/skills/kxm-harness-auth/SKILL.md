@@ -23,6 +23,12 @@ Issuing a token is an operator action. When kxm_* tools fail with
 `No active session token found in env or disk` for such a file even though it
 still blocks the tools.
 
+## Plugins
+
+| Command | Purpose | Options |
+|---|---|---|
+| `kxm plugin install` | Install KXM plugin for discovered or specified harnesses | `--all`, `--claude`, `--omp`, `--pi`, `--dry-run`, `--json` |
+
 ## Updates
 
 | Command | Purpose |
