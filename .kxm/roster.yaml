@@ -2,7 +2,7 @@ schema: kxm.developer-roster.v1
 routes:
   grok-native:
     harness: grok
-    model: grok-4.6
+    model: grok-4.7
     vendor: xai
     roles:
     - writer

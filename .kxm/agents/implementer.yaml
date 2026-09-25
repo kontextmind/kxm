@@ -3,7 +3,7 @@ purpose: Implement the approved change within the declared repository scope.
 harness: grok
 model:
   provider: xai
-  model: grok-4.6
+  model: grok-4.7
 tools:
   preset: workspace-writer
 defaultRepositoryAccess: none

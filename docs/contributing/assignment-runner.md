@@ -33,7 +33,7 @@ permissions:
 
 | Role | Admitted route (harness / model) | Vendor | Permission |
 |---|---|---|---|
-| `writer` | `grok` / `grok-4.6`; relief: `pi` / `openrouter/qwen/qwen3-coder-plus` | `xai`; `alibaba` | `edit` |
+| `writer` | `grok` / `grok-4.7`; relief: `pi` / `openrouter/qwen/qwen3-coder-plus` | `xai`; `alibaba` | `edit` |
 | `planner` | `claude` / `fable` | `anthropic` | `read-only` |
 | `reviewer-arch` | `claude` / `fable` | `anthropic` | `read-only` |
 | `reviewer-cli` | `codex` / `gpt-5.6-sol` | `openai` | `read-only` |
@@ -115,7 +115,7 @@ Write a closed `kxm.assignment.v1` manifest. Unknown keys are refused.
   "assignment_id": "asg-writer-1",
   "kind": "implement",
   "harness": "grok",
-  "model": "grok-4.6",
+  "model": "grok-4.7",
   "effort": "medium",
   "permission": "edit",
   "cwd": "/abs/kxm-fix-improve-sources",

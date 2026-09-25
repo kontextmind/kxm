@@ -14,7 +14,7 @@ Task: $ARGUMENTS
 Do this:
 
 1. **Confirm auth.** `grok models` must report a logged-in account and list
-   `grok-4.6`. If it does not, do **not** silently bill Grok through another harness
+   `grok-4.7`. If it does not, do **not** silently bill Grok through another harness
    (`pi --model xai/...` is exactly that). Either take a route Tracking **admits** for that
    purpose, with its own auth check and cost record, or stop and say which limits were hit.
    Fail-closed means no unadmitted fallback, not no relief route.
@@ -30,7 +30,7 @@ Do this:
 4. **Launch in the background**, logging to the scratchpad. Prefer the common
    envelope so the run is recorded like every other dispatch:
    `just impl <brief> <worktree>`
-   which resolves to `grok --prompt-file <brief> -m grok-4.6 --reasoning-effort
+   which resolves to `grok --prompt-file <brief> -m grok-4.7 --reasoning-effort
    high --always-approve --output-format json`. Drop to `--reasoning-effort low`
    for mechanical edits.
 5. **Verify independently when it returns.** Check `git status`, `git log`, and

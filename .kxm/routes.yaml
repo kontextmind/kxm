@@ -1,5 +1,5 @@
 schema: kxm.routes.v2
-updatedAt: '2026-09-16T18:30:00.000Z'
+updatedAt: '2026-09-24T00:00:00.000Z'
 admitted:
 - anthropic/fable
 - google/gemini-3.8-flash-high
@@ -11,13 +11,13 @@ admitted:
 - qwen-token-plan/deepseek-v4.1-flash
 - qwen-token-plan/qwen3.8-flash
 - qwen-token-plan/qwen3.8-max
-- xai/grok-4.6
+- xai/grok-4.7
 - zai-coding-cn/glm-5.3
 - zai-coding-cn/glm-5.3-flash
 disabled: []
 roles:
   implementer:
-  - xai/grok-4.6
+  - xai/grok-4.7
   - openrouter/qwen/qwen3-coder-plus
   critic-arch:
   - anthropic/fable
