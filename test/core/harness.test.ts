@@ -73,7 +73,7 @@ function issueCodes(error: unknown): string[] {
 
 test("builtin catalog defaults to headless Pi and lists known harnesses", () => {
   assert.equal(DEFAULT_HARNESS, "pi");
-  assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "claude", "kimi", "codex", "deepseek", "grok", "agy"]);
+  assert.deepEqual([...BUILTIN_HARNESS_IDS], ["pi", "omp", "claude", "kimi", "codex", "deepseek", "grok", "agy"]);
 });
 
 test("Claude catalog pins documented read-only one-shot flags without write-capable tools", () => {

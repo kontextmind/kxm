@@ -15262,6 +15262,7 @@ var READ_ONLY_ONESHOT_ARGS = Object.freeze({
   // AGENTS.md/CLAUDE.md context discovery, and an ephemeral session. `--no-tools` alone
   // is not enough: extensions and hooks can still run with their own permissions.
   pi: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
+  omp: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--permission-mode", "plan", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
   grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
@@ -15273,6 +15274,7 @@ function oneShotReadOnlyArgs(harness) {
 }
 var WRITER_ONESHOT_ARGS = Object.freeze({
   pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  omp: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
   grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"])
 });
 var BUILTIN_HARNESSES = Object.freeze([
@@ -15290,6 +15292,26 @@ var BUILTIN_HARNESSES = Object.freeze([
     },
     oneShot: {
       argv: ["-p", "--mode", "json"],
+      promptVia: "arg",
+      outputFormat: "json",
+      usageParser: parsePiOneShotUsage
+    }
+  },
+  {
+    id: "omp",
+    label: "Oh My Pi",
+    default: false,
+    mode: "headless",
+    commands: ["omp"],
+    versionArgs: ["--version"],
+    authArgs: ["models", "--json"],
+    update: {
+      self: ["update"],
+      extensions: ["plugin", "upgrade"],
+      models: ["models", "refresh"]
+    },
+    oneShot: {
+      argv: ["-p", ...oneShotReadOnlyArgs("omp"), "--mode", "json"],
       promptVia: "arg",
       outputFormat: "json",
       usageParser: parsePiOneShotUsage

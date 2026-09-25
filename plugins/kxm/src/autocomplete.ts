@@ -8,6 +8,7 @@ const TOP_LEVEL_COMMANDS = [
   "runs",
   "tenant",
   "harness",
+  "plugin",
   "update",
   "runtime",
   "trust",
@@ -38,6 +39,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   runs: ["status", "cancel", "list"],
   tenant: ["status"],
   harness: ["list"],
+  plugin: ["install"],
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],
   agent: ["worker"],
@@ -137,6 +139,7 @@ _kxm() {
     'run:Create a KXM workflow run'
     'runs:Inspect KXM runs'
     'harness:Detect coding-agent harnesses and auth'
+    'plugin:Install or manage KXM harness plugins'
     'update:Update kxm, harness CLIs, and model catalogs'
     'runtime:Manage the KXM Runtime supervisor'
     'trust:Permission-diff trust review'

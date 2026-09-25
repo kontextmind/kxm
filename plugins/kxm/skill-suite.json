@@ -19,7 +19,7 @@
     {
       "name": "kxm-harness-auth",
       "path": "./skills/kxm-harness-auth",
-      "ownedCommands": ["harness", "auth", "update", "runtime", "agent", "models", "routes", "ssh"],
+      "ownedCommands": ["harness", "plugin", "auth", "update", "runtime", "agent", "models", "routes", "ssh"],
       "intent": "Check harness installs and auth, update, run the Runtime supervisor, refresh models, admit routes, and use SSH workers"
     },
     {

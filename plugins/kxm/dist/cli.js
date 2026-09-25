@@ -21777,6 +21777,7 @@ var READ_ONLY_ONESHOT_ARGS = Object.freeze({
   // AGENTS.md/CLAUDE.md context discovery, and an ephemeral session. `--no-tools` alone
   // is not enough: extensions and hooks can still run with their own permissions.
   pi: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
+  omp: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--permission-mode", "plan", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
   grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
@@ -21788,6 +21789,7 @@ function oneShotReadOnlyArgs(harness) {
 }
 var WRITER_ONESHOT_ARGS = Object.freeze({
   pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  omp: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
   grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"])
 });
 function oneShotWriterArgs(harness) {
@@ -21811,6 +21813,26 @@ var BUILTIN_HARNESSES = Object.freeze([
     },
     oneShot: {
       argv: ["-p", "--mode", "json"],
+      promptVia: "arg",
+      outputFormat: "json",
+      usageParser: parsePiOneShotUsage
+    }
+  },
+  {
+    id: "omp",
+    label: "Oh My Pi",
+    default: false,
+    mode: "headless",
+    commands: ["omp"],
+    versionArgs: ["--version"],
+    authArgs: ["models", "--json"],
+    update: {
+      self: ["update"],
+      extensions: ["plugin", "upgrade"],
+      models: ["models", "refresh"]
+    },
+    oneShot: {
+      argv: ["-p", ...oneShotReadOnlyArgs("omp"), "--mode", "json"],
       promptVia: "arg",
       outputFormat: "json",
       usageParser: parsePiOneShotUsage
@@ -22069,6 +22091,16 @@ function interpretAuth(id, result) {
     if (commandSucceeded(result) && lines.some((line) => line === GROK_LOGIN_LINE)) return { authenticated: true, issues: [] };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
+  if (id === "omp") {
+    if (commandSucceeded(result)) {
+      const payload = parseJsonObject(result.stdout);
+      if (payload && Array.isArray(payload.models) && payload.models.length > 0) {
+        return { authenticated: true, issues: [] };
+      }
+      if (commandSucceeded(result)) return { authenticated: true, issues: [] };
+    }
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
   if (id === "agy") {
     const text = `${result.stdout}
 ${result.stderr}`;
@@ -22278,7 +22310,7 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     }
     return { valid: true };
   }
-  if (harnessId === "pi") {
+  if (harnessId === "pi" || harnessId === "omp") {
     if (!provider && model?.includes("/")) {
       const idx = model.indexOf("/");
       provider = model.slice(0, idx).toLowerCase();
@@ -22287,17 +22319,17 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     if (!provider) return { valid: true };
     const blocked = (message) => ({ valid: false, issue: "pi_native_impersonation_blocked", message });
     if (PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
-      return blocked(`pi must not impersonate native provider ${provider}; use the native harness`);
+      return blocked(`${harnessId} must not impersonate native provider ${provider}; use the native harness`);
     }
     if (provider === "antigravity" && model && PI_ANTIGRAVITY_MODEL_ID.test(model)) return { valid: true };
     const owned = Object.hasOwn(PI_VENDOR_OWNED_PROVIDERS, provider) ? PI_VENDOR_OWNED_PROVIDERS[provider] : void 0;
     if (owned) {
-      return blocked(`pi provider ${provider} bills native vendor ${owned} for ${model ?? "this model"}; use the native harness`);
+      return blocked(`${harnessId} provider ${provider} bills native vendor ${owned} for ${model ?? "this model"}; use the native harness`);
     }
     const segment = model?.includes("/") ? model.slice(0, model.indexOf("/")).toLowerCase() : void 0;
     const vendor = segment && Object.hasOwn(PI_VENDOR_SEGMENT_ALIASES, segment) ? PI_VENDOR_SEGMENT_ALIASES[segment] : segment;
     if (vendor && PI_NATIVE_BRAKE_PROVIDERS.includes(vendor)) {
-      return blocked(`pi must not bill native vendor ${vendor} through ${provider}; use the native harness`);
+      return blocked(`${harnessId} must not bill native vendor ${vendor} through ${provider}; use the native harness`);
     }
     return { valid: true };
   }
@@ -35863,6 +35895,162 @@ ${lines.join("\n")}`
   }
 }
 
+// plugins/kxm/src/cli/plugins.ts
+import { spawnSync as spawnSync5 } from "node:child_process";
+var PLUGIN_SUPPORTED_HARNESSES = Object.freeze(["pi", "omp", "claude"]);
+async function cmdPluginInstall(runtime, options) {
+  const repoRoot = findKxmRepoRoot(import.meta.url);
+  const env = runtime.env.PATH ? runtime.env : { ...process.env, ...runtime.env };
+  const inventory = probeHarnesses({ env });
+  const isExplicit = Boolean(options.claude || options.omp || options.pi);
+  const requestedHarnesses = [];
+  if (options.pi) requestedHarnesses.push("pi");
+  if (options.omp) requestedHarnesses.push("omp");
+  if (options.claude) requestedHarnesses.push("claude");
+  const targetHarnesses = isExplicit ? requestedHarnesses : PLUGIN_SUPPORTED_HARNESSES;
+  const results = [];
+  for (const harnessId of targetHarnesses) {
+    const status = inventory.harnesses.find((h) => h.id === harnessId);
+    const detected = Boolean(status?.detected && status?.command);
+    if (!detected) {
+      if (isExplicit) {
+        results.push({
+          harness: harnessId,
+          status: "failed",
+          error: "harness_not_detected",
+          detail: `${harnessId} harness is not installed or not found on PATH`
+        });
+      }
+      continue;
+    }
+    const command = status.command;
+    if (harnessId === "pi") {
+      const args = ["install", repoRoot, "-a"];
+      if (runtime.dryRun) {
+        results.push({
+          harness: "pi",
+          status: "would",
+          command,
+          args,
+          detail: `would install kxm plugin into pi: ${command} ${args.join(" ")}`
+        });
+      } else {
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync5(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        if (run.error || run.status !== 0 && run.status !== null) {
+          results.push({
+            harness: "pi",
+            status: "failed",
+            command,
+            args,
+            error: run.error?.message || "install_failed",
+            detail: (run.stderr || run.stdout || "pi install exited with error").trim()
+          });
+        } else {
+          results.push({
+            harness: "pi",
+            status: "passed",
+            command,
+            args,
+            detail: "installed kxm plugin into pi"
+          });
+        }
+      }
+    } else if (harnessId === "omp") {
+      const args = ["plugin", "install", repoRoot];
+      if (runtime.dryRun) {
+        results.push({
+          harness: "omp",
+          status: "would",
+          command,
+          args,
+          detail: `would install kxm plugin into omp: ${command} ${args.join(" ")}`
+        });
+      } else {
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync5(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        if (run.error || run.status !== 0 && run.status !== null) {
+          results.push({
+            harness: "omp",
+            status: "failed",
+            command,
+            args,
+            error: run.error?.message || "install_failed",
+            detail: (run.stderr || run.stdout || "omp plugin install exited with error").trim()
+          });
+        } else {
+          results.push({
+            harness: "omp",
+            status: "passed",
+            command,
+            args,
+            detail: "installed kxm plugin into omp"
+          });
+        }
+      }
+    } else if (harnessId === "claude") {
+      const marketplaceArgs = ["plugin", "marketplace", "add", repoRoot];
+      const installArgs = ["plugin", "install", "kxm", "-y"];
+      if (runtime.dryRun) {
+        results.push({
+          harness: "claude",
+          status: "would",
+          command,
+          args: installArgs,
+          detail: `would add marketplace and install kxm plugin into claude: ${command} ${installArgs.join(" ")}`
+        });
+      } else {
+        if (runtime.io.spawnSync) {
+          runtime.io.spawnSync(command, marketplaceArgs);
+        } else {
+          spawnSync5(command, marketplaceArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        }
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, installArgs) : spawnSync5(command, installArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        if (run.error || run.status !== 0 && run.status !== null) {
+          results.push({
+            harness: "claude",
+            status: "failed",
+            command,
+            args: installArgs,
+            error: run.error?.message || "install_failed",
+            detail: (run.stderr || run.stdout || "claude plugin install exited with error").trim()
+          });
+        } else {
+          results.push({
+            harness: "claude",
+            status: "passed",
+            command,
+            args: installArgs,
+            detail: "installed kxm plugin into claude"
+          });
+        }
+      }
+    }
+  }
+  if (results.length === 0) {
+    const errorMsg = "no supported harnesses (pi, omp, claude) detected on PATH";
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, command: "plugin install", error: "no_harnesses_detected", results: [] },
+      errorMsg
+    );
+    return 1;
+  }
+  const ok = results.every((r) => r.status === "passed" || r.status === "would");
+  const summary = results.map((r) => `${r.harness}: ${r.status}${r.detail ? ` (${r.detail})` : ""}`).join("\n");
+  print(
+    runtime.io,
+    runtime.json,
+    {
+      ok,
+      command: "plugin install",
+      ...runtime.dryRun ? { dryRun: true } : {},
+      results
+    },
+    summary
+  );
+  return ok ? 0 : 1;
+}
+
 // plugins/kxm/src/cli/hub.ts
 import { randomUUID as randomUUID13 } from "node:crypto";
 import { existsSync as existsSync34, mkdirSync as mkdirSync27, readFileSync as readFileSync34, readdirSync as readdirSync12, rmSync as rmSync11, writeFileSync as writeFileSync24 } from "node:fs";
@@ -44306,7 +44494,7 @@ var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 // plugins/kxm/src/tui.ts
 import { mkdirSync as mkdirSync24 } from "node:fs";
 import { join as join39, resolve as resolve26, dirname as dirname19 } from "node:path";
-import { spawnSync as spawnSync5 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 
 // packages/core/tui/src/types/surface.ts
 var KXM_TUI_LIMITS = Object.freeze({
@@ -44860,16 +45048,16 @@ function applyMeshTuiKey(view, key, itemCount = 0) {
 function copyToClipboard(text) {
   try {
     if (process.platform === "darwin") {
-      const proc = spawnSync5("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync6("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
     if (process.platform === "win32") {
-      const proc = spawnSync5("clip", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync6("clip", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
-    const wl = spawnSync5("wl-copy", [text], { encoding: "utf8", windowsHide: true });
+    const wl = spawnSync6("wl-copy", [text], { encoding: "utf8", windowsHide: true });
     if (wl.status === 0) return true;
-    const xclip = spawnSync5("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
+    const xclip = spawnSync6("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
     return xclip.status === 0;
   } catch {
     return false;
@@ -44877,7 +45065,7 @@ function copyToClipboard(text) {
 }
 function spawnDegradeWorktree(repoRoot, runId, options) {
   const runner = options?.execFn ?? ((cmd, args) => {
-    const res = spawnSync5(cmd, args, {
+    const res = spawnSync6(cmd, args, {
       cwd: repoRoot,
       encoding: "utf8",
       windowsHide: true,
@@ -45661,7 +45849,7 @@ async function runMeshTui(input) {
 }
 
 // plugins/kxm/src/session-work.ts
-import { spawnSync as spawnSync6 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync30, mkdirSync as mkdirSync25, readFileSync as readFileSync30, renameSync as renameSync8, writeFileSync as writeFileSync22 } from "node:fs";
 import { join as join40 } from "node:path";
@@ -45720,10 +45908,10 @@ function formatShipLine(ship) {
 }
 function readGitShip(cwd) {
   try {
-    const dirty = spawnSync6("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    const dirty = spawnSync7("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return void 0;
     const isDirty = dirty.stdout.trim().length > 0;
-    const upstream = spawnSync6("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    const upstream = spawnSync7("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
     if (upstream.status === 0) {
       return {
         dirty: isDirty,
@@ -45731,9 +45919,9 @@ function readGitShip(cwd) {
       };
     }
     for (const baseRef of ["origin/HEAD", "main", "origin/main", "master", "origin/master"]) {
-      const mb = spawnSync6("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
+      const mb = spawnSync7("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
       if (mb.status === 0 && mb.stdout.trim()) {
-        const count = spawnSync6("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
+        const count = spawnSync7("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
         if (count.status === 0) {
           return {
             dirty: isDirty,
@@ -46915,7 +47103,7 @@ async function cmdSessionStart(runtime, options) {
 }
 
 // plugins/kxm/src/cli/system.ts
-import { spawnSync as spawnSync8 } from "node:child_process";
+import { spawnSync as spawnSync9 } from "node:child_process";
 import { createHash as createHash17 } from "node:crypto";
 import { existsSync as existsSync41, mkdtempSync as mkdtempSync3, readFileSync as readFileSync39, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
@@ -47762,7 +47950,7 @@ ${divider}
 }
 
 // plugins/kxm/src/ssh-remote.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { existsSync as existsSync38, mkdirSync as mkdirSync29, readFileSync as readFileSync37, readdirSync as readdirSync13, rmSync as rmSync12, statSync as statSync5 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
 import { join as join47, resolve as resolve30 } from "node:path";
@@ -47838,7 +48026,7 @@ function parseSshConfig(configPath) {
     return [];
   }
 }
-function resolveSshHostG(host, execFn = spawnSync7) {
+function resolveSshHostG(host, execFn = spawnSync8) {
   try {
     const result = execFn("ssh", ["-G", host], { encoding: "utf-8" });
     if (result.status !== 0 || !result.stdout) {
@@ -47904,7 +48092,7 @@ function buildSshArgs(options) {
   args.push(options.host);
   return args;
 }
-function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync7) {
+function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync8) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join47(resolvedDir, "%C");
   try {
@@ -47916,7 +48104,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
     return false;
   }
 }
-function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync7) {
+function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync8) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join47(resolvedDir, "%C");
   try {
@@ -47930,7 +48118,7 @@ function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function executeSshRun(params) {
   const startTime = Date.now();
-  const execSyncFn = params.execFn ?? spawnSync7;
+  const execSyncFn = params.execFn ?? spawnSync8;
   if (params.action === "info") {
     if (params.host) {
       const hostInfo = resolveSshHostG(params.host, execSyncFn);
@@ -48136,6 +48324,7 @@ var TOP_LEVEL_COMMANDS = [
   "runs",
   "tenant",
   "harness",
+  "plugin",
   "update",
   "runtime",
   "trust",
@@ -48165,6 +48354,7 @@ var SUBCOMMANDS = {
   runs: ["status", "cancel", "list"],
   tenant: ["status"],
   harness: ["list"],
+  plugin: ["install"],
   runtime: ["start", "status", "stop"],
   trust: ["diff", "check"],
   agent: ["worker"],
@@ -48260,6 +48450,7 @@ _kxm() {
     'run:Create a KXM workflow run'
     'runs:Inspect KXM runs'
     'harness:Detect coding-agent harnesses and auth'
+    'plugin:Install or manage KXM harness plugins'
     'update:Update kxm, harness CLIs, and model catalogs'
     'runtime:Manage the KXM Runtime supervisor'
     'trust:Permission-diff trust review'
@@ -48985,7 +49176,7 @@ function parseGuideSelection(input, catalog = GUIDE_WORKFLOWS) {
 // plugins/kxm/src/cli/system.ts
 function cliSpawn(runtime, command, args, extra) {
   if (runtime.io.spawnSync) return runtime.io.spawnSync(command, args);
-  const result = spawnSync8(command, [...args], {
+  const result = spawnSync9(command, [...args], {
     encoding: "utf8",
     windowsHide: true,
     shell: process.platform === "win32",
@@ -49836,6 +50027,8 @@ var DRY_RUN_COMMANDS = /* @__PURE__ */ new Set([
   "dash",
   "completion",
   "completion install",
+  "plugin install",
+  "plugin",
   "runs status",
   "runs drive",
   "runs receipt",
@@ -50169,6 +50362,11 @@ function createProgram(ctx, result) {
   const harnessCmd = addGlobalOptions(program2.command("harness").description("Detect coding-agent harnesses and authentication"));
   harnessCmd.helpCommand("help", "Show harness help");
   addGlobalOptions(harnessCmd.command("list").description("Show installed harnesses, auth, and native updaters")).action(bind(cmdHarnessList));
+  const pluginCmd = addGlobalOptions(program2.command("plugin").description("Install or manage KXM harness plugins"));
+  pluginCmd.helpCommand("help", "Show plugin help");
+  addGlobalOptions(pluginCmd.command("install", { isDefault: true }).description("Install the KXM plugin into discovered or specified harnesses")).option("--all", "Install plugin for all discovered harnesses (default)").option("--claude", "Install plugin for Claude Code").option("--omp", "Install plugin for Oh My Pi (OMP)").option("--pi", "Install plugin for Pi").action(async function pluginInstallAction(options) {
+    result.code = await cmdPluginInstall(runtimeFrom(ctx, this), options);
+  });
   const authCmd = addGlobalOptions(program2.command("auth").description("Manage credentials, tokens, and authorization"));
   authCmd.helpCommand("help", "Show auth help");
   addGlobalOptions(authCmd.command("token").description("Inspect, issue, or clear local disk session tokens")).option("--status", "Check status of the active session token").option("--clear", "Clear persisted disk session token").option("--issue", "Force issuing a fresh session token").action(async function authTokenAction(options) {

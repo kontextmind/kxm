@@ -13,6 +13,11 @@
 import { KxmTuiPanelComponent } from "../tui/panelComponent.ts";
 import type { KxmTuiRegistry } from "../services/registry.ts";
 import { createKxmTuiThemeFromPi, type PiThemeLike } from "../tui/theme.ts";
+import {
+  createKxmTuiOmpOverlay,
+  type KxmTuiOmpOverlayComponent,
+  type KxmTuiOmpOverlayOptions,
+} from "./omp.ts";
 
 /** The renderer handle Pi passes to a custom component. */
 export interface KxmTuiCustomTui {
@@ -36,6 +41,35 @@ export interface KxmTuiPiPanelOptions {
   readonly width?: () => number;
   /** Called once when the operator leaves the panel. */
   readonly done?: (closed: true) => void;
+}
+
+export interface KxmTuiPiOverlayOptions extends KxmTuiOmpOverlayOptions {}
+export type KxmTuiPiOverlayComponent = KxmTuiOmpOverlayComponent;
+
+/**
+ * Create a collapsible Task & Plan overlay for Pi.
+ *
+ * Reuses the differential rendering engine and OMP overlay model,
+ * compatible with Pi's `ctx.ui.custom` hook and keybinding stack.
+ */
+export const createKxmTuiPiOverlay = createKxmTuiOmpOverlay;
+
+/**
+ * Format widget lines for Pi's `ctx.ui.setWidget`.
+ */
+export function renderPiWorkflowWidget(options: {
+  readonly goal: string;
+  readonly stage: string;
+  readonly progressPercent: number;
+  readonly activeTask?: string | undefined;
+  readonly autoDispatch?: boolean | undefined;
+}): string[] {
+  const filled = Math.min(10, Math.max(0, Math.round((options.progressPercent / 100) * 10)));
+  const bar = `[${"█".repeat(filled)}${"░".repeat(10 - filled)}] ${options.progressPercent}%`;
+  const mode = options.autoDispatch ? "AUTO" : "STEP";
+  const line1 = `[KXM] Goal: ${options.goal} ── Stage: ${options.stage} (${bar}) [${mode}]`;
+  const line2 = options.activeTask ? `  Active: ${options.activeTask}` : `  Waiting for next dispatch (use /kxm progress)`;
+  return [line1, line2];
 }
 
 /**

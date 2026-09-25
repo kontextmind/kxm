@@ -120,6 +120,8 @@ cmdBackup,
   cmdKxmRuntime,
 } from "./cli/project.ts";
 
+import { cmdPluginInstall } from "./cli/plugins.ts";
+
 import {
   cmdStatus,
   cmdDash,
@@ -185,6 +187,7 @@ const USAGE_ERROR_CODES = new Set([
  */
 const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "init", "backup", "restore", "run", "explain", "suggest", "update", "dash", "completion", "completion install",
+  "plugin install", "plugin",
   "runs status", "runs drive", "runs receipt", "runs cancel", "runs list",
   "tenant status", "models inventory-refresh", "harness list", "auth token",
   "routes list", "routes count", "routes admit", "routes disable",
@@ -505,6 +508,17 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   const harnessCmd = addGlobalOptions(program.command("harness").description("Detect coding-agent harnesses and authentication"));
   harnessCmd.helpCommand("help", "Show harness help");
   addGlobalOptions(harnessCmd.command("list").description("Show installed harnesses, auth, and native updaters")).action(bind(cmdHarnessList));
+
+  const pluginCmd = addGlobalOptions(program.command("plugin").description("Install or manage KXM harness plugins"));
+  pluginCmd.helpCommand("help", "Show plugin help");
+  addGlobalOptions(pluginCmd.command("install", { isDefault: true }).description("Install the KXM plugin into discovered or specified harnesses"))
+    .option("--all", "Install plugin for all discovered harnesses (default)")
+    .option("--claude", "Install plugin for Claude Code")
+    .option("--omp", "Install plugin for Oh My Pi (OMP)")
+    .option("--pi", "Install plugin for Pi")
+    .action(async function pluginInstallAction(this: Command, options: { all?: boolean; claude?: boolean; omp?: boolean; pi?: boolean }) {
+      result.code = await cmdPluginInstall(runtimeFrom(ctx, this), options);
+    });
 
   const authCmd = addGlobalOptions(program.command("auth").description("Manage credentials, tokens, and authorization"));
   authCmd.helpCommand("help", "Show auth help");

@@ -15621,6 +15621,7 @@ var READ_ONLY_ONESHOT_ARGS = Object.freeze({
   // AGENTS.md/CLAUDE.md context discovery, and an ephemeral session. `--no-tools` alone
   // is not enough: extensions and hooks can still run with their own permissions.
   pi: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
+  omp: Object.freeze(["--no-tools", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-session"]),
   claude: Object.freeze(["--tools", "Read,Glob,Grep", "--restricted", "--safe-mode", "--permission-mode", "plan", "--permission-prompts", "none", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands", "--no-session-persistence"]),
   codex: Object.freeze(["--sandbox", "read-only", "--ignore-user-config", "-c", 'approval_policy="never"']),
   grok: Object.freeze(["--sandbox", "read-only", "--permission-mode", "plan", "--tools", "Read,Glob,Grep", "--no-subagents", "--disable-web-search"]),
@@ -15632,6 +15633,7 @@ function oneShotReadOnlyArgs(harness) {
 }
 var WRITER_ONESHOT_ARGS = Object.freeze({
   pi: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
+  omp: Object.freeze(["-a", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"]),
   grok: Object.freeze(["--always-approve", "--no-subagents", "--disable-web-search"])
 });
 function oneShotWriterArgs(harness) {
@@ -15655,6 +15657,26 @@ var BUILTIN_HARNESSES = Object.freeze([
     },
     oneShot: {
       argv: ["-p", "--mode", "json"],
+      promptVia: "arg",
+      outputFormat: "json",
+      usageParser: parsePiOneShotUsage
+    }
+  },
+  {
+    id: "omp",
+    label: "Oh My Pi",
+    default: false,
+    mode: "headless",
+    commands: ["omp"],
+    versionArgs: ["--version"],
+    authArgs: ["models", "--json"],
+    update: {
+      self: ["update"],
+      extensions: ["plugin", "upgrade"],
+      models: ["models", "refresh"]
+    },
+    oneShot: {
+      argv: ["-p", ...oneShotReadOnlyArgs("omp"), "--mode", "json"],
       promptVia: "arg",
       outputFormat: "json",
       usageParser: parsePiOneShotUsage
@@ -15913,6 +15935,16 @@ function interpretAuth(id, result) {
     if (commandSucceeded(result) && lines.some((line) => line === GROK_LOGIN_LINE)) return { authenticated: true, issues: [] };
     return { authenticated: null, issues: ["auth_unparsed"] };
   }
+  if (id === "omp") {
+    if (commandSucceeded(result)) {
+      const payload = parseJsonObject(result.stdout);
+      if (payload && Array.isArray(payload.models) && payload.models.length > 0) {
+        return { authenticated: true, issues: [] };
+      }
+      if (commandSucceeded(result)) return { authenticated: true, issues: [] };
+    }
+    return { authenticated: null, issues: ["auth_unparsed"] };
+  }
   if (id === "agy") {
     const text = `${result.stdout}
 ${result.stderr}`;
@@ -16127,7 +16159,7 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     }
     return { valid: true };
   }
-  if (harnessId === "pi") {
+  if (harnessId === "pi" || harnessId === "omp") {
     if (!provider && model?.includes("/")) {
       const idx = model.indexOf("/");
       provider = model.slice(0, idx).toLowerCase();
@@ -16136,17 +16168,17 @@ function validateHarnessModelPair(harnessId, modelSpec) {
     if (!provider) return { valid: true };
     const blocked = (message) => ({ valid: false, issue: "pi_native_impersonation_blocked", message });
     if (PI_NATIVE_BRAKE_PROVIDERS.includes(provider)) {
-      return blocked(`pi must not impersonate native provider ${provider}; use the native harness`);
+      return blocked(`${harnessId} must not impersonate native provider ${provider}; use the native harness`);
     }
     if (provider === "antigravity" && model && PI_ANTIGRAVITY_MODEL_ID.test(model)) return { valid: true };
     const owned = Object.hasOwn(PI_VENDOR_OWNED_PROVIDERS, provider) ? PI_VENDOR_OWNED_PROVIDERS[provider] : void 0;
     if (owned) {
-      return blocked(`pi provider ${provider} bills native vendor ${owned} for ${model ?? "this model"}; use the native harness`);
+      return blocked(`${harnessId} provider ${provider} bills native vendor ${owned} for ${model ?? "this model"}; use the native harness`);
     }
     const segment = model?.includes("/") ? model.slice(0, model.indexOf("/")).toLowerCase() : void 0;
     const vendor = segment && Object.hasOwn(PI_VENDOR_SEGMENT_ALIASES, segment) ? PI_VENDOR_SEGMENT_ALIASES[segment] : segment;
     if (vendor && PI_NATIVE_BRAKE_PROVIDERS.includes(vendor)) {
-      return blocked(`pi must not bill native vendor ${vendor} through ${provider}; use the native harness`);
+      return blocked(`${harnessId} must not bill native vendor ${vendor} through ${provider}; use the native harness`);
     }
     return { valid: true };
   }
