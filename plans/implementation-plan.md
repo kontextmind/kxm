@@ -34,6 +34,7 @@ related:
   - history/plan-safety-security-process-integrity.md
   - history/plan-role-configuration-governance.md
   - research-jev-system-one.md
+  - plan-python-migration.md
 depends_on: []
 blocked_by: []
 details:
@@ -56,6 +57,15 @@ It does not replace the phase gates below.
 
 This file remains the only execution tracker and the authority for accepted
 decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
+
+- **Python successor proposal (2026-09-25):**
+  [plan-python-migration.md](plan-python-migration.md) records the operator-requested
+  conversion of KXM product services, runner and CLI to Python, alongside a central
+  tenant/project control plane. Its MG0–MG8 waves are a proposal and do not change
+  the existing deployment or authorize a gate bypass. Select implementation slices
+  here before starting; at each accepted slice update any superseded TypeScript,
+  hosting, automation and package guidance in the same change. Browser Studio and
+  native provider executables retain their own languages.
 
 - **Consolidated scope:** [M0–M9](plan-unified-kxm-milestones.md) is the single
   proposed delivery catalog for all 36 fork reviews, including memory, Studio,
@@ -2527,6 +2537,14 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - **B3: three failing rule tests and auth probes (issue #84):** Three failing-first loop rule tests in `test/core/loop-rules.test.ts` (unhosted harness/model pair rejected with `harness_unhosted_model`; pure inventory eligibility fails closed on empty/unknown; `verify_must_precede_ready` enforced in workflow validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating stdout parser without `--json`); `gemini` and `deepseek` remain `unknown` (`null`) without secret leakage; `kxm harness list` reports status for pi, claude, codex, kimi.
 
 ### Still open
+
+- **Python migration selection (operator request, 2026-09-25).** Proposed scope and
+  acceptance checks are in [the Python migration plan](plan-python-migration.md).
+  Trigger: operator selects the first implementation slice after the MG0 inventory
+  and parity corpus establish deployed versions, consumers and restore coverage.
+  Owner: platform/runtime; each accepted slice must record its gate and actual
+  status in this tracker. Existing current-state decisions remain the deployed
+  contract until the relevant successor slice is accepted.
 
 - **The one queue (replanned 2026-09-20; design record
   [reviews/plan-set-reprioritization-astra.md](reviews/plan-set-reprioritization-astra.md)).**
