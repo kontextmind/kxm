@@ -950,6 +950,12 @@ test("assignment routing export resolves outcomes from accepted.json and groups 
     const a2 = byId(a.records, "asg-writer-2");
     const aReview = byId(a.records, "asg-review-cli-1");
     const bReview = byId(b.records, "asg-review-cli-1");
+    const bWriter = byId(b.records, "asg-writer-1");
+    assert.ok(a1);
+    assert.ok(a2);
+    assert.ok(aReview);
+    assert.ok(bReview);
+    assert.ok(bWriter);
     assert.equal(a1.finalOutcome, "failed");
     assert.equal(a1.providerMetadata.supersededBy, "asg-writer-2");
     assert.equal(a2.finalOutcome, "accepted");
@@ -960,10 +966,10 @@ test("assignment routing export resolves outcomes from accepted.json and groups 
     assert.equal(aReview.providerMetadata.stepWrites, false);
     assert.equal(aReview.providerMetadata.askSha256, bReview.providerMetadata.askSha256);
     assert.equal(aReview.providerMetadata.objectiveSha256, bReview.providerMetadata.objectiveSha256);
-    assert.notEqual(a2.providerMetadata.objectiveSha256, byId(b.records, "asg-writer-1").providerMetadata.objectiveSha256);
+    assert.notEqual(a2.providerMetadata.objectiveSha256, bWriter.providerMetadata.objectiveSha256);
     assert.deepEqual(a.skipped, [{ assignment_id: "asg-writer-3", reason: "no_routing_record" }]);
 
-    const groups = groupRoutingRecords([...a.records, ...b.records]);
+    const groups = groupRoutingRecords([...(a.records as RoutingRecordV2[]), ...(b.records as RoutingRecordV2[])]);
     const review = groups.find((group) => group.stepId === "review-cli");
     assert.ok(review);
     assert.equal(review.askRecurrence, 2);
