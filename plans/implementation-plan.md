@@ -117,7 +117,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `grok-4.7`. This covers this repo's developer runner and this repo's own
   `.kxm` config. Product defaults stay `grok-4.6`: the `kxm init` template,
   the engine implementer fallback, guide candidates, role/modes/subagent
-  defaults, `.kxm/prices.yaml` and the inventory.
+  defaults, `.kxm/prices.yaml` and the inventory. The passive policy-draft
+  tests now use `grok-4.7` for fixtures validated against the developer
+  runner's code ceiling and explicitly reject `grok-4.6` there; this test
+  correction does not alter product defaults or authorize a new route.
 
 - **CI test pause (2026-09-24).** GitHub workflows `CI`, `Nightly` and
   `Real Pi smoke` are disabled server-side, and required status checks are
