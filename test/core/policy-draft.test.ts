@@ -50,7 +50,7 @@ function role(id: string, fields: Record<string, unknown>) {
 function currentDraft(overrides: { models?: Record<string, unknown>; roles?: Record<string, unknown>; evidence?: Record<string, string> } = {}) {
   return {
     models: {
-      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "admitted", permissions: ["edit"] }),
+      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "xai", status: "admitted", permissions: ["edit"] }),
       "qwen-openrouter-pi": model("qwen-openrouter-pi", {
         harness: "pi",
         model: "openrouter/qwen/qwen3-coder-plus",
@@ -83,7 +83,7 @@ test("draft schemas compile closed and reject unknown fields", () => {
   assert.equal(validateModel({
     schema: "kxm.model.v2",
     harness: "grok",
-    model: "grok-4.6",
+    model: "grok-4.7",
     vendor: "xai",
     status: "admitted",
     permissions: ["edit"],
@@ -91,7 +91,7 @@ test("draft schemas compile closed and reject unknown fields", () => {
   assert.equal(validateModel({
     schema: "kxm.model.v2",
     harness: "grok",
-    model: "grok-4.6",
+    model: "grok-4.7",
     vendor: "xai",
     status: "admitted",
     permissions: ["edit"],
@@ -136,23 +136,27 @@ test("validatePolicyDraft accepts current code ceilings and specialty identity",
 
 test("validatePolicyDraft rejects closed-shape, identity, reference, vendor, hash, and admission errors", () => {
   assert.ok(codes(validatePolicyDraft({
-    models: { "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "admitted", permissions: ["edit"], unexpected: true }) },
+    models: { "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "admitted", permissions: ["edit"] }) },
+  }, options())).includes("model_not_in_ceiling"));
+
+  assert.ok(codes(validatePolicyDraft({
+    models: { "grok-native": model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "xai", status: "admitted", permissions: ["edit"], unexpected: true }) },
   }, options())).includes("schema_additionalProperties"));
 
   assert.ok(codes(validatePolicyDraft({
     models: [
-      model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "admitted", permissions: ["edit"] }),
+      model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "xai", status: "admitted", permissions: ["edit"] }),
       model("grok-native", { harness: "claude", model: "fable", vendor: "anthropic", status: "admitted", permissions: ["read-only"] }),
     ],
   }, options())).includes("duplicate_route_id"));
 
   assert.ok(codes(validatePolicyDraft({
-    models: { "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "admitted", permissions: ["edit"] }) },
+    models: { "grok-native": model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "xai", status: "admitted", permissions: ["edit"] }) },
     roles: { writer: role("writer", { purpose: "writer", permission: "edit", roster: [{ route: "missing-route" }] }) },
   }, options())).includes("route_unknown"));
 
   assert.ok(codes(validatePolicyDraft({
-    models: { "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "anthropic", status: "admitted", permissions: ["edit"] }) },
+    models: { "grok-native": model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "anthropic", status: "admitted", permissions: ["edit"] }) },
   }, options())).includes("native_vendor_mismatch"));
 
   assert.ok(codes(validatePolicyDraft({
@@ -203,7 +207,7 @@ test("validatePolicyDraft rejects closed-shape, identity, reference, vendor, has
 
   const candidate = currentDraft({
     models: {
-      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "candidate", permissions: ["edit"] }),
+      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "xai", status: "candidate", permissions: ["edit"] }),
     },
   });
   const candidateCodes = codes(validatePolicyDraft(candidate, options()));
@@ -214,7 +218,7 @@ test("validatePolicyDraft rejects closed-shape, identity, reference, vendor, has
 test("candidate status is stored as candidate data and never treated as admitted", () => {
   const isolated = validatePolicyDraft({
     models: {
-      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "candidate", permissions: ["edit"] }),
+      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "xai", status: "candidate", permissions: ["edit"] }),
     },
   }, options());
   assert.equal(isolated.ok, true);
@@ -222,7 +226,7 @@ test("candidate status is stored as candidate data and never treated as admitted
 
   const used = validatePolicyDraft({
     models: {
-      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.6", vendor: "xai", status: "candidate", permissions: ["edit"] }),
+      "grok-native": model("grok-native", { harness: "grok", model: "grok-4.7", vendor: "xai", status: "candidate", permissions: ["edit"] }),
     },
     roles: { writer: role("writer", { purpose: "writer", permission: "edit", roster: [{ route: "grok-native" }] }) },
   }, options());
@@ -274,7 +278,7 @@ test("active KXM schemas, examples, and roster.yaml remain the live formats", ()
   const mismatch = registry.validate("model", {
     schema: "kxm.model.v2",
     provider: "xai",
-    model: "grok-4.6",
+    model: "grok-4.7",
   }, "draft-as-live.yaml");
   assert.ok(mismatch.some((issue) => issue.code === "schema_identity_mismatch"));
 
@@ -423,7 +427,7 @@ function grokNativeDraft(fields: Record<string, unknown> = {}) {
     models: {
       "grok-native": model("grok-native", {
         harness: "grok",
-        model: "grok-4.6",
+        model: "grok-4.7",
         vendor: "xai",
         status: "admitted",
         permissions: ["edit"],
