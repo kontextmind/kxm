@@ -103,6 +103,14 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Decided
 
+- **CI test pause (2026-09-24).** GitHub workflows `CI`, `Nightly` and
+  `Real Pi smoke` are disabled server-side, and required status checks are
+  removed from ruleset `protect-main`. `Auto-Release` and `Release` stay on,
+  because tenant VMs will upgrade from releases and `Release` still runs
+  `validate:ci`. Before any merge, the local WSL pipeline (Phase 0) is the
+  gate. Workflow files stay unchanged, so re-enabling is a single
+  `gh workflow enable` plus restoring the saved ruleset.
+
 - **Single operator: no migrations, no legacy support, minimal tests (2026-09-20).**
   Nobody else runs this. Old state is deleted and re-created, not upgraded, and nothing
   carries a second shape of anything for the sake of a file that no longer exists. Applied
