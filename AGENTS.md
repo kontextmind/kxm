@@ -181,14 +181,14 @@ Two combined gates (already in npm/CI). Do not add a third unless a test fails.
 | When | Gate | What it combines |
 |---|---|---|
 | **Commit** | `npm run verify` | `npm test` (build + tests), `npm run check` (tsc + lint:docs + versions), then generated `dist` matches the staged `dist`. Needs `npm ci` first: the bundles embed dependency bytes, so a `node_modules` that drifted from the lock is **refused** rather than certified |
-| **PR/MR and main** | CI `validate:pr` is a three-minute merge-safety gate on two Linux legs (Node 22.19.0 and 24) plus two Windows legs on GitHub-hosted `windows-latest`. Linux is the protect-main required pair; Windows is reported and not required. Classify changes, Docs lint, and Plugin validation keep the required job names. Documentation-only changes run Classify and Docs lint; Validate and Plugin execute explicit no-op skip steps. Local Mac `npm run verify` before push. Nightly complete coverage and release stay on Linux. | Fast structural confidence on every change. The exhaustive core/simulation/package suite, coverage floors, full docs check, generated rebuild, and pack dry-run run nightly. Plugin validation remains a CI job, not a third npm script. |
+| **PR/MR and main** | CI test workflows paused 2026-09-24 (single operator); `CI`, `Nightly` and `Real Pi smoke` are disabled; the gate before merge is the local WSL pipeline `~/bin/kxm-pipeline`, which runs the same `validate:pr`, Plugin validation and nightly commands; `Release` still runs `validate:ci`. | Fast structural confidence on every change. The exhaustive core/simulation/package suite, coverage floors, full docs check, generated rebuild, and pack dry-run run nightly. Plugin validation remains a CI job, not a third npm script. |
 
 Cleanup (`git status`, no `nul`/tmp/secrets; `dist` if CLI changed) is **before** the commit gate and **again before push**. Session-ready `/new`/`/fork` and Mesh operator copy are held by tests under `npm test` (extension readiness test, docs brake); no extra npm script. Come-back list: Tracking **Still open**. Ship hint belongs on the Pi status/widget (`ship dirty` / `N local` / `PR after CI`), not in every chat turn.
 
 A commit is not a PR. A PR is not a release.
 
 **PR loop (do not sit on this in the interactive session):** push the branch,
-open the MR, enable auto-merge, watch CI on a background worker. Fix failures
+open the MR, run the local pipeline on the PR head, then `gh pr merge --rebase`. Fix failures
 and conflicts until green. After merge: update local `main`, delete the branch
 (and worktree if used).
 
