@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ import {
   evaluateCircuitBreaker,
   type RoutingRecordV2,
 } from "../../plugins/kxm/src/routing.ts";
+import { exportAssignmentRoutingRecords } from "../../scripts/assignment-run.mjs";
 import {
   exportFederatedTelemetry,
   readFederatedTelemetry,
@@ -888,5 +889,90 @@ test("kxm routing benchmark command executes side-by-side comparison (Decision Q
   assert.equal(tableCode, 0);
   assert.match(tableIo.read().stdout, /Routing Benchmark Results/);
   assert.match(tableIo.read().stdout, /grok-4\.6/);
+});
+
+test("assignment routing export resolves outcomes from accepted.json and groups repeated briefs for kxm improve", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-routing-export-"));
+  const hex = "ab".repeat(32);
+  const record = (dirName: string, stageId: string, agentRole: string, reworkOf?: string) => ({
+    schema: "kxm.routing-record.v1",
+    behavioralHashVersion: 1,
+    behavioralSha256: hex,
+    workflowRunId: dirName,
+    stageId,
+    attempt: 1,
+    requestedModel: "grok/grok-4.7",
+    effectiveModel: "grok/grok-4.7",
+    reasoningEffort: "medium",
+    agentRole,
+    rolePromptSha256: hex,
+    skills: [],
+    retries: 0,
+    transitions: 0,
+    humanInterventions: 0,
+    finalOutcome: "pending",
+    providerMetadata: { harness: stageId.startsWith("review") ? "codex" : "grok", ...(reworkOf ? { rework_of: reworkOf } : {}) },
+  });
+  const manifest = (kind: string, boundary: string) => ({
+    kind,
+    contract: { boundary, deliverables: ["out"], witness: { id: "verify" }, deferred: [] },
+  });
+  const writeAssignment = (task: string, id: string, kind: string, boundary: string, agentRole: string, reworkOf?: string, withRecord = true) => {
+    const dir = join(root, task, id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest(kind, boundary)));
+    if (withRecord) writeFileSync(join(dir, "routing-record.json"), JSON.stringify(record(id, kind, agentRole, reworkOf)));
+  };
+  try {
+    writeAssignment("task-a", "asg-writer-1", "implement", "W1", "writer");
+    writeAssignment("task-a", "asg-writer-2", "repair", "W1", "writer", "asg-writer-1");
+    writeAssignment("task-a", "asg-review-cli-1", "review-cli", "R", "reviewer-cli");
+    writeAssignment("task-a", "asg-writer-3", "implement", "W1", "writer", undefined, false);
+    writeFileSync(join(root, "task-a", "accepted.json"), JSON.stringify({
+      schema: "kxm.task-accepted.v1",
+      task_id: "task-a",
+      writer: { assignment_id: "asg-writer-2" },
+      critics: [{ assignment_id: "asg-review-cli-1" }],
+    }));
+    writeAssignment("task-b", "asg-writer-1", "implement", "W2", "writer");
+    writeAssignment("task-b", "asg-review-cli-1", "review-cli", "R", "reviewer-cli");
+    writeFileSync(join(root, "task-b", "accepted.json"), JSON.stringify({
+      schema: "kxm.task-accepted.v1",
+      task_id: "task-b",
+      writer: { assignment_id: "asg-writer-1" },
+      critics: [{ assignment_id: "asg-review-cli-1" }],
+    }));
+
+    const a = exportAssignmentRoutingRecords({ taskDir: join(root, "task-a") });
+    const b = exportAssignmentRoutingRecords({ taskDir: join(root, "task-b") });
+    const byId = (rows: Array<Record<string, any>>, id: string) => rows.find((row) => row.providerMetadata.assignmentId === id);
+    const a1 = byId(a.records, "asg-writer-1");
+    const a2 = byId(a.records, "asg-writer-2");
+    const aReview = byId(a.records, "asg-review-cli-1");
+    const bReview = byId(b.records, "asg-review-cli-1");
+    assert.equal(a1.finalOutcome, "failed");
+    assert.equal(a1.providerMetadata.supersededBy, "asg-writer-2");
+    assert.equal(a2.finalOutcome, "accepted");
+    assert.equal(aReview.finalOutcome, "accepted");
+    assert.equal(bReview.finalOutcome, "accepted");
+    assert.ok(a.records.every((row) => row.workflowRunId === "task-a"));
+    assert.equal(a1.providerMetadata.stepWrites, true);
+    assert.equal(aReview.providerMetadata.stepWrites, false);
+    assert.equal(aReview.providerMetadata.askSha256, bReview.providerMetadata.askSha256);
+    assert.equal(aReview.providerMetadata.objectiveSha256, bReview.providerMetadata.objectiveSha256);
+    assert.notEqual(a2.providerMetadata.objectiveSha256, byId(b.records, "asg-writer-1").providerMetadata.objectiveSha256);
+    assert.deepEqual(a.skipped, [{ assignment_id: "asg-writer-3", reason: "no_routing_record" }]);
+
+    const groups = groupRoutingRecords([...a.records, ...b.records]);
+    const review = groups.find((group) => group.stepId === "review-cli");
+    assert.ok(review);
+    assert.equal(review.askRecurrence, 2);
+    assert.equal(review.verifyPassRate, 1);
+    assert.equal(review.isCandidate, true);
+    assert.ok(review.candidateId);
+    assert.equal(groups.some((group) => group.stepId !== "review-cli" && group.isCandidate), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 

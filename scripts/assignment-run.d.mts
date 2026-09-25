@@ -339,6 +339,13 @@ export function changeReport(request: { taskDir: string }, deps?: Record<string,
   ranking: "not-ranked";
   orchestration_usage: "unavailable";
 };
+export const ROUTING_EXPORT_SCHEMA: "kxm.assignment-routing-export.v1";
+export function exportAssignmentRoutingRecords(request: { taskDir: string }, deps?: Record<string, unknown>): {
+  schema: "kxm.assignment-routing-export.v1";
+  task_id: string;
+  records: Array<Record<string, any>>;
+  skipped: Array<{ assignment_id: string | null; reason: "acceptance_record_invalid" | "no_routing_record" | "routing_record_invalid" | "manifest_invalid" }>;
+};
 export function writeCurrentPlan(request: {
   taskDir: string; plan: string; sha256: string; baseCommit: string; expectedGeneration: number; settledDecisions?: string[];
 }, deps?: Record<string, unknown>): {

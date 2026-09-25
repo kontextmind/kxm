@@ -512,6 +512,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Assignment-runner records group through a read-side export (2026-09-24).**
+  `routing-export` does not change `buildRoutingRecord` or the on-disk
+  `routing-record.json`. The pass signal is `accepted.json`, the ask is
+  `kind+role`, and the brief is `kind+contract`. Named test:
+  `assignment routing export resolves outcomes from accepted.json and groups repeated briefs for kxm improve`
+  in `test/core/improve.test.ts`.
+
 - **The CLI honors Claude-only workflow and execution contracts (2026-09-23; #314, fixes
   #303).** #314 changed CLI contracts without a Tracking entry; this entry was added after
   the merge, from the PR and commit `d79653c`, by the 2026-09-24 audit of the day's merges.
@@ -1013,7 +1020,7 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   logs directory (`session-work.ts`, `local-snapshot.ts`); `routing.shadowExecution`,
   `routing.circuitBreaker` and `telemetry.federated` stay unconsumed; the
   `examples/project` `improve.yaml` workflow is not converted into a coded gate step; and
-  developer assignment-runner records still do not group (recorded gap in Still open).
+  developer assignment-runner records did not group in that change; `routing-export` later supplies the read-side grouping.
   Candidate diffs are never applied: activation stays a reviewed Git change.
 
 - **Engine routing records carry a stable ask identity, and Runtime-dispatched agents
@@ -2643,16 +2650,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   on `project.yaml` would withhold memory unpredictably. **Owner:** the current writer
   route (per Decided), with Fable planning. **Trigger:** before any hub serves a second
   project, including the hosted per-account kxmd hub.
-
-- **Recorded gap, not scheduled (2026-09-23, found while implementing PR #298): developer
-  assignment-runner records do not group.** `buildRoutingRecord` in
-  `scripts/assignment-run.mjs` writes v1 records with `finalOutcome: "pending"`, the
-  assignment id as `workflowRunId`, and a per-assignment `rolePromptSha256`, so
-  `kxm improve` counts `just assign` history as undecided and never treats two assignments
-  as the same ask. The coded-repeat report therefore does not cover the developer runner.
-  The ready fix is `accepted.json` as the pass signal plus a brief hash as the ask identity.
-  **Owner:** the current writer route (per Decided). **Trigger:** the operator picks the pass
-  signal.
 
 - **Recorded gap, not scheduled (2026-09-23, found while running the P7 deployed restore witness):**
   **`kxm backup` cannot see the stores the Runtime actually owns.** `discoverProjectStores`
