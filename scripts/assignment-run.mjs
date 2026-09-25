@@ -2330,7 +2330,7 @@ export async function observeAssignment(outputDir, deps = {}) {
   return appended;
 }
 
-const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path> | witness --record-dir <absolute-path> | accept --task-dir <absolute-path> --commit <commit> --record-dir <absolute-path> --critic <absolute-path> --critic <absolute-path> [--observed-pr <id>] [--observed-ci <id>] | attribute --task-dir <absolute-path> --record-dir <absolute-path> --class <orchestration|model|environment|unclassified> --explanation-file <absolute-path> | observe-cost --task-dir <absolute-path> --input <absolute-path> | plan-current --task-dir <absolute-path> --plan <absolute-path> --sha256 <hex64> --base-commit <commit> --expected-generation <n> | change-report --task-dir <absolute-path>";
+const CLI_USAGE = "usage: assignment-run.mjs run --manifest <absolute-path> | observe --record-dir <absolute-path> | witness --record-dir <absolute-path> | accept --task-dir <absolute-path> --commit <commit> --record-dir <absolute-path> --critic <absolute-path> --critic <absolute-path> [--observed-pr <id>] [--observed-ci <id>] | attribute --task-dir <absolute-path> --record-dir <absolute-path> --class <orchestration|model|environment|unclassified> --explanation-file <absolute-path> | observe-cost --task-dir <absolute-path> --input <absolute-path> | plan-current --task-dir <absolute-path> --plan <absolute-path> --sha256 <hex64> --base-commit <commit> --expected-generation <n> | change-report --task-dir <absolute-path> | routing-export --task-dir <absolute-path>";
 
 const WITNESS_RECEIPT_KEYS = Object.freeze([
   "schema",
@@ -4293,8 +4293,135 @@ export function writeCurrentPlan(request, deps = {}) {
   } catch (error) { throw observationFailure(error, "plan_ref_invalid"); }
 }
 
+export const ROUTING_EXPORT_SCHEMA = "kxm.assignment-routing-export.v1";
+
+function contractExportable(contract) {
+  return Boolean(contract)
+    && typeof contract === "object"
+    && !Array.isArray(contract)
+    && typeof contract.boundary === "string"
+    && Array.isArray(contract.deliverables)
+    && contract.witness
+    && typeof contract.witness === "object"
+    && !Array.isArray(contract.witness)
+    && typeof contract.witness.id === "string"
+    && Array.isArray(contract.deferred);
+}
+
+export function exportAssignmentRoutingRecords(request, deps = {}) {
+  const io = ioDeps(deps);
+  const taskDir = observationTask(request.taskDir, io);
+  const taskId = basename(taskDir);
+  const skipped = [];
+  const acceptedIds = new Set();
+  const acceptedPath = join(taskDir, ACCEPTED_FILENAME);
+  if (lstatOrNull(acceptedPath, io.lstatSync)) {
+    try {
+      const value = privateRecord(acceptedPath, io).value;
+      const valid = value.schema === ACCEPTED_SCHEMA
+        && value.task_id === taskId
+        && typeof value.writer?.assignment_id === "string"
+        && Array.isArray(value.critics);
+      if (!valid) throw new Error("acceptance invalid");
+      acceptedIds.add(value.writer.assignment_id);
+      for (const critic of value.critics) {
+        if (typeof critic?.assignment_id === "string") acceptedIds.add(critic.assignment_id);
+      }
+    } catch {
+      skipped.push({ assignment_id: null, reason: "acceptance_record_invalid" });
+    }
+  }
+  const collected = [];
+  const dirs = listDirectAssignmentDirs(taskDir, io).sort((left, right) => left.assignment_id < right.assignment_id ? -1 : left.assignment_id > right.assignment_id ? 1 : 0);
+  for (const { assignment_id, path } of dirs) {
+    const routingPath = join(path, "routing-record.json");
+    if (!lstatOrNull(routingPath, io.lstatSync)) {
+      skipped.push({ assignment_id, reason: "no_routing_record" });
+      continue;
+    }
+    let record;
+    try {
+      record = parseRoutingRecord(privateRecord(routingPath, io).value);
+      if (record.workflowRunId !== assignment_id) throw new Error("workflowRunId");
+    } catch {
+      skipped.push({ assignment_id, reason: "routing_record_invalid" });
+      continue;
+    }
+    let contract;
+    try {
+      const manifest = privateRecord(join(path, "manifest.json"), io).value;
+      contract = manifest.contract;
+      if (!contractExportable(contract)) throw new Error("contract");
+    } catch {
+      skipped.push({ assignment_id, reason: "manifest_invalid" });
+      continue;
+    }
+    collected.push({ id: assignment_id, record, contract });
+  }
+  const supersededBy = new Map();
+  for (const entry of collected) {
+    const reworkOf = entry.record.providerMetadata?.rework_of;
+    if (typeof reworkOf === "string" && !supersededBy.has(reworkOf)) supersededBy.set(reworkOf, entry.id);
+  }
+  const records = [];
+  for (const entry of collected) {
+    const kind = entry.record.stageId;
+    const role = entry.record.agentRole;
+    const askSha256 = sha256Bytes(Buffer.from(JSON.stringify(["kxm.assignment-ask.v1", kind, role])));
+    const objectiveSha256 = sha256Bytes(Buffer.from(JSON.stringify([
+      "kxm.assignment-brief.v1",
+      kind,
+      entry.contract.boundary,
+      entry.contract.deliverables,
+      entry.contract.witness.id,
+      entry.contract.deferred,
+    ])));
+    const finalOutcome = acceptedIds.has(entry.id) ? "accepted" : supersededBy.has(entry.id) ? "failed" : "pending";
+    try {
+      records.push(parseRoutingRecord({
+        ...entry.record,
+        workflowRunId: taskId,
+        finalOutcome,
+        providerMetadata: {
+          ...entry.record.providerMetadata,
+          workflowId: "assignment-runner",
+          askSha256,
+          objectiveSha256,
+          stepWrites: WRITER_KINDS.includes(kind),
+          assignmentId: entry.id,
+          ...(finalOutcome === "failed" ? { supersededBy: supersededBy.get(entry.id) } : {}),
+        },
+      }));
+    } catch {
+      skipped.push({ assignment_id: entry.id, reason: "routing_record_invalid" });
+    }
+  }
+  return { schema: ROUTING_EXPORT_SCHEMA, task_id: taskId, records, skipped };
+}
+
 export async function main(argv = process.argv, io = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr }) {
   const args = argv.slice(2).filter((arg) => arg !== "--");
+  if (args[0] === "routing-export") {
+    try {
+      const values = {};
+      for (let i = 1; i < args.length; i += 2) {
+        if (args[i] !== "--task-dir" || values[args[i]] !== undefined || args[i + 1] === undefined) throw failClosed("invalid report/plan arguments", "manifest_invalid");
+        values[args[i]] = args[i + 1];
+      }
+      if (values["--task-dir"] === undefined) throw failClosed("missing report/plan arguments", "manifest_invalid");
+      const result = exportAssignmentRoutingRecords({ taskDir: values["--task-dir"] });
+      for (const record of result.records) io.stdout.write(`${JSON.stringify(record)}\n`);
+      io.stderr.write(`${JSON.stringify({ schema: result.schema, task_id: result.task_id, records: result.records.length, skipped: result.skipped })}\n`);
+      process.exitCode = 0;
+      return result;
+    } catch (error) {
+      const failure = observationFailure(error);
+      io.stderr.write(`${failure.runnerCode}: assignment routing export refused\n`);
+      process.exitCode = 1;
+      throw failure;
+    }
+  }
+
   if (["change-report", "plan-current"].includes(args[0])) {
     try {
       const flags = args[0] === "change-report" ? ["--task-dir"] : ["--task-dir", "--plan", "--sha256", "--base-commit", "--expected-generation"];

@@ -247,7 +247,7 @@ then is that `BLOCK` resolved.
     ├── output-schema.json   # the structured-output schema given to the harness
     ├── pre-dispatch.json    # written before spawn (kxm.assignment-dispatch.v1)
     ├── completion.json      # kxm.assignment-completion.v1, or refusal.json
-    ├── routing-record.json  # read by kxm routing report
+    ├── routing-record.json  # export with `node scripts/assignment-run.mjs routing-export --task-dir <abs>` and pass the JSONL to `kxm improve report --file` / `kxm routing report --file`
     ├── telemetry.jsonl      # usage, latency and cost
     ├── runner-errors.jsonl  # bounded failure codes
     ├── witness/             # latest.json and history/<receipt-id>.json
