@@ -35,6 +35,8 @@ related:
   - history/plan-role-configuration-governance.md
   - research-jev-system-one.md
   - plan-python-migration.md
+  - plan-greenfield-infra.md
+  - plan-1password-vaults.md
 depends_on: []
 blocked_by: []
 details:
@@ -66,6 +68,18 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   here before starting; at each accepted slice update any superseded TypeScript,
   hosting, automation and package guidance in the same change. Browser Studio and
   native provider executables retain their own languages.
+
+- **Greenfield infra proposal (2026-09-25; first move installed the same day):**
+  [plan-greenfield-infra.md](plan-greenfield-infra.md). One Postgres 17 and one
+  Temporal 1.32.0 are running on `kxm-dev-svr`, loopback only. Account `kxmd`
+  has database `kxmd` and Temporal namespace `kxmd`. KXM does not write
+  those stores yet. Redis Streams, NATS, raw WebSockets, and the A2A Python SDK
+  stay backlog. No S3. This does not change the SQLite write-path decision.
+
+- **1Password vaults (2026-09-25):**
+  [plan-1password-vaults.md](plan-1password-vaults.md) is proposed shape for
+  the Families account. It does not create a vault or a token. Accepted names
+  and the same-name override order are the Decided entry below.
 
 - **Consolidated scope:** [M0–M9](plan-unified-kxm-milestones.md) is the single
   proposed delivery catalog for all 36 fork reviews, including memory, Studio,
@@ -112,6 +126,57 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   committed `.kxm/role-hosts.yaml`)
 
 ### Decided
+
+- **Tool choice (2026-09-25).** Use the best tool for the job. Prefer Python
+  when it is the better tool. Prefer Bun over npm when Bun can install or run
+  the package. A missing or stale install is reconciled by `kxm-control`.
+
+- **KXM group scopes (2026-09-25).** Every group starts with the tenant
+  identifier. Slugs are not used, because they change. The product and
+  service tenant is identifier `kxmd`, slug `kxmd`, name `KontextMind Cloud
+  Platform`. Identifier is 1 to 5 characters, unique, and immutable. Slug is
+  1 to 15 characters, unique, and mutable. Host `h1` is still named
+  `kxm-dev-svr`; its intended name is `kxmd-proxmox`, and that hostname is
+  not changed because it is the cluster node. Guest names use the tenant
+  identifier. `platform` means the guest serves every tenant. `tenant` means
+  it does not. `destroy` is a flag, not a deletion.
+  Platform: `kxmd-firewall`, `kxmd-gateway`, `kxmd-authentik`, `kxmd-pg`,
+  `kxmd-proxy`, `kxmd-browser`, `kxmd-services`. Tenant: `kxmd-build-win`.
+  Flagged destroy, still present: `kxmd-api`, `kxmd-admit`, `kxmd-dispatch`,
+  `kxmd-ops`, `kxmd-bastion`, `kxmd-signer`, `kxmd-edgeauth`,
+  `kxmd-bootstrap`, `kxmd-ws-301`, `kxmd-ws-302`. `kxmd-gateway` stays. It
+  is the management path to the firewall, not a product service.
+  Studio and the hub run on `kxmd-studio` (`10.31.0.21`). The control API
+  and the workspace API run on `kxmd-services` (`10.31.0.10`). Temporal runs
+  on `kxmd-temporal` (`10.31.0.22`) and is one cluster for every tenant.
+  The registry is on `kxmd-pg` (`10.30.31.30`). `kxmd-services` can reach
+  that database only. It still cannot reach the host. VLAN 30 still cannot
+  reach VLAN 50. The proxy reaches Studio and the hub on `10.31.0.21`
+  ports 4242 and 7331 only. The host copies are stopped. `kxm` is the
+  service, not a project. Guest ids are Proxmox VMIDs. Roles stay
+  `owners|admins|users` (`users` is standard). Account:
+  `kxmd-owners|admins|users`. Service global: `kxmd-g-*`. Service on the
+  host: `kxmd-h1-*`. Service on a guest: `kxmd-v{vmid}-*`. Studio gate:
+  `kxmd-studio`. Runners: `kxmd-runners`. A tenant project, when it exists,
+  is `kxmd-p{id}-*` or `kxmd-p{id}-v{vmid}-*`. Only the account groups admit
+  the hub edge. Only `kxmd-studio` admits Studio.
+
+- **1Password vaults (2026-09-25).** Shape:
+  [plan-1password-vaults.md](plan-1password-vaults.md). There is no cross-vault item link.
+  Read-only is a service-account grant on one vault. The tenant vault is
+  `kxmd-{tid}`. This tenant's is `kxmd-kxmd`. A guest vault is
+  `kxmd-{tid}-v{vmid}`. A project vault is `kxmd-{tid}-p{projectid}`, and
+  `{projectid}` is never `kxm`. There is no `kxm-{tid}-global` vault.
+  Platform vaults stay outside `{tid}`: `kxmd-system`,
+  `kxmd-shared-system`, `kxmd-shared-public`, and `kxmd-svc-{service}`.
+  A user-accessible guest may read its own guest vault, `kxmd-{tid}`, the
+  project vaults on that guest, and `kxmd-shared-public`. It does not read
+  `kxmd-system` or `kxmd-shared-system`. The same `VAR_NAME` resolves to
+  the narrowest readable scope: guest vault, then project vault, then
+  `kxmd-{tid}`, then `kxmd-shared-public`, then `kxmd-svc-{service}`, then
+  `kxmd-shared-system`, then `kxmd-system`. A missing scope is skipped. A
+  vault the caller cannot read does not override.
+
 
 - **Writer route (2026-09-24).** The Grok writer moves from `grok-4.6` to
   `grok-4.7`. This covers this repo's developer runner and this repo's own
@@ -2541,13 +2606,48 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Still open
 
-- **Python migration selection (operator request, 2026-09-25).** Proposed scope and
-  acceptance checks are in [the Python migration plan](plan-python-migration.md).
-  Trigger: operator selects the first implementation slice after the MG0 inventory
-  and parity corpus establish deployed versions, consumers and restore coverage.
-  Owner: platform/runtime; each accepted slice must record its gate and actual
-  status in this tracker. Existing current-state decisions remain the deployed
-  contract until the relevant successor slice is accepted.
+- **Python migration MG0 witness passed (2026-09-25).**
+  Evidence: [python-migration-mg0.json](evidence/python-migration-mg0.json)
+  and [python-migration-mg0-corpus.json](evidence/python-migration-mg0-corpus.json).
+  Local `main` is `d90afc1`, already `origin/main`. Portal `main` was
+  fast-forwarded to `0380a5f`. The live checkout on `kxm-dev-svr` was not
+  switched; `origin/main` there was fetched to `d90afc1`. `kxm backup
+  --all-projects` on CLI `0.7.115` copied the hub store, registry, and event
+  store. Restore into a temp clone matched 3 run ids, 3 command ids, 1 project
+  id, and the definition hashes. Production was not overwritten and services
+  were not stopped. The encrypted archive is
+  `/home/sysadmin/kxm-upgrade-backups/mg0-2026-09-25.tar.gz.gpg`; its key is
+  the Proton Pass item `kxmd / kxm-dev-svr / mg0-archive`. There is no second
+  box. `config.yaml` and `role-hosts.yaml` are absent and were not invented.
+
+- **Greenfield infra first move installed (2026-09-25).**
+  [plan-greenfield-infra.md](plan-greenfield-infra.md). Postgres 17.11 listens
+  on `127.0.0.1:5432`. Temporal 1.32.0 listens on `127.0.0.1:7233`. Account
+  `kxmd` has database `kxmd` and namespace `kxmd` (retention 168h). The
+  product role cannot open the Temporal databases. KXM still writes SQLite.
+  MG1 code gate passed (2026-09-25). `python/kxm-control` is the uv workspace
+  caller and API. It resolves only database `kxmd`, role `kxmd`, and namespace
+  `kxmd`. A request that names another account, database, namespace, host, or
+  Temporal target is denied. Authentik login accepts an RS256 token only for
+  issuer, audience, and `kxm_actor` of `user` or `runner`; a user token is not
+  a runner membership, and a member of one tenant cannot read another.
+  Published revision round trip and the regenerated Studio client
+  (`python/kxm-control/generated/studio-client.ts`, checked against
+  `python/kxm-control/contract/openapi.json`) passed. `DROP SCHEMA
+  kxm_registry` removes registration and does not touch source state. The
+  schema is installed on the live `kxmd` database (tenants, memberships,
+  projects, repositories, revisions). Object storage is the on-host directory
+  `/var/lib/kxm/artifacts/kxmd`, not S3. Authentik application `kxm-control`
+  is live at issuer `https://id.kxmd.dev/application/o/kxm-control/`. A client
+  credentials token verified against that JWKS as `kxm_actor=runner`. Issuer,
+  audience, JWKS URL, and the client secret are on the 1Password item
+  `kontextmind/Authentik`. `kxm-control.service` is active on
+  `127.0.0.1:8090` with those three URLs set. Guest 300 has Bun and `kxm`
+  `0.7.115`. Guest 310, the Windows runner VM, now answers `qm guest cmd 310 ping` as Windows 11. The installed Studio bundle on
+  `kxm-dev-svr` now proxies `GET /api/control/account` to
+  `http://127.0.0.1:8090`. The hub still writes SQLite.
+  The `onesm-*` groups are now `kxmd-owners`, `kxmd-admins`, and `kxmd-users`. The hub provider and application are `kxm-hub-kxmd`. The old `kontextmind-agent` token is revoked. The trashed Proton Pass `onesm` login is deleted.
+  Redis Streams, NATS, raw WebSockets, and the A2A Python SDK stay backlog.
 
 - **The one queue (replanned 2026-09-20; design record
   [reviews/plan-set-reprioritization-astra.md](reviews/plan-set-reprioritization-astra.md)).**
