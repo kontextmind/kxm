@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -2013,51 +2013,107 @@ test("kxm explain inspects prompt context footprint and projected cost", async (
   assert.equal(parsed.majorMode, "planner");
 });
 
+/** Probe-visible stub. Release runners have no omp/claude/pi, so this test must not read the host PATH. */
+function installPluginHarnessStub(bin: string, name: string): void {
+  mkdirSync(bin, { recursive: true });
+  if (process.platform === "win32") {
+    writeFileSync(join(bin, `${name}.cmd`), "@echo off\r\necho fixture-1.0.0\r\nexit /b 0\r\n");
+    return;
+  }
+  const command = join(bin, name);
+  writeFileSync(command, "#!/bin/sh\necho fixture-1.0.0\nexit 0\n", { mode: 0o755 });
+  chmodSync(command, 0o755);
+}
+
+function pluginInstallProbeEnv(bin: string): NodeJS.ProcessEnv {
+  return { PATH: bin };
+}
+
+function isPluginHarnessCommand(command: string | undefined, id: string): boolean {
+  return command === id || command?.toLowerCase() === `${id}.cmd` || command?.toLowerCase() === `${id}.exe`;
+}
+
 test("kxm plugin install installs for discovered harnesses and honors flags in dry-run and live modes", async () => {
-  const dryRunAll = capture();
-  assert.equal(await runCli(["plugin", "install", "--dry-run", "--json"], {}, dryRunAll), 0);
-  const allParsed = JSON.parse(dryRunAll.read().stdout) as {
-    ok: boolean;
-    command: string;
-    dryRun?: boolean;
-    results: Array<{ harness: string; status: string; command: string; args: string[] }>;
-  };
-  assert.equal(allParsed.ok, true);
-  assert.equal(allParsed.command, "plugin install");
-  assert.equal(allParsed.dryRun, true);
-  const dryHarnesses = allParsed.results.map((r) => r.harness);
-  assert.ok(dryHarnesses.includes("pi") || dryHarnesses.includes("omp") || dryHarnesses.includes("claude"));
+  const root = mkdtempSync(join(tmpdir(), "kxm-plugin-install-"));
+  const allBin = join(root, "all");
+  const partialBin = join(root, "partial");
+  const emptyBin = join(root, "empty");
+  try {
+    mkdirSync(emptyBin, { recursive: true });
+    for (const name of ["pi", "omp", "claude"]) installPluginHarnessStub(allBin, name);
+    for (const name of ["pi", "claude"]) installPluginHarnessStub(partialBin, name);
+    const allEnv = pluginInstallProbeEnv(allBin);
 
-  const dryRunOmp = capture();
-  assert.equal(await runCli(["plugin", "install", "--omp", "--dry-run", "--json"], {}, dryRunOmp), 0);
-  const ompParsed = JSON.parse(dryRunOmp.read().stdout) as {
-    ok: boolean;
-    results: Array<{ harness: string; status: string; command: string }>;
-  };
-  assert.equal(ompParsed.ok, true);
-  assert.equal(ompParsed.results.length, 1);
-  assert.equal(ompParsed.results[0]?.harness, "omp");
-  assert.equal(ompParsed.results[0]?.status, "would");
+    const dryRunAll = capture();
+    assert.equal(await runCli(["plugin", "install", "--dry-run", "--json"], allEnv, dryRunAll), 0);
+    const allParsed = JSON.parse(dryRunAll.read().stdout) as {
+      ok: boolean;
+      command: string;
+      dryRun?: boolean;
+      results: Array<{ harness: string; status: string; command: string; args: string[] }>;
+    };
+    assert.equal(allParsed.ok, true);
+    assert.equal(allParsed.command, "plugin install");
+    assert.equal(allParsed.dryRun, true);
+    assert.deepEqual(allParsed.results.map((r) => r.harness), ["pi", "omp", "claude"]);
+    assert.ok(allParsed.results.every((r) => r.status === "would" && isPluginHarnessCommand(r.command, r.harness)));
 
-  const dryRunClaude = capture();
-  assert.equal(await runCli(["plugin", "install", "--claude", "--dry-run"], {}, dryRunClaude), 0);
-  assert.match(dryRunClaude.read().stdout, /claude: would/);
+    const dryRunOmp = capture();
+    assert.equal(await runCli(["plugin", "install", "--omp", "--dry-run", "--json"], allEnv, dryRunOmp), 0);
+    const ompParsed = JSON.parse(dryRunOmp.read().stdout) as {
+      ok: boolean;
+      results: Array<{ harness: string; status: string; command?: string; args?: string[] }>;
+    };
+    assert.equal(ompParsed.ok, true);
+    assert.equal(ompParsed.results.length, 1);
+    assert.equal(ompParsed.results[0]?.harness, "omp");
+    assert.equal(ompParsed.results[0]?.status, "would");
+    assert.equal(isPluginHarnessCommand(ompParsed.results[0]?.command, "omp"), true);
+    assert.deepEqual(ompParsed.results[0]?.args?.slice(0, 2), ["plugin", "install"]);
 
-  const dryRunPi = capture();
-  assert.equal(await runCli(["plugin", "install", "--pi", "--dry-run"], {}, dryRunPi), 0);
-  assert.match(dryRunPi.read().stdout, /pi: would/);
+    const dryRunClaude = capture();
+    assert.equal(await runCli(["plugin", "install", "--claude", "--dry-run"], allEnv, dryRunClaude), 0);
+    assert.match(dryRunClaude.read().stdout, /claude: would/);
 
-  // Mock spawnSync to test execution paths
-  const spawned: Array<{ command: string; args: readonly string[] }> = [];
-  const mockIo: CliIo = {
-    stdout: () => {},
-    stderr: () => {},
-    spawnSync: (command, args) => {
-      spawned.push({ command, args });
-      return { status: 0, stdout: "ok", stderr: "" };
-    },
-  };
-  const executed = await runCliImplementation(["plugin", "install", "--omp"], {}, mockIo);
-  assert.equal(executed, 0);
-  assert.ok(spawned.some((s) => s.command === "omp" && s.args[0] === "plugin" && s.args[1] === "install"));
+    const dryRunPi = capture();
+    assert.equal(await runCli(["plugin", "install", "--pi", "--dry-run"], allEnv, dryRunPi), 0);
+    assert.match(dryRunPi.read().stdout, /pi: would/);
+
+    // A flag for a harness that is not on this PATH is a failure, including --dry-run.
+    const missingOmp = capture();
+    assert.equal(await runCli(["plugin", "install", "--omp", "--dry-run", "--json"], pluginInstallProbeEnv(partialBin), missingOmp), 1);
+    assert.equal(missingOmp.read().stdout, "");
+    const missingParsed = JSON.parse(missingOmp.read().stderr) as {
+      ok: boolean;
+      results: Array<{ harness: string; status: string; error?: string }>;
+    };
+    assert.equal(missingParsed.ok, false);
+    assert.equal(missingParsed.results.length, 1);
+    assert.equal(missingParsed.results[0]?.harness, "omp");
+    assert.equal(missingParsed.results[0]?.status, "failed");
+    assert.equal(missingParsed.results[0]?.error, "harness_not_detected");
+
+    const none = capture();
+    assert.equal(await runCli(["plugin", "install", "--dry-run", "--json"], pluginInstallProbeEnv(emptyBin), none), 1);
+    const noneParsed = JSON.parse(none.read().stderr) as { ok: boolean; error: string; results: unknown[] };
+    assert.equal(noneParsed.ok, false);
+    assert.equal(noneParsed.error, "no_harnesses_detected");
+    assert.deepEqual(noneParsed.results, []);
+
+    // Mock spawnSync to test execution paths. Detection still uses the stub PATH.
+    const spawned: Array<{ command: string; args: readonly string[] }> = [];
+    const mockIo: CliIo = {
+      stdout: () => {},
+      stderr: () => {},
+      spawnSync: (command, args) => {
+        spawned.push({ command, args });
+        return { status: 0, stdout: "ok", stderr: "" };
+      },
+    };
+    const executed = await runCli(["plugin", "install", "--omp"], allEnv, mockIo);
+    assert.equal(executed, 0);
+    assert.ok(spawned.some((s) => isPluginHarnessCommand(s.command, "omp") && s.args[0] === "plugin" && s.args[1] === "install"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
