@@ -177,7 +177,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `kxmd-shared-system`, then `kxmd-system`. A missing scope is skipped. A
   vault the caller cannot read does not override.
 
-
 - **Writer route (2026-09-24).** The Grok writer moves from `grok-4.6` to
   `grok-4.7`. This covers this repo's developer runner and this repo's own
   `.kxm` config. Product defaults stay `grok-4.6`: the `kxm init` template,
