@@ -42,7 +42,7 @@ default:
 # implement a unit with the current writer: just impl brief.md [worktree]
 # Native grok only. There is no Pi writer fallback. Effort default: medium.
 impl BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.6",effort:"medium",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
+    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.7",effort:"medium",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
 
 # plan a unit, read-only, independent of the writer: just plan brief.md
 plan BRIEF CWD=".":

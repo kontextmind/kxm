@@ -29,7 +29,7 @@ Installed ≠ auth-verified ≠ helper-eligible.
 | `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter or Nous Portal may be `ready`; native-lab prefixes are braked | OpenRouter or Nous Portal, after JSONL usage parse |
 | `claude` | 2.1.281 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
 | `codex` | 0.156.1 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
-| `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.6`) |
+| `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.7`) |
 | `kimi` | 0.40.1 | oauth via `kimi provider list` | **no** — unverified helper dispatch |
 | `gemini` | 0.56.0 | **unknown** (installed only) | **no** — deprecated individual-tier CLI; catalog stays |
 | `agy` | 1.1.27 | `agy models` → non-empty models list (Antigravity OAuth) | writer/experiment **edit**, Gemini kebab ids only |
@@ -65,7 +65,7 @@ implementation, planning, and architecture review; **low** for CLI review.
 
 | Role | Command |
 |---|---|
-| Implement / write | `grok --prompt-file <brief> -m grok-4.6 --reasoning-effort medium --always-approve --no-subagents --disable-web-search --output-format json` |
+| Implement / write | `grok --prompt-file <brief> -m grok-4.7 --reasoning-effort medium --always-approve --no-subagents --disable-web-search --output-format json` |
 | Plan | `cat <brief> \| claude -p --model fable --effort medium --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json` |
 | Review: architecture, permissions | same as Plan |
 | Review: CLI, docs | `codex exec -m gpt-5.6-sol -c 'model_reasoning_effort="low"' -C <dir> --sandbox read-only --ignore-user-config -c 'approval_policy="never"' --json - < <brief>` |

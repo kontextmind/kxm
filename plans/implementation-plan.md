@@ -103,6 +103,12 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Decided
 
+- **Writer route (2026-09-24).** The Grok writer moves from `grok-4.6` to
+  `grok-4.7`. This covers this repo's developer runner and this repo's own
+  `.kxm` config. Product defaults stay `grok-4.6`: the `kxm init` template,
+  the engine implementer fallback, guide candidates, role/modes/subagent
+  defaults, `.kxm/prices.yaml` and the inventory.
+
 - **CI test pause (2026-09-24).** GitHub workflows `CI`, `Nightly` and
   `Real Pi smoke` are disabled server-side, and required status checks are
   removed from ruleset `protect-main`. `Auto-Release` and `Release` stay on,

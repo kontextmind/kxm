@@ -120,10 +120,10 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
   try {
     const prompt = promptFile(dir);
     const cases = [
-      { harness: "grok", role: "planner", model: "grok-4.6", permission: "edit", prompt_file: prompt },
+      { harness: "grok", role: "planner", model: "grok-4.7", permission: "edit", prompt_file: prompt },
       { harness: "claude", role: "writer", model: "fable", permission: "read-only", prompt_file: prompt },
       { harness: "codex", role: "reviewer-cli", model: "gpt-5", permission: "read-only", prompt_file: prompt },
-      { harness: "grok", role: "writer", model: "grok-4.6", permission: "read-only", prompt_file: prompt },
+      { harness: "grok", role: "writer", model: "grok-4.7", permission: "read-only", prompt_file: prompt },
       { harness: "kimi", role: "writer", model: "kimi-for-coding", permission: "edit", prompt_file: prompt },
       { harness: "agy", role: "planner", model: "gemini-3", permission: "read-only", prompt_file: prompt },
       { harness: "agy", role: "planner", model: "x", permission: "read-only", prompt_file: prompt },
@@ -131,7 +131,7 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
       { harness: "pi", role: "writer", model: "openrouter/nous", permission: "edit", prompt_file: prompt },
       { harness: "claude", role: "planner", model: "fable", permission: "read-only", prompt_file: prompt, hooks: true },
       { harness: "claude", role: "planner", model: "fable", permission: "read-only", prompt_file: prompt, skills: ["x"] },
-      { harness: "grok", role: "writer", model: "grok-4.6", permission: "edit", prompt_file: prompt, bare: true },
+      { harness: "grok", role: "writer", model: "grok-4.7", permission: "edit", prompt_file: prompt, bare: true },
     ];
     let spawned = 0;
     for (const request of cases) {
@@ -405,14 +405,14 @@ test("claude argv is safe-mode read-only tools without --bare or Bash", () => {
 test("grok and codex argv match verified A4 flags", () => {
   const grok = buildArgv({
     harness: "grok",
-    model: "grok-4.6",
+    model: "grok-4.7",
     effort: "high",
     permission: "edit",
     prompt_file: "/tmp/brief.md",
   });
   assert.deepEqual(grok, [
     "--prompt-file", "/tmp/brief.md",
-    "-m", "grok-4.6",
+    "-m", "grok-4.7",
     "--reasoning-effort", "high",
     "--always-approve",
     "--no-subagents",
@@ -572,13 +572,13 @@ test("subscription billed cost is unmetered; list estimate stays separate; missi
       result: "files written",
       sessionId: "g1",
       stop_reason: "end_turn",
-      modelUsage: { "grok-4.6-build": { inputTokens: 9, outputTokens: 3 } },
+      modelUsage: { "grok-4.7-build": { inputTokens: 9, outputTokens: 3 } },
     };
     const grok = await dispatch({
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       effort: "high",
       permission: "edit",
       prompt_file: prompt,
@@ -587,7 +587,7 @@ test("subscription billed cost is unmetered; list estimate stays separate; missi
     assert.equal(grok.result.ok, true);
     assert.equal(grok.result.costBasis, "unknown");
     assert.equal(grok.result.costUsd, undefined);
-    assert.equal(grok.result.effectiveModel, "grok-4.6-build");
+    assert.equal(grok.result.effectiveModel, "grok-4.7-build");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -766,7 +766,7 @@ test("native error payloads fail even when the CLI exits 0", async () => {
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "e"),
@@ -933,14 +933,14 @@ test("runHarness moves oversized counters to metadata without zeroing them", asy
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
     }, {
       stdout: `${JSON.stringify({
         result: "ok",
-        modelUsage: { "grok-4.6-build": { inputTokens: huge, outputTokens: 2 } },
+        modelUsage: { "grok-4.7-build": { inputTokens: huge, outputTokens: 2 } },
         total_cost_usd: 0.1,
       })}\n`,
     });
@@ -964,7 +964,7 @@ test("timeout kill sets timedOut and fails", async () => {
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       timeout_ms: 5,
@@ -988,12 +988,12 @@ test("structured result has sidecar paths, not raw stderr or model transport", a
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
     }, {
-      stdout: `${JSON.stringify({ result: "visible answer for callers", modelUsage: { "grok-4.6-build": { inputTokens: 1, outputTokens: 1 } }, total_cost_usd: 0.01 })}\n`,
+      stdout: `${JSON.stringify({ result: "visible answer for callers", modelUsage: { "grok-4.7-build": { inputTokens: 1, outputTokens: 1 } }, total_cost_usd: 0.01 })}\n`,
       stderr: secret,
     });
     const serialized = JSON.stringify(result);
@@ -1113,11 +1113,11 @@ test("runHarness assignment spawn is always shell:false with literal argv", asyn
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
-    }, { stdout: `${JSON.stringify({ result: "ok", modelUsage: { "grok-4.6-build": { inputTokens: 1, outputTokens: 1 } } })}\n` });
+    }, { stdout: `${JSON.stringify({ result: "ok", modelUsage: { "grok-4.7-build": { inputTokens: 1, outputTokens: 1 } } })}\n` });
     assert.equal(spawns[0]?.options.shell, false);
     assert(spawns[0]?.argv.includes("--prompt-file"));
     assert(!spawns[0]?.argv.includes("--bare"));
@@ -1135,7 +1135,7 @@ test("missing binary and unparseable auth fail closed with login hint, no assign
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
@@ -1151,7 +1151,7 @@ test("missing binary and unparseable auth fail closed with login hint, no assign
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out2"),
@@ -1195,11 +1195,11 @@ const inputHarnesses: Array<{
     {
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       auth: grokAuth,
       assignment: {
-        stdout: `${JSON.stringify({ result: "ok", modelUsage: { "grok-4.6-build": { inputTokens: 1, outputTokens: 1 } } })}\n`,
+        stdout: `${JSON.stringify({ result: "ok", modelUsage: { "grok-4.7-build": { inputTokens: 1, outputTokens: 1 } } })}\n`,
       },
     },
     {
@@ -1498,7 +1498,7 @@ const FORWARDING_PATTERN = /just(?:\s+[^\n]+)?\s+(assign|witness|accept|attribut
 
 test("just transport recipes use evidence-informed effort defaults and never mint assignment proof", () => {
   const just = readFileSync(resolve("justfile"), "utf8");
-  assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.6",effort:"medium"/);
+  assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.7",effort:"medium"/);
   assert.match(just, /role:"planner",harness:"claude",model:"opus",effort:"medium"/);
   assert.match(just, /role:"reviewer-arch",harness:"claude",model:"opus",effort:"medium"/);
   assert.match(just, /role:"reviewer-cli",harness:"codex",model:"gpt-5\.6-sol",effort:"low"/);
@@ -1973,7 +1973,7 @@ test("preflight requires routing fields, types, and Pi edit pair ceilings before
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
     };
@@ -2342,8 +2342,8 @@ test("just runs displays billed, list, unmetered, and unknown — never absent c
     { schema: RESULT_SCHEMA, ok: true, harness: "claude", effectiveModel: "claude-fable-5-1", latencyMs: 10, costBasis: "unmetered", providerReportedCostUsd: 2.7499 },
     { schema: RESULT_SCHEMA, ok: true, harness: "pi", effectiveModel: "openrouter/nous", latencyMs: 11, costBasis: "list", costUsd: 0.08 },
     { schema: RESULT_SCHEMA, ok: true, harness: "pi", effectiveModel: "openrouter/nous", latencyMs: 12, costBasis: "billed", costUsd: 1.5 },
-    { schema: RESULT_SCHEMA, ok: true, harness: "grok", effectiveModel: "grok-4.6-build", latencyMs: 13, costBasis: "unknown" },
-    { schema: RESULT_SCHEMA, ok: false, harness: "grok", effectiveModel: "grok-4.6-build", latencyMs: 14 },
+    { schema: RESULT_SCHEMA, ok: true, harness: "grok", effectiveModel: "grok-4.7-build", latencyMs: 13, costBasis: "unknown" },
+    { schema: RESULT_SCHEMA, ok: false, harness: "grok", effectiveModel: "grok-4.7-build", latencyMs: 14 },
     { schema: "kxm.harness-result.v1", ok: true, harness: "grok", finalOutcome: "passed", costUsd: 0.1 },
   ];
   const stdout = rows.map((body) => {
@@ -2395,7 +2395,7 @@ test("capability fixtures record help hashes and Codex parser evidence without i
 test("grok argv adds isolation flags and optional max_turns; other harnesses refuse max_turns before spawn", async () => {
   const grok = buildArgv({
     harness: "grok",
-    model: "grok-4.6",
+    model: "grok-4.7",
     effort: "high",
     permission: "edit",
     prompt_file: "/tmp/brief.md",
@@ -2409,7 +2409,7 @@ test("grok argv adds isolation flags and optional max_turns; other harnesses ref
   assert.equal(grok[maxAt + 1], "70");
   const grokDefault = buildArgv({
     harness: "grok",
-    model: "grok-4.6",
+    model: "grok-4.7",
     permission: "edit",
     prompt_file: "/tmp/brief.md",
   });
@@ -2440,7 +2440,7 @@ test("grok argv adds isolation flags and optional max_turns; other harnesses ref
         schema: REQUEST_SCHEMA,
         harness: "grok",
         role: "writer",
-        model: "grok-4.6",
+        model: "grok-4.7",
         permission: "edit",
         prompt_file: prompt,
         max_turns: 0,
@@ -2449,7 +2449,7 @@ test("grok argv adds isolation flags and optional max_turns; other harnesses ref
         schema: REQUEST_SCHEMA,
         harness: "grok",
         role: "writer",
-        model: "grok-4.6",
+        model: "grok-4.7",
         permission: "edit",
         prompt_file: prompt,
         max_turns: 1.5,
@@ -2473,7 +2473,7 @@ test("grok argv adds isolation flags and optional max_turns; other harnesses ref
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       max_turns: 70,
@@ -2505,14 +2505,14 @@ test("result v2 has no helper finalOutcome or agent; grok total_cost_usd is prov
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
     }, {
       stdout: `${JSON.stringify({
         result: "ok",
-        modelUsage: { "grok-4.6-build": { inputTokens: 9, outputTokens: 3 } },
+        modelUsage: { "grok-4.7-build": { inputTokens: 9, outputTokens: 3 } },
         total_cost_usd: 0.1,
       })}\n`,
     });
@@ -2542,7 +2542,7 @@ test("writes dispatch.json before spawn, amends pid, and keeps prompt/argv out o
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: outputDir,
@@ -2556,7 +2556,7 @@ test("writes dispatch.json before spawn, amends pid, and keeps prompt/argv out o
         const child = fakeChild({
           stdout: `${JSON.stringify({
             result: "ok",
-            modelUsage: { "grok-4.6-build": { inputTokens: 1, outputTokens: 1 } },
+            modelUsage: { "grok-4.7-build": { inputTokens: 1, outputTokens: 1 } },
           })}\n`,
         });
         (child as { pid?: number }).pid = 4242;
@@ -2591,7 +2591,7 @@ test("timeout interruption records timedOut without completed or process-dead cl
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       timeout_ms: 5,
@@ -2642,7 +2642,7 @@ test("failed and interrupted runs keep partial usage and do not invent zeros", a
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "fail"),
@@ -2651,7 +2651,7 @@ test("failed and interrupted runs keep partial usage and do not invent zeros", a
         result: "boom",
         is_error: true,
         total_cost_usd: 0.04,
-        modelUsage: { "grok-4.6-build": { inputTokens: 11, outputTokens: 2 } },
+        modelUsage: { "grok-4.7-build": { inputTokens: 11, outputTokens: 2 } },
       })}\n`,
       exitCode: 0,
     });
@@ -2668,7 +2668,7 @@ test("failed and interrupted runs keep partial usage and do not invent zeros", a
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       timeout_ms: 5,
@@ -2687,7 +2687,7 @@ test("failed and interrupted runs keep partial usage and do not invent zeros", a
             child.stdout.write(`${JSON.stringify({
               result: "partial",
               total_cost_usd: 0.02,
-              modelUsage: { "grok-4.6-build": { inputTokens: 8, outputTokens: 1 } },
+              modelUsage: { "grok-4.7-build": { inputTokens: 8, outputTokens: 1 } },
             })}\n`);
           }
           if (signal === "SIGKILL") {
@@ -2741,7 +2741,7 @@ test("closed model claims cannot override transport or leak free-text sentinels"
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "writer"),
@@ -2749,7 +2749,7 @@ test("closed model claims cannot override transport or leak free-text sentinels"
       stdout: `${JSON.stringify({
         result: JSON.stringify(envelope),
         is_error: false,
-        modelUsage: { "grok-4.6-build": { inputTokens: 4, outputTokens: 4 } },
+        modelUsage: { "grok-4.7-build": { inputTokens: 4, outputTokens: 4 } },
       })}\n`,
     });
     const serialized = JSON.stringify(writer.result);
@@ -2804,7 +2804,7 @@ test("signaled close preserves null exit code and exact signal as interrupted wi
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
@@ -2848,7 +2848,7 @@ test("observed exit without stdio close is not missing completion", { timeout: 1
         schema: REQUEST_SCHEMA,
         harness: "grok",
         role: "writer",
-        model: "grok-4.6",
+        model: "grok-4.7",
         permission: "edit",
         prompt_file: prompt,
         output_dir: join(dir, "out"),
@@ -2867,7 +2867,7 @@ test("observed exit without stdio close is not missing completion", { timeout: 1
           queueMicrotask(() => {
             child.stdout.write(`${JSON.stringify({
               result: "drained",
-              modelUsage: { "grok-4.6-build": { inputTokens: 3, outputTokens: 1 } },
+              modelUsage: { "grok-4.7-build": { inputTokens: 3, outputTokens: 1 } },
             })}\n`);
             child.emit("exit", 0, null);
           });
@@ -2905,7 +2905,7 @@ test("valid JSON with exit 0 and unclosed pipes is stdio_incomplete not complete
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "linger-json"),
@@ -2959,7 +2959,7 @@ test("close with null exit and null signal is not completed even with valid JSON
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "null-exit"),
@@ -3015,7 +3015,7 @@ test("timeout records SIGTERM then SIGKILL and can settle without close or desce
         schema: REQUEST_SCHEMA,
         harness: "grok",
         role: "writer",
-        model: "grok-4.6",
+        model: "grok-4.7",
         permission: "edit",
         prompt_file: prompt,
         timeout_ms: 5,
@@ -3069,7 +3069,7 @@ test("closed public metadata cannot leak model free text via error, stopReason, 
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
@@ -3080,7 +3080,7 @@ test("closed public metadata cannot leak model free text via error, stopReason, 
         stop_reason: leak,
         extra_model_field: leak,
         error: { message: leak },
-        modelUsage: { "grok-4.6-build": { inputTokens: 5, outputTokens: 2, secret: leak } },
+        modelUsage: { "grok-4.7-build": { inputTokens: 5, outputTokens: 2, secret: leak } },
         total_cost_usd: 0.03,
       })}\n`,
       stderr: leak,
@@ -3197,7 +3197,7 @@ test("post-spawn write failure keeps observed spend and is not a no-spend prefli
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
@@ -3209,7 +3209,7 @@ test("post-spawn write failure keeps observed spend and is not a no-spend prefli
       spawn: () => fakeChild({
         stdout: `${JSON.stringify({
           result: "partial-before-write",
-          modelUsage: { "grok-4.6-build": { inputTokens: 9, outputTokens: 4 } },
+          modelUsage: { "grok-4.7-build": { inputTokens: 9, outputTokens: 4 } },
           total_cost_usd: 0.07,
         })}\n`,
       }),
@@ -3245,7 +3245,7 @@ test("split stdout JSON after exit drains instead of empty_payload", { timeout: 
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "drain"),
@@ -3297,7 +3297,7 @@ test("bounded linger after exit does not collect later output or signal the chil
         schema: REQUEST_SCHEMA,
         harness: "grok",
         role: "writer",
-        model: "grok-4.6",
+        model: "grok-4.7",
         permission: "edit",
         prompt_file: prompt,
         output_dir: join(dir, "linger"),
@@ -3353,7 +3353,7 @@ test("invalid usage object types do not leak or zero known cost", async () => {
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "usage"),
@@ -3363,7 +3363,7 @@ test("invalid usage object types do not leak or zero known cost", async () => {
         total_cost_usd: 0.5,
         usage: { input_tokens: { raw: sentinel }, output_tokens: 2, cache_read_input_tokens: "nope" },
         modelUsage: {
-          "grok-4.6-build": { inputTokens: { raw: sentinel }, outputTokens: 2, costUSD: 0.5 },
+          "grok-4.7-build": { inputTokens: { raw: sentinel }, outputTokens: 2, costUSD: 0.5 },
           "aux-model": { inputTokens: { raw: sentinel }, outputTokens: 4, costUSD: 0.25, costBasis: "list" },
         },
       })}\n`,
@@ -3397,7 +3397,7 @@ test("malformed optional text keeps known usage as run-stage failure", async () 
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "text"),
@@ -3533,7 +3533,7 @@ test("pid-record amend failure is run-stage write_failed with retained spend", a
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "pid-amend"),
@@ -3585,7 +3585,7 @@ test("spawn failure is stage spawn with no invented spend", async () => {
       schema: REQUEST_SCHEMA,
       harness: "grok",
       role: "writer",
-      model: "grok-4.6",
+      model: "grok-4.7",
       permission: "edit",
       prompt_file: prompt,
       output_dir: join(dir, "out"),
@@ -3641,7 +3641,7 @@ test("result consumers accept exactly v2 and leave obsolete files untouched", as
       schema: "kxm.harness-result.v2",
       ok: true,
       harness: "grok",
-      effectiveModel: "grok-4.6-build",
+      effectiveModel: "grok-4.7-build",
       latencyMs: 13,
       costBasis: "unknown",
     }, "fresh.json");
@@ -3721,7 +3721,7 @@ test("just binary integration is optional when the binary is installed", (t) => 
       schema: RESULT_SCHEMA, ok: true, harness: "pi", effectiveModel: "openrouter/nous", latencyMs: 12, costBasis: "billed", costUsd: 1.5,
     })}\n`);
     writeFileSync(join(logs, "absent.json"), `${JSON.stringify({
-      schema: RESULT_SCHEMA, ok: false, harness: "grok", effectiveModel: "grok-4.6-build", latencyMs: 14,
+      schema: RESULT_SCHEMA, ok: false, harness: "grok", effectiveModel: "grok-4.7-build", latencyMs: 14,
     })}\n`);
     writeFileSync(join(logs, "old-v1.json"), `${JSON.stringify({
       schema: "kxm.harness-result.v1", ok: true, finalOutcome: "passed", harness: "grok", costUsd: 0.1,

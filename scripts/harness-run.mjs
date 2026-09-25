@@ -137,7 +137,7 @@ export const ROUTES = Object.freeze({
     provider: "xai",
     roles: Object.freeze(["writer"]),
     permissions: Object.freeze(["edit"]),
-    models: Object.freeze(["grok-4.6"]),
+    models: Object.freeze(["grok-4.7"]),
     efforts: Object.freeze(["low", "medium", "high"]),
     auth: Object.freeze({ args: ["models"], loginHint: "grok (OAuth to auth.x.ai)" }),
   },

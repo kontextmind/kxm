@@ -5,7 +5,7 @@ id: writer
 # Effort default: medium for implementation (AGENTS.md). agy ids bake in the
 # effort tier, so those entries carry no effort field.
 roster:
-  - model: xai/grok-4.6
+  - model: xai/grok-4.7
     effort: medium
     enabled: true
   - model: openrouter/qwen/qwen3-coder-plus
