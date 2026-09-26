@@ -42,7 +42,7 @@ Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role author
 
 ### Tasks
 
-- `omp-p1` P1 promote the draft: schemas live, models and roles rewritten to v2, v1 deleted.
+- `omp-p1` P1 promote the draft: schemas live, models and roles rewritten to v2, v1 deleted. Evidence: `test/core/policy-draft.test.ts`.
 - `omp-p2` P2 cut the loader and engine over to the v2 files.
 - `omp-p3` P3 tool policy enforcement.
 - `omp-p4` P4 opt-in fallback walk with route_switch events.
@@ -56,7 +56,8 @@ None.
 
 ### Questions
 
-- Section 7 of the plan lists the open questions; they stay open until P1 is dispatched.
+- Section 7 of the plan lists the open questions; they stay open until P2 is dispatched.
+- P2 waits on the lane registry slice (backlog S24) so the writer can run through kxm lane run.
 
 ## Python migration
 
@@ -244,3 +245,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-26: Portal mark applied.
 - 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
+- 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.

@@ -30,6 +30,10 @@
     {
       "date": "2026-09-26",
       "line": "First deep review: planner loop and role-authority phases added ahead of the Python proposal."
+    },
+    {
+      "date": "2026-09-26",
+      "line": "P1 role authority landed (#337): v2 role and model files are live."
     }
   ],
   "architecture": {
@@ -133,7 +137,7 @@
           "title": "Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes",
           "status": "open",
           "evidence": "",
-          "doneCriterion": "One real unit runs writer and both critics through the one-step workflows and its attempts appear in kxm improve report.",
+          "doneCriterion": "One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report; P1 ran the writer that way but the critics and repairs went through the harness runner because the lane's schema cutover made the runtime refuse it.",
           "evidenceNeeded": "The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, impl-bg.",
           "template": "feature",
           "detail": "scoped"
@@ -168,14 +172,15 @@
       "source": "plans/plan-omp-config-alignment.md",
       "blockers": [],
       "questions": [
-        "Section 7 of the plan lists the open questions; they stay open until P1 is dispatched."
+        "Section 7 of the plan lists the open questions; they stay open until P2 is dispatched.",
+        "P2 waits on the lane registry slice (backlog S24) so the writer can run through kxm lane run."
       ],
       "tasks": [
         {
           "id": "omp-p1",
           "title": "P1 promote the draft: schemas live, models and roles rewritten to v2, v1 deleted",
-          "status": "open",
-          "evidence": "",
+          "status": "done",
+          "evidence": "test/core/policy-draft.test.ts",
           "planSection": "plans/plan-omp-config-alignment.md#5-phases",
           "doneCriterion": "just verify green; every .kxm/roles and .kxm/models file validates through validatePolicyDraft with the developer ceilings; role list, get, add, modify, remove read and write v2 only.",
           "evidenceNeeded": "The validator test named in the P1 row and the CHANGELOG entry.",
