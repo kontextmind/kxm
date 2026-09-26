@@ -2346,6 +2346,21 @@ test("lane run records lastRunId and refuses a second call while that run is ope
   }
 });
 
+test("lane run --json without --brief prints a usage_error envelope and exits 2", async () => {
+  const io = capture();
+  assert.equal(await runCli(["lane", "run", "probe", "--json"], {}, io), 2);
+  const parsed = JSON.parse(io.read().stdout) as { schema?: string; ok?: boolean; command?: string; error?: string; detail?: string };
+  assert.equal(parsed.schema, "kxm.cli-result.v1");
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.command, "lane run");
+  assert.equal(parsed.error, "usage_error");
+  assert.equal(parsed.detail, "error: required option '--brief <file>' not specified");
+  const text = capture();
+  assert.equal(await runCli(["lane", "run", "probe"], {}, text), 2);
+  assert.equal(text.read().stdout, "");
+  assert.match(text.read().stderr, /required option '--brief <file>' not specified/);
+});
+
 test("kxm land dry-run prints the verify plan", async () => {
   const io = capture();
   const code = await runCli(["land", "--stage", "verify", "--dry-run", "--json"], {}, io);

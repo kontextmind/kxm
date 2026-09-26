@@ -31,6 +31,7 @@ import { projectRuntimeOwnsRun } from "./runtime-store.ts";
 
 // Submodule imports
 import {
+  CLI_RESULT_SCHEMA,
   print,
   refuseDryRun,
   runtimeFrom,
@@ -496,11 +497,13 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(program.command("land").description("Land the current branch: verify, regenerate docs, push, pull request, rebase, unblock, squash-merge, release, and milestone"))
     .option("--pr <n>", "Existing pull request number")
     .option("--stage <name>", "Run one stage: verify, docs, push, pr, rebase, unblock, merge, release, or milestone")
+    .option("--title <text>", "Pull request title. Default is the subject of the first commit on the branch")
     .option("--body-file <path>", "Pull request body file used when creating a pull request")
-    .action(async function landAction(this: Command, options: { pr?: string; stage?: string; bodyFile?: string }) {
+    .action(async function landAction(this: Command, options: { pr?: string; stage?: string; title?: string; bodyFile?: string }) {
       result.code = await cmdLand(runtimeFrom(ctx, this), {
         ...(options.pr !== undefined ? { pr: options.pr } : {}),
         ...(options.stage !== undefined ? { stage: options.stage } : {}),
+        ...(options.title !== undefined ? { title: options.title } : {}),
         ...(options.bodyFile !== undefined ? { bodyFile: options.bodyFile } : {}),
       });
     });
@@ -1434,10 +1437,57 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   return program;
 }
 
-function mapCommanderError(error: CommanderError): number {
+function hasJsonFlag(argv: readonly string[]): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]!;
+    if (arg === "--") break;
+    if (arg === "--json") return true;
+  }
+  return false;
+}
+
+function commandWords(argv: readonly string[]): string[] {
+  const words: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]!;
+    if (arg === "--") break;
+    if (!arg.startsWith("-")) {
+      words.push(arg);
+      continue;
+    }
+    if (arg.includes("=") || arg === "--json" || arg === "--dry-run" || arg === "-h" || arg === "--help" || arg === "-V" || arg === "--version") continue;
+    const next = argv[index + 1];
+    if (next !== undefined && !next.startsWith("-")) index += 1;
+  }
+  return words;
+}
+
+function commandPathFromArgv(program: Command, argv: readonly string[]): string {
+  const names: string[] = [];
+  let current: Command = program;
+  for (const word of commandWords(argv)) {
+    const next = current.commands.find((command) => command.name() === word || command.aliases().includes(word));
+    if (!next) break;
+    names.push(next.name());
+    current = next;
+  }
+  return names.join(" ");
+}
+
+function mapCommanderError(error: CommanderError, argv: readonly string[], program: Command, io: CliIo): number {
   if (error.exitCode === 0) return 0;
-  if (USAGE_ERROR_CODES.has(error.code)) return 2;
-  return error.exitCode || 1;
+  const code = USAGE_ERROR_CODES.has(error.code) ? 2 : (error.exitCode || 1);
+  if (code === 2 && hasJsonFlag(argv)) {
+    const command = commandPathFromArgv(program, argv);
+    io.stdout(`${JSON.stringify({
+      schema: CLI_RESULT_SCHEMA,
+      ok: false,
+      command: command || "kxm",
+      error: "usage_error",
+      detail: error.message,
+    })}\n`);
+  }
+  return code;
 }
 
 const MESH_REMOVED_TEXT = "kxm mesh was removed. Use kxm init, kxm hub start|view|stop, and node scripts/smoke-multi-pi.mjs (KXM_SMOKE=1).";
@@ -1491,7 +1541,7 @@ export async function runCli(
     await program.parseAsync(argv, { from: "user" });
     return result.code;
   } catch (error) {
-    if (error instanceof CommanderError) return mapCommanderError(error);
+    if (error instanceof CommanderError) return mapCommanderError(error, argv, program, io);
     if (error instanceof DryRunRefused) return error.code;
     throw error;
   }

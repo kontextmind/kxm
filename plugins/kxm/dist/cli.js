@@ -37166,6 +37166,7 @@ function cmdLand(runtime, options = {}) {
   const args = [script];
   if (options.pr) args.push("--pr", options.pr);
   if (options.stage) args.push("--stage", options.stage);
+  if (options.title) args.push("--title", options.title);
   if (options.bodyFile) args.push("--body-file", options.bodyFile);
   if (runtime.json) args.push("--json");
   if (runtime.dryRun) args.push("--dry-run");
@@ -51617,10 +51618,11 @@ function createProgram(ctx, result) {
       ...options.timeoutMs !== void 0 ? { timeoutMs: options.timeoutMs } : {}
     });
   });
-  addGlobalOptions(program2.command("land").description("Land the current branch: verify, regenerate docs, push, pull request, rebase, unblock, squash-merge, release, and milestone")).option("--pr <n>", "Existing pull request number").option("--stage <name>", "Run one stage: verify, docs, push, pr, rebase, unblock, merge, release, or milestone").option("--body-file <path>", "Pull request body file used when creating a pull request").action(async function landAction(options) {
+  addGlobalOptions(program2.command("land").description("Land the current branch: verify, regenerate docs, push, pull request, rebase, unblock, squash-merge, release, and milestone")).option("--pr <n>", "Existing pull request number").option("--stage <name>", "Run one stage: verify, docs, push, pr, rebase, unblock, merge, release, or milestone").option("--title <text>", "Pull request title. Default is the subject of the first commit on the branch").option("--body-file <path>", "Pull request body file used when creating a pull request").action(async function landAction(options) {
     result.code = await cmdLand(runtimeFrom(ctx, this), {
       ...options.pr !== void 0 ? { pr: options.pr } : {},
       ...options.stage !== void 0 ? { stage: options.stage } : {},
+      ...options.title !== void 0 ? { title: options.title } : {},
       ...options.bodyFile !== void 0 ? { bodyFile: options.bodyFile } : {}
     });
   });
@@ -52097,10 +52099,55 @@ function createProgram(ctx, result) {
   });
   return program2;
 }
-function mapCommanderError(error) {
+function hasJsonFlag(argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--") break;
+    if (arg === "--json") return true;
+  }
+  return false;
+}
+function commandWords(argv) {
+  const words = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--") break;
+    if (!arg.startsWith("-")) {
+      words.push(arg);
+      continue;
+    }
+    if (arg.includes("=") || arg === "--json" || arg === "--dry-run" || arg === "-h" || arg === "--help" || arg === "-V" || arg === "--version") continue;
+    const next = argv[index + 1];
+    if (next !== void 0 && !next.startsWith("-")) index += 1;
+  }
+  return words;
+}
+function commandPathFromArgv(program2, argv) {
+  const names3 = [];
+  let current = program2;
+  for (const word of commandWords(argv)) {
+    const next = current.commands.find((command) => command.name() === word || command.aliases().includes(word));
+    if (!next) break;
+    names3.push(next.name());
+    current = next;
+  }
+  return names3.join(" ");
+}
+function mapCommanderError(error, argv, program2, io) {
   if (error.exitCode === 0) return 0;
-  if (USAGE_ERROR_CODES.has(error.code)) return 2;
-  return error.exitCode || 1;
+  const code = USAGE_ERROR_CODES.has(error.code) ? 2 : error.exitCode || 1;
+  if (code === 2 && hasJsonFlag(argv)) {
+    const command = commandPathFromArgv(program2, argv);
+    io.stdout(`${JSON.stringify({
+      schema: CLI_RESULT_SCHEMA,
+      ok: false,
+      command: command || "kxm",
+      error: "usage_error",
+      detail: error.message
+    })}
+`);
+  }
+  return code;
 }
 var MESH_REMOVED_TEXT = "kxm mesh was removed. Use kxm init, kxm hub start|view|stop, and node scripts/smoke-multi-pi.mjs (KXM_SMOKE=1).";
 function removedMeshInvocation(argv) {
@@ -52146,7 +52193,7 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
     await program2.parseAsync(argv, { from: "user" });
     return result.code;
   } catch (error) {
-    if (error instanceof CommanderError) return mapCommanderError(error);
+    if (error instanceof CommanderError) return mapCommanderError(error, argv, program2, io);
     if (error instanceof DryRunRefused) return error.code;
     throw error;
   }

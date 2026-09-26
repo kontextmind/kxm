@@ -7,6 +7,7 @@ import { print, type Runtime } from "./types.ts";
 export interface LandOptions {
   pr?: string;
   stage?: string;
+  title?: string;
   bodyFile?: string;
 }
 
@@ -35,6 +36,7 @@ export function cmdLand(runtime: Runtime, options: LandOptions = {}): Promise<nu
   const args = [script];
   if (options.pr) args.push("--pr", options.pr);
   if (options.stage) args.push("--stage", options.stage);
+  if (options.title) args.push("--title", options.title);
   if (options.bodyFile) args.push("--body-file", options.bodyFile);
   if (runtime.json) args.push("--json");
   if (runtime.dryRun) args.push("--dry-run");

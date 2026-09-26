@@ -4,6 +4,23 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Changed
+
+- **Usage errors under `--json` print a `usage_error` envelope and exit 2.**
+  A missing required option, unknown command, or other Commander usage error
+  writes `kxm.cli-result.v1` to stdout with `command`, `error`, and `detail`.
+  Text mode still prints the Commander line on stderr.
+
+### Fixed
+
+- **`kxm land` names the pull request from the first commit subject and matches the Release run by time.**
+  `--title` sets the title; otherwise the subject of the first commit on the
+  branch is used, and a missing subject refuses `land_pr_title_missing`. The
+  title is never the branch name. The squash commit title stays `<title> (#n)`.
+  After Auto-Release succeeds, the Release run is the first `release.yml` run
+  created after that Auto-Release run, with no title filter. Both run ids are
+  recorded and printed, and each wait logs one JSON line every two minutes.
+
 ### Added
 
 - **`kxm land` verifies, regenerates docs, and squash-merges the current branch.**
