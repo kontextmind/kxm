@@ -327,3 +327,165 @@ exit 0
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function prGitShim(): string {
+  return `#!/bin/sh
+printf '%s\\n' "$*" >> "$KXM_GIT_CAPTURE"
+if [ "$1" = "rev-parse" ]; then
+  printf '%s\\n' "landing-gates"
+  exit 0
+fi
+if [ "$1" = "log" ]; then
+  printf '%s\\n' "Fix the land title"
+  printf '%s\\n' "second subject"
+  exit 0
+fi
+exit 0
+`;
+}
+
+function prGhShim(): string {
+  return `#!/bin/sh
+printf '%s\\n' "$*" >> "$KXM_GH_CAPTURE"
+case "$*" in
+  *'pr create'*)
+    printf '%s\\n' created > "$KXM_GH_CAPTURE.created"
+    exit 0
+    ;;
+  *'pr list'*)
+    if [ -f "$KXM_GH_CAPTURE.created" ]; then
+      printf '%s\\n' '[{"number":9,"title":"ignored"}]'
+    else
+      printf '%s\\n' '[]'
+    fi
+    ;;
+  *'pr view'*)
+    printf '%s\\n' '{"number":9,"title":"ignored","id":"PR_node","body":""}'
+    ;;
+esac
+exit 0
+`;
+}
+
+test("pr uses the first commit subject as the title and honors --title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-land-pr-"));
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  const gitCapture = join(dir, "git.txt");
+  const ghCapture = join(dir, "gh.txt");
+  writeFileSync(join(dir, "body.md"), "Body\n");
+  writeShim(bin, "git", prGitShim());
+  writeShim(bin, "gh", prGhShim());
+  writeShim(bin, "npm", "#!/bin/sh\nexit 0\n");
+  try {
+    const created = runStage("pr", dir, bin, ["--body-file", "body.md"], { git: gitCapture, gh: ghCapture });
+    assert.equal(created.status, 0, `${created.stdout}\n${created.stderr}`);
+    const createdRows = jsonLines(created.stdout);
+    assert.equal(createdRows.at(-1)?.detail, "created #9");
+    const captured = readFileSync(ghCapture, "utf8");
+    assert.match(captured, /pr create --head landing-gates --title Fix the land title --body-file body\.md/);
+    assert.doesNotMatch(captured, /--title landing-gates/);
+
+    const dry = runStage("pr", dir, bin, ["--dry-run"], { git: gitCapture, gh: ghCapture });
+    assert.equal(dry.status, 0, `${dry.stdout}\n${dry.stderr}`);
+    const [dryRow] = jsonLines(dry.stdout);
+    assert.equal(dryRow?.detail, "Fix the land title");
+    assert.match(JSON.stringify(dryRow?.plan), /--title Fix the land title/);
+
+    writeFileSync(ghCapture, "");
+    rmSync(`${ghCapture}.created`, { force: true });
+    const titled = runStage("pr", dir, bin, ["--body-file", "body.md", "--title", "Chosen title"], { git: gitCapture, gh: ghCapture });
+    assert.equal(titled.status, 0, `${titled.stdout}\n${titled.stderr}`);
+    assert.match(readFileSync(ghCapture, "utf8"), /--title Chosen title --body-file body\.md/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pr refuses land_pr_title_missing when the branch has no commit subject", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-land-pr-title-"));
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeShim(bin, "git", `#!/bin/sh
+if [ "$1" = "rev-parse" ]; then
+  printf '%s\\n' "landing-gates"
+  exit 0
+fi
+if [ "$1" = "log" ]; then
+  exit 0
+fi
+exit 0
+`);
+  writeShim(bin, "gh", `#!/bin/sh
+printf '%s\\n' '[]'
+exit 0
+`);
+  writeShim(bin, "npm", "#!/bin/sh\nexit 0\n");
+  try {
+    const result = runStage("pr", dir, bin, ["--body-file", "body.md"]);
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+    const [row] = jsonLines(result.stdout);
+    assert.equal(row?.code, "land_pr_title_missing");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("release matches the Release run by time when its title is Release", { timeout: 20_000 }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "kxm-land-release-"));
+  const bin = join(dir, "bin");
+  mkdirSync(join(dir, ".kxm", "logs"), { recursive: true });
+  mkdirSync(bin);
+  writeFileSync(join(dir, ".kxm", "logs", "land-release-context.json"), `${JSON.stringify({
+    tag: "v0.7.1",
+    title: "Fix the gates",
+    mergedAt: "2026-09-26T12:00:00.000Z",
+  })}\n`);
+  writeShim(bin, "git", `#!/bin/sh
+if [ "$1" = "rev-parse" ]; then
+  printf '%s\\n' "landing-gates"
+  exit 0
+fi
+if [ "$1" = "ls-remote" ]; then
+  printf '%s\\t%s\\n' "aaa" "refs/tags/v0.7.1"
+  printf '%s\\t%s\\n' "bbb" "refs/tags/v0.7.2"
+  exit 0
+fi
+exit 0
+`);
+  writeShim(bin, "gh", `#!/bin/sh
+case "$*" in
+  *auto-release.yml*)
+    printf '%s\\n' '[{"databaseId":111,"status":"completed","conclusion":"success","displayTitle":"Fix the gates","createdAt":"2026-09-26T12:01:00.000Z"}]'
+    ;;
+  *release.yml*)
+    printf '%s\\n' '[{"databaseId":1,"status":"completed","conclusion":"success","displayTitle":"Release","createdAt":"2026-09-26T11:00:00.000Z"},{"databaseId":333,"status":"completed","conclusion":"success","displayTitle":"Release","createdAt":"2026-09-26T13:00:00.000Z"},{"databaseId":222,"status":"completed","conclusion":"success","displayTitle":"Release","createdAt":"2026-09-26T12:02:00.000Z"}]'
+    ;;
+  *)
+    printf '%s\\n' '[]'
+    ;;
+esac
+exit 0
+`);
+  writeShim(bin, "npm", `#!/bin/sh
+printf '%s\\n' "0.7.2"
+exit 0
+`);
+  const previous = process.env.KXM_LAND_POLL_MS;
+  process.env.KXM_LAND_POLL_MS = "1";
+  try {
+    const result = runStage("release", dir, bin);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const row = jsonLines(result.stdout).at(-1);
+    assert.equal(row?.stage, "release");
+    assert.equal(row?.ok, true);
+    assert.equal(row?.detail, "PUBLISHED 0.7.2 auto-release 111 release 222");
+    const context = JSON.parse(readFileSync(join(dir, ".kxm", "logs", "land-release-context.json"), "utf8")) as { autoReleaseRunId?: string; releaseRunId?: string };
+    assert.equal(context.autoReleaseRunId, "111");
+    assert.equal(context.releaseRunId, "222");
+  } finally {
+    if (previous === undefined) delete process.env.KXM_LAND_POLL_MS;
+    else process.env.KXM_LAND_POLL_MS = previous;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
