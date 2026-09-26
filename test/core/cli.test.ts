@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
@@ -2115,5 +2115,212 @@ test("kxm plugin install installs for discovered harnesses and honors flags in d
     assert.ok(spawned.some((s) => isPluginHarnessCommand(s.command, "omp") && s.args[0] === "plugin" && s.args[1] === "install"));
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function makeLaneCheckout(): { root: string; origin: string } {
+  const root = mkdtempSync(join(tmpdir(), "kxm-lane-"));
+  const origin = mkdtempSync(join(tmpdir(), "kxm-lane-origin-"));
+  makeGitRoot(root);
+  initializeKxmProject(root, { projectId: "prj_01JLANECLI00000000000000", projectName: "Lane CLI" });
+  const git = (args: string[]) => {
+    const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", windowsHide: true });
+    assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);
+  };
+  git(["add", "-A"]);
+  git(["-c", "user.name=Test", "-c", "user.email=test@example.test", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "init"]);
+  const bare = spawnSync("git", ["init", "--bare", "--quiet", origin], { encoding: "utf8", windowsHide: true });
+  assert.equal(bare.status, 0, bare.stderr);
+  git(["remote", "add", "origin", origin]);
+  git(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+  return { root, origin };
+}
+
+function removeLaneCheckout(root: string, origin: string, units: readonly string[]): void {
+  for (const unit of units) {
+    rmSync(resolve(dirname(root), `${basename(root)}-${unit}`), { recursive: true, force: true });
+  }
+  rmSync(root, { recursive: true, force: true });
+  rmSync(origin, { recursive: true, force: true });
+}
+
+test("lane create records the resolved base sha and a project worktree", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const unit = "slice";
+  try {
+    const io = capture();
+    assert.equal(await runCli(["lane", "create", unit, "--json"], {}, io, root), 0, io.read().stderr);
+    const payload = JSON.parse(io.read().stdout) as { lane: { path: string; branch: string; baseRef: string; baseSha: string; createdAt: string } };
+    const expectedSha = spawnSync("git", ["-C", root, "rev-parse", "origin/main"], { encoding: "utf8", windowsHide: true }).stdout.trim();
+    assert.equal(payload.lane.baseSha, expectedSha);
+    assert.equal(payload.lane.baseRef, "origin/main");
+    assert.equal(payload.lane.branch, unit);
+    assert.equal(realpathSync(payload.lane.path), realpathSync(resolve(dirname(root), `${basename(root)}-${unit}`)));
+    assert.equal(existsSync(join(payload.lane.path, ".kxm", "project.yaml")), true);
+    const recordPath = join(root, ".kxm", "state", "lanes.json");
+    assert.equal(statSync(recordPath).mode & 0o777, 0o600);
+    const record = JSON.parse(readFileSync(recordPath, "utf8")) as { schema: string; lanes: Record<string, { baseSha: string }> };
+    assert.equal(record.schema, "kxm.lanes.v1");
+    assert.equal(record.lanes[unit]?.baseSha, expectedSha);
+    assert.match(payload.lane.createdAt, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    removeLaneCheckout(root, origin, [unit]);
+  }
+});
+
+test("lane create twice refuses lane_exists", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const unit = "slice";
+  try {
+    assert.equal(await runCli(["lane", "create", unit, "--json"], {}, capture(), root), 0);
+    const again = capture();
+    assert.equal(await runCli(["lane", "create", unit, "--json"], {}, again, root), 1);
+    const payload = JSON.parse(again.read().stderr) as { ok: boolean; error: string };
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "lane_exists");
+  } finally {
+    removeLaneCheckout(root, origin, [unit]);
+  }
+});
+
+test("lane create refuses an unresolved base", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const unit = "slice";
+  try {
+    const io = capture();
+    assert.equal(await runCli(["lane", "create", unit, "--base", "nope", "--json"], {}, io, root), 1);
+    const payload = JSON.parse(io.read().stderr) as { ok: boolean; error: string; hint?: string };
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "lane_base_unresolved");
+    assert.match(io.read().stderr, /git fetch origin/);
+    assert.equal(existsSync(resolve(dirname(root), `${basename(root)}-${unit}`)), false);
+  } finally {
+    removeLaneCheckout(root, origin, [unit]);
+  }
+});
+
+test("lane drop refuses a dirty worktree unless forced, and keeps the branch", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const unit = "slice";
+  try {
+    const created = capture();
+    assert.equal(await runCli(["lane", "create", unit, "--json"], {}, created, root), 0, created.read().stderr);
+    const lanePath = (JSON.parse(created.read().stdout) as { lane: { path: string } }).lane.path;
+    writeFileSync(join(lanePath, "dirty.txt"), "x\n");
+    const dirty = capture();
+    assert.equal(await runCli(["lane", "drop", unit, "--json"], {}, dirty, root), 1);
+    assert.equal((JSON.parse(dirty.read().stderr) as { error: string }).error, "lane_dirty");
+    assert.equal(existsSync(join(lanePath, ".kxm", "project.yaml")), true);
+    const forced = capture();
+    assert.equal(await runCli(["lane", "drop", unit, "--force", "--json"], {}, forced, root), 0, forced.read().stderr);
+    const payload = JSON.parse(forced.read().stdout) as { branchDeleted: boolean; branch: string };
+    assert.equal(payload.branchDeleted, false);
+    assert.equal(payload.branch, unit);
+    assert.equal(existsSync(lanePath), false);
+    assert.equal(existsSync(join(root, ".kxm", "state", "lanes.json")), true);
+    const record = JSON.parse(readFileSync(join(root, ".kxm", "state", "lanes.json"), "utf8")) as { lanes: Record<string, unknown> };
+    assert.equal(record.lanes[unit], undefined);
+    const branch = spawnSync("git", ["-C", root, "rev-parse", "--verify", `refs/heads/${unit}`], { encoding: "utf8", windowsHide: true });
+    assert.equal(branch.status, 0, branch.stderr);
+  } finally {
+    removeLaneCheckout(root, origin, [unit]);
+  }
+});
+
+test("run --brief --lane posts the lane project root and the trimmed brief", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const unit = "slice";
+  try {
+    const created = capture();
+    assert.equal(await runCli(["lane", "create", unit, "--json"], {}, created, root), 0, created.read().stderr);
+    const lanePath = (JSON.parse(created.read().stdout) as { lane: { path: string } }).lane.path;
+    const brief = join(root, "brief.md");
+    writeFileSync(brief, "  fix the lane gate\n\n");
+    let posted: { projectRoot?: string; prompt?: string } | undefined;
+    kxmDriveCliSeams.ensureSupervisor = async () => ({ runtimeId: "rtm_lanebrief", port: 9, token: "tok", started: true });
+    kxmDriveCliSeams.runtimeRequest = async (_handle, method, path, body) => {
+      assert.equal(method, "POST");
+      assert.equal(path, "/v1/runs");
+      posted = body as { projectRoot?: string; prompt?: string };
+      return {
+        ok: true,
+        run: {
+          runId: "run_lanebrief00000000000000000000",
+          homeRuntimeId: "rtm_lanebrief",
+          status: "created",
+          configRevision: `sha256:${"a".repeat(64)}`,
+        },
+      };
+    };
+    const io = capture();
+    assert.equal(await runCli(["run", "default", "--brief", "brief.md", "--lane", unit, "--json"], {}, io, root), 0, io.read().stderr);
+    assert.equal(posted?.projectRoot, lanePath);
+    assert.equal(posted?.prompt, "fix the lane gate");
+    assert.equal((JSON.parse(io.read().stdout) as { brief?: string }).brief, "brief.md");
+  } finally {
+    delete kxmDriveCliSeams.ensureSupervisor;
+    delete kxmDriveCliSeams.runtimeRequest;
+    removeLaneCheckout(root, origin, [unit]);
+  }
+});
+
+test("run refuses --brief together with a positional prompt", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-brief-both-"));
+  try {
+    writeFileSync(join(root, "brief.md"), "from the file\n");
+    const io = capture();
+    assert.equal(await runCli(["run", "default", "--brief", "brief.md", "some", "words", "--json"], {}, io, root), 1);
+    const payload = JSON.parse(io.read().stderr) as { ok: boolean; error: string };
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "brief_and_prompt");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("lane run records lastRunId and refuses a second call while that run is open", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const unit = "slice";
+  const runId = "run_laneopen00000000000000000000";
+  let posts = 0;
+  let gets = 0;
+  try {
+    writeFileSync(join(root, "brief.md"), "  do the work\n");
+    kxmDriveCliSeams.ensureSupervisor = async () => ({ runtimeId: "rtm_laneopen", port: 9, token: "tok", started: true });
+    kxmDriveCliSeams.runtimeRequest = async (_handle, method, path, body) => {
+      if (method === "POST" && path === "/v1/runs") {
+        posts += 1;
+        assert.equal((body as { prompt?: string }).prompt, "do the work");
+        return {
+          ok: true,
+          run: { runId, homeRuntimeId: "rtm_laneopen", status: "created", configRevision: `sha256:${"a".repeat(64)}` },
+        };
+      }
+      if (method === "GET") {
+        gets += 1;
+        return {
+          ok: true,
+          run: { runId, status: "running", workflowId: "default", configRevision: `sha256:${"a".repeat(64)}`, updatedAt: "2026-09-25T00:00:00.000Z" },
+        };
+      }
+      if (method === "POST" && path.includes("/drive")) {
+        return { ok: true, status: "accepted", runId, driveId: "drv_0123456789abcdef01234567", poll: `/v1/runs/${runId}`, mode: "live" };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+    const first = capture();
+    assert.equal(await runCli(["lane", "run", unit, "--brief", "brief.md", "--json"], {}, first, root), 0, `${first.read().stderr}\n${first.read().stdout}`);
+    const record = JSON.parse(readFileSync(join(root, ".kxm", "state", "lanes.json"), "utf8")) as { lanes: Record<string, { lastRunId?: string }> };
+    assert.equal(record.lanes[unit]?.lastRunId, runId);
+    assert.equal(posts, 1);
+    const second = capture();
+    assert.equal(await runCli(["lane", "run", unit, "--brief", "brief.md", "--json"], {}, second, root), 1);
+    assert.equal((JSON.parse(second.read().stderr) as { error: string }).error, "lane_run_open");
+    assert.equal(posts, 1);
+    assert.equal(gets, 1);
+  } finally {
+    delete kxmDriveCliSeams.ensureSupervisor;
+    delete kxmDriveCliSeams.runtimeRequest;
+    removeLaneCheckout(root, origin, [unit]);
   }
 });

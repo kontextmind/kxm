@@ -14,7 +14,7 @@ Output shown under examples was captured from a source checkout, inside a throwa
 - Setup: [`init`](#kxm-init), [`config`](#kxm-config), [`completion`](#kxm-completion), [`trust`](#kxm-trust)
 - Hub and sessions: [`hub`](#kxm-hub-view), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
 - Harnesses, models, and roles: [`harness`](#kxm-harness), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
-- Running work: [`run`](#kxm-run), [`runs`](#kxm-runs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
+- Running work: [`lane`](#kxm-lane), [`run`](#kxm-run), [`runs`](#kxm-runs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
 - Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing), [`prices`](#kxm-prices)
 - Operations: [`backup`](#kxm-backup), [`restore`](#kxm-restore), [`tenant`](#kxm-tenant), [`ssh`](#kxm-ssh), [`help`](#kxm-help)
 - [Known behavior gaps](#known-behavior-gaps)
@@ -143,7 +143,7 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 |---|---|---|
 | Project files under `<project>/.kxm/` (reviewed in Git) | `project.yaml`, `agents/`, `workflows/`, `gates.yaml`, `repo/`, `template-provenance.yaml`, `routes.yaml`, `models/inventory.yaml`, `roles/`, `role-hosts.yaml`, `modes.yaml`, `prices.yaml` | `init`, `trust`, `run`, `models`, `routes`, `role`, `workflow definitions\|add\|remove\|modify`, `explain`, `studio` |
 | Local project records under `<project>/.kxm/` | `config.yaml` (project scope), `goals/`, `tasks/`, `memory/`, `skills/`, `candidates/`, `backups/`, `run/ssh-sockets/` | `config`, `goal`, `task`, `memory`, `skills`, `improve`, `backup`, `ssh` |
-| Workspace directories (`.kxm/state`, `.kxm/logs`, `.kxm/assets`, `.kxm/config`; moved by `--workspace` or `KXM_*_DIR`) | hub SQLite store `state/kxm.db` (or `KXM_DATA_PATH`), `state/hub.pid`, `state/session-brief.json`, `logs/telemetry.jsonl`, `logs/kxm-hub.jsonl`, `assets/sessions/`, `assets/workflows/`, `assets/improvements/`, `assets/retrospectives/`, legacy `config/agents.json` and `config/gates.json` | `hub`, `session`, `dash`, `agent worker`, `workflow list\|get\|export`, `gate`, `improve`, `routing report` |
+| Workspace directories (`.kxm/state`, `.kxm/logs`, `.kxm/assets`, `.kxm/config`; moved by `--workspace` or `KXM_*_DIR`) | hub SQLite store `state/kxm.db` (or `KXM_DATA_PATH`), `state/hub.pid`, `state/session-brief.json`, `state/lanes.json` (mode 0600 lane records), `logs/telemetry.jsonl`, `logs/kxm-hub.jsonl`, `assets/sessions/`, `assets/workflows/`, `assets/improvements/`, `assets/retrospectives/`, legacy `config/agents.json` and `config/gates.json` | `hub`, `session`, `dash`, `lane`, `agent worker`, `workflow list\|get\|export`, `gate`, `improve`, `routing report` |
 | User config directory (`KXM_USER_CONFIG_DIR`, default `~/.config/kxm`) | `config.yaml` (user scope), `session.token`, global `roles/` and `workflows/`, `role-hosts.yaml`, `completions/` | `config --scope user`, `auth token`, `session brief\|token`, `role`/`workflow` with `--scope global`, `studio serve`, `completion install` |
 | User state root (`KXM_STATE_HOME`; macOS `~/Library/Application Support/KXM`; Linux `$XDG_STATE_HOME/kxm` or `~/.local/state/kxm`; Windows `%LOCALAPPDATA%\KXM`) | `hub-env.json` (persisted hub credentials), `hub-binding.json`, `runtime/` (Runtime supervisor registry and per-project run stores), `update.yaml`, repository bindings | `hub start\|bind\|unbind`, every hub client, `run`, `runs`, `runtime`, `tenant status`, `update`, `init --repository`, and (read-only, the project's run store) `improve` and `routing report` |
 
@@ -157,6 +157,7 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 | Start or bind a hub | [`kxm hub start`](#kxm-hub-start), [`kxm hub bind`](#kxm-hub-bind), [`kxm hub view`](#kxm-hub-view) |
 | Check harness installs and authentication | [`kxm harness list`](#kxm-harness-list), [`kxm update --dry-run`](#kxm-update) |
 | Create and drive a run | [`kxm run`](#kxm-run), [`kxm runs drive`](#kxm-runs-drive), [`kxm runtime status`](#kxm-runtime-status) |
+| Work in an isolated checkout | [`kxm lane`](#kxm-lane), [`kxm run --lane`](#kxm-run) |
 | Inspect runs | [`kxm runs list`](#kxm-runs-list), [`kxm runs status`](#kxm-runs-status), [`kxm runs receipt`](#kxm-runs-receipt), [`kxm tenant status`](#kxm-tenant-status), [`kxm workflow list`](#kxm-workflow-list) |
 | Message peers | [`kxm peer list`](#kxm-peer-list), [`kxm peer send`](#kxm-peer-send), [`kxm peer await`](#kxm-peer-await), [`kxm peer fanout`](#kxm-peer-fanout) |
 | Operate gates and evidence | [`kxm gate validate`](#kxm-gate-validate), [`kxm gate artifacts-exist`](#kxm-gate-artifacts-exist), [`kxm gate signal`](#kxm-gate-signal), [`kxm workflow checkpoint`](#kxm-workflow-checkpoint) |
@@ -1382,19 +1383,69 @@ dry run: resume workflow run wf_dry_run (stage: review)
   would write /work/proj/.kxm/state/kxm.db (workflow_runs wf_dry_run, one workflow_journal decision)
 ```
 
+## `kxm lane`
+
+One lane is one git worktree, one branch named the unit, and one recorded base sha. The record lives in the control checkout's state directory, `.kxm/state/lanes.json` (`kxm.lanes.v1`, mode 0600). The worktree path is `../<control-dir-basename>-<unit>`, next to the control checkout. Creating a lane resolves the base ref to a sha and does not fetch. There is no push, merge, pull request, or branch delete.
+
+```text
+kxm lane create <unit> [--base <ref>]
+kxm lane list
+kxm lane status <unit>
+kxm lane drop <unit> [--force]
+kxm lane run <unit> --brief <file> [--workflow <id>] [--base <ref>] [--wait] [--timeout-ms <n>]
+```
+
+```bash
+kxm lane run omp-align-p1 --brief .kxm/briefs/omp-align-p1.md --wait
+```
+
+### `kxm lane create`
+
+Resolves `<ref>` (default `origin/main`) with `git rev-parse --verify <ref>^{commit}` in the control checkout, then `git worktree add -b <unit> <path> <sha>`. The new worktree must contain `.kxm/project.yaml`. Writes the record and prints it.
+
+| Option | Argument | Default | Description |
+|---|---|---|---|
+| `--base` | `<ref>` | `origin/main` | Ref to resolve before adding the worktree |
+
+Refusals (exit 1): `lane_unit_invalid`, `lane_exists` (record, path, or branch already present), `lane_base_unresolved` (the text names `git fetch origin`), `lane_not_project` (worktree removed again), `lane_git_failed`, `lanes_unreadable`.
+
+### `kxm lane list`
+
+Prints one line per lane: unit, branch, base sha, `dirty` (porcelain line count), `ahead` and `behind` against the recorded base sha, and `exists`. JSON key: `lanes`.
+
+### `kxm lane status`
+
+The list row for one unit, plus `status` of `lastRunId` when the Runtime supervisor is already running and answers. Otherwise `status=unknown`. Does not start the supervisor.
+
+Refusals (exit 1): `lane_missing`, `lane_unit_invalid`, `lanes_unreadable`.
+
+### `kxm lane drop`
+
+Removes the worktree and the record. Refuses `lane_dirty` when porcelain is nonempty, and `lane_run_open` when `lastRunId` is set and that run is not `completed`, `failed`, or `cancelled`. `--force` overrides both. `git worktree remove --force` is used only with `--force`. The branch is not deleted; the text says so (`branchDeleted: false`).
+
+Refusals (exit 1): `lane_missing`, `lane_dirty`, `lane_run_open`, `lane_git_failed`.
+
+### `kxm lane run`
+
+Creates the lane when the record is absent (same rules as `create`), refuses `lane_run_open` when the last run is not settled, then runs the same path as `kxm run --lane <unit> --brief <file>` and `kxm runs drive <runId> --lane <unit>`. `--wait` and `--timeout-ms` are passed through. The run id is stored on the record. Prints the run envelope and the drive result.
+
+`--brief` is required. `--workflow` defaults to the lane project's `defaultWorkflow`. `--base` applies only when the lane is created.
+
 ## `kxm run`
 
 ```text
-kxm run <workflow> [prompt...]
+kxm run <workflow> [--brief <file>] [--lane <unit>] [prompt...]
 ```
 
 Create a KXM run without executing steps. The run pins the project's `homeRuntimeId`, config revision, and executor and tool policy revisions. Events store the prompt's SHA-256; its full text is kept in a local mode-0600 sidecar, `run-events.db.run-prompts.json`, and dispatch refuses a hash mismatch (`run_prompt_mismatch`). The Runtime supervisor starts if needed. Output explicitly reports no execution, live prerequisites, and separate drive/status/receipt commands. Use `kxm runs drive <runId> --wait` for supported live one-shot calls; no hub or Pi worker is required. `--simulated` is a model-free experiment, not evidence that implementation ran. Local runs are inspected with `kxm runs`, not the webhook-only `kxm workflow get`.
 
 - Arguments: `<workflow>`, Workflow id to run (a file under `.kxm/workflows/`); `[prompt...]`, Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file).
-- No command-specific options. Refuses `--workspace` (exit 2).
+- `--brief <file>` reads that file from the invocation directory, trims it, and uses the text as the prompt. The JSON envelope includes `brief` set to the path as given. `--brief` together with a positional prompt is `brief_and_prompt`. A file that cannot be read is `brief_unreadable`.
+- `--lane <unit>` selects the recorded worktree before project discovery. A missing lane is `lane_missing`. A last run that is not settled is `lane_run_open`.
+- Refuses `--workspace` (exit 2, `workspace_option_unsupported`).
 - Needs a KXM project. Starts and uses the Runtime; no hub needed. Honors `--dry-run`, which validates the project and prints the plan without starting the supervisor.
 - JSON keys: `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`), and `execution` (`status: not_started`, `mode: live`, `defaultHarness`, `authentication: not_checked`, `prerequisites`, `nextSteps`). Dry run: `projectRoot`, `workflowId`, `configRevision`, `defaultHarness`, `prerequisites`. The obsolete `phase: pre-3a` field is no longer returned.
-- Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `run_failed` with `issues` (any invalid file in the project fails the load, for example `gate_outcome_impossible`), `run_io_failed` (exit 1).
+- Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `brief_and_prompt`, `brief_unreadable`, `lane_missing`, `lane_run_open`, `run_failed` with `issues` (any invalid file in the project fails the load, for example `gate_outcome_impossible`), `run_io_failed` (exit 1).
 - The `default` workflow that `kxm init` writes does not set `limits.maxAgentTimeMs`, so it can be driven. A workflow that sets that limit is created, but `kxm runs drive` refuses it with `run_handoff_required` (`limit_unsupported`); projects from older `kxm init` templates carry it on `default`.
 
 ```bash
@@ -1436,12 +1487,12 @@ Reads and drives runs through the Runtime supervisor. Every subcommand needs a K
 ### `kxm runs status`
 
 ```text
-kxm runs status <runId>
+kxm runs status <runId> [--lane <unit>]
 ```
 
 Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned).
 
-- Arguments: `<runId>`, Run id. No command-specific options. Reads run state, but starts the supervisor if needed (not under `--dry-run`).
+- Arguments: `<runId>`, Run id. `--lane <unit>` discovers the project from that lane's worktree (`lane_missing` when the record or path is absent). Reads run state, but starts the supervisor if needed (not under `--dry-run`).
 - Text: `run <id>: <status> (workflow <id>, updated <time>)`, plus a drive line such as `drive <id>: open`, `completed (receipt verified)`, `unsettled <reason>`, `handoff`, `cancelled (<reason>)`, or `no receipt (orphaned)`.
 - JSON keys: `run` (`runId`, `status`, `workflowId`, `configRevision`, `updatedAt`, ...), `drive` (`driveId`, `mode`, `openedAt`, `receipt`, `verified`, `divergence`).
 - Errors: `project_required`, `run_status_failed`, `run_status_io_failed` (exit 1).
@@ -1467,7 +1518,7 @@ kxm runs status --dry-run refused: the Runtime supervisor is not running and --d
 ### `kxm runs drive`
 
 ```text
-kxm runs drive <runId> [--simulated] [--wait] [--timeout-ms <n>]
+kxm runs drive <runId> [--simulated] [--wait] [--timeout-ms <n>] [--lane <unit>]
 ```
 
 Opens a drive of the run. With `--simulated`, a model-free producer reports every agent step as passed. Without `--simulated` the drive runs in live mode: each agent step invokes its harness through a one-shot producer, and the agent's model must be an admitted route (otherwise `producer_route_not_admitted`; there is no fallback model). A read-only step runs with the harness's read-only flags. A step with `write` access runs with an audited writer profile, which only `pi` and `grok` have; it must be a single assignment in a project whose `limits.maxConcurrentRuns` is 1, and, when `.kxm/roster.yaml` exists, its route must be on the roster's writer lineup. Otherwise the drive hands the run off with `step_unsupported`. Around each live attempt the Runtime fingerprints the checkout with `git status` and `git diff`: a write step settles `passed` only when the checkout changed (routing metadata `authored: true`), and a read-only step that changed it settles `failed` (`authoringWitness: readonly_mutated`).
@@ -1477,8 +1528,9 @@ Opens a drive of the run. With `--simulated`, a model-free producer reports ever
 | `--simulated` | none | off | Use the model-free simulation producer |
 | `--wait` | none | off | Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement |
 | `--timeout-ms` | `<n>` | `60000` | Wait timeout in milliseconds (default 60000, max 600000) |
+| `--lane` | `<unit>` | none | Discover the project from this lane's worktree |
 
-- Arguments: `<runId>`, Run id.
+- Arguments: `<runId>`, Run id. `--lane` refuses `lane_missing` when the record or path is absent.
 - `--timeout-ms` applies only with `--wait` and must be an integer from 1 to 600000 (`run_drive_timeout_invalid`, exit 1).
 - Mutates run state. Honors `--dry-run`.
 - JSON keys without `--wait`: `runId`, `driveId`, `poll`, `mode`, `status` (`accepted`). With `--wait`: `receipt`, `verified`; a timeout prints `error: "timeout"`.
@@ -1511,7 +1563,7 @@ Not run: starts the Runtime and writes run events.
 ### `kxm runs receipt`
 
 ```text
-kxm runs receipt <runId> [--all]
+kxm runs receipt <runId> [--all] [--lane <unit>]
 ```
 
 Print the newest drive receipt for a run.
@@ -1519,8 +1571,9 @@ Print the newest drive receipt for a run.
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--all` | none | off | Print the capped receipt list for the run |
+| `--lane` | `<unit>` | none | Discover the project from this lane's worktree |
 
-- Arguments: `<runId>`, Run id. Text mode prints the newest receipt's settlement as JSON; `--all` prints the list. Starts the supervisor if needed (not under `--dry-run`).
+- Arguments: `<runId>`, Run id. Text mode prints the newest receipt's settlement as JSON; `--all` prints the list. Starts the supervisor if needed (not under `--dry-run`). `--lane` refuses `lane_missing` when the record or path is absent.
 - JSON keys: `receipt`, or `receipts` with `--all`. Exit 1 with `no_receipts` when the run was never driven.
 
 ```bash
@@ -1532,12 +1585,12 @@ Not run: starts the Runtime supervisor.
 ### `kxm runs cancel`
 
 ```text
-kxm runs cancel <runId>
+kxm runs cancel <runId> [--lane <unit>]
 ```
 
 Durably request cancellation of a run: records `run.cancel_requested` then `run.status_changed`. Cancelling a terminal run is an idempotent no-op.
 
-- Arguments: `<runId>`, Run id. No command-specific options.
+- Arguments: `<runId>`, Run id. `--lane <unit>` discovers the project from that lane's worktree (`lane_missing` when the record or path is absent).
 - Mutates run state. Honors `--dry-run`.
 - JSON keys: `idempotent`, `run` (`runId`, `status`).
 

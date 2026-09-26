@@ -17,7 +17,7 @@ a KXM product feature.
 
 - A clean control checkout of this repository whose `HEAD` is an ancestor of
   `origin/main`. The runner loads `.kxm/roster.yaml` only from there.
-- A separate worktree for the writer. `just worktree <unit>` creates one from
+- A separate worktree for the writer. `kxm lane create <unit>` creates one from
   `origin/main`.
 - [`just`](https://github.com/casey/just), plus the harness CLIs the roster
   admits, installed and logged in. `node scripts/kxm.mjs harness list` shows

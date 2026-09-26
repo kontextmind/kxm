@@ -13,6 +13,7 @@ Runtime-local records, and JSON events/results for the planned KXM contract.
 | `workflow.schema.json` | `kxm.workflow.v1` |
 | `template-provenance.schema.json` | `kxm.template-provenance.v1` |
 | `local-repository-bindings.schema.json` | `kxm.local-repository-bindings.v1` |
+| `lanes.schema.json` | `kxm.lanes.v1` |
 | `init-operation.schema.json` | `kxm.init-operation.v1` |
 | `permission-diff.schema.json` | `kxm.permission-diff.v1` |
 | `run-event.schema.json` | `kxm.run-event.v1` |

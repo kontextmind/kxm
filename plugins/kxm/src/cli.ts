@@ -104,7 +104,6 @@ import {
 cmdBackup,
   cmdRestore,
   cmdKxmTrust,
-  cmdKxmRun,
   cmdKxmRunStatus,
   cmdKxmRunDrive,
   cmdKxmRunReceipt,
@@ -121,6 +120,16 @@ cmdBackup,
 } from "./cli/project.ts";
 
 import { cmdPluginInstall } from "./cli/plugins.ts";
+
+import {
+  applyLane,
+  cmdKxmRunCli,
+  cmdLaneCreate,
+  cmdLaneDrop,
+  cmdLaneList,
+  cmdLaneRun,
+  cmdLaneStatus,
+} from "./cli/lanes.ts";
 
 import {
   cmdStatus,
@@ -187,6 +196,7 @@ const USAGE_ERROR_CODES = new Set([
  */
 const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "init", "backup", "restore", "run", "explain", "suggest", "update", "dash", "completion", "completion install",
+  "lane create", "lane list", "lane status", "lane drop", "lane run",
   "plugin install", "plugin",
   "runs status", "runs drive", "runs receipt", "runs cancel", "runs list",
   "tenant status", "models inventory-refresh", "harness list", "auth token",
@@ -435,26 +445,76 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
       result.code = await cmdRestore(runtimeFrom(ctx, this), manifest, options);
     });
 
+  const laneCmd = addGlobalOptions(program.command("lane").description("Manage one git worktree per unit of work"));
+  laneCmd.helpCommand("help", "Show lane help");
+  addGlobalOptions(laneCmd.command("create").description("Create a worktree lane from a base ref (default origin/main)"))
+    .argument("<unit>", "Lane unit name")
+    .option("--base <ref>", "Base ref to resolve before adding the worktree (default origin/main)")
+    .action(async function laneCreateAction(this: Command, unit: string, options: { base?: string }) {
+      result.code = await cmdLaneCreate(runtimeFrom(ctx, this), unit, options);
+    });
+  addGlobalOptions(laneCmd.command("list").description("List lanes with dirty, ahead, and behind counts"))
+    .action(async function laneListAction(this: Command) {
+      result.code = await cmdLaneList(runtimeFrom(ctx, this));
+    });
+  addGlobalOptions(laneCmd.command("status").description("Show one lane and the projected status of its last run"))
+    .argument("<unit>", "Lane unit name")
+    .action(async function laneStatusAction(this: Command, unit: string) {
+      result.code = await cmdLaneStatus(runtimeFrom(ctx, this), unit);
+    });
+  addGlobalOptions(laneCmd.command("drop").description("Remove a lane worktree and its record without deleting the branch"))
+    .argument("<unit>", "Lane unit name")
+    .option("--force", "Remove a dirty lane or one whose last run is still open")
+    .action(async function laneDropAction(this: Command, unit: string, options: { force?: boolean }) {
+      result.code = await cmdLaneDrop(runtimeFrom(ctx, this), unit, { force: options.force === true });
+    });
+  addGlobalOptions(laneCmd.command("run").description("Create the lane if needed, start a run from a brief, and drive it"))
+    .argument("<unit>", "Lane unit name")
+    .requiredOption("--brief <file>", "Read the run prompt from a file")
+    .option("--workflow <id>", "Workflow id (default: the project default)")
+    .option("--base <ref>", "Base ref when the lane does not exist yet (default origin/main)")
+    .option("--wait", "Wait until a drive receipt is recorded")
+    .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)")
+    .action(async function laneRunAction(this: Command, unit: string, options: { brief?: string; workflow?: string; base?: string; wait?: boolean; timeoutMs?: string }) {
+      result.code = await cmdLaneRun(runtimeFrom(ctx, this), unit, {
+        ...(options.brief !== undefined ? { brief: options.brief } : {}),
+        ...(options.workflow !== undefined ? { workflow: options.workflow } : {}),
+        ...(options.base !== undefined ? { base: options.base } : {}),
+        wait: options.wait === true,
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      });
+    });
+
   addGlobalOptions(program.command("run").description("Create a KXM run without executing steps; follow its prerequisites, then kxm runs drive <runId> --wait")
     .argument("[workflow]", "Workflow id to run")
     .argument("[prompt...]", "Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file)")
-    .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[]) {
-      result.code = await cmdKxmRun(runtimeFrom(ctx, this), workflow, promptParts);
+    .option("--brief <file>", "Read the run prompt from a file instead of the positional prompt")
+    .option("--lane <unit>", "Discover the project from this lane's worktree")
+    .action(async function runAction(this: Command, workflow: string | undefined, promptParts: string[], options: { brief?: string; lane?: string }) {
+      result.code = await cmdKxmRunCli(runtimeFrom(ctx, this), workflow, promptParts, options);
     }));
   const runCmd = addGlobalOptions(program.command("runs").description("Inspect KXM runs"));
   runCmd.helpCommand("help", "Show runs help");
   addGlobalOptions(runCmd.command("status").description("Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned)"))
     .argument("<runId>", "Run id")
-    .action(async function runStatusAction(this: Command, runId: string) {
-      result.code = await cmdKxmRunStatus(runtimeFrom(ctx, this), runId);
+    .option("--lane <unit>", "Discover the project from this lane's worktree")
+    .action(async function runStatusAction(this: Command, runId: string, options: { lane?: string }) {
+      const runtime = applyLane(runtimeFrom(ctx, this), options.lane, "runs status");
+      result.code = typeof runtime === "number" ? runtime : await cmdKxmRunStatus(runtime, runId);
     });
   addGlobalOptions(runCmd.command("drive").description("Drive a run with live harness calls, or with the model-free simulation when --simulated is passed"))
     .argument("<runId>", "Run id")
     .option("--simulated", "Use the model-free simulation producer instead of a live model")
     .option("--wait", "Wait until a drive receipt is recorded; exits 0 only for a VERIFIED COMPLETED settlement")
     .option("--timeout-ms <n>", "Wait timeout in milliseconds (default 60000, max 600000)")
-    .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean; wait?: boolean; timeoutMs?: string }) {
-      result.code = await cmdKxmRunDrive(runtimeFrom(ctx, this), runId, options.simulated === true, {
+    .option("--lane <unit>", "Discover the project from this lane's worktree")
+    .action(async function runDriveAction(this: Command, runId: string, options: { simulated?: boolean; wait?: boolean; timeoutMs?: string; lane?: string }) {
+      const runtime = applyLane(runtimeFrom(ctx, this), options.lane, "runs drive");
+      if (typeof runtime === "number") {
+        result.code = runtime;
+        return;
+      }
+      result.code = await cmdKxmRunDrive(runtime, runId, options.simulated === true, {
         wait: options.wait === true,
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       });
@@ -462,13 +522,17 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(runCmd.command("receipt").description("Print the newest drive receipt for a run"))
     .argument("<runId>", "Run id")
     .option("--all", "Print the capped receipt list for the run")
-    .action(async function runReceiptAction(this: Command, runId: string, options: { all?: boolean }) {
-      result.code = await cmdKxmRunReceipt(runtimeFrom(ctx, this), runId, { all: options.all === true });
+    .option("--lane <unit>", "Discover the project from this lane's worktree")
+    .action(async function runReceiptAction(this: Command, runId: string, options: { all?: boolean; lane?: string }) {
+      const runtime = applyLane(runtimeFrom(ctx, this), options.lane, "runs receipt");
+      result.code = typeof runtime === "number" ? runtime : await cmdKxmRunReceipt(runtime, runId, { all: options.all === true });
     });
   addGlobalOptions(runCmd.command("cancel").description("Durably request cancellation of a run"))
     .argument("<runId>", "Run id")
-    .action(async function runCancelAction(this: Command, runId: string) {
-      result.code = await cmdKxmRunCancel(runtimeFrom(ctx, this), runId);
+    .option("--lane <unit>", "Discover the project from this lane's worktree")
+    .action(async function runCancelAction(this: Command, runId: string, options: { lane?: string }) {
+      const runtime = applyLane(runtimeFrom(ctx, this), options.lane, "runs cancel");
+      result.code = typeof runtime === "number" ? runtime : await cmdKxmRunCancel(runtime, runId);
     });
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project"))
     .action(async function runListAction(this: Command) {

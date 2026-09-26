@@ -1,6 +1,6 @@
 ---
 name: kxm-runs
-description: Create, drive, and inspect local KXM runs. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, or smoke-test a workflow.
+description: Create, drive, and inspect local KXM runs, and manage worktree lanes. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, or create a lane.
 ---
 
 # KXM runs
@@ -15,12 +15,17 @@ create, or logs verbs under `runs`.
 
 | Command | Purpose | Options / arguments |
 |---|---|---|
-| `kxm run [workflow] [prompt...]` | Create a run; the full prompt is kept on disk (see below) | `--dry-run` (plan only), `--json` |
-| `kxm runs drive <runId>` | Drive a run; with `--wait`, exits 0 only for a verified completed settlement | `--simulated`, `--wait`, `--timeout-ms <n>` (default 60000, max 600000), `--json` |
-| `kxm runs status <runId>` | Projected run status plus drive receipt state (open, receipt verified, unsettled, orphaned) | `--json` |
-| `kxm runs receipt <runId>` | Newest drive receipt for a run | `--all`, `--json` |
-| `kxm runs cancel <runId>` | Durably request cancellation | `--json` |
+| `kxm run [workflow] [prompt...]` | Create a run; the full prompt is kept on disk (see below) | `--brief <file>`, `--lane <unit>`, `--dry-run` (plan only), `--json` |
+| `kxm runs drive <runId>` | Drive a run; with `--wait`, exits 0 only for a verified completed settlement | `--simulated`, `--wait`, `--timeout-ms <n>` (default 60000, max 600000), `--lane <unit>`, `--json` |
+| `kxm runs status <runId>` | Projected run status plus drive receipt state (open, receipt verified, unsettled, orphaned) | `--lane <unit>`, `--json` |
+| `kxm runs receipt <runId>` | Newest drive receipt for a run | `--all`, `--lane <unit>`, `--json` |
+| `kxm runs cancel <runId>` | Durably request cancellation | `--lane <unit>`, `--json` |
 | `kxm runs list` | Recent runs for the current project | `--json` |
+| `kxm lane create <unit>` | Add a worktree lane at a resolved base sha. Default base is origin/main | `--base <ref>`, `--json` |
+| `kxm lane list` | List lanes with dirty, ahead, behind, and exists | `--json` |
+| `kxm lane status <unit>` | One lane plus its last run status, or unknown when the supervisor is not answering | `--json` |
+| `kxm lane drop <unit>` | Remove the worktree and the record. The branch is not deleted | `--force`, `--json` |
+| `kxm lane run <unit>` | Create the lane if needed, start a run from a brief, and drive it | `--brief <file>` (required), `--workflow <id>`, `--base <ref>`, `--wait`, `--timeout-ms <n>`, `--json` |
 
 The run record and its events keep only the prompt's hash, but the full
 prompt text is kept in a local `run-events.db.run-prompts.json` file (mode
@@ -53,6 +58,12 @@ kxm runtime stop
 The dry run prints `run plan: workflow first at sha256:… (no run created)`.
 After the drive, `kxm runs status` prints `completed … (receipt verified)` and
 the receipt's settlement is terminal `completed`.
+
+`kxm lane` keeps one git worktree per unit in the control checkout's
+`.kxm/state/lanes.json`. `kxm run --brief <file>` reads the prompt from that
+file. `kxm run --lane <unit>` and `kxm runs status|drive|receipt|cancel --lane`
+discover the project from the lane worktree. `kxm lane run <unit> --brief <file>`
+creates the lane when it is missing, starts the run, and drives it.
 
 ## Refusals
 
