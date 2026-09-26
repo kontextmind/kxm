@@ -56,6 +56,7 @@ function request(overrides: Partial<KxmProducerRequest> = {}): KxmProducerReques
     assignmentId: "asg_claude_write_refusal",
     attemptId: "att_claude_write_refusal",
     agentId: "critic",
+    harness: "claude",
     capability: "fixture-only",
     allowedOutcomes: ["passed", "failed"],
     prompt: WRITE_PROMPT,
@@ -145,7 +146,6 @@ test("write-refused Claude fixture cannot settle as passed and does not land a f
   const producer = createKxmOneShotProducer({
     projectRoot: sandbox,
     evidenceRoot: privateEvidenceRoot(sandbox),
-    defaultHarness: "claude",
     defaultModel: "fable",
     timeoutMs,
     probeHarness: authenticated,
@@ -184,7 +184,6 @@ smokeTest("live Claude read-only one-shot refuses a write in a temp sandbox", { 
   const producer = createKxmOneShotProducer({
     projectRoot: sandbox,
     evidenceRoot: privateEvidenceRoot(sandbox),
-    defaultHarness: "claude",
     defaultModel: "fable",
     timeoutMs,
   });

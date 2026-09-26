@@ -26983,7 +26983,6 @@ var init_runtime_supervisor = __esm({
     init_sqlite();
     init_runtime_service();
     init_oneshot_producer();
-    init_routes();
     init_engine();
     init_runtime_owner();
     init_client();

@@ -164,7 +164,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   in the developer ceilings or the harness inventory can dispatch them:
   `zai-coding-cn/glm-5.3-flash`, `qwen-token-plan/qwen3.8-flash`,
   `qwen-token-plan/qwen3.8-max`, and `zai-coding-cn/glm-5.3`.
-  Dispatch still reads `.kxm/roster.yaml` until P2.
+  Dispatch resolves harness, provider, model, and effort from the role roster.
+  A live request with no harness is refused. A roster entry with no effort
+  leaves thinking unset.
 
 - **Usage errors under `--json` print a `usage_error` envelope and exit 2.**
   A missing required option, unknown command, or other Commander usage error

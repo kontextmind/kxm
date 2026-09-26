@@ -22,11 +22,11 @@ const authenticated = () => ({ id: "claude", label: "Claude", default: false, mo
 const reply = (text = '{"outcome":"passed"}') => JSON.stringify({ result: text, usage: { input_tokens: 12, output_tokens: 8, cache_read_input_tokens: 2, cache_creation_input_tokens: 3 } });
 async function produce(processResult: KxmOneShotProcessResult, overrides: Partial<KxmProducerRequest> = {}) {
   const producer = createKxmOneShotProducer({
-    projectRoot: resolve("examples/project"), defaultHarness: "claude", defaultModel: "fable",
+    projectRoot: resolve("examples/project"), defaultModel: "fable",
     probeHarness: authenticated,
     spawnProcess: async () => processResult,
   });
-  try { return await producer.produce(request(overrides)); }
+  try { return await producer.produce(request({ harness: "claude", ...overrides })); }
   finally { await producer.close(); }
 }
 
@@ -61,12 +61,12 @@ for (const harness of ["deepseek"]) {
   test(`unaudited ${harness} one-shot permissions refuse before authentication and execution`, async () => {
     let probes = 0;
     let spawns = 0;
-    const producer = createKxmOneShotProducer({ defaultHarness: harness, defaultModel: "deepseek-v4",
+    const producer = createKxmOneShotProducer({ defaultModel: "deepseek-v4",
       probeHarness: () => { probes++; return authenticated(); },
       spawnProcess: async () => { spawns++; return { stdout: reply(), stderr: "", code: 0 }; },
     });
     try {
-      await assert.rejects(producer.produce(request()), /permission_profile_unaudited/);
+      await assert.rejects(producer.produce(request({ harness })), /permission_profile_unaudited/);
       assert.equal(probes, 0);
       assert.equal(spawns, 0);
     } finally { await producer.close(); }
@@ -76,7 +76,6 @@ for (const harness of ["deepseek"]) {
 test("audited agy and kimi one-shot dispatches apply sandboxed read-only flags", async () => {
   let capturedAgyArgs: readonly string[] = [];
   const agyProducer = createKxmOneShotProducer({
-    defaultHarness: "agy",
     probeHarness: () => ({
       id: "agy", label: "AGY", default: false, mode: "either" as const,
       detected: true, authenticated: true as const, authMethod: "antigravity-oauth",
@@ -88,7 +87,7 @@ test("audited agy and kimi one-shot dispatches apply sandboxed read-only flags",
     },
   });
   try {
-    const res = await agyProducer.produce(request({ model: "gemini-3.8-flash-high" }));
+    const res = await agyProducer.produce(request({ harness: "agy", model: "gemini-3.8-flash-high" }));
     assert.equal(res.outcome, "passed");
     assert.ok(capturedAgyArgs.includes("--mode"));
     assert.ok(capturedAgyArgs.includes("plan"));
@@ -100,7 +99,6 @@ test("audited agy and kimi one-shot dispatches apply sandboxed read-only flags",
 
   let capturedKimiArgs: readonly string[] = [];
   const kimiProducer = createKxmOneShotProducer({
-    defaultHarness: "kimi",
     probeHarness: () => ({
       id: "kimi", label: "Kimi", default: false, mode: "either" as const,
       detected: true, authenticated: true as const,
@@ -116,7 +114,7 @@ test("audited agy and kimi one-shot dispatches apply sandboxed read-only flags",
     },
   });
   try {
-    const res = await kimiProducer.produce(request({ model: "kimi-k2" }));
+    const res = await kimiProducer.produce(request({ harness: "kimi", model: "kimi-k2" }));
     assert.equal(res.outcome, "passed");
     assert.ok(capturedKimiArgs.includes("--plan"));
   } finally {
@@ -131,7 +129,7 @@ test("pre-aborted producer performs no authentication or execution", async () =>
     probeHarness: () => { probes++; return authenticated(); },
     spawnProcess: async () => { throw new Error("must not spawn"); },
   });
-  const res = await producer.produce(request({ signal: AbortSignal.abort() }));
+  const res = await producer.produce(request({ harness: "claude", signal: AbortSignal.abort() }));
   assert.equal(res.outcome, "cancelled");
   assert.equal(probes, 0);
 });
@@ -143,14 +141,14 @@ test("native auth preflight yields to sibling timers", { skip: process.platform 
   let progressed = false;
   const timer = setTimeout(() => { progressed = true; }, 20);
   const producer = createKxmOneShotProducer({
-    projectRoot: dir, defaultHarness: "claude", defaultModel: "fable",
+    projectRoot: dir, defaultModel: "fable",
     env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}` },
     spawnProcess: async () => {
       assert.equal(progressed, true, "auth must not block sibling kill/drain timers");
       return { stdout: reply(), stderr: "", code: 0 };
     },
   });
-  try { assert.equal((await producer.produce(request())).outcome, "passed"); }
+  try { assert.equal((await producer.produce(request({ harness: "claude" }))).outcome, "passed"); }
   finally { clearTimeout(timer); await producer.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -170,7 +168,7 @@ test("close cancels and drains pending async authentication before model spawn",
     },
     spawnProcess: async () => { spawned++; return { stdout: reply(), stderr: "", code: 0 }; },
   });
-  const pending = producer.produce(request());
+  const pending = producer.produce(request({ harness: "claude" }));
   await probing;
   await producer.close();
   assert.equal((await pending).outcome, "cancelled");
@@ -303,11 +301,11 @@ test("closing a producer cancels and drains its active subprocesses", { timeout:
       return work;
     },
   });
-  const work = producer.produce(request());
+  const work = producer.produce(request({ harness: "claude" }));
   await launched;
   await producer.close();
   assert.equal((await work).outcome, "cancelled");
-  await assert.rejects(producer.produce(request()), /oneshot_producer_closed/);
+  await assert.rejects(producer.produce(request({ harness: "claude" })), /oneshot_producer_closed/);
 });
 
 test("audited pi one-shot dispatches toolless, ephemeral, with the qualified model id, and parses the NDJSON stream", async () => {
@@ -321,7 +319,6 @@ test("audited pi one-shot dispatches toolless, ephemeral, with the qualified mod
     ], provider: "qwen-token-plan", model: "qwen3.8-flash", usage: { input: 456, output: 28, cacheRead: 0, cacheWrite: 0 } } }),
   ].join("\n");
   const producer = createKxmOneShotProducer({
-    defaultHarness: "pi",
     probeHarness: () => ({
       id: "pi", label: "Pi", default: true, mode: "headless" as const,
       detected: true, authenticated: true, canUpdate: { self: false, extensions: false, models: false }, issues: [],
@@ -349,7 +346,6 @@ test("audited pi one-shot dispatches toolless, ephemeral, with the qualified mod
   // spawns as the full three-part id, not openrouter/qwen3-coder-plus.
   {
     const nsProducer = createKxmOneShotProducer({
-      defaultHarness: "pi",
       probeHarness: () => ({
         id: "pi", label: "Pi", default: true, mode: "headless" as const,
         detected: true, authenticated: true, canUpdate: { self: false, extensions: false, models: false }, issues: [],

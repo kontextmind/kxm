@@ -1764,7 +1764,7 @@ function prepareDispatch(
   for (const event of events) context.eventStore.appendEvent(event);
   const entered = foldStoredKxmRun(context, run);
   persistKxmRunState(context, runId, entered, events[events.length - 1]!.sequence);
-  const first = birthMember(context, {
+  const firstBirth = birthMember(context, {
     run,
     plan,
     step,
@@ -1775,6 +1775,10 @@ function prepareDispatch(
     resolvedRoute,
     dispatchSources,
   });
+  if ("handoff" in firstBirth) {
+    return { kind: "return", state: entered, handoff: firstBirth.handoff };
+  }
+  const first = firstBirth;
   return {
     kind: "panel",
     panel: {
@@ -1836,7 +1840,7 @@ function birthMember(
     resolvedRoute?: ResolvedProducerRoute | undefined;
     dispatchSources: DispatchContextSources;
   },
-): PreparedDispatch {
+): PreparedDispatch | { handoff: KxmRunHandoff } {
   const run = requireRun(context, input.run.runId);
   const folded = foldStoredKxmRun(context, run);
   if (!birthAllowed(folded, input.step)) {
@@ -1859,9 +1863,10 @@ function birthMember(
   let resolvedRoute = input.resolvedRoute;
   if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
     const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
-    if (!("error" in routeResult)) {
-      resolvedRoute = routeResult;
+    if ("error" in routeResult) {
+      return { handoff: { ...routeResult.error, stepId: input.stepId } };
     }
+    resolvedRoute = routeResult;
   }
   const dispatchContext = assembleDispatchContext(input.dispatchSources, {
     projectId: run.projectId,
@@ -1969,13 +1974,13 @@ function birthMember(
       allowedOutcomes: input.step.outcomes,
       signal: controller.signal,
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
-      thinking: resolvedRoute?.effort ?? (input.stepAttempt <= 1 ? "low" : "medium"),
       permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       ...((input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== undefined
         ? { timeoutMs: input.step.timeoutMs }
         : {}),
       contextPacket,
-      ...(resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}),
+      ...(resolvedRoute?.effort !== undefined ? { thinking: resolvedRoute.effort } : {}),
+      ...(resolvedRoute ? { harness: resolvedRoute.harness, provider: resolvedRoute.provider, model: resolvedRoute.model } : {}),
     },
     controller,
     state: next,
@@ -2168,13 +2173,14 @@ async function drivePanel(
     pending.set(member.attemptId, work);
   };
 
+  let routeHandoff: KxmRunHandoff | undefined;
   const tryBirth = (): PreparedDispatch | undefined => {
-    if (stopBirths) return undefined;
+    if (stopBirths || routeHandoff) return undefined;
     return context.eventStore.transaction(() => {
       const run = requireRun(context, runId);
       const state = foldStoredKxmRun(context, run);
       if (!birthAllowed(state, panel.step)) return undefined;
-      return birthMember(context, {
+      const born = birthMember(context, {
         run,
         plan: panel.plan,
         step: panel.step,
@@ -2183,6 +2189,11 @@ async function drivePanel(
         producerId: producer.id,
         dispatchSources: panel.dispatchSources,
       });
+      if ("handoff" in born) {
+        routeHandoff = born.handoff;
+        return undefined;
+      }
+      return born;
     });
   };
 
@@ -2229,6 +2240,10 @@ async function drivePanel(
       while (!stopBirths && !settlementFailed) {
         try {
           const next = tryBirth();
+          if (routeHandoff) {
+            stopBirths = true;
+            break;
+          }
           if (!next) break;
           launch(next);
         } catch {
@@ -2238,6 +2253,13 @@ async function drivePanel(
           const state = foldStoredKxmRun(context, requireRun(context, runId));
           return unreconciledHandoff(state, panel.stepId);
         }
+      }
+      if (routeHandoff) {
+        const handoff = routeHandoff;
+        abortOwned();
+        await drainPendingInvoked();
+        const state = foldStoredKxmRun(context, requireRun(context, runId));
+        return { state, handoff };
       }
       if (pending.size === 0) break;
       const finished = await Promise.race(pending.values());

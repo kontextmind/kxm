@@ -29,7 +29,6 @@ import {
 export interface KxmOneShotProducerOptions {
   projectRoot?: string | undefined;
   evidenceRoot?: string | undefined;
-  defaultHarness?: string | undefined;
   defaultModel?: string | undefined;
   defaultProvider?: string | undefined;
   inventory?: HarnessInventory | undefined;
@@ -39,9 +38,7 @@ export interface KxmOneShotProducerOptions {
   timeoutMs?: number | undefined;
   spawnProcess?: KxmOneShotSpawn | undefined;
   probeHarness?: ((options: Omit<HarnessAssignmentProbeOptions, "runCommand"> & { signal?: AbortSignal | undefined }) => HarnessStatus | Promise<HarnessStatus>) | undefined;
-  resolveHarness?: ((agentId: string, runId: string) => string | undefined) | undefined;
   resolveModel?: ((agentId: string, runId: string) => {
-    harness?: string | undefined;
     provider?: string | undefined;
     model?: string | undefined;
     thinking?: string | undefined;
@@ -66,21 +63,12 @@ function determineOutcome(text: string, allowedOutcomes: readonly string[]): str
 }
 
 export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}): KxmOneShotProducer {
-  const defaultHarness = options.defaultHarness ?? "claude";
   const running = new Map<AbortController, Promise<KxmProducerResult>>();
   let closed = false;
 
-  function resolveHarnessForRequest(request: KxmProducerRequest): string {
+  function requireHarness(request: KxmProducerRequest): string {
     if (request.harness) return request.harness;
-    if (options.resolveHarness) {
-      const resolved = options.resolveHarness(request.agentId, request.runId);
-      if (resolved) return resolved;
-    }
-    if (options.resolveModel) {
-      const resolved = options.resolveModel(request.agentId, request.runId);
-      if (resolved?.harness) return resolved.harness;
-    }
-    return defaultHarness;
+    throw new Error("producer_harness_required");
   }
 
   function parseModelString(spec: string, harness: string): { provider: string; model: string } {
@@ -155,7 +143,7 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
 
   async function executeRequest(request: KxmProducerRequest): Promise<KxmProducerResult> {
       const startTime = Date.now();
-      const harness = resolveHarnessForRequest(request);
+      const harness = requireHarness(request);
       const resolved = resolveModelForRequest(request, harness);
 
       if (closed) throw new Error("oneshot_producer_closed");

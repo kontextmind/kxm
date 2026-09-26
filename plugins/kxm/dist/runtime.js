@@ -25171,10 +25171,6 @@ function listRoleBindings(root) {
   }
   return result;
 }
-function isRouteAdmitted(root, modelId) {
-  const policy = loadRoutePolicy(root);
-  return policy.admitted.includes(modelId) && !policy.disabled.includes(modelId);
-}
 
 // plugins/kxm/src/worktree-witness.ts
 import { spawnSync as spawnSync4 } from "node:child_process";
@@ -29136,7 +29132,7 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
   for (const event of events) context.eventStore.appendEvent(event);
   const entered = foldStoredKxmRun(context, run);
   persistKxmRunState(context, runId, entered, events[events.length - 1].sequence);
-  const first = birthMember(context, {
+  const firstBirth = birthMember(context, {
     run,
     plan,
     step,
@@ -29147,6 +29143,10 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
     resolvedRoute,
     dispatchSources
   });
+  if ("handoff" in firstBirth) {
+    return { kind: "return", state: entered, handoff: firstBirth.handoff };
+  }
+  const first = firstBirth;
   return {
     kind: "panel",
     panel: {
@@ -29209,9 +29209,10 @@ function birthMember(context, input) {
   let resolvedRoute = input.resolvedRoute;
   if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
     const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
-    if (!("error" in routeResult)) {
-      resolvedRoute = routeResult;
+    if ("error" in routeResult) {
+      return { handoff: { ...routeResult.error, stepId: input.stepId } };
     }
+    resolvedRoute = routeResult;
   }
   const dispatchContext = assembleDispatchContext(input.dispatchSources, {
     projectId: run.projectId,
@@ -29318,11 +29319,11 @@ function birthMember(context, input) {
       prompt: input.step.instructions ? `${input.step.instructions}
 
 ${generatedPrompt}` : generatedPrompt,
-      thinking: resolvedRoute?.effort ?? (input.stepAttempt <= 1 ? "low" : "medium"),
       permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       ...(input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== void 0 ? { timeoutMs: input.step.timeoutMs } : {},
       contextPacket,
-      ...resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}
+      ...resolvedRoute?.effort !== void 0 ? { thinking: resolvedRoute.effort } : {},
+      ...resolvedRoute ? { harness: resolvedRoute.harness, provider: resolvedRoute.provider, model: resolvedRoute.model } : {}
     },
     controller,
     state: next
@@ -29467,13 +29468,14 @@ async function drivePanel(context, panel, producer) {
     })();
     pending.set(member.attemptId, work);
   };
+  let routeHandoff;
   const tryBirth = () => {
-    if (stopBirths) return void 0;
+    if (stopBirths || routeHandoff) return void 0;
     return context.eventStore.transaction(() => {
       const run = requireRun(context, runId);
       const state = foldStoredKxmRun(context, run);
       if (!birthAllowed(state, panel.step)) return void 0;
-      return birthMember(context, {
+      const born = birthMember(context, {
         run,
         plan: panel.plan,
         step: panel.step,
@@ -29482,6 +29484,11 @@ async function drivePanel(context, panel, producer) {
         producerId: producer.id,
         dispatchSources: panel.dispatchSources
       });
+      if ("handoff" in born) {
+        routeHandoff = born.handoff;
+        return void 0;
+      }
+      return born;
     });
   };
   const settleInvoked = (member, produced) => {
@@ -29525,6 +29532,10 @@ async function drivePanel(context, panel, producer) {
       while (!stopBirths && !settlementFailed) {
         try {
           const next = tryBirth();
+          if (routeHandoff) {
+            stopBirths = true;
+            break;
+          }
           if (!next) break;
           launch(next);
         } catch {
@@ -29534,6 +29545,13 @@ async function drivePanel(context, panel, producer) {
           const state = foldStoredKxmRun(context, requireRun(context, runId));
           return unreconciledHandoff(state, panel.stepId);
         }
+      }
+      if (routeHandoff) {
+        const handoff = routeHandoff;
+        abortOwned();
+        await drainPendingInvoked();
+        const state = foldStoredKxmRun(context, requireRun(context, runId));
+        return { state, handoff };
       }
       if (pending.size === 0) break;
       const finished = await Promise.race(pending.values());
@@ -30567,20 +30585,11 @@ function determineOutcome(text, allowedOutcomes) {
   return "failed";
 }
 function createKxmOneShotProducer(options = {}) {
-  const defaultHarness = options.defaultHarness ?? "claude";
   const running = /* @__PURE__ */ new Map();
   let closed = false;
-  function resolveHarnessForRequest(request) {
+  function requireHarness(request) {
     if (request.harness) return request.harness;
-    if (options.resolveHarness) {
-      const resolved = options.resolveHarness(request.agentId, request.runId);
-      if (resolved) return resolved;
-    }
-    if (options.resolveModel) {
-      const resolved = options.resolveModel(request.agentId, request.runId);
-      if (resolved?.harness) return resolved.harness;
-    }
-    return defaultHarness;
+    throw new Error("producer_harness_required");
   }
   function parseModelString(spec, harness) {
     const trimmed = spec.trim();
@@ -30642,7 +30651,7 @@ function createKxmOneShotProducer(options = {}) {
   }
   async function executeRequest(request) {
     const startTime = Date.now();
-    const harness = resolveHarnessForRequest(request);
+    const harness = requireHarness(request);
     const resolved = resolveModelForRequest(request, harness);
     if (closed) throw new Error("oneshot_producer_closed");
     const cancelled = () => ({
@@ -31892,24 +31901,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
             const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
             const createProducer = () => body.mode === "live" ? createKxmOneShotProducer({
               projectRoot,
-              timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs,
-              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
-              resolveHarness: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                return typeof agent?.value.harness === "string" ? agent.value.harness : void 0;
-              },
-              resolveModel: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                const model = agent?.value.model;
-                if (!model || typeof model !== "object" || Array.isArray(model)) return void 0;
-                const value = model;
-                const provider = typeof value.provider === "string" ? value.provider : void 0;
-                const modelName = typeof value.model === "string" ? value.model : void 0;
-                if (!provider || !modelName || !isRouteAdmitted(projectRoot, `${provider}/${modelName}`)) {
-                  throw new Error("producer_route_not_admitted");
-                }
-                return { provider, model: modelName };
-              }
+              timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs
             }) : createKxmSimulatedProducer(async () => {
               if (delayMs > 0) {
                 await new Promise((r) => setTimeout(r, delayMs));

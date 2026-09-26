@@ -28,7 +28,6 @@ import {
   type KxmRuntimeContext,
 } from "./runtime-service.ts";
 import { createKxmOneShotProducer } from "./oneshot-producer.ts";
-import { isRouteAdmitted } from "./routes.ts";
 import { KxmRunScheduler, createKxmSimulatedProducer, recordDriveReceipt, recoverKxmRun, kxmDrivePollProjection } from "./engine.ts";
 import { kxmDriveSession, kxmOpenDriveSessions } from "./runtime-owner.ts";
 import { RuntimeHubClient, HubHttpError, type SyncPushResponse } from "./client.ts";
@@ -919,23 +918,6 @@ async function startKxmRuntimeSupervisorInner(
               ? createKxmOneShotProducer({
                   projectRoot,
                   timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs,
-                  defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
-                  resolveHarness: (agentId) => {
-                    const agent = bundle.agents.get(agentId);
-                    return typeof agent?.value.harness === "string" ? agent.value.harness : undefined;
-                  },
-                  resolveModel: (agentId) => {
-                    const agent = bundle.agents.get(agentId);
-                    const model = agent?.value.model;
-                    if (!model || typeof model !== "object" || Array.isArray(model)) return undefined;
-                    const value = model as Record<string, unknown>;
-                    const provider = typeof value.provider === "string" ? value.provider : undefined;
-                    const modelName = typeof value.model === "string" ? value.model : undefined;
-                    if (!provider || !modelName || !isRouteAdmitted(projectRoot, `${provider}/${modelName}`)) {
-                      throw new Error("producer_route_not_admitted");
-                    }
-                    return { provider, model: modelName };
-                  },
                 })
               : createKxmSimulatedProducer(async () => {
                   if (delayMs > 0) {

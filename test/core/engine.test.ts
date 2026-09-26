@@ -1330,7 +1330,7 @@ test("a producer that throws is recorded as itself, with its reason", async () =
   }
 });
 
-test("a live drive resolves the producer route from the agent role roster", async () => {
+test("a live drive request carries the route harness, provider, and model", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-agent-model-route-");
   try {
     const agentFile = (name: string, role: string) => [
@@ -1416,12 +1416,12 @@ test("a live drive resolves the producer route from the agent role roster", asyn
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
       const scheduler = KxmRunScheduler.for(context, bundle);
-      const seen: Array<{ provider?: string | undefined; model?: string | undefined }> = [];
+      const seen: Array<{ harness?: string | undefined; provider?: string | undefined; model?: string | undefined }> = [];
       const inner = createKxmSimulatedProducer(async () => ({ outcome: "passed" }));
       const producer = {
         id: "pi" as const,
         produce: (request: Parameters<typeof inner.produce>[0]) => {
-          seen.push({ provider: request.provider, model: request.model });
+          seen.push({ harness: request.harness, provider: request.provider, model: request.model });
           return inner.produce(request);
         },
         close: async () => undefined,
@@ -1432,7 +1432,7 @@ test("a live drive resolves the producer route from the agent role roster", asyn
       const session = await scheduler.openDriveSession(accepted.run.runId, { mode: "live", createProducer: () => producer });
       const result = await session.settled;
       assert.equal(result.state.status, "completed", "the declared route lets the drive run instead of handing off");
-      assert.deepEqual(seen, [{ provider: "xai", model: "grok-4.6" }], "the producer received the agent's declared provider/model");
+      assert.deepEqual(seen, [{ harness: "grok", provider: "xai", model: "grok-4.6" }], "the producer received the route harness, provider, and model");
 
       // Namespaced model ids stay whole: both fields must survive the selector split.
       const namespacedAccepted = acceptKxmRun(context, bundle, { workflowId: "namespaced", prompt: "namespaced witness" });
@@ -1440,8 +1440,134 @@ test("a live drive resolves the producer route from the agent role roster", asyn
       const namespacedSession = await scheduler.openDriveSession(namespacedAccepted.run.runId, { mode: "live", createProducer: () => producer });
       const namespacedResult = await namespacedSession.settled;
       assert.equal(namespacedResult.state.status, "completed", "a namespaced model id is a valid declaration, not an absence");
-      assert.deepEqual(seen, [{ provider: "openrouter", model: "qwen/qwen3-coder-plus" }], "both fields survive the selector round-trip");
+      assert.deepEqual(seen, [{ harness: "grok", provider: "openrouter", model: "qwen/qwen3-coder-plus" }], "harness, provider, and the namespaced model all survive");
 
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live dispatch thinking is the roster effort and is absent when the roster entry has none", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-roster-effort-");
+  try {
+    writeFileSync(join(root, ".kxm", "roles", "measured.yaml"), `schema: kxm.role.v2
+id: measured
+purpose: experiment
+permission: read-only
+description: effort witness
+roster:
+  - route: grok-default
+    effort: high
+`);
+    writeFileSync(join(root, ".kxm", "agents", "measured.yaml"), `schema: kxm.agent.v1
+purpose: Effort witness.
+role: measured
+tools:
+  preset: read-only
+defaultRepositoryAccess: none
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
+    writeFileSync(join(root, ".kxm", "workflows", "measured.yaml"), `schema: kxm.workflow.v1
+description: Effort witness.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: measured
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const seen: Array<{ agentId: string; thinking?: string | undefined }> = [];
+      const producer = {
+        id: "oneshot" as const,
+        async produce(request: { agentId: string; thinking?: string | undefined }) {
+          seen.push({ agentId: request.agentId, thinking: request.thinking });
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(producer as never);
+      const plain = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "no effort" });
+      pinKxmCompiledPlan(context, bundle, plain.run.runId);
+      const plainDrive = await driveKxmRun(context, plain.run.runId, producer as never);
+      assert.equal(plainDrive.handoff, undefined);
+      assert.equal(plainDrive.state.status, "completed");
+      assert.equal(seen[0]?.agentId, "implementer");
+      assert.equal(seen[0]?.thinking, undefined);
+
+      const measured = acceptKxmRun(context, bundle, { workflowId: "measured", prompt: "with effort" });
+      pinKxmCompiledPlan(context, bundle, measured.run.runId);
+      const measuredDrive = await driveKxmRun(context, measured.run.runId, producer as never);
+      assert.equal(measuredDrive.handoff, undefined);
+      assert.equal(measuredDrive.state.status, "completed");
+      assert.equal(seen[1]?.agentId, "measured");
+      assert.equal(seen[1]?.thinking, "high");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a later panel member whose route resolution fails takes step_unsupported instead of dispatching", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-panel-route-");
+  try {
+    writeFileSync(join(root, ".kxm", "agents", "unrouted.yaml"), `schema: kxm.agent.v1
+purpose: Panel member with no role.
+tools:
+  preset: read-only
+defaultRepositoryAccess: none
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
+    writePanelWorkflow(root, "panel-route", {
+      maximum: 2,
+      target: 2,
+      maxParallel: 2,
+      allowedAgents: "allowedAgents: [implementer, unrouted]",
+    });
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const seen: Array<{ agentId: string; harness?: string | undefined; provider?: string | undefined; model?: string | undefined }> = [];
+      const producer = {
+        id: "oneshot" as const,
+        async produce(request: { agentId: string; harness?: string | undefined; provider?: string | undefined; model?: string | undefined }) {
+          seen.push({
+            agentId: request.agentId,
+            harness: request.harness,
+            provider: request.provider,
+            model: request.model,
+          });
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(producer as never);
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "panel-route", prompt: "panel route" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      const result = await driveKxmRun(context, accepted.run.runId, producer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "model");
+      assert.equal(result.handoff?.stepId, "only");
+      assert.deepEqual(seen, [{ agentId: "implementer", harness: "grok", provider: "xai", model: "grok-4.6" }]);
+      const created = context.eventStore.events(accepted.run.runId, 0, 10_000)
+        .filter((event) => event.eventType === "assignment.created");
+      assert.equal(created.length, 1);
+      assert.equal(created[0]?.payload.agentId, "implementer");
     } finally {
       closeKxmRuntimeContext(context);
     }
@@ -4870,7 +4996,6 @@ ${timeout}    on:
     const producer = createKxmOneShotProducer({
       projectRoot: root,
       evidenceRoot,
-      defaultHarness: "grok",
       timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs,
       probeHarness: authenticated,
       spawnProcess: async (_command, _args, options) => {
