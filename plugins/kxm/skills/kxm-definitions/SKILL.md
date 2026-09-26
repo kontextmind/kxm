@@ -28,7 +28,7 @@ changes every project or the trusted developer runner.
 |---|---|---|
 | `kxm role list` | List configured roles | `--scope all\|global\|local` |
 | `kxm role get <roleId>` | Read role YAML and details | `--scope all\|global\|local` |
-| `kxm role add [roleId]` | Add a YAML definition or construct a role | `--file`, `--description`, `--skills`, `--harness`, `--model`, `--scope`, `--overwrite`, `--pick` |
+| `kxm role add [roleId]` | Add a YAML definition or construct a role | `--file`, `--description`, `--skills`, `--route` (repeatable; the first id is primary and must name `.kxm/models/<route-id>.yaml`), `--scope`, `--overwrite`, `--pick` |
 | `kxm role modify [roleId]` | Change description, skill references, or the route roster | `--description`, `--add-skill`, `--remove-skill`, `--add-route <route-id>`, `--remove-route <route-id>`, `--scope`, `--pick` |
 | `kxm role remove [roleId]` | Remove a definition | `--scope`, `--pick` |
 | `kxm role resume <runId> [ruling]` | Resume an audit-escalated run with an operator directive | `[ruling]` free text |

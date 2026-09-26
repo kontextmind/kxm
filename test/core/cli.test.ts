@@ -608,6 +608,24 @@ test("KXM init joins with repeated CLI member bindings stored outside Git", asyn
   }
 });
 
+test("kxm role add refuses a --route that is not a file under .kxm/models", async () => {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-add-route-")));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-role-add-route-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JROLEADDROUTE000000000", projectName: "Role route" });
+    const env = { KXM_STATE_HOME: stateRoot, KXM_USER_CONFIG_DIR: join(stateRoot, "user-config") };
+    const io = capture();
+    const code = await runCli(["role", "add", "reviewer", "--route", "missing-route", "--description", "Reviewer"], env, io, cwd);
+    assert.equal(code, 1);
+    assert.match(io.read().stderr, /kxm: route 'missing-route' is not a file under \.kxm\/models\//);
+    assert.equal(existsSync(join(cwd, ".kxm", "roles", "reviewer.yaml")), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("the deleted kxm migrate surface stays deleted: unknown command, not a silent no-op", async () => {
   const io = capture();
   const code = await runCli(["migrate", "plan", "--json"], {}, io, process.cwd());

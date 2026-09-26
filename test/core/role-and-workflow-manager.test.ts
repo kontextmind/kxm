@@ -261,8 +261,7 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
       "role", "add", "qa-lead",
       "--description", "Quality Assurance Lead",
       "--skills", "testing,e2e",
-      "--harness", "grok",
-      "--model", "grok-default",
+      "--route", "grok-default",
       "--scope", "local",
     ], env, addLocalIo.io, tempRepoDir);
     assert.equal(addLocalCode, 0);
@@ -774,7 +773,7 @@ test("workflow add --pick <global-id> copies that global definition into the pro
   }
 });
 
-test("role add --pick <global-id> copies that global role into the project, with --description, --skills and --model applied over it", async () => {
+test("role add --pick <global-id> copies that global role into the project, with --description, --skills and --route applied over it", async () => {
   const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
   const root = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-pick-global-")));
   const project = join(root, "project");
@@ -803,7 +802,7 @@ test("role add --pick <global-id> copies that global role into the project, with
     assert.equal((await kxm(["init", "--project-id", "prj_01JROLEPICKGLOBAL00000000", "--name", "Role pick"])).code, 0);
 
     // A global role arrives in the project as written, not as an empty role under its id.
-    const kept = await kxm(["role", "add", "qa-lead", "--scope", "global", "--description", "QA lead", "--skills", "testing,e2e", "--model", "grok-default"]);
+    const kept = await kxm(["role", "add", "qa-lead", "--scope", "global", "--description", "QA lead", "--skills", "testing,e2e", "--route", "grok-default"]);
     assert.equal(kept.code, 0, kept.err);
     const picked = await kxm(["role", "add", "--pick", "qa-lead"]);
     assert.equal(picked.code, 0, picked.err);
@@ -825,7 +824,7 @@ test("role add --pick <global-id> copies that global role into the project, with
       "  - route: sol-codex",
       "",
     ].join("\n"));
-    const overridden = await kxm(["role", "add", "--pick", "reviewer", "--description", "Project reviewer", "--skills", "review,security", "--model", "fable-default"]);
+    const overridden = await kxm(["role", "add", "--pick", "reviewer", "--description", "Project reviewer", "--skills", "review,security", "--route", "fable-default"]);
     assert.equal(overridden.code, 0, overridden.err);
     const copy = parseRoleFile(join(roles, "reviewer.yaml"));
     assert.equal(copy?.description, "Project reviewer");
@@ -890,7 +889,8 @@ test("role add writes a local role only at the project root, and only if the pro
     }
 
     // With the implementer's model, from a subdirectory, the role lands where the loader reads it.
-    const added = await kxm(["role", "add", "--pick", "writer", "--model", "fable-agent"], join(project, "sub"));
+    writeFileSync(join(project, ".kxm", "models", "fable-agent.yaml"), "schema: kxm.model.v2\nid: fable-agent\nharness: claude\nmodel: claude-fable-5-1\nvendor: anthropic\nstatus: admitted\npermissions:\n  - edit\n");
+    const added = await kxm(["role", "add", "--pick", "writer", "--route", "fable-agent"], join(project, "sub"));
     assert.equal(added.code, 0, added.err);
     assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, join(roles, "writer.yaml"));
     assert.equal(existsSync(join(project, "sub", ".kxm")), false);
@@ -899,7 +899,7 @@ test("role add writes a local role only at the project root, and only if the pro
     // A conflicting writer left on disk is judged by what replaces it, so --overwrite repairs it.
     writeFileSync(join(roles, "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\ndescription: Conflicting writer.\nroster:\n  - route: grok-default\n");
     assert.throws(() => loadKxmProject(project), /role_roster_conflicts_with_agent/);
-    const repaired = await kxm(["role", "add", "writer", "--model", "fable-agent", "--overwrite"]);
+    const repaired = await kxm(["role", "add", "writer", "--route", "fable-agent", "--overwrite"]);
     assert.equal(repaired.code, 0, repaired.err);
     assert.ok(loadKxmProject(project));
   } finally {

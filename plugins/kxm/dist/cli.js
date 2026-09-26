@@ -33325,7 +33325,7 @@ async function cmdRoleAdd(runtime, roleId, options) {
         }
       }
     }
-    const picked = await resolvePickItem(runtime.io, `Select a role template to add (${scope})`, candidates, options.pick, runtime.env);
+    const picked = await resolvePickItem(runtime.io, `Select a global role to add (${scope})`, candidates, options.pick, runtime.env);
     if (!picked) {
       if (!roleId) {
         runtime.io.stderr("role add failed: missing roleId or pick selection\n");
@@ -33337,7 +33337,19 @@ async function cmdRoleAdd(runtime, roleId, options) {
     }
   }
   const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
-  const roster = options.model ? [{ route: options.model }] : void 0;
+  const routes = (options.route ?? []).filter((route) => route.length > 0);
+  const roster = routes.length > 0 ? routes.map((route) => ({ route })) : void 0;
+  if (roster && !options.file) {
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+    for (const entry of roster) {
+      const modelFile = join22(projectRoot, ".kxm", "models", `${entry.route}.yaml`);
+      if (!existsSync20(modelFile)) {
+        runtime.io.stderr(`kxm: route '${entry.route}' is not a file under .kxm/models/
+`);
+        return 1;
+      }
+    }
+  }
   const purpose = rolePurposeForId(roleId ?? "experiment");
   let roleDef;
   if (options.file) {
@@ -50076,7 +50088,7 @@ var SUBCOMMANDS = {
   goal: ["create", "list", "get"],
   task: ["create", "list", "get", "run", "sync"],
   studio: ["layout", "serve"],
-  role: ["list", "get", "add", "remove", "modify", "hosts", "set-host", "resume"]
+  role: ["list", "get", "add", "remove", "modify", "resume"]
 };
 function generateShellCompletion(shell) {
   switch (shell) {
@@ -52359,7 +52371,7 @@ function createProgram(ctx, result, argv) {
   addGlobalOptions(role.command("get <roleId>").description("Get role definition YAML and details")).option("--scope <scope>", "Filter by scope: all, global, or local", "all").action(async function roleGetAction(roleId, options) {
     result.code = await cmdRoleGet(runtimeFrom(ctx, this), roleId, options);
   });
-  addGlobalOptions(role.command("add [roleId]").description("Add a role definition to global or local configuration")).option("--file <path>", "Path to YAML role definition file").option("--description <text>", "Role description").option("--skills <skills>", "Comma-separated skills list").option("--harness <harness>", "Primary harness name (e.g. grok, claude, agy, pi)").option("--model <model>", "Primary model identifier (e.g. grok-4.6, fable, gemini-3.8-flash-high)").option("--scope <scope>", "Configuration scope: global or local (default: local)", "local").option("--overwrite", "Overwrite existing role definition if present").option("--pick [selection]", "Pick from available role templates (index or id)").action(async function roleAddAction(roleId, options) {
+  addGlobalOptions(role.command("add [roleId]").description("Add a role definition to global or local configuration")).option("--file <path>", "Path to YAML role definition file").option("--description <text>", "Role description").option("--skills <skills>", "Comma-separated skills list").option("--route <route-id>", "Route id under .kxm/models/. Repeat to set the roster; the first id is primary", (value, previous) => (previous ?? []).concat(value)).option("--scope <scope>", "Configuration scope: global or local (default: local)", "local").option("--overwrite", "Overwrite existing role definition if present").option("--pick [selection]", "Pick a global role to copy (index or id)").action(async function roleAddAction(roleId, options) {
     result.code = await cmdRoleAdd(runtimeFrom(ctx, this), roleId, options ?? {});
   });
   addGlobalOptions(role.command("remove [roleId]").description("Remove a role definition")).option("--scope <scope>", "Configuration scope: global or local (default: local)", "local").option("--pick [selection]", "Pick a role to remove (index or id)").action(async function roleRemoveAction(roleId, options) {

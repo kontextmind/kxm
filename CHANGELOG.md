@@ -142,8 +142,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   `schemas/role.schema.json` and `schemas/model.schema.json` are the files
   `kxm config` validates. Each admitted roster route is a
   `.kxm/models/<route-id>.yaml` (`harness`, `model`, `vendor`, `status`,
-  `permissions`, and `origin` when the route records one). `kxm role modify`
-  takes `--add-route <route-id>` and `--remove-route <route-id>`. Adding a
+  `permissions`, and `origin` when the route records one). Native routes may now carry an `origin` block; the validator's `origin_unexpected` refusal was removed. `kxm role modify`
+  takes `--add-route <route-id>` and `--remove-route <route-id>`. `kxm role add`
+  takes repeatable `--route <route-id>` (the first id is primary) instead of
+  `--harness` and `--model`. Adding a
   route exits 1 when `.kxm/models/<route-id>.yaml` is missing
   (`kxm: route '<route-id>' is not a file under .kxm/models/`).
   The writer roster again includes `google/gemini-3.8-flash-high` as

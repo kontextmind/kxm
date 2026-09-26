@@ -1023,7 +1023,7 @@ Opens an interactive screen over `.kxm/models/inventory.yaml` that shows each mo
 
 - Needs an interactive terminal. With `--json` or without a TTY it exits 2 with `interactive_tty_required`.
 - `r` and `x` also mark the model `admitted` in `.kxm/routes.yaml`. So `x` re-admits a disabled route while it removes the role binding, and `r` admits the route as well as binding it.
-- `r` writes a roster entry `{model: <inventory id>, enabled: true}` with no harness, creating the role file if needed. The inventory id is often a bare model (`grok-4.6`), which the Runtime's roster check does not match against an agent's `provider/model`; edit the entry to the full selector.
+- `r` binds the role only when a `kxm.model.v2` file matches the inventory id (`model`, or `vendor/model`). It appends `{route: <route-id>}` and creates a v2 role file when the role is new. A selector with no matching model file is refused with `unknown route` before either file is written. `kxm models` does not write a v1 roster entry.
 
 ```bash
 kxm models --json
@@ -1151,7 +1151,9 @@ kxm routes disable --dry-run --json
 
 ## `kxm role`
 
-Manages role definitions (`kxm.role.v2`) and role-seat host bindings (`kxm.role.v2`). Local scope is `.kxm/roles/` and `.kxm/roles` in the current directory; global scope is `<KXM_USER_CONFIG_DIR>/roles/` and `<KXM_USER_CONFIG_DIR>/roles`. A local role with the same ID overrides a global one. `kxm role` with no subcommand runs `role list`. For `--pick` without a value on a non-interactive shell, set `KXM_PICK_SELECT` to an index or ID. Errors from this group are plain text on stderr, even with `--json`.
+Manages role definitions (`kxm.role.v2`). A role file is `.kxm/roles/<role>.yaml` in the project, or `<KXM_USER_CONFIG_DIR>/roles/<role>.yaml` for global scope. A local role with the same ID overrides a global one. `kxm role` with no subcommand runs `role list`. For `--pick` without a value on a non-interactive shell, set `KXM_PICK_SELECT` to an index or ID. Errors from this group are plain text on stderr, even with `--json`.
+
+A roster entry is `{route, effort, mode}`. `route` names `.kxm/models/<route-id>.yaml`. The first entry is the primary route. `kxm role add --route` writes that roster. `kxm role modify --add-route` and `--remove-route` change it.
 
 ### `kxm role list`
 
@@ -1198,29 +1200,26 @@ Not run with a configured role; in a fresh project it exits 1 with `kxm: role 'w
 ### `kxm role add`
 
 ```text
-kxm role add [roleId] [--file <path>] [--description <text>] [--skills <skills>] [--harness <harness>] [--model <model>] [--scope global|local] [--overwrite] [--pick [selection]]
+kxm role add [roleId] [--file <path>] [--description <text>] [--skills <skills>] [--route <route-id>] [--scope global|local] [--overwrite] [--pick [selection]]
 ```
 
-Adds a role definition. Without a role ID, or with `--pick`, you choose from the built-in templates (`writer`, `planner`, `critic-arch`, `critic-cli`, `verifier`) and, for local scope, existing global roles; a global role with a template's ID is not offered. The choice is written under its own ID with its content: the template, or a copy of the global role's file, with `--description`, `--skills`, and `--model` (with `--harness`) replacing its description, skills, and roster. With `--file`, the YAML file is used and its `id` is replaced by the role ID. Otherwise a role with only the given options is written.
+Adds a role definition. Without a role ID, or with `--pick`, local scope offers existing global roles. The choice is written under its own ID: a copy of the global role file, with `--description`, `--skills`, and `--route` replacing its description, skills, and roster. Repeat `--route`. The first id is the primary roster entry. With `--file`, the YAML file is used and its `id` is replaced by the role ID. `--route` does not replace the file's roster. Otherwise a role with only the given options is written.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--file` | `<path>` | none | Path to YAML role definition file |
 | `--description` | `<text>` | `Role <id>` | Role description |
 | `--skills` | `<skills>` | none | Comma-separated skills list |
-| `--harness` | `<harness>` | `pi` when `--model` is set | Primary harness name (e.g. grok, claude, agy, pi) |
-| `--model` | `<model>` | none | Primary model identifier (e.g. grok-4.6, fable, gemini-3.8-flash-high) |
+| `--route` | `<route-id>` | none | Route id under `.kxm/models/`. Repeatable. The first id is primary |
 | `--scope` | `<scope>` | `local` | Configuration scope: global or local (default: local) |
 | `--overwrite` | none | off | Overwrite existing role definition if present |
-| `--pick` | `[selection]` | none | Pick from available role templates (index or id) |
+| `--pick` | `[selection]` | none | Pick a global role to copy (index or id) |
 
-- Writes `<scope dir>/roles/<id>.yaml`. `--dry-run` plans the write and writes nothing.
-- Local scope belongs to a KXM project: the file lands in the project root's `.kxm/roles/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new role in place of any file of that ID. The loader reads only `writer.yaml`, whose enabled roster must include the `implementer` agent's model (see [Roles](config-reference.md#kxmrolesroleyaml-kxmrolev1)). If the project would not load, the command refuses with `role_invalid`, lists each issue and writes nothing, also under `--dry-run`, and `--overwrite` replaces a `writer.yaml` the loader refuses. Global scope is not checked, because no loader reads it.
-- Refusals exit 2 and honor `--json`: `project_not_found` and `role_invalid` (with `issues`, each `{phase, code, file, message}`). An existing role without `--overwrite` exits 1 with a plain `role add failed: role_already_exists: ...` line, also under `--dry-run`.
+- Writes `.kxm/roles/<id>.yaml` in local scope, or `<KXM_USER_CONFIG_DIR>/roles/<id>.yaml` in global scope. `--dry-run` plans the write and writes nothing.
+- Each `--route` is checked the same way as `kxm role modify --add-route`. If `.kxm/models/<route-id>.yaml` is missing, the command exits 1 and writes `kxm: route '<route-id>' is not a file under .kxm/models/` to stderr. It does not write the role file, including under `--dry-run`.
+- Local scope belongs to a KXM project: the file lands in the project root's `.kxm/roles/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new role in place of any file of that ID. The loader reads only `writer.yaml`, whose roster must name a route whose model is the `implementer` agent's model (see [Roles](config-reference.md#kxmrolesroleyaml-kxmrolev2)). If the project would not load, the command refuses with `role_invalid`, lists each issue and writes nothing, also under `--dry-run`, and `--overwrite` replaces a `writer.yaml` the loader refuses. Global scope is not checked, because no loader reads it.
+- Refusals exit 2 and honor `--json`: `project_not_found` and `role_invalid` (with `issues`, each `{phase, code, file, message}`). A missing `--route` file, and an existing role without `--overwrite`, exit 1 with a plain stderr line, also under `--dry-run` (`kxm: route '<route-id>' is not a file under .kxm/models/`, or `role add failed: role_already_exists: ...`).
 - JSON keys: `roleId`, `id`, `filePath`, `scope`.
-
-> [!WARNING]
-> Most built-in template entries, and `--model` as you type it, are bare model IDs such as `grok-4.6`, `fable`, and `gemini-2.5-pro`. The Runtime's roster check needs the agent's full `provider/model` selector, so a live attempt under a local `writer.yaml` copied from the template is refused (`producer_route_unsupported: … not in role 'writer' roster`). Write `--model xai/grok-4.6`, or edit the entries to full selectors, before you drive live runs.
 
 ```bash
 kxm role add demo-role --description "Demo role" --dry-run --json
@@ -1230,14 +1229,14 @@ kxm role add demo-role --description "Demo role" --dry-run --json
 {"schema":"kxm.cli-result.v1","ok":true,"command":"role add","roleId":"demo-role","id":"demo-role","filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
 ```
 
-Add a reviewer role with a Claude model, and copy a built-in template into global scope (Not run):
+Add a reviewer whose primary route is `fable-claude`, with `grok-native` second (Not run):
 
 ```bash
-kxm role add reviewer --description "Independent reviewer" --harness claude --model fable --skills kxm
+kxm role add reviewer --description "Independent reviewer" --route fable-claude --route grok-native --skills kxm
 ```
 
 ```bash
-kxm role add --pick critic-arch --scope global
+kxm role add --pick reviewer --scope local
 ```
 
 ### `kxm role remove`

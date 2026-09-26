@@ -145,8 +145,7 @@ export async function cmdRoleAdd(
     file?: string | undefined;
     description?: string | undefined;
     skills?: string | undefined;
-    harness?: string | undefined;
-    model?: string | undefined;
+    route?: string[] | undefined;
     scope?: "global" | "local" | undefined;
     overwrite?: boolean | undefined;
     pick?: string | boolean | undefined;
@@ -166,7 +165,7 @@ export async function cmdRoleAdd(
         }
       }
     }
-    const picked = await resolvePickItem(runtime.io, `Select a role template to add (${scope})`, candidates, options.pick, runtime.env);
+    const picked = await resolvePickItem(runtime.io, `Select a global role to add (${scope})`, candidates, options.pick, runtime.env);
     if (!picked) {
       if (!roleId) {
         runtime.io.stderr("role add failed: missing roleId or pick selection\n");
@@ -179,7 +178,20 @@ export async function cmdRoleAdd(
   }
 
   const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
-  const roster = options.model ? [{ route: options.model }] : undefined;
+  const routes = (options.route ?? []).filter((route) => route.length > 0);
+  const roster = routes.length > 0 ? routes.map((route) => ({ route })) : undefined;
+  // --file carries its own roster. A constructed or copied role takes --route, and the
+  // first id is the primary. A missing model file is the same refusal as modify --add-route.
+  if (roster && !options.file) {
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+    for (const entry of roster) {
+      const modelFile = join(projectRoot, ".kxm", "models", `${entry.route}.yaml`);
+      if (!existsSync(modelFile)) {
+        runtime.io.stderr(`kxm: route '${entry.route}' is not a file under .kxm/models/\n`);
+        return 1;
+      }
+    }
+  }
   const purpose = rolePurposeForId(roleId ?? "experiment");
   let roleDef: KxmRoleDefinition;
   if (options.file) {

@@ -1006,13 +1006,14 @@ roster:
     effort: medium
 ```
 
-`kxm role modify <role> --add-route <route-id>` appends a route that already
+`kxm role add --route <route-id>` writes the roster. Repeat the option; the first id is primary. `kxm role modify <role> --add-route <route-id>` appends a route that already
 has a model file. `--remove-route <route-id>` drops one. Validated with
 `kxm config` and `kxm role list --json`.
 
-Commands: `kxm role list|get|add|remove|modify` (`--scope global|local`);
-`kxm models` (interactive) adds or removes `{model, enabled: true}` entries
-while admitting a route; the Runtime reads rosters on every live attempt.
+`kxm models` does not write a v1 roster entry (a model id with an enabled flag). Its `r` and `x` keys call `setRouteState`, which appends `{route}` only when a `kxm.model.v2` file matches the inventory id. A selector with no matching model file is the `unknown route` path: the role file is left unchanged.
+
+Commands: `kxm role list|get|add|remove|modify` (`--scope global|local`, and `add --route`, `modify --add-route`, `modify --remove-route`);
+the Runtime reads rosters on every live attempt.
 
 ## `.kxm/routes.yaml` (`kxm.routes.v2`)
 

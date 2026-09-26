@@ -1025,12 +1025,11 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
     .option("--file <path>", "Path to YAML role definition file")
     .option("--description <text>", "Role description")
     .option("--skills <skills>", "Comma-separated skills list")
-    .option("--harness <harness>", "Primary harness name (e.g. grok, claude, agy, pi)")
-    .option("--model <model>", "Primary model identifier (e.g. grok-4.6, fable, gemini-3.8-flash-high)")
+    .option("--route <route-id>", "Route id under .kxm/models/. Repeat to set the roster; the first id is primary", (value: string, previous: string[] | undefined) => (previous ?? []).concat(value))
     .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
     .option("--overwrite", "Overwrite existing role definition if present")
-    .option("--pick [selection]", "Pick from available role templates (index or id)")
-    .action(async function roleAddAction(this: Command, roleId?: string, options?: { file?: string; description?: string; skills?: string; harness?: string; model?: string; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean }) {
+    .option("--pick [selection]", "Pick a global role to copy (index or id)")
+    .action(async function roleAddAction(this: Command, roleId?: string, options?: { file?: string; description?: string; skills?: string; route?: string[]; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean }) {
       result.code = await cmdRoleAdd(runtimeFrom(ctx, this), roleId, options ?? {});
     });
   addGlobalOptions(role.command("remove [roleId]").description("Remove a role definition"))
