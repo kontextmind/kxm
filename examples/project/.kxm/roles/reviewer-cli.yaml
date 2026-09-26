@@ -1,0 +1,8 @@
+schema: kxm.role.v2
+id: reviewer-cli
+purpose: reviewer-cli
+permission: read-only
+description: Independent CLI and docs critic for the example project.
+roster:
+  - route: implementation
+    effort: low

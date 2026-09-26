@@ -82,7 +82,7 @@ test("production KXM loader discovers and resolves the complete fixture determin
     assert.equal(first.project.value.id, "prj_01JPROJECT00000000000000000");
     assert.deepEqual([...first.repositories.keys()].sort(), ["api", "control", "web"]);
     assert.deepEqual([...first.workflows.keys()].sort(), ["default", "fix", "improve"]);
-    assert.equal(first.resources.length, 23);
+    assert.equal(first.resources.length, 27);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -100,7 +100,7 @@ kxm -V
 
 `--dry-run` changes nothing: no file is written, deleted, or moved, no request that changes hub or Runtime state is sent, no process is started, and no remote command runs. A command that cannot say what it would do without doing some of it refuses the flag instead of acting.
 
-- Plan with `planned`: `backup`, `restore`, `config set`, `role add|remove|modify|set-host|resume`, `workflow add|remove|modify`, `goal create`, `task create|run|sync`, `memory note|sync`, `skills evaluate|promote|reject`, `context promote`, `context wiki-compile --out`, `auth token`, `session token`, `session brief`, and `ssh run|file|close`. Each prints its normal result plus `dryRun: true` and `planned`, a list of `{action, target}` entries whose `action` is `write`, `delete`, `move`, `request`, or `ssh`. Text mode prints `dry run: <summary>` and one indented `would <action> <target>` line per entry (`session brief` appends `dry run: would write <file>` lines to the brief instead).
+- Plan with `planned`: `backup`, `restore`, `config set`, `role add|remove|modify|resume`, `workflow add|remove|modify`, `goal create`, `task create|run|sync`, `memory note|sync`, `skills evaluate|promote|reject`, `context promote`, `context wiki-compile --out`, `auth token`, `session token`, `session brief`, and `ssh run|file|close`. Each prints its normal result plus `dryRun: true` and `planned`, a list of `{action, target}` entries whose `action` is `write`, `delete`, `move`, `request`, or `ssh`. Text mode prints `dry run: <summary>` and one indented `would <action> <target>` line per entry (`session brief` appends `dry run: would write <file>` lines to the brief instead).
 - Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `docs build|serve`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, and `improve report`. `gate github watch --dry-run` still polls GitHub but does not post the signal.
 - Read-only commands run as usual, without leaving a trace: a local SQLite store is opened without creating `-wal` or `-shm` files, and `runs status|list|receipt` only attach to a running Runtime supervisor. With no supervisor running they exit 2 with `dry_run_unsupported` instead of starting one. `context wiki-compile --dry-run` still asks the hub to compile, which is a read.
 - Refused: `kxm models` (the interactive screen) and `kxm prices acknowledge` exit 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
@@ -1267,22 +1267,22 @@ kxm role remove demo-role --dry-run --json
 ### `kxm role modify`
 
 ```text
-kxm role modify [roleId] [--description <text>] [--add-skill <skill>] [--remove-skill <skill>] [--add-model <harness:model>] [--remove-model <model>] [--scope global|local] [--pick [selection]]
+kxm role modify [roleId] [--description <text>] [--add-skill <skill>] [--remove-skill <skill>] [--add-route <route-id>] [--remove-route <route-id>] [--scope global|local] [--pick [selection]]
 ```
 
-Updates an existing role's description, skills, or model roster and rewrites its file.
+Updates an existing role's description, skills, or route roster and rewrites its file.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--description` | `<text>` | unchanged | Updated description |
 | `--add-skill` | `<skill>` | none | Skill to add |
 | `--remove-skill` | `<skill>` | none | Skill to remove |
-| `--add-model` | `<harness:model>` | none | Model to add to roster |
-| `--remove-model` | `<model>` | none | Model to remove from roster |
+| `--add-route` | `<route-id>` | none | Route id to add. Must be `.kxm/models/<route-id>.yaml` |
+| `--remove-route` | `<route-id>` | none | Route id to remove from the roster |
 | `--scope` | `<scope>` | first match | Configuration scope: global or local |
 | `--pick` | `[selection]` | none | Pick a role to modify (index or id) |
 
-- `--add-model` without a colon uses harness `pi`. `--dry-run` returns the modified role and plans the write without making it.
+- `--add-route` checks that `.kxm/models/<route-id>.yaml` exists in the project. If it does not, the command exits 1 and writes `kxm: route '<route-id>' is not a file under .kxm/models/` to stderr. It does not write the role file. `--remove-route` drops a roster entry by id and does not require the model file. `--dry-run` returns the modified role and plans the write without making it, after the same existence check.
 - JSON keys: `roleId`, `id`, `role`, `filePath`, `scope`.
 
 ```bash
@@ -1293,62 +1293,10 @@ kxm role modify demo-role --add-skill kxm --dry-run --json
 {"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"demo-role","id":"demo-role","role":{"schema":"kxm.role.v2","id":"demo-role","description":"Demo role","skills":["kxm"],"roster":[]},"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
 ```
 
-Add a Claude model to a role's roster (Not run):
+Add an existing route to a role's roster (Not run):
 
 ```bash
-kxm role modify reviewer --add-model claude:fable --add-skill kxm-peer
-```
-
-### `kxm role hosts`
-
-```text
-kxm role hosts [--scope all|global|local]
-```
-
-Lists role seats (`critic-arch`, `critic-cli`, `planner`, `verifier`, `writer`, plus any configured seat) and the host, model, and effort each resolves to, with the source of the decision (`override`, `role-hosts`, `seat-default`, `role-roster`, or `fallback`). The listing is display-only: no dispatch path reads seats or `roles`, so a run's harness and model still come from the agent file.
-
-| Option | Argument | Default | Description |
-|---|---|---|---|
-| `--scope` | `<scope>` | `all` | Filter by scope: all, global, or local |
-
-- Reads only. JSON keys: `scope`, `filePath`, `seats` (`seatId`, `host`, `model`, `provider`, `effort`, `source`, `configuredHost`, `configuredModel`), `hostProviders`.
-
-```bash
-kxm role hosts
-```
-
-```text
-ROLE SEATS (default):
-  critic-arch      -> host: pi            [anthropic/claude-fable-5.1]  (via seat-default)
-  critic-cli       -> host: pi            [openai/gpt-5.6-sol]          (via seat-default)
-  planner          -> host: pi            [anthropic/claude-fable-5.1]  (via seat-default)
-  verifier         -> host: pi            [evaluator]                   (via seat-default)
-  writer           -> host: grok          [x-ai/grok-4.6]               (via seat-default)
-```
-
-### `kxm role set-host`
-
-```text
-kxm role set-host <seatId> <host> [--model <model>] [--effort low|medium|high|xhigh] [--scope global|local]
-```
-
-Binds a role seat to a host in `roles`. The binding changes what `kxm role hosts` shows, not what runs.
-
-| Option | Argument | Default | Description |
-|---|---|---|---|
-| `--model` | `<model>` | none | Model identifier for this seat |
-| `--effort` | `<effort>` | none | Effort level: low, medium, high, xhigh |
-| `--scope` | `<scope>` | `local` | Configuration scope: global or local (default: local) |
-
-- Writes `.kxm/roles` (or the global file). `--dry-run` plans the write and writes nothing.
-- JSON keys: `seatId`, `host`, `binding`, `filePath`, `scope`.
-
-```bash
-kxm role set-host writer claude --model fable --effort high --dry-run --json
-```
-
-```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role set-host","seatId":"writer","host":"claude","binding":{"host":"claude","model":"fable","effort":"high"},"filePath":"/work/proj/.kxm/roles","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles"}]}
+kxm role modify reviewer --add-route fable-claude --add-skill kxm-peer
 ```
 
 ### `kxm role resume`

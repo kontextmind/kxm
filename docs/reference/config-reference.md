@@ -26,11 +26,10 @@ Related pages:
 | `.kxm/repo/repo.yaml` (in each repository) | `kxm.repository.v1` | Per-repository definition | You; `kxm init` creates the control one | Yes, in the repository it describes |
 | `.kxm/project/env.yaml`, `.kxm/repo/env.yaml` | `kxm.environment.v1` | Portable, non-secret environment | You | Yes |
 | `.kxm/agents/<id>.yaml` | `kxm.agent.v1` | Agent harness, model, and permission ceilings | You; `kxm init` creates two | Yes |
-| `.kxm/models/<id>.yaml` | `kxm.model.v2` | Named model profiles for selectors | You | Yes |
+| `.kxm/models/<id>.yaml` | `kxm.model.v2` | One model route (harness, vendor, status, permissions) | You; `kxm init` | Yes |
 | `.kxm/workflows/<id>.yaml` | `kxm.workflow.v1` | Ordered steps and typed transitions | You; `kxm init` creates `default` | Yes |
 | `.kxm/gates.yaml` | `kxm.gate-registry.v1` | The executable gate registry | You; `kxm init` creates it | Yes |
 | `.kxm/roles/<role>.yaml` | `kxm.role.v2` | Model rosters per role | You, `kxm role`, `kxm models` | Yes |
-| `.kxm/roles` | `kxm.role.v2` | Role seat to host bindings (display only) | `kxm role set-host` | Yes, unless you ignore it |
 | `.kxm/routes.yaml` | `kxm.routes.v2` | Admitted and disabled model routes | You, `kxm routes`, `kxm models` | Yes |
 | `.kxm/roster.yaml` | `kxm.developer-roster.v1` | Developer assignment roster for the KXM source repository | Maintainers | Yes, and it must be committed |
 | `.kxm/prices.yaml` | `kxm.prices.v1` | Dated, hash-pinned list prices | You | Yes |
@@ -466,45 +465,46 @@ reach the `antigravity` Pi provider yet; `kxm run` and the Runtime read them;
 
 ## `.kxm/models/<id>.yaml` (`kxm.model.v2`)
 
-Named model profiles that agent and step selectors can reference by `profile`
-or `tag`. The filename is the profile ID; `inventory.yaml` in the same
-directory is reserved for the generated inventory and is skipped by this
-loader.
+One model route. The filename is the route id (`inventory.yaml` in the same
+directory is the generated catalog and is skipped). `kxm config` validation
+checks the file against `schemas/model.schema.json`. `origin` is required when
+`harness` is `pi` and optional otherwise. When `origin` is present, `source`
+is a project-relative evidence file and `sha256` is the SHA-256 of that file's
+bytes.
 
 | Field | Type and allowed values | Required, default | What reads it |
 |---|---|---|---|
 | `schema` | `kxm.model.v2` | Required | Loader |
-| `provider` | Identifier | Required | Loader: selector resolution, harness pairing, provider diversity |
-| `model` | String, 1 to 200 characters | Required | Loader: same |
-| `thinking` | String, 1 to 64 characters | Optional | Not read by any code path yet |
-| `tags` | Unique identifiers, at most 32 | Optional | Loader: `tag` selectors |
-| `capabilities` | Unique identifiers, at most 32 | Optional | Loader: `tag` selectors with `capabilities` |
-| `priority` | Integer, -10,000 to 10,000 | Optional | Not read by any code path yet |
-| `fallbacks` | Up to 8 selectors | Optional | Loader checks references (`model_profile_unknown`, `model_tag_unresolved`) and cycles (`model_fallback_cycle`); nothing fails over yet |
-| `limits.contextTokens`, `limits.outputTokens` | Integer, at least 1 | Optional | Not read by any code path yet |
-| `limits.timeoutMs` | Integer, 0 to 31,536,000,000 | Optional | Not read by any code path yet |
-
-Profiles are load-time data only. The Runtime's live route resolution reads
-the agent file directly and does not consult profiles.
+| `id` | Kebab identifier, 1 to 64 characters | Optional; the filename is the id | Loader |
+| `harness` | Identifier, 1 to 64 characters | Required | Developer ceilings and dispatch membership |
+| `model` | String, 1 to 200 characters | Required | Dispatch membership (`model`, `vendor/model`, `harness/model`) |
+| `vendor` | String, 1 to 64 characters | Required | The lab that trained the model, not the biller |
+| `status` | `admitted`, `candidate`, or `retired` | Required | A role roster may use only `admitted` |
+| `permissions` | One or two of `edit`, `read-only` | Required | Must stay inside the harness ceiling |
+| `origin.source` | String, 1 to 512 characters | Required with `origin.sha256` when `origin` is set; required for `harness: pi` | Evidence path |
+| `origin.sha256` | 64 hex characters | Required with `origin.source` | Must match the evidence file |
+| `thinking` | String, 1 to 64 characters | Optional | Recorded on the route |
+| `tags`, `capabilities` | Unique identifiers, at most 32 | Optional | Selector tags |
+| `priority` | Integer, -10,000 to 10,000 | Optional | Recorded on the route |
+| `fallbacks` | Up to 8 `profile`, `tag`, or `provider`+`model` objects | Optional | Reference check |
+| `limits.contextTokens`, `limits.outputTokens` | Integer, at least 1 | Optional | Recorded on the route |
+| `limits.timeoutMs` | Integer, 0 to 31,536,000,000 | Optional | Recorded on the route |
 
 ```yaml
-# .kxm/models/critic-claude.yaml — the filename is the profile id.
 schema: kxm.model.v2
-provider: anthropic
-model: fable
-thinking: high
-tags: [critic]
-capabilities: [tools, structured-output]
-priority: 100
-fallbacks:
-  - profile: critic-sol
-limits:
-  contextTokens: 200000
-  outputTokens: 32000
-  timeoutMs: 1800000
+id: grok-native
+harness: grok
+model: grok-4.7
+vendor: xai
+status: admitted
+permissions:
+  - edit
+origin:
+  source: .kxm/roster.yaml
+  sha256: b2bd628604e8fec5afdff2a1f2c104ed14ff785686bb1f38272bc972a310c806
 ```
 
-Commands: the loader in `kxm init`, `kxm run`, and `kxm trust`.
+Commands: `kxm init`, `kxm run`, and `kxm trust` load these files. `kxm role modify --add-route` refuses a route id that has no file here (exit 1). Dispatch membership for a role reads `harness`, `model`, and `vendor`. The developer assignment runner still reads `.kxm/roster.yaml` until P2.
 
 ## `.kxm/workflows/<id>.yaml` (`kxm.workflow.v1`)
 
@@ -959,63 +959,56 @@ not this registry.
 
 ## `.kxm/roles/<role>.yaml` (`kxm.role.v2`)
 
-Role files hold model rosters. Three different readers use them, and they
-read different fields:
+One role. The filename is the role id. `kxm config` validation checks the file
+against `schemas/role.schema.json`.
 
-| Reader | File | Fields it reads | Effect |
-|---|---|---|---|
-| Project loader (`validateBundle`) | `.kxm/roles/writer.yaml` only | `roster[].model`, `roster[].enabled` | Cross-checks the writer roster against the `implementer` agent's model (see below). Parsed as restricted YAML. |
-| Runtime route check (`listRoleBindings` in `plugins/kxm/src/routes.ts`) | `.kxm/roles/<role>.yaml`, role = agent ID, `writer` for `implementer` | `roster[].model` | The agent's `provider/model` must appear exactly. `enabled` is ignored, so a disabled entry still admits. The role name comes from the filename. |
-| `kxm role` commands (`plugins/kxm/src/role.ts`) | `.kxm/roles/*.yaml` and `~/.config/kxm/roles/*.yaml` | Everything below | Listing and editing only. A file without `schema: kxm.role.v2` is silently skipped. A local file overrides a global one with the same ID. A local `kxm role add` runs the project loader check above first and refuses with `role_invalid` a role the loader would reject. |
-
-The loader check applies when the agent `implementer` (or else `writer`)
-declares a model and the roster has at least one enabled entry. One enabled
-entry must then equal `provider/model`, equal the bare model, or end with
-`/<model>`; otherwise the load fails with `role_roster_conflicts_with_agent`.
-
-Write roster models as the full `provider/model` string. `kxm role add --model
-grok-4.6` writes a bare model ID, which satisfies the loader check but not the
-Runtime route check. `kxm role modify <role> --add-model grok:xai/grok-4.6`
-writes the full form.
+`listRoleBindings` reads `roster[].route`. Dispatch treats `implementer` as
+`writer` and requires the agent selector to be one of the selectors named by
+those route files (`model`, `vendor/model`, or `harness/model`). The writer
+cross-check (`role_roster_conflicts_with_agent`) does the same comparison
+against the `implementer` agent's model, or the `writer` agent when there is
+no implementer. `kxm role` reads and writes these files. A file without
+`schema: kxm.role.v2` is skipped by `kxm role`. A local file overrides a
+global one with the same id.
 
 | Field | Type | Required, default | What reads it |
 |---|---|---|---|
-| `schema` | `kxm.role.v2` | Required by `kxm role` | `kxm role` commands |
-| `id` | String | Optional, the filename | `kxm role` commands; the loader and Runtime use the filename |
-| `description` | String | Optional | `kxm role` commands |
-| `roster[].model` | String, `provider/model` | Required per entry | Loader (writer only), Runtime route check |
-| `roster[].enabled` | Boolean | Optional, `true` | Loader writer check only |
-| `roster[].harness` | String | Optional | `kxm role list` and `kxm role hosts` display |
-| `roster[].provider` | String | Optional | `kxm role hosts` display |
-| `roster[].effort` | `low`, `medium`, `high`, or `xhigh` | Optional | `kxm role hosts` display; not passed to any producer |
-| `roster[].mode` | `headless`, `interactive`, or `either` | Optional | Not read by any code path yet |
-| `skills`, `tools`, `produces`, `consumes`, `policy` | See `schemas/role.schema.json` | Optional | Stored and shown by `kxm role`; not read by any code path yet |
+| `schema` | `kxm.role.v2` | Required | Loader and `kxm role` |
+| `purpose` | `writer`, `planner`, `reviewer-arch`, `reviewer-cli`, or `experiment` | Required | Developer ceilings |
+| `permission` | `edit` or `read-only` | Required | Must be granted by every roster route |
+| `description` | String, 1 to 2,000 characters | Required | `kxm role` |
+| `roster[].route` | Kebab route id, 1 to 64 characters | Required per entry | Must name `.kxm/models/<route>.yaml` |
+| `id` | Identifier | Optional; the filename | `kxm role` |
+| `extends` | Identifier of another role in the same project | Optional | Refused when the chain cycles |
+| `roster[].effort` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Optional | Must be inside the harness ceiling when set |
+| `roster[].mode` | `headless`, `interactive`, or `either` | Optional | Recorded on the entry |
+| `policy.fallback.onError` | Unique `rate_limit`, `transport`, `provider_unavailable` | Optional | Recorded on the role |
+| `policy.fallback.maxSwitches` | Integer, at least 0 | Optional | Recorded on the role |
+| `policy.fallback.revert` | `next_run` or `never` | Optional | Recorded on the role |
+| `skills`, `tools`, `produces`, `consumes` | See `schemas/role.schema.json` | Optional | `kxm role` |
+| `policy.vendorIndependenceRequired`, `policy.maxTransitions`, `policy.requiresGateVerification` | Boolean, or a positive integer for `maxTransitions` | Optional | Recorded on the role |
 
-Roster order is priority by convention, and `kxm role list` shows the first
-entry as the primary. No code path fails over along the roster yet: the
-Runtime only checks membership, and the model comes from the agent file.
-
-`schemas/role.schema.json` describes a stricter shape (required
-`description`, required `harness` per entry, `model` as a selector object, no
-`enabled`). No loader enforces it, and the role files the Runtime reads do not
-follow it.
+Roster order is preference. `kxm role list` shows the first route as the
+primary. The Runtime checks membership. The model that runs still comes from
+the agent file. The developer assignment runner still reads `.kxm/roster.yaml`
+until P2.
 
 ```yaml
-# .kxm/roles/writer.yaml — the filename is the role id the Runtime looks up.
 schema: kxm.role.v2
 id: writer
-description: Primary implementation role.
-roster:                       # order is priority
-  - model: xai/grok-4.6       # full provider/model string
+purpose: writer
+permission: edit
+description: Primary implementation agent.
+roster:
+  - route: grok-native
     effort: medium
-    enabled: true
-  - model: openrouter/qwen/qwen3-coder-plus
+  - route: qwen-openrouter-pi
     effort: medium
-    enabled: true
 ```
 
-Validated with `kxm init --json` (writer cross-check), `kxm role list --json`,
-and the Runtime's `listRoleBindings`.
+`kxm role modify <role> --add-route <route-id>` appends a route that already
+has a model file. `--remove-route <route-id>` drops one. Validated with
+`kxm config` and `kxm role list --json`.
 
 Commands: `kxm role list|get|add|remove|modify` (`--scope global|local`);
 `kxm models` (interactive) adds or removes `{model, enabled: true}` entries

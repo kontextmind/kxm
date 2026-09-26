@@ -1,0 +1,8 @@
+schema: kxm.role.v2
+id: writer
+purpose: writer
+permission: edit
+description: Primary implementation agent for the example project.
+roster:
+  - route: primary
+    effort: medium
