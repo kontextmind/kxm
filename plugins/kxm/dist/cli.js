@@ -18708,6 +18708,69 @@ function readJsonObject(file) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object`);
   return parsed;
 }
+function validateRunEvent(value, file) {
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
+  if (!registry.runEventValidator(value)) {
+    throw new KxmConfigError([issue3(
+      "schema",
+      "run_event_invalid",
+      file,
+      registry.ajv.errorsText(registry.runEventValidator.errors, { separator: "; " })
+    )]);
+  }
+}
+function syncEventSchemaErrors(value) {
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
+  if (registry.syncEventValidator(value)) return void 0;
+  return registry.ajv.errorsText(registry.syncEventValidator.errors, { separator: "; " });
+}
+function validateDriveReceipt(value, file) {
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.drive-receipt.v1") {
+    throw new KxmConfigError([issue3(
+      "schema",
+      "drive_receipt_invalid",
+      file,
+      "expected kxm.drive-receipt.v1"
+    )]);
+  }
+  if (!registry.driveReceiptValidator(value)) {
+    throw new KxmConfigError([issue3(
+      "schema",
+      "drive_receipt_invalid",
+      file,
+      registry.ajv.errorsText(registry.driveReceiptValidator.errors, { separator: "; " })
+    )]);
+  }
+}
+function validateCoordinator(value, file) {
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.coordinator.v1") {
+    throw new KxmConfigError([issue3("schema", "coordinator_invalid", file, "expected kxm.coordinator.v1")]);
+  }
+  if (!registry.coordinatorValidator(value)) {
+    throw new KxmConfigError([issue3(
+      "schema",
+      "coordinator_invalid",
+      file,
+      registry.ajv.errorsText(registry.coordinatorValidator.errors, { separator: "; " })
+    )]);
+  }
+}
+function validateIntakeMessage(value, file) {
+  const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.intake-message.v1") {
+    throw new KxmConfigError([issue3("schema", "intake_message_invalid", file, "expected kxm.intake-message.v1")]);
+  }
+  if (!registry.intakeMessageValidator(value)) {
+    throw new KxmConfigError([issue3(
+      "schema",
+      "intake_message_invalid",
+      file,
+      registry.ajv.errorsText(registry.intakeMessageValidator.errors, { separator: "; " })
+    )]);
+  }
+}
 function schemaIssue(file, error) {
   const location = error.instancePath || "/";
   const suffix = error.params && "additionalProperty" in error.params ? ` (${String(error.params.additionalProperty)})` : "";
@@ -19853,7 +19916,7 @@ function planKxmInitialization(start = process.cwd(), options = {}) {
   }
   return { mode: "create", inspectedFrom, projectRoot: candidateRoot, changesRequired: true, issues: [], legacyInputs: [] };
 }
-var import__, KxmConfigError, DEFAULT_SCHEMA_DIR, RESOURCE_SCHEMA, IDENTIFIER2, WINDOWS_RESERVED, BUILTIN_EXECUTORS, BUILTIN_TOOL_PRESETS, SECRET_VALUE_PATTERNS, KxmSchemaRegistry, GATE_STEP_OUTCOMES, LEGACY_CONFIG_FILES;
+var import__, KxmConfigError, DEFAULT_SCHEMA_DIR, RESOURCE_SCHEMA, IDENTIFIER2, WINDOWS_RESERVED, BUILTIN_EXECUTORS, BUILTIN_TOOL_PRESETS, SECRET_VALUE_PATTERNS, KxmSchemaRegistry, cachedRunEventRegistry, GATE_STEP_OUTCOMES, LEGACY_CONFIG_FILES;
 var init_project_config = __esm({
   "plugins/kxm/src/project-config.ts"() {
     "use strict";
@@ -20418,12 +20481,169 @@ var init_runtime_paths = __esm({
 
 // plugins/kxm/src/sync-transform.ts
 import { createHash as createHash10 } from "node:crypto";
-var KXM_DEFAULT_SYNC_POLICY, KXM_DEFAULT_SYNC_POLICY_REVISION, SCALAR_FIELDS, CARRIED_FIELDS;
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function pickScalars(source, keys, redactor) {
+  if (!isRecord(source)) return void 0;
+  const result = {};
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" || typeof value === "boolean") {
+      result[key] = value;
+    } else if (typeof value === "string") {
+      if (redactor) {
+        const scrubbed = redactor.scrub(value);
+        if (scrubbed.text.length > 0) result[key] = scrubbed.text.slice(0, 200);
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return Object.keys(result).length > 0 ? result : void 0;
+}
+function buildPayload(source, builder) {
+  for (const key of SCALAR_FIELDS) {
+    const value = source[key];
+    if (typeof value === "string" || typeof value === "number") builder.set(key, value);
+  }
+  builder.set("displayTitle", builder.text(source.displayTitle, 200));
+  builder.set("summary", builder.text(source.summary, 1e3));
+  if (source.reason !== void 0) {
+    builder.set("reason", builder.text(source.reason, 1e3) ?? REDACTED);
+  }
+  builder.set("executor", builder.record(source.executor, ["id", "kind", "harness"], {
+    executorVersion: 128,
+    harnessVersion: 128,
+    helperGeneration: 256
+  }));
+  const model = builder.record(source.model, ["profile", "provider"], { model: 200, thinking: 64 });
+  if (model && isRecord(source.model) && Array.isArray(source.model.tags)) {
+    model.tags = source.model.tags.filter((tag) => typeof tag === "string").slice(0, 32);
+  }
+  builder.set("model", model);
+  builder.set("timing", builder.record(source.timing, ["startedAt", "finishedAt", "durationMs", "queueMs", "agentMs"]));
+  builder.set("usage", builder.record(source.usage, [
+    "inputTokens",
+    "outputTokens",
+    "cacheReadTokens",
+    "cacheWriteTokens",
+    "cost",
+    "currency",
+    "costKind"
+  ]));
+  const refs = (value, keys) => Array.isArray(value) ? value.slice(0, MAX_REFS).map((entry) => pickScalars(entry, keys)).filter((entry) => entry !== void 0) : void 0;
+  builder.set("evidenceRefs", refs(source.evidenceRefs, REF_KEYS));
+  builder.set("suppliedRefs", refs(source.suppliedRefs, REF_KEYS));
+  builder.set("artifacts", refs(source.artifacts, ARTIFACT_KEYS));
+  if (isRecord(source.receipt)) {
+    const receipt = builder.record(source.receipt, ["provider", "kind", "hash", "observedAt"], { id: 512 });
+    if (receipt) builder.set("receipts", [receipt]);
+    if (source.receipt.url !== void 0) builder.omitted.add("receipt.url");
+  }
+  builder.set("error", builder.record(source.error, ["class", "retryable"], { component: 128 }));
+  if (isRecord(source.effect)) {
+    const effect = pickScalars(source.effect, ["id", "idempotencyKeyHash"], builder.redactor) ?? {};
+    const policy = pickScalars(source.effect.policy, ["class", "sharedMutable", "idempotencyKey", "receiptQuery"], builder.redactor);
+    if (policy) effect.policy = policy;
+    builder.set("effect", effect);
+  }
+  builder.set("lease", pickScalars(source.lease, LEASE_KEYS, builder.redactor));
+  builder.set("actor", builder.record(source.actor, ["kind"], { id: 200 }));
+  builder.set("resolvedBy", builder.record(source.resolvedBy, ["kind"], { id: 200 }));
+  if (isRecord(source.counts)) {
+    const counts = Object.fromEntries(Object.entries(source.counts).filter((entry) => Number.isInteger(entry[1]) && entry[1] >= 0).slice(0, 32));
+    builder.set("counts", counts);
+  }
+}
+function envelope(event, policyRevision, payload, fieldsOmitted, valuesReplaced) {
+  return {
+    schema: KXM_SYNC_EVENT_SCHEMA,
+    sourceEventId: event.eventId,
+    eventType: event.eventType,
+    projectId: event.projectId,
+    runId: event.runId,
+    homeRuntimeId: event.homeRuntimeId,
+    sequence: event.sequence,
+    occurredAt: event.occurredAt,
+    configRevision: event.configRevision,
+    memoryRevision: event.memoryRevision,
+    executorPolicyRevision: event.executorPolicyRevision,
+    toolPolicyRevision: event.toolPolicyRevision,
+    syncPolicyRevision: policyRevision,
+    redaction: {
+      version: KXM_SYNC_REDACTOR_VERSION,
+      fieldsOmitted: [...new Set(fieldsOmitted)].sort().slice(0, 128),
+      valuesReplaced: Math.min(valuesReplaced, 1e5)
+    },
+    payload
+  };
+}
+function deriveKxmSyncEvent(event, options = {}) {
+  const redactor = options.redactor ?? new KxmSyncRedactor();
+  const policyRevision = options.policyRevision ?? KXM_DEFAULT_SYNC_POLICY_REVISION;
+  const source = isRecord(event.payload) ? event.payload : {};
+  const builder = new SyncPayloadBuilder(redactor);
+  buildPayload(source, builder);
+  const omitted = new Set(builder.omitted);
+  for (const key of Object.keys(source)) if (!CARRIED_FIELDS.has(key)) omitted.add(key);
+  if (event.protectedPayload !== void 0) omitted.add("protectedPayload");
+  const payload = Object.keys(builder.payload).length > 0 ? builder.payload : { counts: {} };
+  const full = envelope(event, policyRevision, payload, omitted, builder.replaced);
+  if (syncEventSchemaErrors(full) === void 0) return full;
+  const degradedPayload = { degraded: true };
+  for (const key of CONTROL_FIELDS) {
+    const value = builder.payload[key];
+    const restoreNested = (built, orig) => {
+      if (!isRecord(orig)) return built !== void 0 ? built : "[redacted]";
+      const result = {};
+      const builtRecord = isRecord(built) ? built : {};
+      for (const [k2, v2] of Object.entries(orig)) {
+        const builtValue = builtRecord[k2];
+        if (builtValue === void 0 || typeof builtValue === "string" && builtValue.trim().length === 0) {
+          result[k2] = isRecord(v2) ? restoreNested(void 0, v2) : "[redacted]";
+        } else {
+          result[k2] = builtValue;
+        }
+      }
+      return result;
+    };
+    if (value === void 0) {
+      const sourceValue = source[key];
+      if (sourceValue !== void 0) {
+        degradedPayload[key] = restoreNested(void 0, sourceValue);
+      }
+    } else if (typeof value === "string" && value.trim().length === 0) {
+      degradedPayload[key] = "[redacted]";
+    } else if (isRecord(value)) {
+      degradedPayload[key] = restoreNested(value, source[key]);
+    } else {
+      degradedPayload[key] = value;
+    }
+  }
+  const degradedOmitted = new Set(omitted);
+  for (const key of Object.keys(builder.payload)) if (!(key in degradedPayload)) degradedOmitted.add(key);
+  const degraded = envelope(event, policyRevision, degradedPayload, degradedOmitted, builder.replaced);
+  const errors = syncEventSchemaErrors(degraded);
+  if (errors === void 0) return degraded;
+  throw new KxmConfigError([{
+    phase: "schema",
+    code: "sync_event_invalid",
+    file: `${event.runId}#${event.sequence}`,
+    message: `event cannot be derived into kxm.sync-event.v1: ${errors}`
+  }]);
+}
+function kxmSyncEventBytes(event) {
+  return kxmCanonicalJson(event);
+}
+var KXM_SYNC_EVENT_SCHEMA, KXM_SYNC_REDACTOR_VERSION, KXM_DEFAULT_SYNC_POLICY, KXM_DEFAULT_SYNC_POLICY_REVISION, MIN_REGISTERED_SECRET_CHARS, REDACTED, PATH_REDACTED, CREDENTIAL_SHAPES, URL_USERINFO, ABSOLUTE_PATHS, CONTROL_CHARACTERS, KxmSyncRedactor, SyncPayloadBuilder, SCALAR_FIELDS, REF_KEYS, ARTIFACT_KEYS, LEASE_KEYS, MAX_REFS, CARRIED_FIELDS, CONTROL_FIELDS;
 var init_sync_transform = __esm({
   "plugins/kxm/src/sync-transform.ts"() {
     "use strict";
     init_project_config();
     init_redact();
+    KXM_SYNC_EVENT_SCHEMA = "kxm.sync-event.v1";
+    KXM_SYNC_REDACTOR_VERSION = "redactor-v1";
     KXM_DEFAULT_SYNC_POLICY = Object.freeze({
       prompts: "title-only",
       results: "bounded-summary",
@@ -20435,6 +20655,98 @@ var init_sync_transform = __esm({
       environmentValues: false
     });
     KXM_DEFAULT_SYNC_POLICY_REVISION = `sha256:${createHash10("sha256").update(kxmCanonicalJson(KXM_DEFAULT_SYNC_POLICY), "utf8").digest("hex")}`;
+    MIN_REGISTERED_SECRET_CHARS = 4;
+    REDACTED = "[redacted]";
+    PATH_REDACTED = "[path]";
+    CREDENTIAL_SHAPES = [
+      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+      /\bssh-(?:rsa|ed25519|dss|ecdsa-[a-z0-9-]+) AAAA[0-9A-Za-z+/=]+/g,
+      /\bAKIA[0-9A-Z]{16}\b/g,
+      /\bgh[opsu]_[A-Za-z0-9]{20,}\b/g,
+      /\b(?:api[_-]?key|token|secret|password|passwd)\s*[:=]\s*\S+/gi
+    ];
+    URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi;
+    ABSOLUTE_PATHS = [
+      /\\\\[^\s\\"'`]+\\[^\s"'`]*/g,
+      // UNC
+      /\b[A-Za-z]:[\\/][^\s"'`]*/g,
+      // Windows drive
+      /(?<![\w.~:/-])~[\\/][^\s"'`]*/g,
+      // home
+      /(?<![\w.~:/-])\/(?:[\w.@%+-]+\/)*[\w.@%+-]+\/?/g
+      // POSIX
+    ];
+    CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/g;
+    KxmSyncRedactor = class {
+      values = /* @__PURE__ */ new Set();
+      register(value) {
+        const trimmed = value.trim();
+        if (trimmed.length >= MIN_REGISTERED_SECRET_CHARS) this.values.add(trimmed);
+      }
+      get size() {
+        return this.values.size;
+      }
+      /** Scrub one free-text value; `replaced` counts every substitution. */
+      scrub(input) {
+        let replaced = 0;
+        let text = input;
+        for (const secret of [...this.values].sort((left, right) => right.length - left.length)) {
+          const parts = text.split(secret);
+          if (parts.length > 1) {
+            replaced += parts.length - 1;
+            text = parts.join(REDACTED);
+          }
+        }
+        const substitute = (pattern, replacement) => {
+          text = text.replace(pattern, (...args) => {
+            replaced += 1;
+            return typeof replacement === "string" ? replacement : replacement(...args);
+          });
+        };
+        for (const pattern of CREDENTIAL_SHAPES) substitute(pattern, REDACTED);
+        substitute(URL_USERINFO, (_match, scheme) => `${scheme}${REDACTED}@`);
+        const shaped = redactSecrets(text);
+        if (shaped !== text) {
+          replaced += shaped.split(REDACTED).length - text.split(REDACTED).length;
+          text = shaped;
+        }
+        for (const pattern of ABSOLUTE_PATHS) substitute(pattern, PATH_REDACTED);
+        text = text.replace(CONTROL_CHARACTERS, " ").replace(/\s+/g, " ").trim();
+        return { text, replaced };
+      }
+    };
+    SyncPayloadBuilder = class {
+      payload = {};
+      omitted = /* @__PURE__ */ new Set();
+      replaced = 0;
+      redactor;
+      constructor(redactor) {
+        this.redactor = redactor;
+      }
+      /** Bounded, scrubbed free text; empty after scrubbing means absent. */
+      text(value, max) {
+        if (typeof value !== "string") return void 0;
+        const { text, replaced } = this.redactor.scrub(value);
+        this.replaced += replaced;
+        if (text.length === 0) return void 0;
+        return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
+      }
+      /** A nested record rebuilt key by key, with the named keys scrubbed as text. */
+      record(source, keys, textKeys = {}) {
+        const scalars = pickScalars(source, keys.filter((key) => !(key in textKeys)));
+        const result = { ...scalars ?? {} };
+        if (isRecord(source)) {
+          for (const [key, max] of Object.entries(textKeys)) {
+            const value = this.text(source[key], max);
+            if (value !== void 0) result[key] = value;
+          }
+        }
+        return Object.keys(result).length > 0 ? result : void 0;
+      }
+      set(key, value) {
+        if (value !== void 0) this.payload[key] = value;
+      }
+    };
     SCALAR_FIELDS = [
       "workflowId",
       "promptHash",
@@ -20452,6 +20764,10 @@ var init_sync_transform = __esm({
       "scopeEpoch",
       "resolutionAction"
     ];
+    REF_KEYS = ["id", "kind", "hash", "status", "producerId"];
+    ARTIFACT_KEYS = ["id", "kind", "hash", "size", "classification", "availability"];
+    LEASE_KEYS = ["id", "fencingToken", "acquiredAt", "expiresAt", "operation"];
+    MAX_REFS = 64;
     CARRIED_FIELDS = /* @__PURE__ */ new Set([
       ...SCALAR_FIELDS,
       "displayTitle",
@@ -20472,6 +20788,7 @@ var init_sync_transform = __esm({
       "suppliedRefs",
       "counts"
     ]);
+    CONTROL_FIELDS = ["effect", "lease", "actor", "resolvedBy", "resolutionAction", "reason", "suppliedRefs", "outcome"];
   }
 });
 
@@ -20551,22 +20868,25 @@ function ensureWalJournalMode(database, file, description, timeoutMs = 5e3) {
     Atomics.wait(sleeper, 0, 0, 10);
   }
 }
+function assertDatabaseFile(file, description) {
+  checkedParent(file, description);
+  const stat = lstatSync3(file, { throwIfNoEntry: false });
+  if (stat) {
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
+    }
+  }
+  for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
+    const info = lstatSync3(sidecar, { throwIfNoEntry: false });
+    if (info?.isSymbolicLink()) {
+      throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
+    }
+  }
+}
 function openDatabase(file, description, spec) {
   const isMemory = file === ":memory:";
   if (!isMemory) {
-    checkedParent(file, description);
-    const stat = lstatSync3(file, { throwIfNoEntry: false });
-    if (stat) {
-      if (stat.isSymbolicLink() || !stat.isFile()) {
-        throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
-      }
-    }
-    for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-      const info = lstatSync3(sidecar, { throwIfNoEntry: false });
-      if (info?.isSymbolicLink()) {
-        throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
-      }
-    }
+    assertDatabaseFile(file, description);
   }
   const database = new DatabaseSync(file);
   let transaction = false;
@@ -20595,7 +20915,7 @@ function openDatabase(file, description, spec) {
       throw databaseError(
         "runtime_schema_outdated",
         file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for registry/event stores); \`kxm init\` is project-only and rebuilds no database \u2014 upgrading old state in place is deliberately unsupported`
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for event stores). The Runtime registry copy from schema 1 to 2 is the one exception. \`kxm init\` is project-only and rebuilds no database. Upgrading any other old state in place is deliberately unsupported`
       );
     }
     if (spec.tables) {
@@ -20613,6 +20933,84 @@ function openDatabase(file, description, spec) {
     }
     database.close();
     throw error;
+  }
+}
+function monotonicNowMs() {
+  return Number(process.hrtime.bigint() / 1000000n);
+}
+function finiteNow(clock, label) {
+  const now = clock();
+  if (typeof now !== "number" || !Number.isFinite(now)) {
+    throw databaseError(
+      "runtime_transaction_clock_invalid",
+      "transaction",
+      `${label} must return a finite monotonic number; got ${String(now)}`
+    );
+  }
+  return now;
+}
+function isTransactionContention(error) {
+  const carrier = error;
+  for (const value of [carrier?.errcode, carrier?.errCode, carrier?.errno]) {
+    if (typeof value === "number" && Number.isInteger(value)) return CONTENTION_PRIMARY_CODES.includes(value & 255);
+  }
+  for (const value of [carrier?.code, carrier?.name]) {
+    if (typeof value === "string" && SQLITE_RESULT_NAMES.test(value)) {
+      return CONTENTION_SYMBOLIC_NAMES.test(value);
+    }
+  }
+  return CONTENTION_MESSAGES.test(error instanceof Error ? error.message : String(error));
+}
+function withDatabaseTransaction(database, work, mode = "IMMEDIATE", clock = monotonicNowMs) {
+  if (activeTransactions.has(database)) {
+    throw databaseError("runtime_transaction_nested", "transaction", "nested transactions are not allowed");
+  }
+  if (mode !== "DEFERRED") {
+    const deadlines = transactionThrottles.get(database);
+    const until = deadlines?.get(clock);
+    if (until !== void 0) {
+      const remaining = until - finiteNow(clock, "the transaction clock");
+      if (remaining > 0) {
+        throw databaseError(
+          "runtime_transaction_busy",
+          "transaction",
+          `a previous BEGIN was blocked on this database; retry deferred ${String(remaining)}ms`
+        );
+      }
+      deadlines?.delete(clock);
+    }
+  }
+  try {
+    database.exec(`BEGIN ${mode}`);
+  } catch (error) {
+    if (!isTransactionContention(error)) throw error;
+    const now = finiteNow(clock, "the transaction clock");
+    let deadlines = transactionThrottles.get(database);
+    if (deadlines === void 0) {
+      deadlines = /* @__PURE__ */ new WeakMap();
+      transactionThrottles.set(database, deadlines);
+    }
+    deadlines.set(clock, now + TRANSACTION_BUSY_BACKOFF_MS);
+    throw databaseError(
+      "runtime_transaction_busy",
+      "transaction",
+      `BEGIN ${mode} blocked by another transaction: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  activeTransactions.add(database);
+  if (mode !== "DEFERRED") transactionThrottles.get(database)?.delete(clock);
+  try {
+    const result = work();
+    database.exec("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+    }
+    throw error;
+  } finally {
+    activeTransactions.delete(database);
   }
 }
 function checkpointWal(database, mode = "TRUNCATE") {
@@ -21083,13 +21481,20 @@ function applyRestorePlan(plan) {
     restoredStores
   };
 }
-var KXM_BACKUP_CEILINGS;
+var activeTransactions, TRANSACTION_BUSY_BACKOFF_MS, transactionThrottles, CONTENTION_PRIMARY_CODES, CONTENTION_SYMBOLIC_NAMES, SQLITE_RESULT_NAMES, CONTENTION_MESSAGES, KXM_BACKUP_CEILINGS;
 var init_database = __esm({
   "plugins/kxm/src/database.ts"() {
     "use strict";
     init_sqlite();
     init_project_config();
     init_runtime_paths();
+    activeTransactions = /* @__PURE__ */ new WeakSet();
+    TRANSACTION_BUSY_BACKOFF_MS = 1e3;
+    transactionThrottles = /* @__PURE__ */ new WeakMap();
+    CONTENTION_PRIMARY_CODES = [5, 6, 15];
+    CONTENTION_SYMBOLIC_NAMES = /^SQLITE_(?:BUSY|LOCKED|PROTOCOL)(?:_[A-Z0-9]+)?$/;
+    SQLITE_RESULT_NAMES = /^SQLITE_[A-Z][A-Z0-9_]*$/;
+    CONTENTION_MESSAGES = /^(?:database is locked|database table is locked|locking protocol|SQLITE_BUSY|SQLITE_LOCKED|SQLITE_PROTOCOL)(?:$|[\s.:])/i;
     KXM_BACKUP_CEILINGS = {
       "hub-store": 5,
       registry: 2,
@@ -21101,6 +21506,7 @@ var init_database = __esm({
 
 // plugins/kxm/src/runtime-store.ts
 import { spawnSync as spawnSync4 } from "node:child_process";
+import { createHash as createHash12, randomUUID as randomUUID4 } from "node:crypto";
 import { existsSync as existsSync10, lstatSync as lstatSync4, mkdirSync as mkdirSync6, readFileSync as readFileSync8, realpathSync as realpathSync4, statSync, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname7, isAbsolute as isAbsolute5, resolve as resolve8 } from "node:path";
 function runtimeIssue(phase, code, file, message) {
@@ -21157,13 +21563,10 @@ function gitCommonDirectory(projectRoot) {
   }
   return process.platform === "win32" ? canonical2.toLocaleLowerCase("en-US") : canonical2;
 }
-function sameGitRepository(left, right) {
-  const leftDir = gitCommonDirectory(left);
-  const rightDir = gitCommonDirectory(right);
-  return leftDir !== void 0 && leftDir === rightDir;
-}
 function migrateRegistryLanes(file) {
-  if (!existsSync10(file)) return;
+  const stat = lstatSync4(file, { throwIfNoEntry: false });
+  if (!stat) return;
+  assertDatabaseFile(file, "runtime registry");
   const database = new DatabaseSync(file);
   let transaction = false;
   try {
@@ -21223,7 +21626,326 @@ function readKxmSupervisorRecord(database) {
     state: row.state
   } : void 0;
 }
-var KXM_REGISTRY_SCHEMA_VERSION, REGISTRY_TABLES, REGISTRY_SCHEMA, PROJECT_COLUMNS, KxmRuntimeRegistry, DRIVE_RECEIPT_MAX_BYTES, EVENT_STORE_TABLES, KXM_EVENT_STORE_TABLE_NAMES;
+function coordinatorFromRow(row) {
+  const parsed = JSON.parse(row.record);
+  if (row.schema !== "kxm.coordinator.v1") {
+    throw runtimeError("coordinator_record_divergent", row.coordinator_id, `unexpected coordinator schema ${row.schema}`);
+  }
+  validateCoordinator(parsed, row.coordinator_id);
+  if (parsed.coordinatorId !== row.coordinator_id || parsed.projectId !== row.project_id || parsed.role !== row.role || parsed.channel !== row.channel || parsed.ceilingHash !== row.ceiling_hash || parsed.configRevision !== row.config_revision || parsed.boundAt !== row.bound_at) {
+    throw runtimeError("coordinator_record_divergent", row.coordinator_id, "coordinator columns do not match the persisted record");
+  }
+  return {
+    coordinatorId: row.coordinator_id,
+    projectId: row.project_id,
+    role: row.role,
+    channel: row.channel,
+    ceilingHash: row.ceiling_hash,
+    configRevision: row.config_revision,
+    boundAt: row.bound_at,
+    record: row.record
+  };
+}
+function intakeFromRow(row) {
+  const parsed = JSON.parse(row.record);
+  if (row.schema !== "kxm.intake-message.v1") {
+    throw runtimeError("intake_record_divergent", row.message_id, `unexpected intake schema ${row.schema}`);
+  }
+  validateIntakeMessage(parsed, row.message_id);
+  if (parsed.messageId !== row.message_id || parsed.projectId !== row.project_id || parsed.coordinatorId !== row.coordinator_id || parsed.idempotencyKey !== row.idempotency_key || parsed.contentHash !== row.content_hash || parsed.receivedAt !== row.received_at || parsed.dispatch?.state !== row.dispatch_state) {
+    throw runtimeError("intake_record_divergent", row.message_id, "intake columns do not match the persisted record");
+  }
+  return {
+    messageId: row.message_id,
+    projectId: row.project_id,
+    coordinatorId: row.coordinator_id,
+    idempotencyKey: row.idempotency_key,
+    contentHash: row.content_hash,
+    receivedAt: row.received_at,
+    dispatchState: row.dispatch_state,
+    record: row.record
+  };
+}
+function controlFromRow(row) {
+  const paused = row.paused === 1;
+  const expected = kxmCanonicalJson({
+    schema: "kxm.project-control.v1",
+    projectId: row.project_id,
+    paused,
+    ...row.reason !== null ? { reason: row.reason } : {},
+    updatedAt: row.updated_at,
+    actor: row.actor
+  });
+  if (row.record !== expected) {
+    throw runtimeError("project_control_divergent", row.project_id, "project control record does not match its columns");
+  }
+  return {
+    projectId: row.project_id,
+    paused,
+    ...row.reason !== null ? { reason: row.reason } : {},
+    updatedAt: row.updated_at,
+    actor: row.actor,
+    record: row.record
+  };
+}
+function parseDriveReceipt(raw) {
+  const parsed = JSON.parse(raw);
+  validateDriveReceipt(parsed, "drive-receipt");
+  return parsed;
+}
+function outboxFromRow(row) {
+  return {
+    seq: row.seq,
+    runId: row.run_id,
+    sequence: row.sequence,
+    syncEvent: row.sync_event,
+    attemptCount: row.attempt_count,
+    ...row.attempted_at !== null ? { attemptedAt: row.attempted_at } : {},
+    ...row.acked_at !== null ? { ackedAt: row.acked_at } : {},
+    ...row.refused_code !== null ? { refusedCode: row.refused_code } : {},
+    ...row.refused_at !== null ? { refusedAt: row.refused_at } : {}
+  };
+}
+function runFromRow(row) {
+  if (typeof row.memory_revision !== "string" || row.memory_revision.length === 0) {
+    throw runtimeError("runtime_schema_shape_invalid", row.run_id, "memory_revision is required");
+  }
+  return {
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    workflowId: row.workflow_id,
+    promptSha256: row.prompt_sha256,
+    status: row.status,
+    configRevision: row.config_revision,
+    memoryRevision: row.memory_revision,
+    executorPolicyRevision: row.executor_policy_revision,
+    toolPolicyRevision: row.tool_policy_revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+function gateRowContentHash(table, row) {
+  const copy = { ...row };
+  delete copy.contentHash;
+  void table;
+  return `sha256:${createHash12("sha256").update(kxmCanonicalJson(copy), "utf8").digest("hex")}`;
+}
+function assertClosedGateObservation(kind, row, id = "observation") {
+  if (row.completeness === "incomplete") return;
+  if (row.completeness === "no-start") {
+    const legitimateStartFailure = (row.errorClass === "validation" || row.errorClass === "spawn-error") && row.stopCause === "none";
+    const requestedStop = row.stopCause === "cancel" && row.errorClass === null;
+    if (row.spawned !== 0 || row.pid !== null || row.exitCode !== null || row.signal !== null || row.exitObserved !== 0 || row.closeObserved !== 0 || row.signalsAttempted !== "none" || row.stdoutSha256 !== null || row.stdoutBytes !== null || row.stdoutComplete !== null || row.stderrSha256 !== null || row.stderrBytes !== null || row.stderrComplete !== null || row.checkedCount !== null || row.failedCount !== null || !legitimateStartFailure && !requestedStop) {
+      throw gateRowInvalid(id, "no-start observation forbids PID/exit/close/stream/check facts and requires a legitimate no-start cause");
+    }
+    return;
+  }
+  if (kind === "command") {
+    if (row.spawned !== 1 || typeof row.pid !== "number" || typeof row.exitCode !== "number" || row.signal !== null || row.exitObserved !== 1 || row.closeObserved !== 1 || row.stopCause !== "none" || row.signalsAttempted !== "none" || row.stdoutComplete !== 1 || row.stderrComplete !== 1 || typeof row.stdoutSha256 !== "string" || typeof row.stderrSha256 !== "string" || typeof row.stdoutBytes !== "number" || typeof row.stderrBytes !== "number" || row.checkedCount !== null || row.failedCount !== null) {
+      throw gateRowInvalid(id, "complete command observation requires spawn, numeric exit, no signal, exit/close, complete streams, and stopCause none");
+    }
+    return;
+  }
+  if (row.spawned !== 0 || row.pid !== null || row.exitCode !== null || row.signal !== null || row.exitObserved !== 0 || row.closeObserved !== 0 || row.stopCause !== "none" || row.signalsAttempted !== "none" || row.stdoutSha256 !== null || row.stdoutBytes !== null || row.stdoutComplete !== null || row.stderrSha256 !== null || row.stderrBytes !== null || row.stderrComplete !== null || typeof row.checkedCount !== "number" || typeof row.failedCount !== "number" || row.checkedCount < 0 || row.failedCount < 0 || row.failedCount > row.checkedCount) {
+    throw gateRowInvalid(id, "complete artifacts observation requires consistent counts and no command facts");
+  }
+}
+function gateRowInvalid(file, message) {
+  return runtimeError("gate_row_invalid", file, message);
+}
+function assertExactRowKeys(row, keys, id) {
+  const actual = Object.keys(row);
+  if (actual.length !== keys.length || keys.some((key) => !Object.prototype.hasOwnProperty.call(row, key))) {
+    throw gateRowInvalid(id, "gate row does not have the exact key set");
+  }
+  for (const key of actual) {
+    if (FORBIDDEN_TEXT_KEYS.has(key)) throw gateRowInvalid(id, "gate row must not carry raw stdout/stderr/error text");
+  }
+}
+function assertId(value, prefix, id, label) {
+  if (typeof value !== "string" || !value.startsWith(prefix) || !OPAQUE.test(value)) {
+    throw gateRowInvalid(id, `${label} is not a valid ${prefix} opaque id`);
+  }
+}
+function assertSha(value, id, label) {
+  if (typeof value !== "string" || !SHA2562.test(value)) throw gateRowInvalid(id, `${label} is not a sha256 hash`);
+}
+function assertFlag(value, id, label) {
+  if (value !== 0 && value !== 1) throw gateRowInvalid(id, `${label} must be 0 or 1`);
+}
+function assertNullInt(value, id, label) {
+  if (value !== null && (typeof value !== "number" || !Number.isInteger(value))) {
+    throw gateRowInvalid(id, `${label} must be an integer or null`);
+  }
+}
+function assertGateAttemptRow(row) {
+  assertExactRowKeys(row, GATE_ATTEMPT_KEYS, row.attemptId);
+  assertId(row.attemptId, "att_", row.attemptId, "attemptId");
+  assertId(row.effectId, "eff_", row.attemptId, "effectId");
+  assertId(row.intentEventId, "evt_", row.attemptId, "intentEventId");
+  assertSha(row.gateDefinitionHash, row.attemptId, "gateDefinitionHash");
+  assertSha(row.registryHash, row.attemptId, "registryHash");
+  assertSha(row.runPlanHash, row.attemptId, "runPlanHash");
+  if (row.producerId !== "kxm-gate") throw gateRowInvalid(row.attemptId, "producerId must be kxm-gate");
+  if (row.gateKind !== "command" && row.gateKind !== "artifacts-exist") {
+    throw gateRowInvalid(row.attemptId, "gateKind is invalid");
+  }
+  if (row.expect !== "pass" && row.expect !== "fail") throw gateRowInvalid(row.attemptId, "expect is invalid");
+  if (row.gateKind === "artifacts-exist" && row.expect === "fail") {
+    throw gateRowInvalid(row.attemptId, "artifacts-exist cannot expect fail");
+  }
+  if (typeof row.controlProjectKey !== "string" || row.controlProjectKey.length === 0) {
+    throw gateRowInvalid(row.attemptId, "controlProjectKey is required");
+  }
+  if (gateRowContentHash("gate_attempts", row) !== row.contentHash) {
+    throw gateRowInvalid(row.attemptId, "contentHash does not match the canonical row");
+  }
+}
+function assertGateObservationRow(row) {
+  assertExactRowKeys(row, GATE_OBSERVATION_KEYS, row.observationId);
+  assertId(row.observationId, "obs_", row.observationId, "observationId");
+  assertId(row.attemptId, "att_", row.observationId, "attemptId");
+  assertId(row.effectId, "eff_", row.observationId, "effectId");
+  assertId(row.recordedEventId, "evt_", row.observationId, "recordedEventId");
+  if (!["complete", "incomplete", "no-start"].includes(row.completeness)) {
+    throw gateRowInvalid(row.observationId, "completeness is invalid");
+  }
+  assertFlag(row.spawned, row.observationId, "spawned");
+  assertFlag(row.exitObserved, row.observationId, "exitObserved");
+  assertFlag(row.closeObserved, row.observationId, "closeObserved");
+  assertNullInt(row.pid, row.observationId, "pid");
+  assertNullInt(row.exitCode, row.observationId, "exitCode");
+  assertNullInt(row.stdoutBytes, row.observationId, "stdoutBytes");
+  assertNullInt(row.stderrBytes, row.observationId, "stderrBytes");
+  assertNullInt(row.checkedCount, row.observationId, "checkedCount");
+  assertNullInt(row.failedCount, row.observationId, "failedCount");
+  if (typeof row.elapsedMs !== "number" || !Number.isInteger(row.elapsedMs) || row.elapsedMs < 0) {
+    throw gateRowInvalid(row.observationId, "elapsedMs is invalid");
+  }
+  if (row.stdoutSha256 !== null) assertSha(row.stdoutSha256, row.observationId, "stdoutSha256");
+  if (row.stderrSha256 !== null) assertSha(row.stderrSha256, row.observationId, "stderrSha256");
+  if (row.stdoutComplete !== null && row.stdoutComplete !== 0 && row.stdoutComplete !== 1) {
+    throw gateRowInvalid(row.observationId, "stdoutComplete must be 0, 1, or null");
+  }
+  if (row.stderrComplete !== null && row.stderrComplete !== 0 && row.stderrComplete !== 1) {
+    throw gateRowInvalid(row.observationId, "stderrComplete must be 0, 1, or null");
+  }
+  if (gateRowContentHash("gate_observations", row) !== row.contentHash) {
+    throw gateRowInvalid(row.observationId, "contentHash does not match the canonical row");
+  }
+}
+function assertGateEvidenceRow(row) {
+  assertExactRowKeys(row, GATE_EVIDENCE_KEYS, row.evidenceId);
+  assertId(row.evidenceId, "gev_", row.evidenceId, "evidenceId");
+  assertId(row.attemptId, "att_", row.evidenceId, "attemptId");
+  assertId(row.observationId, "obs_", row.evidenceId, "observationId");
+  assertId(row.effectId, "eff_", row.evidenceId, "effectId");
+  assertId(row.settledEventId, "evt_", row.evidenceId, "settledEventId");
+  if (row.kind !== "gate") throw gateRowInvalid(row.evidenceId, "kind must be gate");
+  if (!["passed", "implementation-failure", "repro-missing"].includes(row.outcome)) {
+    throw gateRowInvalid(row.evidenceId, "outcome is invalid");
+  }
+  if (gateRowContentHash("gate_evidence", row) !== row.contentHash) {
+    throw gateRowInvalid(row.evidenceId, "contentHash does not match the canonical row");
+  }
+}
+function assertSharedIdentity(row, attempt, id) {
+  if (row.runId !== attempt.runId || row.projectId !== attempt.projectId || row.homeRuntimeId !== attempt.homeRuntimeId || row.stepId !== attempt.stepId || row.stepAttempt !== attempt.stepAttempt || row.assignmentId !== attempt.assignmentId || row.effectId !== attempt.effectId) {
+    throw gateRowInvalid(id, "row identity does not match the gate attempt");
+  }
+}
+function gateAttemptFromSql(row) {
+  return {
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    gateId: row.gate_id,
+    gateKind: row.gate_kind,
+    expect: row.expect,
+    gateDefinitionHash: row.gate_definition_hash,
+    registryHash: row.registry_hash,
+    runPlanHash: row.run_plan_hash,
+    controlProjectKey: row.control_project_key,
+    producerId: row.producer_id,
+    intentEventId: row.intent_event_id,
+    contentHash: row.content_hash
+  };
+}
+function gateObservationFromSql(row) {
+  return {
+    observationId: row.observation_id,
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    completeness: row.completeness,
+    spawned: row.spawned === 1 ? 1 : 0,
+    pid: row.pid,
+    exitCode: row.exit_code,
+    signal: row.signal,
+    exitObserved: row.exit_observed === 1 ? 1 : 0,
+    closeObserved: row.close_observed === 1 ? 1 : 0,
+    stopCause: row.stop_cause,
+    signalsAttempted: row.signals_attempted,
+    errorClass: row.error_class,
+    stdoutSha256: row.stdout_sha256,
+    stdoutBytes: row.stdout_bytes,
+    stdoutComplete: row.stdout_complete === null ? null : row.stdout_complete === 1 ? 1 : 0,
+    stderrSha256: row.stderr_sha256,
+    stderrBytes: row.stderr_bytes,
+    stderrComplete: row.stderr_complete === null ? null : row.stderr_complete === 1 ? 1 : 0,
+    checkedCount: row.checked_count,
+    failedCount: row.failed_count,
+    elapsedMs: row.elapsed_ms,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    recordedEventId: row.recorded_event_id,
+    contentHash: row.content_hash
+  };
+}
+function gateEvidenceFromSql(row) {
+  return {
+    evidenceId: row.evidence_id,
+    attemptId: row.attempt_id,
+    observationId: row.observation_id,
+    runId: row.run_id,
+    projectId: row.project_id,
+    homeRuntimeId: row.home_runtime_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    assignmentId: row.assignment_id,
+    effectId: row.effect_id,
+    evidenceKey: row.evidence_key,
+    kind: row.kind,
+    expect: row.expect,
+    outcome: row.outcome,
+    settledEventId: row.settled_event_id,
+    contentHash: row.content_hash
+  };
+}
+function capabilityFromRow(row) {
+  return row ? {
+    attemptId: row.attempt_id,
+    runId: row.run_id,
+    assignmentId: row.assignment_id,
+    stepId: row.step_id,
+    stepAttempt: row.step_attempt,
+    producerId: row.producer_id,
+    capabilityHash: row.capability_hash,
+    state: row.state
+  } : void 0;
+}
+var KXM_REGISTRY_SCHEMA_VERSION, REGISTRY_TABLES, REGISTRY_SCHEMA, PROJECT_COLUMNS, KxmRuntimeRegistry, KXM_EVENT_STORE_SCHEMA_VERSION, DRIVE_RECEIPT_MAX_BYTES, EVENT_STORE_TABLES, KXM_EVENT_STORE_TABLE_NAMES, EVENT_STORE_SCHEMA, KxmRunEventStore, SHA2562, OPAQUE, FORBIDDEN_TEXT_KEYS, GATE_ATTEMPT_KEYS, GATE_OBSERVATION_KEYS, GATE_EVIDENCE_KEYS;
 var init_runtime_store = __esm({
   "plugins/kxm/src/runtime-store.ts"() {
     "use strict";
@@ -21363,69 +22085,115 @@ CREATE INDEX projects_by_project_id ON projects (project_id);
       registerProject(registration) {
         const projectRoot = resolve8(registration.projectRoot);
         const projectKey = projectRuntimeKey(projectRoot);
+        const candidateCommon = gitCommonDirectory(projectRoot);
+        const commonByRoot = /* @__PURE__ */ new Map();
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          this.database.exec("BEGIN IMMEDIATE");
+          let rootsToMeasure;
+          try {
+            const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
+            if (byKey) {
+              const problems = [];
+              if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
+              if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
+              if (problems.length > 0) {
+                this.database.exec("ROLLBACK");
+                throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
+              }
+              const result = registrationFromRow(byKey);
+              this.database.exec("COMMIT");
+              return result;
+            }
+            const rows = this.database.prepare(
+              `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`
+            ).all(registration.projectId);
+            const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
+            const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
+            const unknown = live.filter((row) => !commonByRoot.has(row.project_root));
+            if (unknown.length > 0) {
+              rootsToMeasure = unknown.map((row) => row.project_root);
+              this.database.exec("ROLLBACK");
+            } else if (live.length > 0) {
+              const anchor = live.find((row) => {
+                const dir = commonByRoot.get(row.project_root);
+                return candidateCommon !== void 0 && dir === candidateCommon;
+              });
+              if (!anchor) {
+                this.database.exec("ROLLBACK");
+                throw runtimeError(
+                  "project_home_conflict",
+                  ".kxm/project.yaml",
+                  `project ${registration.projectId} is already bound to a different control root`
+                );
+              }
+              if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+                this.database.exec("ROLLBACK");
+                throw runtimeError(
+                  "project_home_conflict",
+                  ".kxm/project.yaml",
+                  `project ${registration.projectId} home runtime is immutable and cannot be rebound`
+                );
+              }
+              const laneOf = anchor.lane_of ?? anchor.project_key;
+              this.database.prepare(`
+            INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
+              const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
+              this.database.exec("COMMIT");
+              return result;
+            } else if (dead.length > 0) {
+              const replaced = dead[0];
+              if (dead.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+                this.database.exec("ROLLBACK");
+                throw runtimeError(
+                  "project_home_conflict",
+                  ".kxm/project.yaml",
+                  `project ${registration.projectId} home runtime is immutable and cannot be rebound`
+                );
+              }
+              this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
+              this.insertHome(registration, projectRoot, projectKey);
+              this.database.exec("COMMIT");
+              registration.logger?.({
+                event: "project_registration_replaced",
+                projectId: registration.projectId,
+                projectRoot,
+                replacedRoot: replaced.project_root,
+                replacedCount: dead.length,
+                replacedHomeRuntimeId: replaced.home_runtime_id,
+                replacedProjectKey: replaced.project_key
+              });
+              return this.insertedRegistration(registration, projectRoot, projectKey);
+            } else {
+              this.insertHome(registration, projectRoot, projectKey);
+              this.database.exec("COMMIT");
+              return this.insertedRegistration(registration, projectRoot, projectKey);
+            }
+          } catch (error) {
+            try {
+              this.database.exec("ROLLBACK");
+            } catch {
+            }
+            throw error;
+          }
+          for (const root of rootsToMeasure ?? []) {
+            commonByRoot.set(root, gitCommonDirectory(root));
+          }
+        }
+        throw runtimeError(
+          "runtime_registry_busy",
+          projectRoot,
+          `project ${registration.projectId} registration could not be rechecked`
+        );
+      }
+      /** Remove one control root. Returns false when that root was not registered. */
+      unregisterProject(projectRoot) {
         this.database.exec("BEGIN IMMEDIATE");
         try {
-          const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
-          if (byKey) {
-            const problems = [];
-            if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
-            if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
-            if (problems.length > 0) {
-              this.database.exec("ROLLBACK");
-              throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
-            }
-            const result = registrationFromRow(byKey);
-            this.database.exec("COMMIT");
-            return result;
-          }
-          const rows = this.database.prepare(
-            `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`
-          ).all(registration.projectId);
-          const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
-          const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
-          if (live.length > 0) {
-            const anchor = live.find((row) => sameGitRepository(row.project_root, projectRoot));
-            if (!anchor) {
-              this.database.exec("ROLLBACK");
-              throw runtimeError(
-                "project_home_conflict",
-                ".kxm/project.yaml",
-                `project ${registration.projectId} is already bound to a different control root`
-              );
-            }
-            if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
-              this.database.exec("ROLLBACK");
-              throw runtimeError(
-                "project_home_conflict",
-                ".kxm/project.yaml",
-                `project ${registration.projectId} home runtime is immutable and cannot be rebound`
-              );
-            }
-            const laneOf = anchor.lane_of ?? anchor.project_key;
-            this.database.prepare(`
-          INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
-            const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
-            this.database.exec("COMMIT");
-            return result;
-          }
-          if (dead.length > 0) {
-            this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
-            this.insertHome(registration, projectRoot, projectKey);
-            this.database.exec("COMMIT");
-            registration.logger?.({
-              event: "project_registration_replaced",
-              projectId: registration.projectId,
-              projectRoot,
-              replacedRoot: dead[0]?.project_root,
-              replacedCount: dead.length
-            });
-            return this.insertedRegistration(registration, projectRoot, projectKey);
-          }
-          this.insertHome(registration, projectRoot, projectKey);
+          const removed = this.deleteRegisteredRoot(projectRoot);
           this.database.exec("COMMIT");
-          return this.insertedRegistration(registration, projectRoot, projectKey);
+          return removed;
         } catch (error) {
           try {
             this.database.exec("ROLLBACK");
@@ -21434,30 +22202,21 @@ CREATE INDEX projects_by_project_id ON projects (project_id);
           throw error;
         }
       }
-      /** Remove one control root. Returns false when that root was not registered. */
-      unregisterProject(projectRoot) {
-        const projectKey = projectRuntimeKey(resolve8(projectRoot));
+      /**
+       * Delete the row only when `supervisorIsLive` is false for the supervisor
+       * row read inside this write transaction. A live supervisor keeps the row;
+       * the caller uses the supervisor route instead of editing the file.
+       */
+      unregisterProjectIfIdle(projectRoot, supervisorIsLive) {
         this.database.exec("BEGIN IMMEDIATE");
         try {
-          const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
-          if (!row) {
-            this.database.exec("COMMIT");
-            return false;
+          if (supervisorIsLive(this.readSupervisorRow())) {
+            this.database.exec("ROLLBACK");
+            return "supervisor_live";
           }
-          this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
-          if (row.lane_of === null) {
-            const successor = this.database.prepare(
-              "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1"
-            ).get(row.project_id);
-            if (successor) {
-              this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
-              this.database.prepare(
-                "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)"
-              ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
-            }
-          }
+          const removed = this.deleteRegisteredRoot(projectRoot);
           this.database.exec("COMMIT");
-          return true;
+          return removed ? "removed" : "absent";
         } catch (error) {
           try {
             this.database.exec("ROLLBACK");
@@ -21465,6 +22224,34 @@ CREATE INDEX projects_by_project_id ON projects (project_id);
           }
           throw error;
         }
+      }
+      /** How many other rows share this home root's project. Zero when this root is a lane or missing. */
+      homeLaneCount(projectRoot) {
+        const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectRuntimeKey(resolve8(projectRoot)));
+        if (!row || row.lane_of !== null) return 0;
+        const count = this.database.prepare(
+          "SELECT COUNT(*) AS total FROM projects WHERE project_id = ? AND project_key != ?"
+        ).get(row.project_id, row.project_key);
+        return Number(count?.total ?? 0);
+      }
+      /** Caller holds the write transaction. Does not commit. */
+      deleteRegisteredRoot(projectRoot) {
+        const projectKey = projectRuntimeKey(resolve8(projectRoot));
+        const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
+        if (!row) return false;
+        this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
+        if (row.lane_of === null) {
+          const successor = this.database.prepare(
+            "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1"
+          ).get(row.project_id);
+          if (successor) {
+            this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
+            this.database.prepare(
+              "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)"
+            ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
+          }
+        }
+        return true;
       }
       /** The home row for a project id, or the earliest row when every row is a lane. */
       project(projectId) {
@@ -21499,6 +22286,7 @@ CREATE INDEX projects_by_project_id ON projects (project_id);
         };
       }
     };
+    KXM_EVENT_STORE_SCHEMA_VERSION = 7;
     DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
     EVENT_STORE_TABLES = {
       runs: ["run_id", "project_id", "home_runtime_id", "workflow_id", "prompt_sha256", "status", "config_revision", "memory_revision", "executor_policy_revision", "tool_policy_revision", "created_at", "updated_at"],
@@ -21616,6 +22404,969 @@ CREATE INDEX projects_by_project_id ON projects (project_id);
       ]
     };
     KXM_EVENT_STORE_TABLE_NAMES = Object.keys(EVENT_STORE_TABLES).sort();
+    EVENT_STORE_SCHEMA = `
+CREATE TABLE runs (
+  run_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  workflow_id TEXT NOT NULL,
+  prompt_sha256 TEXT NOT NULL,
+  status TEXT NOT NULL,
+  config_revision TEXT NOT NULL,
+  memory_revision TEXT NOT NULL,
+  executor_policy_revision TEXT NOT NULL,
+  tool_policy_revision TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+CREATE TABLE events (
+  project_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  event_id TEXT NOT NULL UNIQUE,
+  event_type TEXT NOT NULL,
+  command_id TEXT,
+  occurred_at TEXT NOT NULL,
+  recorded_at TEXT NOT NULL,
+  monotonic_ns TEXT NOT NULL,
+  config_revision TEXT NOT NULL,
+  memory_revision TEXT NOT NULL,
+  executor_policy_revision TEXT NOT NULL,
+  tool_policy_revision TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  PRIMARY KEY (project_id, run_id, sequence)
+) STRICT;
+CREATE INDEX events_run ON events(run_id, sequence);
+CREATE TABLE commands (
+  command_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  result TEXT NOT NULL,
+  recorded_at TEXT NOT NULL
+) STRICT;
+CREATE TABLE run_plans (
+  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+  run_plan_hash TEXT NOT NULL,
+  envelope TEXT NOT NULL,
+  pinned_sequence INTEGER NOT NULL
+) STRICT;
+CREATE TABLE run_state (
+  run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+  last_sequence INTEGER NOT NULL,
+  state TEXT NOT NULL
+) STRICT;
+CREATE TABLE attempt_capabilities (
+  attempt_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  assignment_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  producer_id TEXT NOT NULL,
+  capability_hash TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK (state IN ('issued','settled','revoked'))
+) STRICT;
+CREATE TABLE gate_attempts (
+  attempt_id TEXT PRIMARY KEY REFERENCES attempt_capabilities(attempt_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL UNIQUE,
+  gate_id TEXT NOT NULL,
+  gate_kind TEXT NOT NULL CHECK (gate_kind IN ('command','artifacts-exist')),
+  expect TEXT NOT NULL CHECK (expect IN ('pass','fail')),
+  gate_definition_hash TEXT NOT NULL,
+  registry_hash TEXT NOT NULL,
+  run_plan_hash TEXT NOT NULL,
+  control_project_key TEXT NOT NULL,
+  producer_id TEXT NOT NULL CHECK (producer_id = 'kxm-gate'),
+  intent_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE INDEX gate_attempts_run ON gate_attempts(run_id);
+CREATE INDEX gate_attempts_project ON gate_attempts(project_id);
+CREATE TABLE gate_observations (
+  observation_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL UNIQUE REFERENCES gate_attempts(attempt_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL,
+  completeness TEXT NOT NULL CHECK (completeness IN ('complete','incomplete','no-start')),
+  spawned INTEGER NOT NULL CHECK (spawned IN (0, 1)),
+  pid INTEGER,
+  exit_code INTEGER,
+  signal TEXT,
+  exit_observed INTEGER NOT NULL CHECK (exit_observed IN (0, 1)),
+  close_observed INTEGER NOT NULL CHECK (close_observed IN (0, 1)),
+  stop_cause TEXT NOT NULL CHECK (stop_cause IN ('none','timeout','cancel','error')),
+  signals_attempted TEXT NOT NULL CHECK (signals_attempted IN ('none','term','term-kill')),
+  error_class TEXT CHECK (error_class IN ('validation','spawn-error','stream-error','stop-error','recording-error','lost-close')),
+  stdout_sha256 TEXT,
+  stdout_bytes INTEGER,
+  stdout_complete INTEGER CHECK (stdout_complete IN (0, 1)),
+  stderr_sha256 TEXT,
+  stderr_bytes INTEGER,
+  stderr_complete INTEGER CHECK (stderr_complete IN (0, 1)),
+  checked_count INTEGER,
+  failed_count INTEGER,
+  elapsed_ms INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  recorded_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE INDEX gate_observations_run ON gate_observations(run_id);
+CREATE TABLE gate_evidence (
+  evidence_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL UNIQUE REFERENCES gate_attempts(attempt_id),
+  observation_id TEXT NOT NULL UNIQUE REFERENCES gate_observations(observation_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  project_id TEXT NOT NULL,
+  home_runtime_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  step_attempt INTEGER NOT NULL,
+  assignment_id TEXT NOT NULL,
+  effect_id TEXT NOT NULL,
+  evidence_key TEXT,
+  kind TEXT NOT NULL CHECK (kind = 'gate'),
+  expect TEXT NOT NULL CHECK (expect IN ('pass','fail')),
+  outcome TEXT NOT NULL CHECK (outcome IN ('passed','implementation-failure','repro-missing')),
+  settled_event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+  content_hash TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX gate_evidence_key ON gate_evidence(run_id, step_id, step_attempt, evidence_key) WHERE evidence_key IS NOT NULL;
+CREATE INDEX gate_evidence_run ON gate_evidence(run_id);
+CREATE TABLE drive_receipts (
+  drive_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  opened_sequence INTEGER NOT NULL,
+  last_sequence INTEGER NOT NULL,
+  closed_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  receipt TEXT NOT NULL
+) STRICT;
+CREATE INDEX drive_receipts_run ON drive_receipts(run_id);
+CREATE TABLE coordinators (
+  coordinator_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  ceiling_hash TEXT NOT NULL,
+  config_revision TEXT NOT NULL,
+  bound_at TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX coordinators_slot ON coordinators(project_id, role, channel);
+CREATE TABLE intake_messages (
+  message_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  coordinator_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  dispatch_state TEXT NOT NULL CHECK (dispatch_state IN ('ready','held_paused','admitted','refused')),
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE UNIQUE INDEX intake_idempotency ON intake_messages(project_id, coordinator_id, idempotency_key);
+CREATE INDEX intake_dispatch ON intake_messages(project_id, dispatch_state, received_at, message_id);
+CREATE TABLE project_controls (
+  project_id TEXT PRIMARY KEY,
+  paused INTEGER NOT NULL CHECK (paused IN (0, 1)),
+  reason TEXT,
+  updated_at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  schema TEXT NOT NULL,
+  record TEXT NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS outbox (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  sync_event TEXT NOT NULL,
+  attempted_at TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  acked_at TEXT,
+  refused_code TEXT,
+  refused_at TEXT,
+  UNIQUE (run_id, sequence)
+) STRICT;
+CREATE INDEX outbox_pending ON outbox(seq) WHERE acked_at IS NULL AND refused_code IS NULL;
+CREATE INDEX outbox_refused ON outbox(seq) WHERE refused_code IS NOT NULL;
+`;
+    KxmRunEventStore = class {
+      path;
+      /** Secret values registered here are replaced in every sync object this
+       * store derives. In memory only: they are never written anywhere. */
+      syncRedactor = new KxmSyncRedactor();
+      database;
+      constructor(path4) {
+        this.path = resolve8(path4);
+        this.database = openDatabase(this.path, "run event store", {
+          schema: EVENT_STORE_SCHEMA,
+          version: KXM_EVENT_STORE_SCHEMA_VERSION,
+          tables: EVENT_STORE_TABLES
+        });
+      }
+      close() {
+        this.database.close();
+      }
+      /** Persist the accepted prompt outside the event log (hashed in events only). */
+      putRunPrompt(runId, prompt) {
+        const all = this.readRunPrompts();
+        all[runId] = prompt;
+        this.writeRunPrompts(all);
+      }
+      getRunPrompt(runId) {
+        const value = this.readRunPrompts()[runId];
+        return typeof value === "string" ? value : void 0;
+      }
+      runPromptSidecarPath() {
+        return `${this.path}.run-prompts.json`;
+      }
+      readRunPrompts() {
+        const sidecar = this.runPromptSidecarPath();
+        if (!existsSync10(sidecar)) return {};
+        try {
+          const parsed = JSON.parse(readFileSync8(sidecar, "utf8"));
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+          return Object.fromEntries(
+            Object.entries(parsed).filter((entry) => typeof entry[1] === "string")
+          );
+        } catch {
+          return {};
+        }
+      }
+      writeRunPrompts(all) {
+        writeFileSync6(this.runPromptSidecarPath(), `${JSON.stringify(all)}
+`, { encoding: "utf8", mode: 384 });
+      }
+      /** Run one immutable transaction, rolling back on any failure. */
+      transaction(work) {
+        return withDatabaseTransaction(this.database, work);
+      }
+      command(commandId) {
+        const row = this.database.prepare("SELECT command_id, run_id, kind, result, recorded_at FROM commands WHERE command_id = ?").get(commandId);
+        return row ? { commandId: row.command_id, runId: row.run_id, kind: row.kind, result: JSON.parse(row.result), recordedAt: row.recorded_at } : void 0;
+      }
+      insertCommand(record) {
+        this.database.prepare("INSERT INTO commands (command_id, run_id, kind, result, recorded_at) VALUES (?, ?, ?, ?, ?)").run(record.commandId, record.runId, record.kind, JSON.stringify(record.result), record.recordedAt);
+      }
+      insertRun(record) {
+        this.database.prepare(`
+      INSERT INTO runs (run_id, project_id, home_runtime_id, workflow_id, prompt_sha256, status, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+          record.runId,
+          record.projectId,
+          record.homeRuntimeId,
+          record.workflowId,
+          record.promptSha256,
+          record.status,
+          record.configRevision,
+          record.memoryRevision,
+          record.executorPolicyRevision,
+          record.toolPolicyRevision,
+          record.createdAt,
+          record.updatedAt
+        );
+      }
+      updateRunStatus(runId, status, updatedAt) {
+        this.database.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE run_id = ?").run(status, updatedAt, runId);
+      }
+      run(runId) {
+        const row = this.database.prepare(`
+      SELECT run_id, project_id, home_runtime_id, workflow_id, prompt_sha256, status, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, created_at, updated_at
+      FROM runs WHERE run_id = ?
+    `).get(runId);
+        return row ? runFromRow(row) : void 0;
+      }
+      /** All projects registered to this Runtime, for restart recovery: the
+       * supervisor needs to reopen their contexts so pending outbox rows resume
+       * syncing and presence keeps beating. */
+      projectsForRuntime(homeRuntimeId) {
+        const rows = this.database.prepare(
+          "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at"
+        ).all(homeRuntimeId);
+        return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
+      }
+      runsForProject(projectId, limit = 50) {
+        const rows = this.database.prepare(`
+      SELECT run_id, project_id, home_runtime_id, workflow_id, prompt_sha256, status, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, created_at, updated_at
+      FROM runs WHERE project_id = ? ORDER BY created_at DESC, run_id DESC LIMIT ?
+    `).all(projectId, limit);
+        return rows.map(runFromRow);
+      }
+      nextSequence(runId) {
+        const row = this.database.prepare("SELECT COALESCE(MAX(sequence), 0) AS max_sequence FROM events WHERE run_id = ?").get(runId);
+        return row.max_sequence + 1;
+      }
+      appendEvent(event) {
+        validateRunEvent(event, "run-event");
+        const run = this.run(event.runId);
+        if (!run) throw runtimeError("run_unknown", event.runId, "run does not exist in this event store");
+        if (event.homeRuntimeId !== run.homeRuntimeId || event.projectId !== run.projectId) {
+          throw runtimeError("run_event_owner_mismatch", event.runId, "event homeRuntimeId or projectId does not match the run");
+        }
+        this.database.prepare(`
+      INSERT INTO events (project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload, schema, home_runtime_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+          event.projectId,
+          event.runId,
+          event.sequence,
+          event.eventId,
+          event.eventType,
+          event.commandId ?? null,
+          event.occurredAt,
+          event.recordedAt,
+          event.monotonicNs,
+          event.configRevision,
+          event.memoryRevision,
+          event.executorPolicyRevision,
+          event.toolPolicyRevision,
+          JSON.stringify(event.payload),
+          event.schema,
+          event.homeRuntimeId
+        );
+        const syncEvent = deriveKxmSyncEvent(event, { redactor: this.syncRedactor });
+        this.database.prepare("INSERT INTO outbox (run_id, sequence, sync_event) VALUES (?, ?, ?)").run(event.runId, event.sequence, kxmSyncEventBytes(syncEvent));
+      }
+      /**
+       * Retryable outbox rows after `afterSeq`, in outbox order, oldest first.
+       * Acked and durably refused rows are never returned: a refused row is not
+       * waiting for a retry, it is waiting for an operator.
+       */
+      pendingOutbox(limit = 100, afterSeq = 0) {
+        const rows = this.database.prepare(`
+      SELECT seq, run_id, sequence, sync_event, attempt_count, attempted_at, acked_at, refused_code, refused_at
+      FROM outbox WHERE acked_at IS NULL AND refused_code IS NULL AND seq > ? ORDER BY seq ASC LIMIT ?
+    `).all(afterSeq, limit);
+        return rows.map(outboxFromRow);
+      }
+      /** Every outbox row of one run, in any state, in sequence order. */
+      outboxForRun(runId) {
+        const rows = this.database.prepare(`
+      SELECT seq, run_id, sequence, sync_event, attempt_count, attempted_at, acked_at, refused_code, refused_at
+      FROM outbox WHERE run_id = ? ORDER BY sequence ASC
+    `).all(runId);
+        return rows.map(outboxFromRow);
+      }
+      /**
+       * Count one attempt against each row. Refused rows are never re-counted: they
+       * are out of the queue, and a tick that reaches them again would mean the
+       * refusal was cleared (which resets the count).
+       */
+      markOutboxAttempted(seqs, at2) {
+        const statement = this.database.prepare(`
+      UPDATE outbox SET attempted_at = ?, attempt_count = attempt_count + 1
+      WHERE seq = ? AND acked_at IS NULL AND refused_code IS NULL
+    `);
+        this.transaction(() => {
+          for (const seq of seqs) statement.run(at2, seq);
+        });
+      }
+      /** Advance the cursor: the hub holds these rows now. Returns rows newly acked. */
+      ackOutbox(seqs, at2) {
+        const statement = this.database.prepare("UPDATE outbox SET acked_at = ?, refused_code = NULL, refused_at = NULL WHERE seq = ? AND acked_at IS NULL");
+        return this.transaction(() => {
+          let changed = 0;
+          for (const seq of seqs) changed += Number(statement.run(at2, seq).changes);
+          return changed;
+        });
+      }
+      /**
+       * Record a durable hub refusal: the answer will not change if the same bytes
+       * are sent again. Returns rows newly moved out of the pending queue.
+       */
+      refuseOutbox(refusals, at2) {
+        const statement = this.database.prepare(`
+      UPDATE outbox SET refused_code = ?, refused_at = ?
+      WHERE seq = ? AND acked_at IS NULL AND refused_code IS NULL
+    `);
+        return this.transaction(() => {
+          let changed = 0;
+          for (const refusal of refusals) changed += Number(statement.run(refusal.code, at2, refusal.seq).changes);
+          return changed;
+        });
+      }
+      /**
+       * Operator revive: put refused rows back in the pending queue with a fresh
+       * attempt budget. Used after the hub-side state is corrected — the Runtime
+       * must not decide on its own that a refusal has become retryable.
+       */
+      retryRefusedOutbox() {
+        return Number(this.database.prepare(`
+      UPDATE outbox SET refused_code = NULL, refused_at = NULL, attempted_at = NULL, attempt_count = 0
+      WHERE acked_at IS NULL AND refused_code IS NOT NULL
+    `).run().changes);
+      }
+      /**
+       * The outbox as one read model: what is still retryable, what the hub holds,
+       * and what the hub refused with which codes. This is what makes a stalled
+       * sync answerable without opening SQLite.
+       */
+      outboxStatus() {
+        const counts = this.database.prepare(`
+      SELECT
+        COALESCE(SUM(acked_at IS NULL AND refused_code IS NULL), 0) AS pending,
+        COALESCE(SUM(acked_at IS NOT NULL), 0) AS acked,
+        COALESCE(SUM(acked_at IS NULL AND refused_code IS NOT NULL), 0) AS refused,
+        MAX(attempted_at) AS last_attempt_at
+      FROM outbox
+    `).get();
+        const refusals = this.database.prepare(`
+      SELECT refused_code AS code, COUNT(*) AS count
+      FROM outbox WHERE acked_at IS NULL AND refused_code IS NOT NULL
+      GROUP BY refused_code ORDER BY count DESC, code ASC
+    `).all();
+        const oldest = this.database.prepare(`
+      SELECT seq FROM outbox WHERE acked_at IS NULL AND refused_code IS NULL ORDER BY seq ASC LIMIT 1
+    `).get();
+        return {
+          pending: counts.pending,
+          acked: counts.acked,
+          refused: counts.refused,
+          ...counts.last_attempt_at !== null ? { lastAttemptAt: counts.last_attempt_at } : {},
+          ...oldest ? { oldestPendingSeq: oldest.seq } : {},
+          // Mapped, not spread: node:sqlite rows are null-prototype objects, and this
+          // read model is handed straight to the CLI and the supervisor's JSON answer.
+          refusals: refusals.map((refusal) => ({ code: refusal.code, count: refusal.count }))
+        };
+      }
+      events(runId, afterSequence = 0, limit = 200) {
+        const rows = this.database.prepare(`
+      SELECT project_id, run_id, sequence, event_id, event_type, command_id, occurred_at, recorded_at, monotonic_ns, config_revision, memory_revision, executor_policy_revision, tool_policy_revision, payload, schema, home_runtime_id
+      FROM events WHERE run_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?
+    `).all(runId, afterSequence, limit);
+        return rows.map((row) => ({
+          schema: row.schema,
+          eventId: row.event_id,
+          eventType: row.event_type,
+          projectId: row.project_id,
+          runId: row.run_id,
+          homeRuntimeId: row.home_runtime_id,
+          sequence: row.sequence,
+          ...row.command_id !== null ? { commandId: row.command_id } : {},
+          occurredAt: row.occurred_at,
+          recordedAt: row.recorded_at,
+          monotonicNs: row.monotonic_ns,
+          configRevision: row.config_revision,
+          memoryRevision: row.memory_revision,
+          executorPolicyRevision: row.executor_policy_revision,
+          toolPolicyRevision: row.tool_policy_revision,
+          payload: JSON.parse(row.payload)
+        }));
+      }
+      insertRunPlan(row) {
+        this.database.prepare("INSERT INTO run_plans (run_id, run_plan_hash, envelope, pinned_sequence) VALUES (?, ?, ?, ?)").run(row.runId, row.runPlanHash, row.envelope, row.pinnedSequence);
+      }
+      runPlan(runId) {
+        const row = this.database.prepare("SELECT run_id, run_plan_hash, envelope, pinned_sequence FROM run_plans WHERE run_id = ?").get(runId);
+        return row ? { runId: row.run_id, runPlanHash: row.run_plan_hash, envelope: row.envelope, pinnedSequence: row.pinned_sequence } : void 0;
+      }
+      runState(runId) {
+        const row = this.database.prepare("SELECT run_id, last_sequence, state FROM run_state WHERE run_id = ?").get(runId);
+        return row ? { runId: row.run_id, lastSequence: row.last_sequence, state: row.state } : void 0;
+      }
+      upsertRunState(row) {
+        this.database.prepare(`
+      INSERT INTO run_state (run_id, last_sequence, state) VALUES (?, ?, ?)
+      ON CONFLICT(run_id) DO UPDATE SET last_sequence = excluded.last_sequence, state = excluded.state
+    `).run(row.runId, row.lastSequence, row.state);
+      }
+      insertDriveReceipt(receipt) {
+        validateDriveReceipt(receipt, "drive-receipt");
+        const canonical2 = kxmCanonicalJson(receipt);
+        if (Buffer.byteLength(canonical2, "utf8") > DRIVE_RECEIPT_MAX_BYTES) {
+          throw runtimeError("drive_receipt_invalid", receipt.driveId, `drive receipt exceeds ${DRIVE_RECEIPT_MAX_BYTES} bytes`);
+        }
+        const result = this.database.prepare(`
+      INSERT INTO drive_receipts (drive_id, run_id, project_id, opened_sequence, last_sequence, closed_at, schema, receipt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(drive_id) DO NOTHING
+    `).run(
+          receipt.driveId,
+          receipt.runId,
+          receipt.projectId,
+          receipt.openedSequence,
+          receipt.lastSequence,
+          receipt.closedAt,
+          receipt.schema,
+          canonical2
+        );
+        return { inserted: Number(result.changes) === 1 };
+      }
+      driveReceipt(driveId) {
+        const row = this.database.prepare("SELECT receipt FROM drive_receipts WHERE drive_id = ?").get(driveId);
+        return row ? parseDriveReceipt(row.receipt) : void 0;
+      }
+      driveReceiptsForRun(runId, limit = 20) {
+        const rows = this.database.prepare(`
+      SELECT drive_id, receipt FROM drive_receipts WHERE run_id = ? ORDER BY closed_at DESC, drive_id DESC LIMIT ?
+    `).all(runId, limit);
+        return rows.map((row) => {
+          try {
+            return parseDriveReceipt(row.receipt);
+          } catch {
+            return { driveId: row.drive_id, divergence: "receipt unreadable" };
+          }
+        });
+      }
+      /** Insert a coordinator unless the (project, role, channel) slot is taken. */
+      insertCoordinatorIfAbsent(row) {
+        const result = this.database.prepare(`
+      INSERT OR IGNORE INTO coordinators
+        (coordinator_id, project_id, role, channel, ceiling_hash, config_revision, bound_at, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+          row.coordinatorId,
+          row.projectId,
+          row.role,
+          row.channel,
+          row.ceilingHash,
+          row.configRevision,
+          row.boundAt,
+          "kxm.coordinator.v1",
+          row.record
+        );
+        return Number(result.changes) === 1;
+      }
+      coordinatorById(coordinatorId) {
+        const row = this.database.prepare("SELECT * FROM coordinators WHERE coordinator_id = ?").get(coordinatorId);
+        return row ? coordinatorFromRow(row) : void 0;
+      }
+      coordinatorInSlot(projectId, role, channel) {
+        const row = this.database.prepare(`
+      SELECT * FROM coordinators WHERE project_id = ? AND role = ? AND channel = ?
+    `).get(projectId, role, channel);
+        return row ? coordinatorFromRow(row) : void 0;
+      }
+      /**
+       * Replace the coordinator holding a (project, role, channel) slot, guarded by
+       * the identity that is currently there. A rebind therefore cannot clobber a
+       * record that changed underneath it, and cannot leave two live identities for
+       * one slot.
+       */
+      replaceCoordinatorInSlot(expectedCoordinatorId, row) {
+        const result = this.database.prepare(`
+      UPDATE coordinators
+      SET coordinator_id = ?, ceiling_hash = ?, config_revision = ?, bound_at = ?, schema = ?, record = ?
+      WHERE project_id = ? AND role = ? AND channel = ? AND coordinator_id = ?
+    `).run(
+          row.coordinatorId,
+          row.ceilingHash,
+          row.configRevision,
+          row.boundAt,
+          "kxm.coordinator.v1",
+          row.record,
+          row.projectId,
+          row.role,
+          row.channel,
+          expectedCoordinatorId
+        );
+        return Number(result.changes) === 1;
+      }
+      /** Insert an intake message unless its idempotency slot is taken. */
+      insertIntakeMessageIfAbsent(row) {
+        const result = this.database.prepare(`
+      INSERT OR IGNORE INTO intake_messages
+        (message_id, project_id, coordinator_id, idempotency_key, content_hash, received_at, dispatch_state, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+          row.messageId,
+          row.projectId,
+          row.coordinatorId,
+          row.idempotencyKey,
+          row.contentHash,
+          row.receivedAt,
+          row.dispatchState,
+          "kxm.intake-message.v1",
+          row.record
+        );
+        return Number(result.changes) === 1;
+      }
+      intakeMessage(messageId) {
+        const row = this.database.prepare("SELECT * FROM intake_messages WHERE message_id = ?").get(messageId);
+        return row ? intakeFromRow(row) : void 0;
+      }
+      intakeBySlot(projectId, coordinatorId, idempotencyKey) {
+        const row = this.database.prepare(`
+      SELECT * FROM intake_messages WHERE project_id = ? AND coordinator_id = ? AND idempotency_key = ?
+    `).get(projectId, coordinatorId, idempotencyKey);
+        return row ? intakeFromRow(row) : void 0;
+      }
+      /**
+       * Intake rows in the given dispatch states, in arrival order (replay-safe).
+       *
+       * `rowid` gives same-store arrival order, which is what queue priority needs
+       * here. It is **not** a durable sequence: this repository backs stores up with
+       * `VACUUM INTO`, and a vacuum may renumber implicit rowids. An explicit
+       * immutable arrival sequence is tracked in the plan's schema-v6 follow-ups.
+       */
+      intakeInStates(projectId, states, limit = 100) {
+        if (states.length === 0) return [];
+        const placeholders = states.map(() => "?").join(", ");
+        const rows = this.database.prepare(`
+      SELECT * FROM intake_messages
+      WHERE project_id = ? AND dispatch_state IN (${placeholders})
+      ORDER BY rowid ASC
+      LIMIT ?
+    `).all(projectId, ...states, limit);
+        return rows.map(intakeFromRow);
+      }
+      /** Rewrite one intake row's dispatch state and record. Returns false when it raced away. */
+      updateIntakeDispatch(messageId, expectState, next) {
+        const result = this.database.prepare(`
+      UPDATE intake_messages SET dispatch_state = ?, record = ?, schema = ?
+      WHERE message_id = ? AND dispatch_state = ?
+    `).run(next.state, next.record, "kxm.intake-message.v1", messageId, expectState);
+        return Number(result.changes) === 1;
+      }
+      projectControl(projectId) {
+        const row = this.database.prepare("SELECT * FROM project_controls WHERE project_id = ?").get(projectId);
+        return row ? controlFromRow(row) : void 0;
+      }
+      putProjectControl(row) {
+        this.database.prepare(`
+      INSERT INTO project_controls (project_id, paused, reason, updated_at, actor, schema, record)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id) DO UPDATE SET
+        paused = excluded.paused,
+        reason = excluded.reason,
+        updated_at = excluded.updated_at,
+        actor = excluded.actor,
+        schema = excluded.schema,
+        record = excluded.record
+    `).run(
+          row.projectId,
+          row.paused ? 1 : 0,
+          row.reason ?? null,
+          row.updatedAt,
+          row.actor,
+          "kxm.project-control.v1",
+          row.record
+        );
+      }
+      insertCapability(row) {
+        this.database.prepare(`
+      INSERT INTO attempt_capabilities (attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(row.attemptId, row.runId, row.assignmentId, row.stepId, row.stepAttempt, row.producerId, row.capabilityHash, row.state);
+      }
+      capabilityByHash(capabilityHash) {
+        return capabilityFromRow(this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities WHERE capability_hash = ?
+    `).get(capabilityHash));
+      }
+      capabilityByAttempt(attemptId) {
+        return capabilityFromRow(this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities WHERE attempt_id = ?
+    `).get(attemptId));
+      }
+      settleCapability(attemptId, state) {
+        const updated = this.database.prepare("UPDATE attempt_capabilities SET state = ? WHERE attempt_id = ?").run(state, attemptId);
+        if (Number(updated.changes) !== 1) {
+          throw runtimeError("capability_unknown", attemptId, "attempt capability does not exist");
+        }
+      }
+      insertGateAttempt(row) {
+        assertGateAttemptRow(row);
+        this.assertEventType(row.runId, row.intentEventId, ["effect.intent_recorded"]);
+        const capability = this.capabilityByAttempt(row.attemptId);
+        if (!capability || capability.runId !== row.runId || capability.assignmentId !== row.assignmentId || capability.stepId !== row.stepId || capability.stepAttempt !== row.stepAttempt) {
+          throw gateRowInvalid(row.attemptId, "gate attempt identity does not match attempt_capabilities");
+        }
+        this.database.prepare(`
+      INSERT INTO gate_attempts (
+        attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+          row.attemptId,
+          row.runId,
+          row.projectId,
+          row.homeRuntimeId,
+          row.stepId,
+          row.stepAttempt,
+          row.assignmentId,
+          row.effectId,
+          row.gateId,
+          row.gateKind,
+          row.expect,
+          row.gateDefinitionHash,
+          row.registryHash,
+          row.runPlanHash,
+          row.controlProjectKey,
+          row.producerId,
+          row.intentEventId,
+          row.contentHash
+        );
+      }
+      insertGateObservation(row) {
+        assertGateObservationRow(row);
+        this.assertEventType(row.runId, row.recordedEventId, ["effect.observed", "effect.blocked_uncertain"]);
+        const attempt = this.gateAttempt(row.attemptId);
+        if (!attempt) throw gateRowInvalid(row.attemptId, "gate observation has no matching gate attempt");
+        assertSharedIdentity(row, attempt, row.observationId);
+        assertClosedGateObservation(attempt.gateKind, row, row.observationId);
+        this.database.prepare(`
+      INSERT INTO gate_observations (
+        observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause, signals_attempted,
+        error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes, stderr_complete,
+        checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+          row.observationId,
+          row.attemptId,
+          row.runId,
+          row.projectId,
+          row.homeRuntimeId,
+          row.stepId,
+          row.stepAttempt,
+          row.assignmentId,
+          row.effectId,
+          row.completeness,
+          row.spawned,
+          row.pid,
+          row.exitCode,
+          row.signal,
+          row.exitObserved,
+          row.closeObserved,
+          row.stopCause,
+          row.signalsAttempted,
+          row.errorClass,
+          row.stdoutSha256,
+          row.stdoutBytes,
+          row.stdoutComplete,
+          row.stderrSha256,
+          row.stderrBytes,
+          row.stderrComplete,
+          row.checkedCount,
+          row.failedCount,
+          row.elapsedMs,
+          row.startedAt,
+          row.finishedAt,
+          row.recordedEventId,
+          row.contentHash
+        );
+      }
+      insertGateEvidence(row) {
+        assertGateEvidenceRow(row);
+        this.assertEventType(row.runId, row.settledEventId, ["effect.settled"]);
+        const attempt = this.gateAttempt(row.attemptId);
+        if (!attempt) throw gateRowInvalid(row.attemptId, "gate evidence has no matching gate attempt");
+        assertSharedIdentity(row, attempt, row.evidenceId);
+        const observation = this.gateObservationForAttempt(row.attemptId);
+        if (!observation || observation.observationId !== row.observationId) {
+          throw gateRowInvalid(row.evidenceId, "gate evidence observation_id does not match the attempt observation");
+        }
+        this.database.prepare(`
+      INSERT INTO gate_evidence (
+        evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+          row.evidenceId,
+          row.attemptId,
+          row.observationId,
+          row.runId,
+          row.projectId,
+          row.homeRuntimeId,
+          row.stepId,
+          row.stepAttempt,
+          row.assignmentId,
+          row.effectId,
+          row.evidenceKey,
+          row.kind,
+          row.expect,
+          row.outcome,
+          row.settledEventId,
+          row.contentHash
+        );
+      }
+      gateAttempt(attemptId) {
+        const row = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE attempt_id = ?
+    `).get(attemptId);
+        return row ? gateAttemptFromSql(row) : void 0;
+      }
+      gateAttemptsForRun(runId) {
+        const rows = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE run_id = ? ORDER BY step_attempt ASC, attempt_id ASC
+    `).all(runId);
+        return rows.map(gateAttemptFromSql);
+      }
+      gateAttemptsForProject(projectId) {
+        const rows = this.database.prepare(`
+      SELECT attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id, effect_id,
+        gate_id, gate_kind, expect, gate_definition_hash, registry_hash, run_plan_hash, control_project_key,
+        producer_id, intent_event_id, content_hash
+      FROM gate_attempts WHERE project_id = ? ORDER BY run_id ASC, step_attempt ASC, attempt_id ASC
+    `).all(projectId);
+        return rows.map(gateAttemptFromSql);
+      }
+      issuedOrRevokedCapabilities() {
+        const rows = this.database.prepare(`
+      SELECT attempt_id, run_id, assignment_id, step_id, step_attempt, producer_id, capability_hash, state
+      FROM attempt_capabilities
+      WHERE state IN ('issued','revoked')
+      ORDER BY run_id ASC, step_attempt ASC, attempt_id ASC
+    `).all();
+        const mapped = [];
+        for (const row of rows) {
+          const capability = capabilityFromRow(row);
+          if (!capability) {
+            throw runtimeError("gate_recovery_corrupt", "attempt_capabilities", "issued or revoked capability row could not be read");
+          }
+          mapped.push(capability);
+        }
+        return mapped;
+      }
+      gateObservationForAttempt(attemptId) {
+        const row = this.database.prepare(`
+      SELECT observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id,
+        effect_id, completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause,
+        signals_attempted, error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes,
+        stderr_complete, checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      FROM gate_observations WHERE attempt_id = ?
+    `).get(attemptId);
+        return row ? gateObservationFromSql(row) : void 0;
+      }
+      gateObservationsForRun(runId) {
+        const rows = this.database.prepare(`
+      SELECT observation_id, attempt_id, run_id, project_id, home_runtime_id, step_id, step_attempt, assignment_id,
+        effect_id, completeness, spawned, pid, exit_code, signal, exit_observed, close_observed, stop_cause,
+        signals_attempted, error_class, stdout_sha256, stdout_bytes, stdout_complete, stderr_sha256, stderr_bytes,
+        stderr_complete, checked_count, failed_count, elapsed_ms, started_at, finished_at, recorded_event_id, content_hash
+      FROM gate_observations WHERE run_id = ? ORDER BY step_attempt ASC, observation_id ASC
+    `).all(runId);
+        return rows.map(gateObservationFromSql);
+      }
+      gateEvidenceForRun(runId) {
+        const rows = this.database.prepare(`
+      SELECT evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      FROM gate_evidence WHERE run_id = ? ORDER BY step_attempt ASC, evidence_id ASC
+    `).all(runId);
+        return rows.map(gateEvidenceFromSql);
+      }
+      gateEvidenceForAttempt(attemptId) {
+        const row = this.database.prepare(`
+      SELECT evidence_id, attempt_id, observation_id, run_id, project_id, home_runtime_id, step_id, step_attempt,
+        assignment_id, effect_id, evidence_key, kind, expect, outcome, settled_event_id, content_hash
+      FROM gate_evidence WHERE attempt_id = ?
+    `).get(attemptId);
+        return row ? gateEvidenceFromSql(row) : void 0;
+      }
+      gateRowCounts(runId) {
+        const attempts = this.database.prepare("SELECT COUNT(*) AS n FROM gate_attempts WHERE run_id = ?").get(runId);
+        const observations = this.database.prepare("SELECT COUNT(*) AS n FROM gate_observations WHERE run_id = ?").get(runId);
+        const evidence = this.database.prepare("SELECT COUNT(*) AS n FROM gate_evidence WHERE run_id = ?").get(runId);
+        return { attempts: Number(attempts.n), observations: Number(observations.n), evidence: Number(evidence.n) };
+      }
+      assertEventType(runId, eventId, allowed) {
+        const row = this.database.prepare("SELECT run_id, event_type FROM events WHERE event_id = ?").get(eventId);
+        if (!row || row.run_id !== runId || !allowed.includes(row.event_type)) {
+          throw gateRowInvalid(eventId, `referenced event is not ${allowed.join("|")} for this run`);
+        }
+      }
+    };
+    SHA2562 = /^sha256:[a-f0-9]{64}$/;
+    OPAQUE = /^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
+    FORBIDDEN_TEXT_KEYS = /* @__PURE__ */ new Set(["stdout", "stderr", "error", "errorText", "stdoutText", "stderrText", "errorMessage", "message"]);
+    GATE_ATTEMPT_KEYS = [
+      "attemptId",
+      "runId",
+      "projectId",
+      "homeRuntimeId",
+      "stepId",
+      "stepAttempt",
+      "assignmentId",
+      "effectId",
+      "gateId",
+      "gateKind",
+      "expect",
+      "gateDefinitionHash",
+      "registryHash",
+      "runPlanHash",
+      "controlProjectKey",
+      "producerId",
+      "intentEventId",
+      "contentHash"
+    ];
+    GATE_OBSERVATION_KEYS = [
+      "observationId",
+      "attemptId",
+      "runId",
+      "projectId",
+      "homeRuntimeId",
+      "stepId",
+      "stepAttempt",
+      "assignmentId",
+      "effectId",
+      "completeness",
+      "spawned",
+      "pid",
+      "exitCode",
+      "signal",
+      "exitObserved",
+      "closeObserved",
+      "stopCause",
+      "signalsAttempted",
+      "errorClass",
+      "stdoutSha256",
+      "stdoutBytes",
+      "stdoutComplete",
+      "stderrSha256",
+      "stderrBytes",
+      "stderrComplete",
+      "checkedCount",
+      "failedCount",
+      "elapsedMs",
+      "startedAt",
+      "finishedAt",
+      "recordedEventId",
+      "contentHash"
+    ];
+    GATE_EVIDENCE_KEYS = [
+      "evidenceId",
+      "attemptId",
+      "observationId",
+      "runId",
+      "projectId",
+      "homeRuntimeId",
+      "stepId",
+      "stepAttempt",
+      "assignmentId",
+      "effectId",
+      "evidenceKey",
+      "kind",
+      "expect",
+      "outcome",
+      "settledEventId",
+      "contentHash"
+    ];
   }
 });
 
@@ -22137,9 +23888,9 @@ var init_engine_compile = __esm({
 });
 
 // plugins/kxm/src/engine-plan.ts
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 function kxmSha256(input) {
-  return `sha256:${createHash12("sha256").update(input, "utf8").digest("hex")}`;
+  return `sha256:${createHash13("sha256").update(input, "utf8").digest("hex")}`;
 }
 function parseGateDefinition(raw, gateId, runId) {
   const value = asObject(raw, runId, `gates.definitions.${gateId}`);
@@ -22351,7 +24102,7 @@ var init_price_calc = __esm({
 });
 
 // plugins/kxm/src/prices.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 import { existsSync as existsSync11, readFileSync as readFileSync9, statSync as statSync2, writeFileSync as writeFileSync7 } from "node:fs";
 import { join as join11 } from "node:path";
 function hashPriceCatalog(catalog) {
@@ -22373,7 +24124,7 @@ function hashPriceCatalog(catalog) {
       }))
     })).sort((a, b2) => a.id.localeCompare(b2.id))
   };
-  return createHash13("sha256").update(JSON.stringify(canonical2), "utf8").digest("hex");
+  return createHash14("sha256").update(JSON.stringify(canonical2), "utf8").digest("hex");
 }
 function parsePriceCatalog(text) {
   const parsed = (0, import_yaml3.parse)(text);
@@ -23050,7 +24801,7 @@ var init_arbiter = __esm({
 });
 
 // plugins/kxm/src/memory.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 import { existsSync as existsSync15, mkdirSync as mkdirSync10, readdirSync as readdirSync5, readFileSync as readFileSync13, writeFileSync as writeFileSync11 } from "node:fs";
 import { extname as extname2, join as join15, resolve as resolve10 } from "node:path";
 function parseFrontmatter(content) {
@@ -23187,7 +24938,7 @@ function createMemoryNote(repoRoot, summary, options = {}) {
   if (!VALID_SCOPES.has(scope)) {
     throw new Error(`invalid memory note scope: ${scope}; must be one of agent, project, run, operator`);
   }
-  const hex = randomUUID4().replaceAll("-", "").slice(0, 12);
+  const hex = randomUUID5().replaceAll("-", "").slice(0, 12);
   const id = `cand_${scope}_${hex}`;
   const record = {
     schema: MEMORY_SCHEMA,
@@ -23333,11 +25084,11 @@ var init_memory = __esm({
 });
 
 // plugins/kxm/src/skills.ts
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 import { existsSync as existsSync16, mkdirSync as mkdirSync11, readdirSync as readdirSync6, readFileSync as readFileSync14, renameSync as renameSync3, rmSync as rmSync4, statSync as statSync3, writeFileSync as writeFileSync12 } from "node:fs";
 import { dirname as dirname10, join as join16 } from "node:path";
 function skillContentSha256(content) {
-  return createHash14("sha256").update(content, "utf8").digest("hex");
+  return createHash15("sha256").update(content, "utf8").digest("hex");
 }
 function skillIdFor(name, contentSha256) {
   const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -24551,9 +26302,9 @@ function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
   const workflow = bundle.workflows.get(workflowId);
   if (!workflow) throw runtimeError("run_workflow_unknown", workflowId, `workflow ${workflowId} does not exist in this project`);
   const plan = compileKxmWorkflow({ id: workflowId, value: workflow.value, logicalPath: workflow.logicalPath });
-  const envelope = { plan, projectLimits: kxmProjectAdmissionLimits(bundle), gates: pinnedGatesForCompiledPlan(plan, bundle, projectRoot) };
+  const envelope2 = { plan, projectLimits: kxmProjectAdmissionLimits(bundle), gates: pinnedGatesForCompiledPlan(plan, bundle, projectRoot) };
   const prerequisites = [];
-  const limit = unsupportedLimit(envelope);
+  const limit = unsupportedLimit(envelope2);
   if (limit) prerequisites.push(limit);
   const visited = /* @__PURE__ */ new Set();
   const pending = [plan.entryStepId];
@@ -24565,8 +26316,8 @@ function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
     for (const transition2 of Object.values(step.transitions)) {
       if (transition2.to === "step") pending.push(transition2.target);
     }
-    const limitMs = envelope.projectLimits.agentStepTimeoutMs ?? KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
-    const unsupported = step.kind === "gate" ? unsupportedGateStep(plan, step, envelope, { projectRoot }) ?? starterGatePrerequisite(step, envelope.gates, projectRoot) : unsupportedAgentStepTimeout(step, limitMs) ?? unsupportedStep(plan, step, "oneshot");
+    const limitMs = envelope2.projectLimits.agentStepTimeoutMs ?? KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
+    const unsupported = step.kind === "gate" ? unsupportedGateStep(plan, step, envelope2, { projectRoot }) ?? starterGatePrerequisite(step, envelope2.gates, projectRoot) : unsupportedAgentStepTimeout(step, limitMs) ?? unsupportedStep(plan, step, "oneshot");
     if (unsupported) {
       prerequisites.push({ ...unsupported, stepId });
       continue;
@@ -24586,7 +26337,7 @@ function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
         prerequisites.push({ ...route.error, stepId, detail: `${agentId}: ${route.error.detail}; configure its model in .kxm/agents/${agentId}.yaml and admit the installed model with kxm routes admit --model <provider/model>` });
         continue;
       }
-      const writeRefusal = unsupportedLiveWrite(projectRoot, step, agentId, route.selector, envelope.projectLimits.maxConcurrentRuns);
+      const writeRefusal = unsupportedLiveWrite(projectRoot, step, agentId, route.selector, envelope2.projectLimits.maxConcurrentRuns);
       if (writeRefusal) {
         prerequisites.push({ ...writeRefusal, stepId });
         continue;
@@ -24616,11 +26367,11 @@ function starterGatePrerequisite(step, gates, projectRoot) {
   }
   return void 0;
 }
-function unsupportedLimit(envelope) {
-  if (envelope.plan.limits.maxAgentTimeMs !== void 0) {
+function unsupportedLimit(envelope2) {
+  if (envelope2.plan.limits.maxAgentTimeMs !== void 0) {
     return { reason: "limit_unsupported", field: "limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
   }
-  if (envelope.projectLimits.maxAgentTimeMs !== void 0) {
+  if (envelope2.projectLimits.maxAgentTimeMs !== void 0) {
     return { reason: "limit_unsupported", field: "project.limits.maxAgentTimeMs", detail: "agent-time budget enforcement is not available in this slice" };
   }
   return void 0;
@@ -24740,12 +26491,12 @@ function unsupportedLiveWrite(projectRoot, step, agentId, selector, maxConcurren
   }
   return void 0;
 }
-function unsupportedGateStep(plan, step, envelope, context) {
+function unsupportedGateStep(plan, step, envelope2, context) {
   if (!step.gate) return { reason: "step_unsupported", field: "gate", detail: "gate step is missing gate id" };
-  if (envelope.gates.registry === null) {
+  if (envelope2.gates.registry === null) {
     return { reason: "step_unsupported", field: "gate", detail: `step ${step.id} refers to a gate but registry is null` };
   }
-  const definition = envelope.gates.definitions[step.gate];
+  const definition = envelope2.gates.definitions[step.gate];
   if (!definition) {
     return { reason: "step_unsupported", field: "gate", detail: `gate definition ${step.gate} not found in registry` };
   }
@@ -24851,7 +26602,7 @@ function unsupportedGateStep(plan, step, envelope, context) {
       return { reason: "gate_outcome_undeclared", field: "outcomes", detail: "step expects fail but missing required failure outcome; declare implementation-failure or failed" };
     }
   }
-  if (context && projectRuntimeKey(context.projectRoot) !== envelope.gates.controlRoot.projectKey) {
+  if (context && projectRuntimeKey(context.projectRoot) !== envelope2.gates.controlRoot.projectKey) {
     throw runtimeError("run_owner_mismatch", plan.workflowId, `gate control root does not match project`);
   }
   if (definition.kind === "artifacts-exist" && step.expect === "fail") {
@@ -25071,7 +26822,7 @@ var init_logger = __esm({
 
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash15, createHmac as createHmac2, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+import { createHash as createHash16, createHmac as createHmac2, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync19, lstatSync as lstatSync6, mkdirSync as mkdirSync13, readFileSync as readFileSync17, renameSync as renameSync5, rmSync as rmSync6, writeFileSync as writeFileSync14 } from "node:fs";
 import { dirname as dirname12, isAbsolute as isAbsolute8, join as join19 } from "node:path";
 function kxmSupervisorTokenFile(paths) {
@@ -25113,6 +26864,9 @@ function readRecentSupervisorError(paths) {
   } catch {
     return void 0;
   }
+}
+function kxmSupervisorRecordIsLive(record) {
+  return supervisorStatusOf(record).running;
 }
 function supervisorStatusOf(record) {
   if (!record) return { running: false };
@@ -25451,7 +27205,7 @@ function refuseDryRun(io, jsonMode, command, reason) {
 }
 function printWorker(runtime, worker, payload, text, outcome) {
   const sessionId = runtime.env.KXM_SESSION_ID?.trim();
-  const envelope = workerResult(worker, {
+  const envelope2 = workerResult(worker, {
     ...payload,
     summary: text,
     ...outcome ? { outcome } : {},
@@ -25459,7 +27213,7 @@ function printWorker(runtime, worker, payload, text, outcome) {
   });
   if (!runtime.dryRun) {
     try {
-      const safeEnvelope = redactCliValue(envelope);
+      const safeEnvelope = redactCliValue(envelope2);
       appendTelemetry(telemetryPath(runtime.dirs.logs), makeTelemetryEvent({
         envelope: safeEnvelope,
         ...sessionId ? { sessionId } : {},
@@ -25472,7 +27226,7 @@ function printWorker(runtime, worker, payload, text, outcome) {
     } catch {
     }
   }
-  print(runtime.io, runtime.json, envelope, text);
+  print(runtime.io, runtime.json, envelope2, text);
 }
 function hostMode(runtime) {
   try {
@@ -25729,7 +27483,7 @@ var init_model_inventory = __esm({
 
 // plugins/kxm/src/permission.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import { createHash as createHash16 } from "node:crypto";
+import { createHash as createHash17 } from "node:crypto";
 import { existsSync as existsSync24, mkdtempSync, mkdirSync as mkdirSync20, readFileSync as readFileSync24, rmSync as rmSync8, writeFileSync as writeFileSync19 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname as dirname14, join as join28, resolve as resolve19, sep as sep4 } from "node:path";
@@ -25933,7 +27687,7 @@ function kxmProseEntries(resource) {
   return entries;
 }
 function valueHash(canonicalValue) {
-  return `sha256:${createHash16("sha256").update(canonicalValue, "utf8").digest("hex")}`;
+  return `sha256:${createHash17("sha256").update(canonicalValue, "utf8").digest("hex")}`;
 }
 function rankDirection(rank, baseValue, candidateValue) {
   const base = JSON.parse(baseValue);
@@ -26253,7 +28007,7 @@ function loadKxmProjectAtRevision(root, revision, options = {}) {
   const paths = listing.split("\0").filter((line) => line.length > 0 && (line.startsWith(".kxm/") || line.includes("/.kxm/")));
   const shadow = mkdtempSync(join28(tmpdir(), "kxm-permission-base-"));
   const shadowResolved = resolve19(shadow);
-  const shadowMembersDir = `.kxm-shadow-members-${createHash16("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
+  const shadowMembersDir = `.kxm-shadow-members-${createHash17("sha256").update(shadowResolved, "utf8").digest("hex").slice(0, 8)}`;
   try {
     for (const path4 of paths) {
       const segments = path4.split("/");
@@ -26473,7 +28227,7 @@ var init_permission = __esm({
 });
 
 // plugins/kxm/src/repair.ts
-import { randomUUID as randomUUID10 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 import {
   chmodSync as chmodSync5,
   closeSync as closeSync3,
@@ -26763,7 +28517,7 @@ function operationPlanSha(operation) {
 function writeOperation(projectRoot, operation) {
   const root = transactionRoot(projectRoot);
   const file = operationFile(projectRoot);
-  const temporary = join29(root, `.operation-${operation.operationId}-${randomUUID10()}.tmp`);
+  const temporary = join29(root, `.operation-${operation.operationId}-${randomUUID11()}.tmp`);
   try {
     writeDurableNew(temporary, Buffer.from(`${JSON.stringify(operation, null, 2)}
 `, "utf8"), 384);
@@ -26955,7 +28709,7 @@ function createOperation(projectRoot, kind, rendered, files, sourceTemplateRevis
   const root = resolve20(projectRoot);
   const operationWithoutHash = {
     schema: "kxm.init-operation.v1",
-    operationId: `op_${randomUUID10().replaceAll("-", "")}`,
+    operationId: `op_${randomUUID11().replaceAll("-", "")}`,
     kind,
     projectRoot: root,
     projectId: rendered.projectId,
@@ -27019,7 +28773,7 @@ function destinationSha(projectRoot, path4) {
   return kxmContentSha256(readRegularBounded(file, path4));
 }
 function requireConditionalLinkSupport(directory, operationId, path4) {
-  const nonce = randomUUID10();
+  const nonce = randomUUID11();
   const source = join29(directory, `.kxm-repair-${operationId}-${nonce}.link-source`);
   const target = join29(directory, `.kxm-repair-${operationId}-${nonce}.link-target`);
   try {
@@ -27073,7 +28827,7 @@ function atomicInstallTarget(projectRoot, operation, entry) {
   requireConditionalLinkSupport(directory, operation.operationId, entry.path);
   const bytes = readTarget(projectRoot, entry.path);
   if (!bytes) fail3("init_transaction_target_missing", entry.path, "pinned target artifact is missing");
-  const temporary = join29(directory, `${temporaryPrefix}${randomUUID10()}.tmp`);
+  const temporary = join29(directory, `${temporaryPrefix}${randomUUID11()}.tmp`);
   const mode = existsSync25(destination) ? lstatSync7(destination).mode & 511 : 420;
   try {
     writeDurableNew(temporary, bytes, mode);
@@ -27349,7 +29103,7 @@ function commitKxmInitTransaction(projectRoot, schemasDir) {
     fail3("init_transaction_not_verified", TRANSACTION_NAME, "initialization transaction cannot commit before installed state is verified");
   }
   const transaction = transactionRoot(projectRoot);
-  const retired = join29(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID10()}`);
+  const retired = join29(projectRoot, `${TRANSACTION_NAME}-cleanup-${operation.operationId}-${randomUUID11()}`);
   renameSync7(transaction, retired);
   syncDirectory2(projectRoot);
   rmSync9(retired, { recursive: true, force: true });
@@ -27380,7 +29134,7 @@ var init_repair = __esm({
 });
 
 // plugins/kxm/src/init.ts
-import { randomUUID as randomUUID11 } from "node:crypto";
+import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync26 } from "node:fs";
 import { basename as basename6, join as join30 } from "node:path";
 function initIssue(code, file, message) {
@@ -27394,7 +29148,7 @@ function normalizedProjectName(root, requested) {
   return name;
 }
 function generatedProjectId(requested) {
-  const id = requested?.trim() || `prj_${randomUUID11().replaceAll("-", "")}`;
+  const id = requested?.trim() || `prj_${randomUUID12().replaceAll("-", "")}`;
   if (!PROJECT_ID.test(id) || id.length > 144) {
     throw new KxmConfigError([initIssue("project_id_invalid", ".kxm/project.yaml", "project ID must satisfy the kxm.project.v1 opaque ID grammar and use the prj_ prefix")]);
   }
@@ -28226,29 +29980,29 @@ function runEngineNotice(runId, defaultHarness, prerequisites) {
     "These are local Runtime runs, not webhook workflows; use kxm runs, not kxm workflow get."
   ].join("\n");
 }
-function resolveKxmRunTarget(runtime, workflow, forTask = false, envelope = {}, allowDefaultWorkflow = false) {
+function resolveKxmRunTarget(runtime, workflow, forTask = false, envelope2 = {}, allowDefaultWorkflow = false) {
   if (runtime.workspaceFlag !== void 0) {
     print(runtime.io, runtime.json, {
       ok: false,
       command: "run",
       error: "workspace_option_unsupported",
-      ...envelope
+      ...envelope2
     }, "kxm run discovers the authoritative project from the current directory; --workspace is not supported");
     return 2;
   }
   if (!workflow && !forTask && !allowDefaultWorkflow) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required", ...envelope }, "usage: kxm run <workflow> [prompt]");
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required", ...envelope2 }, "usage: kxm run <workflow> [prompt]");
     return 2;
   }
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
   if (!projectRoot) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required", ...envelope }, "kxm run requires a KXM project (run kxm init first)");
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required", ...envelope2 }, "kxm run requires a KXM project (run kxm init first)");
     return 1;
   }
   const bundle = loadKxmProject(projectRoot, {});
   const workflowId = workflow ?? String(bundle.project.value.defaultWorkflow ?? "default");
   if (!bundle.workflows.has(workflowId)) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow: workflowId, ...envelope }, `workflow ${workflowId} does not exist in this project`);
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow: workflowId, ...envelope2 }, `workflow ${workflowId} does not exist in this project`);
     return 1;
   }
   const defaultHarness = String(bundle.project.value.defaultHarness ?? "pi");
@@ -28268,9 +30022,9 @@ ${prerequisites.map((item) => `${item.stepId ?? workflowId}: ${item.detail}`).jo
   return { projectRoot, workflowId, configRevision: bundle.configRevision, defaultHarness, prerequisites };
 }
 async function cmdKxmRun(runtime, workflow, promptParts, forTask = false, call) {
-  const envelope = call?.brief !== void 0 ? { brief: call.brief } : {};
+  const envelope2 = call?.brief !== void 0 ? { brief: call.brief } : {};
   try {
-    const target = resolveKxmRunTarget(runtime, workflow, forTask, envelope, call?.allowDefaultWorkflow === true);
+    const target = resolveKxmRunTarget(runtime, workflow, forTask, envelope2, call?.allowDefaultWorkflow === true);
     if (typeof target === "number") return target;
     const { projectRoot } = target;
     if (runtime.dryRun) {
@@ -28278,7 +30032,7 @@ async function cmdKxmRun(runtime, workflow, promptParts, forTask = false, call) 
         ok: true,
         command: "run",
         dryRun: true,
-        ...envelope,
+        ...envelope2,
         ...target
       }, `run plan: workflow ${target.workflowId} at ${target.configRevision.slice(0, 19)}\u2026 (no run created)`);
       return 0;
@@ -28295,7 +30049,7 @@ async function cmdKxmRun(runtime, workflow, promptParts, forTask = false, call) 
     print(runtime.io, runtime.json, {
       ok: true,
       command: "run",
-      ...envelope,
+      ...envelope2,
       execution: {
         status: "not_started",
         mode: "live",
@@ -28317,10 +30071,10 @@ ${runEngineNotice(run.runId, target.defaultHarness, target.prerequisites)}`);
     return 0;
   } catch (error) {
     if (error instanceof KxmConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_failed", issues: error.issues, ...envelope }, `run failed: ${error.message}`);
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_failed", issues: error.issues, ...envelope2 }, `run failed: ${error.message}`);
       return 1;
     }
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_io_failed", ...envelope }, "run failed because a local operation did not complete");
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_io_failed", ...envelope2 }, "run failed because a local operation did not complete");
     return 1;
   }
 }
@@ -33383,7 +35137,7 @@ init_runtime_supervisor();
 init_runtime_store();
 init_workflow();
 init_types();
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import { existsSync as existsSync20, readFileSync as readFileSync19 } from "node:fs";
 import { join as join22, resolve as resolve14 } from "node:path";
 import { createInterface } from "node:readline";
@@ -33817,7 +35571,7 @@ async function cmdRoleResume(runtime, runId, ruling) {
           JSON.stringify(resumeResult.run),
           runId
         );
-        const journalId = randomUUID5();
+        const journalId = randomUUID6();
         const journalPayload = {
           id: journalId,
           runId,
@@ -33863,7 +35617,7 @@ async function cmdRoleResume(runtime, runId, ruling) {
 // plugins/kxm/src/cli/workflows.ts
 var import_yaml12 = __toESM(require_dist(), 1);
 init_sqlite();
-import { randomUUID as randomUUID7 } from "node:crypto";
+import { randomUUID as randomUUID8 } from "node:crypto";
 import { existsSync as existsSync22, readFileSync as readFileSync21 } from "node:fs";
 import { join as join24, resolve as resolve16 } from "node:path";
 
@@ -34111,7 +35865,7 @@ init_redact();
 // plugins/kxm/src/github-watch.ts
 init_redact();
 init_workflow();
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 async function fetchWithTimeout(fetchImpl, input, init, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
@@ -34213,7 +35967,7 @@ async function watchGithubChecks(input) {
     "workflow.signal": input.signalKey
   };
   const explicitDeliveryId = input.deliveryId?.trim();
-  const deliveryGeneration = randomUUID6();
+  const deliveryGeneration = randomUUID7();
   let deliveryId = explicitDeliveryId || `github-watch:${deliveryGeneration}:pr-${input.pr}`;
   const deliver = async (status, summary, evidence) => {
     const boundedEvidence = Object.fromEntries(Object.entries({ ...contextEvidence, ...evidence }).slice(0, 64));
@@ -34954,7 +36708,7 @@ async function cmdWorkflowModify(runtime, workflowId, options) {
 }
 async function cmdWorkflowStart(runtime, definitionIdArg, options) {
   const definitionId = definitionIdArg || runtime.env.KXM_WORKFLOW_ID?.trim();
-  const deliveryId = String(options.deliveryId || `cli-${randomUUID7()}`);
+  const deliveryId = String(options.deliveryId || `cli-${randomUUID8()}`);
   const event = options.event;
   const payloadFlag = options.payload ?? "{}";
   if (!definitionId) {
@@ -35085,7 +36839,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
       printWorker(runtime, worker, { ok: true, command: "signal", dryRun: true, runId, signalKey, status, summary, evidence }, "would post signal to KXM run");
       return 0;
     }
-    const deliveryId2 = String(deliveryIdFlag || `cli-signal:${randomUUID7()}`);
+    const deliveryId2 = String(deliveryIdFlag || `cli-signal:${randomUUID8()}`);
     try {
       const supervisor = await ensureKxmSupervisor({ env: runtime.env });
       const posted = await kxmRuntimeRequest(
@@ -35121,7 +36875,7 @@ async function cmdSignal(runtime, runId, signalKey, status, summary, evidenceArg
     printWorker(runtime, worker, { ok: true, command: "signal", dryRun: true, runId, signalKey, status, summary, evidence }, "would post signed signal");
     return 0;
   }
-  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID7()}`);
+  const deliveryId = String(deliveryIdFlag || `cli-signal:${randomUUID8()}`);
   try {
     const posted = await postWorkflowSignal({
       serverUrl: runtime.serverUrl,
@@ -35400,7 +37154,7 @@ function suggestWorkflowAndRoles(prompt, options = {}) {
 
 // plugins/kxm/src/task-manager.ts
 var import_yaml13 = __toESM(require_dist(), 1);
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 import { existsSync as existsSync23, mkdirSync as mkdirSync17, readFileSync as readFileSync22, readdirSync as readdirSync8, writeFileSync as writeFileSync17 } from "node:fs";
 import { join as join25, resolve as resolve17 } from "node:path";
 var GOAL_SCHEMA = "kxm.goal.v1";
@@ -35418,7 +37172,7 @@ function taskFilePath(repoRoot, taskId) {
   return join25(tasksDirectory(repoRoot), `${taskId}.yaml`);
 }
 function createGoal(repoRoot, input, options = {}) {
-  const id = `goal_${randomUUID8().replaceAll("-", "").slice(0, 12)}`;
+  const id = `goal_${randomUUID9().replaceAll("-", "").slice(0, 12)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const record = {
     schema: GOAL_SCHEMA,
@@ -35454,7 +37208,7 @@ function listGoals(repoRoot) {
   return goals.sort((a, b2) => a.createdAt.localeCompare(b2.createdAt));
 }
 function createTask(repoRoot, input, options = {}) {
-  const id = `task_${randomUUID8().replaceAll("-", "").slice(0, 12)}`;
+  const id = `task_${randomUUID9().replaceAll("-", "").slice(0, 12)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const record = {
     schema: TASK_SCHEMA,
@@ -35535,7 +37289,7 @@ init_engine_compile();
 
 // plugins/kxm/src/studio-layout.ts
 import { createServer } from "node:http";
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { randomUUID as randomUUID10 } from "node:crypto";
 var STUDIO_LAYOUT_SCHEMA = "kxm.studio-layout.v1";
 function generateStudioLayout(plan, state) {
   const generatedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -35798,7 +37552,7 @@ function createStudioServer(options = {}) {
         }));
         return;
       }
-      const mutationId = `mut_${randomUUID9().replaceAll("-", "").slice(0, 12)}`;
+      const mutationId = `mut_${randomUUID10().replaceAll("-", "").slice(0, 12)}`;
       if (options.onMutation) {
         try {
           const outcome = await options.onMutation(command, args);
@@ -37310,6 +39064,7 @@ var LANE_SCHEMA = "kxm.lanes.v1";
 var SHA_RE = /^[a-f0-9]{40,64}$/;
 var TIMESTAMP_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z$/;
 var SETTLED_RUN = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
+var LANE_RUN_LIST_LIMIT = 1e4;
 function lanesFile(runtime) {
   return join36(runtime.dirs.state, "lanes.json");
 }
@@ -37542,6 +39297,61 @@ async function projectedRunStatus(runtime, projectRoot, runId, allowStart) {
 function isSettled(status) {
   return SETTLED_RUN.has(status);
 }
+async function laneStoreRuns(runtime, lanePath) {
+  const project = await Promise.resolve().then(() => (init_project(), project_exports));
+  const request = project.kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest;
+  const handle = await attachKxmSupervisor({ env: runtime.env });
+  const projectId = () => String(loadKxmProject(lanePath, {}).project.value.id);
+  if (handle) {
+    try {
+      const result = await request(
+        handle,
+        "GET",
+        `/v1/projects/${encodeURIComponent(projectId())}/runs?projectRoot=${encodeURIComponent(lanePath)}&limit=${LANE_RUN_LIST_LIMIT}`
+      );
+      const runs = Array.isArray(result.runs) ? result.runs : [];
+      return runs.flatMap((run) => {
+        if (!run || typeof run !== "object" || Array.isArray(run)) return [];
+        const record = run;
+        if (typeof record.runId !== "string" || record.runId.length === 0) return [];
+        const status = typeof record.status === "string" && record.status.length > 0 ? record.status : "unknown";
+        return [{ runId: record.runId, status }];
+      });
+    } catch {
+    }
+  }
+  const eventsPath = kxmProjectRunEventsPath(lanePath, runtime.env);
+  if (!existsSync30(eventsPath)) return void 0;
+  const store = new KxmRunEventStore(eventsPath);
+  try {
+    return store.runsForProject(projectId(), LANE_RUN_LIST_LIMIT).map((run) => ({ runId: run.runId, status: run.status }));
+  } finally {
+    store.close();
+  }
+}
+async function refuseIfLaneStoreRunsOpen(runtime, unit, command) {
+  const loaded = loadLanes(runtime, command);
+  if (typeof loaded === "number") return loaded;
+  const lane = loaded.lanes[unit];
+  if (!lane) return void 0;
+  let runs;
+  try {
+    runs = await laneStoreRuns(runtime, lane.path);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "run list failed";
+    return refuse(runtime, command, "lane_run_open", `lane ${unit} runs could not be read: ${detail.slice(0, 200)}`, { unit });
+  }
+  if (!runs) return void 0;
+  const unsettled = runs.filter((run) => !isSettled(run.status)).map((run) => run.runId);
+  if (unsettled.length === 0) return void 0;
+  return refuse(
+    runtime,
+    command,
+    "lane_run_open",
+    `lane ${unit} run ${unsettled.join(", ")} is unsettled`,
+    { unit, runIds: unsettled }
+  );
+}
 async function refuseIfLaneRunOpen(runtime, unit, command) {
   const loaded = loadLanes(runtime, command);
   if (typeof loaded === "number") return loaded;
@@ -37657,22 +39467,32 @@ async function cmdLaneStatus(runtime, unit) {
   );
   return 0;
 }
-async function unregisterLaneRoot(runtime, projectRoot) {
+async function unregisterLaneRoot(runtime, projectRoot, force) {
+  const body = force ? { projectRoot, force: true } : { projectRoot };
   try {
     const project = await Promise.resolve().then(() => (init_project(), project_exports));
     const request = project.kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest;
+    const post = async (handle2) => {
+      await request(handle2, "POST", "/v1/projects/unregister", body);
+    };
     const handle = await attachKxmSupervisor({ env: runtime.env });
     if (handle) {
-      await request(handle, "POST", "/v1/projects/unregister", { projectRoot });
+      await post(handle);
       return void 0;
     }
     const paths = kxmRuntimePaths({ env: runtime.env });
     if (!existsSync30(paths.registryDb)) return void 0;
     const registry = new KxmRuntimeRegistry(paths.registryDb);
+    let outcome;
     try {
-      registry.unregisterProject(projectRoot);
+      outcome = registry.unregisterProjectIfIdle(projectRoot, kxmSupervisorRecordIsLive);
     } finally {
       registry.close();
+    }
+    if (outcome === "supervisor_live") {
+      const live = await attachKxmSupervisor({ env: runtime.env });
+      if (!live) return "runtime supervisor is live but could not be reached";
+      await post(live);
     }
     return void 0;
   } catch (error) {
@@ -37700,6 +39520,8 @@ async function cmdLaneDrop(runtime, unit, options = {}) {
         return refuse(runtime, command, "lane_dirty", `lane ${unit} has ${dirty} uncommitted change(s)`, { unit, dirty });
       }
     }
+    const listed = await refuseIfLaneStoreRunsOpen(runtime, unit, command);
+    if (listed !== void 0) return listed;
     const open = await refuseIfLaneRunOpen(runtime, unit, command);
     if (open !== void 0) return open;
   }
@@ -37711,7 +39533,7 @@ async function cmdLaneDrop(runtime, unit, options = {}) {
     ], `drop lane ${unit}; branch ${record.branch} is not deleted`);
     return 0;
   }
-  const unregistered = await unregisterLaneRoot(runtime, record.path);
+  const unregistered = await unregisterLaneRoot(runtime, record.path, force);
   if (unregistered !== void 0) {
     return refuse(runtime, command, "lane_unregister_failed", `lane ${unit} could not be unregistered: ${unregistered.slice(0, 300)}`, { unit });
   }
@@ -37929,7 +39751,7 @@ async function cmdAssign(runtime, subcommand, args) {
 
 // plugins/kxm/src/cli/hub.ts
 init_redact();
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { randomUUID as randomUUID14 } from "node:crypto";
 import { existsSync as existsSync37, mkdirSync as mkdirSync28, readFileSync as readFileSync35, readdirSync as readdirSync12, rmSync as rmSync11, writeFileSync as writeFileSync25 } from "node:fs";
 import { join as join48, resolve as resolve27 } from "node:path";
 init_hub_env();
@@ -47732,7 +49554,7 @@ async function runMeshTui(input) {
 
 // plugins/kxm/src/session-work.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
-import { randomUUID as randomUUID12 } from "node:crypto";
+import { randomUUID as randomUUID13 } from "node:crypto";
 import { existsSync as existsSync33, mkdirSync as mkdirSync26, readFileSync as readFileSync31, renameSync as renameSync8, writeFileSync as writeFileSync23 } from "node:fs";
 import { join as join44 } from "node:path";
 init_hub_binding();
@@ -47913,7 +49735,7 @@ function writeCachedSessionBrief(stateDir, brief) {
   try {
     mkdirSync26(stateDir, { recursive: true, mode: 448 });
     const file = join44(stateDir, "session-brief.json");
-    const tmp = `${file}.tmp.${randomUUID12().slice(0, 8)}`;
+    const tmp = `${file}.tmp.${randomUUID13().slice(0, 8)}`;
     writeFileSync23(tmp, JSON.stringify(brief, null, 2), { encoding: "utf8", mode: 384 });
     renameSync8(tmp, file);
   } catch {
@@ -48784,16 +50606,16 @@ async function cmdSessionStatus(runtime) {
   const recoveries = [];
   for (const file of names3.filter((name) => name.startsWith("worker-recovery-") && name.endsWith(".json"))) {
     try {
-      const envelope = JSON.parse(readFileSync35(join48(stateDir, file), "utf8"));
+      const envelope2 = JSON.parse(readFileSync35(join48(stateDir, file), "utf8"));
       recoveries.push({
         file,
-        reason: envelope.reason,
-        agentName: envelope.agentName,
-        project: envelope.project,
-        createdAt: envelope.createdAt,
-        runId: envelope.runId ?? void 0,
-        stageId: envelope.stageId ?? void 0,
-        freshSession: envelope.freshSession === true
+        reason: envelope2.reason,
+        agentName: envelope2.agentName,
+        project: envelope2.project,
+        createdAt: envelope2.createdAt,
+        runId: envelope2.runId ?? void 0,
+        stageId: envelope2.stageId ?? void 0,
+        freshSession: envelope2.freshSession === true
       });
     } catch {
       recoveries.push({ file, error: "invalid_recovery_envelope" });
@@ -48948,7 +50770,7 @@ Session token: ${sessionToken}
   return 0;
 }
 async function cmdSessionStart(runtime, options) {
-  const id = options.id?.trim() || `session_${randomUUID13().replaceAll("-", "").slice(0, 12)}`;
+  const id = options.id?.trim() || `session_${randomUUID14().replaceAll("-", "").slice(0, 12)}`;
   const workflowId = options.workflow?.trim();
   const mix = options.mix?.trim();
   if (workflowId && mix) {
@@ -49008,7 +50830,7 @@ init_telemetry();
 init_routing();
 init_prices();
 import { spawnSync as spawnSync12 } from "node:child_process";
-import { createHash as createHash19 } from "node:crypto";
+import { createHash as createHash20 } from "node:crypto";
 import { existsSync as existsSync44, mkdtempSync as mkdtempSync3, readFileSync as readFileSync41, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
 import { basename as basename11, extname as extname3, join as join54, resolve as resolve32 } from "node:path";
@@ -49018,7 +50840,7 @@ import { createInterface as createInterface3 } from "node:readline";
 init_routing();
 init_protocol();
 init_relevance();
-import { createHash as createHash17 } from "node:crypto";
+import { createHash as createHash18 } from "node:crypto";
 import { existsSync as existsSync38, mkdirSync as mkdirSync29, writeFileSync as writeFileSync26 } from "node:fs";
 import { join as join49, relative as relative7, resolve as resolve28 } from "node:path";
 var CANDIDATE_SCHEMA = "kxm.candidate.v1";
@@ -49235,7 +51057,7 @@ function groupRoutingRecords(records, options = {}) {
     }
     const candidateKind = isCandidate ? classifyCandidateKind(group.stepId, group.agentRole) : void 0;
     const safeSlug = group.stepId.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 16) || "step";
-    const keyHash = createHash17("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
+    const keyHash = createHash18("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
     const candidateId = isCandidate && candidateKind ? `cand_${candidateKind.replace(/-/g, "_")}_${safeSlug}_${keyHash}` : void 0;
     keyed.push({
       key: group.key,
@@ -50640,7 +52462,7 @@ ${line}
 // plugins/kxm/src/init-guide-setup.ts
 var import_yaml18 = __toESM(require_dist(), 1);
 init_routes();
-import { createHash as createHash18 } from "node:crypto";
+import { createHash as createHash19 } from "node:crypto";
 import { existsSync as existsSync43, mkdirSync as mkdirSync32, readFileSync as readFileSync40, writeFileSync as writeFileSync28 } from "node:fs";
 import { dirname as dirname24, join as join53 } from "node:path";
 var ADMITTED_GUIDE_BINDINGS = Object.freeze({
@@ -51025,7 +52847,7 @@ function workflowDocument(workflow) {
 }
 function renderGuideSetupFiles(projectRoot, plan) {
   const projectYaml = join53(projectRoot, ".kxm", "project.yaml");
-  const projectOrigin = existsSync43(projectYaml) ? { source: ".kxm/project.yaml", sha256: createHash18("sha256").update(readFileSync40(projectYaml)).digest("hex") } : void 0;
+  const projectOrigin = existsSync43(projectYaml) ? { source: ".kxm/project.yaml", sha256: createHash19("sha256").update(readFileSync40(projectYaml)).digest("hex") } : void 0;
   const files = [];
   const roleStages = /* @__PURE__ */ new Map();
   for (const workflow of plan.workflows) {
@@ -51174,7 +52996,7 @@ function applyKxmPackageUpdate(runtime, notice) {
     for (const step of planned) {
       if (step.kind === "verify") {
         if (!verifyReleaseAssetDigest(step.path, step.sha256)) {
-          const actual = existsSync44(step.path) ? createHash19("sha256").update(readFileSync41(step.path)).digest("hex") : "missing";
+          const actual = existsSync44(step.path) ? createHash20("sha256").update(readFileSync41(step.path)).digest("hex") : "missing";
           return {
             ok: false,
             error: "release_digest_mismatch",

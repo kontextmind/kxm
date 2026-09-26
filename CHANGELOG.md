@@ -434,7 +434,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   the lane root when the Runtime is running, and still drops the worktree
   when the Runtime is stopped. `kxm runs status` and `kxm lane status` print
   the root they read. Existing registry rows are kept; schema 1 gains the
-  column in place.
+  column in place. `kxm lane drop` refuses `lane_run_open` and names every
+  unsettled run in that lane's event store unless `--force` is set. Unregister
+  answers 409 `runtime_project_busy` or `runtime_project_has_lanes` unless the
+  body sets `force`.
 - **`npm test` exits when the suite finishes.** The script passes
   `--test-force-exit`, so a green run does not sit in the event loop and a
   red run still prints its failures. Two full runs of the suite without the

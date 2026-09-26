@@ -18761,22 +18761,25 @@ function ensureWalJournalMode(database, file, description, timeoutMs = 5e3) {
     Atomics.wait(sleeper, 0, 0, 10);
   }
 }
+function assertDatabaseFile(file, description) {
+  checkedParent(file, description);
+  const stat = lstatSync2(file, { throwIfNoEntry: false });
+  if (stat) {
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
+    }
+  }
+  for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
+    const info = lstatSync2(sidecar, { throwIfNoEntry: false });
+    if (info?.isSymbolicLink()) {
+      throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
+    }
+  }
+}
 function openDatabase(file, description, spec) {
   const isMemory = file === ":memory:";
   if (!isMemory) {
-    checkedParent(file, description);
-    const stat = lstatSync2(file, { throwIfNoEntry: false });
-    if (stat) {
-      if (stat.isSymbolicLink() || !stat.isFile()) {
-        throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
-      }
-    }
-    for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-      const info = lstatSync2(sidecar, { throwIfNoEntry: false });
-      if (info?.isSymbolicLink()) {
-        throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
-      }
-    }
+    assertDatabaseFile(file, description);
   }
   const database = new DatabaseSync(file);
   let transaction = false;
@@ -18805,7 +18808,7 @@ function openDatabase(file, description, spec) {
       throw databaseError(
         "runtime_schema_outdated",
         file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for registry/event stores); \`kxm init\` is project-only and rebuilds no database \u2014 upgrading old state in place is deliberately unsupported`
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for event stores). The Runtime registry copy from schema 1 to 2 is the one exception. \`kxm init\` is project-only and rebuilds no database. Upgrading any other old state in place is deliberately unsupported`
       );
     }
     if (spec.tables) {
@@ -18983,13 +18986,10 @@ function gitCommonDirectory(projectRoot) {
   }
   return process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
 }
-function sameGitRepository(left, right) {
-  const leftDir = gitCommonDirectory(left);
-  const rightDir = gitCommonDirectory(right);
-  return leftDir !== void 0 && leftDir === rightDir;
-}
 function migrateRegistryLanes(file) {
-  if (!existsSync6(file)) return;
+  const stat = lstatSync3(file, { throwIfNoEntry: false });
+  if (!stat) return;
+  assertDatabaseFile(file, "runtime registry");
   const database = new DatabaseSync(file);
   let transaction = false;
   try {
@@ -19151,69 +19151,115 @@ var KxmRuntimeRegistry = class {
   registerProject(registration) {
     const projectRoot = resolve6(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
+    const candidateCommon = gitCommonDirectory(projectRoot);
+    const commonByRoot = /* @__PURE__ */ new Map();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      this.database.exec("BEGIN IMMEDIATE");
+      let rootsToMeasure;
+      try {
+        const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
+        if (byKey) {
+          const problems = [];
+          if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
+          if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
+          if (problems.length > 0) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
+          }
+          const result = registrationFromRow(byKey);
+          this.database.exec("COMMIT");
+          return result;
+        }
+        const rows = this.database.prepare(
+          `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`
+        ).all(registration.projectId);
+        const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
+        const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
+        const unknown = live.filter((row) => !commonByRoot.has(row.project_root));
+        if (unknown.length > 0) {
+          rootsToMeasure = unknown.map((row) => row.project_root);
+          this.database.exec("ROLLBACK");
+        } else if (live.length > 0) {
+          const anchor = live.find((row) => {
+            const dir = commonByRoot.get(row.project_root);
+            return candidateCommon !== void 0 && dir === candidateCommon;
+          });
+          if (!anchor) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError(
+              "project_home_conflict",
+              ".kxm/project.yaml",
+              `project ${registration.projectId} is already bound to a different control root`
+            );
+          }
+          if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError(
+              "project_home_conflict",
+              ".kxm/project.yaml",
+              `project ${registration.projectId} home runtime is immutable and cannot be rebound`
+            );
+          }
+          const laneOf = anchor.lane_of ?? anchor.project_key;
+          this.database.prepare(`
+            INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
+          const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
+          this.database.exec("COMMIT");
+          return result;
+        } else if (dead.length > 0) {
+          const replaced = dead[0];
+          if (dead.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError(
+              "project_home_conflict",
+              ".kxm/project.yaml",
+              `project ${registration.projectId} home runtime is immutable and cannot be rebound`
+            );
+          }
+          this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
+          this.insertHome(registration, projectRoot, projectKey);
+          this.database.exec("COMMIT");
+          registration.logger?.({
+            event: "project_registration_replaced",
+            projectId: registration.projectId,
+            projectRoot,
+            replacedRoot: replaced.project_root,
+            replacedCount: dead.length,
+            replacedHomeRuntimeId: replaced.home_runtime_id,
+            replacedProjectKey: replaced.project_key
+          });
+          return this.insertedRegistration(registration, projectRoot, projectKey);
+        } else {
+          this.insertHome(registration, projectRoot, projectKey);
+          this.database.exec("COMMIT");
+          return this.insertedRegistration(registration, projectRoot, projectKey);
+        }
+      } catch (error) {
+        try {
+          this.database.exec("ROLLBACK");
+        } catch {
+        }
+        throw error;
+      }
+      for (const root of rootsToMeasure ?? []) {
+        commonByRoot.set(root, gitCommonDirectory(root));
+      }
+    }
+    throw runtimeError(
+      "runtime_registry_busy",
+      projectRoot,
+      `project ${registration.projectId} registration could not be rechecked`
+    );
+  }
+  /** Remove one control root. Returns false when that root was not registered. */
+  unregisterProject(projectRoot) {
     this.database.exec("BEGIN IMMEDIATE");
     try {
-      const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
-      if (byKey) {
-        const problems = [];
-        if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
-        if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
-        if (problems.length > 0) {
-          this.database.exec("ROLLBACK");
-          throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
-        }
-        const result = registrationFromRow(byKey);
-        this.database.exec("COMMIT");
-        return result;
-      }
-      const rows = this.database.prepare(
-        `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`
-      ).all(registration.projectId);
-      const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
-      const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
-      if (live.length > 0) {
-        const anchor = live.find((row) => sameGitRepository(row.project_root, projectRoot));
-        if (!anchor) {
-          this.database.exec("ROLLBACK");
-          throw runtimeError(
-            "project_home_conflict",
-            ".kxm/project.yaml",
-            `project ${registration.projectId} is already bound to a different control root`
-          );
-        }
-        if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
-          this.database.exec("ROLLBACK");
-          throw runtimeError(
-            "project_home_conflict",
-            ".kxm/project.yaml",
-            `project ${registration.projectId} home runtime is immutable and cannot be rebound`
-          );
-        }
-        const laneOf = anchor.lane_of ?? anchor.project_key;
-        this.database.prepare(`
-          INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
-        const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
-        this.database.exec("COMMIT");
-        return result;
-      }
-      if (dead.length > 0) {
-        this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
-        this.insertHome(registration, projectRoot, projectKey);
-        this.database.exec("COMMIT");
-        registration.logger?.({
-          event: "project_registration_replaced",
-          projectId: registration.projectId,
-          projectRoot,
-          replacedRoot: dead[0]?.project_root,
-          replacedCount: dead.length
-        });
-        return this.insertedRegistration(registration, projectRoot, projectKey);
-      }
-      this.insertHome(registration, projectRoot, projectKey);
+      const removed = this.deleteRegisteredRoot(projectRoot);
       this.database.exec("COMMIT");
-      return this.insertedRegistration(registration, projectRoot, projectKey);
+      return removed;
     } catch (error) {
       try {
         this.database.exec("ROLLBACK");
@@ -19222,30 +19268,21 @@ var KxmRuntimeRegistry = class {
       throw error;
     }
   }
-  /** Remove one control root. Returns false when that root was not registered. */
-  unregisterProject(projectRoot) {
-    const projectKey = projectRuntimeKey(resolve6(projectRoot));
+  /**
+   * Delete the row only when `supervisorIsLive` is false for the supervisor
+   * row read inside this write transaction. A live supervisor keeps the row;
+   * the caller uses the supervisor route instead of editing the file.
+   */
+  unregisterProjectIfIdle(projectRoot, supervisorIsLive) {
     this.database.exec("BEGIN IMMEDIATE");
     try {
-      const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
-      if (!row) {
-        this.database.exec("COMMIT");
-        return false;
+      if (supervisorIsLive(this.readSupervisorRow())) {
+        this.database.exec("ROLLBACK");
+        return "supervisor_live";
       }
-      this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
-      if (row.lane_of === null) {
-        const successor = this.database.prepare(
-          "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1"
-        ).get(row.project_id);
-        if (successor) {
-          this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
-          this.database.prepare(
-            "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)"
-          ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
-        }
-      }
+      const removed = this.deleteRegisteredRoot(projectRoot);
       this.database.exec("COMMIT");
-      return true;
+      return removed ? "removed" : "absent";
     } catch (error) {
       try {
         this.database.exec("ROLLBACK");
@@ -19253,6 +19290,34 @@ var KxmRuntimeRegistry = class {
       }
       throw error;
     }
+  }
+  /** How many other rows share this home root's project. Zero when this root is a lane or missing. */
+  homeLaneCount(projectRoot) {
+    const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectRuntimeKey(resolve6(projectRoot)));
+    if (!row || row.lane_of !== null) return 0;
+    const count = this.database.prepare(
+      "SELECT COUNT(*) AS total FROM projects WHERE project_id = ? AND project_key != ?"
+    ).get(row.project_id, row.project_key);
+    return Number(count?.total ?? 0);
+  }
+  /** Caller holds the write transaction. Does not commit. */
+  deleteRegisteredRoot(projectRoot) {
+    const projectKey = projectRuntimeKey(resolve6(projectRoot));
+    const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
+    if (!row) return false;
+    this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
+    if (row.lane_of === null) {
+      const successor = this.database.prepare(
+        "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1"
+      ).get(row.project_id);
+      if (successor) {
+        this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
+        this.database.prepare(
+          "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)"
+        ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
+      }
+    }
+    return true;
   }
   /** The home row for a project id, or the earliest row when every row is a lane. */
   project(projectId) {
@@ -30571,6 +30636,24 @@ function readRecentSupervisorError(paths) {
     return void 0;
   }
 }
+var SETTLED_RUN_STATUS = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
+function kxmSupervisorRecordIsLive(record2) {
+  return supervisorStatusOf(record2).running;
+}
+function unsettledRunIds(context) {
+  const ids = [];
+  for (const stored of context.eventStore.runsForProject(context.projectId, 1e4)) {
+    let status = stored.status;
+    try {
+      status = projectKxmRunReadOnly(context, stored.runId).status;
+    } catch {
+      ids.push(stored.runId);
+      continue;
+    }
+    if (!SETTLED_RUN_STATUS.has(status)) ids.push(stored.runId);
+  }
+  return ids;
+}
 function supervisorStatusOf(record2) {
   if (!record2) return { running: false };
   const heartbeatAgeMs = Date.now() - Date.parse(record2.heartbeatAt);
@@ -30988,9 +31071,47 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
         if (request.method === "POST" && url.pathname === "/v1/projects/unregister") {
           const body = await readJsonBody(request);
           const projectRoot = typeof body.projectRoot === "string" ? body.projectRoot : "";
+          const force = body.force === true;
           if (!projectRoot || !isAbsolute8(projectRoot)) {
             sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: "projectRoot must be an absolute path" });
             return;
+          }
+          if (!force) {
+            const key2 = projectRuntimeKey(projectRoot);
+            const existing2 = contexts.get(key2);
+            let openRunIds = [];
+            if (existing2) {
+              openRunIds = unsettledRunIds(existing2);
+            } else {
+              const registration = registry.projectByRoot(projectRoot);
+              const eventsPath = join18(paths.projectsDir, registration?.projectKey ?? projectRuntimeKey(projectRoot), "run-events.db");
+              if (registration && existsSync16(eventsPath)) {
+                const store = new KxmRunEventStore(eventsPath);
+                try {
+                  openRunIds = store.runsForProject(registration.projectId, 1e4).filter((run) => !SETTLED_RUN_STATUS.has(run.status)).map((run) => run.runId);
+                } finally {
+                  store.close();
+                }
+              }
+            }
+            if (openRunIds.length > 0) {
+              sendJson(response, 409, {
+                ok: false,
+                error: "runtime_project_busy",
+                message: `unsettled run ${openRunIds.join(", ")}`,
+                runIds: openRunIds
+              });
+              return;
+            }
+            const laneCount = registry.homeLaneCount(projectRoot);
+            if (laneCount > 0) {
+              sendJson(response, 409, {
+                ok: false,
+                error: "runtime_project_has_lanes",
+                message: `home root still has ${laneCount} lane(s)`
+              });
+              return;
+            }
           }
           const key = projectRuntimeKey(projectRoot);
           const existing = contexts.get(key);
@@ -31226,7 +31347,10 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
             sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: `project ${requestedProjectId} is not the bound project ${context.projectId}` });
             return;
           }
-          const runs = context.eventStore.runsForProject(requestedProjectId, 50).map((stored) => {
+          const limitText = url.searchParams.get("limit");
+          const parsedLimit = limitText === null ? 50 : Number(limitText);
+          const limit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 1e4) : 50;
+          const runs = context.eventStore.runsForProject(requestedProjectId, limit).map((stored) => {
             try {
               return projectKxmRunReadOnly(context, stored.runId);
             } catch (error) {
@@ -31500,6 +31624,7 @@ export {
   hashKxmSupervisorToken,
   hashKxmTokenProof,
   kxmRuntimeRequest,
+  kxmSupervisorRecordIsLive,
   kxmSupervisorStatus,
   kxmSupervisorTokenFile,
   readKxmSupervisorToken,

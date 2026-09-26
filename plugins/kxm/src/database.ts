@@ -154,22 +154,27 @@ export function ensureWalJournalMode(database: DatabaseSync, file: string, descr
   }
 }
 
+/** Parent, file, and WAL sidecar must be regular filesystem objects. A symlink is refused before the file is opened. */
+export function assertDatabaseFile(file: string, description: string): void {
+  checkedParent(file, description);
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (stat) {
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
+    }
+  }
+  for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
+    const info = lstatSync(sidecar, { throwIfNoEntry: false });
+    if (info?.isSymbolicLink()) {
+      throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
+    }
+  }
+}
+
 export function openDatabase(file: string, description: string, spec: DatabaseSchemaSpec): DatabaseSync {
   const isMemory = file === ":memory:";
   if (!isMemory) {
-    checkedParent(file, description);
-    const stat = lstatSync(file, { throwIfNoEntry: false });
-    if (stat) {
-      if (stat.isSymbolicLink() || !stat.isFile()) {
-        throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
-      }
-    }
-    for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-      const info = lstatSync(sidecar, { throwIfNoEntry: false });
-      if (info?.isSymbolicLink()) {
-        throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
-      }
-    }
+    assertDatabaseFile(file, description);
   }
 
   const database = new DatabaseSync(file);
@@ -199,14 +204,15 @@ export function openDatabase(file: string, description: string, spec: DatabaseSc
       database.exec(spec.schema);
       database.exec(`PRAGMA user_version = ${spec.version}`);
     } else if (version < spec.version) {
-      // No migration lanes. This is a single-operator tool: an older database is
-      // re-initialised, not upgraded in place, and the code never carries two schema
-      // shapes at once. Silently accepting an older file would mean every query has to
-      // work against shapes it no longer tests.
+      // No migration lanes, except the Runtime registry copy from schema 1 to 2
+      // (migrateRegistryLanes). This is a single-operator tool: every other older
+      // database is re-initialised, not upgraded in place, and the code never carries
+      // two schema shapes at once. Silently accepting an older file would mean every
+      // query has to work against shapes it no longer tests.
       throw databaseError(
         "runtime_schema_outdated",
         file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for registry/event stores); \`kxm init\` is project-only and rebuilds no database — upgrading old state in place is deliberately unsupported`,
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for event stores). The Runtime registry copy from schema 1 to 2 is the one exception. \`kxm init\` is project-only and rebuilds no database. Upgrading any other old state in place is deliberately unsupported`,
       );
     }
 

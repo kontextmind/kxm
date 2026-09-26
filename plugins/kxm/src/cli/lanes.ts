@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { discoverKxmProjectRoot, kxmResourceIdentifier } from "../project-config.ts";
-import { KxmRuntimeRegistry, kxmRuntimePaths } from "../runtime-store.ts";
-import { attachKxmSupervisor, ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
+import { discoverKxmProjectRoot, kxmResourceIdentifier, loadKxmProject } from "../project-config.ts";
+import { KxmRunEventStore, KxmRuntimeRegistry, kxmProjectRunEventsPath, kxmRuntimePaths } from "../runtime-store.ts";
+import { attachKxmSupervisor, ensureKxmSupervisor, kxmRuntimeRequest, kxmSupervisorRecordIsLive } from "../runtime-supervisor.ts";
 import { print, printPlan, workspaceDirs, type Runtime } from "./types.ts";
 
 /** One worktree lane recorded in the control checkout. The sha is the base,
@@ -34,6 +34,7 @@ const LANE_SCHEMA = "kxm.lanes.v1";
 const SHA_RE = /^[a-f0-9]{40,64}$/;
 const TIMESTAMP_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z$/;
 const SETTLED_RUN = new Set(["completed", "failed", "cancelled"]);
+const LANE_RUN_LIST_LIMIT = 10_000;
 
 function lanesFile(runtime: Runtime): string {
   return join(runtime.dirs.state, "lanes.json");
@@ -317,6 +318,65 @@ function isSettled(status: string): boolean {
   return SETTLED_RUN.has(status);
 }
 
+/** Runs in the lane event store. Undefined when the lane has no store and no supervisor list. */
+async function laneStoreRuns(runtime: Runtime, lanePath: string): Promise<Array<{ runId: string; status: string }> | undefined> {
+  const project = await import("./project.ts");
+  const request = project.kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest;
+  const handle = await attachKxmSupervisor({ env: runtime.env });
+  const projectId = (): string => String(loadKxmProject(lanePath, {}).project.value.id);
+  if (handle) {
+    try {
+      const result = await request(
+        handle,
+        "GET",
+        `/v1/projects/${encodeURIComponent(projectId())}/runs?projectRoot=${encodeURIComponent(lanePath)}&limit=${LANE_RUN_LIST_LIMIT}`,
+      );
+      const runs = Array.isArray(result.runs) ? result.runs : [];
+      return runs.flatMap((run) => {
+        if (!run || typeof run !== "object" || Array.isArray(run)) return [];
+        const record = run as { runId?: unknown; status?: unknown };
+        if (typeof record.runId !== "string" || record.runId.length === 0) return [];
+        const status = typeof record.status === "string" && record.status.length > 0 ? record.status : "unknown";
+        return [{ runId: record.runId, status }];
+      });
+    } catch {
+      // The supervisor could not list this root. The file read below still can.
+    }
+  }
+  const eventsPath = kxmProjectRunEventsPath(lanePath, runtime.env);
+  if (!existsSync(eventsPath)) return undefined;
+  const store = new KxmRunEventStore(eventsPath);
+  try {
+    return store.runsForProject(projectId(), LANE_RUN_LIST_LIMIT).map((run) => ({ runId: run.runId, status: run.status }));
+  } finally {
+    store.close();
+  }
+}
+
+async function refuseIfLaneStoreRunsOpen(runtime: Runtime, unit: string, command: string): Promise<number | undefined> {
+  const loaded = loadLanes(runtime, command);
+  if (typeof loaded === "number") return loaded;
+  const lane = loaded.lanes[unit];
+  if (!lane) return undefined;
+  let runs: Array<{ runId: string; status: string }> | undefined;
+  try {
+    runs = await laneStoreRuns(runtime, lane.path);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "run list failed";
+    return refuse(runtime, command, "lane_run_open", `lane ${unit} runs could not be read: ${detail.slice(0, 200)}`, { unit });
+  }
+  if (!runs) return undefined;
+  const unsettled = runs.filter((run) => !isSettled(run.status)).map((run) => run.runId);
+  if (unsettled.length === 0) return undefined;
+  return refuse(
+    runtime,
+    command,
+    "lane_run_open",
+    `lane ${unit} run ${unsettled.join(", ")} is unsettled`,
+    { unit, runIds: unsettled },
+  );
+}
+
 export async function refuseIfLaneRunOpen(runtime: Runtime, unit: string, command: string): Promise<number | undefined> {
   const loaded = loadLanes(runtime, command);
   if (typeof loaded === "number") return loaded;
@@ -439,23 +499,35 @@ export async function cmdLaneStatus(runtime: Runtime, unit: string): Promise<num
 }
 
 /** Remove the lane root from the Runtime registry. A stopped supervisor is not
- * an error: the row is deleted from the registry file when that file exists. */
-async function unregisterLaneRoot(runtime: Runtime, projectRoot: string): Promise<string | undefined> {
+ * an error: the row is deleted from the registry file when that file exists.
+ * The delete holds the write lock and rechecks the supervisor row; a live
+ * supervisor is left for the unregister route. */
+async function unregisterLaneRoot(runtime: Runtime, projectRoot: string, force: boolean): Promise<string | undefined> {
+  const body = force ? { projectRoot, force: true as const } : { projectRoot };
   try {
     const project = await import("./project.ts");
     const request = project.kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest;
+    const post = async (handle: { runtimeId: string; port: number; token: string; started: boolean }): Promise<void> => {
+      await request(handle, "POST", "/v1/projects/unregister", body);
+    };
     const handle = await attachKxmSupervisor({ env: runtime.env });
     if (handle) {
-      await request(handle, "POST", "/v1/projects/unregister", { projectRoot });
+      await post(handle);
       return undefined;
     }
     const paths = kxmRuntimePaths({ env: runtime.env });
     if (!existsSync(paths.registryDb)) return undefined;
     const registry = new KxmRuntimeRegistry(paths.registryDb);
+    let outcome: "removed" | "absent" | "supervisor_live";
     try {
-      registry.unregisterProject(projectRoot);
+      outcome = registry.unregisterProjectIfIdle(projectRoot, kxmSupervisorRecordIsLive);
     } finally {
       registry.close();
+    }
+    if (outcome === "supervisor_live") {
+      const live = await attachKxmSupervisor({ env: runtime.env });
+      if (!live) return "runtime supervisor is live but could not be reached";
+      await post(live);
     }
     return undefined;
   } catch (error) {
@@ -484,6 +556,8 @@ export async function cmdLaneDrop(runtime: Runtime, unit: string, options: { for
         return refuse(runtime, command, "lane_dirty", `lane ${unit} has ${dirty} uncommitted change(s)`, { unit, dirty });
       }
     }
+    const listed = await refuseIfLaneStoreRunsOpen(runtime, unit, command);
+    if (listed !== undefined) return listed;
     const open = await refuseIfLaneRunOpen(runtime, unit, command);
     if (open !== undefined) return open;
   }
@@ -495,7 +569,7 @@ export async function cmdLaneDrop(runtime: Runtime, unit: string, options: { for
     ], `drop lane ${unit}; branch ${record.branch} is not deleted`);
     return 0;
   }
-  const unregistered = await unregisterLaneRoot(runtime, record.path);
+  const unregistered = await unregisterLaneRoot(runtime, record.path, force);
   if (unregistered !== undefined) {
     return refuse(runtime, command, "lane_unregister_failed", `lane ${unit} could not be unregistered: ${unregistered.slice(0, 300)}`, { unit });
   }

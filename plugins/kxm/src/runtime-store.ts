@@ -49,6 +49,7 @@ function checkedParent(path: string, description: string): void {
 }
 
 import {
+  assertDatabaseFile,
   openDatabase,
   tableColumns,
   withDatabaseTransaction,
@@ -165,20 +166,18 @@ function gitCommonDirectory(projectRoot: string): string | undefined {
   return process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
 }
 
-function sameGitRepository(left: string, right: string): boolean {
-  const leftDir = gitCommonDirectory(left);
-  const rightDir = gitCommonDirectory(right);
-  return leftDir !== undefined && leftDir === rightDir;
-}
-
 /**
  * Registry schema 1 keyed `projects` on project id, so a second control root
  * could not be stored. Schema 2 keys on the control root and adds `lane_of`.
  * Existing rows are copied unchanged, with `lane_of` left null. A database
  * that is already shape 2 and was only restamped as version 1 is not rebuilt.
+ * The file is opened only after the same symlink and sidecar checks as
+ * `openDatabase`.
  */
 function migrateRegistryLanes(file: string): void {
-  if (!existsSync(file)) return;
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (!stat) return;
+  assertDatabaseFile(file, "runtime registry");
   const database = new DatabaseSync(file);
   let transaction = false;
   try {
@@ -363,106 +362,175 @@ export class KxmRuntimeRegistry {
   }): KxmProjectRegistration {
     const projectRoot = resolve(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
+    // Git runs only outside the write lock. The candidate is measured first;
+    // live rows are measured after a rollback, then the rows are read again.
+    const candidateCommon = gitCommonDirectory(projectRoot);
+    const commonByRoot = new Map<string, string | undefined>();
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      this.database.exec("BEGIN IMMEDIATE");
+      let rootsToMeasure: string[] | undefined;
+      try {
+        const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
+        if (byKey) {
+          const problems: string[] = [];
+          if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
+          if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
+          if (problems.length > 0) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
+          }
+          const result = registrationFromRow(byKey);
+          this.database.exec("COMMIT");
+          return result;
+        }
+
+        const rows = this.database.prepare(
+          `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`,
+        ).all(registration.projectId) as unknown as ProjectRow[];
+        const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
+        const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
+        const unknown = live.filter((row) => !commonByRoot.has(row.project_root));
+        if (unknown.length > 0) {
+          rootsToMeasure = unknown.map((row) => row.project_root);
+          this.database.exec("ROLLBACK");
+        } else if (live.length > 0) {
+          const anchor = live.find((row) => {
+            const dir = commonByRoot.get(row.project_root);
+            return candidateCommon !== undefined && dir === candidateCommon;
+          });
+          if (!anchor) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError(
+              "project_home_conflict",
+              ".kxm/project.yaml",
+              `project ${registration.projectId} is already bound to a different control root`,
+            );
+          }
+          if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError(
+              "project_home_conflict",
+              ".kxm/project.yaml",
+              `project ${registration.projectId} home runtime is immutable and cannot be rebound`,
+            );
+          }
+          const laneOf = anchor.lane_of ?? anchor.project_key;
+          this.database.prepare(`
+            INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
+          const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
+          this.database.exec("COMMIT");
+          return result;
+        } else if (dead.length > 0) {
+          const replaced = dead[0] as ProjectRow;
+          if (dead.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError(
+              "project_home_conflict",
+              ".kxm/project.yaml",
+              `project ${registration.projectId} home runtime is immutable and cannot be rebound`,
+            );
+          }
+          this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
+          this.insertHome(registration, projectRoot, projectKey);
+          this.database.exec("COMMIT");
+          registration.logger?.({
+            event: "project_registration_replaced",
+            projectId: registration.projectId,
+            projectRoot,
+            replacedRoot: replaced.project_root,
+            replacedCount: dead.length,
+            replacedHomeRuntimeId: replaced.home_runtime_id,
+            replacedProjectKey: replaced.project_key,
+          });
+          return this.insertedRegistration(registration, projectRoot, projectKey);
+        } else {
+          this.insertHome(registration, projectRoot, projectKey);
+          this.database.exec("COMMIT");
+          return this.insertedRegistration(registration, projectRoot, projectKey);
+        }
+      } catch (error) {
+        try { this.database.exec("ROLLBACK"); } catch { /* already rolled back */ }
+        throw error;
+      }
+      for (const root of rootsToMeasure ?? []) {
+        commonByRoot.set(root, gitCommonDirectory(root));
+      }
+    }
+    throw runtimeError(
+      "runtime_registry_busy",
+      projectRoot,
+      `project ${registration.projectId} registration could not be rechecked`,
+    );
+  }
+
+  /** Remove one control root. Returns false when that root was not registered. */
+  unregisterProject(projectRoot: string): boolean {
     this.database.exec("BEGIN IMMEDIATE");
     try {
-      const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
-      if (byKey) {
-        const problems: string[] = [];
-        if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
-        if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
-        if (problems.length > 0) {
-          this.database.exec("ROLLBACK");
-          throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
-        }
-        const result = registrationFromRow(byKey);
-        this.database.exec("COMMIT");
-        return result;
-      }
-
-      const rows = this.database.prepare(
-        `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`,
-      ).all(registration.projectId) as unknown as ProjectRow[];
-      const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
-      const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
-      if (live.length > 0) {
-        const anchor = live.find((row) => sameGitRepository(row.project_root, projectRoot));
-        if (!anchor) {
-          this.database.exec("ROLLBACK");
-          throw runtimeError(
-            "project_home_conflict",
-            ".kxm/project.yaml",
-            `project ${registration.projectId} is already bound to a different control root`,
-          );
-        }
-        if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
-          this.database.exec("ROLLBACK");
-          throw runtimeError(
-            "project_home_conflict",
-            ".kxm/project.yaml",
-            `project ${registration.projectId} home runtime is immutable and cannot be rebound`,
-          );
-        }
-        const laneOf = anchor.lane_of ?? anchor.project_key;
-        this.database.prepare(`
-          INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
-        const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
-        this.database.exec("COMMIT");
-        return result;
-      }
-
-      if (dead.length > 0) {
-        this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
-        this.insertHome(registration, projectRoot, projectKey);
-        this.database.exec("COMMIT");
-        registration.logger?.({
-          event: "project_registration_replaced",
-          projectId: registration.projectId,
-          projectRoot,
-          replacedRoot: dead[0]?.project_root,
-          replacedCount: dead.length,
-        });
-        return this.insertedRegistration(registration, projectRoot, projectKey);
-      }
-
-      this.insertHome(registration, projectRoot, projectKey);
+      const removed = this.deleteRegisteredRoot(projectRoot);
       this.database.exec("COMMIT");
-      return this.insertedRegistration(registration, projectRoot, projectKey);
+      return removed;
     } catch (error) {
       try { this.database.exec("ROLLBACK"); } catch { /* already rolled back */ }
       throw error;
     }
   }
 
-  /** Remove one control root. Returns false when that root was not registered. */
-  unregisterProject(projectRoot: string): boolean {
-    const projectKey = projectRuntimeKey(resolve(projectRoot));
+  /**
+   * Delete the row only when `supervisorIsLive` is false for the supervisor
+   * row read inside this write transaction. A live supervisor keeps the row;
+   * the caller uses the supervisor route instead of editing the file.
+   */
+  unregisterProjectIfIdle(
+    projectRoot: string,
+    supervisorIsLive: (record: KxmSupervisorRecord | undefined) => boolean,
+  ): "removed" | "absent" | "supervisor_live" {
     this.database.exec("BEGIN IMMEDIATE");
     try {
-      const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
-      if (!row) {
-        this.database.exec("COMMIT");
-        return false;
+      if (supervisorIsLive(this.readSupervisorRow())) {
+        this.database.exec("ROLLBACK");
+        return "supervisor_live";
       }
-      this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
-      if (row.lane_of === null) {
-        const successor = this.database.prepare(
-          "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1",
-        ).get(row.project_id) as { project_key: string } | undefined;
-        if (successor) {
-          this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
-          this.database.prepare(
-            "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)",
-          ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
-        }
-      }
+      const removed = this.deleteRegisteredRoot(projectRoot);
       this.database.exec("COMMIT");
-      return true;
+      return removed ? "removed" : "absent";
     } catch (error) {
       try { this.database.exec("ROLLBACK"); } catch { /* already rolled back */ }
       throw error;
     }
+  }
+
+  /** How many other rows share this home root's project. Zero when this root is a lane or missing. */
+  homeLaneCount(projectRoot: string): number {
+    const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectRuntimeKey(resolve(projectRoot)));
+    if (!row || row.lane_of !== null) return 0;
+    const count = this.database.prepare(
+      "SELECT COUNT(*) AS total FROM projects WHERE project_id = ? AND project_key != ?",
+    ).get(row.project_id, row.project_key) as { total: number } | undefined;
+    return Number(count?.total ?? 0);
+  }
+
+  /** Caller holds the write transaction. Does not commit. */
+  private deleteRegisteredRoot(projectRoot: string): boolean {
+    const projectKey = projectRuntimeKey(resolve(projectRoot));
+    const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
+    if (!row) return false;
+    this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
+    if (row.lane_of === null) {
+      const successor = this.database.prepare(
+        "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1",
+      ).get(row.project_id) as { project_key: string } | undefined;
+      if (successor) {
+        this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
+        this.database.prepare(
+          "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)",
+        ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
+      }
+    }
+    return true;
   }
 
   /** The home row for a project id, or the earliest row when every row is a lane. */

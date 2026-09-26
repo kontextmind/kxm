@@ -2041,7 +2041,8 @@ test(`store brakes: registry v1 stays valid; event store v${KXM_EVENT_STORE_SCHE
         assert.match(message, new RegExp(`this build requires ${KXM_EVENT_STORE_SCHEMA_VERSION}`));
         assert.match(message, /start fresh/);
         assert.match(message, /kxm hub start/);
-        assert.match(message, /Runtime for registry\/event stores/);
+        assert.match(message, /Runtime for event stores/);
+        assert.match(message, /registry copy from schema 1 to 2 is the one exception/);
         assert.match(message, /`kxm init` is project-only and rebuilds no database/);
         assert.doesNotMatch(message, /or re-run `kxm init`/, "init must not be offered as a database recovery path");
         return true;
