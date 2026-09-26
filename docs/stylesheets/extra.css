@@ -1,0 +1,69 @@
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #2ee6a6;
+  --md-primary-fg-color--light: #7af0c8;
+  --md-primary-fg-color--dark: #14a37a;
+  --md-accent-fg-color: #2ee6a6;
+  --md-default-bg-color: #0f1419;
+  --md-default-fg-color: #e7eef2;
+  --md-default-fg-color--light: #93a4b8;
+  --md-default-fg-color--lighter: #6d7f90;
+  --md-code-bg-color: #1a2332;
+  --md-code-fg-color: #e7eef2;
+  --md-footer-bg-color: #0f1419;
+  --md-typeset-a-color: #2ee6a6;
+}
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .admonition,
+.md-typeset details {
+  background-color: #1a2332;
+  border-color: #243044;
+}
+
+.md-typeset .kxm-diagram {
+  position: relative;
+  background: #1a2332;
+  border: 1px solid #243044;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.md-typeset .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.md-typeset .kxm-fs {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2;
+  background: #0f1419;
+  color: #2ee6a6;
+  border: 1px solid #2ee6a6;
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.md-typeset .kxm-diagram:fullscreen,
+.md-typeset .kxm-diagram.kxm-fs-open,
+.md-typeset .mermaid:fullscreen,
+.md-typeset .mermaid.kxm-fs-open {
+  background: #0f1419;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.md-typeset .kxm-diagram:fullscreen svg,
+.md-typeset .kxm-diagram.kxm-fs-open svg,
+.md-typeset .mermaid:fullscreen svg,
+.md-typeset .mermaid.kxm-fs-open svg {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+}
