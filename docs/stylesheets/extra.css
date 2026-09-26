@@ -1,29 +1,60 @@
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #2ee6a6;
-  --md-primary-fg-color--light: #7af0c8;
-  --md-primary-fg-color--dark: #14a37a;
-  --md-accent-fg-color: #2ee6a6;
-  --md-default-bg-color: #0f1419;
-  --md-default-fg-color: #e7eef2;
-  --md-default-fg-color--light: #93a4b8;
-  --md-default-fg-color--lighter: #6d7f90;
-  --md-code-bg-color: #1a2332;
-  --md-code-fg-color: #e7eef2;
-  --md-footer-bg-color: #0f1419;
-  --md-typeset-a-color: #2ee6a6;
+  --md-primary-fg-color: #3068da;
+  --md-primary-fg-color--light: color-mix(in srgb, #3068da 65%, #f2eee7);
+  --md-primary-fg-color--dark: color-mix(in srgb, #3068da 70%, #0e0d0b);
+  --md-primary-bg-color: #f2eee7;
+  --md-primary-bg-color--light: color-mix(in srgb, #f2eee7 70%, transparent);
+  --md-accent-fg-color: #3068da;
+  --md-accent-fg-color--transparent: color-mix(in srgb, #3068da 12%, transparent);
+  --md-accent-bg-color: #0e0d0b;
+  --md-accent-bg-color--light: color-mix(in srgb, #0e0d0b 70%, transparent);
+  --md-default-bg-color: #0e0d0b;
+  --md-default-fg-color: #f2eee7;
+  --md-default-fg-color--light: color-mix(in srgb, #f2eee7 62%, #0e0d0b);
+  --md-default-fg-color--lighter: color-mix(in srgb, #f2eee7 40%, #0e0d0b);
+  --md-default-fg-color--lightest: color-mix(in srgb, #f2eee7 14%, #0e0d0b);
+  --md-code-bg-color: color-mix(in srgb, #f2eee7 8%, #0e0d0b);
+  --md-code-fg-color: #f2eee7;
+  --md-footer-bg-color: #0e0d0b;
+  --md-footer-fg-color: #f2eee7;
+  --md-footer-fg-color--light: color-mix(in srgb, #f2eee7 62%, #0e0d0b);
+  --md-typeset-a-color: #3068da;
+  --md-mermaid-edge-color: #3068da;
+  --md-mermaid-node-bg-color: color-mix(in srgb, #3068da 12%, #0e0d0b);
+  --md-mermaid-node-fg-color: #3068da;
+  --md-mermaid-label-bg-color: #0e0d0b;
+  --md-mermaid-label-fg-color: #f2eee7;
+  --md-mermaid-sequence-actor-border-color: #3068da;
+  --md-mermaid-sequence-message-line-color: #3068da;
+  --md-mermaid-sequence-number-bg-color: #3068da;
+}
+
+.md-header,
+.md-tabs {
+  background-color: #0e0d0b;
+  color: #f2eee7;
+}
+
+.md-header__button.md-logo {
+  display: inline-block;
+}
+
+.md-header__button.md-logo img {
+  height: 1.6rem;
+  width: auto;
 }
 
 .md-typeset .grid.cards > ul > li,
 .md-typeset .admonition,
 .md-typeset details {
-  background-color: #1a2332;
-  border-color: #243044;
+  background-color: color-mix(in srgb, #f2eee7 8%, #0e0d0b);
+  border-color: color-mix(in srgb, #f2eee7 16%, #0e0d0b);
 }
 
 .md-typeset .kxm-diagram {
   position: relative;
-  background: #1a2332;
-  border: 1px solid #243044;
+  background: color-mix(in srgb, #f2eee7 8%, #0e0d0b);
+  border: 1px solid color-mix(in srgb, #f2eee7 16%, #0e0d0b);
   border-radius: 8px;
   padding: 1rem;
 }
@@ -38,9 +69,9 @@
   top: 0.5rem;
   right: 0.5rem;
   z-index: 2;
-  background: #0f1419;
-  color: #2ee6a6;
-  border: 1px solid #2ee6a6;
+  background: #0e0d0b;
+  color: #3068da;
+  border: 1px solid #3068da;
   border-radius: 4px;
   padding: 0.25rem 0.6rem;
   cursor: pointer;
@@ -50,7 +81,7 @@
 .md-typeset .kxm-diagram.kxm-fs-open,
 .md-typeset .mermaid:fullscreen,
 .md-typeset .mermaid.kxm-fs-open {
-  background: #0f1419;
+  background: #0e0d0b;
   width: 100vw;
   height: 100vh;
   margin: 0;
