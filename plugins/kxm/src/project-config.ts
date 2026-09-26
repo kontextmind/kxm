@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 import { validatePolicyDraft } from "./policy-draft.mjs";
 import { resolveKxmTemplateBaseline } from "./template.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
-import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS, validateHarnessModelPair } from "./harness.ts";
+import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS } from "./harness.ts";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -1186,24 +1186,10 @@ function validateBundle(
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
     if (executor && !executors.has(executor)) issues.push(issue("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
-    const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
-    }
-    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
-    const declaredHarness = stringValue(agent.value.harness);
-    if (declaredHarness && harnesses.has(declaredHarness)) {
-      for (const candidate of candidates) {
-        const candidateProvider = stringValue(candidate.value.provider);
-        const candidateModel = stringValue(candidate.value.model);
-        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
-        if (!validation.valid) {
-          issues.push(issue("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
-        }
-      }
     }
   }
   validateModelReferences(models, issues);

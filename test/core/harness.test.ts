@@ -351,7 +351,7 @@ test("fresh template names admitted harnesses; omitted harness still loads; unkn
       "resultSchema: kxm.assignment-result.v1",
       "",
     ].join("\n"));
-    assert.throws(() => loadKxmProject(root), (error: unknown) => error instanceof KxmConfigError && error.issues.some((issue) => issue.code === "harness_unknown"));
+    assert.throws(() => loadKxmProject(root), (error: unknown) => error instanceof KxmConfigError && error.issues.some((issue) => issue.code === "retired_agent_routing_fields"));
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
@@ -762,7 +762,7 @@ test("config with a Grok model under harness claude is rejected at validation", 
     makeGitRoot(join(root, "repositories", "web"));
     const agentFile = join(root, ".kxm", "agents", "critic-2.yaml");
     writeFileSync(agentFile, `${readFileSync(agentFile, "utf8").trimEnd()}\nharness: claude\nmodel:\n  profile: critic-grok\n`);
-    assert.throws(() => loadKxmProject(root), (error: unknown) => issueCodes(error).includes("harness_unhosted_model"));
+    assert.throws(() => loadKxmProject(root), (error: unknown) => issueCodes(error).includes("retired_agent_routing_fields"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

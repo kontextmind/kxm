@@ -436,6 +436,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   `review-cli`, `impl-bg`, and `dispatch` recipes are gone. One-step
   workflows are the transport: `kxm lane run <unit> --brief <file> --workflow implement-only`,
   and the same command with `review-arch-only` or `review-cli-only`.
+  Transfer policy from `.kxm/roster.yaml` to the role and model files and
+  delete the retired roster before running KXM. KXM refuses a leftover
+  `.kxm/roster.yaml`.
 - **`.kxm/template-provenance.yaml` was removed from this project, a repository
   change rather than a product change,** because the installed kxm no longer
   recognizes its recorded revision and a project without the file validates as

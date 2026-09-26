@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   planGuideSetup,
   mergeGuideRouteAdmission,
   renderGuideSetupFiles,
+  type GuideSetupPlan,
   resolveCandidate,
   writeGuideSetupFiles,
 } from "../../plugins/kxm/src/init-guide-setup.ts";
@@ -183,8 +184,7 @@ test("rendered files load as a valid KXM project bundle", () => {
     const report = writeGuideSetupFiles(files);
     assert.equal(report.existed.length, 0);
     assert.equal(report.written.length, files.length);
-    mkdirSync(join(root, "plans", "evidence"), { recursive: true });
-    cpSync("plans/evidence/route-guide-qwen-pi.md", join(root, "plans", "evidence", "route-guide-qwen-pi.md"));
+    assert.equal(existsSync(join(root, "plans", "evidence", "route-guide-qwen-pi.md")), true);
 
     const bundle = loadKxmProject(root);
     assert.equal(bundle.agents.has("lead-systems-planner"), true);
@@ -226,6 +226,22 @@ test("writeGuideSetupFiles never overwrites existing files", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("guided init omits a Pi model file when the binding disagrees with the evidence note", () => {
+  const workflow = GUIDE_WORKFLOWS.find((entry) => entry.slug === "build-feature");
+  assert.ok(workflow);
+  const plan: GuideSetupPlan = {
+    agents: new Map([
+      ["scaffold-build-specialist", { harness: "pi", provider: "openrouter", model: "not-the-noted-model" }],
+    ]),
+    workflows: [workflow],
+    skipped: [],
+  };
+  const files = renderGuideSetupFiles(join("/tmp", "guide-mismatch"), plan);
+  assert.equal(files.some((file) => file.path.endsWith(join("models", "scaffold-build-specialist.yaml"))), false);
+  assert.equal(files.some((file) => file.path.endsWith("route-guide-qwen-pi.md")), false);
+  assert.equal(files.some((file) => file.content.includes("sha256:")), false);
 });
 
 test("Pi guide models pin origin to the immutable evidence note", () => {

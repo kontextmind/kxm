@@ -337,7 +337,7 @@ with `retired_agent_routing_fields`.
 | `skills` | Unique identifiers, at most 64 | Optional | Skill names granted to the agent |
 | `instructions` | String, at most 16,000 characters | Optional | Not read by any code path yet. Step `instructions` are what reach the prompt. |
 | `executor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the executor-policy revision; no dispatch path selects an executor from it yet |
-| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`): the preset must be registered. Narrowing an agent preset against the role preset is not validated yet (P3). |
+| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`): the preset must be registered. An agent `tools.preset` may only narrow the role preset. Enforcement of that rule is pending (P3). |
 | `tools.allow`, `tools.deny` | Unique identifiers, at most 128 each | Optional | A tool in both lists is `tool_policy_contradiction`; steps may only narrow the ceiling |
 | `defaultRepositoryAccess` | `none`, `read`, or `write` | Optional; the ceiling is `none` when absent | Loader: access ceiling for repositories not listed in `repositories` |
 | `repositories` | Map of repository ID to `none`, `read`, or `write`; at most 64 | Optional | Loader: per-repository access ceiling; IDs must be declared (`repository_unknown`) |
@@ -959,8 +959,8 @@ unknown keys are ignored).
 | `disabled` | Array of route strings | Optional, `[]` | Runtime: a disabled route is refused even if admitted |
 | `updatedAt` | ISO timestamp string | Optional | Rewritten by every CLI change |
 
-A route string is exactly the agent's `model.provider`, a slash, and
-`model.model`: `xai/grok-4.6`, `anthropic/fable`,
+A route string is derived from the selected model file's `vendor` and
+`model`, joined by a slash: `xai/grok-4.6`, `anthropic/fable`,
 `openrouter/qwen/qwen3-coder-plus`. When the file is missing, nothing is
 admitted and every live attempt is refused (`producer_route_unsupported`, or
 `producer_route_not_admitted` from the live producer). A leftover

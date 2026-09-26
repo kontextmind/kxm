@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { applyRestorePlan, createBackup, databaseError, planBackup, planRestore, type RestorePlan } from "../database.ts";
 import { readLiveHubClaim } from "../hub-autostart.ts";
 import { refreshModelInventory } from "../model-inventory.ts";
-import { listInventoryModels, listRoleBindings, loadRoutePolicy, setRouteState, updateRouteState } from "../routes.ts";
+import { listInventoryModels, listRoleBindings, loadRoutePolicy, rolesForInventoryModel, setRouteState, updateRouteState } from "../routes.ts";
 import {
   KxmConfigError,
   discoverKxmProjectRoot,
@@ -889,8 +889,7 @@ export async function cmdModelsScreen(runtime: Runtime): Promise<number> {
   try {
     while (true) {
       const policy = loadRoutePolicy(runtime.dirs.workdir);
-      const roleBindings = listRoleBindings(runtime.dirs.workdir);
-      runtime.io.stdout(models.map((m, i) => `${i + 1}. ${m} [${policy.admitted.includes(m) ? "admitted" : policy.disabled.includes(m) ? "disabled" : "unset"}] roles:${Object.entries(roleBindings).filter(([, xs]) => xs.includes(m)).map(([r]) => r).join(",") || "-"}`).join("\n") + "\n");
+      runtime.io.stdout(models.map((m, i) => `${i + 1}. ${m} [${policy.admitted.includes(m) ? "admitted" : policy.disabled.includes(m) ? "disabled" : "unset"}] roles:${rolesForInventoryModel(runtime.dirs.workdir, m).join(",") || "-"}`).join("\n") + "\n");
       const command = (await ask("[a]dmit [d]isable [r]ole-add [x]ole-remove [q]uit: ")).trim().toLowerCase();
       if (command === "q" || command === "quit") return 0;
       const index = Number.parseInt((await ask("model number: ")).trim(), 10) - 1;

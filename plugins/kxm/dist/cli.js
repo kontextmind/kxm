@@ -19432,24 +19432,10 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
     if (executor && !executors.has(executor)) issues.push(issue3("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
-    const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue3("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue3("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
-    }
-    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
-    const declaredHarness = stringValue(agent.value.harness);
-    if (declaredHarness && harnesses.has(declaredHarness)) {
-      for (const candidate of candidates) {
-        const candidateProvider = stringValue(candidate.value.provider);
-        const candidateModel = stringValue(candidate.value.model);
-        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
-        if (!validation.valid) {
-          issues.push(issue3("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
-        }
-      }
     }
   }
   validateModelReferences(models, issues);
@@ -24755,21 +24741,7 @@ function setRouteState(root, model, state, role, removeRole2 = false) {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) roleFile = parsed;
     }
     const roster = Array.isArray(roleFile.roster) ? roleFile.roster.filter((entry) => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)) : [];
-    const modelsDir = join14(root, ".kxm", "models");
-    let routeId2;
-    if (existsSync14(modelsDir)) {
-      for (const name of readdirSync4(modelsDir)) {
-        if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
-        const parsedModel = (0, import_yaml6.parse)(readFileSync12(join14(modelsDir, name), "utf8"));
-        if (parsedModel?.schema !== "kxm.model.v2") continue;
-        const vendor = typeof parsedModel.vendor === "string" ? parsedModel.vendor : "";
-        const named = typeof parsedModel.model === "string" ? parsedModel.model : "";
-        if (named === model || vendor && `${vendor}/${named}` === model) {
-          routeId2 = name.slice(0, -5);
-          break;
-        }
-      }
-    }
+    const routeId2 = routeIdForInventoryModel(root, model);
     if (!routeId2) throw new Error(`unknown route: no v2 model file matches '${model}'`);
     const existing = roster.findIndex((entry) => entry.route === routeId2 || entry.model === model);
     if (removeRole2) {
@@ -24789,6 +24761,24 @@ function setRouteState(root, model, state, role, removeRole2 = false) {
   mkdirSync9(join14(root, ".kxm"), { recursive: true });
   writeFileSync10(join14(root, ".kxm", "routes.yaml"), (0, import_yaml6.stringify)(policy), "utf8");
   return policy;
+}
+function routeIdForInventoryModel(root, model) {
+  const modelsDir = join14(root, ".kxm", "models");
+  if (!existsSync14(modelsDir)) return void 0;
+  for (const name of readdirSync4(modelsDir)) {
+    if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
+    const parsedModel = (0, import_yaml6.parse)(readFileSync12(join14(modelsDir, name), "utf8"));
+    if (parsedModel?.schema !== "kxm.model.v2") continue;
+    const vendor = typeof parsedModel.vendor === "string" ? parsedModel.vendor : "";
+    const named = typeof parsedModel.model === "string" ? parsedModel.model : "";
+    if (named === model || vendor && `${vendor}/${named}` === model) return name.slice(0, -5);
+  }
+  return void 0;
+}
+function rolesForInventoryModel(root, inventoryId) {
+  const routeId2 = routeIdForInventoryModel(root, inventoryId);
+  if (!routeId2) return [];
+  return Object.entries(listRoleBindings(root)).filter(([, ids]) => ids.includes(routeId2)).map(([role]) => role);
 }
 function listRoleBindings(root) {
   const dir = join14(root, ".kxm", "roles");
@@ -30443,8 +30433,7 @@ async function cmdModelsScreen(runtime) {
   try {
     while (true) {
       const policy = loadRoutePolicy(runtime.dirs.workdir);
-      const roleBindings = listRoleBindings(runtime.dirs.workdir);
-      runtime.io.stdout(models.map((m2, i) => `${i + 1}. ${m2} [${policy.admitted.includes(m2) ? "admitted" : policy.disabled.includes(m2) ? "disabled" : "unset"}] roles:${Object.entries(roleBindings).filter(([, xs]) => xs.includes(m2)).map(([r]) => r).join(",") || "-"}`).join("\n") + "\n");
+      runtime.io.stdout(models.map((m2, i) => `${i + 1}. ${m2} [${policy.admitted.includes(m2) ? "admitted" : policy.disabled.includes(m2) ? "disabled" : "unset"}] roles:${rolesForInventoryModel(runtime.dirs.workdir, m2).join(",") || "-"}`).join("\n") + "\n");
       const command = (await ask("[a]dmit [d]isable [r]ole-add [x]ole-remove [q]uit: ")).trim().toLowerCase();
       if (command === "q" || command === "quit") return 0;
       const index = Number.parseInt((await ask("model number: ")).trim(), 10) - 1;
@@ -52886,21 +52875,62 @@ function workflowDocument(workflow) {
     steps
   };
 }
-var GUIDE_PI_ORIGIN = {
-  source: "plans/evidence/route-guide-qwen-pi.md",
-  sha256: "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759"
+var GUIDE_PI_EVIDENCE_SOURCE = "plans/evidence/route-guide-qwen-pi.md";
+var GUIDE_PI_EVIDENCE_SHA256 = "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759";
+var GUIDE_PI_NOTE = {
+  harness: "pi",
+  vendor: "openrouter",
+  model: "qwen/qwen3-coder-plus",
+  reason: "Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup.",
+  provingCommand: "pi auth check --provider openrouter"
 };
+var GUIDE_PI_EVIDENCE_NOTE = `---
+schema: "kxm.doc.v1"
+id: "RES-GUIDE-QWEN-PI"
+type: "research"
+title: "Research: guided setup Pi Qwen origin"
+project: "kxm"
+status: "approved"
+owner: "@operator"
+created: "2026-09-26"
+updated: "2026-09-26"
+authority: "evidence"
+confidence: "verified"
+summary: "Guided setup pins every Pi model origin to this note so a later project.yaml edit cannot change the hash."
+tags: ["routing", "qwen", "pi", "init-guide"]
+related: []
+details:
+  research_status: "complete"
+  target_decision_date: "2026-09-26"
+---
+
+# route-guide-qwen-pi
+
+Dated 2026-09-26. Route ids are the guided role slugs. Harness \`${GUIDE_PI_NOTE.harness}\`. Model id \`${GUIDE_PI_NOTE.model}\`. Vendor \`${GUIDE_PI_NOTE.vendor}\`. Admitted because ${GUIDE_PI_NOTE.reason} Auth was proved with \`${GUIDE_PI_NOTE.provingCommand}\`.
+`;
+function guidePiNoteMatches(binding) {
+  return binding.harness === GUIDE_PI_NOTE.harness && binding.provider === GUIDE_PI_NOTE.vendor && binding.model === GUIDE_PI_NOTE.model;
+}
 function renderGuideSetupFiles(projectRoot, plan) {
   const files = [];
   const roleStages = /* @__PURE__ */ new Map();
   for (const workflow of plan.workflows) {
     for (const stage of workflow.stages) roleStages.set(stage.role, stage);
   }
+  let evidenceQueued = false;
   for (const [role, binding] of [...plan.agents.entries()].sort(([a], [b2]) => a.localeCompare(b2))) {
     const stage = roleStages.get(role);
     if (!stage) continue;
     const routeId2 = role.replaceAll("_", "-");
     const writer = isWriterRole(role);
+    const piMatch = binding.harness === "pi" && guidePiNoteMatches(binding);
+    if (binding.harness === "pi" && !piMatch) {
+      files.push({
+        path: join53(projectRoot, ".kxm", "agents", `${role}.yaml`),
+        content: (0, import_yaml18.stringify)(agentDocument(role, stage))
+      });
+      continue;
+    }
     const modelDocument = {
       schema: "kxm.model.v2",
       id: routeId2,
@@ -52910,7 +52940,16 @@ function renderGuideSetupFiles(projectRoot, plan) {
       status: "admitted",
       permissions: [writer ? "edit" : "read-only"]
     };
-    if (binding.harness === "pi") modelDocument.origin = { ...GUIDE_PI_ORIGIN };
+    if (piMatch) {
+      modelDocument.origin = { source: GUIDE_PI_EVIDENCE_SOURCE, sha256: GUIDE_PI_EVIDENCE_SHA256 };
+      if (!evidenceQueued) {
+        files.push({
+          path: join53(projectRoot, GUIDE_PI_EVIDENCE_SOURCE),
+          content: GUIDE_PI_EVIDENCE_NOTE
+        });
+        evidenceQueued = true;
+      }
+    }
     files.push({
       path: join53(projectRoot, ".kxm", "agents", `${role}.yaml`),
       content: (0, import_yaml18.stringify)(agentDocument(role, stage))

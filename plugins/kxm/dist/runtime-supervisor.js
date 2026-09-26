@@ -17842,24 +17842,10 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
     if (executor && !executors.has(executor)) issues.push(issue3("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
-    const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue3("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue3("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
-    }
-    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
-    const declaredHarness = stringValue(agent.value.harness);
-    if (declaredHarness && harnesses.has(declaredHarness)) {
-      for (const candidate of candidates) {
-        const candidateProvider = stringValue(candidate.value.provider);
-        const candidateModel = stringValue(candidate.value.model);
-        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
-        if (!validation.valid) {
-          issues.push(issue3("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
-        }
-      }
     }
   }
   validateModelReferences(models, issues);

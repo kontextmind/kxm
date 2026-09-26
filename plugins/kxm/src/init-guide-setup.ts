@@ -12,6 +12,7 @@
  *   - `.kxm/workflows/<slug>.yaml`     (kxm.workflow.v1)
  *   - `.kxm/roles/<role-slug>.yaml`    (kxm.role.v2)
  *   - `.kxm/models/<route-id>.yaml`    (kxm.model.v2)
+ *   - `plans/evidence/route-guide-qwen-pi.md` when a Pi binding matches that note
  *   - admitted selectors appended to `.kxm/routes.yaml`
  * It never writes retired legacy authority (`.kxm/config` or
  * `.kxm/roster.json`). Role and model files are the dispatch authority.
@@ -483,16 +484,57 @@ function workflowDocument(workflow: GuideWorkflow): Record<string, unknown> {
   };
 }
 
-/** Immutable origin for every guided Pi model. Do not edit the evidence file. */
-const GUIDE_PI_ORIGIN = {
-  source: "plans/evidence/route-guide-qwen-pi.md",
-  sha256: "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759",
+/**
+ * Evidence written into the user's project for the one admitted guided Pi model.
+ * The hash is of these exact bytes. A Pi binding that is not this vendor, model
+ * id, and harness gets no model file and no origin.
+ */
+const GUIDE_PI_EVIDENCE_SOURCE = "plans/evidence/route-guide-qwen-pi.md";
+const GUIDE_PI_EVIDENCE_SHA256 = "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759";
+const GUIDE_PI_NOTE = {
+  harness: "pi",
+  vendor: "openrouter",
+  model: "qwen/qwen3-coder-plus",
+  reason: "Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup.",
+  provingCommand: "pi auth check --provider openrouter",
 } as const;
+
+const GUIDE_PI_EVIDENCE_NOTE = `---
+schema: "kxm.doc.v1"
+id: "RES-GUIDE-QWEN-PI"
+type: "research"
+title: "Research: guided setup Pi Qwen origin"
+project: "kxm"
+status: "approved"
+owner: "@operator"
+created: "2026-09-26"
+updated: "2026-09-26"
+authority: "evidence"
+confidence: "verified"
+summary: "Guided setup pins every Pi model origin to this note so a later project.yaml edit cannot change the hash."
+tags: ["routing", "qwen", "pi", "init-guide"]
+related: []
+details:
+  research_status: "complete"
+  target_decision_date: "2026-09-26"
+---
+
+# route-guide-qwen-pi
+
+Dated 2026-09-26. Route ids are the guided role slugs. Harness \`${GUIDE_PI_NOTE.harness}\`. Model id \`${GUIDE_PI_NOTE.model}\`. Vendor \`${GUIDE_PI_NOTE.vendor}\`. Admitted because ${GUIDE_PI_NOTE.reason} Auth was proved with \`${GUIDE_PI_NOTE.provingCommand}\`.
+`;
+
+function guidePiNoteMatches(binding: AgentBinding): boolean {
+  return binding.harness === GUIDE_PI_NOTE.harness
+    && binding.provider === GUIDE_PI_NOTE.vendor
+    && binding.model === GUIDE_PI_NOTE.model;
+}
 
 /**
  * Render the planned KXM resource files (`.kxm/agents/*.yaml`,
- * `.kxm/workflows/*.yaml`). A Pi model origin is the hash of
- * `plans/evidence/route-guide-qwen-pi.md`, whether or not `.kxm/project.yaml` exists.
+ * `.kxm/workflows/*.yaml`, and the Pi evidence note when a binding matches it).
+ * The Pi origin is the hash of `plans/evidence/route-guide-qwen-pi.md` written
+ * into the project, whether or not `.kxm/project.yaml` exists.
  */
 export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan): GuideSetupFile[] {
   const files: GuideSetupFile[] = [];
@@ -500,11 +542,20 @@ export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan)
   for (const workflow of plan.workflows) {
     for (const stage of workflow.stages) roleStages.set(stage.role, stage);
   }
+  let evidenceQueued = false;
   for (const [role, binding] of [...plan.agents.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const stage = roleStages.get(role);
     if (!stage) continue;
     const routeId = role.replaceAll("_", "-");
     const writer = isWriterRole(role);
+    const piMatch = binding.harness === "pi" && guidePiNoteMatches(binding);
+    if (binding.harness === "pi" && !piMatch) {
+      files.push({
+        path: join(projectRoot, ".kxm", "agents", `${role}.yaml`),
+        content: stringify(agentDocument(role, stage)),
+      });
+      continue;
+    }
     const modelDocument: Record<string, unknown> = {
       schema: "kxm.model.v2",
       id: routeId,
@@ -514,7 +565,16 @@ export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan)
       status: "admitted",
       permissions: [writer ? "edit" : "read-only"],
     };
-    if (binding.harness === "pi") modelDocument.origin = { ...GUIDE_PI_ORIGIN };
+    if (piMatch) {
+      modelDocument.origin = { source: GUIDE_PI_EVIDENCE_SOURCE, sha256: GUIDE_PI_EVIDENCE_SHA256 };
+      if (!evidenceQueued) {
+        files.push({
+          path: join(projectRoot, GUIDE_PI_EVIDENCE_SOURCE),
+          content: GUIDE_PI_EVIDENCE_NOTE,
+        });
+        evidenceQueued = true;
+      }
+    }
     files.push({
       path: join(projectRoot, ".kxm", "agents", `${role}.yaml`),
       content: stringify(agentDocument(role, stage)),

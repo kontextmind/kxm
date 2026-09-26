@@ -36,7 +36,7 @@ function targetsOf(step: WorkflowStep): string[] {
 }
 
 // Rule 1: A harness cannot declare a model it does not host
-test("agent validation rejects harness declaring a model it does not host", () => {
+test("agent validation refuses harness and model as retired routing fields", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-harness-unhosted-"));
   try {
     cpSync(join(repoRoot, "examples/project"), root, { recursive: true });
@@ -49,7 +49,7 @@ test("agent validation rejects harness declaring a model it does not host", () =
       () => loadKxmProject(root),
       (error: unknown) => {
         assert(error instanceof KxmConfigError, `expected KxmConfigError, received ${String(error)}`);
-        return error.issues.some((i) => i.code === "harness_unhosted_model");
+        return error.issues.some((i) => i.code === "retired_agent_routing_fields");
       },
     );
   } finally {
