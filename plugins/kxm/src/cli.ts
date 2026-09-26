@@ -401,7 +401,7 @@ async function dispatchAgentCliCommand(
   }
 }
 
-function createProgram(ctx: CliContext, result: { code: number }): Command {
+function createProgram(ctx: CliContext, result: { code: number }, argv: readonly string[]): Command {
   const bind = (action: (runtime: Runtime, ...args: never[]) => Promise<number>) => {
     return async function commandAction(this: Command, ...args: unknown[]) {
       const command = args.at(-1) instanceof Command ? args.at(-1) as Command : this;
@@ -416,7 +416,11 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
     .exitOverride()
     .configureOutput({
       writeOut: (text) => ctx.io.stdout(text),
-      writeErr: (text) => ctx.io.stderr(text),
+      // Subcommands inherit this object by reference (copyInheritedSettings).
+      writeErr: (text) => {
+        if (hasJsonFlag(argv)) return;
+        ctx.io.stderr(text);
+      },
     })
     .helpCommand("help", "Show help");
   addGlobalOptions(program);
@@ -1536,7 +1540,7 @@ export async function runCli(
     return 2;
   }
   const result = { code: 0 };
-  const program = createProgram({ env, io, cwd }, result);
+  const program = createProgram({ env, io, cwd }, result, argv);
   try {
     await program.parseAsync(argv, { from: "user" });
     return result.code;

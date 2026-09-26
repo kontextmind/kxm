@@ -241,7 +241,10 @@ test("agent and gate CLI results share the worker envelope", async () => {
 test("init rejects --hub and --hub-url as unknown options", async () => {
   const hub = capture();
   assert.equal(await runCli(["init", "--json", "--hub", "new"], {}, hub), 2);
-  assert.match(hub.read().stderr, /unknown option '--hub'/);
+  const parsed = JSON.parse(hub.read().stdout) as { error?: string; detail?: string };
+  assert.equal(parsed.error, "usage_error");
+  assert.match(parsed.detail ?? "", /unknown option '--hub'/);
+  assert.equal(hub.read().stderr, "");
   const hubUrl = capture();
   assert.equal(await runCli(["init", "--hub-url", "http://127.0.0.1:7331"], {}, hubUrl), 2);
   assert.match(hubUrl.read().stderr, /unknown option '--hub-url'/);
@@ -2355,10 +2358,11 @@ test("lane run --json without --brief prints a usage_error envelope and exits 2"
   assert.equal(parsed.command, "lane run");
   assert.equal(parsed.error, "usage_error");
   assert.equal(parsed.detail, "error: required option '--brief <file>' not specified");
+  assert.equal(io.read().stderr, "");
   const text = capture();
   assert.equal(await runCli(["lane", "run", "probe"], {}, text), 2);
   assert.equal(text.read().stdout, "");
-  assert.match(text.read().stderr, /required option '--brief <file>' not specified/);
+  assert.equal(text.read().stderr, "error: required option '--brief <file>' not specified\n");
 });
 
 test("kxm land dry-run prints the verify plan", async () => {

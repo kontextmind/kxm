@@ -51563,7 +51563,7 @@ async function dispatchAgentCliCommand(runtime, toolName, rawArgs) {
     }
   }
 }
-function createProgram(ctx, result) {
+function createProgram(ctx, result, argv) {
   const bind = (action) => {
     return async function commandAction(...args) {
       const command = args.at(-1) instanceof Command ? args.at(-1) : this;
@@ -51573,7 +51573,11 @@ function createProgram(ctx, result) {
   const program2 = new Command(CLI_NAME2);
   program2.description("KXM local-first orchestration CLI").version(readInstalledKxmVersion(findKxmRepoRoot(import.meta.url)), "-V, --version", "Print the installed kxm version").exitOverride().configureOutput({
     writeOut: (text) => ctx.io.stdout(text),
-    writeErr: (text) => ctx.io.stderr(text)
+    // Subcommands inherit this object by reference (copyInheritedSettings).
+    writeErr: (text) => {
+      if (hasJsonFlag(argv)) return;
+      ctx.io.stderr(text);
+    }
   }).helpCommand("help", "Show help");
   addGlobalOptions(program2);
   program2.hook("preAction", (_program, actionCommand) => {
@@ -52188,7 +52192,7 @@ async function runCli(argv, env = process.env, io = { stdout: (text) => process.
     return 2;
   }
   const result = { code: 0 };
-  const program2 = createProgram({ env, io, cwd }, result);
+  const program2 = createProgram({ env, io, cwd }, result, argv);
   try {
     await program2.parseAsync(argv, { from: "user" });
     return result.code;
