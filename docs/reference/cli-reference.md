@@ -1470,6 +1470,7 @@ Outside a KXM project the command refuses `project_required` (exit 1). Unknown a
 | `milestone` | Compares `plans/kxm-roadmap/state.json` from before and after `docs`. When a phase goes from an open task to all tasks `done`, or the pull request body contains a `Milestone:` line, prints `deep_review_required: true` and exits 0. The review is the `/reanalyze-roadmap` skill, not this command. An absent state file passes with skipped. |
 
 Refusals (exit 1): `project_required`, `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`, `land_push_rejected`, `land_pr_body_missing`, `land_conflict_manual`, `land_blocked`, `land_merge_failed`, `land_release_failed`, `land_publish_timeout`, `land_milestone_failed`.
+
 ## `kxm assign`
 
 `kxm assign` is the entry to this repository's developer assignment runner. Each verb spawns `node scripts/assignment-run.mjs <verb> ...` from the project root with that argument list, `stdio: "inherit"`, and the process environment unchanged. The command returns the child's exit code. It does not load a `.env` file, resolve paths, or repeat any runner check. Every validation rule, refusal code, and file the runner writes stays in [`scripts/assignment-run.mjs`](../../scripts/assignment-run.mjs). The loop, the records, and those codes are documented in [Assignment runner](../contributing/assignment-runner.md).
