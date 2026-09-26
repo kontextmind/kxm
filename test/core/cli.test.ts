@@ -608,6 +608,39 @@ test("KXM init joins with repeated CLI member bindings stored outside Git", asyn
   }
 });
 
+test("kxm role add --file refuses a roster route that is not a file under .kxm/models", async () => {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-add-file-route-")));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-role-add-file-route-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JROLEADDFILE000000000000", projectName: "Role file route" });
+    const userConfig = join(stateRoot, "user-config");
+    const env = { KXM_STATE_HOME: stateRoot, KXM_USER_CONFIG_DIR: userConfig };
+    const file = join(cwd, "unknown-role.yaml");
+    writeFileSync(file, [
+      "schema: kxm.role.v2",
+      "id: reviewer",
+      "purpose: experiment",
+      "permission: read-only",
+      "description: From a file",
+      "roster:",
+      "  - route: missing-route",
+      "",
+    ].join("\n"));
+    for (const scope of ["local", "global"] as const) {
+      const io = capture();
+      const code = await runCli(["role", "add", "reviewer", "--file", file, "--scope", scope], env, io, cwd);
+      assert.equal(code, 1, scope);
+      assert.match(io.read().stderr, /kxm: route 'missing-route' is not a file under \.kxm\/models\//);
+    }
+    assert.equal(existsSync(join(cwd, ".kxm", "roles", "reviewer.yaml")), false);
+    assert.equal(existsSync(join(userConfig, "roles", "reviewer.yaml")), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("kxm role add refuses a --route that is not a file under .kxm/models", async () => {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-add-route-")));
   const stateRoot = mkdtempSync(join(tmpdir(), "kxm-role-add-route-state-"));

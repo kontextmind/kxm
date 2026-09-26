@@ -180,16 +180,19 @@ export async function cmdRoleAdd(
   const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
   const routes = (options.route ?? []).filter((route) => route.length > 0);
   const roster = routes.length > 0 ? routes.map((route) => ({ route })) : undefined;
-  // --file carries its own roster. A constructed or copied role takes --route, and the
-  // first id is the primary. A missing model file is the same refusal as modify --add-route.
+  // A constructed or copied role takes --route, and the first id is the primary.
+  // A missing model file is the same refusal as modify --add-route. --file is checked
+  // after its roster is parsed, for both local and global scope.
+  const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+  const refuseMissingRoute = (routeId: string): boolean => {
+    const modelFile = join(projectRoot, ".kxm", "models", `${routeId}.yaml`);
+    if (existsSync(modelFile)) return false;
+    runtime.io.stderr(`kxm: route '${routeId}' is not a file under .kxm/models/\n`);
+    return true;
+  };
   if (roster && !options.file) {
-    const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
     for (const entry of roster) {
-      const modelFile = join(projectRoot, ".kxm", "models", `${entry.route}.yaml`);
-      if (!existsSync(modelFile)) {
-        runtime.io.stderr(`kxm: route '${entry.route}' is not a file under .kxm/models/\n`);
-        return 1;
-      }
+      if (refuseMissingRoute(entry.route)) return 1;
     }
   }
   const purpose = rolePurposeForId(roleId ?? "experiment");
@@ -202,6 +205,9 @@ export async function cmdRoleAdd(
     roleDef.schema = "kxm.role.v2";
     roleDef.purpose ??= rolePurposeForId(roleDef.id);
     roleDef.permission ??= roleDef.purpose === "writer" ? "edit" : "read-only";
+    for (const entry of roleDef.roster ?? []) {
+      if (typeof entry?.route === "string" && entry.route.length > 0 && refuseMissingRoute(entry.route)) return 1;
+    }
   } else if (base) {
     roleDef = {
       ...base,

@@ -33339,15 +33339,17 @@ async function cmdRoleAdd(runtime, roleId, options) {
   const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : void 0;
   const routes = (options.route ?? []).filter((route) => route.length > 0);
   const roster = routes.length > 0 ? routes.map((route) => ({ route })) : void 0;
-  if (roster && !options.file) {
-    const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
-    for (const entry of roster) {
-      const modelFile = join22(projectRoot, ".kxm", "models", `${entry.route}.yaml`);
-      if (!existsSync20(modelFile)) {
-        runtime.io.stderr(`kxm: route '${entry.route}' is not a file under .kxm/models/
+  const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+  const refuseMissingRoute = (routeId2) => {
+    const modelFile = join22(projectRoot, ".kxm", "models", `${routeId2}.yaml`);
+    if (existsSync20(modelFile)) return false;
+    runtime.io.stderr(`kxm: route '${routeId2}' is not a file under .kxm/models/
 `);
-        return 1;
-      }
+    return true;
+  };
+  if (roster && !options.file) {
+    for (const entry of roster) {
+      if (refuseMissingRoute(entry.route)) return 1;
     }
   }
   const purpose = rolePurposeForId(roleId ?? "experiment");
@@ -33360,6 +33362,9 @@ async function cmdRoleAdd(runtime, roleId, options) {
     roleDef.schema = "kxm.role.v2";
     roleDef.purpose ??= rolePurposeForId(roleDef.id);
     roleDef.permission ??= roleDef.purpose === "writer" ? "edit" : "read-only";
+    for (const entry of roleDef.roster ?? []) {
+      if (typeof entry?.route === "string" && entry.route.length > 0 && refuseMissingRoute(entry.route)) return 1;
+    }
   } else if (base) {
     roleDef = {
       ...base,
@@ -33381,8 +33386,8 @@ async function cmdRoleAdd(runtime, roleId, options) {
   }
   let repoRoot = runtime.cwd;
   if (scope === "local") {
-    const projectRoot = discoverKxmProjectRoot(runtime.cwd);
-    if (!projectRoot) {
+    const projectRoot2 = discoverKxmProjectRoot(runtime.cwd);
+    if (!projectRoot2) {
       print(
         runtime.io,
         runtime.json,
@@ -33391,7 +33396,7 @@ async function cmdRoleAdd(runtime, roleId, options) {
       );
       return 2;
     }
-    const issues = kxmRoleWriteIssues(projectRoot, roleDef.id, (0, import_yaml10.stringify)(roleDef));
+    const issues = kxmRoleWriteIssues(projectRoot2, roleDef.id, (0, import_yaml10.stringify)(roleDef));
     if (issues.length > 0) {
       print(
         runtime.io,
@@ -33402,7 +33407,7 @@ ${issues.map((entry) => `  ${entry.file}: ${entry.code}: ${entry.message}`).join
       );
       return 2;
     }
-    repoRoot = projectRoot;
+    repoRoot = projectRoot2;
   }
   try {
     const res = addRole(roleDef, {
