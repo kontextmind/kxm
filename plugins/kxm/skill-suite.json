@@ -55,8 +55,8 @@
     {
       "name": "kxm-runs",
       "path": "./skills/kxm-runs",
-      "ownedCommands": ["run", "runs", "lane", "land"],
-      "intent": "Create, drive, inspect, and cancel local KXM runs, manage worktree lanes, land a branch, or smoke-test a workflow model-free"
+      "ownedCommands": ["run", "runs", "lane", "land", "assign"],
+      "intent": "Create, drive, inspect, and cancel local KXM runs, manage worktree lanes, land a branch, call the assignment runner, or smoke-test a workflow model-free"
     },
     {
       "name": "kxm-context-memory",

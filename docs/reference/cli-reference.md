@@ -14,7 +14,7 @@ Output shown under examples was captured from a source checkout, inside a throwa
 - Setup: [`init`](#kxm-init), [`config`](#kxm-config), [`completion`](#kxm-completion), [`trust`](#kxm-trust)
 - Hub and sessions: [`hub`](#kxm-hub-view), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
 - Harnesses, models, and roles: [`harness`](#kxm-harness), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
-- Running work: [`lane`](#kxm-lane), [`run`](#kxm-run), [`runs`](#kxm-runs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
+- Running work: [`lane`](#kxm-lane), [`assign`](#kxm-assign), [`run`](#kxm-run), [`runs`](#kxm-runs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
 - Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing), [`prices`](#kxm-prices)
 - Operations: [`backup`](#kxm-backup), [`restore`](#kxm-restore), [`tenant`](#kxm-tenant), [`ssh`](#kxm-ssh), [`help`](#kxm-help)
 - [Known behavior gaps](#known-behavior-gaps)
@@ -159,6 +159,7 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 | Create and drive a run | [`kxm run`](#kxm-run), [`kxm runs drive`](#kxm-runs-drive), [`kxm runtime status`](#kxm-runtime-status) |
 | Work in an isolated checkout | [`kxm lane`](#kxm-lane), [`kxm run --lane`](#kxm-run) |
 | Land the current branch | [`kxm land`](#kxm-land) |
+| Delegate and accept a developer assignment | [`kxm assign`](#kxm-assign) |
 | Inspect runs | [`kxm runs list`](#kxm-runs-list), [`kxm runs status`](#kxm-runs-status), [`kxm runs receipt`](#kxm-runs-receipt), [`kxm tenant status`](#kxm-tenant-status), [`kxm workflow list`](#kxm-workflow-list) |
 | Message peers | [`kxm peer list`](#kxm-peer-list), [`kxm peer send`](#kxm-peer-send), [`kxm peer await`](#kxm-peer-await), [`kxm peer fanout`](#kxm-peer-fanout) |
 | Operate gates and evidence | [`kxm gate validate`](#kxm-gate-validate), [`kxm gate artifacts-exist`](#kxm-gate-artifacts-exist), [`kxm gate signal`](#kxm-gate-signal), [`kxm workflow checkpoint`](#kxm-workflow-checkpoint) |
@@ -1469,6 +1470,97 @@ Outside a KXM project the command refuses `project_required` (exit 1). Unknown a
 | `milestone` | Compares `plans/kxm-roadmap/state.json` from before and after `docs`. When a phase goes from an open task to all tasks `done`, or the pull request body contains a `Milestone:` line, prints `deep_review_required: true` and exits 0. The review is the `/reanalyze-roadmap` skill, not this command. An absent state file passes with skipped. |
 
 Refusals (exit 1): `project_required`, `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`, `land_push_rejected`, `land_pr_body_missing`, `land_conflict_manual`, `land_blocked`, `land_merge_failed`, `land_release_failed`, `land_publish_timeout`, `land_milestone_failed`.
+
+## `kxm assign`
+
+`kxm assign` is the entry to this repository's developer assignment runner. Each verb spawns `node scripts/assignment-run.mjs <verb> ...` from the project root with that argument list, `stdio: "inherit"`, and the process environment unchanged. The command returns the child's exit code. It does not load a `.env` file, resolve paths, or repeat any runner check. Every validation rule, refusal code, and file the runner writes stays in [`scripts/assignment-run.mjs`](../../scripts/assignment-run.mjs). The loop, the records, and those codes are documented in [Assignment runner](../contributing/assignment-runner.md).
+
+The command does not start the hub or the Runtime supervisor. It writes nothing itself. `--dry-run` prints the argv that would run and exits 0 without spawning. `--json` formats this command's own refusals and that dry-run plan. The runner's usage text documents no `--json` flag, and `accept` already prints JSON, so `--json` is not forwarded.
+
+Outside a KXM project the command exits 1 with `project_required`. A project that has no `scripts/assignment-run.mjs` exits 1 with `assign_runner_missing`. A missing required flag is a usage error and exits 2. If `node` cannot be started, the command exits 1 with `assign_spawn_failed`.
+
+```text
+kxm assign run --manifest <path>
+kxm assign witness --record-dir <path>
+kxm assign plan-current --task-dir <path> --plan <path> --sha256 <hex> --base-commit <sha> --expected-generation <n>
+kxm assign attribute --task-dir <path> --record-dir <path> --class <class> --explanation-file <path>
+kxm assign observe-cost --task-dir <path> --input <path>
+kxm assign accept --task-dir <path> --commit <sha> --record-dir <path> --critic <path> --critic <path> [--observed-pr <id>] [--observed-ci <id>]
+kxm assign change-report --task-dir <path>
+```
+
+```bash
+kxm assign run --manifest /abs/tasks/fix-improve-sources/asg-writer-1.json
+```
+
+### `kxm assign run`
+
+Dispatches one closed manifest. The runner validates the route, the base, and the plan pointer, then writes the assignment record.
+
+| Option | Argument | Description |
+|---|---|---|
+| `--manifest` | `<path>` | Absolute path to the `kxm.assignment.v1` manifest. Passed through as given |
+
+### `kxm assign witness`
+
+Runs the fixed witness named in the manifest against the staged tree.
+
+| Option | Argument | Description |
+|---|---|---|
+| `--record-dir` | `<path>` | Absolute path to the assignment record directory |
+
+### `kxm assign plan-current`
+
+Stamps or advances `plan-current.json` in the task directory.
+
+| Option | Argument | Description |
+|---|---|---|
+| `--task-dir` | `<path>` | Absolute path to the task directory |
+| `--plan` | `<path>` | Absolute path to the plan file |
+| `--sha256` | `<hex>` | SHA-256 the runner expects for that file |
+| `--base-commit` | `<sha>` | Commit the pointer records |
+| `--expected-generation` | `<n>` | Generation the pointer must currently have |
+
+### `kxm assign attribute`
+
+Attaches one private note under the record's `attribution/` directory. The note is not proof.
+
+| Option | Argument | Description |
+|---|---|---|
+| `--task-dir` | `<path>` | Absolute path to the task directory |
+| `--record-dir` | `<path>` | Absolute path to the assignment record directory |
+| `--class` | `<class>` | `orchestration`, `model`, `environment`, or `unclassified` |
+| `--explanation-file` | `<path>` | Absolute path to the note file |
+
+### `kxm assign observe-cost`
+
+Imports one cost observation. The record is cost-only and cannot authorize acceptance.
+
+| Option | Argument | Description |
+|---|---|---|
+| `--task-dir` | `<path>` | Absolute path to the task directory |
+| `--input` | `<path>` | Absolute path to the observation file |
+
+### `kxm assign accept`
+
+Binds the witnessed commit and two critic records. Optional observation ids are forwarded when present. `accept` prints JSON and takes no `--json` flag.
+
+| Option | Argument | Description |
+|---|---|---|
+| `--task-dir` | `<path>` | Absolute path to the task directory |
+| `--commit` | `<sha>` | Commit whose tree must equal the witnessed tree |
+| `--record-dir` | `<path>` | Absolute path to the writer record directory |
+| `--critic` | `<path>` | Absolute path to a critic record directory. Pass it twice |
+| `--observed-pr` | `<id>` | Observed pull request id. Omitted unless set |
+| `--observed-ci` | `<id>` | Observed CI run id. Omitted unless set |
+
+### `kxm assign change-report`
+
+Prints the task's attempts, rework, and spend. The runner keeps provider-reported, list, unmetered, and unknown cost apart.
+
+| Option | Argument | Description |
+|---|---|---|
+| `--task-dir` | `<path>` | Absolute path to the task directory |
 
 ## `kxm run`
 

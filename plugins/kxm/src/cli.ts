@@ -132,6 +132,7 @@ import {
 } from "./cli/lanes.ts";
 
 import { cmdLand } from "./cli/land.ts";
+import { cmdAssign } from "./cli/assign.ts";
 
 import {
   cmdStatus,
@@ -200,6 +201,8 @@ const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "init", "backup", "restore", "run", "explain", "suggest", "update", "dash", "completion", "completion install",
   "lane create", "lane list", "lane status", "lane drop", "lane run",
   "land",
+  "assign run", "assign witness", "assign plan-current", "assign attribute",
+  "assign observe-cost", "assign accept", "assign change-report",
   "plugin install", "plugin",
   "runs status", "runs drive", "runs receipt", "runs cancel", "runs list",
   "tenant status", "models inventory-refresh", "harness list", "auth token",
@@ -498,6 +501,74 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
         ...(options.stage !== undefined ? { stage: options.stage } : {}),
         ...(options.bodyFile !== undefined ? { bodyFile: options.bodyFile } : {}),
       });
+    });
+  const assignCmd = addGlobalOptions(program.command("assign").description("Run this repository's developer assignment runner"));
+  assignCmd.helpCommand("help", "Show assign help");
+  addGlobalOptions(assignCmd.command("run").description("Dispatch a bound assignment manifest"))
+    .requiredOption("--manifest <path>", "Absolute path to the assignment manifest")
+    .action(async function assignRunAction(this: Command, options: { manifest: string }) {
+      result.code = await cmdAssign(runtimeFrom(ctx, this), "run", { manifest: options.manifest });
+    });
+  addGlobalOptions(assignCmd.command("witness").description("Run the fixed verification witness for an existing assignment"))
+    .requiredOption("--record-dir <path>", "Absolute path to the assignment record directory")
+    .action(async function assignWitnessAction(this: Command, options: { recordDir: string }) {
+      result.code = await cmdAssign(runtimeFrom(ctx, this), "witness", { recordDir: options.recordDir });
+    });
+  addGlobalOptions(assignCmd.command("plan-current").description("Stamp or advance the current-plan pointer"))
+    .requiredOption("--task-dir <path>", "Absolute path to the task directory")
+    .requiredOption("--plan <path>", "Absolute path to the plan file")
+    .requiredOption("--sha256 <hex>", "SHA-256 of the plan file")
+    .requiredOption("--base-commit <sha>", "Base commit the pointer records")
+    .requiredOption("--expected-generation <n>", "Generation the pointer must currently have")
+    .action(async function assignPlanCurrentAction(this: Command, options: { taskDir: string; plan: string; sha256: string; baseCommit: string; expectedGeneration: string }) {
+      result.code = await cmdAssign(runtimeFrom(ctx, this), "plan-current", {
+        taskDir: options.taskDir,
+        plan: options.plan,
+        sha256: options.sha256,
+        baseCommit: options.baseCommit,
+        expectedGeneration: options.expectedGeneration,
+      });
+    });
+  addGlobalOptions(assignCmd.command("attribute").description("Attach a private attribution note"))
+    .requiredOption("--task-dir <path>", "Absolute path to the task directory")
+    .requiredOption("--record-dir <path>", "Absolute path to the assignment record directory")
+    .requiredOption("--class <class>", "orchestration, model, environment, or unclassified")
+    .requiredOption("--explanation-file <path>", "Absolute path to the note file")
+    .action(async function assignAttributeAction(this: Command, options: { taskDir: string; recordDir: string; class: string; explanationFile: string }) {
+      result.code = await cmdAssign(runtimeFrom(ctx, this), "attribute", {
+        taskDir: options.taskDir,
+        recordDir: options.recordDir,
+        classification: options.class,
+        explanationFile: options.explanationFile,
+      });
+    });
+  addGlobalOptions(assignCmd.command("observe-cost").description("Import one historical cost observation as cost-only"))
+    .requiredOption("--task-dir <path>", "Absolute path to the task directory")
+    .requiredOption("--input <path>", "Absolute path to the observation file")
+    .action(async function assignObserveCostAction(this: Command, options: { taskDir: string; input: string }) {
+      result.code = await cmdAssign(runtimeFrom(ctx, this), "observe-cost", { taskDir: options.taskDir, input: options.input });
+    });
+  addGlobalOptions(assignCmd.command("accept").description("Bind an exact witnessed commit and two critic PASS records"))
+    .requiredOption("--task-dir <path>", "Absolute path to the task directory")
+    .requiredOption("--commit <sha>", "Commit to accept")
+    .requiredOption("--record-dir <path>", "Absolute path to the writer record directory")
+    .requiredOption("--critic <path>", "Absolute path to a critic record directory; pass twice", (value: string, previous: string[]) => previous.concat(value), [] as string[])
+    .option("--observed-pr <id>", "Observed pull request id")
+    .option("--observed-ci <id>", "Observed CI run id")
+    .action(async function assignAcceptAction(this: Command, options: { taskDir: string; commit: string; recordDir: string; critic: string[]; observedPr?: string; observedCi?: string }) {
+      result.code = await cmdAssign(runtimeFrom(ctx, this), "accept", {
+        taskDir: options.taskDir,
+        commit: options.commit,
+        recordDir: options.recordDir,
+        critics: options.critic,
+        ...(options.observedPr !== undefined ? { observedPr: options.observedPr } : {}),
+        ...(options.observedCi !== undefined ? { observedCi: options.observedCi } : {}),
+      });
+    });
+  addGlobalOptions(assignCmd.command("change-report").description("Report attempts, rework, costs, and retained verification history"))
+    .requiredOption("--task-dir <path>", "Absolute path to the task directory")
+    .action(async function assignChangeReportAction(this: Command, options: { taskDir: string }) {
+      result.code = await cmdAssign(runtimeFrom(ctx, this), "change-report", { taskDir: options.taskDir });
     });
 
   addGlobalOptions(program.command("run").description("Create a KXM run without executing steps; follow its prerequisites, then kxm runs drive <runId> --wait")

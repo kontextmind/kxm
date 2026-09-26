@@ -19,9 +19,9 @@ a KXM product feature.
   `origin/main`. The runner loads `.kxm/roster.yaml` only from there.
 - A separate worktree for the writer. `kxm lane create <unit>` creates one from
   `origin/main`.
-- [`just`](https://github.com/casey/just), plus the harness CLIs the roster
-  admits, installed and logged in. `node scripts/kxm.mjs harness list` shows
-  which are.
+- The harness CLIs the roster admits, installed and logged in.
+  `node scripts/kxm.mjs harness list` shows which are. The loop below is
+  `kxm assign`. `just` still runs the transport recipes.
 - A task directory whose final path segment equals the task ID. Every path you
   pass to the runner must be absolute.
 
@@ -80,10 +80,12 @@ Use this slim loop for daily work and for docs. The 13-step `fix` workflow in
 `examples/project/` is a product fixture, not the developer loop.
 
 > [!NOTE]
-> These recipes never load a `.env` file from the working directory. An
+> `kxm assign` never loads a `.env` file from the working directory. An
 > unreviewed file could otherwise set `NODE_OPTIONS` and run code before the
-> runner validates anything. To use one, pass it explicitly:
-> `just --dotenv-path /abs/.env assign /abs/manifest.json`.
+> runner validates anything. The process environment is passed through as it
+> is. Export any variable you need before the command.
+
+The seven `just` assignment recipes remain available and will be removed after one real unit has been accepted through `kxm assign`; until then both forms are equivalent because both call `scripts/assignment-run.mjs` unchanged.
 
 ### 1. Pin the current plan
 
@@ -91,7 +93,7 @@ Every writer assignment binds to the current plan. Stamp the pointer, or advance
 it with a generation check:
 
 ```bash
-just plan-current /abs/task-dir /abs/plan.md <sha256> <base-commit> <expected-generation>
+kxm assign plan-current --task-dir /abs/task-dir --plan /abs/plan.md --sha256 <sha256> --base-commit <base-commit> --expected-generation <expected-generation>
 ```
 
 The runner writes `plan-current.json` (`kxm.plan-pointer.v1`) in the task
@@ -137,7 +139,7 @@ Optional keys are `rework_of`, `timeout_ms` and `max_turns`. Each `inputs`
 entry is `{ "path", "sha256" }`, and the runner checks the hash. Dispatch it:
 
 ```bash
-just assign /abs/tasks/fix-improve-sources/asg-writer-1.json
+kxm assign run --manifest /abs/tasks/fix-improve-sources/asg-writer-1.json
 ```
 
 The runner validates the manifest, the route and the base, writes
@@ -151,7 +153,7 @@ generated files, then run the witness:
 
 ```bash
 git -C /abs/kxm-fix-improve-sources add -A
-just witness /abs/tasks/fix-improve-sources/asg-writer-1
+kxm assign witness --record-dir /abs/tasks/fix-improve-sources/asg-writer-1
 ```
 
 The witness refuses with `dirty_baseline` while anything is unstaged or
@@ -185,17 +187,18 @@ witnessed tree: either the staged index (`base.kind: "staged"` with its
 Commit the exact witnessed tree, then bind the commit and both `PASS` records:
 
 ```bash
-just accept /abs/tasks/fix-improve-sources <commit-sha> \
-  /abs/tasks/fix-improve-sources/asg-writer-1 \
-  /abs/tasks/fix-improve-sources/asg-review-arch-1 \
-  /abs/tasks/fix-improve-sources/asg-review-cli-1
+kxm assign accept \
+  --task-dir /abs/tasks/fix-improve-sources \
+  --commit <commit-sha> \
+  --record-dir /abs/tasks/fix-improve-sources/asg-writer-1 \
+  --critic /abs/tasks/fix-improve-sources/asg-review-arch-1 \
+  --critic /abs/tasks/fix-improve-sources/asg-review-cli-1
 ```
 
-To record an observed pull request or CI run, call the script directly, since
-the recipe does not pass those flags:
+To record an observed pull request or CI run, pass the same flags:
 
 ```bash
-node scripts/assignment-run.mjs accept \
+kxm assign accept \
   --task-dir /abs/tasks/fix-improve-sources \
   --commit <commit-sha> \
   --record-dir /abs/tasks/fix-improve-sources/asg-writer-1 \
@@ -205,7 +208,7 @@ node scripts/assignment-run.mjs accept \
   --observed-ci <ci-id>
 ```
 
-`accept` prints JSON and takes no `--json` flag. It checks, in order, that:
+`accept` prints JSON and takes no `--json` flag, and `kxm assign --json` is not passed through. The runner checks, in order, that:
 
 1. the trusted roster policy loads and validates, before anything is written;
 2. the commit exists and its tree equals the witnessed tree;
@@ -226,7 +229,7 @@ You decide, then dispatch:
 1. Write a new manifest with `"kind": "repair"` and `"rework_of"` set to the
    assignment ID it reworks. The runner checks that the earlier assignment has a
    `completion.json` in the same task directory, with the same task ID.
-2. Dispatch it with `just assign`, then run `just witness` on the new record.
+2. Dispatch it with `kxm assign run`, then run `kxm assign witness` on the new record.
 3. Dispatch fresh critics against the new tree, and accept.
 
 A `BLOCK` stops acceptance only for the tree it judged. A repair that changes
@@ -266,7 +269,7 @@ Record friction or a model regression as a private note, without touching any
 completion:
 
 ```bash
-just attribute /abs/task-dir /abs/record-dir <class> /abs/note.txt
+kxm assign attribute --task-dir /abs/task-dir --record-dir /abs/record-dir --class <class> --explanation-file /abs/note.txt
 ```
 
 The class is `orchestration`, `model`, `environment` or `unclassified`. Each
@@ -277,7 +280,7 @@ Import a cost observation for a run whose native telemetry was not captured,
 such as a subscription session:
 
 ```bash
-just observe-cost /abs/task-dir /abs/observation.json
+kxm assign observe-cost --task-dir /abs/task-dir --input /abs/observation.json
 ```
 
 The record (`kxm.cost-observation.v1`) is cost-only. It cannot mint witness
@@ -286,7 +289,7 @@ proof or authorize acceptance.
 Summarize a task's attempts, rework and spend:
 
 ```bash
-just change-report /abs/task-dir
+kxm assign change-report --task-dir /abs/task-dir
 ```
 
 The report (`kxm.change-report.v1`) keeps provider-reported spend, list-price
@@ -356,7 +359,7 @@ ones:
 |---|---|---|
 | `route_invalid` | Route not in the role's lineup, permission above its ceiling, or the roster policy cannot load | Run from a clean control checkout on `origin/main`; check the lineup |
 | `base_invalid` | `base.commit` is not `HEAD`, the tree is dirty, or a writer targets a staged index | Commit or stash elsewhere; writers need a clean base |
-| `plan_ref_invalid` | The plan hash or path does not match `plan-current.json` | Advance the pointer with `just plan-current` |
+| `plan_ref_invalid` | The plan hash or path does not match `plan-current.json` | Advance the pointer with `kxm assign plan-current` |
 | `rework_invalid` | `rework_of` names no completed assignment in this task | Point it at an existing record directory's assignment ID |
 | `witness_failed` | The fixed gate exited non-zero | Fix the failures and run a repair |
 | `dirty_baseline` | Unstaged or untracked changes when the witness starts | Stage the candidate with `git add -A`, then re-witness |
