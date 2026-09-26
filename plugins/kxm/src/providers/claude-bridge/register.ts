@@ -92,6 +92,12 @@ export function claudeBridgeRegistrationNotice(
   report: ClaudeBridgeRegistration | undefined,
   pi?: object,
 ): { message: string; type: "warning" } | undefined {
+  if (report?.warning) {
+    return {
+      message: boundedRegistrationWarning(report.warning),
+      type: "warning",
+    };
+  }
   const conflict = Boolean(report?.conflict) || (pi ? claudeBridgeStandaloneToolsPresent(pi) : false);
   if (!conflict) return undefined;
   return {
@@ -112,13 +118,23 @@ export function registerClaudeBridgeProvider(pi: ExtensionAPI): ClaudeBridgeRegi
     return { registered: false, conflict: false };
   }
 
-  pi.registerProvider(PROVIDER_ID, {
-    name: PROVIDER_NAME,
-    baseUrl: PROVIDER_ID,
-    api: CLAUDE_BRIDGE_API,
-    models: registeredClaudeBridgeModels(),
-    streamSimple: streamClaudeBridge,
-  } as unknown as Parameters<ExtensionAPI["registerProvider"]>[1]);
+  try {
+    pi.registerProvider(PROVIDER_ID, {
+      name: PROVIDER_NAME,
+      baseUrl: PROVIDER_ID,
+      apiKey: PROVIDER_ID,
+      api: CLAUDE_BRIDGE_API,
+      models: registeredClaudeBridgeModels(),
+      streamSimple: streamClaudeBridge,
+    } as unknown as Parameters<ExtensionAPI["registerProvider"]>[1]);
 
-  return { registered: true, conflict: false };
+    return { registered: true, conflict: false };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      registered: false,
+      conflict: false,
+      warning: `kxm: claude-bridge provider registration failed (${reason}). Configure apiKey or ensure provider auth is valid.`,
+    };
+  }
 }
