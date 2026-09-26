@@ -149,3 +149,13 @@ change-report TASK:
 # local pi models store; secrets stay inside a mode-600 temp env file.
 docker-install-smoke:
     @node scripts/docker-install-smoke.mjs
+
+# ── docs site ────────────────────────────────────────────────────────────
+
+# rebuild the tailnet docs site from the roadmap state
+docs-build:
+    @node plans/kxm-roadmap/update-dashboard.mjs
+
+# serve the built site on this machine's tailnet address only
+docs-serve:
+    @python3 ops/docs-site/serve.py
