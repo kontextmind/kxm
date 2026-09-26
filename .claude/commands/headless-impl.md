@@ -27,12 +27,9 @@ Do this:
    changes are fixed in tree — no aliases, no shims, no dual product names), an
    explicit "do not" list, and a request to report back what surprised it.
    Include the reading and diff budgets from the unit.
-4. **Launch in the background**, logging to the scratchpad. Prefer the common
-   envelope so the run is recorded like every other dispatch:
-   `just impl <brief> <worktree>`
-   which resolves to `grok --prompt-file <brief> -m grok-4.7 --reasoning-effort
-   high --always-approve --output-format json`. Drop to `--reasoning-effort low`
-   for mechanical edits.
+4. **Launch in the background**, logging to the scratchpad. Prefer the one-step
+   workflow so the run is recorded like every other dispatch:
+   `kxm lane run <unit> --brief <file> --workflow implement-only`
 5. **Verify independently when it returns.** Check `git status`, `git log`, and
    the actual diff yourself, and confirm the gates (`npm run verify`, then
    `npm run check:generated`) really passed. The writer's summary is a claim,

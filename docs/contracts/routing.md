@@ -130,7 +130,7 @@ just accept /abs/task-dir <commit> /abs/writer-record /abs/arch-review /abs/cli-
 # optional observed PR/CI (direct script; the five-argument just recipe cannot forward them):
 # node scripts/assignment-run.mjs accept --task-dir /abs/task --commit <sha> --record-dir /abs/writer --critic /abs/arch --critic /abs/cli [--observed-pr <id>] [--observed-ci <id>]
 
-just plan-current /abs/task-dir /abs/plan.md <sha256> <base-commit> <expected-generation>
+kxm assign plan-current --task-dir /abs/task-dir --plan /abs/plan.md --sha256 <sha256> --base-commit <base-commit> --expected-generation <expected-generation>
 just change-report /abs/task-dir
 ```
 

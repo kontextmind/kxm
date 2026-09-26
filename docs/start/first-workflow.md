@@ -254,7 +254,7 @@ The file is a `kxm.workflow.v1` definition. `coordinator` names the agent that o
 | Cost | None | Model usage on your accounts |
 
 > [!WARNING]
-> Without `--simulated`, `kxm runs drive` calls live harnesses. An agent whose model is not an admitted route fails with `producer_route_not_admitted`. Read [Harness routing](../reference/harness-routing.md) before your first live drive. A live step with `write` access runs only on a harness with an audited writer profile (`pi` or `grok`), as a single assignment, in a project whose `limits.maxConcurrentRuns` is 1, and, when `the role and model files` exists, only on a route in its writer lineup; any other live write step is handed off. A live write step settles `passed` only when the checkout changed, and a read-only step that changes the checkout settles `failed`. Gate steps are exempt. The read-only `spec-and-plan` template needs none of this.
+> Without `--simulated`, `kxm runs drive` calls live harnesses. An agent whose model is not an admitted route fails with `producer_route_not_admitted`. Read [Harness routing](../reference/harness-routing.md) before your first live drive. A live step with `write` access runs only on a harness with an audited writer profile (`pi` or `grok`), as a single assignment, in a project whose `limits.maxConcurrentRuns` is 1, and only on a route in the writer roster under `.kxm/roles/writer.yaml`; any other live write step is handed off. A live write step settles `passed` only when the checkout changed, and a read-only step that changes the checkout settles `failed`. Gate steps are exempt. The read-only `spec-and-plan` template needs none of this.
 
 ### Why start with `first` and not `default`
 

@@ -1069,14 +1069,32 @@ Lists admitted and disabled routes.
 
 No command-specific options.
 
-- Reads only. JSON keys: `policy` (`schema`, `updatedAt`, `admitted`, `disabled`, `roles`).
+- Reads only. JSON keys: `policy` (`schema`, `updatedAt`, `admitted`, `disabled`) and `membership` (strings `<role> <route-id>` from `.kxm/roles/*.yaml`). `policy` has no `roles` field. A model file named by no roster, such as `opus-claude`, is absent from `membership`.
 
 ```bash
 kxm routes list
 ```
 
 ```text
-no route decisions
+admitted anthropic/fable
+admitted google/gemini-3.8-flash-high
+admitted google/gemini-3.8-flash-medium
+admitted openai/gpt-5.6-sol
+admitted openrouter/qwen/qwen3-coder-plus
+admitted openrouter/qwen/qwen3.8-flash
+admitted openrouter/z-ai/glm-5.3-flash
+admitted qwen-token-plan/deepseek-v4.1-flash
+admitted qwen-token-plan/qwen3.8-flash
+admitted qwen-token-plan/qwen3.8-max
+admitted xai/grok-4.7
+admitted zai-coding-cn/glm-5.3
+admitted zai-coding-cn/glm-5.3-flash
+planner fable-claude
+reviewer-arch fable-claude
+reviewer-cli sol-codex
+writer grok-native
+writer qwen-openrouter-pi
+writer gemini-agy
 ```
 
 ```bash
@@ -1084,7 +1102,7 @@ kxm routes list --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-23T13:50:08.663Z","admitted":[],"disabled":[],"roles":{}}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-24T00:00:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","openai/gpt-5.6-sol","openrouter/qwen/qwen3-coder-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","qwen-token-plan/deepseek-v4.1-flash","qwen-token-plan/qwen3.8-flash","qwen-token-plan/qwen3.8-max","xai/grok-4.7","zai-coding-cn/glm-5.3","zai-coding-cn/glm-5.3-flash"],"disabled":[]},"membership":["planner fable-claude","reviewer-arch fable-claude","reviewer-cli sol-codex","writer grok-native","writer qwen-openrouter-pi","writer gemini-agy"]}
 ```
 
 ### `kxm routes count`
@@ -1671,7 +1689,7 @@ kxm runs status --dry-run refused: the Runtime supervisor is not running and --d
 kxm runs drive <runId> [--simulated] [--wait] [--timeout-ms <n>] [--lane <unit>]
 ```
 
-Opens a drive of the run. With `--simulated`, a model-free producer reports every agent step as passed. Without `--simulated` the drive runs in live mode: each agent step invokes its harness through a one-shot producer, and the agent's model must be an admitted route (otherwise `producer_route_not_admitted`; there is no fallback model). A read-only step runs with the harness's read-only flags. A step with `write` access runs with an audited writer profile, which only `pi` and `grok` have; it must be a single assignment in a project whose `limits.maxConcurrentRuns` is 1, and, when `the role and model files` exists, its route must be on the roster's writer lineup. Otherwise the drive hands the run off with `step_unsupported`. Around each live attempt the Runtime fingerprints the checkout with `git status` and `git diff`: a write step settles `passed` only when the checkout changed (routing metadata `authored: true`), and a read-only step that changed it settles `failed` (`authoringWitness: readonly_mutated`).
+Opens a drive of the run. With `--simulated`, a model-free producer reports every agent step as passed. Without `--simulated` the drive runs in live mode: each agent step invokes its harness through a one-shot producer, and the agent's model must be an admitted route (otherwise `producer_route_not_admitted`; there is no fallback model). A read-only step runs with the harness's read-only flags. A step with `write` access runs with an audited writer profile, which only `pi` and `grok` have; it must be a single assignment in a project whose `limits.maxConcurrentRuns` is 1, and its route must be on the writer roster in `.kxm/roles/writer.yaml`. Otherwise the drive hands the run off with `step_unsupported`. Around each live attempt the Runtime fingerprints the checkout with `git status` and `git diff`: a write step settles `passed` only when the checkout changed (routing metadata `authored: true`), and a read-only step that changed it settles `failed` (`authoringWitness: readonly_mutated`).
 
 | Option | Argument | Default | Description |
 |---|---|---|---|

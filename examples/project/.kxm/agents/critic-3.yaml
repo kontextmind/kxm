@@ -1,7 +1,6 @@
 schema: kxm.agent.v1
 purpose: Third provider-distinct critic used by the KXM MOA target.
-model:
-  profile: critic-gemini
+role: reviewer-arch
 tools:
   preset: read-only
 defaultRepositoryAccess: read

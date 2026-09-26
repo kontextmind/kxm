@@ -12,7 +12,7 @@ or permission to execute an assignment.
 
 Dispatch reads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml`. An agent binds
 a role with `role:` and does not pin `harness` or `model`. The agent
-`tools.preset` may only narrow the role preset. `kxm routes` prints
+An agent `tools.preset` that narrows its role preset is recorded and enforced in P3. `kxm routes` prints
 admission from `.kxm/routes.yaml` and membership from the role files.
 The developer runner builds its policy object from those same files at
 `refs/remotes/origin/main`.

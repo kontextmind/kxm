@@ -423,7 +423,7 @@ A `kxm.role.v2` definition in `.kxm/roles/`, managed with `kxm role`, that descr
 
 ### Roster
 
-A list of allowed models. It means either a [role](#role)'s roster, or the developer roster `the role and model files` that the [assignment runner](contributing/assignment-runner.md) trusts to choose writers and critics. Neither one admits a route; see [admission](#admission).
+A list of allowed models. It means either a [role](#role)'s roster, or the developer roster in `.kxm/roles/*.yaml` and `.kxm/models/*.yaml` that the [assignment runner](contributing/assignment-runner.md) trusts to choose writers and critics. Neither one admits a route; see [admission](#admission).
 
 ### Route
 

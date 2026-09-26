@@ -154,7 +154,7 @@ roster:
 
 The model that runs a step still comes from the agent file. The harness is the agent's `harness:`, or Pi when the agent omits it. A route file records which harness can host that model; it does not replace the agent. If the implementer agent declares `harness: grok`, only the Grok selector can run under it. A Pi selector under that agent fails closed with `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`. To run a Pi selector, create a separate agent with `harness:` omitted. The engine does not walk the roster to fail over on its own.
 
-Dispatch still reads `the role and model files` until P2. Role files are what `kxm role` and the Runtime membership check use.
+Dispatch reads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml`. Role files are what `kxm role` and the Runtime membership check use.
 
 ### Route ids in `.kxm/routes.yaml`
 

@@ -15,7 +15,6 @@ a `default` workflow, `gates.yaml` and `template-provenance.yaml`.
 | `agents/`, `models/`, `workflows/` | Agents, model profiles and workflows, one YAML file each | Tracked |
 | `gates.yaml` | The executable gate registry | Tracked |
 | `roles/`, `routes.yaml`, `prices.yaml` | Role rosters, admitted model routes, dated list prices | Tracked |
-| `roster.yaml` | The developer assignment roster for this repository | Tracked, and must be committed |
 | `template-provenance.yaml` | Hashes of the template `kxm init` used | Tracked |
 | `models/inventory.yaml` | The discovered model catalog | Generated; track it for a reviewed snapshot |
 | `config.yaml` | Shared personalization settings | Tracked if the project shares them |
@@ -25,6 +24,10 @@ a `default` workflow, `gates.yaml` and `template-provenance.yaml`.
 | `logs/` | Hub, worker and agent logs | Ignored |
 | `state/` | The hub database `kxm.db`, Pi sessions and restart state | Ignored |
 | `run/` | SSH control sockets from `kxm ssh` | Ignored |
+
+The role files under `.kxm/roles/` and the model files under `.kxm/models/`
+carry the developer policy. The assignment runner reads them at
+`refs/remotes/origin/main`.
 
 The [configuration reference](../docs/reference/config-reference.md#workspace-layout-tracked-ignored-and-state)
 describes every file, the ignore rules to add, and the state KXM keeps outside

@@ -16,24 +16,25 @@ a KXM product feature.
 ## Before you begin
 
 - A clean control checkout of this repository whose `HEAD` is an ancestor of
-  `origin/main`. The runner loads `the role and model files` only from there.
+  `origin/main`. The runner loads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml`
+  only from there.
 - A separate worktree for the writer. `kxm lane create <unit>` creates one from
   `origin/main`.
 - The harness CLIs the roster admits, installed and logged in.
   `node scripts/kxm.mjs harness list` shows which are. The loop below is
-  `kxm assign`. `just` still runs the transport recipes.
+  `kxm assign`. Transport is `kxm lane run <unit> --brief <file> --workflow implement-only`,
+  or the same command with `review-arch-only` or `review-cli-only`.
 - A task directory whose final path segment equals the task ID. Every path you
   pass to the runner must be absolute.
 
 ## Roles and routes
 
-The trusted roster policy in [`the role and model files`](../../the role and model files)
-(`the assembled developer policy`) admits each route for specific roles and
-permissions:
+The trusted roster policy in `.kxm/roles/*.yaml` and `.kxm/models/*.yaml`
+admits each route for specific roles and permissions:
 
 | Role | Admitted route (harness / model) | Vendor | Permission |
 |---|---|---|---|
-| `writer` | `grok` / `grok-4.7`; relief: `pi` / `openrouter/qwen/qwen3-coder-plus` | `xai`; `alibaba` | `edit` |
+| `writer` | `grok` / `grok-4.7`; relief: `pi` / `openrouter/qwen/qwen3-coder-plus`; `agy` / `gemini-3.8-flash-high` | `xai`; `alibaba`; `google` | `edit` |
 | `planner` | `claude` / `fable` | `anthropic` | `read-only` |
 | `reviewer-arch` | `claude` / `fable` | `anthropic` | `read-only` |
 | `reviewer-cli` | `codex` / `gpt-5.6-sol` | `openai` | `read-only` |
@@ -85,7 +86,7 @@ Use this slim loop for daily work and for docs. The 13-step `fix` workflow in
 > runner validates anything. The process environment is passed through as it
 > is. Export any variable you need before the command.
 
-The seven `just` assignment recipes remain available and will be removed after one real unit has been accepted through `kxm assign`; until then both forms are equivalent because both call `scripts/assignment-run.mjs` unchanged.
+Transport is `kxm lane run <unit> --brief <file> --workflow implement-only`, or the same command with `review-arch-only` or `review-cli-only`. The transport recipes are deleted.
 
 ### 1. Pin the current plan
 
@@ -314,14 +315,12 @@ It writes `recording-resolved.json` in the record directory. It never changes
 ## Transport-only recipes
 
 Drive a one-step workflow in a lane. Each command writes a drive receipt and
-the checkout fingerprint. `kxm lane run` with `implement-only`, `review-arch-only`, or `review-cli-only` is the transport.
-`kxm lane run`, and `kxm lane run` are retired in favor of these. The
-recipes stay in the justfile until one real unit has been driven this way.
+the checkout fingerprint.
 
 ```bash
-kxm lane run <unit> --workflow implement-only --brief <file>
-kxm lane run <unit> --workflow review-arch-only --brief <file>
-kxm lane run <unit> --workflow review-cli-only --brief <file>
+kxm lane run <unit> --brief <file> --workflow implement-only
+kxm lane run <unit> --brief <file> --workflow review-arch-only
+kxm lane run <unit> --brief <file> --workflow review-cli-only
 ```
 
 `scripts/harness-run.mjs` still accepts one `kxm.harness-request.v1` envelope through
@@ -430,4 +429,4 @@ gate-only workflows are supported. See the
 - [Develop KXM](development.md): the commit gate the witness runs
 - [CI and release](ci-and-release.md): what runs after you push
 - [Harness routing](../reference/harness-routing.md): harness and model pairing
-- [Configuration reference](../reference/config-reference.md#kxmrosteryaml-kxmdeveloper policyv1): the roster file
+- [Configuration reference](../reference/config-reference.md#developer-assignment-policy): the developer assignment policy
