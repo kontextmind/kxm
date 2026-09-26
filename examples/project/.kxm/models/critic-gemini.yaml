@@ -1,6 +1,10 @@
-schema: kxm.model.v1
-provider: google
+schema: kxm.model.v2
+harness: agy
 model: gemini-3.1-pro-preview
+vendor: google
+status: admitted
+permissions:
+  - edit
 tags:
   - critic
 capabilities:

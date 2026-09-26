@@ -4017,6 +4017,14 @@ steps:
         target: $terminal
         terminalStatus: failed
 `);
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v2
+id: writer
+purpose: writer
+permission: edit
+description: Writer aligned to the retargeted implementer.
+roster:
+  - route: fable-default
+`);
     const bundle = loadKxmProject(root);
     assert(kxmLiveRunPrerequisites(bundle, "write-step", root).some((entry) => entry.field === "harness" && entry.detail.includes("claude")));
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
@@ -4364,11 +4372,23 @@ test("admission: role roster that excludes the agent model fails closed at load"
     setRouteState(root, "xai/grok-4.6", "admitted");
     updateRouteState(root, "xai/grok-4.6", "admitted");
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
-    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v1
+    mkdirSync(join(root, ".kxm", "models"), { recursive: true });
+    writeFileSync(join(root, ".kxm", "models", "other-route.yaml"), `schema: kxm.model.v2
+id: other-route
+harness: grok
+model: other-model
+vendor: other-provider
+status: admitted
+permissions:
+  - edit
+`);
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v2
 id: writer
+purpose: writer
+permission: edit
+description: Writer roster that omits the agent model.
 roster:
-  - model: other-provider/other-model
-    enabled: true
+  - route: other-route
 `);
 
     assert.throws(() => loadKxmProject(root), /role_roster_conflicts_with_agent/);

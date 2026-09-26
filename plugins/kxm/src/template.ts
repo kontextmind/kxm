@@ -203,7 +203,40 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
       updatedAt: "2026-09-23T00:00:00.000Z",
       admitted: ["anthropic/fable", "xai/grok-4.6"],
       disabled: [],
-      roles: { implementer: ["xai/grok-4.6"] },
+    });
+    files.set(".kxm/models/grok-default.yaml", {
+      schema: "kxm.model.v2",
+      id: "grok-default",
+      harness: "grok",
+      model: "grok-4.6",
+      vendor: "xai",
+      status: "admitted",
+      permissions: ["edit"],
+    });
+    files.set(".kxm/models/fable-default.yaml", {
+      schema: "kxm.model.v2",
+      id: "fable-default",
+      harness: "claude",
+      model: "fable",
+      vendor: "anthropic",
+      status: "admitted",
+      permissions: ["read-only"],
+    });
+    files.set(".kxm/roles/writer.yaml", {
+      schema: "kxm.role.v2",
+      id: "writer",
+      purpose: "writer",
+      permission: "edit",
+      description: "Primary implementation agent.",
+      roster: [{ route: "grok-default" }],
+    });
+    files.set(".kxm/roles/planner.yaml", {
+      schema: "kxm.role.v2",
+      id: "planner",
+      purpose: "planner",
+      permission: "read-only",
+      description: "Plans the change before implementation.",
+      roster: [{ route: "fable-default" }],
     });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",

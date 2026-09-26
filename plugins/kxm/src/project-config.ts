@@ -9,6 +9,8 @@ import {
   parseRestrictedYaml as parseRestrictedYamlShared,
   type KxmYamlLimits,
 } from "./restricted-yaml.mjs";
+import { pathToFileURL } from "node:url";
+import { validatePolicyDraft } from "./policy-draft.mjs";
 import { resolveKxmTemplateBaseline } from "./template.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS, validateHarnessModelPair } from "./harness.ts";
@@ -38,7 +40,7 @@ export class KxmConfigError extends Error {
   }
 }
 
-export type KxmResourceKind = "project" | "repository" | "agent" | "model" | "environment" | "workflow" | "gate-registry";
+export type KxmResourceKind = "project" | "repository" | "agent" | "model" | "role" | "environment" | "workflow" | "gate-registry";
 
 export interface KxmResource {
   kind: KxmResourceKind;
@@ -54,6 +56,7 @@ export interface KxmProjectBundle {
   repositories: ReadonlyMap<string, KxmResource>;
   agents: ReadonlyMap<string, KxmResource>;
   models: ReadonlyMap<string, KxmResource>;
+  roles: ReadonlyMap<string, KxmResource>;
   workflows: ReadonlyMap<string, KxmResource>;
   environments: readonly KxmResource[];
   gateRegistry?: KxmResource;
@@ -91,7 +94,8 @@ const RESOURCE_SCHEMA: Readonly<Record<KxmResourceKind, { identity: string; file
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
   agent: { identity: "kxm.agent.v1", file: "agent.schema.json" },
-  model: { identity: "kxm.model.v1", file: "model.schema.json" },
+  model: { identity: "kxm.model.v2", file: "model.schema.json" },
+  role: { identity: "kxm.role.v2", file: "role.schema.json" },
   environment: { identity: "kxm.environment.v1", file: "environment.schema.json" },
   workflow: { identity: "kxm.workflow.v1", file: "workflow.schema.json" },
   "gate-registry": { identity: "kxm.gate-registry.v1", file: "gate-registry.schema.json" },
@@ -516,7 +520,7 @@ function listNamedResources(
   root: string,
   directory: string,
   logicalDirectory: string,
-  kind: "agent" | "model" | "workflow",
+  kind: "agent" | "model" | "role" | "workflow",
   replacedId?: string,
 ): Map<string, KxmResource> {
   const resources = new Map<string, KxmResource>();
@@ -658,7 +662,7 @@ function modelCandidates(selectorValue: JsonValue | undefined, models: ReadonlyM
     return [{
       key: `profile:${profile}`,
       profile,
-      ...(stringValue(resource.value.provider) ? { provider: stringValue(resource.value.provider)! } : {}),
+      ...(stringValue(resource.value.provider) || stringValue(resource.value.vendor) ? { provider: (stringValue(resource.value.provider) ?? stringValue(resource.value.vendor))! } : {}),
       ...(stringValue(resource.value.model) ? { model: stringValue(resource.value.model)! } : {}),
     }];
   }
@@ -671,7 +675,7 @@ function modelCandidates(selectorValue: JsonValue | undefined, models: ReadonlyM
       .map((resource) => ({
         key: `profile:${resource.id ?? "unknown"}`,
         ...(resource.id ? { profile: resource.id } : {}),
-        ...(stringValue(resource.value.provider) ? { provider: stringValue(resource.value.provider)! } : {}),
+        ...(stringValue(resource.value.provider) || stringValue(resource.value.vendor) ? { provider: (stringValue(resource.value.provider) ?? stringValue(resource.value.vendor))! } : {}),
         ...(stringValue(resource.value.model) ? { model: stringValue(resource.value.model)! } : {}),
       }));
   }
@@ -1208,10 +1212,26 @@ function validateBundle(
         const rosterEntries = valuesOf(roleObj ?? {}, "roster")
           .map((candidate) => objectValue(candidate))
           .filter((entry): entry is JsonObject => Boolean(entry));
-        const enabledRosterModels = rosterEntries
-          .filter((entry) => entry.enabled !== false)
-          .map((entry) => stringValue(entry.model))
-          .filter((m): m is string => Boolean(m));
+        const enabledRosterModels = rosterEntries.flatMap((entry) => {
+          const direct = stringValue(entry.model);
+          const route = stringValue(entry.route);
+          const named: string[] = direct ? [direct] : [];
+          if (route) {
+            const modelFile = join(projectRoot, ".kxm", "models", `${route}.yaml`);
+            if (existsSync(modelFile)) {
+              try {
+                const modelDoc = objectValue(parseRestrictedYaml(readFileSync(modelFile, "utf8"), modelFile));
+                const model = modelDoc ? stringValue(modelDoc.model) : undefined;
+                const vendor = modelDoc ? stringValue(modelDoc.vendor) : undefined;
+                const harness = modelDoc ? stringValue(modelDoc.harness) : undefined;
+                if (model) named.push(model);
+                if (vendor && model) named.push(`${vendor}/${model}`);
+                if (harness && model) named.push(`${harness}/${model}`);
+              } catch { /* schema issues are reported by resource validation */ }
+            }
+          }
+          return named;
+        });
 
         const agentModelObj = objectValue(implementerAgent.value.model);
         const agentModelStr = stringValue(implementerAgent.value.model);
@@ -1233,7 +1253,69 @@ function validateBundle(
     }
   }
 
+  if (projectRoot && existsSync(join(projectRoot, ".kxm", "roster.yaml"))) {
+    issues.push(...developerRolePolicyIssues(projectRoot));
+  }
+
   return sortIssues(issues);
+}
+
+function developerCeilings(): {
+  ROUTES: Record<string, { provider: string; permissions: readonly string[]; models?: readonly string[]; roles?: readonly string[]; efforts?: readonly string[] }>;
+  NATIVE_PI_BRAKE_PROVIDERS: string[];
+  PI_ALLOWED_PROVIDERS: string[];
+  PI_NATIVE_VENDOR_PROVIDERS: Record<string, string>;
+} {
+  const script = join(findKxmRepoRoot(import.meta.url), "scripts", "harness-run.mjs");
+  const loaded = spawnSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
+    encoding: "utf8",
+    timeout: 15000,
+  });
+  if (loaded.status !== 0 || !loaded.stdout) {
+    return { ROUTES: {}, NATIVE_PI_BRAKE_PROVIDERS: [], PI_ALLOWED_PROVIDERS: [], PI_NATIVE_VENDOR_PROVIDERS: {} };
+  }
+  return JSON.parse(loaded.stdout) as ReturnType<typeof developerCeilings>;
+}
+
+function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
+  const rolesDir = join(projectRoot, ".kxm", "roles");
+  const modelsDir = join(projectRoot, ".kxm", "models");
+  const roles: Record<string, JsonObject> = {};
+  const models: Record<string, JsonObject> = {};
+  const evidence: Record<string, string> = {};
+  const readMap = (dir: string, into: Record<string, JsonObject>, skipInventory: boolean) => {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".yaml")) continue;
+      const id = basename(name, ".yaml");
+      if (skipInventory && id === "inventory") continue;
+      try {
+        const value = parseRestrictedYaml(readFileSync(join(dir, name), "utf8"), `${dir}/${name}`);
+        into[id] = value;
+      } catch (error) {
+        if (error instanceof KxmConfigError) return;
+      }
+    }
+  };
+  readMap(rolesDir, roles, false);
+  readMap(modelsDir, models, true);
+  for (const model of Object.values(models)) {
+    const origin = objectValue(model.origin);
+    const source = origin ? stringValue(origin.source) : undefined;
+    if (!source || evidence[source] !== undefined) continue;
+    const evidenceFile = isAbsolute(source) ? source : join(projectRoot, source);
+    if (existsSync(evidenceFile)) evidence[source] = readFileSync(evidenceFile, "utf8");
+  }
+  const ceilings = developerCeilings();
+  const result = validatePolicyDraft({ models, roles, evidence }, {
+    ceilings: ceilings.ROUTES,
+    nativePiBrakeProviders: ceilings.NATIVE_PI_BRAKE_PROVIDERS,
+    piAllowedProviders: ceilings.PI_ALLOWED_PROVIDERS,
+    piNativeVendorProviders: ceilings.PI_NATIVE_VENDOR_PROVIDERS,
+    vendorAliases: { "x-ai": "xai", moonshotai: "moonshot", "google-ai": "google", qwen: "alibaba" },
+  });
+  if (result.ok) return [];
+  return result.issues.map((entry) => issue(entry.phase, entry.code, entry.file, entry.message));
 }
 
 export function kxmCanonicalJson(value: JsonValue): string {
@@ -1385,6 +1467,11 @@ function loadProjectBundle(
 
   const agents = listNamedResources(registry, root, join(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join(root, ".kxm", "models"), ".kxm/models", "model");
+  const roles = listNamedResources(registry, root, join(root, ".kxm", "roles"), ".kxm/roles", "role", writerRole === undefined ? undefined : "writer");
+  if (writerRole !== undefined) {
+    const logicalPath = ".kxm/roles/writer.yaml";
+    roles.set("writer", { kind: "role", id: "writer", file: join(root, logicalPath), logicalPath, value: resourceValue(registry, writerRole, logicalPath, "role") });
+  }
   const workflows = listNamedResources(registry, root, join(root, ".kxm", "workflows"), ".kxm/workflows", "workflow", workflowCandidate?.id);
   if (workflowCandidate) {
     const { id, document } = workflowCandidate;
@@ -1514,7 +1601,7 @@ function loadProjectBundle(
 
   const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
   if (issues.length > 0) throw new KxmConfigError(issues);
-  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...(gateRegistry ? [gateRegistry] : [])]
+  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...roles.values(), ...workflows.values(), ...environments, ...(gateRegistry ? [gateRegistry] : [])]
     .sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
@@ -1522,6 +1609,7 @@ function loadProjectBundle(
     repositories,
     agents,
     models,
+    roles,
     workflows,
     environments,
     ...(gateRegistry ? { gateRegistry } : {}),

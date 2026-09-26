@@ -1342,6 +1342,28 @@ export interface KxmPanelDispatchSeams {
 
 export const kxmPanelDispatchSeams: KxmPanelDispatchSeams = {};
 
+/** Selectors named by v2 route files: the model id, `vendor/model`, and `harness/model`. */
+function selectorsNamedByRoutes(projectRoot: string, routeIds: readonly string[]): string[] {
+  const selectors = new Set<string>();
+  for (const routeId of routeIds) {
+    const file = join(projectRoot, ".kxm", "models", `${routeId}.yaml`);
+    if (!existsSync(file)) continue;
+    let parsed: { harness?: unknown; model?: unknown; vendor?: unknown };
+    try {
+      parsed = parse(readFileSync(file, "utf8")) as { harness?: unknown; model?: unknown; vendor?: unknown };
+    } catch {
+      continue;
+    }
+    const model = typeof parsed.model === "string" ? parsed.model : "";
+    const vendor = typeof parsed.vendor === "string" ? parsed.vendor : "";
+    const harness = typeof parsed.harness === "string" ? parsed.harness : "";
+    if (model) selectors.add(model);
+    if (vendor && model) selectors.add(`${vendor}/${model}`);
+    if (harness && model) selectors.add(`${harness}/${model}`);
+  }
+  return [...selectors];
+}
+
 function unreconciledPanelAttemptId(state: KxmRunState): string | undefined {
   const current = state.currentStep;
   if (!current) return undefined;
@@ -1438,7 +1460,8 @@ function resolveProducerRoute(
   const role = agentId === "implementer" ? "writer" : agentId;
   const roleBindings = listRoleBindings(projectRoot);
   const roster = roleBindings[role];
-  if (roster && !roster.includes(selector)) {
+  const rosterSelectors = roster ? selectorsNamedByRoutes(projectRoot, roster) : undefined;
+  if (rosterSelectors && !rosterSelectors.includes(selector)) {
     return {
       error: {
         reason: "step_unsupported",

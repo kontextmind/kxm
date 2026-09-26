@@ -1,6 +1,10 @@
-schema: kxm.model.v1
-provider: anthropic
+schema: kxm.model.v2
+harness: claude
 model: claude-fable-5-1
+vendor: anthropic
+status: admitted
+permissions:
+  - read-only
 tags:
   - critic
 capabilities:

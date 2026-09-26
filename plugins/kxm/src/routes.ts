@@ -32,12 +32,34 @@ export function setRouteState(root: string, model: string, state: "admitted" | "
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) roleFile = parsed as Record<string, unknown>;
     }
     const roster = Array.isArray(roleFile.roster) ? roleFile.roster.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)) : [];
-    const existing = roster.findIndex((entry) => entry.model === model);
-    if (removeRole) { if (existing >= 0) roster.splice(existing, 1); }
-    else if (existing < 0) roster.push({ model, enabled: true });
-    roleFile.schema ??= "kxm.role.v1"; roleFile.id ??= role; roleFile.roster = roster;
-    mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
-    writeFileSync(rolePath, stringify(roleFile), "utf8");
+    const modelsDir = join(root, ".kxm", "models");
+    let routeId: string | undefined;
+    if (existsSync(modelsDir)) {
+      for (const name of readdirSync(modelsDir)) {
+        if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
+        const parsedModel = parse(readFileSync(join(modelsDir, name), "utf8")) as { vendor?: unknown; model?: unknown; schema?: unknown };
+        if (parsedModel?.schema !== "kxm.model.v2") continue;
+        const vendor = typeof parsedModel.vendor === "string" ? parsedModel.vendor : "";
+        const named = typeof parsedModel.model === "string" ? parsedModel.model : "";
+        if (named === model || (vendor && `${vendor}/${named}` === model)) {
+          routeId = name.slice(0, -5);
+          break;
+        }
+      }
+    }
+    const existing = roster.findIndex((entry) => entry.route === routeId || entry.model === model);
+    if (routeId) {
+      if (removeRole) { if (existing >= 0) roster.splice(existing, 1); }
+      else if (existing < 0) roster.push({ route: routeId });
+      roleFile.schema = "kxm.role.v2";
+      roleFile.id ??= role;
+      roleFile.purpose ??= role;
+      roleFile.permission ??= "edit";
+      roleFile.description ??= role;
+      roleFile.roster = roster;
+      mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
+      writeFileSync(rolePath, stringify(roleFile), "utf8");
+    }
   }
   policy.updatedAt = new Date().toISOString();
   mkdirSync(join(root, ".kxm"), { recursive: true });
@@ -49,8 +71,8 @@ export function listRoleBindings(root: string): Record<string, string[]> {
   const dir = join(root, ".kxm", "roles"); const result: Record<string, string[]> = {};
   if (!existsSync(dir)) return result;
   for (const file of readdirSync(dir).filter((name) => name.endsWith(".yaml"))) {
-    const role = file.slice(0, -5); const value = parse(readFileSync(join(dir, file), "utf8")) as { roster?: Array<{ model?: unknown }> };
-    result[role] = (value.roster ?? []).map((entry) => entry.model).filter((model): model is string => typeof model === "string");
+    const role = file.slice(0, -5); const value = parse(readFileSync(join(dir, file), "utf8")) as { roster?: Array<{ route?: unknown }> };
+    result[role] = (value.roster ?? []).map((entry) => entry.route).filter((route): route is string => typeof route === "string");
   }
   return result;
 }

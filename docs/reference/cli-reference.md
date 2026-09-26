@@ -142,10 +142,10 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 
 | Location | Contents | Used by |
 |---|---|---|
-| Project files under `<project>/.kxm/` (reviewed in Git) | `project.yaml`, `agents/`, `workflows/`, `gates.yaml`, `repo/`, `template-provenance.yaml`, `routes.yaml`, `models/inventory.yaml`, `roles/`, `role-hosts.yaml`, `modes.yaml`, `prices.yaml` | `init`, `trust`, `run`, `models`, `routes`, `role`, `workflow definitions\|add\|remove\|modify`, `explain`, `studio` |
+| Project files under `<project>/.kxm/` (reviewed in Git) | `project.yaml`, `agents/`, `workflows/`, `gates.yaml`, `repo/`, `template-provenance.yaml`, `routes.yaml`, `models/inventory.yaml`, `roles/`, `roles`, `modes.yaml`, `prices.yaml` | `init`, `trust`, `run`, `models`, `routes`, `role`, `workflow definitions\|add\|remove\|modify`, `explain`, `studio` |
 | Local project records under `<project>/.kxm/` | `config.yaml` (project scope), `goals/`, `tasks/`, `memory/`, `skills/`, `candidates/`, `backups/`, `run/ssh-sockets/` | `config`, `goal`, `task`, `memory`, `skills`, `improve`, `backup`, `ssh` |
 | Workspace directories (`.kxm/state`, `.kxm/logs`, `.kxm/assets`, `.kxm/config`; moved by `--workspace` or `KXM_*_DIR`) | hub SQLite store `state/kxm.db` (or `KXM_DATA_PATH`), `state/hub.pid`, `state/session-brief.json`, `state/lanes.json` (mode 0600 lane records), `logs/telemetry.jsonl`, `logs/kxm-hub.jsonl`, `assets/sessions/`, `assets/workflows/`, `assets/improvements/`, `assets/retrospectives/`, legacy `config/agents.json` and `config/gates.json` | `hub`, `session`, `dash`, `lane`, `agent worker`, `workflow list\|get\|export`, `gate`, `improve`, `routing report` |
-| User config directory (`KXM_USER_CONFIG_DIR`, default `~/.config/kxm`) | `config.yaml` (user scope), `session.token`, global `roles/` and `workflows/`, `role-hosts.yaml`, `completions/` | `config --scope user`, `auth token`, `session brief\|token`, `role`/`workflow` with `--scope global`, `studio serve`, `completion install` |
+| User config directory (`KXM_USER_CONFIG_DIR`, default `~/.config/kxm`) | `config.yaml` (user scope), `session.token`, global `roles/` and `workflows/`, `roles`, `completions/` | `config --scope user`, `auth token`, `session brief\|token`, `role`/`workflow` with `--scope global`, `studio serve`, `completion install` |
 | User state root (`KXM_STATE_HOME`; macOS `~/Library/Application Support/KXM`; Linux `$XDG_STATE_HOME/kxm` or `~/.local/state/kxm`; Windows `%LOCALAPPDATA%\KXM`) | `hub-env.json` (persisted hub credentials), `hub-binding.json`, `runtime/` (Runtime supervisor registry and per-project run stores), `update.yaml`, repository bindings | `hub start\|bind\|unbind`, every hub client, `run`, `runs`, `runtime`, `tenant status`, `update`, `init --repository`, and (read-only, the project's run store) `improve` and `routing report` |
 
 `init`, `trust`, `run`, `runs`, `docs build`, `docs serve`, `runtime sync-retry`, `tenant status`, and `studio layout` find the project root by walking up from the current directory. `improve` and `routing report` use the current directory's Git root when it holds `.kxm/project.yaml`, to find the project's Runtime run store (and, for `improve`, its configuration and default candidate directory). `config`, `role`, `workflow definitions|add|remove|modify`, `goal`, `task`, `memory`, `skills`, `backup`, `restore`, `studio serve`, and `ssh` (socket directory) use `.kxm` in the current directory. Run those from the project root.
@@ -1151,7 +1151,7 @@ kxm routes disable --dry-run --json
 
 ## `kxm role`
 
-Manages role definitions (`kxm.role.v1`) and role-seat host bindings (`kxm.role-hosts.v1`). Local scope is `.kxm/roles/` and `.kxm/role-hosts.yaml` in the current directory; global scope is `<KXM_USER_CONFIG_DIR>/roles/` and `<KXM_USER_CONFIG_DIR>/role-hosts.yaml`. A local role with the same ID overrides a global one. `kxm role` with no subcommand runs `role list`. For `--pick` without a value on a non-interactive shell, set `KXM_PICK_SELECT` to an index or ID. Errors from this group are plain text on stderr, even with `--json`.
+Manages role definitions (`kxm.role.v2`) and role-seat host bindings (`kxm.role.v2`). Local scope is `.kxm/roles/` and `.kxm/roles` in the current directory; global scope is `<KXM_USER_CONFIG_DIR>/roles/` and `<KXM_USER_CONFIG_DIR>/roles`. A local role with the same ID overrides a global one. `kxm role` with no subcommand runs `role list`. For `--pick` without a value on a non-interactive shell, set `KXM_PICK_SELECT` to an index or ID. Errors from this group are plain text on stderr, even with `--json`.
 
 ### `kxm role list`
 
@@ -1290,7 +1290,7 @@ kxm role modify demo-role --add-skill kxm --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"demo-role","id":"demo-role","role":{"schema":"kxm.role.v1","id":"demo-role","description":"Demo role","skills":["kxm"],"roster":[]},"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"demo-role","id":"demo-role","role":{"schema":"kxm.role.v2","id":"demo-role","description":"Demo role","skills":["kxm"],"roster":[]},"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
 ```
 
 Add a Claude model to a role's roster (Not run):
@@ -1305,7 +1305,7 @@ kxm role modify reviewer --add-model claude:fable --add-skill kxm-peer
 kxm role hosts [--scope all|global|local]
 ```
 
-Lists role seats (`critic-arch`, `critic-cli`, `planner`, `verifier`, `writer`, plus any configured seat) and the host, model, and effort each resolves to, with the source of the decision (`override`, `role-hosts`, `seat-default`, `role-roster`, or `fallback`). The listing is display-only: no dispatch path reads seats or `role-hosts.yaml`, so a run's harness and model still come from the agent file.
+Lists role seats (`critic-arch`, `critic-cli`, `planner`, `verifier`, `writer`, plus any configured seat) and the host, model, and effort each resolves to, with the source of the decision (`override`, `role-hosts`, `seat-default`, `role-roster`, or `fallback`). The listing is display-only: no dispatch path reads seats or `roles`, so a run's harness and model still come from the agent file.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1332,7 +1332,7 @@ ROLE SEATS (default):
 kxm role set-host <seatId> <host> [--model <model>] [--effort low|medium|high|xhigh] [--scope global|local]
 ```
 
-Binds a role seat to a host in `role-hosts.yaml`. The binding changes what `kxm role hosts` shows, not what runs.
+Binds a role seat to a host in `roles`. The binding changes what `kxm role hosts` shows, not what runs.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -1340,7 +1340,7 @@ Binds a role seat to a host in `role-hosts.yaml`. The binding changes what `kxm 
 | `--effort` | `<effort>` | none | Effort level: low, medium, high, xhigh |
 | `--scope` | `<scope>` | `local` | Configuration scope: global or local (default: local) |
 
-- Writes `.kxm/role-hosts.yaml` (or the global file). `--dry-run` plans the write and writes nothing.
+- Writes `.kxm/roles` (or the global file). `--dry-run` plans the write and writes nothing.
 - JSON keys: `seatId`, `host`, `binding`, `filePath`, `scope`.
 
 ```bash
@@ -1348,7 +1348,7 @@ kxm role set-host writer claude --model fable --effort high --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role set-host","seatId":"writer","host":"claude","binding":{"host":"claude","model":"fable","effort":"high"},"filePath":"/work/proj/.kxm/role-hosts.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/role-hosts.yaml"}]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role set-host","seatId":"writer","host":"claude","binding":{"host":"claude","model":"fable","effort":"high"},"filePath":"/work/proj/.kxm/roles","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles"}]}
 ```
 
 ### `kxm role resume`

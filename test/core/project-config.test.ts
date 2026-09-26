@@ -310,7 +310,7 @@ test("KXM init atomically creates a minimal project and is idempotent", () => {
       localStateRoot: stateRoot,
     });
     assert.equal(created.action, "created");
-    assert.equal(created.files.length, 8);
+    assert.equal(created.files.length, 12);
     assert.ok(created.files.includes(".kxm/routes.yaml"));
     assert.match(created.configRevision ?? "", /^sha256:[a-f0-9]{64}$/);
     const before = created.files.map((file) => readFileSync(join(root, ...file.split("/")), "utf8"));

@@ -493,7 +493,7 @@ test("KXM init creates and revalidates project configuration without legacy envi
     assert.equal(created.action, "created");
     assert.equal(created.mode, "ready");
     assert.match(created.configRevision, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(created.files.length, 8);
+    assert.equal(created.files.length, 12);
     assert(created.files.includes(".kxm/gates.yaml"));
     assert(created.files.includes(".kxm/routes.yaml"));
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
@@ -900,6 +900,7 @@ test("task run refuses unavailable live work before mutation and honors an execu
         on: { passed: { target: "$terminal", terminalStatus: "completed" }, failed: { target: "$terminal", terminalStatus: "failed" } },
       }],
     }));
+    rmSync(join(cwd, ".kxm", "roles", "writer.yaml"), { force: true });
     writeFileSync(join(cwd, ".kxm", "agents", "implementer.yaml"), stringify({
       schema: "kxm.agent.v1", purpose: "Inspect the issue", repositories: { control: "write" },
       model: { provider: "anthropic", model: "claude-sonnet-4-6" },

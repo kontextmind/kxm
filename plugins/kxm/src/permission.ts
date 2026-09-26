@@ -56,6 +56,7 @@ const PROSE_FIELDS: Readonly<Record<KxmResourceKind, ReadonlySet<string>>> = {
   repository: new Set(["description"]),
   agent: new Set(["purpose", "instructions"]),
   model: new Set([]),
+  role: new Set(["description"]),
   environment: new Set([]),
   workflow: new Set(["description"]),
   "gate-registry": new Set([]),
@@ -191,6 +192,16 @@ export function kxmAuthorityEntries(resource: { kind: KxmResourceKind; id?: stri
       for (const [index, grant] of valuesOf(value, "secrets").entries()) {
         push(`/secrets/${envSecretKeys.get(index)}`, "secrets", grant);
       }
+      break;
+    }
+    case "role": {
+      push("/schema", "resource-shape", value.schema);
+      push("/purpose", "resource-shape", value.purpose);
+      push("/permission", "resource-shape", value.permission);
+      push("/extends", "resource-shape", value.extends);
+      push("/roster", "resource-shape", value.roster);
+      push("/policy", "resource-shape", value.policy);
+      push("/tools", "tools", value.tools);
       break;
     }
     case "gate-registry": {

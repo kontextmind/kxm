@@ -150,13 +150,28 @@ resultSchema: kxm.assignment-result.v1
 
     // Create conflicting writer.yaml without xai/grok-4.6
     mkdirSync(join(dir, ".kxm", "roles"), { recursive: true });
+    mkdirSync(join(dir, ".kxm", "models"), { recursive: true });
+    writeFileSync(join(dir, ".kxm", "models", "qwen-openrouter-pi.yaml"), `schema: kxm.model.v2
+id: qwen-openrouter-pi
+harness: pi
+model: openrouter/qwen/qwen3-coder-plus
+vendor: alibaba
+status: admitted
+permissions:
+  - edit
+origin:
+  source: .kxm/project.yaml
+  sha256: ${"a".repeat(64)}
+`);
     writeFileSync(
       join(dir, ".kxm", "roles", "writer.yaml"),
-      `schema: kxm.role.v1
+      `schema: kxm.role.v2
 id: writer
+purpose: writer
+permission: edit
+description: Writer roster that omits the agent model.
 roster:
-  - model: openrouter/qwen/qwen3-coder-plus
-    enabled: true
+  - route: qwen-openrouter-pi
 `,
     );
 
@@ -174,13 +189,13 @@ roster:
     // Now align writer.yaml to include xai/grok-4.6
     writeFileSync(
       join(dir, ".kxm", "roles", "writer.yaml"),
-      `schema: kxm.role.v1
+      `schema: kxm.role.v2
 id: writer
+purpose: writer
+permission: edit
+description: Writer roster that includes the agent model.
 roster:
-  - model: xai/grok-4.6
-    enabled: true
-  - model: openrouter/qwen/qwen3-coder-plus
-    enabled: true
+  - route: grok-default
 `,
     );
 

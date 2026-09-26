@@ -8,7 +8,8 @@ Runtime-local records, and JSON events/results for the planned KXM contract.
 | `project.schema.json` | `kxm.project.v1` |
 | `repository.schema.json` | `kxm.repository.v1` |
 | `agent.schema.json` | `kxm.agent.v1` |
-| `model.schema.json` | `kxm.model.v1` |
+| `model.schema.json` | `kxm.model.v2` |
+| `role.schema.json` | `kxm.role.v2` |
 | `environment.schema.json` | `kxm.environment.v1` |
 | `workflow.schema.json` | `kxm.workflow.v1` |
 | `template-provenance.schema.json` | `kxm.template-provenance.v1` |

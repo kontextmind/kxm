@@ -26,11 +26,11 @@ Related pages:
 | `.kxm/repo/repo.yaml` (in each repository) | `kxm.repository.v1` | Per-repository definition | You; `kxm init` creates the control one | Yes, in the repository it describes |
 | `.kxm/project/env.yaml`, `.kxm/repo/env.yaml` | `kxm.environment.v1` | Portable, non-secret environment | You | Yes |
 | `.kxm/agents/<id>.yaml` | `kxm.agent.v1` | Agent harness, model, and permission ceilings | You; `kxm init` creates two | Yes |
-| `.kxm/models/<id>.yaml` | `kxm.model.v1` | Named model profiles for selectors | You | Yes |
+| `.kxm/models/<id>.yaml` | `kxm.model.v2` | Named model profiles for selectors | You | Yes |
 | `.kxm/workflows/<id>.yaml` | `kxm.workflow.v1` | Ordered steps and typed transitions | You; `kxm init` creates `default` | Yes |
 | `.kxm/gates.yaml` | `kxm.gate-registry.v1` | The executable gate registry | You; `kxm init` creates it | Yes |
-| `.kxm/roles/<role>.yaml` | `kxm.role.v1` | Model rosters per role | You, `kxm role`, `kxm models` | Yes |
-| `.kxm/role-hosts.yaml` | `kxm.role-hosts.v1` | Role seat to host bindings (display only) | `kxm role set-host` | Yes, unless you ignore it |
+| `.kxm/roles/<role>.yaml` | `kxm.role.v2` | Model rosters per role | You, `kxm role`, `kxm models` | Yes |
+| `.kxm/roles` | `kxm.role.v2` | Role seat to host bindings (display only) | `kxm role set-host` | Yes, unless you ignore it |
 | `.kxm/routes.yaml` | `kxm.routes.v2` | Admitted and disabled model routes | You, `kxm routes`, `kxm models` | Yes |
 | `.kxm/roster.yaml` | `kxm.developer-roster.v1` | Developer assignment roster for the KXM source repository | Maintainers | Yes, and it must be committed |
 | `.kxm/prices.yaml` | `kxm.prices.v1` | Dated, hash-pinned list prices | You | Yes |
@@ -86,7 +86,7 @@ Cost accounting:
 | Revisions pinned on every run | `configRevision` (the bundle), memory revision (`.kxm/memory` without `candidates/`, plus `.kxm/skills/promoted`), executor policy, tool policy (agent and step `tools` plus the gate registry) | `kxm run` |
 
 Nothing validates `routes.yaml`, `roles/` (other than `writer.yaml`),
-`role-hosts.yaml`, `roster.yaml`, `prices.yaml`, `inventory.yaml`,
+`roles`, `roster.yaml`, `prices.yaml`, `inventory.yaml`,
 `config.yaml`, `modes.yaml`, memory, tasks, goals, or webhook JSON during
 `kxm init`. Their own readers report problems when they run. None of them are
 part of `configRevision`, and `kxm trust check` does not see them: a change to
@@ -454,7 +454,7 @@ Error codes: `executor_unknown`, `harness_unknown`, `tool_preset_unknown`,
 `model_tag_unresolved`, `harness_unhosted_model`,
 `pi_native_impersonation_blocked`, the path codes under
 [Rules shared by the project bundle](#rules-shared-by-the-project-bundle), and
-`role_roster_conflicts_with_agent` (see [Roles](#kxmrolesroleyaml-kxmrolev1)).
+`role_roster_conflicts_with_agent` (see [Roles](#kxmrolesroleyaml-kxmrolev2)).
 
 Commands: `kxm init` creates `coordinator` (`claude`, `anthropic/fable`) and
 `implementer` (`grok`, `xai/grok-4.6`) and admits both selectors in
@@ -464,7 +464,7 @@ selectors too, but skips Google guide candidates because the Runtime cannot
 reach the `antigravity` Pi provider yet; `kxm run` and the Runtime read them;
 `kxm trust` diffs them.
 
-## `.kxm/models/<id>.yaml` (`kxm.model.v1`)
+## `.kxm/models/<id>.yaml` (`kxm.model.v2`)
 
 Named model profiles that agent and step selectors can reference by `profile`
 or `tag`. The filename is the profile ID; `inventory.yaml` in the same
@@ -473,7 +473,7 @@ loader.
 
 | Field | Type and allowed values | Required, default | What reads it |
 |---|---|---|---|
-| `schema` | `kxm.model.v1` | Required | Loader |
+| `schema` | `kxm.model.v2` | Required | Loader |
 | `provider` | Identifier | Required | Loader: selector resolution, harness pairing, provider diversity |
 | `model` | String, 1 to 200 characters | Required | Loader: same |
 | `thinking` | String, 1 to 64 characters | Optional | Not read by any code path yet |
@@ -489,7 +489,7 @@ the agent file directly and does not consult profiles.
 
 ```yaml
 # .kxm/models/critic-claude.yaml — the filename is the profile id.
-schema: kxm.model.v1
+schema: kxm.model.v2
 provider: anthropic
 model: fable
 thinking: high
@@ -957,7 +957,7 @@ policy revision pinned on each run. `kxm gate artifacts-exist --path <file>` is 
 separate CLI check against the workspace assets directory (`KXM_ASSETS_DIR`),
 not this registry.
 
-## `.kxm/roles/<role>.yaml` (`kxm.role.v1`)
+## `.kxm/roles/<role>.yaml` (`kxm.role.v2`)
 
 Role files hold model rosters. Three different readers use them, and they
 read different fields:
@@ -966,7 +966,7 @@ read different fields:
 |---|---|---|---|
 | Project loader (`validateBundle`) | `.kxm/roles/writer.yaml` only | `roster[].model`, `roster[].enabled` | Cross-checks the writer roster against the `implementer` agent's model (see below). Parsed as restricted YAML. |
 | Runtime route check (`listRoleBindings` in `plugins/kxm/src/routes.ts`) | `.kxm/roles/<role>.yaml`, role = agent ID, `writer` for `implementer` | `roster[].model` | The agent's `provider/model` must appear exactly. `enabled` is ignored, so a disabled entry still admits. The role name comes from the filename. |
-| `kxm role` commands (`plugins/kxm/src/role.ts`) | `.kxm/roles/*.yaml` and `~/.config/kxm/roles/*.yaml` | Everything below | Listing and editing only. A file without `schema: kxm.role.v1` is silently skipped. A local file overrides a global one with the same ID. A local `kxm role add` runs the project loader check above first and refuses with `role_invalid` a role the loader would reject. |
+| `kxm role` commands (`plugins/kxm/src/role.ts`) | `.kxm/roles/*.yaml` and `~/.config/kxm/roles/*.yaml` | Everything below | Listing and editing only. A file without `schema: kxm.role.v2` is silently skipped. A local file overrides a global one with the same ID. A local `kxm role add` runs the project loader check above first and refuses with `role_invalid` a role the loader would reject. |
 
 The loader check applies when the agent `implementer` (or else `writer`)
 declares a model and the roster has at least one enabled entry. One enabled
@@ -980,7 +980,7 @@ writes the full form.
 
 | Field | Type | Required, default | What reads it |
 |---|---|---|---|
-| `schema` | `kxm.role.v1` | Required by `kxm role` | `kxm role` commands |
+| `schema` | `kxm.role.v2` | Required by `kxm role` | `kxm role` commands |
 | `id` | String | Optional, the filename | `kxm role` commands; the loader and Runtime use the filename |
 | `description` | String | Optional | `kxm role` commands |
 | `roster[].model` | String, `provider/model` | Required per entry | Loader (writer only), Runtime route check |
@@ -1002,7 +1002,7 @@ follow it.
 
 ```yaml
 # .kxm/roles/writer.yaml — the filename is the role id the Runtime looks up.
-schema: kxm.role.v1
+schema: kxm.role.v2
 id: writer
 description: Primary implementation role.
 roster:                       # order is priority
@@ -1020,35 +1020,6 @@ and the Runtime's `listRoleBindings`.
 Commands: `kxm role list|get|add|remove|modify` (`--scope global|local`);
 `kxm models` (interactive) adds or removes `{model, enabled: true}` entries
 while admitting a route; the Runtime reads rosters on every live attempt.
-
-## `.kxm/role-hosts.yaml` (`kxm.role-hosts.v1`)
-
-Seat-to-host bindings for display. Read and written only by `kxm role hosts`
-and `kxm role set-host`; no dispatch path reads it. Location:
-`.kxm/role-hosts.yaml` (or `.yml`, or `role-hosts.json`) locally and
-`~/.config/kxm/role-hosts.yaml` globally; local seats override global ones.
-
-| Field | Type | Notes |
-|---|---|---|
-| `schema` | `kxm.role-hosts.v1` | A file with a different `schema` is ignored |
-| `seats.<seat>.host` | String | Harness shown for the seat |
-| `seats.<seat>.model` | String | Model shown for the seat |
-| `seats.<seat>.effort` | `low`, `medium`, `high`, or `xhigh` | |
-| `hostProviders.<host>` | String | Provider shown for a host |
-
-Seats without a binding fall back to built-in defaults (`planner`, `writer`,
-`critic-arch`, `critic-cli`, `verifier`), then to the role roster's first entry.
-
-```yaml
-schema: kxm.role-hosts.v1
-seats:
-  writer:
-    host: grok
-    model: xai/grok-4.6
-    effort: medium
-```
-
-Written by `kxm role set-host writer grok --model xai/grok-4.6 --effort medium`.
 
 ## `.kxm/routes.yaml` (`kxm.routes.v2`)
 
@@ -1723,7 +1694,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | Path | Group | Written by |
 |---|---|---|
 | `project.yaml`, `repo/`, `project/env.yaml`, `agents/`, `models/*.yaml` (except `inventory.yaml`), `workflows/`, `gates.yaml`, `template-provenance.yaml` | Tracked configuration (the bundle) | You and `kxm init` |
-| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `role-hosts.yaml`, `roster.yaml` | Tracked configuration outside the bundle | You and their commands |
+| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `roles`, `roster.yaml` | Tracked configuration outside the bundle | You and their commands |
 | `config.yaml` | Tracked if the project wants shared preferences; otherwise ignore it | `kxm config set` |
 | `memory/`, `skills/`, `candidates/`, `goals/` | Tracked durable records | Their commands |
 | `models/inventory.yaml` | Generated; track it if you want a reviewed snapshot | `kxm models inventory-refresh` |
@@ -1775,7 +1746,7 @@ and `$XDG_STATE_HOME/kxm` (default `~/.local/state/kxm`) on Linux.
 
 The **user configuration directory** is `KXM_USER_CONFIG_DIR`, default
 `~/.config/kxm`. It holds `config.yaml`, global `roles/` and `workflows/`,
-`role-hosts.yaml`, `session.token`, and shell completion scripts. Global
+`roles`, `session.token`, and shell completion scripts. Global
 workflows are listed by `kxm workflow definitions` but never loaded by
 `kxm run`.
 

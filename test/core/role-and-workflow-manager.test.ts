@@ -10,7 +10,6 @@ import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { loadKxmProject } from "../../plugins/kxm/src/project-config.ts";
 import {
   addRole,
-  ensureDefaultRoles,
   getRole,
   listRoles,
   modifyRole,
@@ -33,22 +32,29 @@ test("Role subsystem: add, get, list, modify, remove with global/local scoping",
   const tempRepoDir = mkdtempSync(join(tmpdir(), "kxm-repo-roles-"));
 
   try {
-    // 1. Seed default global roles
-    ensureDefaultRoles(tempUserDir);
+    addRole({
+      schema: "kxm.role.v2", id: "writer", purpose: "writer", permission: "edit",
+      description: "Primary implementation agent.", roster: [{ route: "grok-native", effort: "medium" }],
+    }, { scope: "global", repoRoot: tempRepoDir, userConfigDir: tempUserDir });
+    addRole({
+      schema: "kxm.role.v2", id: "planner", purpose: "planner", permission: "read-only",
+      description: "Plans the change.", roster: [{ route: "fable-claude", effort: "medium" }],
+    }, { scope: "global", repoRoot: tempRepoDir, userConfigDir: tempUserDir });
     const globalRoles = listRoles({ scope: "global", userConfigDir: tempUserDir, repoRoot: tempRepoDir });
-    assert.ok(globalRoles.length >= 4);
     assert.ok(globalRoles.some((r) => r.id === "writer"));
     assert.ok(globalRoles.some((r) => r.id === "planner"));
 
     // 2. Add local role
     const customRole: KxmRoleDefinition = {
-      schema: "kxm.role.v1",
+      schema: "kxm.role.v2",
       id: "sec-specialist",
+      purpose: "experiment",
+      permission: "read-only",
       description: "AppSec and fuzzing auditor",
       skills: ["appsec", "fuzzing"],
       tools: { preset: "auditor", allow: ["view_file", "run_command"] },
       produces: [{ template: "audit-report" }],
-      roster: [{ harness: "grok", model: "grok-4.6", effort: "high" }],
+      roster: [{ route: "grok-native", effort: "high" }],
     };
     const addRes = addRole(customRole, { scope: "local", repoRoot: tempRepoDir, userConfigDir: tempUserDir });
     assert.equal(addRes.id, "sec-specialist");
@@ -63,12 +69,14 @@ test("Role subsystem: add, get, list, modify, remove with global/local scoping",
 
     // 4. Override global role in local repo
     const overriddenWriter: KxmRoleDefinition = {
-      schema: "kxm.role.v1",
+      schema: "kxm.role.v2",
       id: "writer",
+      purpose: "writer",
+      permission: "edit",
       description: "Custom project writer with strict repo tools",
       skills: ["kxm", "custom-skill"],
       tools: { allow: ["view_file", "write_to_file"] },
-      roster: [{ harness: "grok", model: "grok-4.6" }],
+      roster: [{ route: "grok-native" }],
     };
     addRole(overriddenWriter, { scope: "local", repoRoot: tempRepoDir, userConfigDir: tempUserDir });
 
@@ -203,6 +211,8 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
   // Local roles belong to a KXM project.
   assert.equal(spawnSync("git", ["-c", "init.defaultBranch=main", "init", "--quiet", tempRepoDir]).status, 0);
   initializeKxmProject(tempRepoDir, { projectId: "prj_01JROLECLI0000000000000000" });
+  rmSync(join(tempRepoDir, ".kxm", "roles", "writer.yaml"), { force: true });
+  rmSync(join(tempRepoDir, ".kxm", "roles", "planner.yaml"), { force: true });
 
   const env = {
     KXM_USER_CONFIG_DIR: tempUserDir,
@@ -230,11 +240,11 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
     assert.equal(emptyCode, 0);
     assert.match(listEmptyIo.out(), /No roles configured/);
 
-    // 2. role add using pick list for global configuration
     const addPickIo = createIo();
-    const addPickCode = await runCliImpl(["role", "add", "--scope", "global", "--pick", "1"], env, addPickIo.io, tempRepoDir);
+    const addPickCode = await runCliImpl(["role", "add", "writer", "--scope", "global", "--description", "Primary implementation agent."], env, addPickIo.io, tempRepoDir);
     assert.equal(addPickCode, 0);
     assert.match(addPickIo.out(), /Added role 'writer' to global/);
+    assert.equal(await runCliImpl(["role", "add", "planner", "--scope", "global", "--description", "Plans the change."], env, createIo().io, tempRepoDir), 0);
 
     // 3. role list with global populated
     const listGlobalIo = createIo();
@@ -251,7 +261,7 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
       "--description", "Quality Assurance Lead",
       "--skills", "testing,e2e",
       "--harness", "grok",
-      "--model", "grok-4.6",
+      "--model", "grok-default",
       "--scope", "local",
     ], env, addLocalIo.io, tempRepoDir);
     assert.equal(addLocalCode, 0);
@@ -272,7 +282,7 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
       "--description", "Senior QA Lead",
       "--add-skill", "load-testing",
       "--remove-skill", "e2e",
-      "--add-model", "claude:fable",
+      "--add-route", "fable-default",
       "--scope", "local",
     ], env, modifyIo.io, tempRepoDir);
     assert.equal(modCode, 0);
@@ -283,7 +293,7 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
     assert.equal(parsedModified.role.description, "Senior QA Lead");
     assert.ok(parsedModified.role.skills.includes("load-testing"));
     assert.ok(!parsedModified.role.skills.includes("e2e"));
-    assert.ok(parsedModified.role.roster.some((r: any) => r.model === "fable"));
+    assert.ok(parsedModified.role.roster.some((r: { route?: string }) => r.route === "fable-default"));
 
     // 7. role remove using pick list
     const removePickIo = createIo();
@@ -329,7 +339,7 @@ test("Role & Workflow CLI: commands with pick list, scoping, and JSON output", a
 
     // 14. File-based role add
     const fileRolePath = join(tempRepoDir, "sample-role.yaml");
-    writeFileSync(fileRolePath, "schema: kxm.role.v1\nid: file-role\ndescription: Role from file\nroster: []\n", "utf8");
+    writeFileSync(fileRolePath, "schema: kxm.role.v2\nid: file-role\npurpose: experiment\npermission: read-only\ndescription: Role from file\nroster: []\n", "utf8");
     const addFileIo = createIo();
     assert.equal(await runCliImpl(["role", "add", "file-role", "--file", fileRolePath], env, addFileIo.io, tempRepoDir), 0);
 
@@ -792,7 +802,7 @@ test("role add --pick <global-id> copies that global role into the project, with
     assert.equal((await kxm(["init", "--project-id", "prj_01JROLEPICKGLOBAL00000000", "--name", "Role pick"])).code, 0);
 
     // A global role arrives in the project as written, not as an empty role under its id.
-    const kept = await kxm(["role", "add", "qa-lead", "--scope", "global", "--description", "QA lead", "--skills", "testing,e2e", "--harness", "grok", "--model", "grok-4.6"]);
+    const kept = await kxm(["role", "add", "qa-lead", "--scope", "global", "--description", "QA lead", "--skills", "testing,e2e", "--model", "grok-default"]);
     assert.equal(kept.code, 0, kept.err);
     const picked = await kxm(["role", "add", "--pick", "qa-lead"]);
     assert.equal(picked.code, 0, picked.err);
@@ -801,24 +811,25 @@ test("role add --pick <global-id> copies that global role into the project, with
 
     // A `.yml` global, which a lookup by `<id>.yaml` misses, takes the overrides and keeps the rest.
     writeFileSync(join(globalRoles, "reviewer.yml"), [
-      "schema: kxm.role.v1",
+      "schema: kxm.role.v2",
       "id: reviewer",
+      "purpose: experiment",
+      "permission: read-only",
       "description: Reviews diffs",
       "skills:",
       "  - review",
       "tools:",
       "  preset: critic",
       "roster:",
-      "  - harness: codex",
-      "    model: openai/gpt-5.6-sol",
+      "  - route: sol-codex",
       "",
     ].join("\n"));
-    const overridden = await kxm(["role", "add", "--pick", "reviewer", "--description", "Project reviewer", "--skills", "review,security", "--harness", "claude", "--model", "anthropic/claude-fable-5-1"]);
+    const overridden = await kxm(["role", "add", "--pick", "reviewer", "--description", "Project reviewer", "--skills", "review,security", "--model", "fable-default"]);
     assert.equal(overridden.code, 0, overridden.err);
     const copy = parseRoleFile(join(roles, "reviewer.yaml"));
     assert.equal(copy?.description, "Project reviewer");
     assert.deepEqual(copy?.skills, ["review", "security"]);
-    assert.deepEqual(copy?.roster, [{ harness: "claude", model: "anthropic/claude-fable-5-1" }]);
+    assert.deepEqual(copy?.roster, [{ route: "fable-default" }]);
     assert.deepEqual(copy?.tools, { preset: "critic" });
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -858,6 +869,9 @@ test("role add writes a local role only at the project root, and only if the pro
     assert.equal(existsSync(join(project, ".kxm")), false);
 
     assert.equal((await kxm(["init", "--project-id", "prj_01JROLEADDLOAD000000000000", "--name", "Role load"])).code, 0);
+    rmSync(join(roles, "writer.yaml"));
+    mkdirSync(join(root, "user-config", "roles"), { recursive: true });
+    writeFileSync(join(root, "user-config", "roles", "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\ndescription: Global writer.\nroster:\n  - route: grok-default\n");
     // An implementer on a model the built-in writer template's roster leaves out.
     const implementer = join(project, ".kxm", "agents", "implementer.yaml");
     const undeclared = readFileSync(implementer, "utf8").replace(/^harness:.*\n/m, "").replace(/^model:.*\n(?: {2}.*\n)*/m, "");
@@ -875,16 +889,16 @@ test("role add writes a local role only at the project root, and only if the pro
     }
 
     // With the implementer's model, from a subdirectory, the role lands where the loader reads it.
-    const added = await kxm(["role", "add", "--pick", "writer", "--harness", "claude", "--model", "anthropic/claude-fable-5-1"], join(project, "sub"));
+    const added = await kxm(["role", "add", "--pick", "writer", "--model", "fable-agent"], join(project, "sub"));
     assert.equal(added.code, 0, added.err);
     assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, join(roles, "writer.yaml"));
     assert.equal(existsSync(join(project, "sub", ".kxm")), false);
     assert.ok(loadKxmProject(project));
 
     // A conflicting writer left on disk is judged by what replaces it, so --overwrite repairs it.
-    writeFileSync(join(roles, "writer.yaml"), "schema: kxm.role.v1\nid: writer\nroster:\n  - model: xai/grok-4.6\n");
+    writeFileSync(join(roles, "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\ndescription: Conflicting writer.\nroster:\n  - route: grok-default\n");
     assert.throws(() => loadKxmProject(project), /role_roster_conflicts_with_agent/);
-    const repaired = await kxm(["role", "add", "writer", "--harness", "claude", "--model", "anthropic/claude-fable-5-1", "--overwrite"]);
+    const repaired = await kxm(["role", "add", "writer", "--model", "fable-agent", "--overwrite"]);
     assert.equal(repaired.code, 0, repaired.err);
     assert.ok(loadKxmProject(project));
   } finally {

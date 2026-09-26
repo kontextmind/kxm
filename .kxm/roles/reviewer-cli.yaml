@@ -1,10 +1,9 @@
-schema: kxm.role.v1
+schema: kxm.role.v2
 id: reviewer-cli
-# sol is the required cli critic; glm-5.3-flash failover (fast tier, review-unproven)
+purpose: reviewer-cli
+permission: read-only
+description: Independent CLI and docs critic.
+# sol is the required cli critic.
 roster:
-  - model: openai/gpt-5.6-sol
+  - route: sol-codex
     effort: low
-    enabled: true
-  - model: zai-coding-cn/glm-5.3-flash
-    effort: low
-    enabled: true

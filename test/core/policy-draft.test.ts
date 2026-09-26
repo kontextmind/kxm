@@ -10,7 +10,6 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from "../../scripts/harness-run.mjs";
 import { KIND_ROLES, getRosterPolicy } from "../../scripts/assignment-run.mjs";
 import { withRosterPolicy } from "../helpers/roster-policy.ts";
-import { DEFAULT_ROLES } from "../../plugins/kxm/src/role.ts";
 import {
   KxmSchemaRegistry,
   parseRestrictedYaml,
@@ -76,8 +75,9 @@ function currentDraft(overrides: { models?: Record<string, unknown>; roles?: Rec
 
 test("draft schemas compile closed and reject unknown fields", () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
-  const modelSchema = JSON.parse(readFileSync("schemas/policy-draft/model.v2.schema.json", "utf8"));
-  const roleSchema = JSON.parse(readFileSync("schemas/policy-draft/role.v2.schema.json", "utf8"));
+  ajv.addSchema(JSON.parse(readFileSync("schemas/common.schema.json", "utf8")));
+  const modelSchema = JSON.parse(readFileSync("schemas/model.schema.json", "utf8"));
+  const roleSchema = JSON.parse(readFileSync("schemas/role.schema.json", "utf8"));
   const validateModel = ajv.compile(modelSchema);
   const validateRole = ajv.compile(roleSchema);
   assert.equal(validateModel({
@@ -269,26 +269,24 @@ test("active KXM schemas, examples, and roster.yaml remain the live formats", ()
   assert.equal(roster.routes["sol-codex"]?.model, "gpt-5.6-sol");
 
   const primary = parseRestrictedYaml(readFileSync("examples/project/.kxm/models/primary.yaml"), "primary.yaml");
-  assert.equal(primary.schema, "kxm.model.v1");
-  assert.equal("harness" in primary, false);
-  assert.equal("vendor" in primary, false);
+  assert.equal(primary.schema, "kxm.model.v2");
+  assert.equal(primary.harness, "grok");
+  assert.equal(primary.vendor, "xai");
 
   const registry = new KxmSchemaRegistry();
   assert.match(registry.schemasDir.replaceAll("\\", "/"), /\/schemas$/);
   const mismatch = registry.validate("model", {
-    schema: "kxm.model.v2",
+    schema: "kxm.model.v1",
     provider: "xai",
     model: "grok-4.7",
-  }, "draft-as-live.yaml");
+  }, "v1-as-live.yaml");
   assert.ok(mismatch.some((issue) => issue.code === "schema_identity_mismatch"));
 
   for (const name of readdirSync(join("examples", "project", ".kxm", "models"))) {
     const value = parseRestrictedYaml(readFileSync(join("examples", "project", ".kxm", "models", name)), name);
-    assert.equal(value.schema, "kxm.model.v1");
+    assert.equal(value.schema, "kxm.model.v2");
   }
 
-  assert.equal(DEFAULT_ROLES.writer?.schema, "kxm.role.v1");
-  assert.ok(DEFAULT_ROLES.writer?.roster.some((entry) => entry.model === "gemini-2.5-pro"));
   assert.equal(KIND_ROLES.implement, "writer");
   assert.equal(KIND_ROLES["review-arch"], "reviewer-arch");
   assert.equal(KIND_ROLES["review-cli"], "reviewer-cli");
@@ -401,24 +399,73 @@ test("policy-draft module ships as plain JS and does not import unshipped script
   assert.equal(ran.status, 0, `${ran.stderr}\n${ran.stdout}`);
 });
 
-test("policy-draft directory is not an active KXM schema or example tree", () => {
-  const draftFiles = readdirSync("schemas/policy-draft");
-  assert.ok(draftFiles.includes("model.v2.schema.json"));
-  assert.ok(draftFiles.includes("role.v2.schema.json"));
-  const kxm = readdirSync("schemas");
-  assert.ok(kxm.includes("model.schema.json"));
-  assert.ok(kxm.includes("role.schema.json"));
-  const liveModel = JSON.parse(readFileSync("schemas/model.schema.json", "utf8")) as { properties: { schema: { const: string } } };
-  const liveRole = JSON.parse(readFileSync("schemas/role.schema.json", "utf8")) as { properties: { schema: { const: string } } };
-  assert.equal(liveModel.properties.schema.const, "kxm.model.v1");
-  assert.equal(liveRole.properties.schema.const, "kxm.role.v1");
-  const examples = readdirSync(join("examples", "project", ".kxm", "models"));
-  assert.ok(examples.every((name) => name.endsWith(".yaml")));
+test("live role and model files pass validatePolicyDraft with developer ceilings", () => {
+  const models: Record<string, unknown> = {};
+  const roles: Record<string, unknown> = {};
+  const evidence: Record<string, string> = {};
+  for (const name of readdirSync(".kxm/models")) {
+    if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
+    models[name.slice(0, -5)] = parse(readFileSync(join(".kxm/models", name), "utf8"));
+  }
+  for (const name of readdirSync(".kxm/roles")) {
+    if (!name.endsWith(".yaml")) continue;
+    roles[name.slice(0, -5)] = parse(readFileSync(join(".kxm/roles", name), "utf8"));
+  }
+  for (const model of Object.values(models)) {
+    const origin = (model as { origin?: { source?: string } }).origin;
+    if (origin?.source && evidence[origin.source] === undefined) {
+      evidence[origin.source] = readFileSync(origin.source, "utf8");
+    }
+  }
+  const result = validatePolicyDraft({ models: models as never, roles: roles as never, evidence }, options());
+  assert.equal(result.ok, true, result.ok ? "" : result.issues.map((issue) => `${issue.code}:${issue.file}:${issue.message}`).join("\n"));
+});
+
+test("validatePolicyDraft refuses an extends cycle", () => {
+  const draft = currentDraft({
+    roles: {
+      writer: role("writer", { purpose: "writer", permission: "edit", extends: "planner", roster: [{ route: "grok-native" }] }),
+      planner: role("planner", { purpose: "planner", permission: "read-only", extends: "writer", roster: [{ route: "fable-claude" }] }),
+    },
+  });
+  assert.ok(codes(validatePolicyDraft(draft, options())).includes("role_extends_cycle"));
+});
+
+test("validatePolicyDraft refuses an unknown policy.fallback key", () => {
+  const draft = currentDraft({
+    roles: {
+      writer: role("writer", {
+        purpose: "writer",
+        permission: "edit",
+        roster: [{ route: "grok-native" }],
+        policy: { fallback: { onError: [], maxSwitches: 1, revert: "next_run", extra: true } },
+      }),
+    },
+  });
+  assert.ok(codes(validatePolicyDraft(draft, options())).includes("schema_additionalProperties"));
+});
+
+test.todo("justfile plan and review-arch still say opus while the role files say fable");
+
+test("justfile impl and review-cli literals match the first roster entry", () => {
+  const justfile = readFileSync("justfile", "utf8");
+  const recipes: Record<string, string> = { impl: "writer", "review-cli": "reviewer-cli" };
+  for (const [recipe, roleId] of Object.entries(recipes)) {
+    const roleDoc = parse(readFileSync(join(".kxm/roles", `${roleId}.yaml`), "utf8")) as { permission: string; roster: Array<{ route: string; effort?: string }> };
+    const first = roleDoc.roster[0]!;
+    const modelDoc = parse(readFileSync(join(".kxm/models", `${first.route}.yaml`), "utf8")) as { harness: string; model: string };
+    const block = justfile.split(`\n${recipe} `)[1]?.split("\n\n")[0] ?? "";
+    assert.match(block, new RegExp(`role:"${roleId}"`));
+    assert.match(block, new RegExp(`harness:"${modelDoc.harness}"`));
+    assert.match(block, new RegExp(`model:"${modelDoc.model}"`));
+    assert.match(block, new RegExp(`effort:"${first.effort}"`));
+    assert.match(block, new RegExp(`permission:"${roleDoc.permission}"`));
+  }
 });
 
 function compilePassiveModel() {
   const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
-  const modelSchema = JSON.parse(readFileSync("schemas/policy-draft/model.v2.schema.json", "utf8"));
+  const modelSchema = JSON.parse(readFileSync("schemas/model.schema.json", "utf8"));
   return ajv.compile(modelSchema);
 }
 

@@ -1,14 +1,46 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.kxm.dev/role.schema.json",
-  "title": "KXM role definition",
-  "description": "The filename determines the role identity unless explicitly declared.",
+  "title": "KXM role",
+  "description": "Live kxm.role.v2 role. Specialty identity is separate from purpose. Roster order is configured preference, not a measured ranking.",
   "type": "object",
-  "required": ["schema", "description"],
+  "required": ["schema", "purpose", "permission", "description", "roster"],
+  "additionalProperties": false,
   "properties": {
-    "schema": { "const": "kxm.role.v1" },
-    "id": { "$ref": "common.schema.json#/$defs/identifier" },
+    "schema": { "const": "kxm.role.v2" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "extends": { "$ref": "common.schema.json#/$defs/identifier" },
+    "purpose": {
+      "enum": ["writer", "planner", "reviewer-arch", "reviewer-cli", "experiment"]
+    },
+    "permission": { "enum": ["edit", "read-only"] },
     "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "roster": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": ["route"],
+        "additionalProperties": false,
+        "properties": {
+          "route": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "effort": {
+            "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+          },
+          "mode": { "enum": ["headless", "interactive", "either"] }
+        }
+      }
+    },
     "skills": {
       "type": "array",
       "items": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -16,23 +48,23 @@
     },
     "tools": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "preset": { "type": "string" },
         "allow": { "type": "array", "items": { "type": "string" } },
         "deny": { "type": "array", "items": { "type": "string" } }
-      },
-      "additionalProperties": false
+      }
     },
     "produces": {
       "type": "array",
       "items": {
         "type": "object",
         "required": ["template"],
+        "additionalProperties": false,
         "properties": {
           "template": { "type": "string" },
           "schema": { "type": "string" }
-        },
-        "additionalProperties": false
+        }
       }
     },
     "consumes": {
@@ -40,37 +72,35 @@
       "items": {
         "type": "object",
         "required": ["template"],
+        "additionalProperties": false,
         "properties": {
           "template": { "type": "string" },
           "schema": { "type": "string" }
-        },
-        "additionalProperties": false
-      }
-    },
-    "roster": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["harness", "model"],
-        "properties": {
-          "harness": { "$ref": "common.schema.json#/$defs/identifier" },
-          "model": { "$ref": "common.schema.json#/$defs/modelSelector" },
-          "provider": { "type": "string" },
-          "effort": { "enum": ["low", "medium", "high", "xhigh"] },
-          "mode": { "enum": ["headless", "interactive", "either"] }
-        },
-        "additionalProperties": false
+        }
       }
     },
     "policy": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "vendorIndependenceRequired": { "type": "boolean" },
         "maxTransitions": { "type": "integer", "minimum": 1 },
-        "requiresGateVerification": { "type": "boolean" }
-      },
-      "additionalProperties": false
+        "requiresGateVerification": { "type": "boolean" },
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "onError": {
+              "type": "array",
+              "items": { "enum": ["rate_limit", "transport", "provider_unavailable"] },
+              "uniqueItems": true,
+              "default": []
+            },
+            "maxSwitches": { "type": "integer", "minimum": 0 },
+            "revert": { "enum": ["next_run", "never"] }
+          }
+        }
+      }
     }
-  },
-  "additionalProperties": false
+  }
 }

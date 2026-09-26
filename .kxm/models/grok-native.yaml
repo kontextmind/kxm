@@ -1,0 +1,8 @@
+schema: kxm.model.v2
+id: grok-native
+harness: grok
+model: grok-4.7
+vendor: xai
+status: admitted
+permissions:
+  - edit

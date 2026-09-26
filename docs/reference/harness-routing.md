@@ -136,7 +136,7 @@ The harness and the selector have to agree. Pi refuses `provider: xai` and `open
 A role file lists the selectors a role may run. For example, `.kxm/roles/writer.yaml`:
 
 ```yaml
-schema: kxm.role.v1
+schema: kxm.role.v2
 id: writer
 roster:
   - model: xai/grok-4.6

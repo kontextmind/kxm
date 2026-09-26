@@ -48,6 +48,7 @@ function resourceKindForTemplatePath(path: string): KxmResourceKind {
   if (path.endsWith("repo.yaml")) return "repository";
   if (path.startsWith(".kxm/agents/")) return "agent";
   if (path.startsWith(".kxm/models/")) return "model";
+  if (path.startsWith(".kxm/roles/")) return "role";
   if (path.startsWith(".kxm/workflows/")) return "workflow";
   return "environment";
 }

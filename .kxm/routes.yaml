@@ -15,11 +15,3 @@ admitted:
 - zai-coding-cn/glm-5.3
 - zai-coding-cn/glm-5.3-flash
 disabled: []
-roles:
-  implementer:
-  - xai/grok-4.7
-  - openrouter/qwen/qwen3-coder-plus
-  critic-arch:
-  - anthropic/fable
-  critic-cli:
-  - openai/gpt-5.6-sol

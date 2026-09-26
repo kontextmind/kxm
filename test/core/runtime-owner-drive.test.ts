@@ -97,9 +97,9 @@ test("runtime handle counts and producer inventory helpers stay fail-closed", ()
     assert.equal(loadRoutePolicy(root).schema, "kxm.routes.v2");
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
     mkdirSync(join(root, ".kxm", "models"), { recursive: true });
-    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), "schema: kxm.role.v1\nid: writer\nroster:\n  - model: grok-4.6\n", "utf8");
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), "schema: kxm.role.v2\nid: writer\nroster:\n  - route: grok-native\n", "utf8");
     writeFileSync(join(root, ".kxm", "models", "inventory.yaml"), "models:\n  - id: grok-4.6\n", "utf8");
-    assert.deepEqual(listRoleBindings(root).writer, ["grok-4.6"]);
+    assert.deepEqual(listRoleBindings(root).writer, ["grok-native"]);
     assert.deepEqual(listInventoryModels(root), ["grok-4.6"]);
   } finally {
     removeTempDir(root);

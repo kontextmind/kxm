@@ -1,10 +1,9 @@
-schema: kxm.role.v1
+schema: kxm.role.v2
 id: planner
-# fable primary (proven planning); qwen3.8-max failover (admitted, planning-unproven)
+purpose: planner
+permission: read-only
+description: Plans the change before implementation.
+# fable primary (proven planning).
 roster:
-  - model: anthropic/fable
+  - route: fable-claude
     effort: medium
-    enabled: true
-  - model: qwen-token-plan/qwen3.8-max
-    effort: medium
-    enabled: true

@@ -10,7 +10,7 @@ This page records how the KXM repository applies [harness routing](../reference/
 `node scripts/kxm.mjs role get writer`:
 
 ```text
-schema: kxm.role.v1
+schema: kxm.role.v2
 id: writer
 description: ""
 skills: []
