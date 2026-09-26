@@ -6,6 +6,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **`kxm lane` keeps one git worktree per unit beside the control checkout.**
+  `create`, `list`, `status`, `drop` and `run` store a 0600 record in
+  `.kxm/state/lanes.json` keyed by the resolved base sha, and `drop` never
+  deletes the branch. `kxm run --brief <file>` and `--lane <unit>` start that
+  work, and `--lane` is also accepted by `kxm runs status`, `drive`, `receipt`
+  and `cancel`. The `just worktree` and `just worktree-drop` recipes now call
+  those verbs. The refusals a user can see are `lane_exists`, `lane_missing`,
+  `lane_base_unresolved`, `lane_dirty`, `lane_run_open`, `brief_unreadable` and
+  `brief_and_prompt`. A live writer step through `kxm lane run` is still
+  bounded by the Runtime's 120 second one-shot timeout until the configurable
+  limit lands. See the
+  [CLI reference](docs/reference/cli-reference.md#kxm-lane).
+
 - **Claude-only workflow recommendations now fail honestly when execution is unavailable.**
   `suggest` honors explicit harness constraints, uses flat installable IDs and verified
   capability-appropriate routes, refuses unchecked existing definitions, and never substitutes a
@@ -336,6 +349,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **Read-only run projection:** `GET /v1/runs/:id` folds the event log without
   persisting a projection write, so a read cannot mutate run state or surface a
   false `run_projection_divergent`.
+
+### Removed
+
+- **`.kxm/template-provenance.yaml` was removed from this project, a repository
+  change rather than a product change,** because the installed kxm no longer
+  recognizes its recorded revision and a project without the file validates as
+  ready.
 
 ### Fixed
 

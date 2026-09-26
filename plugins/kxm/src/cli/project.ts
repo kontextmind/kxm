@@ -415,28 +415,31 @@ export function resolveKxmRunTarget(
   runtime: Runtime,
   workflow: string | undefined,
   forTask = false,
+  envelope: Record<string, unknown> = {},
+  allowDefaultWorkflow = false,
 ): { projectRoot: string; workflowId: string; configRevision: string; defaultHarness: string; prerequisites: KxmRunHandoff[] } | number {
   if (runtime.workspaceFlag !== undefined) {
     print(runtime.io, runtime.json, {
       ok: false,
       command: "run",
       error: "workspace_option_unsupported",
+      ...envelope,
     }, "kxm run discovers the authoritative project from the current directory; --workspace is not supported");
     return 2;
   }
-  if (!workflow && !forTask) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required" }, "usage: kxm run <workflow> [prompt]");
+  if (!workflow && !forTask && !allowDefaultWorkflow) {
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "workflow_required", ...envelope }, "usage: kxm run <workflow> [prompt]");
     return 2;
   }
   const projectRoot = discoverKxmProjectRoot(runtime.cwd);
   if (!projectRoot) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required" }, "kxm run requires a KXM project (run kxm init first)");
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "project_required", ...envelope }, "kxm run requires a KXM project (run kxm init first)");
     return 1;
   }
   const bundle = loadKxmProject(projectRoot, {});
   const workflowId = workflow ?? String(bundle.project.value.defaultWorkflow ?? "default");
   if (!bundle.workflows.has(workflowId)) {
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow: workflowId }, `workflow ${workflowId} does not exist in this project`);
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow: workflowId, ...envelope }, `workflow ${workflowId} does not exist in this project`);
     return 1;
   }
   const defaultHarness = String(bundle.project.value.defaultHarness ?? "pi");
@@ -451,9 +454,16 @@ export function resolveKxmRunTarget(
   return { projectRoot, workflowId, configRevision: bundle.configRevision, defaultHarness, prerequisites };
 }
 
-export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, promptParts: string[], forTask = false): Promise<number> {
+export async function cmdKxmRun(
+  runtime: Runtime,
+  workflow: string | undefined,
+  promptParts: string[],
+  forTask = false,
+  call?: { brief?: string; prompt?: string; runIdOut?: { runId?: string }; allowDefaultWorkflow?: boolean },
+): Promise<number> {
+  const envelope = call?.brief !== undefined ? { brief: call.brief } : {};
   try {
-    const target = resolveKxmRunTarget(runtime, workflow, forTask);
+    const target = resolveKxmRunTarget(runtime, workflow, forTask, envelope, call?.allowDefaultWorkflow === true);
     if (typeof target === "number") return target;
     const { projectRoot } = target;
     if (runtime.dryRun) {
@@ -461,21 +471,24 @@ export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, 
         ok: true,
         command: "run",
         dryRun: true,
+        ...envelope,
         ...target,
       }, `run plan: workflow ${target.workflowId} at ${target.configRevision.slice(0, 19)}… (no run created)`);
       return 0;
     }
     const supervisor = await (kxmDriveCliSeams.ensureSupervisor ?? ensureKxmSupervisor)({ env: runtime.env });
-    const prompt = promptParts.join(" ").trim();
+    const prompt = call?.prompt !== undefined ? call.prompt : promptParts.join(" ").trim();
     const acceptance = await (kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest)(supervisor, "POST", "/v1/runs", {
       projectRoot,
       workflowId: target.workflowId,
       prompt,
     });
     const run = acceptance.run as { runId: string; homeRuntimeId: string; status: string; configRevision: string };
+    if (call?.runIdOut) call.runIdOut.runId = run.runId;
     print(runtime.io, runtime.json, {
       ok: true,
       command: "run",
+      ...envelope,
       execution: {
         status: "not_started",
         mode: "live",
@@ -496,10 +509,10 @@ export async function cmdKxmRun(runtime: Runtime, workflow: string | undefined, 
     return 0;
   } catch (error) {
     if (error instanceof KxmConfigError) {
-      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_failed", issues: error.issues }, `run failed: ${error.message}`);
+      print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_failed", issues: error.issues, ...envelope }, `run failed: ${error.message}`);
       return 1;
     }
-    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_io_failed" }, "run failed because a local operation did not complete");
+    print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_io_failed", ...envelope }, "run failed because a local operation did not complete");
     return 1;
   }
 }

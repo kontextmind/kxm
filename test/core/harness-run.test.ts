@@ -2278,8 +2278,8 @@ test("just impl-bg and worktree pass user args as positional argv, not interpola
   const wt = recipeLines("worktree").join("\n");
   const drop = recipeLines("worktree-drop").join("\n");
   assert.match(bg, /just impl "\$1" "\$2"/);
-  assert.match(wt, /git worktree add -b "\$1" -- "\.\.\/kxm-\$1"/);
-  assert.match(drop, /git worktree remove -- "\.\.\/kxm-\$1"/);
+  assert.match(wt, /kxm lane create "\$1"/);
+  assert.match(drop, /kxm lane drop "\$1"/);
   if (!posixShell) {
     t.skip("POSIX shebang PATH mocks, nohup, and git recipe bodies are scoped off win32");
     return;
@@ -2288,11 +2288,11 @@ test("just impl-bg and worktree pass user args as positional argv, not interpola
   const bin = join(dir, "bin");
   mkdirSync(bin);
   const justCapture = join(dir, "just-argv.txt");
-  const gitCapture = join(dir, "git-argv.txt");
+  const kxmCapture = join(dir, "kxm-argv.txt");
   writeFileSync(join(bin, "just"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$KXM_JUST_CAPTURE"\n`);
-  writeFileSync(join(bin, "git"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$KXM_GIT_CAPTURE"\n`);
+  writeFileSync(join(bin, "kxm"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$KXM_KXM_CAPTURE"\n`);
   chmodSync(join(bin, "just"), 0o755);
-  chmodSync(join(bin, "git"), 0o755);
+  chmodSync(join(bin, "kxm"), 0o755);
   const unit = `a"b $c; rm -rf -- --dash`;
   const brief = `brief"q.md`;
   const cwdArg = `tree\\path`;
@@ -2311,26 +2311,20 @@ test("just impl-bg and worktree pass user args as positional argv, not interpola
     assert.deepEqual(justArgv, ["impl", brief, cwdArg]);
 
     const wtRan = spawnPosixRecipe(wt, [unit], {
-      env: { ...mockEnv, KXM_GIT_CAPTURE: gitCapture },
+      env: { ...mockEnv, KXM_KXM_CAPTURE: kxmCapture },
       cwd: dir,
     });
     assert.equal(wtRan.status, 0, wtRan.stderr);
-    const gitArgv = readFileSync(gitCapture, "utf8").trim().split("\n");
-    assert.equal(gitArgv[0], "worktree");
-    assert.equal(gitArgv[1], "add");
-    assert.equal(gitArgv[2], "-b");
-    assert.equal(gitArgv[3], unit);
-    assert.equal(gitArgv[4], "--");
-    assert.equal(gitArgv[5], `../kxm-${unit}`);
-    assert.equal(gitArgv[6], "origin/main");
+    const kxmArgv = readFileSync(kxmCapture, "utf8").trim().split("\n");
+    assert.deepEqual(kxmArgv, ["lane", "create", unit]);
 
     const dropRan = spawnPosixRecipe(drop, [unit], {
-      env: { ...mockEnv, KXM_GIT_CAPTURE: gitCapture },
+      env: { ...mockEnv, KXM_KXM_CAPTURE: kxmCapture },
       cwd: dir,
     });
     assert.equal(dropRan.status, 0, dropRan.stderr);
-    const dropArgv = readFileSync(gitCapture, "utf8").trim().split("\n");
-    assert.deepEqual(dropArgv, ["worktree", "remove", "--", `../kxm-${unit}`]);
+    const dropArgv = readFileSync(kxmCapture, "utf8").trim().split("\n");
+    assert.deepEqual(dropArgv, ["lane", "drop", unit]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

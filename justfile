@@ -67,14 +67,13 @@ impl-bg BRIEF CWD=".":
 
 # ── isolation ───────────────────────────────────────────────────────────────
 
-# one worktree per concurrent lane; two writers in one tree clobber each other
+# create one worktree lane; kxm lane create prints the lane line
 worktree UNIT:
-    git worktree add -b "$1" -- "../kxm-$1" origin/main
-    @echo "lane ready at ../kxm-$1"
+    kxm lane create "$1"
 
 # drop a finished lane: just worktree-drop a3-hub-bind
 worktree-drop UNIT:
-    git worktree remove -- "../kxm-$1"
+    kxm lane drop "$1"
 
 # ── inspect ─────────────────────────────────────────────────────────────────
 
