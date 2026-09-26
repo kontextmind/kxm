@@ -28,3 +28,5 @@ nul
 # Built docs site (mkdocs). Never published.
 site/
 .venv-docs/
+__pycache__/
+*.pyc
