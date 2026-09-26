@@ -433,8 +433,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   logs one `project_registration_replaced` event. `kxm lane drop` unregisters
   the lane root when the Runtime is running, and still drops the worktree
   when the Runtime is stopped. `kxm runs status` and `kxm lane status` print
-  the root they read. Existing registry rows are kept; schema 1 gains the
-  column in place. `kxm lane drop` refuses `lane_run_open` and names every
+  the root they read. On the first read-write open, the registry table is
+  rebuilt and the registry advances from schema 1 to 2, copying every row
+  forward with `lane_of` empty. `kxm lane drop` refuses `lane_run_open` and names every
   unsettled run in that lane's event store unless `--force` is set. Unregister
   answers 409 `runtime_project_busy` or `runtime_project_has_lanes` unless the
   body sets `force`.
