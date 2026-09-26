@@ -13,8 +13,16 @@ extension, the Claude Code plugin, or the bundled skills.
 - Optional tools, needed only for the matching task:
   - [Pi](https://pi.dev) to load the extension from source.
   - The Claude Code CLI to validate the plugin manifests locally.
-  - [`just`](https://github.com/casey/just) for the
-    [assignment runner](assignment-runner.md).
+  - [`just`](https://github.com/casey/just) for the remaining
+    [assignment runner](assignment-runner.md) recipes only:
+    `assign`, `witness`, `accept`, `observe-cost`, `attribute`,
+    `change-report`, and `plan-current`. Those recipes are harness
+    transport for the issue 127 runner. They are not how a unit is
+    dispatched. Do not rename or delete them.
+  - `kxm lane run` to dispatch a unit. A writer unit uses
+    `kxm lane run <unit> --brief <file> --workflow implement-only`.
+    The read-only critic workflows on the same command are
+    `review-arch-only` and `review-cli-only`.
   - Docker for the clean-container install smoke.
 
 ## Set up a checkout
@@ -116,7 +124,7 @@ excluded from the npm package.
 ├── .github/                CI, release, issue and PR templates (not shipped)
 ├── .claude/                Developer harness notes and commands (not shipped)
 ├── plans/                  Internal planning and tracking (not shipped)
-├── justfile                Developer recipes for the assignment runner
+├── justfile                Remaining issue 127 recipes (assign, witness, accept, observe-cost, attribute, change-report, plan-current)
 └── AGENTS.md, CLAUDE.md, GEMINI.md   Agent instructions with generated blocks
 ```
 
@@ -196,8 +204,14 @@ For what each skill covers, see [Agent skills](../guides/agent-skills.md).
 8. Push and open a pull request. The template asks for the slice issue and the
    `npm run verify` result.
 
-Maintainers who delegate work to coding agents use the
-[assignment runner](assignment-runner.md) for steps 2 to 7.
+Maintainers who delegate a unit dispatch it with
+`kxm lane run <unit> --brief <file> --workflow implement-only`.
+Read-only critics use the same command with `review-arch-only` or
+`review-cli-only`. The [assignment runner](assignment-runner.md)
+recipes (`assign`, `witness`, `accept`, `observe-cost`, `attribute`,
+`change-report`, `plan-current`) stay on `just`. They are harness
+transport for the issue 127 runner, not the unit transport, and they
+cover steps 2 to 7 after a lane run.
 
 ## Generated artifacts
 
