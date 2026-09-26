@@ -6,6 +6,3 @@ vendor: google
 status: admitted
 permissions:
   - edit
-origin:
-  source: .kxm/routes.yaml
-  sha256: 813e84a728be5aee2495d98c9466c0f11c2eb154e0e8e714a61cbc1516699230
