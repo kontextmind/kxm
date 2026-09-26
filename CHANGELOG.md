@@ -435,6 +435,11 @@ All notable user-facing changes are documented here. The project follows [Semant
   when the Runtime is stopped. `kxm runs status` and `kxm lane status` print
   the root they read. Existing registry rows are kept; schema 1 gains the
   column in place.
+- **`npm test` exits when the suite finishes.** The script passes
+  `--test-force-exit`, so a green run does not sit in the event loop and a
+  red run still prints its failures. Two full runs of the suite without the
+  flag also exited once the files finished; the handle that kept an earlier
+  run alive was not reproduced in this tree.
 - **`kxm land` names the pull request from the first commit subject and matches the Release run by time.**
   `--title` sets the title; otherwise the subject of the first commit on the
   branch is used, and a missing subject refuses `land_pr_title_missing`. The

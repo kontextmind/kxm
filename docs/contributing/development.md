@@ -235,7 +235,7 @@ It runs three scripts in order:
 
 | Step | Script | What it checks |
 |---|---|---|
-| 1 | `npm test` | Build, then `test/core/*.test.ts` and `packages/core/*/tests/unit/*.test.ts` |
+| 1 | `npm test` | Build, then `test/core/*.test.ts` and `packages/core/*/tests/unit/*.test.ts`. The script passes `--test-force-exit` so a finished run leaves the process even if a handle is still open; a failing test is still reported before that exit |
 | 2 | `npm run check` | `tsc --noEmit`, `markdownlint-cli2`, and version surfaces |
 | 3 | `npm run check:generated` | Generated artifacts are tracked and match the staged copy |
 
