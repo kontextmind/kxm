@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-09-26"
 authority: "hypothesis"
 confidence: "verified"
 summary: "Running list of every interim step taken instead of the solid fix, so nothing skipped is forgotten. Each item names what was done, why, what the proper fix is, and where that fix is already planned when it is. Appended in the same turn a shortcut is taken. Not a tracker; execution stays in implementation-plan.md."
@@ -16,6 +16,7 @@ related:
   - implementation-plan.md
   - plan-lane-cli.md
   - plan-omp-config-alignment.md
+  - plan-landing-gates.md
   - reviews/lane-cli-review-arch.md
 depends_on: []
 blocked_by: []

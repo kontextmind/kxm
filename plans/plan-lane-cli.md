@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-09-26"
 authority: "hypothesis"
 confidence: "high"
 summary: "Small slice. Add a kxm lane command group (create, list, status, drop, run) that manages one git worktree per unit of work, records the lane in the project state directory, and lets kxm run and kxm runs target a lane by name. Add --brief <file> to kxm run so a prompt is never passed inline. The just worktree recipes become wrappers. Lands before P1 of plan-omp-config-alignment.md, which is the first run that uses it. No push, merge, or PR behavior; no change to admission or the trusted roster read."
@@ -15,6 +15,8 @@ tags: ["cli", "lanes", "worktree", "runs", "devex"]
 related:
   - plan-omp-config-alignment.md
   - implementation-plan.md
+  - backlog-shortcuts.md
+  - plan-landing-gates.md
 depends_on: []
 blocked_by: []
 details:

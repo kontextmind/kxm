@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-09-26"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Draft plan, decisions taken. KXM already carries a passive kxm.role.v2 and kxm.model.v2 draft (schemas/policy-draft, validatePolicyDraft) whose shape matches what omp does well: roles hold an ordered roster of route ids, routes hold harness, model, vendor, status, permissions, priority and fallbacks. This plan promotes that draft to the live authority, retires kxm.role.v1, routes.yaml roles, roster.yaml and the code defaults, gives agents a role: reference, then adds an opt-in in-flight fallback walk, role tool-policy enforcement, provenance, role aliases, and effort validation. No legacy read paths: old files are deleted and re-created per the single-operator rule. Execution tracking stays in implementation-plan.md."
@@ -17,6 +17,7 @@ related:
   - research-omp-config-examples.md
   - evidence/omp-config-settings-18.3.1.md
   - plan-lane-cli.md
+  - backlog-shortcuts.md
   - implementation-plan.md
   - plan-usage-cost-quota-tracking.md
   - plan-workflow-modes-selective-loading.md
