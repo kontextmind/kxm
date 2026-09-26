@@ -77,13 +77,15 @@ nav:
   - Roadmap:
       - Dashboard: roadmap/dashboard.md
       - Master plan: roadmap/MASTER.md
-      - Python migration: roadmap/phases/01-python-migration.md
-      - Greenfield infra: roadmap/phases/02-greenfield-infra.md
-      - Per-tenant hosting: roadmap/phases/03-per-tenant-hosting.md
-      - Cross-host: roadmap/phases/04-cross-host.md
-      - Workflow modes: roadmap/phases/05-workflow-modes.md
-      - Usage and cost: roadmap/phases/06-usage-cost.md
-      - Still open: roadmap/phases/07-still-open.md
+      - Planner loop and lanes: roadmap/phases/01-planner-loop.md
+      - Role authority from the v2 policy draft: roadmap/phases/02-role-authority.md
+      - Python migration: roadmap/phases/03-python-migration.md
+      - Greenfield infra: roadmap/phases/04-greenfield-infra.md
+      - Per-tenant hosting: roadmap/phases/05-per-tenant-hosting.md
+      - Cross-host: roadmap/phases/06-cross-host.md
+      - Workflow modes: roadmap/phases/07-workflow-modes.md
+      - Usage and cost: roadmap/phases/08-usage-cost.md
+      - Still open: roadmap/phases/09-still-open.md
   - Architecture:
       - architecture/index.md
       - Platform: architecture/platform.md
@@ -166,4 +168,6 @@ nav:
       - Test matrix: contributing/test-matrix.md
       - TUI components: contributing/tui-components.md
       - Writing docs: contributing/writing-docs.md
+      - Operating rules: contributing/operating-rules.md
+      - Learnings: contributing/learnings.md
       - Glossary: glossary.md
