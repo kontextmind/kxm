@@ -4,7 +4,7 @@ model: grok-4.6
 vendor: xai
 status: admitted
 permissions:
-  - edit
+  - read-only
 thinking: high
 tags:
   - critic

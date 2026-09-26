@@ -4,7 +4,7 @@ model: gemini-3.1-pro-preview
 vendor: google
 status: admitted
 permissions:
-  - edit
+  - read-only
 tags:
   - critic
 capabilities:

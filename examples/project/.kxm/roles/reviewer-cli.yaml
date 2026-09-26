@@ -4,5 +4,5 @@ purpose: reviewer-cli
 permission: read-only
 description: Independent CLI and docs critic for the example project.
 roster:
-  - route: implementation
+  - route: critic-gemini
     effort: low
