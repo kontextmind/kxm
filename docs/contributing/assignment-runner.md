@@ -85,7 +85,7 @@ Use this slim loop for daily work and for docs. The 13-step `fix` workflow in
 > runner validates anything. The process environment is passed through as it
 > is. Export any variable you need before the command.
 
-The `just` recipes for this loop are retired in favor of `kxm assign` and will be removed after one real unit has been accepted through `kxm assign`.
+The seven `just` assignment recipes remain available and will be removed after one real unit has been accepted through `kxm assign`; until then both forms are equivalent because both call `scripts/assignment-run.mjs` unchanged.
 
 ### 1. Pin the current plan
 
