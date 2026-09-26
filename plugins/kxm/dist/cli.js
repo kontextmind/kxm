@@ -21375,13 +21375,16 @@ function objectValue3(value) {
 function kxmProjectAdmissionLimits(bundle) {
   const limits = objectValue3(bundle.project.value.limits);
   const maxConcurrentRuns = typeof limits?.maxConcurrentRuns === "number" && Number.isInteger(limits.maxConcurrentRuns) && limits.maxConcurrentRuns >= 1 ? limits.maxConcurrentRuns : 1;
+  const declared = limits?.agentStepTimeoutMs;
+  const agentStepTimeoutMs = typeof declared === "number" && Number.isInteger(declared) && declared >= KXM_MIN_AGENT_STEP_TIMEOUT_MS ? declared : KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
   return {
     maxConcurrentRuns,
     ...typeof limits?.maxRunDurationMs === "number" ? { maxRunDurationMs: limits.maxRunDurationMs } : {},
-    ...typeof limits?.maxAgentTimeMs === "number" ? { maxAgentTimeMs: limits.maxAgentTimeMs } : {}
+    ...typeof limits?.maxAgentTimeMs === "number" ? { maxAgentTimeMs: limits.maxAgentTimeMs } : {},
+    agentStepTimeoutMs
   };
 }
-var RUNTIME_EPOCH_NS;
+var KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS, KXM_MIN_AGENT_STEP_TIMEOUT_MS, RUNTIME_EPOCH_NS;
 var init_runtime_service = __esm({
   "plugins/kxm/src/runtime-service.ts"() {
     "use strict";
@@ -21391,6 +21394,8 @@ var init_runtime_service = __esm({
     init_engine_plan();
     init_runtime_owner();
     init_runtime_store();
+    KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS = 36e5;
+    KXM_MIN_AGENT_STEP_TIMEOUT_MS = 6e4;
     RUNTIME_EPOCH_NS = process.hrtime.bigint();
   }
 });
@@ -21400,6 +21405,7 @@ var TEXT_LIMIT, ARGV_LIMIT, RECORD_LIMIT;
 var init_oneshot_evidence = __esm({
   "plugins/kxm/src/oneshot-evidence.ts"() {
     "use strict";
+    init_bindings();
     TEXT_LIMIT = 4 * 1024 * 1024;
     ARGV_LIMIT = 64 * 1024;
     RECORD_LIMIT = 16 * 1024 * 1024;
@@ -23195,6 +23201,15 @@ function resolveProducerRoute(projectRoot, step, agentId) {
   const model = selector.slice(slash + 1);
   return { provider, model, selector };
 }
+function unsupportedAgentStepTimeout(step, limitMs) {
+  if (step.kind !== "agent" && step.kind !== "moa") return void 0;
+  if (step.timeoutMs === void 0 || step.timeoutMs <= limitMs) return void 0;
+  return {
+    reason: "step_unsupported",
+    field: "timeoutMs",
+    detail: "step timeoutMs is wider than project limits.agentStepTimeoutMs"
+  };
+}
 function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
   const workflow = bundle.workflows.get(workflowId);
   if (!workflow) throw runtimeError("run_workflow_unknown", workflowId, `workflow ${workflowId} does not exist in this project`);
@@ -23213,7 +23228,8 @@ function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
     for (const transition2 of Object.values(step.transitions)) {
       if (transition2.to === "step") pending.push(transition2.target);
     }
-    const unsupported = step.kind === "gate" ? unsupportedGateStep(plan, step, envelope, { projectRoot }) ?? starterGatePrerequisite(step, envelope.gates, projectRoot) : unsupportedStep(plan, step, "oneshot");
+    const limitMs = envelope.projectLimits.agentStepTimeoutMs ?? KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
+    const unsupported = step.kind === "gate" ? unsupportedGateStep(plan, step, envelope, { projectRoot }) ?? starterGatePrerequisite(step, envelope.gates, projectRoot) : unsupportedAgentStepTimeout(step, limitMs) ?? unsupportedStep(plan, step, "oneshot");
     if (unsupported) {
       prerequisites.push({ ...unsupported, stepId });
       continue;
@@ -23533,6 +23549,7 @@ var init_engine = __esm({
     init_context_packet();
     init_engine_compile();
     init_harness();
+    init_oneshot_evidence();
     init_engine_fold();
     init_engine_plan();
     init_dispatch_context();
@@ -23556,7 +23573,6 @@ var init_oneshot_producer = __esm({
   "plugins/kxm/src/oneshot-producer.ts"() {
     "use strict";
     init_oneshot_evidence();
-    init_bindings();
     init_oneshot_process();
     init_oneshot_process();
     init_harness();
@@ -26990,7 +27006,10 @@ function formatDriveStatusLine(runStatus, drive) {
 }
 function formatRunStatusLine(run, drive) {
   const reason = typeof drive?.receipt?.settlement?.reason === "string" ? drive.receipt.settlement.reason : "";
-  const statusLabel = run.status === "cancelled" ? formatCancelledStatus(reason) : run.status;
+  const handoff = drive?.receipt?.settlement?.handoff;
+  const attemptId = typeof handoff?.attemptId === "string" ? handoff.attemptId : "";
+  const handoffReason = typeof handoff?.reason === "string" ? handoff.reason : "";
+  const statusLabel = run.status === "cancelled" ? formatCancelledStatus(reason) : run.status === "cancelling" && attemptId.length > 0 && handoffReason.length > 0 ? `cancelling (attempt ${attemptId}, ${handoffReason})` : run.status;
   return `run ${run.runId}: ${statusLabel} (workflow ${run.workflowId}, updated ${run.updatedAt})`;
 }
 async function cmdKxmRunStatus(runtime, runId) {
