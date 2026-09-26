@@ -182,6 +182,26 @@ test("error payloads carry a schema and land on stderr in JSON and text modes", 
   }
 });
 
+test("kxm docs build and serve dry-run print the command", async () => {
+  const build = capture();
+  assert.equal(await runCli(["docs", "build", "--dry-run", "--json"], {}, build), 0);
+  const buildPayload = JSON.parse(build.read().stdout) as { ok: boolean; command: string; dryRun: boolean; detail: string };
+  assert.equal(buildPayload.ok, true);
+  assert.equal(buildPayload.command, "docs build");
+  assert.equal(buildPayload.dryRun, true);
+  assert.equal(buildPayload.detail, "node plans/kxm-roadmap/update-dashboard.mjs");
+  assert.equal(build.read().stderr, "");
+
+  const serve = capture();
+  assert.equal(await runCli(["docs", "serve", "--dry-run", "--json"], {}, serve), 0);
+  const servePayload = JSON.parse(serve.read().stdout) as { ok: boolean; command: string; dryRun: boolean; detail: string };
+  assert.equal(servePayload.ok, true);
+  assert.equal(servePayload.command, "docs serve");
+  assert.equal(servePayload.dryRun, true);
+  assert.equal(servePayload.detail, "python3 ops/docs-site/serve.py");
+  assert.equal(serve.read().stderr, "");
+});
+
 test("agent and gate CLI results share the worker envelope", async () => {
   const agentIo = capture();
   assert.equal(await runCli([

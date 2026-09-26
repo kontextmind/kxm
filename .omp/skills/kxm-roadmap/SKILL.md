@@ -6,12 +6,8 @@ description: Update the KXM roadmap when a fact on it changes. Edit only plans/k
 # KXM roadmap
 
 When a fact on the roadmap changes, edit only `plans/kxm-roadmap/state.json`.
-Set `updated` to the day of the edit. Then run the generator from the
-repository root:
-
-```bash
-node plans/kxm-roadmap/update-dashboard.mjs
-```
+Set `updated` to the day of the edit. Then run `kxm docs build` from the
+repository root (`node plans/kxm-roadmap/update-dashboard.mjs` is the fallback).
 
 Do not hand-edit `dashboard.md`, `MASTER.md`, or `phases/`.
 

@@ -11,6 +11,11 @@ the Runtime supervisor. A created run stays `created` until
 an admitted model; `--simulated` is the model-free producer. Do not invent get,
 create, or logs verbs under `runs`.
 
+`kxm docs build` regenerates the docs site from the roadmap state by running
+`node plans/kxm-roadmap/update-dashboard.mjs` at the project root. `kxm docs
+serve` serves that site with `python3 ops/docs-site/serve.py` and passes
+`--port` through when it is set. Both require a KXM project.
+
 ## Commands
 
 | Command | Purpose | Options / arguments |
@@ -34,6 +39,8 @@ create, or logs verbs under `runs`.
 | `kxm assign observe-cost` | Import one cost-only observation | `--task-dir <path>`, `--input <path>` |
 | `kxm assign accept` | Bind a witnessed commit and two critic records | `--task-dir <path>`, `--commit <sha>`, `--record-dir <path>`, `--critic <path>` twice, optional `--observed-pr <id>`, `--observed-ci <id>` |
 | `kxm assign change-report` | Report attempts, rework, and spend | `--task-dir <path>` |
+| `kxm docs build` | Regenerate the docs site from roadmap state | `--dry-run`, `--json` |
+| `kxm docs serve` | Serve the built site on the tailnet address | `--port <port>`, `--dry-run`, `--json` |
 
 The run record and its events keep only the prompt's hash, but the full
 prompt text is kept in a local `run-events.db.run-prompts.json` file (mode

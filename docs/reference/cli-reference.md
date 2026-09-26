@@ -14,7 +14,7 @@ Output shown under examples was captured from a source checkout, inside a throwa
 - Setup: [`init`](#kxm-init), [`config`](#kxm-config), [`completion`](#kxm-completion), [`trust`](#kxm-trust)
 - Hub and sessions: [`hub`](#kxm-hub-view), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
 - Harnesses, models, and roles: [`harness`](#kxm-harness), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
-- Running work: [`lane`](#kxm-lane), [`assign`](#kxm-assign), [`run`](#kxm-run), [`runs`](#kxm-runs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
+- Running work: [`lane`](#kxm-lane), [`land`](#kxm-land), [`assign`](#kxm-assign), [`run`](#kxm-run), [`runs`](#kxm-runs), [`docs`](#kxm-docs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
 - Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing), [`prices`](#kxm-prices)
 - Operations: [`backup`](#kxm-backup), [`restore`](#kxm-restore), [`tenant`](#kxm-tenant), [`ssh`](#kxm-ssh), [`help`](#kxm-help)
 - [Known behavior gaps](#known-behavior-gaps)
@@ -100,7 +100,7 @@ kxm -V
 `--dry-run` changes nothing: no file is written, deleted, or moved, no request that changes hub or Runtime state is sent, no process is started, and no remote command runs. A command that cannot say what it would do without doing some of it refuses the flag instead of acting.
 
 - Plan with `planned`: `backup`, `restore`, `config set`, `role add|remove|modify|set-host|resume`, `workflow add|remove|modify`, `goal create`, `task create|run|sync`, `memory note|sync`, `skills evaluate|promote|reject`, `context promote`, `context wiki-compile --out`, `auth token`, `session token`, `session brief`, and `ssh run|file|close`. Each prints its normal result plus `dryRun: true` and `planned`, a list of `{action, target}` entries whose `action` is `write`, `delete`, `move`, `request`, or `ssh`. Text mode prints `dry run: <summary>` and one indented `would <action> <target>` line per entry (`session brief` appends `dry run: would write <file>` lines to the brief instead).
-- Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, and `improve report`. `gate github watch --dry-run` still polls GitHub but does not post the signal.
+- Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `docs build|serve`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, and `improve report`. `gate github watch --dry-run` still polls GitHub but does not post the signal.
 - Read-only commands run as usual, without leaving a trace: a local SQLite store is opened without creating `-wal` or `-shm` files, and `runs status|list|receipt` only attach to a running Runtime supervisor. With no supervisor running they exit 2 with `dry_run_unsupported` instead of starting one. `context wiki-compile --dry-run` still asks the hub to compile, which is a read.
 - Refused: `kxm models` (the interactive screen) and `kxm prices acknowledge` exit 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
 
@@ -147,7 +147,7 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 | User config directory (`KXM_USER_CONFIG_DIR`, default `~/.config/kxm`) | `config.yaml` (user scope), `session.token`, global `roles/` and `workflows/`, `role-hosts.yaml`, `completions/` | `config --scope user`, `auth token`, `session brief\|token`, `role`/`workflow` with `--scope global`, `studio serve`, `completion install` |
 | User state root (`KXM_STATE_HOME`; macOS `~/Library/Application Support/KXM`; Linux `$XDG_STATE_HOME/kxm` or `~/.local/state/kxm`; Windows `%LOCALAPPDATA%\KXM`) | `hub-env.json` (persisted hub credentials), `hub-binding.json`, `runtime/` (Runtime supervisor registry and per-project run stores), `update.yaml`, repository bindings | `hub start\|bind\|unbind`, every hub client, `run`, `runs`, `runtime`, `tenant status`, `update`, `init --repository`, and (read-only, the project's run store) `improve` and `routing report` |
 
-`init`, `trust`, `run`, `runs`, `runtime sync-retry`, `tenant status`, and `studio layout` find the project root by walking up from the current directory. `improve` and `routing report` use the current directory's Git root when it holds `.kxm/project.yaml`, to find the project's Runtime run store (and, for `improve`, its configuration and default candidate directory). `config`, `role`, `workflow definitions|add|remove|modify`, `goal`, `task`, `memory`, `skills`, `backup`, `restore`, `studio serve`, and `ssh` (socket directory) use `.kxm` in the current directory. Run those from the project root.
+`init`, `trust`, `run`, `runs`, `docs build`, `docs serve`, `runtime sync-retry`, `tenant status`, and `studio layout` find the project root by walking up from the current directory. `improve` and `routing report` use the current directory's Git root when it holds `.kxm/project.yaml`, to find the project's Runtime run store (and, for `improve`, its configuration and default candidate directory). `config`, `role`, `workflow definitions|add|remove|modify`, `goal`, `task`, `memory`, `skills`, `backup`, `restore`, `studio serve`, and `ssh` (socket directory) use `.kxm` in the current directory. Run those from the project root.
 
 ## Task to command
 
@@ -1561,6 +1561,57 @@ Prints the task's attempts, rework, and spend. The runner keeps provider-reporte
 | Option | Argument | Description |
 |---|---|---|
 | `--task-dir` | `<path>` | Absolute path to the task directory |
+
+## `kxm docs`
+
+Build and serve the tailnet docs site from this checkout. Both subcommands need a KXM project: the Git root that contains `.kxm/project.yaml`. They run from that root. No hub and no Runtime supervisor.
+
+```text
+kxm docs build
+kxm docs serve [--port <port>]
+```
+
+```bash
+kxm docs build --dry-run
+kxm docs serve --dry-run --port 8765
+```
+
+### `kxm docs build`
+
+Runs `node plans/kxm-roadmap/update-dashboard.mjs` and returns that process's exit code. The generator refreshes the roadmap pages and the MkDocs inputs from `plans/kxm-roadmap/state.json`.
+
+- No command-specific options.
+- Honors `--dry-run`: prints `node plans/kxm-roadmap/update-dashboard.mjs` and does not start the process. JSON key: `detail` (that command line), plus `dryRun: true`.
+- Errors (exit 1): `project_required`, `docs_generator_missing` when `plans/kxm-roadmap/update-dashboard.mjs` is absent.
+
+### `kxm docs serve`
+
+Runs `python3 ops/docs-site/serve.py` with output streamed to the terminal, and returns that process's exit code. `--port` is appended as `--port <port>` when it is set. The server binds a tailnet address; see `ops/docs-site/serve.py`.
+
+| Option | Argument | Default | Description |
+|---|---|---|---|
+| `--port` | `<port>` | the server's own port list | Port passed through to `serve.py` |
+
+- Honors `--dry-run`: prints `python3 ops/docs-site/serve.py` (and `--port <port>` when given) and does not start the process. JSON key: `detail`.
+- Errors (exit 1): `project_required`, `docs_server_missing` when `ops/docs-site/serve.py` is absent.
+
+```bash
+kxm docs build --dry-run --json
+```
+
+```text
+{"schema":"kxm.cli-result.v1","ok":true,"command":"docs build","dryRun":true,"detail":"node plans/kxm-roadmap/update-dashboard.mjs"}
+```
+
+```bash
+kxm docs serve --dry-run --json
+```
+
+```text
+{"schema":"kxm.cli-result.v1","ok":true,"command":"docs serve","dryRun":true,"detail":"python3 ops/docs-site/serve.py"}
+```
+
+A live `kxm docs serve` runs until the server exits. Not run for this page.
 
 ## `kxm run`
 

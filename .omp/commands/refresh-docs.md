@@ -2,7 +2,7 @@
 description: Rebuild the docs site from the roadmap state without reanalyzing
 ---
 
-From the repository root, run `node plans/kxm-roadmap/update-dashboard.mjs`.
+From the repository root, run `kxm docs build` (`node plans/kxm-roadmap/update-dashboard.mjs` is the fallback).
 
 Do not edit `plans/kxm-roadmap/state.json`. Do not reanalyze the roadmap.
 

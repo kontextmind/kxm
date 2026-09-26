@@ -1,5 +1,6 @@
 // The agent host must be restarted once for this hook to load.
 // This hook regenerates pages. It never reanalyzes the roadmap.
+// Operators run `kxm docs build` (`node plans/kxm-roadmap/update-dashboard.mjs` is the fallback).
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
@@ -24,7 +25,7 @@ function watched(input) {
 
 export default function kxmRoadmapHook(pi) {
   const run = {
-    description: "Regenerate roadmap pages and the docs site. Does not reanalyze.",
+    description: "Regenerate roadmap pages and the docs site with kxm docs build (node plans/kxm-roadmap/update-dashboard.mjs is the fallback). Does not reanalyze.",
     handler: async (_args, ctx) => {
       regenerate(ctx);
     },

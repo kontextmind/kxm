@@ -31,11 +31,7 @@ not all `done`.
 - A claim that is not in this checkout stays "not observed from this checkout"
   with a drift row.
 
-Run the generator from the repository root:
-
-```bash
-node plans/kxm-roadmap/update-dashboard.mjs
-```
+Run `kxm docs build` from the repository root (`node plans/kxm-roadmap/update-dashboard.mjs` is the fallback).
 
 ## Critic
 

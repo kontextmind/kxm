@@ -1760,7 +1760,7 @@ test("real just does not preload a working-directory .env, and every control can
 /** The complete shipped recipe surface. Adding one is a deliberate act, not drift. */
 const EXPECTED_RECIPES = [
   "accept", "assign", "attribute", "change-report", "check-generated", "default", "dispatch",
-  "docker-install-smoke", "docs-build", "docs-serve", "harnesses", "impl", "impl-bg", "observe-cost", "plan", "plan-current",
+  "docker-install-smoke", "harnesses", "impl", "impl-bg", "observe-cost", "plan", "plan-current",
   "review-arch", "review-cli", "runs", "verify", "witness", "worktree", "worktree-drop",
 ].sort();
 
