@@ -2492,6 +2492,8 @@ test("kxm assign refuses assign_runner_missing when the runner script is absent"
     assert.equal(payload.error, "assign_runner_missing");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("kxm run implement-only --dry-run plans with no prerequisites", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "kxm-impl-only-"));
