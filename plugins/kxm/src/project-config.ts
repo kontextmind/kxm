@@ -1253,7 +1253,7 @@ function validateBundle(
     }
   }
 
-  if (projectRoot && existsSync(join(projectRoot, ".kxm", "roster.yaml"))) {
+  if (projectRoot && existsSync(join(projectRoot, "scripts", "harness-run.mjs"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }
 
@@ -1328,7 +1328,7 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
   }
   const ceilings = developerCeilings();
   if (!ceilings.ok) {
-    return [...parseIssues, issue("semantic", "developer_ceilings_unavailable", ".kxm/roster.yaml", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+    return [...parseIssues, issue("semantic", "developer_ceilings_unavailable", ".kxm/models", `developer ceilings could not be loaded: ${ceilings.detail}`)];
   }
   const result = validatePolicyDraft({ models, roles, evidence }, {
     ceilings: ceilings.ROUTES,

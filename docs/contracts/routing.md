@@ -134,7 +134,7 @@ just plan-current /abs/task-dir /abs/plan.md <sha256> <base-commit> <expected-ge
 just change-report /abs/task-dir
 ```
 
-`just impl|plan|review-arch|review-cli` remain harness transport. They do not
+`kxm lane run` remain harness transport. They do not
 create assignment identity, witness receipts, or `accepted.json`.
 
 Distinctions the report and docs must keep:
@@ -161,7 +161,7 @@ learned policy and not a catalog feed. Phase 9 may use this report to
 Per-candidate acceptance requires an actual native writer, the fixed witness,
 and both designated native reviews. PR/CI/merge complete issue 127. This
 document does not assert those gates have passed. Low-level
-`just impl|plan|review-arch|review-cli` recipes remain harness transport.
+`kxm lane run` recipes remain harness transport.
 
 ## Implemented: v2 record
 

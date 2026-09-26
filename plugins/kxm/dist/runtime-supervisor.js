@@ -15663,21 +15663,9 @@ function coreTemplate(projectId, projectName, variant) {
   ]);
   if (variant === "v4-registry") {
     const coordinator = files.get(".kxm/agents/coordinator.yaml");
-    if (coordinator) {
-      files.set(".kxm/agents/coordinator.yaml", {
-        ...coordinator,
-        harness: "claude",
-        model: { provider: "anthropic", model: "fable" }
-      });
-    }
+    if (coordinator) files.set(".kxm/agents/coordinator.yaml", { ...coordinator, role: "planner" });
     const implementer = files.get(".kxm/agents/implementer.yaml");
-    if (implementer) {
-      files.set(".kxm/agents/implementer.yaml", {
-        ...implementer,
-        harness: "grok",
-        model: { provider: "xai", model: "grok-4.6" }
-      });
-    }
+    if (implementer) files.set(".kxm/agents/implementer.yaml", { ...implementer, role: "writer" });
     const workflow = files.get(".kxm/workflows/default.yaml");
     if (workflow) {
       const limits = { ...workflow.limits };
@@ -17916,7 +17904,7 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
       }
     }
   }
-  if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roster.yaml"))) {
+  if (projectRoot && existsSync3(join2(projectRoot, "scripts", "harness-run.mjs"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }
   return sortIssues3(issues);
@@ -17982,7 +17970,7 @@ function developerRolePolicyIssues(projectRoot) {
   }
   const ceilings = developerCeilings();
   if (!ceilings.ok) {
-    return [...parseIssues, issue3("semantic", "developer_ceilings_unavailable", ".kxm/roster.yaml", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+    return [...parseIssues, issue3("semantic", "developer_ceilings_unavailable", ".kxm/models", `developer ceilings could not be loaded: ${ceilings.detail}`)];
   }
   const result = validatePolicyDraft({ models, roles, evidence }, {
     ceilings: ceilings.ROUTES,
@@ -24479,14 +24467,14 @@ var import_yaml4 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/routes.ts
 var RETIRED_POLICY = ".kxm/producers.yaml";
-var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
+var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [] });
 function loadRoutePolicy(root) {
   if (existsSync9(join10(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
   const path = join10(root, ".kxm", "routes.yaml");
   if (!existsSync9(path)) return empty();
   const value = (0, import_yaml6.parse)(readFileSync7(path, "utf8"));
   if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
-  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
+  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [] };
 }
 function listRoleBindings(root) {
   const dir = join10(root, ".kxm", "roles");
@@ -28070,25 +28058,15 @@ function commitCommandUncertainty(context, prepared, token, reason, observation,
   }
 }
 var kxmPanelDispatchSeams = {};
-function selectorsNamedByRoutes(projectRoot, routeIds) {
-  const selectors = /* @__PURE__ */ new Set();
-  for (const routeId2 of routeIds) {
-    const file = join15(projectRoot, ".kxm", "models", `${routeId2}.yaml`);
-    if (!existsSync12(file)) continue;
-    let parsed;
-    try {
-      parsed = (0, import_yaml9.parse)(readFileSync10(file, "utf8"));
-    } catch {
-      continue;
-    }
-    const model = typeof parsed.model === "string" ? parsed.model : "";
-    const vendor = typeof parsed.vendor === "string" ? parsed.vendor : "";
-    const harness = typeof parsed.harness === "string" ? parsed.harness : "";
-    if (model) selectors.add(model);
-    if (vendor && model) selectors.add(`${vendor}/${model}`);
-    if (harness && model) selectors.add(`${harness}/${model}`);
+function readYamlFile(file) {
+  if (!existsSync12(file)) return void 0;
+  try {
+    const parsed = (0, import_yaml9.parse)(readFileSync10(file, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+    return parsed;
+  } catch {
+    return void 0;
   }
-  return [...selectors];
 }
 function unreconciledPanelAttemptId(state) {
   const current = state.currentStep;
@@ -28104,83 +28082,100 @@ function unreconciledPanelAttemptId(state) {
   }
   return void 0;
 }
-function resolveProducerRoute(projectRoot, step, agentId) {
-  let agentModel;
-  const agentFile = join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
-  if (existsSync12(agentFile)) {
-    try {
-      const parsed = (0, import_yaml9.parse)(readFileSync10(agentFile, "utf8"));
-      if (typeof parsed?.model === "string") {
-        agentModel = parsed.model;
-      } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
-        const declared = parsed.model;
-        const providerOk = typeof declared.provider === "string" && declared.provider.length > 0 && !declared.provider.includes("/");
-        const modelOk = typeof declared.model === "string" && declared.model.length > 0 && !declared.model.startsWith("/") && !declared.model.endsWith("/");
-        if (providerOk && modelOk) {
-          agentModel = `${declared.provider}/${declared.model}`;
-        } else {
-          return {
-            error: {
-              reason: "step_unsupported",
-              field: "model",
-              detail: "producer_route_unsupported: invalid model declaration"
-            }
-          };
+function resolveProducerRoute(projectRoot, _step, agentId) {
+  const agent = readYamlFile(join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`));
+  const role = typeof agent?.role === "string" ? agent.role : "";
+  if (!role) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent has no role"
+      }
+    };
+  }
+  const roleDoc = readYamlFile(join15(projectRoot, ".kxm", "roles", `${role}.yaml`));
+  const roster = Array.isArray(roleDoc?.roster) ? roleDoc.roster : void 0;
+  if (!roster) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: role '${role}' has no roster`
+      }
+    };
+  }
+  const policy = loadRoutePolicy(projectRoot);
+  for (const entry of roster) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record2 = entry;
+    if (typeof record2.route !== "string" || record2.route.length === 0) continue;
+    const doc = readYamlFile(join15(projectRoot, ".kxm", "models", `${record2.route}.yaml`));
+    if (!doc || doc.status !== "admitted") continue;
+    const modelName = typeof doc.model === "string" ? doc.model : "";
+    const vendor = typeof doc.vendor === "string" ? doc.vendor : "";
+    const harness = typeof doc.harness === "string" ? doc.harness : "";
+    if (!modelName || !vendor || !harness) continue;
+    const candidates = [modelName, `${vendor}/${modelName}`, `${harness}/${modelName}`];
+    const admittedSelector = candidates.find((candidate) => policy.admitted.includes(candidate));
+    const disabledSelector = candidates.find((candidate) => policy.disabled.includes(candidate));
+    if (!admittedSelector && disabledSelector) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: first admitted route '${record2.route}' for role '${role}' is disabled`
         }
-      }
-    } catch {
+      };
     }
-  }
-  let selector = typeof step.model === "string" ? step.model : agentModel;
-  if (!selector) {
-    if (agentId === "implementer") {
-      selector = "xai/grok-4.6";
+    const selector = admittedSelector ?? (modelName.includes("/") ? modelName : `${vendor}/${modelName}`);
+    if (policy.disabled.includes(selector)) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: first admitted route '${record2.route}' for role '${role}' is disabled`
+        }
+      };
     }
-  }
-  if (!selector) {
+    if (!policy.admitted.includes(selector)) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: model '${selector}' is not admitted`
+        }
+      };
+    }
+    const slash = selector.indexOf("/");
+    if (slash <= 0 || slash === selector.length - 1) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: invalid selector '${selector}'`
+        }
+      };
+    }
+    const permissions = Array.isArray(doc.permissions) ? doc.permissions.filter((item) => typeof item === "string") : [];
     return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: "producer_route_unsupported: agent or step has no model declared"
-      }
+      provider: selector.slice(0, slash),
+      model: selector.slice(slash + 1),
+      selector,
+      harness,
+      routeId: record2.route,
+      role,
+      permissions,
+      ...typeof record2.effort === "string" ? { effort: record2.effort } : {}
     };
   }
-  const slash = selector.indexOf("/");
-  if (slash <= 0 || slash === selector.length - 1) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: invalid selector '${selector}'`
-      }
-    };
-  }
-  if (!isRouteAdmitted(projectRoot, selector)) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: model '${selector}' is not admitted`
-      }
-    };
-  }
-  const role = agentId === "implementer" ? "writer" : agentId;
-  const roleBindings = listRoleBindings(projectRoot);
-  const roster = roleBindings[role];
-  const rosterSelectors = roster ? selectorsNamedByRoutes(projectRoot, roster) : void 0;
-  if (rosterSelectors && !rosterSelectors.includes(selector)) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: model '${selector}' not in role '${role}' roster`
-      }
-    };
-  }
-  const provider = selector.slice(0, slash);
-  const model = selector.slice(slash + 1);
-  return { provider, model, selector };
+  return {
+    error: {
+      reason: "step_unsupported",
+      field: "model",
+      detail: `producer_route_unsupported: role '${role}' has no admitted route`
+    }
+  };
 }
 function projectAgentStepTimeoutMs(context, run) {
   return loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.agentStepTimeoutMs ?? KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
@@ -28398,8 +28393,7 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
     const writeRefusal = unsupportedLiveWrite(
       context.projectRoot,
       step,
-      agentId,
-      resolvedRoute.selector,
+      resolvedRoute,
       loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.maxConcurrentRuns
     );
     if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
@@ -28610,7 +28604,7 @@ function birthMember(context, input) {
       prompt: input.step.instructions ? `${input.step.instructions}
 
 ${generatedPrompt}` : generatedPrompt,
-      thinking: input.stepAttempt <= 1 ? "low" : "medium",
+      thinking: resolvedRoute?.effort ?? (input.stepAttempt <= 1 ? "low" : "medium"),
       permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       ...(input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== void 0 ? { timeoutMs: input.step.timeoutMs } : {},
       contextPacket,
@@ -29390,25 +29384,7 @@ function unsupportedStep(plan, step, producerId) {
   }
   return void 0;
 }
-function readYamlRecord(path) {
-  if (!existsSync12(path)) return void 0;
-  try {
-    const parsed = (0, import_yaml9.parse)(readFileSync10(path, "utf8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-  } catch {
-    return void 0;
-  }
-  return void 0;
-}
-function agentHarness(projectRoot, agentId) {
-  const harness = readYamlRecord(join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`))?.harness;
-  return typeof harness === "string" && harness.length > 0 ? harness : void 0;
-}
-function projectDefaultHarness(projectRoot) {
-  const harness = readYamlRecord(join15(projectRoot, ".kxm", "project.yaml"))?.defaultHarness;
-  return typeof harness === "string" && harness.length > 0 ? harness : "pi";
-}
-function unsupportedLiveWrite(projectRoot, step, agentId, selector, maxConcurrentRuns) {
+function unsupportedLiveWrite(projectRoot, step, route, maxConcurrentRuns) {
   if (!Object.values(step.repositories).some((access) => access === "write")) return void 0;
   if (step.assignments.maximum !== 1) {
     return {
@@ -29424,42 +29400,23 @@ function unsupportedLiveWrite(projectRoot, step, agentId, selector, maxConcurren
       detail: "live write steps require limits.maxConcurrentRuns of 1; concurrent runs share one checkout"
     };
   }
-  const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
-  if (!oneShotWriterArgs(harness)) {
+  if (!oneShotWriterArgs(route.harness)) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: `live write steps require an audited writer profile; ${harness} has none`
+      detail: `live write steps require an audited writer profile; ${route.harness} has none`
     };
   }
-  const rosterPath = join15(projectRoot, ".kxm", "roster.yaml");
-  if (!existsSync12(rosterPath)) return void 0;
-  const roster = readYamlRecord(rosterPath);
-  if (!roster || roster.schema !== "kxm.developer-roster.v1") {
-    return { reason: "step_unsupported", field: "model", detail: "live write steps require a readable kxm.developer-roster.v1" };
+  const writerIds = listRoleBindings(projectRoot).writer;
+  if (!Array.isArray(writerIds) || writerIds.length === 0) {
+    return { reason: "step_unsupported", field: "model", detail: "writer roster has no admitted edit route" };
   }
-  const routes = roster.routes;
-  const lineup = roster.lineup;
-  const writerIds = lineup && typeof lineup === "object" && !Array.isArray(lineup) ? lineup.writer : void 0;
-  if (!routes || typeof routes !== "object" || Array.isArray(routes) || !Array.isArray(writerIds)) {
-    return { reason: "step_unsupported", field: "model", detail: "developer roster has no writer lineup" };
-  }
-  const allowed = writerIds.some((id) => {
-    if (typeof id !== "string") return false;
-    const route = routes[id];
-    if (!route || typeof route !== "object" || Array.isArray(route)) return false;
-    const record2 = route;
-    if (record2.harness !== harness || record2.status !== "admitted") return false;
-    if (!Array.isArray(record2.permissions) || !record2.permissions.includes("edit")) return false;
-    const model = typeof record2.model === "string" ? record2.model : "";
-    const vendor = typeof record2.vendor === "string" ? record2.vendor : "";
-    return model === selector || vendor.length > 0 && `${vendor}/${model}` === selector;
-  });
-  if (!allowed) {
+  const named = writerIds.includes(route.routeId);
+  if (!named || !route.permissions.includes("edit")) {
     return {
       reason: "step_unsupported",
       field: "model",
-      detail: `live write route ${selector} on ${harness} is not on the developer roster writer lineup`
+      detail: `live write route ${route.selector} on ${route.harness} is not an admitted edit route on the writer roster`
     };
   }
   return void 0;

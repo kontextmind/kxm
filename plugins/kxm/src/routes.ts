@@ -5,15 +5,15 @@ import { rolePurposeForId } from "./role.ts";
 
 const RETIRED_POLICY = ".kxm/producers.yaml";
 
-export interface RoutePolicy { schema: "kxm.routes.v2"; updatedAt: string; admitted: string[]; disabled: string[]; roles: Record<string, string[]>; }
-const empty = (): RoutePolicy => ({ schema: "kxm.routes.v2", updatedAt: new Date().toISOString(), admitted: [], disabled: [], roles: {} });
+export interface RoutePolicy { schema: "kxm.routes.v2"; updatedAt: string; admitted: string[]; disabled: string[]; }
+const empty = (): RoutePolicy => ({ schema: "kxm.routes.v2", updatedAt: new Date().toISOString(), admitted: [], disabled: [] });
 export function loadRoutePolicy(root: string): RoutePolicy {
   if (existsSync(join(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
   const path = join(root, ".kxm", "routes.yaml");
   if (!existsSync(path)) return empty();
   const value = parse(readFileSync(path, "utf8")) as Partial<RoutePolicy>;
   if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
-  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(), admitted: value.admitted.filter((x): x is string => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x): x is string => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, (v as unknown[]).filter((x): x is string => typeof x === "string")])) : {} };
+  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(), admitted: value.admitted.filter((x): x is string => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x): x is string => typeof x === "string") : [] };
 }
 export function updateRouteState(root: string, model: string, state: "admitted" | "disabled"): RoutePolicy {
   return setRouteState(root, model, state);

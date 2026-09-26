@@ -654,8 +654,7 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
     // Task planning requires a route the live read-only Runtime can execute.
     writeFileSync(join(project, ".kxm", "workflows", "inspect.yaml"), "schema: kxm.workflow.v1\ncoordinator: coordinator\nsteps:\n  - id: inspect\n    kind: agent\n    agent: implementer\n    repositories:\n      control: read\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n      failed:\n        target: $terminal\n        terminalStatus: failed\n");
     writeFileSync(join(project, ".kxm", "agents", "implementer.yaml"), JSON.stringify({
-      schema: "kxm.agent.v1", purpose: "Inspect", repositories: { control: "write" },
-      model: { provider: "openrouter", model: "qwen/qwen3-coder-plus" },
+      schema: "kxm.agent.v1", purpose: "Inspect", role: "writer", repositories: { control: "write" },
     }));
     writeFileSync(join(project, ".kxm", "models", "qwen-route.yaml"), `schema: kxm.model.v2
 id: qwen-route

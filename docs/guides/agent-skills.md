@@ -1,6 +1,6 @@
 # Agent skills
 
-KXM ships a suite of Agent Skills that teach a coding agent how to use the `kxm` CLI and the `kxm_*` tools safely: which command owns a task, which verbs exist, and which steps belong to a person. This page is for anyone running KXM from Claude Code, Pi or Codex, and for contributors who edit the skills. Skills document the CLI; they grant no permission, admit no writer and replace no trusted `.kxm/roster.yaml` policy.
+KXM ships a suite of Agent Skills that teach a coding agent how to use the `kxm` CLI and the `kxm_*` tools safely: which command owns a task, which verbs exist, and which steps belong to a person. This page is for anyone running KXM from Claude Code, Pi or Codex, and for contributors who edit the skills. Skills document the CLI; they grant no permission, admit no writer and replace no trusted `the role and model files` policy.
 
 Governed skills that your own runs produce are a separate lifecycle; see [Governed skills](governed-skills.md).
 

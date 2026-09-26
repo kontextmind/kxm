@@ -12,6 +12,14 @@
     "model": { "$ref": "common.schema.json#/$defs/modelSelector" },
     "executor": { "$ref": "common.schema.json#/$defs/identifier" },
     "harness": { "$ref": "common.schema.json#/$defs/identifier" },
+    "role": { "$ref": "common.schema.json#/$defs/identifier" },
+    "effort": { "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"] },
+    "skills": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/identifier" },
+      "maxItems": 64,
+      "uniqueItems": true
+    },
     "tools": { "$ref": "common.schema.json#/$defs/toolPolicy" },
     "defaultRepositoryAccess": { "$ref": "common.schema.json#/$defs/repositoryAccess" },
     "repositories": {

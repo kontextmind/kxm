@@ -4,6 +4,23 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Changed (dispatch reads role and model files)
+
+- **Dispatch reads role and model files, and agents bind a role.**
+  `scripts/roster-policy.mjs` builds the developer policy from
+  `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.
+  The engine resolves harness, model, and effort from the agent's `role`
+  and that role's roster. `kxm routes` prints membership from the role files.
+  `.kxm/routes.yaml` keeps admitted and disabled selectors.
+
+### Removed (roster file and transport recipes)
+
+- **The developer roster file and the transport just recipes.**
+  The single roster document and the `impl`, `plan`, `review-arch`,
+  `review-cli`, `impl-bg`, and `dispatch` recipes are gone. One-step
+  workflows are the transport: `kxm lane run` with `implement-only`,
+  `review-arch-only`, or `review-cli-only`.
+
 ### Added
 
 - **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**

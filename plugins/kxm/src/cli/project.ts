@@ -910,7 +910,8 @@ export async function cmdModelsScreen(runtime: Runtime): Promise<number> {
 
 export async function cmdRouteList(runtime: Runtime): Promise<number> {
   const policy = loadRoutePolicy(runtime.dirs.workdir);
-  print(runtime.io, runtime.json, { ok: true, command: "routes list", policy }, [...policy.admitted.map((x) => `admitted ${x}`), ...policy.disabled.map((x) => `disabled ${x}`)].join("\n") || "no route decisions");
+  const membership = Object.entries(listRoleBindings(runtime.dirs.workdir)).flatMap(([role, ids]) => ids.map((id) => `${role} ${id}`));
+  print(runtime.io, runtime.json, { ok: true, command: "routes list", policy, membership }, [...policy.admitted.map((x) => `admitted ${x}`), ...policy.disabled.map((x) => `disabled ${x}`), ...membership].join("\n") || "no route decisions");
   return 0;
 }
 

@@ -13,8 +13,8 @@
  *   - `.kxm/roles/<role-slug>.yaml`    (kxm.role.v2)
  *   - `.kxm/models/<route-id>.yaml`    (kxm.model.v2)
  *   - admitted selectors appended to `.kxm/routes.yaml`
- * It never writes retired legacy authority (`.kxm/config`, retired
- * `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy.
+ * It never writes retired legacy authority (`.kxm/config` or
+ * `.kxm/roster.json`). Role and model files are the dispatch authority.
  *
  * Guide research ids are not dispatch ids. Only the admitted map below is
  * written, and only when that harness is authenticated. Unmapped ids are skipped.

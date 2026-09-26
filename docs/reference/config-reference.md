@@ -31,7 +31,7 @@ Related pages:
 | `.kxm/gates.yaml` | `kxm.gate-registry.v1` | The executable gate registry | You; `kxm init` creates it | Yes |
 | `.kxm/roles/<role>.yaml` | `kxm.role.v2` | Model rosters per role | You, `kxm role`, `kxm models` | Yes |
 | `.kxm/routes.yaml` | `kxm.routes.v2` | Admitted and disabled model routes | You, `kxm routes`, `kxm models` | Yes |
-| `.kxm/roster.yaml` | `kxm.developer-roster.v1` | Developer assignment roster for the KXM source repository | Maintainers | Yes, and it must be committed |
+| `the role and model files` | `the assembled developer policy` | Developer assignment roster for the KXM source repository | Maintainers | Yes, and it must be committed |
 | `.kxm/prices.yaml` | `kxm.prices.v1` | Dated, hash-pinned list prices | You | Yes |
 | `.kxm/models/inventory.yaml` | `kxm.model-inventory.v1` | Discovered model catalog | `kxm models inventory-refresh` only | Your choice (generated) |
 | `.kxm/config.yaml`, `~/.config/kxm/config.yaml` | `kxm.config.v1` | Personalization and hub auto-start | `kxm config set` | Project file: yes, unless ignored |
@@ -67,7 +67,7 @@ Live dispatch admission (checked by the Runtime for every attempt):
    agent model "provider/model" ──> .kxm/routes.yaml: admitted and not disabled
                                 └─> .kxm/roles/<role>.yaml roster, if that file exists
                                     (role = agent id; "writer" for agent "implementer")
-   developer assignments (scripts/assignment-run.mjs) ──> .kxm/roster.yaml routes + lineup
+   developer assignments (scripts/assignment-run.mjs) ──> the role and model files routes + lineup
 
 Cost accounting:
    producer token usage ──> .kxm/prices.yaml (dated today, hash verified) ──> list estimate
@@ -85,7 +85,7 @@ Cost accounting:
 | Revisions pinned on every run | `configRevision` (the bundle), memory revision (`.kxm/memory` without `candidates/`, plus `.kxm/skills/promoted`), executor policy, tool policy (agent and step `tools` plus the gate registry) | `kxm run` |
 
 Nothing validates `routes.yaml`, `roles/` (other than `writer.yaml`),
-`roles`, `roster.yaml`, `prices.yaml`, `inventory.yaml`,
+`roles`, `the role files`, `prices.yaml`, `inventory.yaml`,
 `config.yaml`, `modes.yaml`, memory, tasks, goals, or webhook JSON during
 `kxm init`. Their own readers report problems when they run. None of them are
 part of `configRevision`, and `kxm trust check` does not see them: a change to
@@ -330,7 +330,7 @@ reference. Schema: `schemas/agent.schema.json`; semantic checks in
 | `harness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, the project's `defaultHarness` | Loader (`harness_unknown`, harness and model pairing); live dispatch launches this harness |
 | `model` | One selector: `{provider, model}`, `{profile}`, or `{tag, capabilities}` | Optional | See [Model selectors](#model-selectors) |
 | `executor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the executor-policy revision; no dispatch path selects an executor from it yet |
-| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`); pinned in the tool-policy revision |
+| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`); pinned in the tool-policy revision. An agent preset may only narrow the role preset. |
 | `tools.allow`, `tools.deny` | Unique identifiers, at most 128 each | Optional | A tool in both lists is `tool_policy_contradiction`; steps may only narrow the ceiling |
 | `defaultRepositoryAccess` | `none`, `read`, or `write` | Optional; the ceiling is `none` when absent | Loader: access ceiling for repositories not listed in `repositories` |
 | `repositories` | Map of repository ID to `none`, `read`, or `write`; at most 64 | Optional | Loader: per-repository access ceiling; IDs must be declared (`repository_unknown`) |
@@ -503,11 +503,11 @@ status: admitted
 permissions:
   - edit
 origin:
-  source: .kxm/roster.yaml
+  source: the role and model files
   sha256: b2bd628604e8fec5afdff2a1f2c104ed14ff785686bb1f38272bc972a310c806
 ```
 
-Commands: `kxm init`, `kxm run`, and `kxm trust` load these files. `kxm role modify --add-route` refuses a route id that has no file here (exit 1). Dispatch membership for a role reads `harness`, `model`, and `vendor`. The developer assignment runner still reads `.kxm/roster.yaml` until P2.
+Commands: `kxm init`, `kxm run`, and `kxm trust` load these files. `kxm role modify --add-route` refuses a route id that has no file here (exit 1). Dispatch membership for a role reads `harness`, `model`, and `vendor`. The developer assignment runner still reads `the role and model files` until P2.
 
 ## `.kxm/workflows/<id>.yaml` (`kxm.workflow.v1`)
 
@@ -695,8 +695,8 @@ these, the run is handed off (`step_unsupported`, `gate_unsupported`, or
 - A live (non-simulated) step with `write` access to any repository when its
   agent's harness has no audited writer profile (only `pi` and `grok` have
   one), when `assignments.maximum` is above 1, when the project's
-  `limits.maxConcurrentRuns` is above 1, or when `.kxm/roster.yaml` exists and
-  is not a `kxm.developer-roster.v1` whose writer lineup admits that harness
+  `limits.maxConcurrentRuns` is above 1, or when `the role and model files` exists and
+  is not a `the assembled developer policy` whose writer lineup admits that harness
   and model with `edit` permission. The checkout witness can attribute a
   change only to one writer at a time.
 - Gate steps with `assignments.allowedAgents`, any assignment count or
@@ -993,7 +993,7 @@ global one with the same id.
 
 Roster order is preference. `kxm role list` shows the first route as the
 primary. The Runtime checks membership. The model that runs still comes from
-the agent file. The developer assignment runner still reads `.kxm/roster.yaml`
+the agent file. The developer assignment runner still reads `the role and model files`
 until P2.
 
 ```yaml
@@ -1069,7 +1069,7 @@ changes), `kxm models` (interactive), the Runtime, and the live producer.
 Route changes are not part of `configRevision` and `kxm trust check` does not
 report them; review them in the pull request diff.
 
-## `.kxm/roster.yaml` (`kxm.developer-roster.v1`)
+## `the role and model files` (`the assembled developer policy`)
 
 The developer roster for `scripts/assignment-run.mjs` (the `just` assignment
 recipes; see [Assignment runner](../contributing/assignment-runner.md)). It applies to the KXM
@@ -1081,7 +1081,7 @@ It has no dispatch authority in the project Runtime.
 
 | Field | Type and allowed values | Notes |
 |---|---|---|
-| `schema` | `kxm.developer-roster.v1` | The five top-level keys are all required and no others are allowed |
+| `schema` | `the assembled developer policy` | The five top-level keys are all required and no others are allowed |
 | `routes.<id>` | Route ID matching `^[a-z0-9]+(?:-[a-z0-9]+)*$` | At least one route |
 | `routes.<id>.harness` | `grok`, `agy`, `claude`, `codex`, or `pi` | Other harnesses are refused (`unsupported harness`) |
 | `routes.<id>.model` | Token without whitespace | Native harnesses: a bare model ID. Pi: `openrouter/<vendor>/<model>`, `nous-portal/<vendor>/<model>`, or `antigravity/gemini-<id>` |
@@ -1101,8 +1101,8 @@ only`, `Pi critic/planner cannot edit`, `writer and critics must have
 independent vendors`, and `retired .kxm/roster.json present`.
 
 ```yaml
-# .kxm/roster.yaml — developer roster policy for scripts/assignment-run.mjs.
-schema: kxm.developer-roster.v1
+# the role and model files — developer roster policy for scripts/assignment-run.mjs.
+schema: the assembled developer policy
 routes:
   grok-native:                  # route id: lowercase words joined by "-"
     harness: grok
@@ -1691,7 +1691,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | Path | Group | Written by |
 |---|---|---|
 | `project.yaml`, `repo/`, `project/env.yaml`, `agents/`, `models/*.yaml` (except `inventory.yaml`), `workflows/`, `gates.yaml`, `template-provenance.yaml` | Tracked configuration (the bundle) | You and `kxm init` |
-| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `roster.yaml` | Tracked configuration outside the bundle | You and their commands |
+| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `the role files` | Tracked configuration outside the bundle | You and their commands |
 | `config.yaml` | Tracked if the project wants shared preferences; otherwise ignore it | `kxm config set` |
 | `memory/`, `skills/`, `candidates/`, `goals/` | Tracked durable records | Their commands |
 | `models/inventory.yaml` | Generated; track it if you want a reviewed snapshot | `kxm models inventory-refresh` |

@@ -1,5 +1,6 @@
 schema: kxm.agent.v1
 purpose: Produce an implementation plan grounded in the pinned repositories and evidence.
+role: planner
 model:
   tag: planning
 tools:

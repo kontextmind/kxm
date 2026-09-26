@@ -16,7 +16,7 @@ a KXM product feature.
 ## Before you begin
 
 - A clean control checkout of this repository whose `HEAD` is an ancestor of
-  `origin/main`. The runner loads `.kxm/roster.yaml` only from there.
+  `origin/main`. The runner loads `the role and model files` only from there.
 - A separate worktree for the writer. `kxm lane create <unit>` creates one from
   `origin/main`.
 - The harness CLIs the roster admits, installed and logged in.
@@ -27,8 +27,8 @@ a KXM product feature.
 
 ## Roles and routes
 
-The trusted roster policy in [`.kxm/roster.yaml`](../../.kxm/roster.yaml)
-(`kxm.developer-roster.v1`) admits each route for specific roles and
+The trusted roster policy in [`the role and model files`](../../the role and model files)
+(`the assembled developer policy`) admits each route for specific roles and
 permissions:
 
 | Role | Admitted route (harness / model) | Vendor | Permission |
@@ -314,8 +314,8 @@ It writes `recording-resolved.json` in the record directory. It never changes
 ## Transport-only recipes
 
 Drive a one-step workflow in a lane. Each command writes a drive receipt and
-the checkout fingerprint. `just impl`, `just plan`, `just review-arch`,
-`just review-cli`, and `just impl-bg` are retired in favor of these. The
+the checkout fingerprint. `kxm lane run` with `implement-only`, `review-arch-only`, or `review-cli-only` is the transport.
+`kxm lane run`, and `kxm lane run` are retired in favor of these. The
 recipes stay in the justfile until one real unit has been driven this way.
 
 ```bash
@@ -324,7 +324,7 @@ kxm lane run <unit> --workflow review-arch-only --brief <file>
 kxm lane run <unit> --workflow review-cli-only --brief <file>
 ```
 
-`just dispatch` still sends one `kxm.harness-request.v1` envelope through
+`scripts/harness-run.mjs` still accepts one `kxm.harness-request.v1` envelope through
 `scripts/harness-run.mjs` and prints a `kxm.harness-result.v2` envelope. It
 mints no assignment, witness or acceptance proof, so its output cannot be
 accepted. The retired recipes did the same.
@@ -430,4 +430,4 @@ gate-only workflows are supported. See the
 - [Develop KXM](development.md): the commit gate the witness runs
 - [CI and release](ci-and-release.md): what runs after you push
 - [Harness routing](../reference/harness-routing.md): harness and model pairing
-- [Configuration reference](../reference/config-reference.md#kxmrosteryaml-kxmdeveloper-rosterv1): the roster file
+- [Configuration reference](../reference/config-reference.md#kxmrosteryaml-kxmdeveloper policyv1): the roster file

@@ -15,7 +15,7 @@ KXM spreads state over six roots. Some of them move with environment variables, 
 ```mermaid
 flowchart TB
   subgraph R["$R checkout root: the Git checkout, never moves"]
-    R1["Project definition: .kxm/project.yaml, config.yaml, agents/, models/, workflows/, gates.yaml, roles/, roles, routes.yaml, roster.yaml, prices.yaml, repo/, project/env.yaml"]
+    R1["Project definition: .kxm/project.yaml, config.yaml, agents/, models/, workflows/, gates.yaml, roles/, roles, routes.yaml, the role files, prices.yaml, repo/, project/env.yaml"]
     R2["Durable records: .kxm/memory/, skills/, goals/, tasks/, candidates/"]
   end
   subgraph D["$D workspace: KXM_WORKSPACE_DIR or --workspace, default $R/.kxm"]
@@ -77,7 +77,7 @@ The Runtime registry and the other projects' event stores are shared by every pr
 | `$D/assets/`, `$D/logs/` | Retrospectives and evidence; logs and local usage accounting (`telemetry.jsonl`) | No |
 | `$C` | User-level roles, workflows and settings | No |
 
-A restore without `roster.yaml`, `routes.yaml` or `prices.yaml` comes back healthy but with different admission and cost behavior, so treat them as part of the backup even though they are plain files. `kxm improve report --out-dir` can write candidates outside `$R/.kxm/candidates/`; include that directory if you use it.
+A restore without `the role files`, `routes.yaml` or `prices.yaml` comes back healthy but with different admission and cost behavior, so treat them as part of the backup even though they are plain files. `kxm improve report --out-dir` can write candidates outside `$R/.kxm/candidates/`; include that directory if you use it.
 
 These files are disposable and need no backup: `hub.pid`, `hub.stop`, `worker-*.pid`, `session-brief.json`, `update-check.json`, `runtime/supervisor.token`, `runtime/supervisor.error`.
 

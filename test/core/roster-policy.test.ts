@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
-import { validateRosterDocument, type RosterPolicy } from "../../scripts/roster-policy.mjs";
+import { parse } from "yaml";
+import { assembleRosterPolicy, validateRosterDocument, type RosterPolicy } from "../../scripts/roster-policy.mjs";
 
 const qwenEvidence = "qwen origin fixture\n";
 const antigravityEvidence = "antigravity origin fixture\n";
@@ -35,7 +38,6 @@ function basePolicy(overrides: {
   model_origins?: Record<string, unknown>;
 } = {}): RosterPolicy {
   return {
-    schema: "kxm.developer-roster.v1",
     routes: {
       "grok-native": nativeRoute({}),
       "qwen-openrouter-pi": {
@@ -180,7 +182,7 @@ test("model origin evidence may pin a source commit and receives it from the rea
     seen.push({ source, commit });
     return qwenEvidence;
   });
-  assert.equal(result.schema, "kxm.developer-roster.v1");
+  assert.equal(result.required_critics["review-arch"], "fable-claude");
   assert.deepEqual(seen, [{ source: "docs/qwen.md", commit: pinnedCommit }]);
 });
 
@@ -195,3 +197,17 @@ test("model origin evidence refuses a malformed pinned commit", () => {
   });
   assert.throws(() => validateRosterDocument(policy, () => qwenEvidence), /invalid origin evidence commit/);
 });
+
+test("the checkout role and model files assemble a policy that validates", () => {
+  const load = (dir: string, skipInventory: boolean) => readdirSync(dir)
+    .filter((name) => name.endsWith(".yaml") && !(skipInventory && name === "inventory.yaml"))
+    .map((name) => parse(readFileSync(join(dir, name), "utf8")));
+  const policy = assembleRosterPolicy(load(".kxm/models", true), load(".kxm/roles", false));
+  const routes = readFileSync(".kxm/routes.yaml");
+  const validated = validateRosterDocument(policy, (source: string) => source === ".kxm/routes.yaml" ? routes : undefined);
+  assert.deepEqual(validated.lineup.writer, ["grok-native", "qwen-openrouter-pi", "gemini-agy"]);
+  assert.equal(validated.required_critics["review-arch"], "fable-claude");
+  assert.equal(validated.required_critics["review-cli"], "sol-codex");
+  assert.equal(validated.routes["qwen-openrouter-pi"]?.permissions[0], "edit");
+});
+

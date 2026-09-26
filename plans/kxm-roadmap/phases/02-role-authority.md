@@ -6,7 +6,7 @@ Source: `plans/plan-omp-config-alignment.md`.
 
 Updated: 2026-09-26.
 
-Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role authority, retire kxm.role.v1, routes.yaml roles, roster.yaml and the code defaults, give agents a role reference, then add the opt-in fallback walk, tool-policy enforcement, provenance, and effort validation.
+Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role authority, retire kxm.role.v1, routes.yaml roles, the role files and the code defaults, give agents a role reference, then add the opt-in fallback walk, tool-policy enforcement, provenance, and effort validation.
 
 ## Tasks
 
@@ -30,7 +30,7 @@ Evidence: `test/core/policy-draft.test.ts`.
 
 Template: `feature`.
 
-Done criterion: roster-policy.mjs and engine.ts read roles and routes from the v2 files at origin/main; roster.yaml and the justfile literals are gone.
+Done criterion: roster-policy.mjs and engine.ts read roles and routes from the v2 files at origin/main; the role files and the justfile literals are gone.
 
 Evidence needed: test/core/roster-policy.test.ts rewritten, one engine test per refusal path.
 

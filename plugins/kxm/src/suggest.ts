@@ -191,10 +191,10 @@ export function suggestWorkflowAndRoles(
       supported: true,
       prerequisites: [
         "Run kxm init in the target repository if needed, then install the exact template with the suggested command. If that workflow ID already exists, stop and review it; the commands below apply only to a newly installed template, not an existing definition with potentially different agents or permissions.",
-        ...roles.map((role) => `Set harness: ${role.harness} and model: <your authenticated compatible model selector> in .kxm/agents/${role.agent}.yaml. Admit that exact selector in .kxm/routes.yaml and ensure it is not disabled; this recommendation does not choose a model or change routing.`),
+        ...roles.map((role) => `Set role on .kxm/agents/${role.agent}.yaml to a role whose roster names an admitted route for harness ${role.harness}. Admit that route's selector in .kxm/routes.yaml and ensure it is not disabled; this recommendation does not choose a model or change routing.`),
         ...(writeStep ? [
           `Keep each writer step at assignments.maximum: 1 and set limits.maxConcurrentRuns: 1 in .kxm/project.yaml; the live ${selected.id} writer profile requires a lone writer in the checkout.`,
-          `If .kxm/roster.yaml exists, it must be readable kxm.developer-roster.v1 with a lineup.writer route matching harness: ${selected.id} and the selected writer model (model or vendor/model), status: admitted, and permissions containing edit.`,
+          `The writer role roster must name a route whose harness is ${selected.id}, whose status is admitted, and whose permissions contain edit.`,
           "Configure the test gate in .kxm/gates.yaml with kind: command and argv for this repository's actual verification command. A scaffold/example command or simulation is not evidence that the implementation works.",
         ] : []),
         `Validate the installed workflow with kxm gate validate --file .kxm/workflows/${bestPattern.id}.yaml and the project configuration with kxm init --dry-run before creating a run.`,

@@ -1096,9 +1096,9 @@ These three files live in this repository's `.kxm/workflows`. `kxm init` does no
 
 | Workflow | Replaces |
 |---|---|
-| `implement-only` | `just impl`. The recipe is retired once this lands. |
-| `review-arch-only` | `just review-arch`. The recipe is retired once this lands. |
-| `review-cli-only` | `just review-cli`. The recipe is retired once this lands. |
+| `implement-only` | `kxm lane run`. The recipe is retired once this lands. |
+| `review-arch-only` | `kxm lane run`. The recipe is retired once this lands. |
+| `review-cli-only` | `kxm lane run`. The recipe is retired once this lands. |
 
 ## Related
 
