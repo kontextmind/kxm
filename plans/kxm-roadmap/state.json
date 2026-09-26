@@ -22,10 +22,18 @@
     {
       "date": "2026-09-26",
       "line": "Portal mark applied."
+    },
+    {
+      "date": "2026-09-26",
+      "line": "Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335)."
+    },
+    {
+      "date": "2026-09-26",
+      "line": "First deep review: planner loop and role-authority phases added ahead of the Python proposal."
     }
   ],
   "architecture": {
-    "verified": null,
+    "verified": "2026-09-26",
     "docs": [
       "docs/architecture/index.md",
       "docs/architecture/platform.md",
@@ -65,6 +73,177 @@
   },
   "improvements": [],
   "phases": [
+    {
+      "id": "loop",
+      "slug": "planner-loop",
+      "title": "Planner loop and lanes",
+      "goal": "The kxm verbs that let the planner dispatch a writer into a worktree lane and land its branch without just recipes: lane, land, assign, docs, and bounded one-shot steps.",
+      "source": "plans/plan-lane-cli.md",
+      "blockers": [],
+      "questions": [
+        "The proof model behind kxm assign (backlog S11) is still an operator decision.",
+        "The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards."
+      ],
+      "tasks": [
+        {
+          "id": "loop-lane",
+          "title": "kxm lane create, list, status, drop, run with --brief and --lane",
+          "status": "done",
+          "evidence": "test/core/cli.test.ts",
+          "planSection": "plans/plan-lane-cli.md#2-target-surface",
+          "template": "feature",
+          "detail": "ready"
+        },
+        {
+          "id": "loop-land",
+          "title": "kxm land: verify, docs, push, pr, rebase, unblock, merge, release, milestone",
+          "status": "done",
+          "evidence": "test/core/pr-land.test.ts",
+          "planSection": "plans/plan-landing-gates.md#2-target",
+          "template": "feature",
+          "detail": "ready"
+        },
+        {
+          "id": "loop-assign",
+          "title": "kxm assign over the assignment runner, seven verbs, argv pass-through",
+          "status": "done",
+          "evidence": "test/core/cli.test.ts",
+          "template": "feature",
+          "detail": "scoped"
+        },
+        {
+          "id": "loop-docs",
+          "title": "Tailnet docs site, roadmap generator, and kxm docs build and serve",
+          "status": "done",
+          "evidence": "plans/kxm-roadmap/update-dashboard.mjs",
+          "template": "feature",
+          "detail": "scoped"
+        },
+        {
+          "id": "loop-timeouts",
+          "title": "Configurable one-shot step timeout, cancel recovery, and the three one-step workflows",
+          "status": "done",
+          "evidence": "test/core/engine.test.ts",
+          "planSection": "plans/plan-lane-cli.md#4-found-during-the-first-dispatch-2026-09-25",
+          "template": "bug-fix",
+          "detail": "ready"
+        },
+        {
+          "id": "loop-dispatch",
+          "title": "Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "One real unit runs writer and both critics through the one-step workflows and its attempts appear in kxm improve report.",
+          "evidenceNeeded": "The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, impl-bg.",
+          "template": "feature",
+          "detail": "scoped"
+        },
+        {
+          "id": "loop-land-followup",
+          "title": "kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "A failing verify names the failing lines and a log path; the rebase stage polls UNKNOWN to a known state and rebases when BEHIND.",
+          "evidenceNeeded": "test/core/pr-land.test.ts cases for both, and one landing that hit each path.",
+          "template": "bug-fix",
+          "detail": "scoped"
+        },
+        {
+          "id": "loop-supervise",
+          "title": "kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20)",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "The five-minute tick survives a closed terminal and a Claude restart, and resumes the same chat.",
+          "evidenceNeeded": "A tick logged in .kxm/logs/supervisor.log after the window that started it was closed.",
+          "template": "feature",
+          "detail": "brief"
+        }
+      ]
+    },
+    {
+      "id": "omp",
+      "slug": "role-authority",
+      "title": "Role authority from the v2 policy draft",
+      "goal": "Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role authority, retire kxm.role.v1, routes.yaml roles, roster.yaml and the code defaults, give agents a role reference, then add the opt-in fallback walk, tool-policy enforcement, provenance, and effort validation.",
+      "source": "plans/plan-omp-config-alignment.md",
+      "blockers": [],
+      "questions": [
+        "Section 7 of the plan lists the open questions; they stay open until P1 is dispatched."
+      ],
+      "tasks": [
+        {
+          "id": "omp-p1",
+          "title": "P1 promote the draft: schemas live, models and roles rewritten to v2, v1 deleted",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-omp-config-alignment.md#5-phases",
+          "doneCriterion": "just verify green; every .kxm/roles and .kxm/models file validates through validatePolicyDraft with the developer ceilings; role list, get, add, modify, remove read and write v2 only.",
+          "evidenceNeeded": "The validator test named in the P1 row and the CHANGELOG entry.",
+          "template": "feature",
+          "detail": "ready"
+        },
+        {
+          "id": "omp-p2",
+          "title": "P2 cut the loader and engine over to the v2 files",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "roster-policy.mjs and engine.ts read roles and routes from the v2 files at origin/main; roster.yaml and the justfile literals are gone.",
+          "evidenceNeeded": "test/core/roster-policy.test.ts rewritten, one engine test per refusal path.",
+          "template": "feature",
+          "detail": "scoped"
+        },
+        {
+          "id": "omp-p3",
+          "title": "P3 tool policy enforcement",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "A step outside its role's tool policy is refused.",
+          "evidenceNeeded": "A fixture per preset pair.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "omp-p4",
+          "title": "P4 opt-in fallback walk with route_switch events",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "An attempt continues on the next admitted route when the role opts in, and the reports show the switch.",
+          "evidenceNeeded": "Simulated 429 and transport fixtures.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "omp-p5",
+          "title": "P5 provenance and extends",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "Role files carry provenance and resolve extends.",
+          "evidenceNeeded": "Unit tests.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "omp-p6",
+          "title": "P6 effort catalog",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "Invalid efforts are rejected at edit time.",
+          "evidenceNeeded": "Probe evidence under plans/evidence and a validator test.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "omp-p7",
+          "title": "P7 quota-aware walk (optional)",
+          "status": "open",
+          "evidence": "",
+          "doneCriterion": "Quota below reserve is an onError class.",
+          "evidenceNeeded": "The usage-cost plan's gate.",
+          "template": "none",
+          "detail": "brief"
+        }
+      ]
+    },
     {
       "id": "py",
       "slug": "python-migration",

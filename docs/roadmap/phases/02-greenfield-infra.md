@@ -1,1 +1,0 @@
-../../../plans/kxm-roadmap/phases/02-greenfield-infra.md

@@ -114,6 +114,8 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 | [Packages and workspaces](contributing/packages.md) | Maintainers | Workspace layout, Nx targets, Bun task running and the layer gate |
 | [KXM terminal components](contributing/tui-components.md) | Maintainers, integrators | The panel kit behind `kxm dash` |
 | [Repository work delivery skill](contributing/repo-work-delivery.md) | Contributors | The repository-local skill for delivering a change |
+| [Operating rules](contributing/operating-rules.md) | Agents, maintainers | The operator's standing instructions, dated, and where each is enforced |
+| [Learnings](contributing/learnings.md) | Agents, maintainers | Durable lessons from running the writer, landing, and docs loops |
 | [Artifact templates](templates/README.md) | Workflow authors | Document templates and where workflows use them |
 
 The templates: [feature](templates/feature.md) · [bug fix](templates/bug-fix.md) · [ADR](templates/adr.md) · [architecture](templates/architecture.md) · [research](templates/research.md) · [review](templates/review.md) · [test plan](templates/test-plan.md) · [test report](templates/test-report.md) · [runbook](templates/runbook.md) · [postmortem](templates/postmortem.md) · [handoff](templates/handoff.md).

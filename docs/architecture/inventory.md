@@ -23,6 +23,10 @@ Read from `plugins/kxm/src/cli.ts`, `scripts/kxm-hub.mjs`, `plugins/kxm/src/hub.
 | Workspace logs | `workspaceDirs` | `.kxm/logs`, or `KXM_LOGS_DIR` | log files | `plugins/kxm/src/cli/types.ts` |
 | Workspace assets | `workspaceDirs` | `.kxm/assets`, or `KXM_ASSETS_DIR` | asset files | `plugins/kxm/src/cli/types.ts` |
 | Workspace state | `workspaceDirs` | `.kxm/state`, or `KXM_STATE_DIR` | `kxm.db` when the hub uses this directory | `plugins/kxm/src/cli/types.ts` |
+| Lane registry | `kxm lane create` | no listener | `lanes.json` under the workspace state dir | `plugins/kxm/src/cli/lanes.ts` |
+| Landing | `kxm land` via `scripts/pr-land.mjs` | no listener | `land-release-context.json` and `land-phases-before.json` under `.kxm/logs` | `scripts/pr-land.mjs` |
+| Assignment runner entry | `kxm assign <verb>` | no listener | none; the runner writes task records | `plugins/kxm/src/cli/assign.ts` |
+| Docs site | `kxm docs serve` via `ops/docs-site/serve.py` | the tailnet IPv4 from `tailscale ip -4` and one port; refuses any other address | none; serves the built `site/` | `ops/docs-site/serve.py` |
 
 On macOS the user state root is `Library/Application Support/KXM` under the
 home directory (`kxmUserStateRoot` in `plugins/kxm/src/bindings.ts`). Windows

@@ -1,6 +1,6 @@
 # Python migration
 
-Status: open. Horizon: next.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-python-migration.md`.
 

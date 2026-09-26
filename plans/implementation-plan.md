@@ -589,6 +589,34 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **`kxm lane` worktree lanes and file briefs (2026-09-26; #330, v0.7.120).** `lane create`,
+  `list`, `status`, `drop`, `run`; `kxm run --brief` and `--lane`; `kxm runs * --lane`. Design
+  `plans/plan-lane-cli.md`. Named tests: the `lane create`, `lane drop`, `lane run`, and `run --brief --lane` cases in `test/core/cli.test.ts`.
+
+- **`kxm land` landing gates (2026-09-26; #331, v0.7.121; follow-up #335, release pending at the time of this entry).**
+  Stages verify, docs, push, pr, rebase, unblock, merge, release, milestone over
+  `scripts/pr-land.mjs`, with the six `land-*` command gates and `.kxm/workflows/land.yaml`.
+  The follow-up names the PR from the first commit subject, selects the Release run by time,
+  and prints `usage_error` envelopes under `--json`. Design `plans/plan-landing-gates.md`.
+  Named tests: `test/core/pr-land.test.ts`. Open: verify detail (backlog S19) and the
+  `UNKNOWN` merge state (S22).
+
+- **`kxm assign` over the assignment runner (2026-09-26; #332, v0.7.122).** Seven verbs
+  mapped one to one onto `scripts/assignment-run.mjs` with argv passed through; the runner
+  and the roster loader untouched. Named tests: the `kxm assign` cases in
+  `test/core/cli.test.ts`. The just recipes retire after one real unit lands through it.
+
+- **Tailnet docs site and roadmap tracker (2026-09-26; #333, v0.7.123).**
+  `plans/kxm-roadmap/state.json` (`kxm.roadmap.v1`), the generator, `ops/docs-site/serve.py`
+  bound to one tailnet address, `kxm docs build|serve`, the `.omp` roadmap commands and
+  skills. Design `plans/reviews/docs-site-review-arch.md`.
+
+- **Configurable one-shot step timeouts, cancel recovery, one-step workflows (2026-09-26;
+  #334, v0.7.124).** `limits.agentStepTimeoutMs`, recovery of a `cancelling` run with an
+  unreconciled attempt, and `implement-only`, `review-arch-only`, `review-cli-only`. Found
+  during the first lane dispatch, `plans/plan-lane-cli.md` section 4. Named tests: the
+  timeout and recovery cases in `test/core/engine.test.ts`.
+
 - **Assignment-runner records group through a read-side export (2026-09-24).**
   `routing-export` does not change `buildRoutingRecord` or the on-disk
   `routing-record.json`. The pass signal is `accepted.json`, the ask is

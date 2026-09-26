@@ -1,0 +1,17 @@
+graph TD
+  U["User prompt containing 'workflowz'<br/>optional +Nk advisory or +Nk! hard budget"] -->|magic keyword matched| N["Hidden system notice appended<br/>workflow-notice.md"]
+  N -->|"scope first, no agents yet"| S["Orchestrator scopes inline<br/>scout or read/grep the work surface"]
+  S -->|"writes an eval cell"| C["eval kernel cell<br/>phase('Review'); pool = workpool('scout', name, context); pool.push(items)"]
+  C -->|"pool name = background job id"| P["WorkPool<br/>bounded by task.maxConcurrency"]
+  P -->|"least-loaded idle worker"| W1["Worker 1<br/>keep-alive subagent"]
+  P -->|"new worker while capacity"| W2["Worker 2"]
+  P -->|"round-robin queue when busy"| W3["Worker N"]
+  W1 -->|"one turn = one batch job"| J["Async jobs<br/>WorkPoolBatch per worker turn"]
+  W2 --> J
+  W3 --> J
+  J -->|"on completion, owner-routed"| D["async-result system notice<br/>injected as a follow-up turn"]
+  D --> V["Orchestrator reads results<br/>gates findings, runs checks itself"]
+  V -->|"more items discovered, pool still open"| C
+  V -->|"item B needs A's exact output"| A["agent(prompt, schema).wait()<br/>direct handle, structured data"]
+  A --> V
+  V -->|"pool drained = phase boundary"| F["Next named pool or final verification<br/>terse status, not a recap"]
