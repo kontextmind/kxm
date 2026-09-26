@@ -84,7 +84,7 @@ Template: `feature`.
 
 Done criterion: One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report; P1 ran the writer that way but the critics and repairs went through the harness runner because the lane's schema cutover made the runtime refuse it.
 
-Evidence needed: The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, lane transport.
+Evidence needed: The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, impl-bg.
 
 ### kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)
 

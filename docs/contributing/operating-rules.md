@@ -55,7 +55,7 @@ replacement.
   registered in `cli.ts`, owned by a bundled skill so `check:generated`
   passes, documented in the CLI reference. Existing recipes retire as their
   `kxm` verbs land; the transport recipes (`impl`, `plan`, `review-*`,
-  `lane transport`) retire last, after one real unit has run through the one-step
+  `impl-bg`) retire last, after one real unit has run through the one-step
   workflows. (2026-09-26.)
 
 ## Decisions and debt

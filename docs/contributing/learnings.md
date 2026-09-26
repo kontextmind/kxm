@@ -31,8 +31,8 @@ entry whose fix has landed is deleted, not archived.
   supervisor tick and any batch of writers finishing together.
 - **The transport's stdin read can fail with `EAGAIN` under concurrent
   detached dispatch.** Retry once; the request itself is fine. Evidence:
-  two occurrences on 2026-09-26 (backlog S18). Applies to: `kxm lane run`
-  and `kxm lane run` until they retire.
+  two occurrences on 2026-09-26 (backlog S18). Applies to: `just impl-bg`
+  and `just review-cli` until they retire.
 - **Do not launch a writer under the Bash tool's ten-minute background
   cap.** It kills the harness mid-run. Use the detached recipe or
   `kxm lane run`. Evidence: the first lane-cli dispatch, 2026-09-26.
@@ -63,7 +63,7 @@ entry whose fix has landed is deleted, not archived.
   `kxm lane run` and `kxm run --lane`.
 
 - **The improvement loop is blind while writers bypass `kxm run`.** Every
-  writer this week ran through the harness runner (`kxm lane run` and the
+  writer this week ran through the harness runner (`just impl-bg` and the
   critic recipes), which records no engine events, so `kxm improve report`
   and `kxm routing report` both return zero records and no candidates.
   Evidence: both reports on 2026-09-26 at 08:14 UTC list the engine store as
