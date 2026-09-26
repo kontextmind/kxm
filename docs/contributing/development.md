@@ -239,7 +239,7 @@ It runs three scripts in order:
 | 2 | `npm run check` | `tsc --noEmit`, `markdownlint-cli2`, and version surfaces |
 | 3 | `npm run check:generated` | Generated artifacts are tracked and match the staged copy |
 
-Every suite script passes `--test-force-exit` and `--test-timeout=180000`, and `scripts/run-bounded.mjs` stops the run if the suite is still going after its wall-clock limit (20 minutes, or 40 for the complete and coverage suites).
+Every suite script passes `--test-force-exit`, and `scripts/run-bounded.mjs` stops the run if the suite is still going after its wall-clock limit (20 minutes, or 40 for the complete and coverage suites). The bound is that wall clock per script. A per-test timeout is not used because under `node --test` each file is itself a test, so a per-test timeout also bounds each file.
 
 Other scripts you will use:
 
