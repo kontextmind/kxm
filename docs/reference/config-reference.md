@@ -1688,7 +1688,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | Path | Group | Written by |
 |---|---|---|
 | `project.yaml`, `repo/`, `project/env.yaml`, `agents/`, `models/*.yaml` (except `inventory.yaml`), `workflows/`, `gates.yaml`, `template-provenance.yaml` | Tracked configuration (the bundle) | You and `kxm init` |
-| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `roles`, `roster.yaml` | Tracked configuration outside the bundle | You and their commands |
+| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `roster.yaml` | Tracked configuration outside the bundle | You and their commands |
 | `config.yaml` | Tracked if the project wants shared preferences; otherwise ignore it | `kxm config set` |
 | `memory/`, `skills/`, `candidates/`, `goals/` | Tracked durable records | Their commands |
 | `models/inventory.yaml` | Generated; track it if you want a reviewed snapshot | `kxm models inventory-refresh` |
@@ -1740,7 +1740,7 @@ and `$XDG_STATE_HOME/kxm` (default `~/.local/state/kxm`) on Linux.
 
 The **user configuration directory** is `KXM_USER_CONFIG_DIR`, default
 `~/.config/kxm`. It holds `config.yaml`, global `roles/` and `workflows/`,
-`roles`, `session.token`, and shell completion scripts. Global
+`session.token`, and shell completion scripts. Global
 workflows are listed by `kxm workflow definitions` but never loaded by
 `kxm run`.
 
