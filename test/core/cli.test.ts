@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
 import { writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
+import { kxmAssignCliSeams } from "../../plugins/kxm/src/cli/assign.ts";
 import { cmdKxmRunStatus, kxmDriveCliSeams } from "../../plugins/kxm/src/cli/project.ts";
 import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
@@ -2333,4 +2334,140 @@ test("kxm land dry-run prints the verify plan", async () => {
   assert.match(stdout, /"stage":"verify"/);
   assert.match(stdout, /"dryRun":true/);
   assert.match(stdout, /npm run verify/);
+});
+
+test("kxm assign help lists the seven runner verbs", async () => {
+  const help = capture();
+  assert.equal(await runCli(["assign", "--help"], {}, help), 0);
+  const text = help.read().stdout;
+  for (const verb of ["run", "witness", "plan-current", "attribute", "observe-cost", "accept", "change-report"]) {
+    assert.match(text, new RegExp(`\\b${verb}\\b`));
+  }
+});
+
+test("kxm assign accept --dry-run --json prints the runner argv and exits 0", async () => {
+  kxmAssignCliSeams.spawn = () => {
+    throw new Error("dry-run spawned");
+  };
+  try {
+    const io = capture();
+    const code = await runCli([
+      "assign", "accept",
+      "--task-dir", "/t",
+      "--commit", "abc",
+      "--record-dir", "/r",
+      "--critic", "/a",
+      "--critic", "/b",
+      "--dry-run", "--json",
+    ], {}, io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.read().stdout) as { ok: boolean; dryRun: boolean; argv: string[] };
+    assert.equal(payload.ok, true);
+    assert.equal(payload.dryRun, true);
+    assert.deepEqual(payload.argv, [
+      "node",
+      "scripts/assignment-run.mjs",
+      "accept",
+      "--task-dir", "/t",
+      "--commit", "abc",
+      "--record-dir", "/r",
+      "--critic", "/a",
+      "--critic", "/b",
+    ]);
+  } finally {
+    delete kxmAssignCliSeams.spawn;
+  }
+});
+
+test("kxm assign run spawns the runner and returns the child exit code", async () => {
+  let seen: { command: string; args: readonly string[]; cwd: string; stdio: string; env: NodeJS.ProcessEnv } | undefined;
+  kxmAssignCliSeams.spawn = (command, args, options) => {
+    seen = { command, args, cwd: options.cwd, stdio: options.stdio, env: options.env };
+    return { status: 7 };
+  };
+  try {
+    const io = capture();
+    const code = await runCli(["assign", "run", "--manifest", "/m"], { KXM_ASSIGN_SENTINEL: "kept" }, io);
+    assert.equal(code, 7);
+    assert.equal(io.read().stdout, "");
+    assert.ok(seen);
+    assert.equal(seen.command, "node");
+    assert.deepEqual(seen.args, ["scripts/assignment-run.mjs", "run", "--manifest", "/m"]);
+    assert.equal(seen.stdio, "inherit");
+    assert.equal(seen.cwd, process.cwd());
+    assert.equal(seen.env.KXM_ASSIGN_SENTINEL, "kept");
+  } finally {
+    delete kxmAssignCliSeams.spawn;
+  }
+});
+
+test("kxm assign accept forwards observed ids after the two critics", async () => {
+  kxmAssignCliSeams.spawn = () => {
+    throw new Error("dry-run spawned");
+  };
+  try {
+    const io = capture();
+    const code = await runCli([
+      "assign", "accept",
+      "--observed-ci", "ci-1",
+      "--task-dir", "/t",
+      "--commit", "abc",
+      "--critic", "/a",
+      "--record-dir", "/r",
+      "--critic", "/b",
+      "--observed-pr", "pr-9",
+      "--dry-run", "--json",
+    ], {}, io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.read().stdout) as { argv: string[] };
+    assert.deepEqual(payload.argv, [
+      "node",
+      "scripts/assignment-run.mjs",
+      "accept",
+      "--task-dir", "/t",
+      "--commit", "abc",
+      "--record-dir", "/r",
+      "--critic", "/a",
+      "--critic", "/b",
+      "--observed-pr", "pr-9",
+      "--observed-ci", "ci-1",
+    ]);
+  } finally {
+    delete kxmAssignCliSeams.spawn;
+  }
+});
+
+test("kxm assign witness without --record-dir exits 2 with a usage error", async () => {
+  const io = capture();
+  assert.equal(await runCli(["assign", "witness"], {}, io), 2);
+  assert.match(`${io.read().stdout}${io.read().stderr}`, /record-dir|usage|required option/i);
+});
+
+test("kxm assign outside a project refuses project_required", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-assign-noproject-"));
+  try {
+    const io = capture();
+    assert.equal(await runCli(["assign", "run", "--manifest", "/m", "--json"], {}, io, cwd), 1);
+    const payload = JSON.parse(io.read().stderr) as { ok: boolean; error: string };
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "project_required");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("kxm assign refuses assign_runner_missing when the runner script is absent", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-assign-norunner-"));
+  try {
+    makeGitRoot(root);
+    mkdirSync(join(root, ".kxm"), { recursive: true });
+    writeFileSync(join(root, ".kxm", "project.yaml"), "schema: kxm.project.v1\n");
+    const io = capture();
+    assert.equal(await runCli(["assign", "change-report", "--task-dir", "/t", "--json"], {}, io, root), 1);
+    const payload = JSON.parse(io.read().stderr) as { ok: boolean; error: string };
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "assign_runner_missing");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
