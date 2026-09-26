@@ -86,6 +86,7 @@ kxm -V
 ### JSON results
 
 - Every JSON result carries a `schema` field. Most commands print `kxm.cli-result.v1` with `ok` and `command` fields plus command-specific keys.
+- A usage error under `--json` (unknown command or option, missing argument, or missing required option) prints one `kxm.cli-result.v1` object on stdout and exits 2. `ok` is false, `error` is `usage_error`, `command` is the command path, and `detail` is the Commander message. Text mode still prints that message on stderr.
 - Gate-style commands print a `kxm.worker-result.v1` envelope, which adds `worker`, `createdAt`, `outcome` (`passed`, `warning`, or `failed`), and `summary`: `gate validate`, `gate artifacts-exist`, `gate degrade`, `gate signal`, `workflow signal`, `gate github watch`, and `agent worker --dry-run`. Outside `--dry-run`, the `gate` subcommands and `workflow signal` also append the envelope to `.kxm/logs/telemetry.jsonl`.
 - `session brief` prints `kxm.session-brief.v1` and `tenant status` prints `kxm.tenant-status.v1`.
 - The `command` field is not always the words you typed: `hub stop` and `session stop` report `stop`, `session token` reports `auth token`, `routes admit` and `routes disable` report `routes admitted` and `routes disabled`, `models inventory-refresh` reports `models inventory refresh`, `workflow export` reports `retrospective export`, `gate degrade` reports `workflow degrade`, `gate signal` and `workflow signal` report `signal`, `gate github watch` reports `github watch`, `agent worker` reports `worker`, and `improve report` reports `improve`.
@@ -135,7 +136,7 @@ For this page, 63 `--dry-run` invocations (every command in the first list, the 
 
 Exit 1 covers an `ok: false` result, an unreachable hub for `hub view`, permission expansions for `trust check`, a stopped supervisor for `runtime status`, missing local state, and a planning-only `init`.
 
-Exit 2 covers an unknown command or option, a missing argument or required option, a value KXM rejects before acting, `--workspace` where unsupported, conflicting flags, a group run without a subcommand, a removed command (`removed_command`), and `--dry-run` on a command that cannot plan (`dry_run_unsupported`).
+Exit 2 covers an unknown command or option, a missing argument or required option, a value KXM rejects before acting, `--workspace` where unsupported, conflicting flags, a group run without a subcommand, a removed command (`removed_command`), and `--dry-run` on a command that cannot plan (`dry_run_unsupported`). With `--json`, Commander usage errors are `usage_error` envelopes on stdout and exit 2.
 
 ## Where commands read and write
 
@@ -1440,7 +1441,7 @@ Refusals (exit 1): `brief_unreadable`, `lane_unit_invalid`, `lane_exists`, `lane
 Land the current branch. `npm run verify` is the first stage and is not replaced. The command spawns `scripts/pr-land.mjs` from the project root and streams one JSON line per stage. With no `--stage`, the stages run in order and stop at the first refusal. `--dry-run` prints each stage's plan and does not mutate. Squash is the only merge. A required review is reported and not bypassed.
 
 ```text
-kxm land [--pr <n>] [--stage <name>] [--body-file <path>]
+kxm land [--pr <n>] [--stage <name>] [--title <text>] [--body-file <path>]
 ```
 
 ```bash
@@ -1451,6 +1452,7 @@ kxm land --stage verify --dry-run
 |---|---|---|---|
 | `--pr` | `<n>` | the open pull request for this branch | Pull request number to reuse |
 | `--stage` | `<name>` | all stages | One of `verify`, `docs`, `push`, `pr`, `rebase`, `unblock`, `merge`, `release`, `milestone` |
+| `--title` | `<text>` | subject of the first commit on the branch | Pull request title passed to `gh pr create`. Never the branch name |
 | `--body-file` | `<path>` | none | Body file for `gh pr create`. Required when creating a pull request |
 
 Outside a KXM project the command refuses `project_required` (exit 1). Unknown arguments and an unknown stage exit 2.
@@ -1462,14 +1464,16 @@ Outside a KXM project the command refuses `project_required` (exit 1). Unknown a
 | `verify` | Refuses `land_dirty_tree` unless `git status --porcelain` is empty. Skips when `.kxm/logs/land-verify-<tree>.json` for `HEAD^{tree}` is younger than 30 minutes. Otherwise runs `npm run verify` and writes that receipt. |
 | `docs` | Runs `plans/kxm-roadmap/update-dashboard.mjs` when that file exists. Commits changes under `docs/roadmap/`, `plans/kxm-roadmap/`, or `docs/architecture/` as `docs(roadmap): regenerate after verify`. Any other path, including `state.json`, is `land_docs_failed`. When the generator is absent the stage passes with `docs: skipped (generator absent)`. |
 | `push` | `git push -u origin <branch>`. After a rebase in this run, the push uses `--force-with-lease`. |
-| `pr` | Reuses the branch's open pull request, or creates one with `gh pr create --body-file`. |
+| `pr` | Reuses the branch's open pull request, or creates one with `gh pr create --body-file`. The title is `--title` when that option is set; otherwise it is the subject of the first commit (`git log --reverse --format=%s origin/main..HEAD`). `--dry-run` prints that title. |
 | `rebase` | When `mergeStateStatus` is `BEHIND` or `DIRTY`: fetch, rebase onto `origin/main`, and resolve only three conflicts (take `plugins/kxm/dist` from main and rebuild; union CHANGELOG Unreleased bullets, ours first; union the tracker "Landed in this tree" list, newest first). Runs `docs` again when the tree changed, re-verifies unless `git merge-tree --write-tree origin/main HEAD` was clean, and pushes with the lease. Five rounds, then `land_conflict_manual`. |
 | `unblock` | Reads `statusCheckRollup` and `reviewDecision`. Reruns one failed check with `gh run rerun --failed`. A second failure or `REVIEW_REQUIRED` is `land_blocked`. |
 | `merge` | Enables auto-merge with `enablePullRequestAutoMerge` and `mergeMethod: SQUASH`. When the response contains "clean status", squash-merges with `PUT /repos/{owner}/{repo}/pulls/{n}/merge` and commit title `<title> (#n)`. Polls `gh pr view --json state` every 30 seconds for up to 20 minutes. |
-| `release` | Records the newest `v*` tag before the merge, waits for the Auto-Release run whose title contains the pull request title, requires a newer tag from `git ls-remote --tags origin`, waits for the Release run created after the merge, then polls `npm view @kontextmind/kxm@<version> version` every 30 seconds for 10 minutes. The success detail is `PUBLISHED <version>`. |
+| `release` | Records the newest `v*` tag before the merge, waits for the Auto-Release run whose title contains the pull request title, requires a newer tag from `git ls-remote --tags origin`, then waits for the first `release.yml` run whose `createdAt` is after that Auto-Release run, with no title filter. Both run ids are written to `.kxm/logs/land-release-context.json` and printed in the stage detail (`PUBLISHED <version> auto-release <id> release <id>`). Each wait prints one JSON line every 2 minutes (`waiting auto-release.yml 4m`). The npm poll is `npm view @kontextmind/kxm@<version> version` every 30 seconds for 10 minutes. |
 | `milestone` | Compares `plans/kxm-roadmap/state.json` from before and after `docs`. When a phase goes from an open task to all tasks `done`, or the pull request body contains a `Milestone:` line, prints `deep_review_required: true` and exits 0. The review is the `/reanalyze-roadmap` skill, not this command. An absent state file passes with skipped. |
 
-Refusals (exit 1): `project_required`, `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`, `land_push_rejected`, `land_pr_body_missing`, `land_conflict_manual`, `land_blocked`, `land_merge_failed`, `land_release_failed`, `land_publish_timeout`, `land_milestone_failed`.
+Refusals (exit 1): `project_required`, `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`, `land_push_rejected`, `land_pr_body_missing`, `land_pr_title_missing`, `land_conflict_manual`, `land_blocked`, `land_merge_failed`, `land_release_failed`, `land_publish_timeout`, `land_milestone_failed`.
+
+`land_pr_title_missing`: the `pr` stage was not given `--title`, and the first commit subject on `origin/main..HEAD` is empty.
 
 ## `kxm assign`
 

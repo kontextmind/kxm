@@ -28,6 +28,7 @@ const REBASE_ROUNDS = 5;
 const POLL_MS = positiveInt(process.env.KXM_LAND_POLL_MS, 30_000);
 const MERGE_WAIT_MS = 20 * 60 * 1000;
 const RELEASE_WAIT_MS = 20 * 60 * 1000;
+const RELEASE_PROGRESS_MS = 2 * 60 * 1000;
 const PUBLISH_WAIT_MS = 10 * 60 * 1000;
 const DOCS_COMMIT = "docs(roadmap): regenerate after verify";
 const GENERATOR = "plans/kxm-roadmap/update-dashboard.mjs";
@@ -40,6 +41,7 @@ const UNRELEASED_HEADING = "## Unreleased";
 const root = process.cwd();
 let dryRun = false;
 let bodyFile;
+let requestedTitle;
 let prNumber;
 let forceLease = false;
 let phasesSnapshotted = false;
@@ -198,13 +200,14 @@ function parseArgs(argv) {
       options.help = true;
       continue;
     }
-    if (arg === "--pr" || arg === "--body-file" || arg === "--stage") {
+    if (arg === "--pr" || arg === "--body-file" || arg === "--stage" || arg === "--title") {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) return { error: `${arg} requires a value` };
       index += 1;
       if (arg === "--pr") options.pr = value;
       if (arg === "--body-file") options.bodyFile = value;
       if (arg === "--stage") options.stage = value;
+      if (arg === "--title") options.title = value;
       continue;
     }
     return { error: `unknown argument ${arg}` };
@@ -324,12 +327,24 @@ function pushStage() {
   return pass("push", { detail: forceLease ? "pushed with lease" : "pushed" });
 }
 
+function pullRequestTitle() {
+  const explicit = String(requestedTitle ?? "").trim();
+  if (explicit) return { ok: true, text: explicit };
+  const logged = run("git", ["log", "--reverse", "--format=%s", "origin/main..HEAD"]);
+  if (logged.status !== 0) return { ok: false, detail: "no commit subject on origin/main..HEAD" };
+  const subject = logged.stdout.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+  if (!subject) return { ok: false, detail: "no commit subject on origin/main..HEAD" };
+  return { ok: true, text: subject };
+}
+
 function prStage() {
+  const titled = pullRequestTitle();
   if (dryRun) {
+    if (!titled.ok) return refuse("pr", "land_pr_title_missing", titled.detail);
     return plan("pr", [
       "gh pr list --head <branch> --state open --json number,title",
-      "gh pr create --body-file <path>",
-    ]);
+      `gh pr create --title ${titled.text} --body-file <path>`,
+    ], titled.text);
   }
   const found = ensurePr();
   if (!found.ok) return refuse("pr", "land_pr_body_missing", found.detail);
@@ -337,12 +352,13 @@ function prStage() {
     prNumber = String(found.pr.number);
     return pass("pr", { detail: `reused #${prNumber}` });
   }
+  if (!titled.ok) return refuse("pr", "land_pr_title_missing", titled.detail);
   if (!bodyFile) return refuse("pr", "land_pr_body_missing", "creating a pull request requires --body-file");
   if (!existsSync(bodyFile.startsWith("/") ? bodyFile : join(root, bodyFile))) {
     return refuse("pr", "land_pr_body_missing", `body file not found: ${bodyFile}`);
   }
   const branch = found.branch || branchName();
-  const created = gh(["pr", "create", "--head", branch, "--title", branch, "--body-file", bodyFile]);
+  const created = gh(["pr", "create", "--head", branch, "--title", titled.text, "--body-file", bodyFile]);
   if (created.status !== 0) return refuse("pr", "land_pr_body_missing", created.stderr || created.stdout);
   const again = ensurePr();
   if (!again.ok || !again.pr?.number) return refuse("pr", "land_pr_body_missing", "pull request was not created");
@@ -782,27 +798,54 @@ function mergeStage() {
   return pass("merge", { detail: `squashed #${prNumber}` });
 }
 
-function selectRun(runs, title, after) {
+function selectRun(runs, title, after, earliest = false) {
   if (!Array.isArray(runs)) return undefined;
   const matches = runs.filter((runRow) => {
     if (!runRow || typeof runRow !== "object") return false;
     const display = String(runRow.displayTitle ?? "");
-    if (title && !display.includes(title)) return false;
+    if (!earliest && title && !display.includes(title)) return false;
     const created = Date.parse(String(runRow.createdAt ?? ""));
-    if (Number.isFinite(after) && Number.isFinite(created) && created < after) return false;
+    if (earliest) {
+      if (!Number.isFinite(after) || !Number.isFinite(created) || created <= after) return false;
+    } else if (Number.isFinite(after) && Number.isFinite(created) && created < after) {
+      return false;
+    }
     return true;
   });
-  matches.sort((left, right) => Date.parse(String(right.createdAt ?? "")) - Date.parse(String(left.createdAt ?? "")));
+  matches.sort((left, right) => {
+    const delta = Date.parse(String(left.createdAt ?? "")) - Date.parse(String(right.createdAt ?? ""));
+    return earliest ? delta : -delta;
+  });
   return matches[0];
 }
 
-function waitForWorkflow(workflow, title, after) {
+function workflowRunId(run) {
+  if (!run || typeof run !== "object" || run.databaseId === undefined || run.databaseId === null) return "";
+  return String(run.databaseId);
+}
+
+function noteReleaseWait(workflow, started, logged) {
+  const minutes = Math.floor((Date.now() - started) / RELEASE_PROGRESS_MS) * 2;
+  if (minutes < 2 || minutes <= logged.minutes) return;
+  logged.minutes = minutes;
+  emit({ stage: "release", ok: true, detail: `waiting ${workflow} ${minutes}m` });
+}
+
+function waitForWorkflow(workflow, title, after, earliest = false) {
+  const started = Date.now();
+  const logged = { minutes: 0 };
   let failure = "";
   const polled = poll(RELEASE_WAIT_MS, () => {
-    const listed = ghJson(["run", "list", `--workflow=${workflow}`, "--json", "status,conclusion,displayTitle,createdAt"]);
-    if (!listed.ok) return { done: false, detail: listed.result.stderr || listed.result.stdout };
-    const match = selectRun(listed.value, title, after);
-    if (!match) return { done: false };
+    const listed = ghJson(["run", "list", `--workflow=${workflow}`, "--json", "databaseId,status,conclusion,displayTitle,createdAt"]);
+    if (!listed.ok) {
+      noteReleaseWait(workflow, started, logged);
+      return { done: false, detail: listed.result.stderr || listed.result.stdout };
+    }
+    const match = selectRun(listed.value, title, after, earliest);
+    if (!match) {
+      noteReleaseWait(workflow, started, logged);
+      return { done: false };
+    }
     const conclusion = String(match.conclusion ?? "").toLowerCase();
     const status = String(match.status ?? "").toLowerCase();
     if (conclusion === "success") return { done: true, run: match };
@@ -810,6 +853,7 @@ function waitForWorkflow(workflow, title, after) {
       failure = `${workflow} concluded ${conclusion}`;
       return { done: true, failed: true };
     }
+    noteReleaseWait(workflow, started, logged);
     return { done: false };
   });
   if (polled.failed) return { ok: false, detail: failure };
@@ -820,11 +864,11 @@ function waitForWorkflow(workflow, title, after) {
 function releaseStage() {
   if (dryRun) {
     return plan("release", [
-      "gh run list --workflow=auto-release.yml --json status,conclusion,displayTitle,createdAt",
+      "gh run list --workflow=auto-release.yml --json databaseId,status,conclusion,displayTitle,createdAt",
       "git ls-remote --tags origin",
-      "gh run list --workflow=release.yml --json status,conclusion,displayTitle,createdAt",
+      "gh run list --workflow=release.yml --json databaseId,status,conclusion,displayTitle,createdAt",
       "npm view @kontextmind/kxm@<version> version",
-    ], "npm poll is 10 minutes");
+    ], "npm poll is 10 minutes; Release is matched by time after Auto-Release");
   }
   const context = readReleaseContext();
   const found = ensurePr();
@@ -838,8 +882,12 @@ function releaseStage() {
   if (!tags.tag || (previous && versionCompare(tags.tag, previous) <= 0)) {
     return refuse("release", "land_release_failed", `tag ${tags.tag || "(none)"} is not newer than ${previous || "(none)"}`);
   }
-  const release = waitForWorkflow("release.yml", title, after);
+  const autoCreated = Date.parse(String(auto.run?.createdAt ?? ""));
+  const release = waitForWorkflow("release.yml", "", autoCreated, true);
   if (!release.ok) return refuse("release", "land_release_failed", release.detail);
+  const autoReleaseRunId = workflowRunId(auto.run);
+  const releaseRunId = workflowRunId(release.run);
+  writeReleaseContext({ autoReleaseRunId, releaseRunId });
   const version = tags.tag.replace(/^v/, "");
   const published = poll(PUBLISH_WAIT_MS, () => {
     const viewed = run("npm", ["view", `@kontextmind/kxm@${version}`, "version"]);
@@ -847,7 +895,7 @@ function releaseStage() {
     return { done: false };
   });
   if (!published.version) return refuse("release", "land_publish_timeout", `npm view @kontextmind/kxm@${version} version`);
-  return pass("release", { detail: `PUBLISHED ${published.version}` });
+  return pass("release", { detail: `PUBLISHED ${published.version} auto-release ${autoReleaseRunId} release ${releaseRunId}` });
 }
 
 function taskStatuses(tasks) {
@@ -950,12 +998,13 @@ function main() {
     emit({
       stage: "usage",
       ok: true,
-      detail: "node scripts/pr-land.mjs [--pr <n>] [--body-file <path>] [--stage <name>] [--json] [--dry-run]",
+      detail: "node scripts/pr-land.mjs [--pr <n>] [--title <text>] [--body-file <path>] [--stage <name>] [--json] [--dry-run]",
     });
     return 0;
   }
   dryRun = parsed.options.dryRun;
   bodyFile = parsed.options.bodyFile;
+  requestedTitle = parsed.options.title;
   prNumber = parsed.options.pr;
   const names = parsed.options.stage ? [parsed.options.stage] : STAGES;
   for (const name of names) {
