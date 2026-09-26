@@ -14,6 +14,8 @@ import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
 import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
+import { KxmRunEventStore, KxmRuntimeRegistry, kxmProjectRunEventsPath, kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
+import { kxmRuntimeRequest, startKxmRuntimeSupervisor } from "../../plugins/kxm/src/runtime-supervisor.ts";
 import { parse, stringify } from "yaml";
 import { createTask, getTask, taskFilePath } from "../../plugins/kxm/src/task-manager.ts";
 import { createTestMesh } from "../helpers.ts";
@@ -1345,7 +1347,6 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
 });
 
 import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
-import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
 
 async function waitForSupervisorExit(env: NodeJS.ProcessEnv): Promise<void> {
   const paths = kxmRuntimePaths({ env });
@@ -2323,6 +2324,111 @@ test("lane drop refuses a dirty worktree unless forced, and keeps the branch", a
     assert.equal(branch.status, 0, branch.stderr);
   } finally {
     removeLaneCheckout(root, origin, [unit]);
+  }
+});
+
+test("lane drop unregisters the lane root while the runtime is running and when it is stopped", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-lane-drop-state-"));
+  const runningUnit = "slice";
+  const stoppedUnit = "other";
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    const created = capture();
+    assert.equal(await runCli(["lane", "create", runningUnit, "--json"], {}, created, root), 0, created.read().stderr);
+    const lanePath = (JSON.parse(created.read().stdout) as { lane: { path: string } }).lane.path;
+    const projectId = "prj_01JLANECLI00000000000000";
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    const now = "2026-09-26T00:00:00.000Z";
+    registry.registerProject({ projectId, projectRoot: root, homeRuntimeId: "rtm_lane", now });
+    registry.registerProject({ projectId, projectRoot: lanePath, homeRuntimeId: "rtm_lane", now });
+    assert.ok(registry.projectByRoot(lanePath)?.laneOf);
+    registry.close();
+
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot });
+    const unregisterCalls: string[] = [];
+    kxmDriveCliSeams.runtimeRequest = async (handle, method, path, body) => {
+      unregisterCalls.push(`${method} ${path}`);
+      return kxmRuntimeRequest(handle, method, path, body);
+    };
+    const dropped = capture();
+    assert.equal(await runCli(["lane", "drop", runningUnit, "--json"], { KXM_STATE_HOME: stateRoot }, dropped, root), 0, dropped.read().stderr);
+    assert.ok(unregisterCalls.includes("POST /v1/projects/unregister"));
+    delete kxmDriveCliSeams.runtimeRequest;
+    const afterRun = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.equal(afterRun.projectByRoot(lanePath), undefined);
+      assert.ok(afterRun.projectByRoot(root));
+    } finally {
+      afterRun.close();
+    }
+    await supervisor.stop();
+    supervisor = undefined;
+
+    const createdAgain = capture();
+    assert.equal(await runCli(["lane", "create", stoppedUnit, "--json"], {}, createdAgain, root), 0, createdAgain.read().stderr);
+    const stoppedPath = (JSON.parse(createdAgain.read().stdout) as { lane: { path: string } }).lane.path;
+    const stoppedRegistry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    stoppedRegistry.registerProject({ projectId, projectRoot: stoppedPath, homeRuntimeId: "rtm_lane", now });
+    assert.ok(stoppedRegistry.projectByRoot(stoppedPath)?.laneOf);
+    stoppedRegistry.close();
+    const droppedStopped = capture();
+    assert.equal(await runCli(["lane", "drop", stoppedUnit, "--json"], { KXM_STATE_HOME: stateRoot }, droppedStopped, root), 0, droppedStopped.read().stderr);
+    const afterStop = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.equal(afterStop.projectByRoot(stoppedPath), undefined);
+      assert.ok(afterStop.projectByRoot(root));
+    } finally {
+      afterStop.close();
+    }
+  } finally {
+    delete kxmDriveCliSeams.runtimeRequest;
+    if (supervisor) await supervisor.stop();
+    removeLaneCheckout(root, origin, [runningUnit, stoppedUnit]);
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("lane drop refuses an older open run when a newer run is settled", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-lane-open-state-"));
+  const unit = "slice";
+  const older = "run_0123456789abcdef0123456789abcdef";
+  const newer = "run_fedcba9876543210fedcba9876543210";
+  try {
+    const created = capture();
+    assert.equal(await runCli(["lane", "create", unit, "--json"], {}, created, root), 0, created.read().stderr);
+    const lanePath = (JSON.parse(created.read().stdout) as { lane: { path: string } }).lane.path;
+    const env = { KXM_STATE_HOME: stateRoot };
+    const store = new KxmRunEventStore(kxmProjectRunEventsPath(lanePath, env));
+    try {
+      const shared = {
+        projectId: "prj_01JLANECLI00000000000000",
+        homeRuntimeId: "rtm_lane",
+        workflowId: "default",
+        promptSha256: "0".repeat(64),
+        configRevision: "c",
+        memoryRevision: "m",
+        executorPolicyRevision: "e",
+        toolPolicyRevision: "t",
+      };
+      store.insertRun({ ...shared, runId: older, status: "running", createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" });
+      store.insertRun({ ...shared, runId: newer, status: "completed", createdAt: "2026-09-26T01:00:00.000Z", updatedAt: "2026-09-26T01:00:00.000Z" });
+    } finally {
+      store.close();
+    }
+    const refused = capture();
+    assert.equal(await runCli(["lane", "drop", unit, "--json"], env, refused, root), 1);
+    const payload = JSON.parse(refused.read().stderr) as { error?: string; runIds?: string[] };
+    assert.equal(payload.error, "lane_run_open");
+    assert.deepEqual(payload.runIds, [older]);
+    assert.equal(existsSync(join(lanePath, ".kxm", "project.yaml")), true);
+    const forced = capture();
+    assert.equal(await runCli(["lane", "drop", unit, "--force", "--json"], env, forced, root), 0, forced.read().stderr);
+    assert.equal(existsSync(lanePath), false);
+  } finally {
+    removeLaneCheckout(root, origin, [unit]);
+    rmSync(stateRoot, { recursive: true, force: true });
   }
 });
 

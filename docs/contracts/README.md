@@ -17,7 +17,7 @@
 | [Synchronization](synchronization.md) | Implemented for the default policy; custom policies and on-demand content transfer are not |
 | [Routing](routing.md) | Implemented: routing records, the dated price catalog, `kxm routing report` and `kxm improve` |
 | [Validation](validation.md) | Largely implemented: the restricted YAML loader, schema, reference and semantic checks, and permission diffs |
-| [Migration](migration.md) | Decided: there is no migration path and no `kxm migrate` command; legacy state is refused |
+| [Migration](migration.md) | Decided: no `kxm migrate` command; legacy state is refused. The Runtime registry schema 1 to 2 copy is the one in-place step |
 
 KXM is a convention-over-configuration, local-first orchestration and
 context platform. One local Runtime owns execution; an optional multi-project

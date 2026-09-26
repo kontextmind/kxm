@@ -1345,7 +1345,7 @@ dry run: resume workflow run wf_dry_run (stage: review)
 
 ## `kxm lane`
 
-One lane is one git worktree, one branch named the unit, and one recorded base sha. The record lives in the control checkout's state directory, `.kxm/state/lanes.json` (`kxm.lanes.v1`, mode 0600). The worktree path is `../<control-dir-basename>-<unit>`, next to the control checkout. Creating a lane resolves the base ref to a sha and does not fetch. There is no push, merge, pull request, or branch delete. Selecting a lane sets the discovery cwd to that lane's path and rebuilds workspace directories from it; `KXM_WORKDIR` still selects the workspace root when it is set, so the lane path is the workspace root only when `KXM_WORKDIR` is unset.
+One lane is one git worktree, one branch named the unit, and one recorded base sha. The record lives in the control checkout's state directory, `.kxm/state/lanes.json` (`kxm.lanes.v1`, mode 0600). The worktree path is `../<control-dir-basename>-<unit>`, next to the control checkout. Creating a lane resolves the base ref to a sha and does not fetch. There is no push, merge, pull request, or branch delete. Selecting a lane sets the discovery cwd to that lane's path and rebuilds workspace directories from it; `KXM_WORKDIR` still selects the workspace root when it is set, so the lane path is the workspace root only when `KXM_WORKDIR` is unset. A lane worktree of an already registered repository registers in the Runtime registry under that project: the same project id, its own control root and event store, and the same home runtime. A foreign clone with the same id is refused with `project_home_conflict`.
 
 ```text
 kxm lane create <unit> [--base <ref>]
@@ -1375,15 +1375,19 @@ Prints one line per lane: unit, branch, base sha, `dirty` (porcelain line count)
 
 ### `kxm lane status`
 
-The list row for one unit, plus `status` of `lastRunId` when the Runtime supervisor is already running and answers. Otherwise `status=unknown`. `kxm lane status` never starts the Runtime supervisor.
+The list row for one unit, plus `status` of `lastRunId` when the Runtime supervisor is already running and answers. Otherwise `status=unknown`. The text ends with `root=<path>`, the lane root that status read. JSON includes the same path as `root`. `kxm lane status` never starts the Runtime supervisor.
 
 Refusals (exit 1): `lane_missing`, `lane_unit_invalid`, `lanes_unreadable`.
 
 ### `kxm lane drop`
 
-Removes the worktree and the record. Refuses `lane_dirty` when porcelain is nonempty, and `lane_run_open` when `lastRunId` is set and that run is not `completed`, `failed`, or `cancelled`. `--force` overrides both. `git worktree remove --force` is used only with `--force`. The branch is not deleted; the text says so (`branchDeleted: false`). Unless `--force` is set, drop may start the Runtime supervisor to check whether the lane's last run is still open; `--dry-run` only attaches to a supervisor that is already running. `kxm lane status` never starts the supervisor.
+Removes the worktree and the record, and unregisters that lane root from the Runtime registry. When the supervisor is running, drop calls `POST /v1/projects/unregister`. A stopped supervisor is not an error: drop takes the registry write lock, deletes the row when that transaction still sees no live supervisor, and continues when the registry is absent. If the lock finds a live supervisor, drop uses the unregister route instead of editing the file. The route answers 409 `runtime_project_busy` when that root has an unsettled run, and 409 `runtime_project_has_lanes` when the root is the home row and other lanes are still registered, unless the body sets `force` to true. Refuses `lane_dirty` when porcelain is nonempty. Refuses `lane_run_open` when any run in the lane event store is not `completed`, `failed`, or `cancelled`. The text names each unsettled run id, and JSON includes `runIds`. That list is the same read as `kxm runs list` when the supervisor is running, and a direct read of the lane event store when the supervisor is stopped. A lane with no event store keeps the earlier check: `lane_run_open` when `lastRunId` is set and that run is not settled. `--force` overrides both refusals and sends `force: true` on the unregister request. `git worktree remove --force` is used only with `--force`. The branch is not deleted; the text says so (`branchDeleted: false`). Unless `--force` is set, the `lastRunId` check may start the Runtime supervisor. The event-store list only attaches to a supervisor that is already running. `--dry-run` only attaches and does not unregister. `kxm lane status` never starts the supervisor.
 
-Refusals (exit 1): `lane_missing`, `lane_dirty`, `lane_run_open`, `lane_git_failed`.
+`lane_run_open` also uses the detail `lane <unit> runs could not be read: <detail>` when the lane's project or store could not be read, so the drop fails closed and does not remove the worktree. `<detail>` is the error message, cut to 200 characters, or `run list failed` when the thrown value is not an `Error`. The unsettled-run details stay `lane <unit> run <ids> is unsettled` (with `runIds`) and `lane <unit> run <lastRunId> is <status>`.
+
+`lane_unregister_failed` uses the detail `lane <unit> could not be unregistered: <detail>`. `<detail>` is cut to 300 characters. It appears when a live supervisor refused the unregister or the request failed: the error message, `lane root could not be unregistered` when the failure is not an `Error`, or `runtime supervisor is live but could not be reached` when the registry lock finds a live supervisor that drop cannot attach to.
+
+Refusals (exit 1): `lane_missing`, `lane_dirty`, `lane_run_open`, `lane_git_failed`, `lane_unregister_failed`.
 
 ### `kxm lane run`
 
@@ -1638,8 +1642,8 @@ kxm runs status <runId> [--lane <unit>]
 Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned).
 
 - Arguments: `<runId>`, Run id. `--lane <unit>` discovers the project from that lane's worktree (`lane_missing` when the record or path is absent, `lane_unit_invalid` when the unit is not a KXM identifier, `lanes_unreadable` when the record cannot be read). Reads run state, but starts the supervisor if needed (not under `--dry-run`).
-- Text: `run <id>: <status> (workflow <id>, updated <time>)`, plus a drive line such as `drive <id>: open`, `completed (receipt verified)`, `unsettled <reason>`, `handoff`, `cancelled (<reason>)`, or `no receipt (orphaned)`.
-- JSON keys: `run` (`runId`, `status`, `workflowId`, `configRevision`, `updatedAt`, ...), `drive` (`driveId`, `mode`, `openedAt`, `receipt`, `verified`, `divergence`).
+- Text: `run <id>: <status> (workflow <id>, updated <time>)`, then `root <path>` (the checkout the status read, which is the lane worktree when `--lane` is set), plus a drive line such as `drive <id>: open`, `completed (receipt verified)`, `unsettled <reason>`, `handoff`, `cancelled (<reason>)`, or `no receipt (orphaned)`.
+- JSON keys: `projectRoot` (that same checkout), `run` (`runId`, `status`, `workflowId`, `configRevision`, `updatedAt`, ...), `drive` (`driveId`, `mode`, `openedAt`, `receipt`, `verified`, `divergence`).
 - Errors: `project_required`, `run_status_failed`, `run_status_io_failed` (exit 1).
 
 ```bash
@@ -1648,6 +1652,7 @@ kxm runs status run_a80e84c98f514299b82f0157f4537ea3
 
 ```text
 run run_a80e84c98f514299b82f0157f4537ea3: preparing (workflow default, updated 2026-09-23T17:47:29.682Z)
+root /work/proj
 ```
 
 With no supervisor running:

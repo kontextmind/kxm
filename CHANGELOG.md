@@ -425,6 +425,25 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **A git worktree lane registers under its project.** The Runtime registry
+  keeps the home row and adds the lane as its own control root and event
+  store, with the same project id and home runtime (`lane_of` on the lane
+  row). A foreign clone with that id is still `project_home_conflict`. A
+  registered root whose directory is gone is replaced, and that replacement
+  logs one `project_registration_replaced` event. `kxm lane drop` unregisters
+  the lane root when the Runtime is running, and still drops the worktree
+  when the Runtime is stopped. `kxm runs status` and `kxm lane status` print
+  the root they read. On the first read-write open, the registry table is
+  rebuilt and the registry advances from schema 1 to 2, copying every row
+  forward with `lane_of` empty. `kxm lane drop` refuses `lane_run_open` and names every
+  unsettled run in that lane's event store unless `--force` is set. Unregister
+  answers 409 `runtime_project_busy` or `runtime_project_has_lanes` unless the
+  body sets `force`.
+- **`npm test` exits when the suite finishes.** The script passes
+  `--test-force-exit`, so a green run does not sit in the event loop and a
+  red run still prints its failures. Two full runs of the suite without the
+  flag also exited once the files finished; the handle that kept an earlier
+  run alive was not reproduced in this tree.
 - **`kxm land` names the pull request from the first commit subject and matches the Release run by time.**
   `--title` sets the title; otherwise the subject of the first commit on the
   branch is used, and a missing subject refuses `land_pr_title_missing`. The

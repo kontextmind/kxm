@@ -600,8 +600,8 @@ export async function cmdKxmRunStatus(runtime: Runtime, runId: string): Promise<
     print(
       runtime.io,
       runtime.json,
-      { ok: true, command: "runs status", run, ...(drive !== undefined ? { drive } : {}) },
-      `${formatRunStatusLine(run, drive)}${driveLine ? `\n${driveLine}` : ""}`,
+      { ok: true, command: "runs status", projectRoot, run, ...(drive !== undefined ? { drive } : {}) },
+      `${formatRunStatusLine(run, drive)}\nroot ${projectRoot}${driveLine ? `\n${driveLine}` : ""}`,
     );
     return 0;
   } catch (error) {

@@ -6,13 +6,13 @@ import { dirname, isAbsolute, join } from "node:path";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { loadKxmProject, KxmConfigError, type KxmConfigOptions } from "./project-config.ts";
 import {
+  KxmRunEventStore,
   KxmRuntimeRegistry,
   projectRuntimeKey,
   readKxmSupervisorRecord,
   runtimeError,
   verifyKxmDriveReceipt,
   kxmRuntimePaths,
-  type KxmRunEventStore,
   type KxmRuntimePaths,
   type KxmSupervisorRecord,
 } from "./runtime-store.ts";
@@ -124,6 +124,28 @@ function readRecentSupervisorError(paths: KxmRuntimePaths): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+const SETTLED_RUN_STATUS = new Set(["completed", "failed", "cancelled"]);
+
+/** Same liveness rule as `kxmSupervisorStatus`: running, a fresh heartbeat, and a live pid. */
+export function kxmSupervisorRecordIsLive(record: KxmSupervisorRecord | undefined): boolean {
+  return supervisorStatusOf(record).running;
+}
+
+function unsettledRunIds(context: KxmRuntimeContext): string[] {
+  const ids: string[] = [];
+  for (const stored of context.eventStore.runsForProject(context.projectId, 10_000)) {
+    let status: string = stored.status;
+    try {
+      status = projectKxmRunReadOnly(context, stored.runId).status;
+    } catch {
+      ids.push(stored.runId);
+      continue;
+    }
+    if (!SETTLED_RUN_STATUS.has(status)) ids.push(stored.runId);
+  }
+  return ids;
 }
 
 function supervisorStatusOf(record: KxmSupervisorRecord | undefined): KxmSupervisorStatus {
@@ -781,6 +803,65 @@ async function startKxmRuntimeSupervisorInner(
           return;
         }
 
+        if (request.method === "POST" && url.pathname === "/v1/projects/unregister") {
+          const body = await readJsonBody(request);
+          const projectRoot = typeof body.projectRoot === "string" ? body.projectRoot : "";
+          const force = body.force === true;
+          if (!projectRoot || !isAbsolute(projectRoot)) {
+            sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: "projectRoot must be an absolute path" });
+            return;
+          }
+          if (!force) {
+            const key = projectRuntimeKey(projectRoot);
+            const existing = contexts.get(key);
+            let openRunIds: string[] = [];
+            if (existing) {
+              openRunIds = unsettledRunIds(existing);
+            } else {
+              const registration = registry.projectByRoot(projectRoot);
+              const eventsPath = join(paths.projectsDir, registration?.projectKey ?? projectRuntimeKey(projectRoot), "run-events.db");
+              if (registration && existsSync(eventsPath)) {
+                const store = new KxmRunEventStore(eventsPath);
+                try {
+                  openRunIds = store.runsForProject(registration.projectId, 10_000)
+                    .filter((run) => !SETTLED_RUN_STATUS.has(run.status))
+                    .map((run) => run.runId);
+                } finally {
+                  store.close();
+                }
+              }
+            }
+            if (openRunIds.length > 0) {
+              sendJson(response, 409, {
+                ok: false,
+                error: "runtime_project_busy",
+                message: `unsettled run ${openRunIds.join(", ")}`,
+                runIds: openRunIds,
+              });
+              return;
+            }
+            const laneCount = registry.homeLaneCount(projectRoot);
+            if (laneCount > 0) {
+              sendJson(response, 409, {
+                ok: false,
+                error: "runtime_project_has_lanes",
+                message: `home root still has ${laneCount} lane(s)`,
+              });
+              return;
+            }
+          }
+          const key = projectRuntimeKey(projectRoot);
+          const existing = contexts.get(key);
+          const unregistered = registry.unregisterProject(projectRoot);
+          if (existing) {
+            contexts.delete(key);
+            syncStatuses.delete(key);
+            closeKxmRuntimeContext(existing);
+          }
+          sendJson(response, 200, { ok: true, unregistered });
+          return;
+        }
+
         if (request.method === "POST" && url.pathname === "/v1/runs") {
           const body = await readJsonBody(request);
           const projectRoot = typeof body.projectRoot === "string" ? body.projectRoot : "";
@@ -1026,9 +1107,12 @@ async function startKxmRuntimeSupervisorInner(
           // that returned raw rows would let every consumer — including the portal's
           // tenant read — present cached status as authoritative. Folding replays each
           // run's events; workflows are transition-bounded, so this stays cheap at the
-          // 50-run cap. A run that refuses to fold is returned with its cached row plus
+          // default 50-run cap (`limit` may ask for up to 10000). A run that refuses to fold is returned with its cached row plus
           // `projectionError`, so one corrupt run cannot make the listing lie by omission.
-          const runs = context.eventStore.runsForProject(requestedProjectId, 50).map((stored) => {
+          const limitText = url.searchParams.get("limit");
+          const parsedLimit = limitText === null ? 50 : Number(limitText);
+          const limit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 10_000) : 50;
+          const runs = context.eventStore.runsForProject(requestedProjectId, limit).map((stored) => {
             try {
               return projectKxmRunReadOnly(context, stored.runId);
             } catch (error) {

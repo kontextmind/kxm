@@ -13,7 +13,7 @@ Read from `plugins/kxm/src/cli.ts`, `scripts/kxm-hub.mjs`, `plugins/kxm/src/hub.
 | Hub | `kxm hub start` via `scripts/kxm-hub.mjs` | `127.0.0.1:7331` | `.kxm/state/kxm.db` under the workspace state dir | `plugins/kxm/src/hub.ts` |
 | Hub credentials | written when the hub starts | `hub-env.json` under the user state root | that JSON file, not SQLite | `plugins/kxm/src/hub-env.ts` |
 | Runtime supervisor | `kxm runtime` / `scripts/kxm-runtime-supervisor.mjs` | `127.0.0.1` and the requested port, or ephemeral | registry and event stores below | `plugins/kxm/src/runtime-supervisor.ts` |
-| Runtime registry | opened by the supervisor | `runtime/registry.db` under the user state root | `registry.db` | `plugins/kxm/src/runtime-paths.ts` |
+| Runtime registry | opened by the supervisor | `runtime/registry.db` under the user state root | `registry.db`. A lane worktree registers under its project: same project id, its own control root, `lane_of` set. A registering root is the primary worktree when its git common dir is `<root>/.git`; if that primary registers while the live home row is not primary, the primary becomes the home row and every other live row of that repository becomes its lane. | `plugins/kxm/src/runtime-paths.ts` |
 | Runtime event store | opened by the supervisor | `runtime/projects/<key>/run-events.db` | `run-events.db` | `plugins/kxm/src/runtime-paths.ts` |
 | MCP server | Claude plugin or stdio launch | stdio | none | `plugins/kxm/src/mcp-server.ts` |
 | One-shot harness | supervisor producer | child process, no listener | none | `plugins/kxm/src/oneshot-producer.ts` |

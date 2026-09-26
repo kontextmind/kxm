@@ -19567,22 +19567,25 @@ function ensureWalJournalMode(database, file, description, timeoutMs = 5e3) {
     Atomics.wait(sleeper, 0, 0, 10);
   }
 }
+function assertDatabaseFile(file, description) {
+  checkedParent(file, description);
+  const stat = lstatSync2(file, { throwIfNoEntry: false });
+  if (stat) {
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
+    }
+  }
+  for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
+    const info = lstatSync2(sidecar, { throwIfNoEntry: false });
+    if (info?.isSymbolicLink()) {
+      throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
+    }
+  }
+}
 function openDatabase(file, description, spec) {
   const isMemory = file === ":memory:";
   if (!isMemory) {
-    checkedParent(file, description);
-    const stat = lstatSync2(file, { throwIfNoEntry: false });
-    if (stat) {
-      if (stat.isSymbolicLink() || !stat.isFile()) {
-        throw databaseError("runtime_path_invalid", description, `${description} must be a regular file, not a link or directory`);
-      }
-    }
-    for (const sidecar of [`${file}-wal`, `${file}-shm`]) {
-      const info = lstatSync2(sidecar, { throwIfNoEntry: false });
-      if (info?.isSymbolicLink()) {
-        throw databaseError("runtime_path_invalid", description, `${description} sidecar must not be a link`);
-      }
-    }
+    assertDatabaseFile(file, description);
   }
   const database = new DatabaseSync(file);
   let transaction = false;
@@ -19611,7 +19614,7 @@ function openDatabase(file, description, spec) {
       throw databaseError(
         "runtime_schema_outdated",
         file,
-        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for registry/event stores); \`kxm init\` is project-only and rebuilds no database \u2014 upgrading old state in place is deliberately unsupported`
+        `${description} is schema version ${version}; this build requires ${spec.version}. Delete the state file to start fresh and let its owning process recreate it (\`kxm hub start\` for hub state, the Runtime for event stores). The Runtime registry copy from schema 1 to 2 is the one exception. \`kxm init\` is project-only and rebuilds no database. Upgrading any other old state in place is deliberately unsupported`
       );
     }
     if (spec.tables) {

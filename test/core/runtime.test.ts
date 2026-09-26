@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { removeTempDir, waitFor } from "../helpers.ts";
+import { makeGitRoot } from "../helpers/git-root.ts";
 import { committedProject } from "../helpers/project.ts";
+import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import {
   KxmRunEventStore,
   KxmRuntimeRegistry,
@@ -637,7 +639,7 @@ async function killAndWait(child: ChildProcess | undefined): Promise<void> {
   });
 }
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 function spawnChild(script: string, env: NodeJS.ProcessEnv): ChildProcess {
   const child = spawn(process.execPath, [script], {
@@ -1198,5 +1200,325 @@ test("a hub this Runtime cannot reach is reported by the sync status, not swallo
   } finally {
     if (supervisor) await supervisor.stop();
     cleanup(root, stateRoot);
+  }
+});
+
+function writeRegistrySchemaV1(
+  dbPath: string,
+  row: { projectId: string; projectRoot: string; projectKey: string; homeRuntimeId: string; registeredAt: string },
+): void {
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const database = new DatabaseSync(dbPath);
+  database.exec(`
+    CREATE TABLE supervisor (
+      singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+      runtime_id TEXT NOT NULL,
+      pid INTEGER NOT NULL,
+      port INTEGER NOT NULL,
+      token_hash TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      heartbeat_at TEXT NOT NULL,
+      state TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE projects (
+      project_id TEXT PRIMARY KEY,
+      project_root TEXT NOT NULL,
+      project_key TEXT NOT NULL UNIQUE,
+      home_runtime_id TEXT NOT NULL,
+      config_revision TEXT,
+      registered_at TEXT NOT NULL
+    ) STRICT;
+  `);
+  database.exec("PRAGMA user_version = 1");
+  database.prepare(
+    "INSERT INTO projects (project_id, project_root, project_key, home_runtime_id, config_revision, registered_at) VALUES (?, ?, ?, ?, NULL, ?)",
+  ).run(row.projectId, row.projectRoot, row.projectKey, row.homeRuntimeId, row.registeredAt);
+  database.close();
+}
+
+test("a worktree of a registered repository is admitted as a lane and a schema 1 row is kept", () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-lane-");
+  const worktree = join(dirname(root), `${basename(root)}-lane`);
+  const registeredAt = "2026-09-01T00:00:00.000Z";
+  try {
+    const paths = kxmRuntimePaths({ stateRoot });
+    const projectId = String(loadKxmProject(root).project.value.id);
+    writeRegistrySchemaV1(paths.registryDb, {
+      projectId,
+      projectRoot: resolve(root),
+      projectKey: projectRuntimeKey(root),
+      homeRuntimeId: "rtm_one",
+      registeredAt,
+    });
+    const registry = new KxmRuntimeRegistry(paths.registryDb);
+    try {
+      const home = registry.projectByRoot(root);
+      assert.ok(home);
+      assert.equal(home.projectId, projectId);
+      assert.equal(home.projectRoot, resolve(root));
+      assert.equal(home.projectKey, projectRuntimeKey(root));
+      assert.equal(home.homeRuntimeId, "rtm_one");
+      assert.equal(home.registeredAt, registeredAt);
+      assert.equal(home.laneOf, undefined, "a schema 1 row stays the home row");
+      const version = new DatabaseSync(paths.registryDb, { readOnly: true });
+      try {
+        const stamp = version.prepare("PRAGMA user_version").get() as { user_version: number };
+        assert.equal(stamp.user_version, KXM_REGISTRY_SCHEMA_VERSION);
+      } finally {
+        version.close();
+      }
+
+      const added = spawnSync("git", ["-C", root, "worktree", "add", "-b", "lane-b", worktree, "HEAD"], { encoding: "utf8", windowsHide: true });
+      assert.equal(added.status, 0, added.stderr);
+      const now = "2026-09-26T00:00:00.000Z";
+      const lane = registry.registerProject({ projectId, projectRoot: worktree, homeRuntimeId: "rtm_one", now });
+      assert.equal(lane.projectId, projectId);
+      assert.equal(lane.homeRuntimeId, "rtm_one");
+      assert.notEqual(lane.projectKey, home.projectKey);
+      assert.equal(lane.laneOf, home.projectKey);
+      assert.equal(registry.project(projectId)?.projectRoot, resolve(root));
+      assert.equal(registry.projectByRoot(worktree)?.projectKey, lane.projectKey);
+      const again = registry.registerProject({ projectId, projectRoot: worktree, homeRuntimeId: "rtm_one", now: "2026-09-27T00:00:00.000Z" });
+      assert.equal(again.registeredAt, now, "re-registering the lane root is idempotent");
+    } finally {
+      registry.close();
+    }
+  } finally {
+    spawnSync("git", ["-C", root, "worktree", "remove", "--force", worktree], { encoding: "utf8", windowsHide: true });
+    cleanup(root, stateRoot, worktree);
+  }
+});
+
+test("a foreign clone with the same project id is refused while its directory exists", () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-foreign-");
+  const foreign = mkdtempSync(join(tmpdir(), "kxm-runtime-foreign-clone-"));
+  try {
+    const projectId = String(loadKxmProject(root).project.value.id);
+    makeGitRoot(foreign);
+    initializeKxmProject(foreign, { projectId, projectName: "Foreign" });
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      const now = "2026-09-26T00:00:00.000Z";
+      registry.registerProject({ projectId, projectRoot: root, homeRuntimeId: "rtm_one", now });
+      assert.throws(
+        () => registry.registerProject({ projectId, projectRoot: foreign, homeRuntimeId: "rtm_one", now }),
+        (error: unknown) => {
+          assert.ok(error instanceof KxmConfigError);
+          assert.equal(error.issues[0]?.code, "project_home_conflict");
+          return true;
+        },
+      );
+      assert.equal(registry.projectByRoot(root)?.projectRoot, resolve(root));
+      assert.equal(registry.projectByRoot(foreign), undefined);
+    } finally {
+      registry.close();
+    }
+  } finally {
+    cleanup(root, stateRoot, foreign);
+  }
+});
+
+test("unregister refuses runtime_project_busy while a run is unsettled", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-busy-");
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot });
+    const token = readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    await kxmRuntimeRequest(handle, "POST", "/v1/runs", {
+      projectRoot: root,
+      workflowId: "default",
+      prompt: "still open",
+    });
+    const refused = await fetch(`http://127.0.0.1:${supervisor.port}/v1/projects/unregister`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ projectRoot: root }),
+    });
+    assert.equal(refused.status, 409);
+    const body = await refused.json() as { error?: string };
+    assert.equal(body.error, "runtime_project_busy");
+    const still = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.ok(still.projectByRoot(root));
+    } finally {
+      still.close();
+    }
+    const forced = await kxmRuntimeRequest(handle, "POST", "/v1/projects/unregister", { projectRoot: root, force: true });
+    assert.equal(forced.unregistered, true);
+    const after = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.equal(after.projectByRoot(root), undefined);
+    } finally {
+      after.close();
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    cleanup(root, stateRoot);
+  }
+});
+
+test("unregister refuses runtime_project_has_lanes while the home root still has a lane", async () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-homelanes-");
+  const worktree = join(dirname(root), `${basename(root)}-lane`);
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    const added = spawnSync("git", ["-C", root, "worktree", "add", "-b", "lane-b", worktree, "HEAD"], { encoding: "utf8", windowsHide: true });
+    assert.equal(added.status, 0, added.stderr);
+    const projectId = String(loadKxmProject(root).project.value.id);
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    const now = "2026-09-26T00:00:00.000Z";
+    registry.registerProject({ projectId, projectRoot: root, homeRuntimeId: "rtm_fixed", now });
+    registry.registerProject({ projectId, projectRoot: worktree, homeRuntimeId: "rtm_fixed", now });
+    assert.ok(registry.homeLaneCount(root) > 0);
+    registry.close();
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot });
+    const token = readKxmSupervisorToken(kxmRuntimePaths({ stateRoot }))!;
+    const handle = { runtimeId: supervisor.runtimeId, port: supervisor.port, token, started: true };
+    const refused = await fetch(`http://127.0.0.1:${supervisor.port}/v1/projects/unregister`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ projectRoot: resolve(root) }),
+    });
+    assert.equal(refused.status, 409);
+    const body = await refused.json() as { error?: string };
+    assert.equal(body.error, "runtime_project_has_lanes");
+    const still = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.ok(still.projectByRoot(root));
+      assert.ok(still.projectByRoot(worktree)?.laneOf);
+    } finally {
+      still.close();
+    }
+    const forced = await kxmRuntimeRequest(handle, "POST", "/v1/projects/unregister", { projectRoot: resolve(root), force: true });
+    assert.equal(forced.unregistered, true);
+    const after = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.equal(after.projectByRoot(root), undefined);
+      assert.equal(after.projectByRoot(worktree)?.laneOf, undefined);
+    } finally {
+      after.close();
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    spawnSync("git", ["-C", root, "worktree", "remove", "--force", worktree], { encoding: "utf8", windowsHide: true });
+    cleanup(root, stateRoot, worktree);
+  }
+});
+
+test("a registered root whose directory is gone is replaced and logs one event", () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-dead-");
+  const replacement = mkdtempSync(join(tmpdir(), "kxm-runtime-dead-next-"));
+  try {
+    const projectId = String(loadKxmProject(root).project.value.id);
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      const now = "2026-09-26T00:00:00.000Z";
+      const original = registry.registerProject({ projectId, projectRoot: root, homeRuntimeId: "rtm_one", now });
+      rmSync(root, { recursive: true, force: true });
+      const events: Array<Record<string, unknown>> = [];
+      const replaced = registry.registerProject({
+        projectId,
+        projectRoot: replacement,
+        homeRuntimeId: "rtm_one",
+        now: "2026-09-26T01:00:00.000Z",
+        logger: (entry) => events.push(entry),
+      });
+      assert.equal(events.length, 1);
+      assert.equal(events[0]?.event, "project_registration_replaced");
+      assert.equal(events[0]?.replacedRoot, original.projectRoot);
+      assert.deepEqual(
+        { replacedHomeRuntimeId: events[0]?.replacedHomeRuntimeId, replacedProjectKey: events[0]?.replacedProjectKey },
+        { replacedHomeRuntimeId: original.homeRuntimeId, replacedProjectKey: original.projectKey },
+      );
+      assert.equal(replaced.projectRoot, resolve(replacement));
+      assert.equal(replaced.laneOf, undefined);
+      assert.equal(registry.projectByRoot(root), undefined);
+      assert.equal(registry.project(projectId)?.projectRoot, resolve(replacement));
+    } finally {
+      registry.close();
+    }
+  } finally {
+    cleanup(root, stateRoot, replacement);
+  }
+});
+
+test("a primary checkout takes the home row from a lane that registered first", () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-promote-");
+  const worktree = join(dirname(root), `${basename(root)}-lane`);
+  try {
+    const added = spawnSync("git", ["-C", root, "worktree", "add", "-b", "lane-b", worktree, "HEAD"], { encoding: "utf8", windowsHide: true });
+    assert.equal(added.status, 0, added.stderr);
+    const projectId = String(loadKxmProject(root).project.value.id);
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      const now = "2026-09-26T00:00:00.000Z";
+      const events: Array<Record<string, unknown>> = [];
+      const laneFirst = registry.registerProject({
+        projectId,
+        projectRoot: worktree,
+        homeRuntimeId: "rtm_one",
+        now,
+        logger: (entry) => events.push(entry),
+      });
+      assert.equal(laneFirst.laneOf, undefined);
+      const primary = registry.registerProject({
+        projectId,
+        projectRoot: root,
+        homeRuntimeId: "rtm_one",
+        now: "2026-09-26T01:00:00.000Z",
+        logger: (entry) => events.push(entry),
+      });
+      assert.equal(events.length, 1);
+      assert.equal(events[0]?.event, "project_home_promoted");
+      assert.equal(primary.laneOf, undefined);
+      assert.equal(primary.homeRuntimeId, "rtm_one");
+      assert.equal(registry.project(projectId)?.projectRoot, resolve(root));
+      assert.equal(registry.projectByRoot(worktree)?.laneOf, primary.projectKey);
+      assert.equal(registry.unregisterProject(worktree), true);
+      assert.equal(registry.projectByRoot(worktree), undefined);
+      assert.equal(registry.project(projectId)?.projectRoot, resolve(root));
+    } finally {
+      registry.close();
+    }
+  } finally {
+    spawnSync("git", ["-C", root, "worktree", "remove", "--force", worktree], { encoding: "utf8", windowsHide: true });
+    cleanup(root, stateRoot, worktree);
+  }
+});
+
+test("a dead row whose home runtime differs is refused and left in place", () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-dead-home-");
+  const replacement = mkdtempSync(join(tmpdir(), "kxm-runtime-dead-home-next-"));
+  try {
+    const projectId = String(loadKxmProject(root).project.value.id);
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      const now = "2026-09-26T00:00:00.000Z";
+      const original = registry.registerProject({ projectId, projectRoot: root, homeRuntimeId: "rtm_one", now });
+      rmSync(root, { recursive: true, force: true });
+      assert.throws(
+        () => registry.registerProject({
+          projectId,
+          projectRoot: replacement,
+          homeRuntimeId: "rtm_two",
+          now: "2026-09-26T01:00:00.000Z",
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof KxmConfigError);
+          assert.equal(error.issues[0]?.code, "project_home_conflict");
+          return true;
+        },
+      );
+      const left = registry.project(projectId);
+      assert.equal(left?.projectKey, original.projectKey);
+      assert.equal(left?.homeRuntimeId, "rtm_one");
+      assert.equal(left?.projectRoot, original.projectRoot);
+      assert.equal(registry.projectByRoot(replacement), undefined);
+    } finally {
+      registry.close();
+    }
+  } finally {
+    cleanup(root, stateRoot, replacement);
   }
 });

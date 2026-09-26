@@ -315,6 +315,7 @@ export function openKxmRuntimeContext(
       homeRuntimeId: options.homeRuntimeId,
       configRevision: bundle.configRevision,
       now: options.now ?? new Date().toISOString(),
+      ...(options.logger ? { logger: options.logger } : {}),
     });
     const eventStore = new KxmRunEventStore(join(paths.projectsDir, registration.projectKey, "run-events.db"));
     registerKxmRuntimeHandle(eventStore.path);
