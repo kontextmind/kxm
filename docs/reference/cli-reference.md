@@ -1195,7 +1195,7 @@ Prints a role definition as YAML.
 kxm role get writer --scope local
 ```
 
-Not run with a configured role; in a fresh project it exits 1 with `kxm: role 'writer' not found`.
+In a fresh project this exits 1 with `kxm: role 'writer' not found`. This checkout's writer is the `kxm role get writer --json` example under [`kxm role modify`](#kxm-role-modify).
 
 ### `kxm role add`
 
@@ -1216,7 +1216,7 @@ Adds a role definition. Without a role ID, or with `--pick`, local scope offers 
 | `--pick` | `[selection]` | none | Pick a global role to copy (index or id) |
 
 - Writes `.kxm/roles/<id>.yaml` in local scope, or `<KXM_USER_CONFIG_DIR>/roles/<id>.yaml` in global scope. `--dry-run` plans the write and writes nothing.
-- Each `--route` is checked the same way as `kxm role modify --add-route`. If `.kxm/models/<route-id>.yaml` is missing, the command exits 1 and writes `kxm: route '<route-id>' is not a file under .kxm/models/` to stderr. It does not write the role file, including under `--dry-run`.
+- Each `--route` is checked the same way as `kxm role modify --add-route`. If `.kxm/models/<route-id>.yaml` is missing, the command exits 1 and writes `kxm: route '<route-id>' is not a file under .kxm/models/` to stderr. It does not write the role file, including under `--dry-run`. `--file` checks every `roster[].route` the same way before writing, in local scope and in global scope.
 - Local scope belongs to a KXM project: the file lands in the project root's `.kxm/roles/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new role in place of any file of that ID. The loader reads only `writer.yaml`, whose roster must name a route whose model is the `implementer` agent's model (see [Roles](config-reference.md#kxmrolesroleyaml-kxmrolev2)). If the project would not load, the command refuses with `role_invalid`, lists each issue and writes nothing, also under `--dry-run`, and `--overwrite` replaces a `writer.yaml` the loader refuses. Global scope is not checked, because no loader reads it.
 - Refusals exit 2 and honor `--json`: `project_not_found` and `role_invalid` (with `issues`, each `{phase, code, file, message}`). A missing `--route` file, and an existing role without `--overwrite`, exit 1 with a plain stderr line, also under `--dry-run` (`kxm: route '<route-id>' is not a file under .kxm/models/`, or `role add failed: role_already_exists: ...`).
 - JSON keys: `roleId`, `id`, `filePath`, `scope`.
@@ -1285,11 +1285,21 @@ Updates an existing role's description, skills, or route roster and rewrites its
 - JSON keys: `roleId`, `id`, `role`, `filePath`, `scope`.
 
 ```bash
-kxm role modify demo-role --add-skill kxm --dry-run --json
+kxm role get writer --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"demo-role","id":"demo-role","role":{"schema":"kxm.role.v2","id":"demo-role","description":"Demo role","skills":["kxm"],"roster":[]},"filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role get","roleId":"writer","scope":"local","filePath":"/work/kxm/.kxm/roles/writer.yaml","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":[],"roster":[{"route":"grok-native","effort":"medium"},{"route":"qwen-openrouter-pi","effort":"medium"},{"route":"gemini-agy"}]}}
+```
+
+Captured from this checkout with `node scripts/kxm.mjs role get writer --json`. The path is shortened to `/work/kxm`.
+
+```bash
+kxm role modify writer --add-skill kxm --dry-run --json
+```
+
+```text
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"writer","id":"writer","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":["kxm"],"roster":[{"route":"grok-native","effort":"medium"},{"route":"qwen-openrouter-pi","effort":"medium"},{"route":"gemini-agy"}]},"filePath":"/work/kxm/.kxm/roles/writer.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/kxm/.kxm/roles/writer.yaml"}]}
 ```
 
 Add an existing route to a role's roster (Not run):
