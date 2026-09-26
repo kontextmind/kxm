@@ -281,8 +281,8 @@ export function resolveBoundPolicy(identity) {
   objectId(identity.commit, 'commit'); digest(identity.blob); digest(identity.sha256);
   const snapshot = control();
   git('merge-base', '--is-ancestor', identity.commit, snapshot.trusted);
-  const { policy, digest } = policyAt(identity.commit, snapshot.trusted, false);
-  if (digest !== identity.blob || digest !== identity.sha256) refuse('bound identity mismatch');
+  const loaded = policyAt(identity.commit, snapshot.trusted, false);
+  if (loaded.digest !== identity.blob || loaded.digest !== identity.sha256) refuse('bound identity mismatch');
   unchanged(snapshot);
-  return frozen({ identity: { ...identity }, policy });
+  return frozen({ identity: { ...identity }, policy: loaded.policy });
 }

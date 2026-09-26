@@ -1381,9 +1381,18 @@ function unreconciledPanelAttemptId(state: KxmRunState): string | undefined {
 
 function resolveProducerRoute(
   projectRoot: string,
-  _step: KxmCompiledStep,
+  step: KxmCompiledStep,
   agentId: string,
 ): ResolvedProducerRoute | { error: Omit<KxmRunHandoff, "stepId"> } {
+  if ((step.kind === "agent" || step.kind === "moa") && step.model !== undefined) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent step model is not honored",
+      },
+    };
+  }
   const agent = readYamlFile(join(projectRoot, ".kxm", "agents", `${agentId}.yaml`));
   const role = typeof agent?.role === "string" ? agent.role : "";
   if (!role) {

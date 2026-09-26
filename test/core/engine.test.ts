@@ -1388,6 +1388,27 @@ test("a live drive resolves the producer route from the agent role roster", asyn
     spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
     spawnSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "route witnesses"], { windowsHide: true });
 
+    // A provider containing the separator is refused by the schema before the engine
+    // ever sees it — the loader is the layer that owns that contract.
+    writeFileSync(join(root, ".kxm", "agents", "malformed.yaml"), [
+      "schema: kxm.agent.v1",
+      "purpose: Malformed provider.",
+      "model:",
+      "  provider: xai/via-slash",
+      "  model: grok-4.6",
+      "tools:",
+      "  preset: read-only",
+      "defaultRepositoryAccess: read",
+      "network: provider-only",
+      "resultSchema: kxm.assignment-result.v1",
+      "",
+    ].join("\n"));
+    assert.throws(
+      () => loadKxmProject(root),
+      /schema_pattern/,
+      "a provider with a separator never loads as a project",
+    );
+    rmSync(join(root, ".kxm", "agents", "malformed.yaml"), { force: true });
     setRouteState(root, "xai/grok-4.6", "admitted");
     setRouteState(root, "openrouter/qwen/qwen3-coder-plus", "admitted");
 
@@ -4054,6 +4075,39 @@ roster:
     } finally {
       closeKxmRuntimeContext(context);
     }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live route refuses an agent step that sets model", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-step-model-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "one-step.yaml"), `schema: kxm.workflow.v1
+description: Single agent step with a model override.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    model:
+      provider: xai
+      model: grok-4.6
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    const refusal = found.find((entry) => entry.field === "model" && entry.reason === "step_unsupported");
+    assert.ok(refusal, "an agent step model is refused");
+    assert.match(refusal.detail ?? "", /agent step model is not honored/);
   } finally {
     removeTempDir(root, stateRoot);
   }

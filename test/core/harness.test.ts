@@ -761,7 +761,7 @@ test("config with a Grok model under harness claude is rejected at validation", 
     makeGitRoot(join(root, "repositories", "api"));
     makeGitRoot(join(root, "repositories", "web"));
     const agentFile = join(root, ".kxm", "agents", "critic-2.yaml");
-    writeFileSync(agentFile, `${readFileSync(agentFile, "utf8").trimEnd()}\nharness: claude\n`);
+    writeFileSync(agentFile, `${readFileSync(agentFile, "utf8").trimEnd()}\nharness: claude\nmodel:\n  profile: critic-grok\n`);
     assert.throws(() => loadKxmProject(root), (error: unknown) => issueCodes(error).includes("harness_unhosted_model"));
   } finally {
     rmSync(root, { recursive: true, force: true });

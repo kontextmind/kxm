@@ -19379,7 +19379,7 @@ function validateModelReferences(models, issues) {
   };
   for (const id of models.keys()) walk(id, []);
 }
-function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot, writerRole) {
+function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot) {
   const issues = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const repositoryIds = /* @__PURE__ */ new Set();
@@ -19447,54 +19447,7 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
   if (!workflows.has(defaultWorkflow)) issues.push(issue3("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
-  if (projectRoot) {
-    const writerRolePath = join6(projectRoot, ".kxm", "roles", "writer.yaml");
-    const implementerAgent = agents.get("implementer") ?? agents.get("writer");
-    if ((writerRole !== void 0 || existsSync6(writerRolePath)) && implementerAgent) {
-      try {
-        const rawRole = parseRestrictedYaml2(writerRole ?? readFileSync5(writerRolePath, "utf8"));
-        const roleObj = objectValue(rawRole);
-        const rosterEntries = valuesOf(roleObj ?? {}, "roster").map((candidate) => objectValue(candidate)).filter((entry) => Boolean(entry));
-        const enabledRosterModels = rosterEntries.flatMap((entry) => {
-          const direct = stringValue(entry.model);
-          const route = stringValue(entry.route);
-          const named = direct ? [direct] : [];
-          if (route) {
-            const modelFile = join6(projectRoot, ".kxm", "models", `${route}.yaml`);
-            if (existsSync6(modelFile)) {
-              try {
-                const modelDoc = objectValue(parseRestrictedYaml2(readFileSync5(modelFile, "utf8"), modelFile));
-                const model = modelDoc ? stringValue(modelDoc.model) : void 0;
-                const vendor = modelDoc ? stringValue(modelDoc.vendor) : void 0;
-                const harness = modelDoc ? stringValue(modelDoc.harness) : void 0;
-                if (model) named.push(model);
-                if (vendor && model) named.push(`${vendor}/${model}`);
-                if (harness && model) named.push(`${harness}/${model}`);
-              } catch {
-              }
-            }
-          }
-          return named;
-        });
-        const agentModelObj = objectValue(implementerAgent.value.model);
-        const agentModelStr = stringValue(implementerAgent.value.model);
-        const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : void 0;
-        const agentModel = agentModelObj ? stringValue(agentModelObj.model) : agentModelStr;
-        const canonicalAgentModel = agentProvider && agentModel ? `${agentProvider}/${agentModel}` : agentModel;
-        if (enabledRosterModels.length > 0 && canonicalAgentModel) {
-          const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
-          if (!matches) {
-            issues.push(issue3("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
-          }
-        }
-      } catch (error) {
-        if (error instanceof KxmConfigError) {
-          issues.push(...error.issues);
-        }
-      }
-    }
-  }
-  if (projectRoot && existsSync6(join6(projectRoot, "scripts", "harness-run.mjs"))) {
+  if (projectRoot && existsSync6(join6(projectRoot, ".kxm", "roles"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }
   return sortIssues3(issues);
@@ -19526,6 +19479,7 @@ function developerCeilings() {
   }
 }
 function developerRolePolicyIssues(projectRoot) {
+  if (resolve3(projectRoot) !== findKxmRepoRoot(import.meta.url)) return [];
   const rolesDir = join6(projectRoot, ".kxm", "roles");
   const modelsDir = join6(projectRoot, ".kxm", "models");
   const roles = {};
@@ -19796,7 +19750,7 @@ function loadProjectBundle(projectRoot, options, candidate) {
     }
   }
   if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
   if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...roles.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits4(left.logicalPath, right.logicalPath));
   return {
@@ -26229,7 +26183,16 @@ function readYamlFile(file) {
     return void 0;
   }
 }
-function resolveProducerRoute(projectRoot, _step, agentId) {
+function resolveProducerRoute(projectRoot, step, agentId) {
+  if ((step.kind === "agent" || step.kind === "moa") && step.model !== void 0) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent step model is not honored"
+      }
+    };
+  }
   const agent = readYamlFile(join17(projectRoot, ".kxm", "agents", `${agentId}.yaml`));
   const role = typeof agent?.role === "string" ? agent.role : "";
   if (!role) {

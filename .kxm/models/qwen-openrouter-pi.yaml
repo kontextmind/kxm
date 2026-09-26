@@ -7,5 +7,5 @@ status: admitted
 permissions:
   - edit
 origin:
-  source: .kxm/routes.yaml
-  sha256: 813e84a728be5aee2495d98c9466c0f11c2eb154e0e8e714a61cbc1516699230
+  source: docs/reference/harness-routing.md
+  sha256: 321c821ed6dbce7b2e98309fdc29387671577049619b6979c685a7ba60c63337

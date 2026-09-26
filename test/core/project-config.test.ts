@@ -125,10 +125,12 @@ test("KXM loader fails closed on schema, path, reference, and semantic errors", 
     assert.throws(() => loadKxmProject(root), (error) => issueCodes(error).includes("probable_secret_value"));
     writeFileSync(environmentFile, originalEnvironment);
 
+    const critic1 = join(root, ".kxm", "agents", "critic-1.yaml");
     const critic2 = join(root, ".kxm", "agents", "critic-2.yaml");
     const critic3 = join(root, ".kxm", "agents", "critic-3.yaml");
-    writeFileSync(critic2, readFileSync(critic2, "utf8").replace("profile: critic-grok", "profile: critic-claude"));
-    writeFileSync(critic3, readFileSync(critic3, "utf8").replace("profile: critic-gemini", "profile: critic-claude"));
+    for (const file of [critic1, critic2, critic3]) {
+      writeFileSync(file, `${readFileSync(file, "utf8").trimEnd()}\nmodel:\n  profile: critic-claude\n`);
+    }
     assert.throws(() => loadKxmProject(root), (error) => issueCodes(error).includes("model_diversity_impossible"));
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -271,6 +273,7 @@ test("KXM workflow validation preserves model/tool ceilings and completed-path g
     assert.throws(() => loadKxmProject(root), (error) => issueCodes(error).includes("tool_scope_expansion"));
     writeFileSync(plannerFile, originalPlanner);
 
+    writeFileSync(plannerFile, `${originalPlanner.trimEnd()}\nmodel:\n  provider: anthropic\n  model: fable\n`);
     writeFileSync(workflowFile, originalWorkflow.replace("    agent: planner\n", "    agent: planner\n    model:\n      provider: google\n      model: gemini-incompatible\n    assignments: {}\n"));
     assert.throws(() => loadKxmProject(root), (error) => issueCodes(error).includes("model_selector_incompatible"));
   } finally {

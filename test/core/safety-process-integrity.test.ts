@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { oneShotReadOnlyArgs } from "../../plugins/kxm/src/harness.ts";
 import {
@@ -11,9 +8,6 @@ import {
   assertPinnedSshHostKeyPolicy,
 } from "../../plugins/kxm/src/safety-integrity.ts";
 import { killProcessTree } from "../../plugins/kxm/src/oneshot-process.ts";
-import { loadKxmProject, KxmConfigError } from "../../plugins/kxm/src/project-config.ts";
-import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
-import { makeGitRoot } from "../helpers/git-root.ts";
 
 test("Stage 1: oneShotReadOnlyArgs exposes pinned sandboxed flags for agy and kimi", () => {
   const agyArgs = oneShotReadOnlyArgs("agy");
@@ -120,89 +114,6 @@ test("Stage 3: killProcessTree invokes negative PGID termination on POSIX", () =
     }
   } finally {
     process.kill = originalKill;
-  }
-});
-
-test("Stage 4: loadKxmProject fails closed if .kxm/roles/writer.yaml conflicts with .kxm/agents/implementer.yaml", () => {
-  const dir = mkdtempSync(join(tmpdir(), "kxm-authority-test-"));
-  try {
-    makeGitRoot(dir);
-    initializeKxmProject(dir, { projectId: "prj_01JAUTHORITY0000000000000000" });
-
-    // Explicitly set implementer agent model to xai/grok-4.6
-    writeFileSync(
-      join(dir, ".kxm", "agents", "implementer.yaml"),
-      `schema: kxm.agent.v1
-purpose: Implement changes
-harness: grok
-model:
-  provider: xai
-  model: grok-4.6
-tools:
-  preset: workspace-writer
-defaultRepositoryAccess: none
-repositories:
-  control: write
-network: provider-only
-resultSchema: kxm.assignment-result.v1
-`,
-    );
-
-    // Create conflicting writer.yaml without xai/grok-4.6
-    mkdirSync(join(dir, ".kxm", "roles"), { recursive: true });
-    mkdirSync(join(dir, ".kxm", "models"), { recursive: true });
-    writeFileSync(join(dir, ".kxm", "models", "qwen-openrouter-pi.yaml"), `schema: kxm.model.v2
-id: qwen-openrouter-pi
-harness: pi
-model: openrouter/qwen/qwen3-coder-plus
-vendor: alibaba
-status: admitted
-permissions:
-  - edit
-origin:
-  source: .kxm/project.yaml
-  sha256: ${"a".repeat(64)}
-`);
-    writeFileSync(
-      join(dir, ".kxm", "roles", "writer.yaml"),
-      `schema: kxm.role.v2
-id: writer
-purpose: writer
-permission: edit
-description: Writer roster that omits the agent model.
-roster:
-  - route: qwen-openrouter-pi
-`,
-    );
-
-    assert.throws(
-      () => loadKxmProject(dir),
-      (err: unknown) => {
-        assert(err instanceof KxmConfigError);
-        const issue = err.issues.find((i) => i.code === "role_roster_conflicts_with_agent");
-        assert(issue, "Expected role_roster_conflicts_with_agent issue code");
-        assert.equal(issue.file, ".kxm/roles/writer.yaml");
-        return true;
-      },
-    );
-
-    // Now align writer.yaml to include xai/grok-4.6
-    writeFileSync(
-      join(dir, ".kxm", "roles", "writer.yaml"),
-      `schema: kxm.role.v2
-id: writer
-purpose: writer
-permission: edit
-description: Writer roster that includes the agent model.
-roster:
-  - route: grok-default
-`,
-    );
-
-    const bundle = loadKxmProject(dir);
-    assert.ok(bundle.project);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 

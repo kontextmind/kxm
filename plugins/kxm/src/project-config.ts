@@ -1128,7 +1128,6 @@ function validateBundle(
   options: KxmConfigOptions,
   gateRegistry?: KxmResource,
   projectRoot?: string,
-  writerRole?: string,
 ): KxmConfigIssue[] {
   const issues: KxmConfigIssue[] = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate): candidate is JsonObject => Boolean(candidate));
@@ -1202,58 +1201,9 @@ function validateBundle(
   if (!workflows.has(defaultWorkflow)) issues.push(issue("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
 
-  if (projectRoot) {
-    const writerRolePath = join(projectRoot, ".kxm", "roles", "writer.yaml");
-    const implementerAgent = agents.get("implementer") ?? agents.get("writer");
-    if ((writerRole !== undefined || existsSync(writerRolePath)) && implementerAgent) {
-      try {
-        const rawRole = parseRestrictedYaml(writerRole ?? readFileSync(writerRolePath, "utf8"));
-        const roleObj = objectValue(rawRole);
-        const rosterEntries = valuesOf(roleObj ?? {}, "roster")
-          .map((candidate) => objectValue(candidate))
-          .filter((entry): entry is JsonObject => Boolean(entry));
-        const enabledRosterModels = rosterEntries.flatMap((entry) => {
-          const direct = stringValue(entry.model);
-          const route = stringValue(entry.route);
-          const named: string[] = direct ? [direct] : [];
-          if (route) {
-            const modelFile = join(projectRoot, ".kxm", "models", `${route}.yaml`);
-            if (existsSync(modelFile)) {
-              try {
-                const modelDoc = objectValue(parseRestrictedYaml(readFileSync(modelFile, "utf8"), modelFile));
-                const model = modelDoc ? stringValue(modelDoc.model) : undefined;
-                const vendor = modelDoc ? stringValue(modelDoc.vendor) : undefined;
-                const harness = modelDoc ? stringValue(modelDoc.harness) : undefined;
-                if (model) named.push(model);
-                if (vendor && model) named.push(`${vendor}/${model}`);
-                if (harness && model) named.push(`${harness}/${model}`);
-              } catch { /* schema issues are reported by resource validation */ }
-            }
-          }
-          return named;
-        });
-
-        const agentModelObj = objectValue(implementerAgent.value.model);
-        const agentModelStr = stringValue(implementerAgent.value.model);
-        const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : undefined;
-        const agentModel = agentModelObj ? stringValue(agentModelObj.model) : agentModelStr;
-        const canonicalAgentModel = agentProvider && agentModel ? `${agentProvider}/${agentModel}` : agentModel;
-
-        if (enabledRosterModels.length > 0 && canonicalAgentModel) {
-          const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
-          if (!matches) {
-            issues.push(issue("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
-          }
-        }
-      } catch (error) {
-        if (error instanceof KxmConfigError) {
-          issues.push(...error.issues);
-        }
-      }
-    }
-  }
-
-  if (projectRoot && existsSync(join(projectRoot, "scripts", "harness-run.mjs"))) {
+  // Developer policy is the role files under .kxm/roles/ (with the model
+  // files they name). scripts/harness-run.mjs only supplies ceilings.
+  if (projectRoot && existsSync(join(projectRoot, ".kxm", "roles"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }
 
@@ -1294,6 +1244,10 @@ function developerCeilings(): {
 }
 
 function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
+  // Product checkouts also have .kxm/roles/ for dispatch. The ceiling check
+  // is this package's developer policy, so it runs when the loaded project
+  // is that package.
+  if (resolve(projectRoot) !== findKxmRepoRoot(import.meta.url)) return [];
   const rolesDir = join(projectRoot, ".kxm", "roles");
   const modelsDir = join(projectRoot, ".kxm", "models");
   const roles: Record<string, JsonObject> = {};
@@ -1622,7 +1576,7 @@ function loadProjectBundle(
   }
   if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
 
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
+  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
   if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...roles.values(), ...workflows.values(), ...environments, ...(gateRegistry ? [gateRegistry] : [])]
     .sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath));
