@@ -1,0 +1,95 @@
+# This workflow may be refused by `kxm run` prerequisites until gate-only
+# workflows are supported. Record the dry run with
+# `kxm run land --dry-run --json`.
+schema: kxm.workflow.v1
+description: Land the current branch through verify, docs, rebase, merge, release, and milestone gates.
+coordinator: coordinator
+limits:
+  maxTransitions: 24
+steps:
+  - id: land-verify
+    kind: gate
+    gate: land-verify
+    expect: pass
+    repositories:
+      control: write
+    on:
+      passed: land-docs
+      failed:
+        target: $terminal
+        terminalStatus: failed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed
+  - id: land-docs
+    kind: gate
+    gate: land-docs
+    expect: pass
+    repositories:
+      control: write
+    on:
+      passed: land-rebase
+      failed:
+        target: $terminal
+        terminalStatus: failed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed
+  - id: land-rebase
+    kind: gate
+    gate: land-rebase
+    expect: pass
+    repositories:
+      control: write
+    on:
+      passed: land-merge
+      failed:
+        target: $terminal
+        terminalStatus: failed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed
+  - id: land-merge
+    kind: gate
+    gate: land-merge
+    expect: pass
+    repositories:
+      control: write
+    on:
+      passed: land-release
+      failed:
+        target: land-rebase
+        maxTransitions: 3
+      implementation-failure:
+        target: land-rebase
+        maxTransitions: 3
+  - id: land-release
+    kind: gate
+    gate: land-release
+    expect: pass
+    repositories:
+      control: write
+    on:
+      passed: land-milestone
+      failed:
+        target: $terminal
+        terminalStatus: failed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed
+  - id: land-milestone
+    kind: gate
+    gate: land-milestone
+    expect: pass
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+      implementation-failure:
+        target: $terminal
+        terminalStatus: failed

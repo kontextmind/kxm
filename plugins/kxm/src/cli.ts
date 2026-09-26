@@ -131,6 +131,8 @@ import {
   cmdLaneStatus,
 } from "./cli/lanes.ts";
 
+import { cmdLand } from "./cli/land.ts";
+
 import {
   cmdStatus,
   cmdDash,
@@ -197,6 +199,7 @@ const USAGE_ERROR_CODES = new Set([
 const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "init", "backup", "restore", "run", "explain", "suggest", "update", "dash", "completion", "completion install",
   "lane create", "lane list", "lane status", "lane drop", "lane run",
+  "land",
   "plugin install", "plugin",
   "runs status", "runs drive", "runs receipt", "runs cancel", "runs list",
   "tenant status", "models inventory-refresh", "harness list", "auth token",
@@ -482,6 +485,18 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
         ...(options.base !== undefined ? { base: options.base } : {}),
         wait: options.wait === true,
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      });
+    });
+
+  addGlobalOptions(program.command("land").description("Land the current branch: verify, regenerate docs, push, pull request, rebase, unblock, squash-merge, release, and milestone"))
+    .option("--pr <n>", "Existing pull request number")
+    .option("--stage <name>", "Run one stage: verify, docs, push, pr, rebase, unblock, merge, release, or milestone")
+    .option("--body-file <path>", "Pull request body file used when creating a pull request")
+    .action(async function landAction(this: Command, options: { pr?: string; stage?: string; bodyFile?: string }) {
+      result.code = await cmdLand(runtimeFrom(ctx, this), {
+        ...(options.pr !== undefined ? { pr: options.pr } : {}),
+        ...(options.stage !== undefined ? { stage: options.stage } : {}),
+        ...(options.bodyFile !== undefined ? { bodyFile: options.bodyFile } : {}),
       });
     });
 

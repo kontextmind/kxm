@@ -6,3 +6,27 @@ gates:
       - npm
       - test
     timeoutMs: 3600000
+  land-verify:
+    kind: command
+    argv: [node, scripts/pr-land.mjs, --stage, verify, --json]
+    timeoutMs: 3900000
+  land-docs:
+    kind: command
+    argv: [node, scripts/pr-land.mjs, --stage, docs, --json]
+    timeoutMs: 900000
+  land-rebase:
+    kind: command
+    argv: [node, scripts/pr-land.mjs, --stage, rebase, --json]
+    timeoutMs: 18600000
+  land-merge:
+    kind: command
+    argv: [node, scripts/pr-land.mjs, --stage, merge, --json]
+    timeoutMs: 1500000
+  land-release:
+    kind: command
+    argv: [node, scripts/pr-land.mjs, --stage, release, --json]
+    timeoutMs: 3300000
+  land-milestone:
+    kind: command
+    argv: [node, scripts/pr-land.mjs, --stage, milestone, --json]
+    timeoutMs: 120000

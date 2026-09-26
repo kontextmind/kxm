@@ -6,6 +6,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **`kxm land` verifies, regenerates docs, and squash-merges the current branch.**
+  The stages are `verify`, `docs`, `push`, `pr`, `rebase`, `unblock`, `merge`,
+  `release`, and `milestone`. `npm run verify` is the first stage and is not
+  replaced. Rebase resolves only the dist rebuild, the CHANGELOG Unreleased
+  union, and the tracker "Landed in this tree" union, for at most five rounds.
+  A required review is reported. The `land` workflow in `.kxm/workflows/land.yaml`
+  runs the same gates and may be refused until gate-only workflows are supported.
+  See the [CLI reference](docs/reference/cli-reference.md#kxm-land).
+
 - **`kxm lane` keeps one git worktree per unit beside the control checkout.**
   `create`, `list`, `status`, `drop` and `run` store a 0600 record in
   `.kxm/state/lanes.json` keyed by the resolved base sha, and `drop` never
