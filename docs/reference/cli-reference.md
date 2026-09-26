@@ -1385,7 +1385,7 @@ dry run: resume workflow run wf_dry_run (stage: review)
 
 ## `kxm lane`
 
-One lane is one git worktree, one branch named the unit, and one recorded base sha. The record lives in the control checkout's state directory, `.kxm/state/lanes.json` (`kxm.lanes.v1`, mode 0600). The worktree path is `../<control-dir-basename>-<unit>`, next to the control checkout. Creating a lane resolves the base ref to a sha and does not fetch. There is no push, merge, pull request, or branch delete.
+One lane is one git worktree, one branch named the unit, and one recorded base sha. The record lives in the control checkout's state directory, `.kxm/state/lanes.json` (`kxm.lanes.v1`, mode 0600). The worktree path is `../<control-dir-basename>-<unit>`, next to the control checkout. Creating a lane resolves the base ref to a sha and does not fetch. There is no push, merge, pull request, or branch delete. Selecting a lane sets the discovery cwd to that lane's path and rebuilds workspace directories from it; `KXM_WORKDIR` still selects the workspace root when it is set, so the lane path is the workspace root only when `KXM_WORKDIR` is unset.
 
 ```text
 kxm lane create <unit> [--base <ref>]
@@ -1415,21 +1415,23 @@ Prints one line per lane: unit, branch, base sha, `dirty` (porcelain line count)
 
 ### `kxm lane status`
 
-The list row for one unit, plus `status` of `lastRunId` when the Runtime supervisor is already running and answers. Otherwise `status=unknown`. Does not start the supervisor.
+The list row for one unit, plus `status` of `lastRunId` when the Runtime supervisor is already running and answers. Otherwise `status=unknown`. `kxm lane status` never starts the Runtime supervisor.
 
 Refusals (exit 1): `lane_missing`, `lane_unit_invalid`, `lanes_unreadable`.
 
 ### `kxm lane drop`
 
-Removes the worktree and the record. Refuses `lane_dirty` when porcelain is nonempty, and `lane_run_open` when `lastRunId` is set and that run is not `completed`, `failed`, or `cancelled`. `--force` overrides both. `git worktree remove --force` is used only with `--force`. The branch is not deleted; the text says so (`branchDeleted: false`).
+Removes the worktree and the record. Refuses `lane_dirty` when porcelain is nonempty, and `lane_run_open` when `lastRunId` is set and that run is not `completed`, `failed`, or `cancelled`. `--force` overrides both. `git worktree remove --force` is used only with `--force`. The branch is not deleted; the text says so (`branchDeleted: false`). Unless `--force` is set, drop may start the Runtime supervisor to check whether the lane's last run is still open; `--dry-run` only attaches to a supervisor that is already running. `kxm lane status` never starts the supervisor.
 
 Refusals (exit 1): `lane_missing`, `lane_dirty`, `lane_run_open`, `lane_git_failed`.
 
 ### `kxm lane run`
 
-Creates the lane when the record is absent (same rules as `create`), refuses `lane_run_open` when the last run is not settled, then runs the same path as `kxm run --lane <unit> --brief <file>` and `kxm runs drive <runId> --lane <unit>`. `--wait` and `--timeout-ms` are passed through. The run id is stored on the record. Prints the run envelope and the drive result.
+Creates the lane when the record is absent (same rules as `create`), refuses `lane_run_open` when the last run is not settled, then runs the same path as `kxm run --lane <unit> --brief <file>` and `kxm runs drive <runId> --lane <unit>`. `--wait` and `--timeout-ms` are passed through. The run id is stored on the record. Prints the run envelope and the drive result. That open-run check may start the Runtime supervisor; `--dry-run` only attaches to a supervisor that is already running. `kxm lane status` never starts the supervisor.
 
-`--brief` is required. `--workflow` defaults to the lane project's `defaultWorkflow`. `--base` applies only when the lane is created.
+`--brief` is required. `--workflow` defaults to the lane project's `defaultWorkflow`. `--base` applies only when the lane is created. A live writer step through this verb is subject to the Runtime's one-shot process timeout, which is 120 seconds until `limits.agentStepTimeoutMs` lands, so long implementation briefs should use `just impl-bg` until then (see section 4 of `plans/plan-lane-cli.md`).
+
+Refusals (exit 1): `brief_unreadable`, `lane_unit_invalid`, `lane_exists`, `lane_base_unresolved`, `lane_run_open`, `lane_git_failed`, `lane_not_project`, `lanes_unreadable`.
 
 ## `kxm run`
 
@@ -1492,7 +1494,7 @@ kxm runs status <runId> [--lane <unit>]
 
 Show the projected status of a run, including durable drive receipt state (open / receipt verified / unsettled / orphaned).
 
-- Arguments: `<runId>`, Run id. `--lane <unit>` discovers the project from that lane's worktree (`lane_missing` when the record or path is absent). Reads run state, but starts the supervisor if needed (not under `--dry-run`).
+- Arguments: `<runId>`, Run id. `--lane <unit>` discovers the project from that lane's worktree (`lane_missing` when the record or path is absent, `lane_unit_invalid` when the unit is not a KXM identifier, `lanes_unreadable` when the record cannot be read). Reads run state, but starts the supervisor if needed (not under `--dry-run`).
 - Text: `run <id>: <status> (workflow <id>, updated <time>)`, plus a drive line such as `drive <id>: open`, `completed (receipt verified)`, `unsettled <reason>`, `handoff`, `cancelled (<reason>)`, or `no receipt (orphaned)`.
 - JSON keys: `run` (`runId`, `status`, `workflowId`, `configRevision`, `updatedAt`, ...), `drive` (`driveId`, `mode`, `openedAt`, `receipt`, `verified`, `divergence`).
 - Errors: `project_required`, `run_status_failed`, `run_status_io_failed` (exit 1).
@@ -1530,7 +1532,7 @@ Opens a drive of the run. With `--simulated`, a model-free producer reports ever
 | `--timeout-ms` | `<n>` | `60000` | Wait timeout in milliseconds (default 60000, max 600000) |
 | `--lane` | `<unit>` | none | Discover the project from this lane's worktree |
 
-- Arguments: `<runId>`, Run id. `--lane` refuses `lane_missing` when the record or path is absent.
+- Arguments: `<runId>`, Run id. `--lane` refuses `lane_missing` when the record or path is absent, and also `lane_unit_invalid` and `lanes_unreadable`.
 - `--timeout-ms` applies only with `--wait` and must be an integer from 1 to 600000 (`run_drive_timeout_invalid`, exit 1).
 - Mutates run state. Honors `--dry-run`.
 - JSON keys without `--wait`: `runId`, `driveId`, `poll`, `mode`, `status` (`accepted`). With `--wait`: `receipt`, `verified`; a timeout prints `error: "timeout"`.
@@ -1573,7 +1575,7 @@ Print the newest drive receipt for a run.
 | `--all` | none | off | Print the capped receipt list for the run |
 | `--lane` | `<unit>` | none | Discover the project from this lane's worktree |
 
-- Arguments: `<runId>`, Run id. Text mode prints the newest receipt's settlement as JSON; `--all` prints the list. Starts the supervisor if needed (not under `--dry-run`). `--lane` refuses `lane_missing` when the record or path is absent.
+- Arguments: `<runId>`, Run id. Text mode prints the newest receipt's settlement as JSON; `--all` prints the list. Starts the supervisor if needed (not under `--dry-run`). `--lane` refuses `lane_missing` when the record or path is absent, and also `lane_unit_invalid` and `lanes_unreadable`.
 - JSON keys: `receipt`, or `receipts` with `--all`. Exit 1 with `no_receipts` when the run was never driven.
 
 ```bash
@@ -1590,7 +1592,7 @@ kxm runs cancel <runId> [--lane <unit>]
 
 Durably request cancellation of a run: records `run.cancel_requested` then `run.status_changed`. Cancelling a terminal run is an idempotent no-op.
 
-- Arguments: `<runId>`, Run id. `--lane <unit>` discovers the project from that lane's worktree (`lane_missing` when the record or path is absent).
+- Arguments: `<runId>`, Run id. `--lane <unit>` discovers the project from that lane's worktree (`lane_missing` when the record or path is absent, `lane_unit_invalid` when the unit is not a KXM identifier, `lanes_unreadable` when the record cannot be read).
 - Mutates run state. Honors `--dry-run`.
 - JSON keys: `idempotent`, `run` (`runId`, `status`).
 

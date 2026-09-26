@@ -67,7 +67,7 @@ impl-bg BRIEF CWD=".":
 
 # ── isolation ───────────────────────────────────────────────────────────────
 
-# one worktree per concurrent lane; two writers in one tree clobber each other
+# create one worktree lane; kxm lane create prints the lane line
 worktree UNIT:
     kxm lane create "$1"
 
