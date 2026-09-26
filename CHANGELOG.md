@@ -35,6 +35,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   limit lands. See the
   [CLI reference](docs/reference/cli-reference.md#kxm-lane).
 
+- **The tailnet docs site is built and served with `kxm docs build` and `kxm docs serve`.**
+  `kxm docs build` runs `node plans/kxm-roadmap/update-dashboard.mjs` from the
+  project root and returns its exit code. `kxm docs serve` runs
+  `python3 ops/docs-site/serve.py`, streams its output, and passes `--port`
+  through when it is set. Both refuse `project_required` outside a KXM project,
+  and `docs_generator_missing` or `docs_server_missing` when the file is absent.
+  `--dry-run` prints the command and starts nothing. The header wordmark is the
+  portal mark, and the slate palette uses `#0e0d0b`, `#3068da`, and `#f2eee7`.
+  `kxm docs build` validates the roadmap state file and refuses when it does not match the schema.
+  See the [CLI reference](docs/reference/cli-reference.md#kxm-docs).
+
 - **Claude-only workflow recommendations now fail honestly when execution is unavailable.**
   `suggest` honors explicit harness constraints, uses flat installable IDs and verified
   capability-appropriate routes, refuses unchecked existing definitions, and never substitutes a

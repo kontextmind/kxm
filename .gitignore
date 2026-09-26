@@ -24,3 +24,9 @@ nul
 .cache/
 .kxm/assets/critic-reviews/
 .nx/
+
+# Built docs site (mkdocs). Never published.
+site/
+.venv-docs/
+__pycache__/
+*.pyc

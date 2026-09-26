@@ -120,6 +120,7 @@ cmdBackup,
 } from "./cli/project.ts";
 
 import { cmdPluginInstall } from "./cli/plugins.ts";
+import { cmdDocsBuild, cmdDocsServe } from "./cli/docs.ts";
 
 import {
   applyLane,
@@ -227,6 +228,7 @@ const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "goal create", "goal list",
   "task create", "task list", "task get", "task run", "task sync",
   "studio layout", "studio serve",
+  "docs build", "docs serve",
 ]);
 
 class DryRunRefused extends Error {
@@ -623,6 +625,18 @@ function createProgram(ctx: CliContext, result: { code: number }): Command {
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project"))
     .action(async function runListAction(this: Command) {
       result.code = await cmdKxmRunList(runtimeFrom(ctx, this));
+    });
+
+  const docsCmd = addGlobalOptions(program.command("docs").description("Build and serve the tailnet docs site"));
+  docsCmd.helpCommand("help", "Show docs help");
+  addGlobalOptions(docsCmd.command("build").description("Regenerate the docs site from the roadmap state"))
+    .action(async function docsBuildAction(this: Command) {
+      result.code = await cmdDocsBuild(runtimeFrom(ctx, this));
+    });
+  addGlobalOptions(docsCmd.command("serve").description("Serve the built docs site on this machine's tailnet address"))
+    .option("--port <port>", "Port passed through to the docs server")
+    .action(async function docsServeAction(this: Command, options: { port?: string }) {
+      result.code = await cmdDocsServe(runtimeFrom(ctx, this), options);
     });
 
   const tenantCmd = addGlobalOptions(program.command("tenant").description("Composed tenant reads for machine clients (portal)"));

@@ -1,0 +1,169 @@
+site_name: KXM
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  custom_dir: overrides
+  font: false
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  palette:
+    scheme: slate
+    primary: custom
+    accent: custom
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mermaid.min.js
+  - javascripts/mermaid-init.js
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path:
+        - docs
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+
+validation:
+  nav:
+    omitted_files: ignore
+
+nav:
+  - Home: index.md
+  - Roadmap:
+      - Dashboard: roadmap/dashboard.md
+      - Master plan: roadmap/MASTER.md
+      - Python migration: roadmap/phases/01-python-migration.md
+      - Greenfield infra: roadmap/phases/02-greenfield-infra.md
+      - Per-tenant hosting: roadmap/phases/03-per-tenant-hosting.md
+      - Cross-host: roadmap/phases/04-cross-host.md
+      - Workflow modes: roadmap/phases/05-workflow-modes.md
+      - Usage and cost: roadmap/phases/06-usage-cost.md
+      - Still open: roadmap/phases/07-still-open.md
+  - Architecture:
+      - architecture/index.md
+      - Platform: architecture/platform.md
+      - Surfaces: architecture/inventory.md
+      - Access: architecture/access.md
+      - Authentication: architecture/authentication.md
+      - Agent path: architecture/agent-path.md
+      - Hosted direction: architecture/hosted-direction.md
+  - Start:
+      - Install: start/install.md
+      - Quick start, Claude Code: start/quickstart-claude-code.md
+      - First workflow: start/first-workflow.md
+      - Quick start, Pi: start/quickstart-pi.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - Data and storage: concepts/data-and-storage.md
+      - Trust model: concepts/trust-model.md
+  - Guides:
+      - Peer messaging: guides/peer-messaging.md
+      - Pi workers: guides/pi-workers.md
+      - Webhook workflows: guides/webhook-workflows.md
+      - Provenance gates: guides/provenance-gates.md
+      - Context and memory: guides/context-and-memory.md
+      - Continuous improvement: guides/continuous-improvement.md
+      - Governed skills: guides/governed-skills.md
+      - Agent skills: guides/agent-skills.md
+      - Browser automation: guides/browser-automation.md
+      - Nous providers: guides/nous-providers.md
+  - Reference:
+      - CLI: reference/cli-reference.md
+      - Config reference: reference/config-reference.md
+      - Configuration: reference/configuration.md
+      - Harness routing: reference/harness-routing.md
+      - HTTP API: reference/http-api.md
+      - Tools: reference/tools.md
+      - Workflow catalog: reference/workflow-catalog.md
+      - Workflow definitions: reference/workflow-definitions.md
+      - Contracts:
+          - contracts/README.md
+          - Architecture: contracts/architecture.md
+          - Effects and recovery: contracts/effects-and-recovery.md
+          - Lifecycles: contracts/lifecycles.md
+          - Migration: contracts/migration.md
+          - Routing: contracts/routing.md
+          - Synchronization: contracts/synchronization.md
+          - Terminology: contracts/terminology.md
+          - Validation: contracts/validation.md
+      - Templates:
+          - templates/README.md
+          - ADR: templates/adr.md
+          - Architecture: templates/architecture.md
+          - Bug fix: templates/bug-fix.md
+          - Feature: templates/feature.md
+          - Handoff: templates/handoff.md
+          - Postmortem: templates/postmortem.md
+          - Research: templates/research.md
+          - Review: templates/review.md
+          - Runbook: templates/runbook.md
+          - Test plan: templates/test-plan.md
+          - Test report: templates/test-report.md
+  - Operations:
+      - Backup and restore: operations/backup-and-restore.md
+      - Deploy: operations/deploy.md
+      - Monitoring: operations/monitoring.md
+      - Runtime sync: operations/runtime-sync.md
+      - Troubleshooting: operations/troubleshooting.md
+      - Upgrade: operations/upgrade.md
+      - Decisions:
+          - adr/README.md
+          - Browser automation: adr/ADR-0002-browser-automation-steel-doks.md
+          - SQLite only store: adr/ADR-0003-sqlite-only-store.md
+          - Edge identity: adr/ADR-0004-edge-identity-authentik.md
+  - Contributing:
+      - Assignment runner: contributing/assignment-runner.md
+      - CI and release: contributing/ci-and-release.md
+      - Development: contributing/development.md
+      - Harness routing internals: contributing/harness-routing-internals.md
+      - Packages: contributing/packages.md
+      - Repo work delivery: contributing/repo-work-delivery.md
+      - Test matrix: contributing/test-matrix.md
+      - TUI components: contributing/tui-components.md
+      - Writing docs: contributing/writing-docs.md
+      - Glossary: glossary.md

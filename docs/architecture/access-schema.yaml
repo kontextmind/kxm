@@ -1,0 +1,60 @@
+schema: kxm.access.v1
+objects:
+  - kind: principal
+    id: writer
+    source: .kxm/roles/writer.yaml
+    enforced: false
+    note: Roster only. This file has no tools block. role.ts counts tools.allow and does not enforce it.
+  - kind: principal
+    id: planner
+    source: .kxm/roles/planner.yaml
+    enforced: false
+    note: Roster only. This file has no tools block.
+  - kind: principal
+    id: reviewer-arch
+    source: .kxm/roles/reviewer-arch.yaml
+    enforced: false
+    note: Roster only. This file has no tools block.
+  - kind: principal
+    id: reviewer-cli
+    source: .kxm/roles/reviewer-cli.yaml
+    enforced: false
+    note: Roster only. This file has no tools block.
+  - kind: group
+    id: writer
+    members: [writer]
+    enforced: false
+    note: Naming group only. No group object is enforced in code.
+  - kind: group
+    id: critics
+    members: [reviewer-arch, reviewer-cli]
+    enforced: false
+    note: Naming group only. No group object is enforced in code.
+  - kind: claim
+    id: edit
+    enforced: true
+    note: oneShotWriterArgs in plugins/kxm/src/harness.ts for pi, omp, and grok.
+  - kind: claim
+    id: read-only
+    enforced: true
+    note: oneShotReadOnlyArgs in plugins/kxm/src/harness.ts, and isToolAllowed in plugins/kxm/src/commands.ts when preset is read-only.
+  - kind: grant
+    id: coordinator
+    source: BUILTIN_TOOL_PRESETS
+    enforced: false
+    note: Accepted preset name in plugins/kxm/src/project-config.ts. isToolAllowed does not special-case it.
+  - kind: grant
+    id: read-only
+    source: BUILTIN_TOOL_PRESETS
+    enforced: true
+    note: Same read-only claim as above.
+  - kind: grant
+    id: workspace-writer
+    source: BUILTIN_TOOL_PRESETS
+    enforced: false
+    note: Accepted preset name. init-guide-setup.ts assigns it to a writer agent. isToolAllowed does not map it to a tool list.
+  - kind: grant
+    id: tests-writer
+    source: BUILTIN_TOOL_PRESETS
+    enforced: false
+    note: Accepted preset name. isToolAllowed does not special-case it.
