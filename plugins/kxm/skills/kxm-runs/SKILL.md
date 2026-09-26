@@ -1,7 +1,6 @@
 ---
 name: kxm-runs
-description: Create, drive, and inspect local KXM runs, manage worktree lanes, and land a branch. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, create a lane, or land the current branch.
-description: Create, drive, and inspect local KXM runs, and manage worktree lanes. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, create a lane, or run the developer assignment loop (kxm assign run, witness, plan-current, attribute, observe-cost, accept, change-report).
+description: Create, drive, and inspect local KXM runs, manage worktree lanes, land a branch, and run the developer assignment loop. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, create a lane, land the current branch, or call kxm assign (run, witness, plan-current, attribute, observe-cost, accept, change-report).
 ---
 
 # KXM runs
