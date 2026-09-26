@@ -25,7 +25,7 @@ Related pages:
 | `.kxm/project.yaml` | `kxm.project.v1` | Project identity, repositories, defaults, run limits | You; `kxm init` creates it | Yes |
 | `.kxm/repo/repo.yaml` (in each repository) | `kxm.repository.v1` | Per-repository definition | You; `kxm init` creates the control one | Yes, in the repository it describes |
 | `.kxm/project/env.yaml`, `.kxm/repo/env.yaml` | `kxm.environment.v1` | Portable, non-secret environment | You | Yes |
-| `.kxm/agents/<id>.yaml` | `kxm.agent.v1` | Agent harness, model, and permission ceilings | You; `kxm init` creates two | Yes |
+| `.kxm/agents/<id>.yaml` | `kxm.agent.v1` | Agent role and permission ceilings | You; `kxm init` creates two | Yes |
 | `.kxm/models/<id>.yaml` | `kxm.model.v2` | One model route (harness, vendor, status, permissions) | You; `kxm init` | Yes |
 | `.kxm/workflows/<id>.yaml` | `kxm.workflow.v1` | Ordered steps and typed transitions | You; `kxm init` creates `default` | Yes |
 | `.kxm/gates.yaml` | `kxm.gate-registry.v1` | The executable gate registry | You; `kxm init` creates it | Yes |
@@ -58,16 +58,15 @@ to add.
 .kxm/workflows/<id>.yaml ── coordinator ──> .kxm/agents/coordinator.yaml
    │ steps[]
    ├─ kind agent | moa | approval | wait ──> .kxm/agents/<id>.yaml
-   │                                           ├─ harness ──> pi | claude | codex | grok | agy | kimi | deepseek
-   │                                           ├─ model ────> {provider, model} | {profile} | {tag}
-   │                                           │                                    └─> .kxm/models/<id>.yaml
+   │                                           ├─ role ──> .kxm/roles/<role>.yaml
+   │                                           │              └─ roster[].route ──> .kxm/models/<route>.yaml
+   │                                           │                                    (harness, model, vendor, permissions)
    │                                           └─ tools, repositories, network: permission ceilings
    └─ kind gate ──> .kxm/gates.yaml: command | artifacts-exist | reserved
 
 Live dispatch admission (checked by the Runtime for every attempt):
-   agent model "provider/model" ──> .kxm/routes.yaml: admitted and not disabled
-                                └─> .kxm/roles/<role>.yaml roster, if that file exists
-                                    (role = agent id; "writer" for agent "implementer")
+   agent.role ──> .kxm/roles/<role>.yaml roster ──> .kxm/models/<route>.yaml
+   .kxm/routes.yaml holds only the admitted and disabled lists
    developer assignments (scripts/assignment-run.mjs) ──> .kxm/roles/*.yaml and .kxm/models/*.yaml
 
 Cost accounting:
@@ -80,8 +79,9 @@ Cost accounting:
 | Check | Files it covers | Where it runs |
 |---|---|---|
 | Project bundle load: restricted YAML, JSON Schema, cross-file semantics | `project.yaml`, every `repo.yaml` and `env.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `template-provenance.yaml`, plus the `roles/writer.yaml` cross-check | `kxm init` (validate mode), `kxm run` and `kxm run --dry-run`, `kxm trust`, every Runtime request |
+| Retired agent routing fields | `harness` or `model` on `.kxm/agents/<id>.yaml` | Loader refuses the file with `retired_agent_routing_fields` (`routing resolves from role; remove model and harness`) |
 | Workflow compile | `workflows/` | `kxm run` when it creates a run |
-| Runtime acceptance | Workflow steps, gate definitions, agent models, `routes.yaml`, `roles/` | `kxm runs drive` and live drives, per step |
+| Runtime acceptance | Workflow steps, gate definitions, the route selected from `agent.role`, `routes.yaml` (`admitted` and `disabled` only), `roles/` | `kxm runs drive` and live drives, per step |
 | Permission diff | The bundle only | `kxm trust diff`, `kxm trust check` |
 | Revisions pinned on every run | `configRevision` (the bundle), memory revision (`.kxm/memory` without `candidates/`, plus `.kxm/skills/promoted`), executor policy, tool policy (agent and step `tools` plus the gate registry) | `kxm run` |
 
@@ -148,7 +148,7 @@ makes a directory a KXM project. Parser: `loadKxmProject` in
 | `description` | String, at most 2,000 characters | Optional | Display only |
 | `defaultWorkflow` | Identifier | Optional, `default` | Loader only: the named workflow must exist (`default_workflow_unknown`). `kxm run` always takes an explicit workflow. |
 | `defaultExecutor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the run's executor-policy revision |
-| `defaultHarness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, `pi` | Loader (`harness_unknown`); harness for agents without `harness`; fallback harness for live dispatch |
+| `defaultHarness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, `pi` | Loader (`harness_unknown`); project default harness. An agent file does not set `harness`; that field is `retired_agent_routing_fields`. |
 | `repositories` | Array of 1 to 64 entries | Required | Loader, Runtime |
 | `repositories[].id` | Identifier | Required | Must be unique after case folding (`repository_id_collision`) |
 | `repositories[].role` | `control` or `member` | Required | Exactly one `control` (`control_repository_count`) |
