@@ -13,18 +13,28 @@ if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || command === undefined) {
   process.exit(2);
 }
 
-const child = spawn(command, args, { stdio: "inherit" });
+const child = spawn(command, args, { stdio: "inherit", detached: true });
 let timedOut = false;
+
+function signalGroup(signal) {
+  if (child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    try { child.kill(signal); } catch { /* already gone */ }
+  }
+}
+
 const timer = setTimeout(() => {
   timedOut = true;
   console.error(`wall clock ${timeoutMs}ms exceeded`);
-  child.kill("SIGTERM");
-  setTimeout(() => child.kill("SIGKILL"), 2000).unref();
+  signalGroup("SIGTERM");
+  setTimeout(() => signalGroup("SIGKILL"), 2000).unref();
 }, timeoutMs);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
-    child.kill(signal);
+    signalGroup(signal);
   });
 }
 
