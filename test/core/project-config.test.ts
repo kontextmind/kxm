@@ -137,6 +137,20 @@ test("KXM loader fails closed on schema, path, reference, and semantic errors", 
   }
 });
 
+test("a leftover .kxm/roster.yaml is refused", () => {
+  const root = temporaryFixture("kxm-retired-roster-");
+  try {
+    writeFileSync(join(root, ".kxm", "roster.yaml"), "schema: kxm.developer-roster.v1\nroutes: {}\n");
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.some((entry) => entry.code === "retired_roster_file" && entry.message === "create the role and model files and delete roster.yaml"),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("legacy JSON in a bound member repository is refused before its resources are read", () => {
   // The control-root refusal alone was not a blanket refusal: a member worktree holding
   // legacy .kxm/config JSON still contributed authoritative repo.yaml/env.yaml. Covers

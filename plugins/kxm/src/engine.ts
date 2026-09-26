@@ -2865,7 +2865,10 @@ export function kxmLiveRunPrerequisites(
     for (const agentId of agentIds) {
       const route = resolveProducerRoute(projectRoot, step, agentId);
       if ("error" in route) {
-        prerequisites.push({ ...route.error, stepId, detail: `${agentId}: ${route.error.detail}; set role in .kxm/agents/${agentId}.yaml and admit the route model with kxm routes admit --model <provider/model>` });
+        const detail = route.error.detail === "producer_route_unsupported: agent step model is not honored"
+          ? `${agentId}: agent step model is not honored; remove model from the step`
+          : `${agentId}: ${route.error.detail}; set role in .kxm/agents/${agentId}.yaml and admit the route model with kxm routes admit --model <provider/model>`;
+        prerequisites.push({ ...route.error, stepId, detail });
         continue;
       }
       const harness = route.harness;

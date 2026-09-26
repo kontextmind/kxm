@@ -13,14 +13,14 @@ test("resolveBoundPolicy loads a committed policy and returns that identity", ()
   try {
     mkdirSync(join(root, ".kxm", "models"), { recursive: true });
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
-    mkdirSync(join(root, "docs", "reference"), { recursive: true });
+    mkdirSync(join(root, "plans", "evidence"), { recursive: true });
     for (const name of ["fable-claude.yaml", "gemini-agy.yaml", "grok-native.yaml", "opus-claude.yaml", "qwen-openrouter-pi.yaml", "sol-codex.yaml"]) {
       cpSync(join(".kxm", "models", name), join(root, ".kxm", "models", name));
     }
     for (const name of ["planner.yaml", "reviewer-arch.yaml", "reviewer-cli.yaml", "writer.yaml"]) {
       cpSync(join(".kxm", "roles", name), join(root, ".kxm", "roles", name));
     }
-    cpSync("docs/reference/harness-routing.md", join(root, "docs", "reference", "harness-routing.md"));
+    cpSync("plans/evidence/route-qwen-openrouter-pi.md", join(root, "plans", "evidence", "route-qwen-openrouter-pi.md"));
     const source = readFileSync("scripts/roster-policy.mjs", "utf8").replace(
       "const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');",
       `const ROOT = ${JSON.stringify(root)};`,

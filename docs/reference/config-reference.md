@@ -331,7 +331,7 @@ reference. Schema: `schemas/agent.schema.json`; semantic checks in
 | `harness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, the project's `defaultHarness` | Loader (`harness_unknown`, harness and model pairing); live dispatch launches this harness |
 | `model` | One selector: `{provider, model}`, `{profile}`, or `{tag, capabilities}` | Optional | See [Model selectors](#model-selectors) |
 | `executor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the executor-policy revision; no dispatch path selects an executor from it yet |
-| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`); pinned in the tool-policy revision. An agent preset may only narrow the role preset: recorded, enforced in P3. |
+| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`): the preset must be registered. Narrowing an agent preset against the role preset is not validated yet (P3). |
 | `tools.allow`, `tools.deny` | Unique identifiers, at most 128 each | Optional | A tool in both lists is `tool_policy_contradiction`; steps may only narrow the ceiling |
 | `defaultRepositoryAccess` | `none`, `read`, or `write` | Optional; the ceiling is `none` when absent | Loader: access ceiling for repositories not listed in `repositories` |
 | `repositories` | Map of repository ID to `none`, `read`, or `write`; at most 64 | Optional | Loader: per-repository access ceiling; IDs must be declared (`repository_unknown`) |
@@ -988,9 +988,10 @@ global one with the same id.
 | `policy.vendorIndependenceRequired`, `policy.maxTransitions`, `policy.requiresGateVerification` | Boolean, or a positive integer for `maxTransitions` | Optional | Recorded on the role |
 
 Roster order is preference. `kxm role list` shows the first route as the
-primary. The Runtime checks membership. The model that runs still comes from
-the agent file. The developer assignment runner reads `.kxm/roles/*.yaml` and
-`.kxm/models/*.yaml` at `refs/remotes/origin/main`.
+primary. The Runtime checks membership. Harness, model, and effort resolve
+from the agent's `role` roster and that route's `.kxm/models/<route-id>.yaml`,
+never from the agent file. The developer assignment runner reads
+`.kxm/roles/*.yaml` and `.kxm/models/*.yaml` at `refs/remotes/origin/main`.
 
 ```yaml
 schema: kxm.role.v2

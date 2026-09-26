@@ -7,5 +7,5 @@ status: admitted
 permissions:
   - edit
 origin:
-  source: docs/reference/harness-routing.md
-  sha256: 321c821ed6dbce7b2e98309fdc29387671577049619b6979c685a7ba60c63337
+  source: plans/evidence/route-qwen-openrouter-pi.md
+  sha256: b15f8a54adc398b33e75609e959076eee310bf4ff6623d0b8470ea3da95e6c54

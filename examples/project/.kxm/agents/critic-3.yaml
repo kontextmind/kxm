@@ -1,5 +1,5 @@
 schema: kxm.agent.v1
-purpose: Third provider-distinct critic used by the KXM MOA target.
+purpose: Third architecture critic, bound to reviewer-arch like critic-1.
 role: reviewer-arch
 tools:
   preset: read-only

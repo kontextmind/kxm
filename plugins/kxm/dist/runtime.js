@@ -18027,6 +18027,9 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
   if (!workflows.has(defaultWorkflow)) issues.push(issue3("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
+  if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roster.yaml"))) {
+    issues.push(issue3("semantic", "retired_roster_file", ".kxm/roster.yaml", "create the role and model files and delete roster.yaml"));
+  }
   if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roles"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }

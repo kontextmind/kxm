@@ -1203,6 +1203,9 @@ function validateBundle(
 
   // Developer policy is the role files under .kxm/roles/ (with the model
   // files they name). scripts/harness-run.mjs only supplies ceilings.
+  if (projectRoot && existsSync(join(projectRoot, ".kxm", "roster.yaml"))) {
+    issues.push(issue("semantic", "retired_roster_file", ".kxm/roster.yaml", "create the role and model files and delete roster.yaml"));
+  }
   if (projectRoot && existsSync(join(projectRoot, ".kxm", "roles"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }

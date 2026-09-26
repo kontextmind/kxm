@@ -203,7 +203,7 @@ test("the checkout role and model files assemble a policy that validates", () =>
     .filter((name) => name.endsWith(".yaml") && !(skipInventory && name === "inventory.yaml"))
     .map((name) => parse(readFileSync(join(dir, name), "utf8")));
   const policy = assembleRosterPolicy(load(".kxm/models", true), load(".kxm/roles", false));
-  const validated = validateRosterDocument(policy, (source: string) => source === "docs/reference/harness-routing.md" ? readFileSync(source) : undefined);
+  const validated = validateRosterDocument(policy, (source: string) => source === "plans/evidence/route-qwen-openrouter-pi.md" ? readFileSync(source) : undefined);
   assert.deepEqual(validated.lineup.writer, ["grok-native", "qwen-openrouter-pi", "gemini-agy"]);
   assert.equal(validated.required_critics["review-arch"], "fable-claude");
   assert.equal(validated.required_critics["review-cli"], "sol-codex");

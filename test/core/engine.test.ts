@@ -4107,7 +4107,8 @@ steps:
     const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
     const refusal = found.find((entry) => entry.field === "model" && entry.reason === "step_unsupported");
     assert.ok(refusal, "an agent step model is refused");
-    assert.match(refusal.detail ?? "", /agent step model is not honored/);
+    assert.match(refusal.detail ?? "", /agent step model is not honored; remove model from the step/);
+    assert.doesNotMatch(refusal.detail ?? "", /kxm routes admit/);
   } finally {
     removeTempDir(root, stateRoot);
   }

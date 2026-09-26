@@ -19447,6 +19447,9 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
   if (!workflows.has(defaultWorkflow)) issues.push(issue3("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
+  if (projectRoot && existsSync6(join6(projectRoot, ".kxm", "roster.yaml"))) {
+    issues.push(issue3("semantic", "retired_roster_file", ".kxm/roster.yaml", "create the role and model files and delete roster.yaml"));
+  }
   if (projectRoot && existsSync6(join6(projectRoot, ".kxm", "roles"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }
@@ -26325,7 +26328,8 @@ function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
     for (const agentId of agentIds) {
       const route = resolveProducerRoute(projectRoot, step, agentId);
       if ("error" in route) {
-        prerequisites.push({ ...route.error, stepId, detail: `${agentId}: ${route.error.detail}; set role in .kxm/agents/${agentId}.yaml and admit the route model with kxm routes admit --model <provider/model>` });
+        const detail = route.error.detail === "producer_route_unsupported: agent step model is not honored" ? `${agentId}: agent step model is not honored; remove model from the step` : `${agentId}: ${route.error.detail}; set role in .kxm/agents/${agentId}.yaml and admit the route model with kxm routes admit --model <provider/model>`;
+        prerequisites.push({ ...route.error, stepId, detail });
         continue;
       }
       const harness = route.harness;
