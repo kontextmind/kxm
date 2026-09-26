@@ -6,6 +6,23 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**
+  The bound is the step `timeoutMs`, or the project `limits.agentStepTimeoutMs`
+  when the step omits it (minimum 60 seconds, default one hour). A wider step
+  is refused at prerequisites (`step_unsupported`, field `timeoutMs`). The
+  effective value is written on the one-shot evidence. A `cancelling` run whose
+  executing attempt's child already exited settles `executing_unrecorded`.
+  Admission is released when a drive closes with a handoff, so a later drive
+  is admitted, and `runs status` names the attempt. `implement-only`,
+  `review-arch-only`, and `review-cli-only` are one-step workflows, driven with
+  `kxm lane run <unit> --workflow <id> --brief <file>`. See
+  [kxm lane](docs/reference/cli-reference.md#kxm-lane),
+  [runs status](docs/reference/cli-reference.md#kxm-runs-status),
+  [project limits](docs/reference/config-reference.md#kxmprojectyaml-kxmprojectv1),
+  [step fields](docs/reference/config-reference.md#step-fields),
+  [developer workflows](docs/reference/workflow-catalog.md#repository-developer-workflows),
+  and the [transport recipes](docs/contributing/assignment-runner.md#transport-only-recipes).
+
 - **`kxm land` verifies, regenerates docs, and squash-merges the current branch.**
   The stages are `verify`, `docs`, `push`, `pr`, `rebase`, `unblock`, `merge`,
   `release`, and `milestone`. `npm run verify` is the first stage and is not
@@ -30,9 +47,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   and `cancel`. The `just worktree` and `just worktree-drop` recipes now call
   those verbs. The refusals a user can see are `lane_exists`, `lane_missing`,
   `lane_base_unresolved`, `lane_dirty`, `lane_run_open`, `brief_unreadable` and
-  `brief_and_prompt`. A live writer step through `kxm lane run` is still
-  bounded by the Runtime's 120 second one-shot timeout until the configurable
-  limit lands. See the
+  `brief_and_prompt`. A live writer step through `kxm lane run` is bounded by
+  the step's `timeoutMs` or the project's `limits.agentStepTimeoutMs`, default
+  one hour. See the
   [CLI reference](docs/reference/cli-reference.md#kxm-lane).
 
 - **The tailnet docs site is built and served with `kxm docs build` and `kxm docs serve`.**

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,11 +68,14 @@ import {
   cancelKxmRun,
   closeKxmRuntimeContext,
   foldStoredKxmRun,
+  kxmProjectAdmissionLimits,
   openKxmRuntimeContext,
   readKxmRunStatus,
   rebuildKxmRunProjection,
 } from "../../plugins/kxm/src/runtime-service.ts";
 import { kxmCanonicalJson as canonicalJson, type JsonObject, type JsonValue } from "../../plugins/kxm/src/project-config.ts";
+import { createKxmOneShotProducer } from "../../plugins/kxm/src/oneshot-producer.ts";
+import { oneShotEvidenceRoot, ONESHOT_EVIDENCE_SCHEMA } from "../../plugins/kxm/src/oneshot-evidence.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureDir = resolve(repoRoot, "test/fixtures/engine");
@@ -1961,7 +1964,7 @@ test("restart after a real child-process executing commit is unreconciled", { ti
       const pending = cancelKxmRun(context, runId);
       assert.equal(pending.run.status, "cancelling");
       const foreign = await stepKxmRun(context, runId, outcomes(["passed"]));
-      assert.equal(foreign.handoff?.reason, "cancel_pending_foreign");
+      assert.equal(foreign.handoff?.reason, "attempt_unreconciled");
       const stored = context.eventStore.runState(runId)!;
       const rebuilt = rebuildKxmRunProjection(context, runId);
       assert.equal(context.eventStore.runState(runId)!.state, stored.state);
@@ -4720,3 +4723,173 @@ function panelMembers(
   }
   return { terminal: events, beforeFirstTerminal };
 }
+
+test("agent step timeoutMs is the spawn timeout, and the project limit is the fallback", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-agent-timeout-");
+  const evidenceRoot = join(stateRoot, "oneshot-evidence");
+  mkdirSync(evidenceRoot, { recursive: true, mode: 0o700 });
+  chmodSync(evidenceRoot, 0o700);
+  try {
+    writeFileSync(join(root, ".kxm", "project.yaml"), readFileSync(join(root, ".kxm", "project.yaml"), "utf8").replace(
+      "defaultHarness: pi\n",
+      "defaultHarness: pi\nlimits:\n  agentStepTimeoutMs: 90000\n",
+    ));
+    const step = (id: string, timeout: string): string => `schema: kxm.workflow.v1
+description: ${id}
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+${timeout}    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`;
+    writeFileSync(join(root, ".kxm", "workflows", "timed.yaml"), step("timed", "    timeoutMs: 5000\n"));
+    writeFileSync(join(root, ".kxm", "workflows", "untimed.yaml"), step("untimed", ""));
+    const bundle = loadKxmProject(root);
+    assert.equal(kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs, 90000);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    const seen: number[] = [];
+    const authenticated = () => ({
+      id: "grok", label: "Grok", default: false, mode: "either" as const,
+      detected: true, authenticated: true, canUpdate: { self: false, extensions: false, models: false }, issues: [],
+    });
+    const producer = createKxmOneShotProducer({
+      projectRoot: root,
+      evidenceRoot,
+      defaultHarness: "grok",
+      timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs,
+      probeHarness: authenticated,
+      spawnProcess: async (_command, _args, options) => {
+        seen.push(options.timeoutMs ?? -1);
+        return {
+          stdout: JSON.stringify({ result: JSON.stringify({ outcome: "passed" }), usage: { input_tokens: 1, output_tokens: 1 } }),
+          stderr: "",
+          code: 0,
+          started: true,
+          observedChildExit: true,
+        };
+      },
+    });
+    try {
+      const timed = acceptKxmRun(context, bundle, { workflowId: "timed", prompt: "timed" });
+      pinKxmCompiledPlan(context, bundle, timed.run.runId);
+      const timedDrive = await driveKxmRun(context, timed.run.runId, producer);
+      assert.equal(timedDrive.handoff, undefined);
+      assert.equal(seen[0], 5000);
+      const intentPath = join(evidenceRoot, readdirEvidence(evidenceRoot)[0]!, "intent.json");
+      const intent = JSON.parse(readFileSync(intentPath, "utf8")) as { timeoutMs?: number };
+      assert.equal(intent.timeoutMs, 5000);
+
+      const untimed = acceptKxmRun(context, bundle, { workflowId: "untimed", prompt: "untimed" });
+      pinKxmCompiledPlan(context, bundle, untimed.run.runId);
+      const untimedDrive = await driveKxmRun(context, untimed.run.runId, producer);
+      assert.equal(untimedDrive.handoff, undefined);
+      assert.equal(seen[1], 90000);
+    } finally {
+      await producer.close();
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+function readdirEvidence(root: string): string[] {
+  return readdirSync(root).filter((name) => name.startsWith("evd_"));
+}
+
+test("a step timeoutMs wider than the project limit is refused", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-timeout-wide-");
+  try {
+    writeFileSync(join(root, ".kxm", "project.yaml"), readFileSync(join(root, ".kxm", "project.yaml"), "utf8").replace(
+      "defaultHarness: pi\n",
+      "defaultHarness: pi\nlimits:\n  agentStepTimeoutMs: 60000\n",
+    ));
+    writeFileSync(join(root, ".kxm", "workflows", "wide.yaml"), `schema: kxm.workflow.v1
+description: wider than the project limit
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: implementer
+    timeoutMs: 120000
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const prerequisites = kxmLiveRunPrerequisites(bundle, "wide", root);
+    assert.equal(prerequisites[0]?.reason, "step_unsupported");
+    assert.equal(prerequisites[0]?.field, "timeoutMs");
+    assert.equal(prerequisites.length, 1);
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("cancelling executing attempt with exited-child evidence settles cancelled; missing evidence hands off", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-exit-recover-");
+  const evidenceRoot = oneShotEvidenceRoot();
+  mkdirSync(evidenceRoot, { recursive: true, mode: 0o700 });
+  try {
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const missing = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "no evidence" });
+      pinKxmCompiledPlan(context, bundle, missing.run.runId);
+      const uncertain = createKxmSimulatedProducer(async () => ({ outcome: "failed", effectUncertain: true as const }));
+      const first = await driveKxmRun(context, missing.run.runId, uncertain);
+      assert.equal(first.handoff?.reason, "attempt_unreconciled");
+      const attemptId = first.handoff?.attemptId;
+      assert.ok(attemptId);
+      cancelKxmRun(context, missing.run.runId);
+      const handed = await driveKxmRun(context, missing.run.runId, uncertain);
+      assert.equal(handed.handoff?.reason, "attempt_unreconciled");
+      assert.equal(handed.state.status, "cancelling");
+
+      const exited = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "child exited" });
+      pinKxmCompiledPlan(context, bundle, exited.run.runId);
+      const opened = await driveKxmRun(context, exited.run.runId, uncertain);
+      assert.equal(opened.handoff?.reason, "attempt_unreconciled");
+      const exitedAttempt = opened.handoff?.attemptId;
+      assert.ok(exitedAttempt);
+      const dir = join(evidenceRoot, "evd_recoverexitedchild");
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const record = {
+        schema: ONESHOT_EVIDENCE_SCHEMA,
+        id: "evd_recoverexitedchild",
+        runId: exited.run.runId,
+        attemptId: exitedAttempt,
+        observedChildExit: true,
+      };
+      writeFileSync(join(dir, "intent.json"), JSON.stringify(record));
+      writeFileSync(join(dir, "result.json"), JSON.stringify(record));
+      cancelKxmRun(context, exited.run.runId);
+      const settled = await driveKxmRun(context, exited.run.runId, uncertain);
+      assert.equal(settled.handoff, undefined);
+      assert.equal(settled.state.status, "cancelled");
+      const reason = context.eventStore.events(exited.run.runId, 0, 1_000)
+        .find((event) => event.payload.producerError === "executing_unrecorded");
+      assert.ok(reason);
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    rmSync(join(evidenceRoot, "evd_recoverexitedchild"), { recursive: true, force: true });
+    removeTempDir(root, stateRoot);
+  }
+});

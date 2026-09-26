@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo } from "../../plugins/kxm/src/cli.ts";
@@ -1048,6 +1049,28 @@ test("kxm runs status prints a drive line and passes the receipt through JSON", 
       assert.match(cancelledText, new RegExp(`drive drv_0123456789abcdef01234567: cancelled \\(${reason}\\)`));
       assert.equal(cancelledText.includes("completed"), false, reason);
     }
+
+    const cancellingBody = {
+      ok: true,
+      run: { ...body.run, status: "cancelling" },
+      drive: {
+        ...body.drive,
+        receipt: {
+          ...receipt,
+          settlement: {
+            kind: "handoff",
+            status: "cancelling",
+            reason: "attempt_unreconciled",
+            handoff: { reason: "attempt_unreconciled", attemptId: "att_0123456789abcdef0123456789abcdef", detail: "issued attempt is not held by this process" },
+          },
+        },
+        verified: true,
+      },
+    };
+    kxmDriveCliSeams.runtimeRequest = async () => cancellingBody;
+    const textCancelling = capture();
+    assert.equal(await cmdKxmRunStatus(driveRuntime(false, textCancelling), "run_statuscli"), 0);
+    assert.match(textCancelling.read().stdout, /run run_statuscli: cancelling \(attempt att_0123456789abcdef0123456789abcdef, attempt_unreconciled\)/);
   } finally {
     delete kxmDriveCliSeams.ensureSupervisor;
     delete kxmDriveCliSeams.runtimeRequest;
@@ -2489,5 +2512,70 @@ test("kxm assign refuses assign_runner_missing when the runner script is absent"
     assert.equal(payload.error, "assign_runner_missing");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("kxm run implement-only --dry-run plans with no prerequisites", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-impl-only-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-impl-only-state-"));
+  const env = { KXM_STATE_HOME: stateRoot };
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JIMPLONLY0000000000000", projectName: "Implement Only" });
+    const source = join(dirname(fileURLToPath(import.meta.url)), "../../.kxm/workflows/implement-only.yaml");
+    cpSync(source, join(cwd, ".kxm", "workflows", "implement-only.yaml"));
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+    const dryIo = capture();
+    assert.equal(await runCli(["run", "implement-only", "--dry-run", "--json"], env, dryIo, cwd), 0, dryIo.read().stderr);
+    const planned = JSON.parse(dryIo.read().stdout) as { dryRun: boolean; prerequisites: Array<{ field?: string }> };
+    assert.equal(planned.dryRun, true);
+    assert.deepEqual(planned.prerequisites, []);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("a second runs drive after a handoff receipt is admitted", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "kxm-drive-again-"));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-drive-again-state-"));
+  const env = { KXM_STATE_HOME: stateRoot };
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JDRIVEAGAIN00000000000", projectName: "Drive Again" });
+    cpSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../fixtures/engine/unsupported-gate.yaml"),
+      join(cwd, ".kxm", "workflows", "unsupported-gate.yaml"),
+    );
+    spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
+    spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
+    const createdIo = capture();
+    assert.equal(await runCli(["run", "unsupported-gate", "--json", "handoff"], env, createdIo, cwd), 0, createdIo.read().stderr);
+    const runId = (JSON.parse(createdIo.read().stdout) as { run: { runId: string } }).run.runId;
+    const firstIo = capture();
+    assert.equal(await runCli(["runs", "drive", runId, "--json", "--simulated"], env, firstIo, cwd), 0, firstIo.read().stderr);
+    const deadline = Date.now() + 10_000;
+    let kind = "";
+    while (Date.now() < deadline) {
+      const statusIo = capture();
+      assert.equal(await runCli(["runs", "status", runId, "--json"], env, statusIo, cwd), 0, statusIo.read().stderr);
+      const status = JSON.parse(statusIo.read().stdout) as { drive?: { receipt?: { settlement?: { kind?: string } } | null } };
+      kind = status.drive?.receipt?.settlement?.kind ?? "";
+      if (kind === "handoff") break;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
+    assert.equal(kind, "handoff");
+    const secondIo = capture();
+    assert.equal(await runCli(["runs", "drive", runId, "--json", "--simulated"], env, secondIo, cwd), 0, secondIo.read().stderr);
+    const second = JSON.parse(secondIo.read().stdout) as { ok: boolean; status?: string; error?: string };
+    assert.equal(second.ok, true);
+    assert.equal(second.status, "accepted");
+    assert.notEqual(second.error, "run_busy");
+  } finally {
+    try { await runCli(["runtime", "stop", "--json"], env, capture(), cwd); } catch { /* best effort */ }
+    await waitForSupervisorExit(env);
+    rmWithRetry(cwd);
+    rmWithRetry(stateRoot);
   }
 });

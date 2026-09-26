@@ -23,6 +23,7 @@ import {
   closeKxmRuntimeContext,
   foldStoredKxmRun,
   openKxmRuntimeContext,
+  kxmProjectAdmissionLimits,
   projectKxmRunReadOnly,
   type KxmRuntimeContext,
 } from "./runtime-service.ts";
@@ -836,6 +837,7 @@ async function startKxmRuntimeSupervisorInner(
             const createProducer = () => body.mode === "live"
               ? createKxmOneShotProducer({
                   projectRoot,
+                  timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs,
                   defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
                   resolveHarness: (agentId) => {
                     const agent = bundle.agents.get(agentId);

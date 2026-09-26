@@ -1090,6 +1090,16 @@ This cross-reference points each software and security workflow at the KXM pages
 
 `kxm run land --dry-run --json` may be refused by live prerequisites until gate-only workflows are supported. The command `kxm land` runs the same stages without a run receipt.
 
+## Repository developer workflows
+
+These three files live in this repository's `.kxm/workflows`. `kxm init` does not write them.
+
+| Workflow | Replaces |
+|---|---|
+| `implement-only` | `just impl`. The recipe is retired once this lands. |
+| `review-arch-only` | `just review-arch`. The recipe is retired once this lands. |
+| `review-cli-only` | `just review-cli`. The recipe is retired once this lands. |
+
 ## Related
 
 - [Workflow definitions](workflow-definitions.md): write a webhook or Runtime workflow for these stages
