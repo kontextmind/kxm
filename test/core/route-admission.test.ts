@@ -756,7 +756,7 @@ test("E3 Gate: Report formatting and snapshot test", () => {
   assert.equal(fableRow.equivalentListCostUsd, 0.12);
 });
 
-test("Dynamic effort stepping sets low thinking on attempt 1 and medium on attempt 2 (Decision Q10)", async () => {
+test("a simulated drive leaves thinking unset instead of substituting low or medium", async () => {
   const env = setupRoutingEnv("kxm-effort-stepping-");
   try {
     const bundle = loadKxmProject(env.root);
@@ -773,7 +773,7 @@ test("Dynamic effort stepping sets low thinking on attempt 1 and medium on attem
       });
 
       await stepKxmRun(context, accepted.run.runId, producer);
-      assert.equal(observedThinking[0], "low");
+      assert.equal(observedThinking[0], undefined);
     } finally {
       closeKxmRuntimeContext(context);
     }

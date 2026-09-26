@@ -1,9 +1,16 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { assembleRosterPolicy } from "../../scripts/roster-policy.mjs";
+
+function docs(dir: string, skipInventory: boolean) {
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".yaml") && !(skipInventory && name === "inventory.yaml"))
+    .map((name) => parse(readFileSync(join(dir, name), "utf8")));
+}
 
 export const ADMITTED_ROSTER_POLICY = Object.freeze(
-  parse(readFileSync(join(process.cwd(), ".kxm/roster.yaml"), "utf8")),
+  assembleRosterPolicy(docs(".kxm/models", true), docs(".kxm/roles", false)),
 );
 
 export function withRosterPolicy<T extends object>(deps: T = {} as T): T {

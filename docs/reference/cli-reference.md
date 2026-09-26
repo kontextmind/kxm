@@ -177,7 +177,7 @@ kxm init [--name <name>] [--project-id <id>] [--repository <id=absolute-path>]..
 
 Creates, validates, repairs, resumes, or joins a KXM project at the Git root that contains the current directory. A new project gets a minimal configuration: one coordinator agent, one implementer agent, a `test` command gate, and a `default` plan-implement-verify workflow. An existing project is validated without rewriting. Conflict-free template updates to non-authority fields are applied; authority changes, overlapping edits, and provenance-free or legacy state stay planning-only. `init` does not start a hub or the Runtime.
 
-The starter `defaultHarness: pi` and `npm test` gate are generic settings, not repository detection. Creation and create-planning output include `guidance`: for Claude, set `defaultHarness: claude` in `.kxm/project.yaml`, update any explicit `harness` overrides in `.kxm/agents/*.yaml`, and configure compatible agent models; for .NET or other non-npm repositories, set `.kxm/gates.yaml` → `gates.test.argv` to the repository's actual test command. Preflight reports an actionable prerequisite for `npm test` without a readable `package.json` test script; `task run` refuses it before creating a run.
+The starter `defaultHarness: pi` and `npm test` gate are generic settings, not repository detection. Initialized agents bind roles. Harness, model, and effort are set in `.kxm/roles/*.yaml` and `.kxm/models/*.yaml`. Creation and create-planning output include `guidance`: for Claude, set `defaultHarness: claude` in `.kxm/project.yaml`; for .NET or other non-npm repositories, set `.kxm/gates.yaml` → `gates.test.argv` to the repository's actual test command. Preflight reports an actionable prerequisite for `npm test` without a readable `package.json` test script; `task run` refuses it before creating a run.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -393,7 +393,7 @@ kxm completion install --shell zsh --dry-run
 
 Compares the authority-bearing fields of the project configuration against a base Git revision. The base is materialized into a temporary shadow with a sanitized environment; nothing in the project is written. Both subcommands refuse `--workspace` (exit 2) and need no hub.
 
-The comparison covers the loaded bundle only: `project.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `project/env.yaml`, and each member repository's `repo.yaml` and `env.yaml`. It does not read `routes.yaml`, `roles/`, `roster.yaml`, or `prices.yaml`, so a new route admission, roster entry, developer-roster route, or price change never counts as an expansion. Review those files by hand.
+The comparison covers the loaded bundle only: `project.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `project/env.yaml`, and each member repository's `repo.yaml` and `env.yaml`. It does not read `routes.yaml`, `roles/`, `the role files`, or `prices.yaml`, so a new route admission, roster entry, developer policy route, or price change never counts as an expansion. Review those files by hand.
 
 ### `kxm trust diff`
 
@@ -1069,14 +1069,32 @@ Lists admitted and disabled routes.
 
 No command-specific options.
 
-- Reads only. JSON keys: `policy` (`schema`, `updatedAt`, `admitted`, `disabled`, `roles`).
+- Reads only. JSON keys: `policy` (`schema`, `updatedAt`, `admitted`, `disabled`) and `membership` (strings `<role> <route-id>` from `.kxm/roles/*.yaml`). `policy` has no `roles` field. A model file named by no roster, such as `opus-claude`, is absent from `membership`.
 
 ```bash
 kxm routes list
 ```
 
 ```text
-no route decisions
+admitted anthropic/fable
+admitted google/gemini-3.8-flash-high
+admitted google/gemini-3.8-flash-medium
+admitted openai/gpt-5.6-sol
+admitted openrouter/qwen/qwen3-coder-plus
+admitted openrouter/qwen/qwen3.8-flash
+admitted openrouter/z-ai/glm-5.3-flash
+admitted qwen-token-plan/deepseek-v4.1-flash
+admitted qwen-token-plan/qwen3.8-flash
+admitted qwen-token-plan/qwen3.8-max
+admitted xai/grok-4.7
+admitted zai-coding-cn/glm-5.3
+admitted zai-coding-cn/glm-5.3-flash
+planner fable-claude
+reviewer-arch fable-claude
+reviewer-cli sol-codex
+writer grok-native
+writer qwen-openrouter-pi
+writer gemini-agy
 ```
 
 ```bash
@@ -1084,7 +1102,7 @@ kxm routes list --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-23T13:50:08.663Z","admitted":[],"disabled":[],"roles":{}}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-24T00:00:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","openai/gpt-5.6-sol","openrouter/qwen/qwen3-coder-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","qwen-token-plan/deepseek-v4.1-flash","qwen-token-plan/qwen3.8-flash","qwen-token-plan/qwen3.8-max","xai/grok-4.7","zai-coding-cn/glm-5.3","zai-coding-cn/glm-5.3-flash"],"disabled":[]},"membership":["planner fable-claude","reviewer-arch fable-claude","reviewer-cli sol-codex","writer grok-native","writer qwen-openrouter-pi","writer gemini-agy"]}
 ```
 
 ### `kxm routes count`
@@ -1217,7 +1235,7 @@ Adds a role definition. Without a role ID, or with `--pick`, local scope offers 
 
 - Writes `.kxm/roles/<id>.yaml` in local scope, or `<KXM_USER_CONFIG_DIR>/roles/<id>.yaml` in global scope. `--dry-run` plans the write and writes nothing.
 - Each `--route` is checked the same way as `kxm role modify --add-route`. If `.kxm/models/<route-id>.yaml` is missing, the command exits 1 and writes `kxm: route '<route-id>' is not a file under .kxm/models/` to stderr. It does not write the role file, including under `--dry-run`. `--file` checks every `roster[].route` the same way before writing, in local scope and in global scope.
-- Local scope belongs to a KXM project: the file lands in the project root's `.kxm/roles/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new role in place of any file of that ID. The loader reads only `writer.yaml`, whose roster must name a route whose model is the `implementer` agent's model (see [Roles](config-reference.md#kxmrolesroleyaml-kxmrolev2)). If the project would not load, the command refuses with `role_invalid`, lists each issue and writes nothing, also under `--dry-run`, and `--overwrite` replaces a `writer.yaml` the loader refuses. Global scope is not checked, because no loader reads it.
+- Local scope belongs to a KXM project: the file lands in the project root's `.kxm/roles/` from any subdirectory, and outside a project the command refuses with `project_not_found` and creates nothing. Before writing, the project loader checks the project with the new role in place of any file of that ID. Validation is the role file schema, and every roster route must exist under `.kxm/models/`. If the project would not load, the command refuses with `role_invalid`, lists each issue and writes nothing, also under `--dry-run`, and `--overwrite` replaces a role file the loader refuses. Global scope is not checked, because no loader reads it.
 - Refusals exit 2 and honor `--json`: `project_not_found` and `role_invalid` (with `issues`, each `{phase, code, file, message}`). A missing `--route` file, and an existing role without `--overwrite`, exit 1 with a plain stderr line, also under `--dry-run` (`kxm: route '<route-id>' is not a file under .kxm/models/`, or `role add failed: role_already_exists: ...`).
 - JSON keys: `roleId`, `id`, `filePath`, `scope`.
 
@@ -1671,7 +1689,7 @@ kxm runs status --dry-run refused: the Runtime supervisor is not running and --d
 kxm runs drive <runId> [--simulated] [--wait] [--timeout-ms <n>] [--lane <unit>]
 ```
 
-Opens a drive of the run. With `--simulated`, a model-free producer reports every agent step as passed. Without `--simulated` the drive runs in live mode: each agent step invokes its harness through a one-shot producer, and the agent's model must be an admitted route (otherwise `producer_route_not_admitted`; there is no fallback model). A read-only step runs with the harness's read-only flags. A step with `write` access runs with an audited writer profile, which only `pi` and `grok` have; it must be a single assignment in a project whose `limits.maxConcurrentRuns` is 1, and, when `.kxm/roster.yaml` exists, its route must be on the roster's writer lineup. Otherwise the drive hands the run off with `step_unsupported`. Around each live attempt the Runtime fingerprints the checkout with `git status` and `git diff`: a write step settles `passed` only when the checkout changed (routing metadata `authored: true`), and a read-only step that changed it settles `failed` (`authoringWitness: readonly_mutated`).
+Opens a drive of the run. With `--simulated`, a model-free producer reports every agent step as passed. Without `--simulated` the drive runs in live mode: each agent step invokes its harness through a one-shot producer, and the agent's model must be an admitted route (otherwise `producer_route_not_admitted`; there is no fallback model). A read-only step runs with the harness's read-only flags. A step with `write` access runs with an audited writer profile, which only `pi` and `grok` have; it must be a single assignment in a project whose `limits.maxConcurrentRuns` is 1, and its route must be on the writer roster in `.kxm/roles/writer.yaml`. Otherwise the drive hands the run off with `step_unsupported`. Around each live attempt the Runtime fingerprints the checkout with `git status` and `git diff`: a write step settles `passed` only when the checkout changed (routing metadata `authored: true`), and a read-only step that changed it settles `failed` (`authoringWitness: readonly_mutated`).
 
 | Option | Argument | Default | Description |
 |---|---|---|---|
@@ -2843,7 +2861,7 @@ Recommends a flat workflow ID backed by a shipped template, with category metada
 
 - Explicit `Claude only`, `Claude-only`, or `only Claude Code` constraints exclude other harnesses. A missing, unauthenticated, or unsupported required harness produces `harness_unavailable`; KXM never silently substitutes Grok or Codex.
 - A write workflow requires an audited writer profile for the selected harness. Only Pi and Grok currently have one; Claude-only bug fixes produce `live_write_unsupported` with direct-Claude implementation guidance, never a Grok substitution. No misleading create/drive command is emitted for an unsupported profile.
-- For supported work, every suggested agent binding uses the selected detected, authenticated, dispatch-ready harness. Configure its compatible admitted model, install the exact template, validate project configuration, then use the separate create/live-drive/status/receipt commands. Writers also require single-assignment/single-run admission, any configured developer-roster writer approval, and the repository's actual verification gate. An already-present recommended workflow ID produces `workflow_already_exists`; KXM will not assume its agents or permissions match the template.
+- For supported work, every suggested agent binding uses the selected detected, authenticated, dispatch-ready harness. Configure its compatible admitted model, install the exact template, validate project configuration, then use the separate create/live-drive/status/receipt commands. Writers also require single-assignment/single-run admission, any configured developer policy writer approval, and the repository's actual verification gate. An already-present recommended workflow ID produces `workflow_already_exists`; KXM will not assume its agents or permissions match the template.
 - Arguments: `<prompt...>`; no command-specific options. No hub needed. `--dry-run` skips native authentication probes to avoid their side effects and does not claim verified availability.
 - JSON keys: `prompt`, `workflowId`, `template`, `area`, `confidence`, `reasons`, `suggestedSkills`, `roles` (an array of `{agent, harness, role}`), `suggestedCommand` (installation only), and `execution`. Supported execution includes `prerequisites`, `shell`, `createCommand`, `driveCommand`, `statusCommand`, and `receiptCommand`; refusal includes `error`, `reason`, and `nextSteps`, sets `ok: false`, and exits 1.
 

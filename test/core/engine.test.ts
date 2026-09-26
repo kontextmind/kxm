@@ -1330,23 +1330,13 @@ test("a producer that throws is recorded as itself, with its reason", async () =
   }
 });
 
-test("a live drive resolves the producer route from the agent's declared model", async () => {
-  // The agent schema requires the object form (`{provider, model}`); the live-route
-  // resolver used to read only a string form that no schema accepts, so every agent
-  // without a route was handed off with producer_route_unsupported unless it was
-  // literally named `implementer` (the hard-coded fallback). A declared model must
-  // drive the route. Namespaced model ids (`qwen/qwen3-coder-plus` under `openrouter`)
-  // are valid and must survive whole, and a malformed declaration is an error — never
-  // a silent reroute to some other model.
+test("a live drive request carries the route harness, provider, and model", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-agent-model-route-");
   try {
-    const agentFile = (name: string, provider: string, model: string) => [
+    const agentFile = (name: string, role: string) => [
       "schema: kxm.agent.v1",
       `purpose: Route witness ${name}.`,
-      "harness: pi",
-      "model:",
-      `  provider: ${provider}`,
-      `  model: ${model}`,
+      `role: ${role}`,
       "tools:",
       "  preset: read-only",
       "defaultRepositoryAccess: read",
@@ -1354,6 +1344,21 @@ test("a live drive resolves the producer route from the agent's declared model",
       "resultSchema: kxm.assignment-result.v1",
       "",
     ].join("\n");
+    const modelFile = (id: string, harness: string, vendor: string, model: string) => [
+      "schema: kxm.model.v2",
+      `id: ${id}`,
+      `harness: ${harness}`,
+      `model: ${model}`,
+      `vendor: ${vendor}`,
+      "status: admitted",
+      "permissions:",
+      "  - read-only",
+      "",
+    ].join("\n");
+    writeFileSync(join(root, ".kxm", "models", "route-grok.yaml"), modelFile("route-grok", "grok", "xai", "grok-4.6"));
+    writeFileSync(join(root, ".kxm", "models", "route-qwen.yaml"), modelFile("route-qwen", "grok", "alibaba", "openrouter/qwen/qwen3-coder-plus"));
+    writeFileSync(join(root, ".kxm", "roles", "witness-grok.yaml"), "schema: kxm.role.v2\nid: witness-grok\npurpose: experiment\npermission: read-only\ndescription: witness\nroster:\n  - route: route-grok\n    effort: low\n");
+    writeFileSync(join(root, ".kxm", "roles", "witness-qwen.yaml"), "schema: kxm.role.v2\nid: witness-qwen\npurpose: experiment\npermission: read-only\ndescription: witness\nroster:\n  - route: route-qwen\n    effort: low\n");
     const workflowFile = (name: string) => [
       "schema: kxm.workflow.v1",
       `description: One agent step for ${name}.`,
@@ -1376,8 +1381,8 @@ test("a live drive resolves the producer route from the agent's declared model",
     // One bundle, one scheduler policy: the two drivable cases differ only in the model
     // declaration, so they share a project revision instead of fighting over the
     // scheduler policy binding (a second policy cannot bind while prior runs hold one).
-    writeFileSync(join(root, ".kxm", "agents", "routewit.yaml"), agentFile("routewit", "xai", "grok-4.6"));
-    writeFileSync(join(root, ".kxm", "agents", "namespaced.yaml"), agentFile("namespaced", "openrouter", "qwen/qwen3-coder-plus"));
+    writeFileSync(join(root, ".kxm", "agents", "routewit.yaml"), agentFile("routewit", "witness-grok"));
+    writeFileSync(join(root, ".kxm", "agents", "namespaced.yaml"), agentFile("namespaced", "witness-qwen"));
     writeFileSync(join(root, ".kxm", "workflows", "routewit.yaml"), workflowFile("routewit"));
     writeFileSync(join(root, ".kxm", "workflows", "namespaced.yaml"), workflowFile("namespaced"));
     spawnSync("git", ["-C", root, "add", "-A"], { windowsHide: true });
@@ -1385,7 +1390,19 @@ test("a live drive resolves the producer route from the agent's declared model",
 
     // A provider containing the separator is refused by the schema before the engine
     // ever sees it — the loader is the layer that owns that contract.
-    writeFileSync(join(root, ".kxm", "agents", "malformed.yaml"), agentFile("malformed", "xai/via-slash", "grok-4.6"));
+    writeFileSync(join(root, ".kxm", "agents", "malformed.yaml"), [
+      "schema: kxm.agent.v1",
+      "purpose: Malformed provider.",
+      "model:",
+      "  provider: xai/via-slash",
+      "  model: grok-4.6",
+      "tools:",
+      "  preset: read-only",
+      "defaultRepositoryAccess: read",
+      "network: provider-only",
+      "resultSchema: kxm.assignment-result.v1",
+      "",
+    ].join("\n"));
     assert.throws(
       () => loadKxmProject(root),
       /schema_pattern/,
@@ -1399,12 +1416,12 @@ test("a live drive resolves the producer route from the agent's declared model",
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
       const scheduler = KxmRunScheduler.for(context, bundle);
-      const seen: Array<{ provider?: string | undefined; model?: string | undefined }> = [];
+      const seen: Array<{ harness?: string | undefined; provider?: string | undefined; model?: string | undefined }> = [];
       const inner = createKxmSimulatedProducer(async () => ({ outcome: "passed" }));
       const producer = {
         id: "pi" as const,
         produce: (request: Parameters<typeof inner.produce>[0]) => {
-          seen.push({ provider: request.provider, model: request.model });
+          seen.push({ harness: request.harness, provider: request.provider, model: request.model });
           return inner.produce(request);
         },
         close: async () => undefined,
@@ -1415,7 +1432,7 @@ test("a live drive resolves the producer route from the agent's declared model",
       const session = await scheduler.openDriveSession(accepted.run.runId, { mode: "live", createProducer: () => producer });
       const result = await session.settled;
       assert.equal(result.state.status, "completed", "the declared route lets the drive run instead of handing off");
-      assert.deepEqual(seen, [{ provider: "xai", model: "grok-4.6" }], "the producer received the agent's declared provider/model");
+      assert.deepEqual(seen, [{ harness: "grok", provider: "xai", model: "grok-4.6" }], "the producer received the route harness, provider, and model");
 
       // Namespaced model ids stay whole: both fields must survive the selector split.
       const namespacedAccepted = acceptKxmRun(context, bundle, { workflowId: "namespaced", prompt: "namespaced witness" });
@@ -1423,8 +1440,134 @@ test("a live drive resolves the producer route from the agent's declared model",
       const namespacedSession = await scheduler.openDriveSession(namespacedAccepted.run.runId, { mode: "live", createProducer: () => producer });
       const namespacedResult = await namespacedSession.settled;
       assert.equal(namespacedResult.state.status, "completed", "a namespaced model id is a valid declaration, not an absence");
-      assert.deepEqual(seen, [{ provider: "openrouter", model: "qwen/qwen3-coder-plus" }], "both fields survive the selector round-trip");
+      assert.deepEqual(seen, [{ harness: "grok", provider: "openrouter", model: "qwen/qwen3-coder-plus" }], "harness, provider, and the namespaced model all survive");
 
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live dispatch thinking is the roster effort and is absent when the roster entry has none", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-roster-effort-");
+  try {
+    writeFileSync(join(root, ".kxm", "roles", "measured.yaml"), `schema: kxm.role.v2
+id: measured
+purpose: experiment
+permission: read-only
+description: effort witness
+roster:
+  - route: grok-default
+    effort: high
+`);
+    writeFileSync(join(root, ".kxm", "agents", "measured.yaml"), `schema: kxm.agent.v1
+purpose: Effort witness.
+role: measured
+tools:
+  preset: read-only
+defaultRepositoryAccess: none
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
+    writeFileSync(join(root, ".kxm", "workflows", "measured.yaml"), `schema: kxm.workflow.v1
+description: Effort witness.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: measured
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const seen: Array<{ agentId: string; thinking?: string | undefined }> = [];
+      const producer = {
+        id: "oneshot" as const,
+        async produce(request: { agentId: string; thinking?: string | undefined }) {
+          seen.push({ agentId: request.agentId, thinking: request.thinking });
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(producer as never);
+      const plain = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "no effort" });
+      pinKxmCompiledPlan(context, bundle, plain.run.runId);
+      const plainDrive = await driveKxmRun(context, plain.run.runId, producer as never);
+      assert.equal(plainDrive.handoff, undefined);
+      assert.equal(plainDrive.state.status, "completed");
+      assert.equal(seen[0]?.agentId, "implementer");
+      assert.equal(seen[0]?.thinking, undefined);
+
+      const measured = acceptKxmRun(context, bundle, { workflowId: "measured", prompt: "with effort" });
+      pinKxmCompiledPlan(context, bundle, measured.run.runId);
+      const measuredDrive = await driveKxmRun(context, measured.run.runId, producer as never);
+      assert.equal(measuredDrive.handoff, undefined);
+      assert.equal(measuredDrive.state.status, "completed");
+      assert.equal(seen[1]?.agentId, "measured");
+      assert.equal(seen[1]?.thinking, "high");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a later panel member whose route resolution fails takes step_unsupported instead of dispatching", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-panel-route-");
+  try {
+    writeFileSync(join(root, ".kxm", "agents", "unrouted.yaml"), `schema: kxm.agent.v1
+purpose: Panel member with no role.
+tools:
+  preset: read-only
+defaultRepositoryAccess: none
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
+    writePanelWorkflow(root, "panel-route", {
+      maximum: 2,
+      target: 2,
+      maxParallel: 2,
+      allowedAgents: "allowedAgents: [implementer, unrouted]",
+    });
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const seen: Array<{ agentId: string; harness?: string | undefined; provider?: string | undefined; model?: string | undefined }> = [];
+      const producer = {
+        id: "oneshot" as const,
+        async produce(request: { agentId: string; harness?: string | undefined; provider?: string | undefined; model?: string | undefined }) {
+          seen.push({
+            agentId: request.agentId,
+            harness: request.harness,
+            provider: request.provider,
+            model: request.model,
+          });
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(producer as never);
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "panel-route", prompt: "panel route" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      const result = await driveKxmRun(context, accepted.run.runId, producer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "model");
+      assert.equal(result.handoff?.stepId, "only");
+      assert.deepEqual(seen, [{ agentId: "implementer", harness: "grok", provider: "xai", model: "grok-4.6" }]);
+      const created = context.eventStore.events(accepted.run.runId, 0, 10_000)
+        .filter((event) => event.eventType === "assignment.created");
+      assert.equal(created.length, 1);
+      assert.equal(created[0]?.payload.agentId, "implementer");
     } finally {
       closeKxmRuntimeContext(context);
     }
@@ -3987,10 +4130,7 @@ test("permission ceiling: live write step fails closed with step_unsupported han
   try {
     writeFileSync(join(root, ".kxm", "agents", "implementer.yaml"), `schema: kxm.agent.v1
 purpose: Claude has no audited writer profile.
-harness: claude
-model:
-  provider: anthropic
-  model: fable
+role: writer
 tools:
   preset: workspace-writer
 defaultRepositoryAccess: none
@@ -4061,6 +4201,89 @@ roster:
     } finally {
       closeKxmRuntimeContext(context);
     }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live route refuses an agent step that sets model", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-step-model-");
+  try {
+    const bundle = loadKxmProject(root);
+    const steps = bundle.workflows.get("one-step")?.value.steps;
+    assert.ok(Array.isArray(steps) && steps[0] && typeof steps[0] === "object" && !Array.isArray(steps[0]));
+    (steps[0] as JsonObject).model = { provider: "xai", model: "grok-4.6" };
+    const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    const refusal = found.find((entry) => entry.field === "model" && entry.reason === "step_unsupported");
+    assert.ok(refusal, "an agent step model is refused");
+    assert.match(refusal.detail ?? "", /agent step model is not honored; remove model from the step/);
+    assert.doesNotMatch(refusal.detail ?? "", /kxm routes admit/);
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("resolveProducerRoute refuses a missing roster model file instead of continuing", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-model-file-");
+  try {
+    writeFileSync(join(root, ".kxm", "models", "gone.yaml"), "schema: kxm.model.v2\nid: gone\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - edit\n");
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v2
+id: writer
+purpose: writer
+permission: edit
+description: First route is removed after load.
+roster:
+  - route: gone
+  - route: grok-default
+`);
+    const bundle = loadKxmProject(root);
+    rmSync(join(root, ".kxm", "models", "gone.yaml"));
+    const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    assert.ok(found.some((entry) => entry.detail?.includes("model file '.kxm/models/gone.yaml' is missing or unreadable")));
+    writeFileSync(join(root, ".kxm", "models", "gone.yaml"), "a: [\n");
+    const unreadable = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    assert.ok(unreadable.some((entry) => entry.detail?.includes("model file '.kxm/models/gone.yaml' is missing or unreadable")));
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live route refuses an agent without a role", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-no-role-");
+  try {
+    writeFileSync(join(root, ".kxm", "agents", "implementer.yaml"), "schema: kxm.agent.v1\npurpose: No role.\ntools:\n  preset: workspace-writer\ndefaultRepositoryAccess: none\nrepositories:\n  control: write\nnetwork: provider-only\nresultSchema: kxm.assignment-result.v1\n");
+    const bundle = loadKxmProject(root);
+    const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    assert.ok(found.some((entry) => entry.detail.includes("agent has no role")));
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live route refuses a role whose first admitted route is disabled", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-route-disabled-");
+  try {
+    writeFileSync(join(root, ".kxm", "models", "blocked.yaml"), "schema: kxm.model.v2\nid: blocked\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
+    writeFileSync(join(root, ".kxm", "roles", "witness.yaml"), "schema: kxm.role.v2\nid: witness\npurpose: experiment\npermission: read-only\ndescription: witness\nroster:\n  - route: blocked\n");
+    writeFileSync(join(root, ".kxm", "agents", "implementer.yaml"), "schema: kxm.agent.v1\npurpose: Witness.\nrole: witness\ntools:\n  preset: workspace-writer\ndefaultRepositoryAccess: none\nrepositories:\n  control: write\nnetwork: provider-only\nresultSchema: kxm.assignment-result.v1\n");
+    setRouteState(root, "xai/grok-4.6", "disabled");
+    const bundle = loadKxmProject(root);
+    const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    assert.ok(found.some((entry) => entry.detail.includes("is disabled")));
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("live write refuses a writer route without edit", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-writer-no-edit-");
+  try {
+    writeFileSync(join(root, ".kxm", "models", "grok-default.yaml"), "schema: kxm.model.v2\nid: grok-default\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), "schema: kxm.workflow.v1\ndescription: Write\ncoordinator: coordinator\nlimits:\n  maxTransitions: 2\nsteps:\n  - id: write-step\n    kind: agent\n    agent: implementer\n    repositories:\n      control: write\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n");
+    setRouteState(root, "xai/grok-4.6", "admitted");
+    const bundle = loadKxmProject(root);
+    const found = kxmLiveRunPrerequisites(bundle, "write-step", root);
+    assert.ok(found.some((entry) => entry.detail.includes("not an admitted edit route")));
   } finally {
     removeTempDir(root, stateRoot);
   }
@@ -4278,7 +4501,6 @@ test("admission: agent without model returns handoff before birth", async () => 
   try {
     writeFileSync(join(root, ".kxm", "agents", "no-model-agent.yaml"), `schema: kxm.agent.v1
 purpose: Test agent without model
-harness: grok
 tools:
   preset: read-only
 defaultRepositoryAccess: none
@@ -4364,14 +4586,9 @@ test("admission: demoted selector returns handoff before birth", async () => {
   }
 });
 
-test("admission: role roster that excludes the agent model fails closed at load", async () => {
+test("admission: a writer roster route that is not admitted is refused before birth", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-adm-roster-");
   try {
-    // The template names xai/grok-4.6 on implementer and admits it. A writer
-    // role roster that omits that model is a lie, so load refuses before a
-    // drive can be born.
-    setRouteState(root, "xai/grok-4.6", "admitted");
-    updateRouteState(root, "xai/grok-4.6", "admitted");
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
     mkdirSync(join(root, ".kxm", "models"), { recursive: true });
     writeFileSync(join(root, ".kxm", "models", "other-route.yaml"), `schema: kxm.model.v2
@@ -4387,12 +4604,13 @@ permissions:
 id: writer
 purpose: writer
 permission: edit
-description: Writer roster that omits the agent model.
+description: Writer roster names a route that routes.yaml does not admit.
 roster:
   - route: other-route
 `);
-
-    assert.throws(() => loadKxmProject(root), /role_roster_conflicts_with_agent/);
+    const bundle = loadKxmProject(root);
+    const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    assert.ok(found.some((entry) => entry.detail.includes("is not admitted")));
   } finally {
     removeTempDir(root, stateRoot);
   }
@@ -4785,7 +5003,6 @@ ${timeout}    on:
     const producer = createKxmOneShotProducer({
       projectRoot: root,
       evidenceRoot,
-      defaultHarness: "grok",
       timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs,
       probeHarness: authenticated,
       spawnProcess: async (_command, _args, options) => {

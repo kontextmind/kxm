@@ -7,7 +7,7 @@ description: Entry point for KXM, the kxm CLI and the Claude Code plugin kxm_* M
 
 Pick the skill that owns the request, then follow it. These bundled skills
 document the current CLI. They do not switch runtime YAML authority, admit
-writers, or replace `.kxm/roster.yaml` trusted policy.
+writers, or replace the trusted role and model policy.
 
 ## Route by request
 

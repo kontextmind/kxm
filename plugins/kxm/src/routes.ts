@@ -5,15 +5,15 @@ import { rolePurposeForId } from "./role.ts";
 
 const RETIRED_POLICY = ".kxm/producers.yaml";
 
-export interface RoutePolicy { schema: "kxm.routes.v2"; updatedAt: string; admitted: string[]; disabled: string[]; roles: Record<string, string[]>; }
-const empty = (): RoutePolicy => ({ schema: "kxm.routes.v2", updatedAt: new Date().toISOString(), admitted: [], disabled: [], roles: {} });
+export interface RoutePolicy { schema: "kxm.routes.v2"; updatedAt: string; admitted: string[]; disabled: string[]; }
+const empty = (): RoutePolicy => ({ schema: "kxm.routes.v2", updatedAt: new Date().toISOString(), admitted: [], disabled: [] });
 export function loadRoutePolicy(root: string): RoutePolicy {
   if (existsSync(join(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
   const path = join(root, ".kxm", "routes.yaml");
   if (!existsSync(path)) return empty();
   const value = parse(readFileSync(path, "utf8")) as Partial<RoutePolicy>;
   if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
-  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(), admitted: value.admitted.filter((x): x is string => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x): x is string => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, (v as unknown[]).filter((x): x is string => typeof x === "string")])) : {} };
+  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(), admitted: value.admitted.filter((x): x is string => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x): x is string => typeof x === "string") : [] };
 }
 export function updateRouteState(root: string, model: string, state: "admitted" | "disabled"): RoutePolicy {
   return setRouteState(root, model, state);
@@ -33,21 +33,7 @@ export function setRouteState(root: string, model: string, state: "admitted" | "
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) roleFile = parsed as Record<string, unknown>;
     }
     const roster = Array.isArray(roleFile.roster) ? roleFile.roster.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)) : [];
-    const modelsDir = join(root, ".kxm", "models");
-    let routeId: string | undefined;
-    if (existsSync(modelsDir)) {
-      for (const name of readdirSync(modelsDir)) {
-        if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
-        const parsedModel = parse(readFileSync(join(modelsDir, name), "utf8")) as { vendor?: unknown; model?: unknown; schema?: unknown };
-        if (parsedModel?.schema !== "kxm.model.v2") continue;
-        const vendor = typeof parsedModel.vendor === "string" ? parsedModel.vendor : "";
-        const named = typeof parsedModel.model === "string" ? parsedModel.model : "";
-        if (named === model || (vendor && `${vendor}/${named}` === model)) {
-          routeId = name.slice(0, -5);
-          break;
-        }
-      }
-    }
+    const routeId = routeIdForInventoryModel(root, model);
     if (!routeId) throw new Error(`unknown route: no v2 model file matches '${model}'`);
     const existing = roster.findIndex((entry) => entry.route === routeId || entry.model === model);
     if (removeRole) { if (existing >= 0) roster.splice(existing, 1); }
@@ -66,6 +52,28 @@ export function setRouteState(root: string, model: string, state: "admitted" | "
   mkdirSync(join(root, ".kxm"), { recursive: true });
   writeFileSync(join(root, ".kxm", "routes.yaml"), stringify(policy), "utf8");
   return policy;
+}
+
+/** Route-file id whose vendor/model matches an inventory selector, if one exists. */
+export function routeIdForInventoryModel(root: string, model: string): string | undefined {
+  const modelsDir = join(root, ".kxm", "models");
+  if (!existsSync(modelsDir)) return undefined;
+  for (const name of readdirSync(modelsDir)) {
+    if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
+    const parsedModel = parse(readFileSync(join(modelsDir, name), "utf8")) as { vendor?: unknown; model?: unknown; schema?: unknown };
+    if (parsedModel?.schema !== "kxm.model.v2") continue;
+    const vendor = typeof parsedModel.vendor === "string" ? parsedModel.vendor : "";
+    const named = typeof parsedModel.model === "string" ? parsedModel.model : "";
+    if (named === model || (vendor && `${vendor}/${named}` === model)) return name.slice(0, -5);
+  }
+  return undefined;
+}
+
+/** Role ids whose roster names the model file that matches this inventory selector. */
+export function rolesForInventoryModel(root: string, inventoryId: string): string[] {
+  const routeId = routeIdForInventoryModel(root, inventoryId);
+  if (!routeId) return [];
+  return Object.entries(listRoleBindings(root)).filter(([, ids]) => ids.includes(routeId)).map(([role]) => role);
 }
 
 export function listRoleBindings(root: string): Record<string, string[]> {

@@ -138,6 +138,17 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Dispatch reads role and model files, and agents bind a role.**
+  `scripts/roster-policy.mjs` builds the developer policy from
+  `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.
+  The engine resolves harness, model, and effort from the agent's `role`
+  and that role's roster. A step `model` does not override that route.
+  `kxm routes` prints `policy` (`admitted`, `disabled`) and `membership`
+  from the role files. `.kxm/routes.yaml` keeps admitted and disabled
+  selectors. `reviewer-arch` resolves to `fable-claude`. `opus-claude` is
+  admitted and named by no roster, so it is absent from `routes` and the
+  lineups. `gemini-agy` is in the writer lineup. An agent `tools.preset`
+  may only narrow its role preset; that rule is recorded and enforced in P3.
 - **Role and model files are live `kxm.role.v2` and `kxm.model.v2`.**
   `schemas/role.schema.json` and `schemas/model.schema.json` are the files
   `kxm config` validates. Each admitted roster route is a
@@ -153,7 +164,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   in the developer ceilings or the harness inventory can dispatch them:
   `zai-coding-cn/glm-5.3-flash`, `qwen-token-plan/qwen3.8-flash`,
   `qwen-token-plan/qwen3.8-max`, and `zai-coding-cn/glm-5.3`.
-  Dispatch still reads `.kxm/roster.yaml` until P2.
+  Dispatch resolves harness, provider, model, and effort from the role roster.
+  A live request with no harness is refused. A roster entry with no effort
+  leaves thinking unset.
 
 - **Usage errors under `--json` print a `usage_error` envelope and exit 2.**
   A missing required option, unknown command, or other Commander usage error
@@ -418,6 +431,14 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Removed
 
+- **The developer roster file and the transport just recipes.**
+  The single roster document and the `impl`, `plan`, `review-arch`,
+  `review-cli`, `impl-bg`, and `dispatch` recipes are gone. One-step
+  workflows are the transport: `kxm lane run <unit> --brief <file> --workflow implement-only`,
+  and the same command with `review-arch-only` or `review-cli-only`.
+  Transfer policy from `.kxm/roster.yaml` to the role and model files and
+  delete the retired roster before running KXM. KXM refuses a leftover
+  `.kxm/roster.yaml`.
 - **`.kxm/template-provenance.yaml` was removed from this project, a repository
   change rather than a product change,** because the installed kxm no longer
   recognizes its recorded revision and a project without the file validates as

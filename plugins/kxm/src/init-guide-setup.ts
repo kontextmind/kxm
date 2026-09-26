@@ -12,9 +12,10 @@
  *   - `.kxm/workflows/<slug>.yaml`     (kxm.workflow.v1)
  *   - `.kxm/roles/<role-slug>.yaml`    (kxm.role.v2)
  *   - `.kxm/models/<route-id>.yaml`    (kxm.model.v2)
+ *   - `plans/evidence/route-guide-qwen-pi.md` when a Pi binding matches that note
  *   - admitted selectors appended to `.kxm/routes.yaml`
- * It never writes retired legacy authority (`.kxm/config`, retired
- * `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy.
+ * It never writes retired legacy authority (`.kxm/config` or
+ * `.kxm/roster.json`). Role and model files are the dispatch authority.
  *
  * Guide research ids are not dispatch ids. Only the admitted map below is
  * written, and only when that harness is authenticated. Unmapped ids are skipped.
@@ -28,8 +29,7 @@
  * admission decision says so.
  */
 
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stringify } from "yaml";
 import { type HarnessInventory } from "./harness.ts";
@@ -446,13 +446,12 @@ function isWriterRole(roleSlug: string): boolean {
   return WRITER_ROLE_PATTERN.test(roleSlug);
 }
 
-function agentDocument(roleSlug: string, stage: GuideStage, binding: AgentBinding): Record<string, unknown> {
+function agentDocument(roleSlug: string, stage: GuideStage): Record<string, unknown> {
   const writer = isWriterRole(roleSlug);
   return {
     schema: "kxm.agent.v1",
     purpose: `${stage.domain} (workflow-guide ${stage.title}; candidate verification is the operator's responsibility)`,
-    harness: binding.harness,
-    model: { provider: binding.provider, model: binding.model },
+    role: roleSlug,
     tools: { preset: writer ? "workspace-writer" : "read-only" },
     defaultRepositoryAccess: writer ? "none" : "read",
     repositories: { control: writer ? "write" : "read" },
@@ -486,25 +485,77 @@ function workflowDocument(workflow: GuideWorkflow): Record<string, unknown> {
 }
 
 /**
+ * Evidence written into the user's project for the one admitted guided Pi model.
+ * The hash is of these exact bytes. A Pi binding that is not this vendor, model
+ * id, and harness gets no model file and no origin.
+ */
+const GUIDE_PI_EVIDENCE_SOURCE = "plans/evidence/route-guide-qwen-pi.md";
+const GUIDE_PI_EVIDENCE_SHA256 = "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759";
+const GUIDE_PI_NOTE = {
+  harness: "pi",
+  vendor: "openrouter",
+  model: "qwen/qwen3-coder-plus",
+  reason: "Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup.",
+  provingCommand: "pi auth check --provider openrouter",
+} as const;
+
+const GUIDE_PI_EVIDENCE_NOTE = `---
+schema: "kxm.doc.v1"
+id: "RES-GUIDE-QWEN-PI"
+type: "research"
+title: "Research: guided setup Pi Qwen origin"
+project: "kxm"
+status: "approved"
+owner: "@operator"
+created: "2026-09-26"
+updated: "2026-09-26"
+authority: "evidence"
+confidence: "verified"
+summary: "Guided setup pins every Pi model origin to this note so a later project.yaml edit cannot change the hash."
+tags: ["routing", "qwen", "pi", "init-guide"]
+related: []
+details:
+  research_status: "complete"
+  target_decision_date: "2026-09-26"
+---
+
+# route-guide-qwen-pi
+
+Dated 2026-09-26. Route ids are the guided role slugs. Harness \`${GUIDE_PI_NOTE.harness}\`. Model id \`${GUIDE_PI_NOTE.model}\`. Vendor \`${GUIDE_PI_NOTE.vendor}\`. Admitted because ${GUIDE_PI_NOTE.reason} Auth was proved with \`${GUIDE_PI_NOTE.provingCommand}\`.
+`;
+
+function guidePiNoteMatches(binding: AgentBinding): boolean {
+  return binding.harness === GUIDE_PI_NOTE.harness
+    && binding.provider === GUIDE_PI_NOTE.vendor
+    && binding.model === GUIDE_PI_NOTE.model;
+}
+
+/**
  * Render the planned KXM resource files (`.kxm/agents/*.yaml`,
- * `.kxm/workflows/*.yaml`). A Pi model origin hashes `.kxm/project.yaml`
- * when that file exists, and is omitted when it does not.
+ * `.kxm/workflows/*.yaml`, and the Pi evidence note when a binding matches it).
+ * The Pi origin is the hash of `plans/evidence/route-guide-qwen-pi.md` written
+ * into the project, whether or not `.kxm/project.yaml` exists.
  */
 export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan): GuideSetupFile[] {
-  const projectYaml = join(projectRoot, ".kxm", "project.yaml");
-  const projectOrigin = existsSync(projectYaml)
-    ? { source: ".kxm/project.yaml", sha256: createHash("sha256").update(readFileSync(projectYaml)).digest("hex") }
-    : undefined;
   const files: GuideSetupFile[] = [];
   const roleStages = new Map<string, GuideStage>();
   for (const workflow of plan.workflows) {
     for (const stage of workflow.stages) roleStages.set(stage.role, stage);
   }
+  let evidenceQueued = false;
   for (const [role, binding] of [...plan.agents.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const stage = roleStages.get(role);
     if (!stage) continue;
     const routeId = role.replaceAll("_", "-");
     const writer = isWriterRole(role);
+    const piMatch = binding.harness === "pi" && guidePiNoteMatches(binding);
+    if (binding.harness === "pi" && !piMatch) {
+      files.push({
+        path: join(projectRoot, ".kxm", "agents", `${role}.yaml`),
+        content: stringify(agentDocument(role, stage)),
+      });
+      continue;
+    }
     const modelDocument: Record<string, unknown> = {
       schema: "kxm.model.v2",
       id: routeId,
@@ -514,10 +565,19 @@ export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan)
       status: "admitted",
       permissions: [writer ? "edit" : "read-only"],
     };
-    if (binding.harness === "pi" && projectOrigin) modelDocument.origin = projectOrigin;
+    if (piMatch) {
+      modelDocument.origin = { source: GUIDE_PI_EVIDENCE_SOURCE, sha256: GUIDE_PI_EVIDENCE_SHA256 };
+      if (!evidenceQueued) {
+        files.push({
+          path: join(projectRoot, GUIDE_PI_EVIDENCE_SOURCE),
+          content: GUIDE_PI_EVIDENCE_NOTE,
+        });
+        evidenceQueued = true;
+      }
+    }
     files.push({
       path: join(projectRoot, ".kxm", "agents", `${role}.yaml`),
-      content: stringify(agentDocument(role, stage, binding)),
+      content: stringify(agentDocument(role, stage)),
     });
     files.push({
       path: join(projectRoot, ".kxm", "models", `${routeId}.yaml`),

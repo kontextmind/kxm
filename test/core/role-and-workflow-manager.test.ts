@@ -872,23 +872,12 @@ test("role add writes a local role only at the project root, and only if the pro
     rmSync(join(roles, "writer.yaml"));
     mkdirSync(join(root, "user-config", "roles"), { recursive: true });
     writeFileSync(join(root, "user-config", "roles", "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\ndescription: Global writer.\nroster:\n  - route: grok-default\n");
-    // An implementer on a model the built-in writer template's roster leaves out.
     const implementer = join(project, ".kxm", "agents", "implementer.yaml");
     const undeclared = readFileSync(implementer, "utf8").replace(/^harness:.*\n/m, "").replace(/^model:.*\n(?: {2}.*\n)*/m, "");
-    writeFileSync(implementer, `${undeclared}harness: claude\nmodel:\n  provider: anthropic\n  model: claude-fable-5-1\n`);
+    writeFileSync(implementer, undeclared.endsWith("\n") ? undeclared : `${undeclared}\n`);
     assert.ok(loadKxmProject(project));
 
-    // The writer template's roster leaves out the implementer's model, so the loader would refuse the project.
-    for (const dryRun of [["--dry-run"], []]) {
-      const refused = await kxm(["role", "add", "--pick", "writer", ...dryRun]);
-      assert.equal(refused.code, 2, refused.err);
-      const refusal = JSON.parse(refused.err) as { error: string; issues: Array<{ code: string; file: string }> };
-      assert.equal(refusal.error, "role_invalid");
-      assert.ok(refusal.issues.some((entry) => entry.code === "role_roster_conflicts_with_agent" && entry.file === ".kxm/roles/writer.yaml"), refused.err);
-      assert.equal(existsSync(join(roles, "writer.yaml")), false);
-    }
-
-    // With the implementer's model, from a subdirectory, the role lands where the loader reads it.
+    // From a subdirectory, the role lands where the loader reads it.
     writeFileSync(join(project, ".kxm", "models", "fable-agent.yaml"), "schema: kxm.model.v2\nid: fable-agent\nharness: claude\nmodel: claude-fable-5-1\nvendor: anthropic\nstatus: admitted\npermissions:\n  - edit\n");
     const added = await kxm(["role", "add", "--pick", "writer", "--route", "fable-agent"], join(project, "sub"));
     assert.equal(added.code, 0, added.err);
@@ -896,9 +885,9 @@ test("role add writes a local role only at the project root, and only if the pro
     assert.equal(existsSync(join(project, "sub", ".kxm")), false);
     assert.ok(loadKxmProject(project));
 
-    // A conflicting writer left on disk is judged by what replaces it, so --overwrite repairs it.
+    // --overwrite replaces the role at the project root.
     writeFileSync(join(roles, "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\ndescription: Conflicting writer.\nroster:\n  - route: grok-default\n");
-    assert.throws(() => loadKxmProject(project), /role_roster_conflicts_with_agent/);
+    assert.ok(loadKxmProject(project));
     const repaired = await kxm(["role", "add", "writer", "--route", "fable-agent", "--overwrite"]);
     assert.equal(repaired.code, 0, repaired.err);
     assert.ok(loadKxmProject(project));

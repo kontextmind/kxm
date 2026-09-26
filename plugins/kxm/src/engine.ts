@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { isRouteAdmitted, listRoleBindings } from "./routes.ts";
+import { listRoleBindings, loadRoutePolicy } from "./routes.ts";
 import { applyAuthoringWitness, captureWorktreeWitness } from "./worktree-witness.ts";
 import {
   buildFormalContextPacket,
@@ -1342,26 +1342,30 @@ export interface KxmPanelDispatchSeams {
 
 export const kxmPanelDispatchSeams: KxmPanelDispatchSeams = {};
 
-/** Selectors named by v2 route files: the model id, `vendor/model`, and `harness/model`. */
-function selectorsNamedByRoutes(projectRoot: string, routeIds: readonly string[]): string[] {
-  const selectors = new Set<string>();
-  for (const routeId of routeIds) {
-    const file = join(projectRoot, ".kxm", "models", `${routeId}.yaml`);
-    if (!existsSync(file)) continue;
-    let parsed: { harness?: unknown; model?: unknown; vendor?: unknown };
-    try {
-      parsed = parse(readFileSync(file, "utf8")) as { harness?: unknown; model?: unknown; vendor?: unknown };
-    } catch {
-      continue;
-    }
-    const model = typeof parsed.model === "string" ? parsed.model : "";
-    const vendor = typeof parsed.vendor === "string" ? parsed.vendor : "";
-    const harness = typeof parsed.harness === "string" ? parsed.harness : "";
-    if (model) selectors.add(model);
-    if (vendor && model) selectors.add(`${vendor}/${model}`);
-    if (harness && model) selectors.add(`${harness}/${model}`);
+interface ResolvedProducerRoute {
+  provider: string;
+  model: string;
+  selector: string;
+  harness: string;
+  routeId: string;
+  role: string;
+  permissions: string[];
+  effort?: string | undefined;
+}
+
+function readYamlFile(file: string): Record<string, unknown> | undefined {
+  return readModelDocument(file);
+}
+
+function readModelDocument(file: string): Record<string, unknown> | undefined {
+  if (!existsSync(file)) return undefined;
+  try {
+    const parsed = parse(readFileSync(file, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
   }
-  return [...selectors];
 }
 
 function unreconciledPanelAttemptId(state: KxmRunState): string | undefined {
@@ -1383,97 +1387,119 @@ function resolveProducerRoute(
   projectRoot: string,
   step: KxmCompiledStep,
   agentId: string,
-): { provider: string; model: string; selector: string } | { error: Omit<KxmRunHandoff, "stepId"> } {
-  let agentModel: string | undefined;
-  const agentFile = join(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
-  if (existsSync(agentFile)) {
-    try {
-      const parsed = parse(readFileSync(agentFile, "utf8")) as Record<string, unknown>;
-      if (typeof parsed?.model === "string") {
-        agentModel = parsed.model;
-      } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
-        // The agent schema requires the object form (`{provider, model}`); reading only the
-        // string form left every agent without a route unless it was literally named
-        // `implementer`, which alone hit the hard-coded fallback below. A declared model
-        // must actually drive the producer route. Model ids may themselves be namespaced
-        // (`qwen/qwen3-coder-plus` under `openrouter`) — the provider is the only field
-        // that may not contain the separator, because it is what the selector splits on.
-        // A malformed declaration is an error, not an absence: falling through to the
-        // fallback would silently route an agent that declared `openrouter` to Grok.
-        const declared = parsed.model as { provider?: unknown; model?: unknown };
-        const providerOk = typeof declared.provider === "string" && declared.provider.length > 0 && !declared.provider.includes("/");
-        const modelOk = typeof declared.model === "string" && declared.model.length > 0 && !declared.model.startsWith("/") && !declared.model.endsWith("/");
-        if (providerOk && modelOk) {
-          agentModel = `${declared.provider}/${declared.model}`;
-        } else {
-          return {
-            error: {
-              reason: "step_unsupported",
-              field: "model",
-              detail: "producer_route_unsupported: invalid model declaration",
-            },
-          };
-        }
-      }
-    } catch {
-      // ignore
+): ResolvedProducerRoute | { error: Omit<KxmRunHandoff, "stepId"> } {
+  if ((step.kind === "agent" || step.kind === "moa") && step.model !== undefined) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent step model is not honored",
+      },
+    };
+  }
+  const agent = readYamlFile(join(projectRoot, ".kxm", "agents", `${agentId}.yaml`));
+  const role = typeof agent?.role === "string" ? agent.role : "";
+  if (!role) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent has no role",
+      },
+    };
+  }
+  const roleDoc = readYamlFile(join(projectRoot, ".kxm", "roles", `${role}.yaml`));
+  const roster = Array.isArray(roleDoc?.roster) ? roleDoc.roster : undefined;
+  if (!roster) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: role '${role}' has no roster`,
+      },
+    };
+  }
+  const policy = loadRoutePolicy(projectRoot);
+  for (const entry of roster) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as { route?: unknown; effort?: unknown };
+    if (typeof record.route !== "string" || record.route.length === 0) continue;
+    const modelPath = join(projectRoot, ".kxm", "models", `${record.route}.yaml`);
+    const doc = readModelDocument(modelPath);
+    if (!doc) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: model file '.kxm/models/${record.route}.yaml' is missing or unreadable`,
+        },
+      };
     }
-  }
-
-  let selector = typeof step.model === "string" ? step.model : agentModel;
-  if (!selector) {
-    if (agentId === "implementer") {
-      selector = "xai/grok-4.6";
+    if (doc.status !== "admitted") continue;
+    const modelName = typeof doc.model === "string" ? doc.model : "";
+    const vendor = typeof doc.vendor === "string" ? doc.vendor : "";
+    const harness = typeof doc.harness === "string" ? doc.harness : "";
+    if (!modelName || !vendor || !harness) continue;
+    const candidates = [modelName, `${vendor}/${modelName}`, `${harness}/${modelName}`];
+    const admittedSelector = candidates.find((candidate) => policy.admitted.includes(candidate));
+    const disabledSelector = candidates.find((candidate) => policy.disabled.includes(candidate));
+    if (!admittedSelector && disabledSelector) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: first admitted route '${record.route}' for role '${role}' is disabled`,
+        },
+      };
     }
-  }
-  if (!selector) {
+    const selector = admittedSelector ?? (modelName.includes("/") ? modelName : `${vendor}/${modelName}`);
+    if (policy.disabled.includes(selector)) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: first admitted route '${record.route}' for role '${role}' is disabled`,
+        },
+      };
+    }
+    if (!policy.admitted.includes(selector)) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: model '${selector}' is not admitted`,
+        },
+      };
+    }
+    const slash = selector.indexOf("/");
+    if (slash <= 0 || slash === selector.length - 1) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: invalid selector '${selector}'`,
+        },
+      };
+    }
+    const permissions = Array.isArray(doc.permissions) ? doc.permissions.filter((item): item is string => typeof item === "string") : [];
     return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: "producer_route_unsupported: agent or step has no model declared",
-      },
+      provider: selector.slice(0, slash),
+      model: selector.slice(slash + 1),
+      selector,
+      harness,
+      routeId: record.route,
+      role,
+      permissions,
+      ...(typeof record.effort === "string" ? { effort: record.effort } : {}),
     };
   }
-
-  const slash = selector.indexOf("/");
-  if (slash <= 0 || slash === selector.length - 1) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: invalid selector '${selector}'`,
-      },
-    };
-  }
-
-  if (!isRouteAdmitted(projectRoot, selector)) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: model '${selector}' is not admitted`,
-      },
-    };
-  }
-
-  const role = agentId === "implementer" ? "writer" : agentId;
-  const roleBindings = listRoleBindings(projectRoot);
-  const roster = roleBindings[role];
-  const rosterSelectors = roster ? selectorsNamedByRoutes(projectRoot, roster) : undefined;
-  if (rosterSelectors && !rosterSelectors.includes(selector)) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: model '${selector}' not in role '${role}' roster`,
-      },
-    };
-  }
-
-  const provider = selector.slice(0, slash);
-  const model = selector.slice(slash + 1);
-  return { provider, model, selector };
+  return {
+    error: {
+      reason: "step_unsupported",
+      field: "model",
+      detail: `producer_route_unsupported: role '${role}' has no admitted route`,
+    },
+  };
 }
 
 function projectAgentStepTimeoutMs(context: KxmRuntimeContext, run: KxmRunRecord): number {
@@ -1708,7 +1734,7 @@ function prepareDispatch(
   const wideTimeout = unsupportedAgentStepTimeout(step, projectAgentStepTimeoutMs(context, run));
   if (wideTimeout) return { kind: "return", state, handoff: { ...wideTimeout, stepId } };
 
-  let resolvedRoute: { provider: string; model: string; selector: string } | undefined;
+  let resolvedRoute: ResolvedProducerRoute | undefined;
   if (producerId !== "driver-simulated") {
     const allowed = step.assignments.allowedAgents;
     const agentId = (allowed && allowed.length > 0 && allowed[0])
@@ -1722,8 +1748,7 @@ function prepareDispatch(
     const writeRefusal = unsupportedLiveWrite(
       context.projectRoot,
       step,
-      agentId,
-      resolvedRoute.selector,
+      resolvedRoute,
       loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.maxConcurrentRuns,
     );
     if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
@@ -1753,7 +1778,7 @@ function prepareDispatch(
   for (const event of events) context.eventStore.appendEvent(event);
   const entered = foldStoredKxmRun(context, run);
   persistKxmRunState(context, runId, entered, events[events.length - 1]!.sequence);
-  const first = birthMember(context, {
+  const firstBirth = birthMember(context, {
     run,
     plan,
     step,
@@ -1764,6 +1789,10 @@ function prepareDispatch(
     resolvedRoute,
     dispatchSources,
   });
+  if ("handoff" in firstBirth) {
+    return { kind: "return", state: entered, handoff: firstBirth.handoff };
+  }
+  const first = firstBirth;
   return {
     kind: "panel",
     panel: {
@@ -1822,10 +1851,10 @@ function birthMember(
     stepAttempt: number;
     enterRunning?: boolean | undefined;
     producerId?: ("driver-simulated" | "pi" | string) | undefined;
-    resolvedRoute?: { provider: string; model: string; selector: string } | undefined;
+    resolvedRoute?: ResolvedProducerRoute | undefined;
     dispatchSources: DispatchContextSources;
   },
-): PreparedDispatch {
+): PreparedDispatch | { handoff: KxmRunHandoff } {
   const run = requireRun(context, input.run.runId);
   const folded = foldStoredKxmRun(context, run);
   if (!birthAllowed(folded, input.step)) {
@@ -1848,9 +1877,10 @@ function birthMember(
   let resolvedRoute = input.resolvedRoute;
   if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
     const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
-    if (!("error" in routeResult)) {
-      resolvedRoute = routeResult;
+    if ("error" in routeResult) {
+      return { handoff: { ...routeResult.error, stepId: input.stepId } };
     }
+    resolvedRoute = routeResult;
   }
   const dispatchContext = assembleDispatchContext(input.dispatchSources, {
     projectId: run.projectId,
@@ -1958,13 +1988,13 @@ function birthMember(
       allowedOutcomes: input.step.outcomes,
       signal: controller.signal,
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
-      thinking: input.stepAttempt <= 1 ? "low" : "medium",
       permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       ...((input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== undefined
         ? { timeoutMs: input.step.timeoutMs }
         : {}),
       contextPacket,
-      ...(resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}),
+      ...(resolvedRoute?.effort !== undefined ? { thinking: resolvedRoute.effort } : {}),
+      ...(resolvedRoute ? { harness: resolvedRoute.harness, provider: resolvedRoute.provider, model: resolvedRoute.model } : {}),
     },
     controller,
     state: next,
@@ -2157,13 +2187,14 @@ async function drivePanel(
     pending.set(member.attemptId, work);
   };
 
+  let routeHandoff: KxmRunHandoff | undefined;
   const tryBirth = (): PreparedDispatch | undefined => {
-    if (stopBirths) return undefined;
+    if (stopBirths || routeHandoff) return undefined;
     return context.eventStore.transaction(() => {
       const run = requireRun(context, runId);
       const state = foldStoredKxmRun(context, run);
       if (!birthAllowed(state, panel.step)) return undefined;
-      return birthMember(context, {
+      const born = birthMember(context, {
         run,
         plan: panel.plan,
         step: panel.step,
@@ -2172,6 +2203,11 @@ async function drivePanel(
         producerId: producer.id,
         dispatchSources: panel.dispatchSources,
       });
+      if ("handoff" in born) {
+        routeHandoff = born.handoff;
+        return undefined;
+      }
+      return born;
     });
   };
 
@@ -2218,6 +2254,10 @@ async function drivePanel(
       while (!stopBirths && !settlementFailed) {
         try {
           const next = tryBirth();
+          if (routeHandoff) {
+            stopBirths = true;
+            break;
+          }
           if (!next) break;
           launch(next);
         } catch {
@@ -2227,6 +2267,13 @@ async function drivePanel(
           const state = foldStoredKxmRun(context, requireRun(context, runId));
           return unreconciledHandoff(state, panel.stepId);
         }
+      }
+      if (routeHandoff) {
+        const handoff = routeHandoff;
+        abortOwned();
+        await drainPendingInvoked();
+        const state = foldStoredKxmRun(context, requireRun(context, runId));
+        return { state, handoff };
       }
       if (pending.size === 0) break;
       const finished = await Promise.race(pending.values());
@@ -2852,26 +2899,28 @@ export function kxmLiveRunPrerequisites(
     if (step.kind !== "agent" && step.kind !== "moa") continue;
     const agentIds = step.assignments.allowedAgents.length > 0 ? step.assignments.allowedAgents : [step.agent];
     for (const agentId of agentIds) {
-      const agent = bundle.agents.get(agentId);
-      const harness = String(agent?.value.harness ?? bundle.project.value.defaultHarness ?? "pi");
+      const route = resolveProducerRoute(projectRoot, step, agentId);
+      if ("error" in route) {
+        const detail = route.error.detail === "producer_route_unsupported: agent step model is not honored"
+          ? `${agentId}: agent step model is not honored; remove model from the step`
+          : `${agentId}: ${route.error.detail}; set role in .kxm/agents/${agentId}.yaml and admit the route model with kxm routes admit --model <provider/model>`;
+        prerequisites.push({ ...route.error, stepId, detail });
+        continue;
+      }
+      const harness = route.harness;
       const permission = Object.values(step.repositories).includes("write") ? "edit" : "read-only";
       if (!BUILTIN_HARNESSES.some((entry) => entry.id === harness && entry.oneShot) || !oneShotPermissionArgs(harness, permission)) {
         prerequisites.push({ reason: "step_unsupported", stepId, field: "harness", detail: `${agentId}: ${harness} has no audited ${permission} one-shot profile; use a supported workflow or execute this work directly in ${harness}, without substituting another harness` });
         continue;
       }
-      const route = resolveProducerRoute(projectRoot, step, agentId);
-      if ("error" in route) {
-        prerequisites.push({ ...route.error, stepId, detail: `${agentId}: ${route.error.detail}; configure its model in .kxm/agents/${agentId}.yaml and admit the installed model with kxm routes admit --model <provider/model>` });
-        continue;
-      }
-      const writeRefusal = unsupportedLiveWrite(projectRoot, step, agentId, route.selector, envelope.projectLimits.maxConcurrentRuns);
+      const writeRefusal = unsupportedLiveWrite(projectRoot, step, route, envelope.projectLimits.maxConcurrentRuns);
       if (writeRefusal) {
         prerequisites.push({ ...writeRefusal, stepId });
         continue;
       }
       const compatible = validateHarnessModelPair(harness, route);
       if (!compatible.valid) {
-        prerequisites.push({ reason: "step_unsupported", stepId, field: "model", detail: `${agentId}: ${compatible.message ?? `${harness} cannot run ${route.selector}`}; configure a model supported by ${harness} in .kxm/agents/${agentId}.yaml` });
+        prerequisites.push({ reason: "step_unsupported", stepId, field: "model", detail: `${agentId}: ${compatible.message ?? `${harness} cannot run ${route.selector}`}; configure a model supported by ${harness} on the role roster` });
       }
     }
   }
@@ -2951,31 +3000,9 @@ function unsupportedStep(
   return undefined;
 }
 
-function readYamlRecord(path: string): Record<string, unknown> | undefined {
-  if (!existsSync(path)) return undefined;
-  try {
-    const parsed = parse(readFileSync(path, "utf8")) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
-function agentHarness(projectRoot: string, agentId: string): string | undefined {
-  const harness = readYamlRecord(join(projectRoot, ".kxm", "agents", `${agentId}.yaml`))?.harness;
-  return typeof harness === "string" && harness.length > 0 ? harness : undefined;
-}
-
-function projectDefaultHarness(projectRoot: string): string {
-  const harness = readYamlRecord(join(projectRoot, ".kxm", "project.yaml"))?.defaultHarness;
-  return typeof harness === "string" && harness.length > 0 ? harness : "pi";
-}
-
 /**
  * Live write steps run only on an audited writer profile, and only when the
- * developer roster (when present) lists that harness and model as an edit writer.
- * A missing roster is a fresh project: route admission is the other gate.
+ * writer roster names that route as admitted with edit.
  *
  * The authoring witness fingerprints the one project checkout around each
  * spawn, so it can only attribute a change to a lone writer. A write step with
@@ -2987,8 +3014,7 @@ function projectDefaultHarness(projectRoot: string): string {
 function unsupportedLiveWrite(
   projectRoot: string,
   step: KxmCompiledStep,
-  agentId: string,
-  selector: string,
+  route: ResolvedProducerRoute,
   maxConcurrentRuns: number,
 ): Omit<KxmRunHandoff, "stepId"> | undefined {
   if (!Object.values(step.repositories).some((access) => access === "write")) return undefined;
@@ -3006,44 +3032,23 @@ function unsupportedLiveWrite(
       detail: "live write steps require limits.maxConcurrentRuns of 1; concurrent runs share one checkout",
     };
   }
-  const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
-  if (!oneShotWriterArgs(harness)) {
+  if (!oneShotWriterArgs(route.harness)) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: `live write steps require an audited writer profile; ${harness} has none`,
+      detail: `live write steps require an audited writer profile; ${route.harness} has none`,
     };
   }
-  const rosterPath = join(projectRoot, ".kxm", "roster.yaml");
-  if (!existsSync(rosterPath)) return undefined;
-  const roster = readYamlRecord(rosterPath);
-  if (!roster || roster.schema !== "kxm.developer-roster.v1") {
-    return { reason: "step_unsupported", field: "model", detail: "live write steps require a readable kxm.developer-roster.v1" };
+  const writerIds = listRoleBindings(projectRoot).writer;
+  if (!Array.isArray(writerIds) || writerIds.length === 0) {
+    return { reason: "step_unsupported", field: "model", detail: "writer roster has no admitted edit route" };
   }
-  const routes = roster.routes;
-  const lineup = roster.lineup;
-  const writerIds = lineup && typeof lineup === "object" && !Array.isArray(lineup)
-    ? (lineup as Record<string, unknown>).writer
-    : undefined;
-  if (!routes || typeof routes !== "object" || Array.isArray(routes) || !Array.isArray(writerIds)) {
-    return { reason: "step_unsupported", field: "model", detail: "developer roster has no writer lineup" };
-  }
-  const allowed = writerIds.some((id) => {
-    if (typeof id !== "string") return false;
-    const route = (routes as Record<string, unknown>)[id];
-    if (!route || typeof route !== "object" || Array.isArray(route)) return false;
-    const record = route as Record<string, unknown>;
-    if (record.harness !== harness || record.status !== "admitted") return false;
-    if (!Array.isArray(record.permissions) || !record.permissions.includes("edit")) return false;
-    const model = typeof record.model === "string" ? record.model : "";
-    const vendor = typeof record.vendor === "string" ? record.vendor : "";
-    return model === selector || (vendor.length > 0 && `${vendor}/${model}` === selector);
-  });
-  if (!allowed) {
+  const named = writerIds.includes(route.routeId);
+  if (!named || !route.permissions.includes("edit")) {
     return {
       reason: "step_unsupported",
       field: "model",
-      detail: `live write route ${selector} on ${harness} is not on the developer roster writer lineup`,
+      detail: `live write route ${route.selector} on ${route.harness} is not an admitted edit route on the writer roster`,
     };
   }
   return undefined;

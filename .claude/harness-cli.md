@@ -70,7 +70,7 @@ implementation, planning, and architecture review; **low** for CLI review.
 | Review: architecture, permissions | same as Plan |
 | Review: CLI, docs | `codex exec -m gpt-5.6-sol -c 'model_reasoning_effort="low"' -C <dir> --sandbox read-only --ignore-user-config -c 'approval_policy="never"' --json - < <brief>` |
 
-`just impl|plan|review-arch|review-cli` are **low-level harness transport**.
+`kxm lane run` with `implement-only`, `review-arch-only`, or `review-cli-only` is **low-level harness transport**.
 They do not mint assignment, witness, or acceptance proof. Normal entry is
 `just assign` with a closed manifest; then `just witness`, `just attribute`,
 `just observe-cost`, `just accept`, `just plan-current`, and
