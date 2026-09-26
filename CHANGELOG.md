@@ -43,6 +43,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   and `docs_generator_missing` or `docs_server_missing` when the file is absent.
   `--dry-run` prints the command and starts nothing. The header wordmark is the
   portal mark, and the slate palette uses `#0e0d0b`, `#3068da`, and `#f2eee7`.
+  `kxm docs build` validates the roadmap state file and refuses when it does not match the schema.
   See the [CLI reference](docs/reference/cli-reference.md#kxm-docs).
 
 - **Claude-only workflow recommendations now fail honestly when execution is unavailable.**

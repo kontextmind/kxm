@@ -1578,7 +1578,7 @@ kxm docs serve --dry-run --port 8765
 
 ### `kxm docs build`
 
-Runs `node plans/kxm-roadmap/update-dashboard.mjs` and returns that process's exit code. The generator refreshes the roadmap pages and the MkDocs inputs from `plans/kxm-roadmap/state.json`.
+Runs `node plans/kxm-roadmap/update-dashboard.mjs` and returns that process's exit code. The generator refreshes the roadmap pages and the MkDocs inputs from `plans/kxm-roadmap/state.json`. `kxm docs build` validates the state file and refuses on schema failure.
 
 - No command-specific options.
 - Honors `--dry-run`: prints `node plans/kxm-roadmap/update-dashboard.mjs` and does not start the process. JSON key: `detail` (that command line), plus `dryRun: true`.

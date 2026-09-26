@@ -1,6 +1,6 @@
 # Greenfield infra
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-greenfield-infra.md`.
 
@@ -10,9 +10,39 @@ Record only what the tracker says about the greenfield first move. The plan file
 
 ## Tasks
 
-- `gf-installed` Loopback database and workflow engine recorded as installed, with KXM still writing SQLite. Evidence: `plans/implementation-plan.md`.
-- `gf-control` Control-plane registration and token checks recorded as passed. Evidence: `plans/implementation-plan.md`.
-- `gf-backlog` Redis Streams, NATS, raw WebSockets, and the A2A Python SDK stay backlog.
+### Loopback database and workflow engine recorded as installed, with KXM still writing SQLite
+
+`gf-installed`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `plans/implementation-plan.md`.
+
+### Control-plane registration and token checks recorded as passed
+
+`gf-control`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `plans/implementation-plan.md`.
+
+### Redis Streams, NATS, raw WebSockets, and the A2A Python SDK stay backlog
+
+`gf-backlog`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
 
 ## Blockers
 

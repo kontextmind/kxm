@@ -1,6 +1,6 @@
 # Per-tenant hosting
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-per-tenant-hosting.md`.
 
@@ -10,12 +10,75 @@ S0 through S5 from the tracker queue. The hosting plan file keeps no schedule of
 
 ## Tasks
 
-- `host-s0` S0 reconcile plan authority. Evidence: `plans/implementation-plan.md`.
-- `host-s1` S1 hub and local Runtime recipe, including the six state roots. Evidence: `docs/operations/backup-and-restore.md`.
-- `host-s2` S2 portal reads of hub metadata and Runtime state. Evidence: `test/core/studio-layout.test.ts`.
-- `host-s3` S3 strict outcome on the selected Pi route. Evidence: `test/core/pi-producer.test.ts`.
-- `host-s4` S4 portal create, drive, and cancel. Evidence: `test/core/studio-layout.test.ts`.
-- `host-s5` S5 interactive login, logout, and refresh.
+### S0 reconcile plan authority
+
+`host-s0`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `plans/implementation-plan.md`.
+
+### S1 hub and local Runtime recipe, including the six state roots
+
+`host-s1`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `docs/operations/backup-and-restore.md`.
+
+### S2 portal reads of hub metadata and Runtime state
+
+`host-s2`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `test/core/studio-layout.test.ts`.
+
+### S3 strict outcome on the selected Pi route
+
+`host-s3`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `test/core/pi-producer.test.ts`.
+
+### S4 portal create, drive, and cancel
+
+`host-s4`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `test/core/studio-layout.test.ts`.
+
+### S5 interactive login, logout, and refresh
+
+`host-s5`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
 
 ## Blockers
 

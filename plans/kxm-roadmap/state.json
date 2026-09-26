@@ -10,6 +10,20 @@
   ],
   "contacts": [],
   "contacts_comment": "The operator fills contacts. Do not invent contacts.",
+  "history": [
+    {
+      "date": "2026-09-26",
+      "line": "Tailnet docs site created."
+    },
+    {
+      "date": "2026-09-26",
+      "line": "Roadmap seeded from state.json."
+    },
+    {
+      "date": "2026-09-26",
+      "line": "Portal mark applied."
+    }
+  ],
   "architecture": {
     "verified": null,
     "docs": [
@@ -66,55 +80,73 @@
           "id": "py-mg0",
           "title": "MG0 baseline and recovery witness recorded by the tracker",
           "status": "done",
-          "evidence": "plans/implementation-plan.md"
+          "evidence": "plans/implementation-plan.md",
+          "template": "test-report",
+          "detail": "ready"
         },
         {
           "id": "py-mg1",
           "title": "MG1 code gate recorded by the tracker",
           "status": "done",
-          "evidence": "plans/implementation-plan.md"
+          "evidence": "plans/implementation-plan.md",
+          "template": "test-report",
+          "detail": "ready"
         },
         {
           "id": "py-mg2",
           "title": "MG2 Python importers and read-only Studio",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "py-mg3",
           "title": "MG3 TypeScript bridge and Python runner",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "py-mg4",
           "title": "MG4 Python Temporal pilot and role routing",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "py-mg5",
           "title": "MG5 guided plans, multi-repo, and schedules",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "py-mg6",
           "title": "MG6 Python knowledge and improvement",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "py-mg7",
           "title": "MG7 project and package cutover",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "py-mg8",
           "title": "MG8 Node runtime retirement",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         }
       ]
     },
@@ -133,19 +165,25 @@
           "id": "gf-installed",
           "title": "Loopback database and workflow engine recorded as installed, with KXM still writing SQLite",
           "status": "done",
-          "evidence": "plans/implementation-plan.md"
+          "evidence": "plans/implementation-plan.md",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "gf-control",
           "title": "Control-plane registration and token checks recorded as passed",
           "status": "done",
-          "evidence": "plans/implementation-plan.md"
+          "evidence": "plans/implementation-plan.md",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "gf-backlog",
           "title": "Redis Streams, NATS, raw WebSockets, and the A2A Python SDK stay backlog",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         }
       ]
     },
@@ -168,37 +206,49 @@
           "id": "host-s0",
           "title": "S0 reconcile plan authority",
           "status": "done",
-          "evidence": "plans/implementation-plan.md"
+          "evidence": "plans/implementation-plan.md",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "host-s1",
           "title": "S1 hub and local Runtime recipe, including the six state roots",
           "status": "done",
-          "evidence": "docs/operations/backup-and-restore.md"
+          "evidence": "docs/operations/backup-and-restore.md",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "host-s2",
           "title": "S2 portal reads of hub metadata and Runtime state",
           "status": "done",
-          "evidence": "test/core/studio-layout.test.ts"
+          "evidence": "test/core/studio-layout.test.ts",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "host-s3",
           "title": "S3 strict outcome on the selected Pi route",
           "status": "done",
-          "evidence": "test/core/pi-producer.test.ts"
+          "evidence": "test/core/pi-producer.test.ts",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "host-s4",
           "title": "S4 portal create, drive, and cancel",
           "status": "done",
-          "evidence": "test/core/studio-layout.test.ts"
+          "evidence": "test/core/studio-layout.test.ts",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "host-s5",
           "title": "S5 interactive login, logout, and refresh",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         }
       ]
     },
@@ -221,43 +271,57 @@
           "id": "xhost-p0",
           "title": "P0 cross-box peer witness",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "xhost-p1",
           "title": "P1 presence across boxes",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "xhost-p2",
           "title": "P2 queued delivery to a known offline peer",
           "status": "done",
-          "evidence": "test/core/hub-api.test.ts"
+          "evidence": "test/core/hub-api.test.ts",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "xhost-p3",
           "title": "P3 fenced hub leases",
           "status": "done",
-          "evidence": "test/core/hub-api.test.ts"
+          "evidence": "test/core/hub-api.test.ts",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "xhost-p4",
           "title": "P4 coordinator intake from peer messages",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "xhost-p5",
           "title": "P5 sync-event outbox and Runtime presence",
           "status": "done",
-          "evidence": "test/core/runtime.test.ts"
+          "evidence": "test/core/runtime.test.ts",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "xhost-p6",
           "title": "P6 Phase 8 gate witness in the driver",
           "status": "done",
-          "evidence": "test/core/driver.test.ts"
+          "evidence": "test/core/driver.test.ts",
+          "template": "none",
+          "detail": "scoped"
         }
       ]
     },
@@ -277,19 +341,25 @@
           "id": "modes-activate",
           "title": "Activate modes, beyond parsing them",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "brief"
         },
         {
           "id": "modes-domain",
           "title": "Domain isolation for a mode",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "brief"
         },
         {
           "id": "modes-explain",
           "title": "Selective loading reported by kxm explain",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "brief"
         }
       ]
     },
@@ -309,13 +379,17 @@
           "id": "quota-observe",
           "title": "Account-scoped quota observations",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "brief"
         },
         {
           "id": "quota-split",
           "title": "Keep usage, quota, metered cost, list cost, and unknown distinct",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "brief"
         }
       ]
     },
@@ -337,67 +411,89 @@
           "id": "open-q",
           "title": "Operator confirmation of the self-improvement defaults Q-B through Q-K",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-plugin",
           "title": "Operator confirmation of plugin decisions D-1 and D-2, and the failure-hook witness",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-journal",
           "title": "Runtime runs have no journal or retrospective",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-pool",
           "title": "Hub context pool reads memory from the hub checkout",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-backup",
           "title": "Restore does not remap user-state paths onto another box",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-policy",
           "title": "producerPolicy.acceptedStatuses is not consulted at peer-reply settlement",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-routing",
           "title": "Routing and cost policy questions remain an operator decision",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-packages",
           "title": "Package restructure slices after packages/core/tui",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-timing",
           "title": "Remaining timing-dependent assertions in the core suite",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-intake",
           "title": "Intake contract follow-ups behind their trigger",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         },
         {
           "id": "open-m",
           "title": "Unified M0 through M9 packets stay proposed",
           "status": "open",
-          "evidence": ""
+          "evidence": "",
+          "template": "none",
+          "detail": "scoped"
         }
       ]
     }

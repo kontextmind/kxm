@@ -8,7 +8,7 @@ Active blockers: 5. Active questions: 8. Later phases are excluded from both cou
 
 ### Python migration
 
-Status: open.
+Status: open. Horizon: next.
 
 Source: `plans/plan-python-migration.md`.
 
@@ -38,7 +38,7 @@ None.
 
 ### Greenfield infra
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-greenfield-infra.md`.
 
@@ -60,7 +60,7 @@ None.
 
 ### Per-tenant hosting
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-per-tenant-hosting.md`.
 
@@ -84,7 +84,7 @@ Goal: S0 through S5 from the tracker queue. The hosting plan file keeps no sched
 
 ### Cross-host
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-cross-host-phase.md`.
 
@@ -110,7 +110,7 @@ Goal: P0 through P6 from plans/plan-cross-host-phase.md, with delivered rows tak
 
 ### Still open
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/implementation-plan.md`.
 
@@ -145,7 +145,7 @@ Goal: Tracker items that are not already tasks on the phases above.
 
 ### Workflow modes
 
-Status: later.
+Status: later. Horizon: later.
 
 Source: `plans/plan-workflow-modes-selective-loading.md`.
 
@@ -169,7 +169,7 @@ None.
 
 ### Usage and cost
 
-Status: later.
+Status: later. Horizon: later.
 
 Source: `plans/plan-usage-cost-quota-tracking.md`.
 
@@ -192,15 +192,15 @@ None.
 
 ## Phase index
 
-| Phase | Status | Page |
-| --- | --- | --- |
-| Python migration | open | [page](phases/01-python-migration.md) |
-| Greenfield infra | open | [page](phases/02-greenfield-infra.md) |
-| Per-tenant hosting | open | [page](phases/03-per-tenant-hosting.md) |
-| Cross-host | open | [page](phases/04-cross-host.md) |
-| Workflow modes | later | [page](phases/05-workflow-modes.md) |
-| Usage and cost | later | [page](phases/06-usage-cost.md) |
-| Still open | open | [page](phases/07-still-open.md) |
+| Phase | Status | Horizon | Page |
+| --- | --- | --- | --- |
+| Python migration | open | next | [page](phases/01-python-migration.md) |
+| Greenfield infra | open | soon | [page](phases/02-greenfield-infra.md) |
+| Per-tenant hosting | open | soon | [page](phases/03-per-tenant-hosting.md) |
+| Cross-host | open | soon | [page](phases/04-cross-host.md) |
+| Workflow modes | later | later | [page](phases/05-workflow-modes.md) |
+| Usage and cost | later | later | [page](phases/06-usage-cost.md) |
+| Still open | open | soon | [page](phases/07-still-open.md) |
 
 ## Goal
 
@@ -231,4 +231,10 @@ Verified: null.
 
 ## Contacts
 
-The operator fills contacts. Do not invent contacts.
+No confirmed contacts.
+
+## History
+
+- 2026-09-26: Tailnet docs site created.
+- 2026-09-26: Roadmap seeded from state.json.
+- 2026-09-26: Portal mark applied.

@@ -1,6 +1,6 @@
 # Python migration
 
-Status: open.
+Status: open. Horizon: next.
 
 Source: `plans/plan-python-migration.md`.
 
@@ -10,15 +10,99 @@ Waves MG0 through MG8 from plans/plan-python-migration.md, with status taken fro
 
 ## Tasks
 
-- `py-mg0` MG0 baseline and recovery witness recorded by the tracker. Evidence: `plans/implementation-plan.md`.
-- `py-mg1` MG1 code gate recorded by the tracker. Evidence: `plans/implementation-plan.md`.
-- `py-mg2` MG2 Python importers and read-only Studio.
-- `py-mg3` MG3 TypeScript bridge and Python runner.
-- `py-mg4` MG4 Python Temporal pilot and role routing.
-- `py-mg5` MG5 guided plans, multi-repo, and schedules.
-- `py-mg6` MG6 Python knowledge and improvement.
-- `py-mg7` MG7 project and package cutover.
-- `py-mg8` MG8 Node runtime retirement.
+### MG0 baseline and recovery witness recorded by the tracker
+
+`py-mg0`. Status: done. Detail: ready.
+
+Template: [test-report](../../templates/test-report.md).
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `plans/implementation-plan.md`.
+
+### MG1 code gate recorded by the tracker
+
+`py-mg1`. Status: done. Detail: ready.
+
+Template: [test-report](../../templates/test-report.md).
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `plans/implementation-plan.md`.
+
+### MG2 Python importers and read-only Studio
+
+`py-mg2`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### MG3 TypeScript bridge and Python runner
+
+`py-mg3`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### MG4 Python Temporal pilot and role routing
+
+`py-mg4`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### MG5 guided plans, multi-repo, and schedules
+
+`py-mg5`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### MG6 Python knowledge and improvement
+
+`py-mg6`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### MG7 project and package cutover
+
+`py-mg7`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### MG8 Node runtime retirement
+
+`py-mg8`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
 
 ## Blockers
 

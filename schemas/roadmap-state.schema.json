@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kxm.dev/roadmap-state.schema.json",
+  "title": "KXM roadmap state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "updated", "goal", "phases"],
+  "properties": {
+    "schema": { "const": "kxm.roadmap.v1" },
+    "updated": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "goal": { "type": "string", "minLength": 1 },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "contacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/contact" }
+    },
+    "contacts_comment": { "type": "string" },
+    "history": {
+      "type": "array",
+      "description": "Oldest first. The generator keeps the newest 12 lines and drops the older ones (history_over_cap). That prune is not a schema refusal.",
+      "items": { "$ref": "#/$defs/historyLine" }
+    },
+    "architecture": { "$ref": "#/$defs/architecture" },
+    "improvements": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "phases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/phase" }
+    }
+  },
+  "$defs": {
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "historyLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "line"],
+      "properties": {
+        "date": { "$ref": "#/$defs/date" },
+        "line": { "type": "string", "minLength": 1, "maxLength": 240 }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "confirmed"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "confirmed": { "$ref": "#/$defs/date" }
+      }
+    },
+    "architecture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verified": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/date" }
+          ]
+        },
+        "docs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "drift": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["claim", "page", "status"],
+            "properties": {
+              "claim": { "type": "string" },
+              "page": { "type": "string" },
+              "status": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "title", "goal", "source", "tasks"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "slug": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "goal": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "priority": { "const": "later" },
+        "horizon": {
+          "description": "Derived by the generator from phase order and priority (next, soon, or later). Not hand-set. A stored value is ignored.",
+          "enum": ["next", "soon", "later"]
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "questions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tasks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/task" }
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["open", "done"] },
+        "evidence": { "type": "string" },
+        "planSection": { "type": "string", "minLength": 1 },
+        "doneCriterion": { "type": "string", "minLength": 1 },
+        "evidenceNeeded": { "type": "string", "minLength": 1 },
+        "template": {
+          "enum": [
+            "feature",
+            "research",
+            "bug-fix",
+            "architecture",
+            "adr",
+            "test-plan",
+            "test-report",
+            "review",
+            "handoff",
+            "runbook",
+            "postmortem",
+            "none"
+          ]
+        },
+        "detail": { "enum": ["brief", "scoped", "ready"] }
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Cross-host
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-cross-host-phase.md`.
 
@@ -10,13 +10,83 @@ P0 through P6 from plans/plan-cross-host-phase.md, with delivered rows taken fro
 
 ## Tasks
 
-- `xhost-p0` P0 cross-box peer witness.
-- `xhost-p1` P1 presence across boxes.
-- `xhost-p2` P2 queued delivery to a known offline peer. Evidence: `test/core/hub-api.test.ts`.
-- `xhost-p3` P3 fenced hub leases. Evidence: `test/core/hub-api.test.ts`.
-- `xhost-p4` P4 coordinator intake from peer messages.
-- `xhost-p5` P5 sync-event outbox and Runtime presence. Evidence: `test/core/runtime.test.ts`.
-- `xhost-p6` P6 Phase 8 gate witness in the driver. Evidence: `test/core/driver.test.ts`.
+### P0 cross-box peer witness
+
+`xhost-p0`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### P1 presence across boxes
+
+`xhost-p1`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### P2 queued delivery to a known offline peer
+
+`xhost-p2`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `test/core/hub-api.test.ts`.
+
+### P3 fenced hub leases
+
+`xhost-p3`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `test/core/hub-api.test.ts`.
+
+### P4 coordinator intake from peer messages
+
+`xhost-p4`. Status: open. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### P5 sync-event outbox and Runtime presence
+
+`xhost-p5`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `test/core/runtime.test.ts`.
+
+### P6 Phase 8 gate witness in the driver
+
+`xhost-p6`. Status: done. Detail: scoped.
+
+Template: `none`.
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Evidence: `test/core/driver.test.ts`.
 
 ## Blockers
 

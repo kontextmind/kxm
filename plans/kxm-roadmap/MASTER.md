@@ -6,7 +6,7 @@ Record the local-first KXM shape that this checkout can show, and track the prop
 
 ## Python migration
 
-Status: open.
+Status: open. Horizon: next.
 
 Source: `plans/plan-python-migration.md`.
 
@@ -34,7 +34,7 @@ None.
 
 ## Greenfield infra
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-greenfield-infra.md`.
 
@@ -56,7 +56,7 @@ None.
 
 ## Per-tenant hosting
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-per-tenant-hosting.md`.
 
@@ -83,7 +83,7 @@ S0 through S5 from the tracker queue. The hosting plan file keeps no schedule of
 
 ## Cross-host
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/plan-cross-host-phase.md`.
 
@@ -111,7 +111,7 @@ P0 through P6 from plans/plan-cross-host-phase.md, with delivered rows taken fro
 
 ## Workflow modes
 
-Status: later.
+Status: later. Horizon: later.
 
 Source: `plans/plan-workflow-modes-selective-loading.md`.
 
@@ -133,7 +133,7 @@ None.
 
 ## Usage and cost
 
-Status: later.
+Status: later. Horizon: later.
 
 Source: `plans/plan-usage-cost-quota-tracking.md`.
 
@@ -154,7 +154,7 @@ None.
 
 ## Still open
 
-Status: open.
+Status: open. Horizon: soon.
 
 Source: `plans/implementation-plan.md`.
 
@@ -182,3 +182,9 @@ Tracker items that are not already tasks on the phases above.
 ### Questions
 
 - Tracking says delivery order is Still open, the one queue. This roadmap orders phases as the brief requires, so the Python proposal is Next while S5 login is still open on the hosting phase.
+
+## History
+
+- 2026-09-26: Tailnet docs site created.
+- 2026-09-26: Roadmap seeded from state.json.
+- 2026-09-26: Portal mark applied.

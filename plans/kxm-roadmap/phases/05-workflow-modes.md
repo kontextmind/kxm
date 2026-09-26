@@ -1,6 +1,6 @@
 # Workflow modes
 
-Status: later.
+Status: later. Horizon: later.
 
 Source: `plans/plan-workflow-modes-selective-loading.md`.
 
@@ -10,9 +10,23 @@ Declarative modes and selective loading. The plan says it is not an active backl
 
 ## Tasks
 
-- `modes-activate` Activate modes, beyond parsing them.
-- `modes-domain` Domain isolation for a mode.
-- `modes-explain` Selective loading reported by kxm explain.
+### Activate modes, beyond parsing them
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### Domain isolation for a mode
+
+Done criterion: None.
+
+Evidence needed: None.
+
+### Selective loading reported by kxm explain
+
+Done criterion: None.
+
+Evidence needed: None.
 
 ## Blockers
 
