@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-24"
+updated: "2026-09-26"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -37,6 +37,10 @@ related:
   - plan-python-migration.md
   - plan-greenfield-infra.md
   - plan-1password-vaults.md
+  - backlog-shortcuts.md
+  - plan-lane-cli.md
+  - plan-landing-gates.md
+  - plan-omp-config-alignment.md
 depends_on: []
 blocked_by: []
 details:
