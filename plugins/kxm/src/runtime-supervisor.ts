@@ -781,6 +781,25 @@ async function startKxmRuntimeSupervisorInner(
           return;
         }
 
+        if (request.method === "POST" && url.pathname === "/v1/projects/unregister") {
+          const body = await readJsonBody(request);
+          const projectRoot = typeof body.projectRoot === "string" ? body.projectRoot : "";
+          if (!projectRoot || !isAbsolute(projectRoot)) {
+            sendJson(response, 400, { ok: false, error: "runtime_request_invalid", message: "projectRoot must be an absolute path" });
+            return;
+          }
+          const key = projectRuntimeKey(projectRoot);
+          const existing = contexts.get(key);
+          const unregistered = registry.unregisterProject(projectRoot);
+          if (existing) {
+            contexts.delete(key);
+            syncStatuses.delete(key);
+            closeKxmRuntimeContext(existing);
+          }
+          sendJson(response, 200, { ok: true, unregistered });
+          return;
+        }
+
         if (request.method === "POST" && url.pathname === "/v1/runs") {
           const body = await readJsonBody(request);
           const projectRoot = typeof body.projectRoot === "string" ? body.projectRoot : "";

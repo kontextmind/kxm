@@ -166,8 +166,11 @@ makes a directory a KXM project. Parser: `loadKxmProject` in
 | `limits.maxAgentTimeMs` | Integer, 0 to 31,536,000,000 | Optional | Runtime refuses to drive any run while it is set (`limit_unsupported`); leave it out |
 | `limits.agentStepTimeoutMs` | Integer, 60,000 to 31,536,000,000 | Optional, 3,600,000 | Wall clock for one live agent or moa step when the step omits `timeoutMs`. The supervisor passes it to the one-shot producer. A step `timeoutMs` narrower than this wins; a wider step value is refused (`step_unsupported`, field `timeoutMs`) |
 
-The Runtime binds one project `id` to one control root per state root, so a
-second checkout with the same ID is refused with `project_home_conflict`.
+The Runtime binds a project `id` to one repository. A git worktree of that
+repository registers as a lane: the same id, its own control root, and the
+same home runtime. A foreign clone with the same id is refused with
+`project_home_conflict`. A registered root whose directory is gone is replaced
+when a new root for that id registers.
 
 Example (validated with `kxm init --json`, including a nested member checkout
 at `repositories/api`):

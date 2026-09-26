@@ -1,6 +1,7 @@
+import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync, openReadOnlyDatabase } from "./sqlite.ts";
 import { KxmConfigError, validateCoordinator, validateDriveReceipt, validateIntakeMessage, validateRunEvent, kxmCanonicalJson, type JsonValue, type KxmConfigIssue, type KxmConfigOptions } from "./project-config.ts";
 import { kxmProjectRunEventsPath, projectRuntimeKey } from "./runtime-paths.ts";
@@ -49,6 +50,7 @@ function checkedParent(path: string, description: string): void {
 
 import {
   openDatabase,
+  tableColumns,
   withDatabaseTransaction,
   type DatabaseSchemaSpec,
 } from "./database.ts";
@@ -74,14 +76,16 @@ export interface KxmProjectRegistration {
   projectKey: string;
   homeRuntimeId: string;
   configRevision?: string;
+  /** Set on a lane row: the home row's project key. Absent on the home row. */
+  laneOf?: string;
   registeredAt: string;
 }
 
-export const KXM_REGISTRY_SCHEMA_VERSION = 1;
+export const KXM_REGISTRY_SCHEMA_VERSION = 2;
 
 const REGISTRY_TABLES = {
   supervisor: ["singleton_id", "runtime_id", "pid", "port", "token_hash", "started_at", "heartbeat_at", "state"],
-  projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at"],
+  projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at", "lane_of"],
 } as const;
 
 const REGISTRY_SCHEMA = `
@@ -96,14 +100,129 @@ CREATE TABLE supervisor (
   state TEXT NOT NULL
 ) STRICT;
 CREATE TABLE projects (
-  project_id TEXT PRIMARY KEY,
+  project_key TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
   project_root TEXT NOT NULL,
-  project_key TEXT NOT NULL UNIQUE,
   home_runtime_id TEXT NOT NULL,
   config_revision TEXT,
-  registered_at TEXT NOT NULL
+  registered_at TEXT NOT NULL,
+  lane_of TEXT
 ) STRICT;
+CREATE INDEX projects_by_project_id ON projects (project_id);
 `;
+
+const PROJECT_COLUMNS = "project_id, project_root, project_key, home_runtime_id, config_revision, registered_at, lane_of";
+
+interface ProjectRow {
+  project_id: string;
+  project_root: string;
+  project_key: string;
+  home_runtime_id: string;
+  config_revision: string | null;
+  registered_at: string;
+  lane_of: string | null;
+}
+
+function registrationFromRow(row: ProjectRow): KxmProjectRegistration {
+  return {
+    projectId: row.project_id,
+    projectRoot: row.project_root,
+    projectKey: row.project_key,
+    homeRuntimeId: row.home_runtime_id,
+    ...(row.config_revision !== null ? { configRevision: row.config_revision } : {}),
+    ...(row.lane_of !== null ? { laneOf: row.lane_of } : {}),
+    registeredAt: row.registered_at,
+  };
+}
+
+function controlRootDirectoryExists(projectRoot: string): boolean {
+  const stat = statSync(projectRoot, { throwIfNoEntry: false });
+  return Boolean(stat?.isDirectory());
+}
+
+function gitEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
+}
+
+/** Absolute git common directory, or undefined when `projectRoot` is not a repository. */
+function gitCommonDirectory(projectRoot: string): string | undefined {
+  const result = spawnSync("git", ["-C", projectRoot, "rev-parse", "--git-common-dir"], {
+    encoding: "utf8",
+    env: gitEnv(),
+    timeout: 30_000,
+    windowsHide: true,
+  });
+  if (result.status !== 0) return undefined;
+  const text = (result.stdout ?? "").trim();
+  if (!text) return undefined;
+  const absolute = isAbsolute(text) ? text : resolve(projectRoot, text);
+  let canonical: string;
+  try {
+    canonical = realpathSync.native(absolute);
+  } catch {
+    canonical = resolve(absolute);
+  }
+  return process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
+}
+
+function sameGitRepository(left: string, right: string): boolean {
+  const leftDir = gitCommonDirectory(left);
+  const rightDir = gitCommonDirectory(right);
+  return leftDir !== undefined && leftDir === rightDir;
+}
+
+/**
+ * Registry schema 1 keyed `projects` on project id, so a second control root
+ * could not be stored. Schema 2 keys on the control root and adds `lane_of`.
+ * Existing rows are copied unchanged, with `lane_of` left null. A database
+ * that is already shape 2 and was only restamped as version 1 is not rebuilt.
+ */
+function migrateRegistryLanes(file: string): void {
+  if (!existsSync(file)) return;
+  const database = new DatabaseSync(file);
+  let transaction = false;
+  try {
+    database.exec("PRAGMA busy_timeout = 5000");
+    const current = database.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
+    if ((current?.user_version ?? 0) !== 1) return;
+    database.exec("BEGIN IMMEDIATE");
+    transaction = true;
+    const locked = database.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
+    if ((locked?.user_version ?? 0) !== 1) {
+      database.exec("ROLLBACK");
+      transaction = false;
+      return;
+    }
+    if (!tableColumns(database, "projects").includes("lane_of")) {
+      database.exec(`
+        CREATE TABLE projects_v2 (
+          project_key TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          project_root TEXT NOT NULL,
+          home_runtime_id TEXT NOT NULL,
+          config_revision TEXT,
+          registered_at TEXT NOT NULL,
+          lane_of TEXT
+        ) STRICT;
+        INSERT INTO projects_v2 (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+        SELECT project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, NULL FROM projects;
+        DROP TABLE projects;
+        ALTER TABLE projects_v2 RENAME TO projects;
+        CREATE INDEX projects_by_project_id ON projects (project_id);
+      `);
+    }
+    database.exec("PRAGMA user_version = 2");
+    database.exec("COMMIT");
+    transaction = false;
+  } catch (error) {
+    if (transaction) {
+      try { database.exec("ROLLBACK"); } catch { /* already rolled back */ }
+    }
+    throw error;
+  } finally {
+    database.close();
+  }
+}
 
 /** The supervisor singleton row, from any connection to a registry, including a read-only one. */
 export function readKxmSupervisorRecord(database: DatabaseSync): KxmSupervisorRecord | undefined {
@@ -129,6 +248,7 @@ export class KxmRuntimeRegistry {
 
   constructor(path: string) {
     this.path = resolve(path);
+    migrateRegistryLanes(this.path);
     this.database = openDatabase(this.path, "runtime registry", {
       schema: REGISTRY_SCHEMA,
       version: KXM_REGISTRY_SCHEMA_VERSION,
@@ -217,10 +337,9 @@ export class KxmRuntimeRegistry {
     return this.readSupervisorRow();
   }
 
-  /** Register or revalidate a project's home binding. Home Runtime is immutable. */
-  /** All projects registered to this Runtime, for restart recovery: the
-   * supervisor needs to reopen their contexts so pending outbox rows resume
-   * syncing and presence keeps beating. */
+  /** All projects registered to this Runtime, including lane roots, for restart
+   * recovery: the supervisor reopens their contexts so pending outbox rows
+   * resume syncing and presence keeps beating. */
   projectsForRuntime(homeRuntimeId: string): Array<{ projectRoot: string; projectId: string }> {
     const rows = this.database.prepare(
       "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at",
@@ -228,88 +347,168 @@ export class KxmRuntimeRegistry {
     return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
   }
 
-  registerProject(registration: { projectId: string; projectRoot: string; homeRuntimeId: string; configRevision?: string; now: string }): KxmProjectRegistration {
+  /**
+   * Register or revalidate a control root. The home runtime of a live row is
+   * immutable. A second root whose git common directory matches a live row
+   * for the same project is a lane. A root whose directory is gone is replaced.
+   * A live root that is a different repository is `project_home_conflict`.
+   */
+  registerProject(registration: {
+    projectId: string;
+    projectRoot: string;
+    homeRuntimeId: string;
+    configRevision?: string;
+    now: string;
+    logger?: (entry: Record<string, unknown>) => void;
+  }): KxmProjectRegistration {
     const projectRoot = resolve(registration.projectRoot);
     const projectKey = projectRuntimeKey(projectRoot);
     this.database.exec("BEGIN IMMEDIATE");
     try {
-      const byId = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_id = ?").get(registration.projectId) as
-        | { project_id: string; project_root: string; project_key: string; home_runtime_id: string; config_revision: string | null; registered_at: string }
-        | undefined;
-      const byKey = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_key = ?").get(projectKey) as
-        | { project_id: string; project_root: string; project_key: string; home_runtime_id: string; config_revision: string | null; registered_at: string }
-        | undefined;
-      const existing = byId ?? byKey;
-      if (existing) {
+      const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
+      if (byKey) {
         const problems: string[] = [];
-        if (byId && byId.project_key !== projectKey) problems.push(`project ${registration.projectId} is already bound to a different control root`);
-        if (byKey && byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
-        if (existing.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
+        if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
+        if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
         if (problems.length > 0) {
           this.database.exec("ROLLBACK");
           throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
         }
-        const result: KxmProjectRegistration = {
-          projectId: existing.project_id,
-          projectRoot: existing.project_root,
-          projectKey: existing.project_key,
-          homeRuntimeId: existing.home_runtime_id,
-          ...(existing.config_revision !== null ? { configRevision: existing.config_revision } : {}),
-          registeredAt: existing.registered_at,
-        };
+        const result = registrationFromRow(byKey);
         this.database.exec("COMMIT");
         return result;
       }
-      this.database.prepare(`
-        INSERT INTO projects (project_id, project_root, project_key, home_runtime_id, config_revision, registered_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(registration.projectId, projectRoot, projectKey, registration.homeRuntimeId, registration.configRevision ?? null, registration.now);
+
+      const rows = this.database.prepare(
+        `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`,
+      ).all(registration.projectId) as unknown as ProjectRow[];
+      const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
+      const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
+      if (live.length > 0) {
+        const anchor = live.find((row) => sameGitRepository(row.project_root, projectRoot));
+        if (!anchor) {
+          this.database.exec("ROLLBACK");
+          throw runtimeError(
+            "project_home_conflict",
+            ".kxm/project.yaml",
+            `project ${registration.projectId} is already bound to a different control root`,
+          );
+        }
+        if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+          this.database.exec("ROLLBACK");
+          throw runtimeError(
+            "project_home_conflict",
+            ".kxm/project.yaml",
+            `project ${registration.projectId} home runtime is immutable and cannot be rebound`,
+          );
+        }
+        const laneOf = anchor.lane_of ?? anchor.project_key;
+        this.database.prepare(`
+          INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
+        const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
+        this.database.exec("COMMIT");
+        return result;
+      }
+
+      if (dead.length > 0) {
+        this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
+        this.insertHome(registration, projectRoot, projectKey);
+        this.database.exec("COMMIT");
+        registration.logger?.({
+          event: "project_registration_replaced",
+          projectId: registration.projectId,
+          projectRoot,
+          replacedRoot: dead[0]?.project_root,
+          replacedCount: dead.length,
+        });
+        return this.insertedRegistration(registration, projectRoot, projectKey);
+      }
+
+      this.insertHome(registration, projectRoot, projectKey);
       this.database.exec("COMMIT");
-      return {
-        projectId: registration.projectId,
-        projectRoot,
-        projectKey,
-        homeRuntimeId: registration.homeRuntimeId,
-        ...(registration.configRevision !== undefined ? { configRevision: registration.configRevision } : {}),
-        registeredAt: registration.now,
-      };
+      return this.insertedRegistration(registration, projectRoot, projectKey);
     } catch (error) {
       try { this.database.exec("ROLLBACK"); } catch { /* already rolled back */ }
       throw error;
     }
   }
 
-  project(projectId: string): KxmProjectRegistration | undefined {
-    const row = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_id = ?").get(projectId) as
-      | { project_id: string; project_root: string; project_key: string; home_runtime_id: string; config_revision: string | null; registered_at: string }
-      | undefined;
-    return row
-      ? {
-        projectId: row.project_id,
-        projectRoot: row.project_root,
-        projectKey: row.project_key,
-        homeRuntimeId: row.home_runtime_id,
-        ...(row.config_revision !== null ? { configRevision: row.config_revision } : {}),
-        registeredAt: row.registered_at,
+  /** Remove one control root. Returns false when that root was not registered. */
+  unregisterProject(projectRoot: string): boolean {
+    const projectKey = projectRuntimeKey(resolve(projectRoot));
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
+      if (!row) {
+        this.database.exec("COMMIT");
+        return false;
       }
-      : undefined;
+      this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
+      if (row.lane_of === null) {
+        const successor = this.database.prepare(
+          "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1",
+        ).get(row.project_id) as { project_key: string } | undefined;
+        if (successor) {
+          this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
+          this.database.prepare(
+            "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)",
+          ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
+        }
+      }
+      this.database.exec("COMMIT");
+      return true;
+    } catch (error) {
+      try { this.database.exec("ROLLBACK"); } catch { /* already rolled back */ }
+      throw error;
+    }
+  }
+
+  /** The home row for a project id, or the earliest row when every row is a lane. */
+  project(projectId: string): KxmProjectRegistration | undefined {
+    const row = this.projectRow(
+      `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY CASE WHEN lane_of IS NULL THEN 0 ELSE 1 END, registered_at LIMIT 1`,
+      projectId,
+    );
+    return row ? registrationFromRow(row) : undefined;
   }
 
   projectByRoot(projectRoot: string): KxmProjectRegistration | undefined {
-    const key = projectRuntimeKey(projectRoot);
-    const row = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_key = ?").get(key) as
-      | { project_id: string; project_root: string; project_key: string; home_runtime_id: string; config_revision: string | null; registered_at: string }
-      | undefined;
-    return row
-      ? {
-        projectId: row.project_id,
-        projectRoot: row.project_root,
-        projectKey: row.project_key,
-        homeRuntimeId: row.home_runtime_id,
-        ...(row.config_revision !== null ? { configRevision: row.config_revision } : {}),
-        registeredAt: row.registered_at,
-      }
-      : undefined;
+    const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectRuntimeKey(projectRoot));
+    return row ? registrationFromRow(row) : undefined;
+  }
+
+  private projectRow(sql: string, parameter: string): ProjectRow | undefined {
+    return this.database.prepare(sql).get(parameter) as ProjectRow | undefined;
+  }
+
+  private insertHome(
+    registration: { projectId: string; homeRuntimeId: string; configRevision?: string; now: string },
+    projectRoot: string,
+    projectKey: string,
+  ): void {
+    this.database.prepare(`
+      INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+      VALUES (?, ?, ?, ?, ?, ?, NULL)
+    `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now);
+  }
+
+  private insertedRegistration(
+    registration: { projectId: string; homeRuntimeId: string; configRevision?: string; now: string },
+    projectRoot: string,
+    projectKey: string,
+    laneOf?: string,
+  ): KxmProjectRegistration {
+    return {
+      projectId: registration.projectId,
+      projectRoot,
+      projectKey,
+      homeRuntimeId: registration.homeRuntimeId,
+      ...(registration.configRevision !== undefined ? { configRevision: registration.configRevision } : {}),
+      ...(laneOf !== undefined ? { laneOf } : {}),
+      registeredAt: registration.now,
+    };
   }
 }
 

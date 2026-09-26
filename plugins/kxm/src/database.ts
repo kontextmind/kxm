@@ -628,7 +628,7 @@ export function restoreDatabaseFile(
  */
 export const KXM_BACKUP_CEILINGS = {
   "hub-store": 5,
-  registry: 1,
+  registry: 2,
   "binding-store": 1,
   events: 7,
 } as const;

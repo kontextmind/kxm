@@ -84,7 +84,7 @@ kxm update pi --models             # refresh Pi model catalogs
 
 ## Understand schema changes
 
-Each store records a schema version, and KXM never upgrades a store in place.
+Each store records a schema version. Hub stores and Runtime event stores are never upgraded in place. The Runtime registry copies schema 1 forward to schema 2 and keeps every existing row.
 
 | Store | Location | Created by |
 |---|---|---|
@@ -93,7 +93,7 @@ Each store records a schema version, and KXM never upgrades a store in place.
 | Run event store | `runtime/projects/<key>/run-events.db` under the user state root | The Runtime supervisor |
 
 - A store **newer** than the running release refuses to open (`runtime_schema_newer`). Do not delete it; run the release that created it, or upgrade.
-- A store **older** than the running release also refuses to open (`runtime_schema_outdated`), and the error names the store. There is no migration.
+- A hub store or event store **older** than the running release also refuses to open (`runtime_schema_outdated`), and the error names the store. There is no migration for those stores. A registry at schema 1 opens, and its rows stay.
 
 When a release changes a schema, either stay on the old release, or accept a fresh store: stop the owner, move the old file aside (keep it with your backup), and start the owner, which re-creates it. `kxm init` rebuilds no database. A fresh hub store loses message and workflow history; a fresh Runtime store loses local run history. Check the changelog for schema changes before you upgrade.
 

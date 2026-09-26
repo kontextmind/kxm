@@ -14,7 +14,7 @@ one re-adds a compatibility lane by inference.
 | Project tree with legacy `.kxm/config` JSON | `loadKxmProject` fails closed with `legacy_state_unsupported`, one issue per legacy file. No receipt, plan, flag, or environment variable unlocks it. |
 | `kxm init` on such a tree | Reports `mode: "legacy"`, lists `legacyInputs`, performs **no writes**. Recovery is a fresh project directory plus the YAML definitions worth keeping. |
 | `kxm migrate` | Unknown command. It existed as `plan` / `apply` / `verify` for pre-KXM JSON and was deleted with this decision. |
-| SQLite store stamped with an older `user_version` | Refused with `runtime_schema_outdated`; the refusal never advances `user_version`, so the store stays identifiably old. Delete the state file and let the process that owns it recreate the store (`kxm hub start` for hub state, the Runtime for registry/event stores). `kxm init` is **project-only** and rebuilds no database. Forward-only stamping is prohibited — it turns a clean failure into a later query against a column that does not exist. |
+| SQLite store stamped with an older `user_version` | Hub stores and Runtime event stores are refused with `runtime_schema_outdated`. That refusal never advances `user_version`. Delete the state file and let the process that owns it recreate the store (`kxm hub start` for hub state, the Runtime for event stores). `kxm init` is **project-only** and rebuilds no database. The Runtime registry is the exception: schema 1 is copied to schema 2 in place, existing rows stay, and `lane_of` is null on those rows. Forward-only stamping of any other store is prohibited, because it turns a clean failure into a later query against a column that does not exist. |
 | Retired product and command names | Rejected by fail-closed brakes (lint + readiness tests), not aliased. |
 | Shared/off-scope Pi history | Never imported into a narrower run scope. A new physical session starts clean; durable facts come from Git, workflow evidence, artifacts, or promoted context. |
 | Historical run records | Never fabricated. Events whose real ordering was not observed stay absent rather than reconstructed into a finer-grained model. |
@@ -31,15 +31,19 @@ does exist:
   [Back up and restore KXM](../operations/backup-and-restore.md); a single `kxm.db`
   copy is not a backup.
 - **Out-of-range versions refuse without touching the file.** The stamp is read
-  before anything that can modify the store, so a database this build refuses —
-  older or newer — comes back byte-identical: neither its schema nor its
+  before anything that can modify the store, so a database this build refuses,
+  older or newer, comes back byte-identical: neither its schema nor its
   `user_version` changes, and it is not converted to WAL as a side effect of being
-  rejected. A store ahead of this build is refused without downgrade.
-- **Schema changes are additive-and-replace, not in-place.** Land the new
+  rejected. A store ahead of this build is refused without downgrade. The
+  registry schema 1 to 2 copy is not a refusal: that file is rewritten, and
+  every other older store is still refused untouched.
+- **Schema changes are additive-and-replace, not in-place,** except the
+  Runtime registry's `lane_of` column. For every other store, land the new
   definition, delete the local state, and let the process that owns each store
-  recreate it — `kxm hub start` for hub state, the Runtime for registry and
-  event stores. `kxm init` is project-only and rebuilds no database.
-  Nothing in the runtime may rewrite an existing store's shape.
+  recreate it. `kxm hub start` recreates hub state. The Runtime recreates event
+  stores. `kxm init` is project-only and rebuilds no database. Nothing else in
+  the runtime may rewrite an existing store's shape. Opening a schema 1
+  registry copies its rows into schema 2 and leaves `lane_of` null.
 
 ## If this ever changes
 

@@ -21092,7 +21092,7 @@ var init_database = __esm({
     init_runtime_paths();
     KXM_BACKUP_CEILINGS = {
       "hub-store": 5,
-      registry: 1,
+      registry: 2,
       "binding-store": 1,
       events: 7
     };
@@ -21100,8 +21100,9 @@ var init_database = __esm({
 });
 
 // plugins/kxm/src/runtime-store.ts
-import { existsSync as existsSync10, lstatSync as lstatSync4, mkdirSync as mkdirSync6, readFileSync as readFileSync8, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname7, resolve as resolve8 } from "node:path";
+import { spawnSync as spawnSync4 } from "node:child_process";
+import { existsSync as existsSync10, lstatSync as lstatSync4, mkdirSync as mkdirSync6, readFileSync as readFileSync8, realpathSync as realpathSync4, statSync, writeFileSync as writeFileSync6 } from "node:fs";
+import { dirname as dirname7, isAbsolute as isAbsolute5, resolve as resolve8 } from "node:path";
 function runtimeIssue(phase, code, file, message) {
   return { phase, code, file, message };
 }
@@ -21119,6 +21120,97 @@ function projectRuntimeOwnsRun(projectRoot, runId, env) {
     database.close();
   }
 }
+function registrationFromRow(row) {
+  return {
+    projectId: row.project_id,
+    projectRoot: row.project_root,
+    projectKey: row.project_key,
+    homeRuntimeId: row.home_runtime_id,
+    ...row.config_revision !== null ? { configRevision: row.config_revision } : {},
+    ...row.lane_of !== null ? { laneOf: row.lane_of } : {},
+    registeredAt: row.registered_at
+  };
+}
+function controlRootDirectoryExists(projectRoot) {
+  const stat = statSync(projectRoot, { throwIfNoEntry: false });
+  return Boolean(stat?.isDirectory());
+}
+function gitEnv() {
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
+}
+function gitCommonDirectory(projectRoot) {
+  const result = spawnSync4("git", ["-C", projectRoot, "rev-parse", "--git-common-dir"], {
+    encoding: "utf8",
+    env: gitEnv(),
+    timeout: 3e4,
+    windowsHide: true
+  });
+  if (result.status !== 0) return void 0;
+  const text = (result.stdout ?? "").trim();
+  if (!text) return void 0;
+  const absolute = isAbsolute5(text) ? text : resolve8(projectRoot, text);
+  let canonical2;
+  try {
+    canonical2 = realpathSync4.native(absolute);
+  } catch {
+    canonical2 = resolve8(absolute);
+  }
+  return process.platform === "win32" ? canonical2.toLocaleLowerCase("en-US") : canonical2;
+}
+function sameGitRepository(left, right) {
+  const leftDir = gitCommonDirectory(left);
+  const rightDir = gitCommonDirectory(right);
+  return leftDir !== void 0 && leftDir === rightDir;
+}
+function migrateRegistryLanes(file) {
+  if (!existsSync10(file)) return;
+  const database = new DatabaseSync(file);
+  let transaction = false;
+  try {
+    database.exec("PRAGMA busy_timeout = 5000");
+    const current = database.prepare("PRAGMA user_version").get();
+    if ((current?.user_version ?? 0) !== 1) return;
+    database.exec("BEGIN IMMEDIATE");
+    transaction = true;
+    const locked = database.prepare("PRAGMA user_version").get();
+    if ((locked?.user_version ?? 0) !== 1) {
+      database.exec("ROLLBACK");
+      transaction = false;
+      return;
+    }
+    if (!tableColumns(database, "projects").includes("lane_of")) {
+      database.exec(`
+        CREATE TABLE projects_v2 (
+          project_key TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          project_root TEXT NOT NULL,
+          home_runtime_id TEXT NOT NULL,
+          config_revision TEXT,
+          registered_at TEXT NOT NULL,
+          lane_of TEXT
+        ) STRICT;
+        INSERT INTO projects_v2 (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+        SELECT project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, NULL FROM projects;
+        DROP TABLE projects;
+        ALTER TABLE projects_v2 RENAME TO projects;
+        CREATE INDEX projects_by_project_id ON projects (project_id);
+      `);
+    }
+    database.exec("PRAGMA user_version = 2");
+    database.exec("COMMIT");
+    transaction = false;
+  } catch (error) {
+    if (transaction) {
+      try {
+        database.exec("ROLLBACK");
+      } catch {
+      }
+    }
+    throw error;
+  } finally {
+    database.close();
+  }
+}
 function readKxmSupervisorRecord(database) {
   const row = database.prepare("SELECT runtime_id, pid, port, token_hash, started_at, heartbeat_at, state FROM supervisor WHERE singleton_id = 1").get();
   return row ? {
@@ -21131,7 +21223,7 @@ function readKxmSupervisorRecord(database) {
     state: row.state
   } : void 0;
 }
-var KXM_REGISTRY_SCHEMA_VERSION, REGISTRY_TABLES, REGISTRY_SCHEMA, KxmRuntimeRegistry, DRIVE_RECEIPT_MAX_BYTES, EVENT_STORE_TABLES, KXM_EVENT_STORE_TABLE_NAMES;
+var KXM_REGISTRY_SCHEMA_VERSION, REGISTRY_TABLES, REGISTRY_SCHEMA, PROJECT_COLUMNS, KxmRuntimeRegistry, DRIVE_RECEIPT_MAX_BYTES, EVENT_STORE_TABLES, KXM_EVENT_STORE_TABLE_NAMES;
 var init_runtime_store = __esm({
   "plugins/kxm/src/runtime-store.ts"() {
     "use strict";
@@ -21141,10 +21233,10 @@ var init_runtime_store = __esm({
     init_sync_transform();
     init_runtime_paths();
     init_database();
-    KXM_REGISTRY_SCHEMA_VERSION = 1;
+    KXM_REGISTRY_SCHEMA_VERSION = 2;
     REGISTRY_TABLES = {
       supervisor: ["singleton_id", "runtime_id", "pid", "port", "token_hash", "started_at", "heartbeat_at", "state"],
-      projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at"]
+      projects: ["project_id", "project_root", "project_key", "home_runtime_id", "config_revision", "registered_at", "lane_of"]
     };
     REGISTRY_SCHEMA = `
 CREATE TABLE supervisor (
@@ -21158,19 +21250,23 @@ CREATE TABLE supervisor (
   state TEXT NOT NULL
 ) STRICT;
 CREATE TABLE projects (
-  project_id TEXT PRIMARY KEY,
+  project_key TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
   project_root TEXT NOT NULL,
-  project_key TEXT NOT NULL UNIQUE,
   home_runtime_id TEXT NOT NULL,
   config_revision TEXT,
-  registered_at TEXT NOT NULL
+  registered_at TEXT NOT NULL,
+  lane_of TEXT
 ) STRICT;
+CREATE INDEX projects_by_project_id ON projects (project_id);
 `;
+    PROJECT_COLUMNS = "project_id, project_root, project_key, home_runtime_id, config_revision, registered_at, lane_of";
     KxmRuntimeRegistry = class {
       path;
       database;
       constructor(path4) {
         this.path = resolve8(path4);
+        migrateRegistryLanes(this.path);
         this.database = openDatabase(this.path, "runtime registry", {
           schema: REGISTRY_SCHEMA,
           version: KXM_REGISTRY_SCHEMA_VERSION,
@@ -21249,57 +21345,87 @@ CREATE TABLE projects (
       supervisor() {
         return this.readSupervisorRow();
       }
-      /** Register or revalidate a project's home binding. Home Runtime is immutable. */
-      /** All projects registered to this Runtime, for restart recovery: the
-       * supervisor needs to reopen their contexts so pending outbox rows resume
-       * syncing and presence keeps beating. */
+      /** All projects registered to this Runtime, including lane roots, for restart
+       * recovery: the supervisor reopens their contexts so pending outbox rows
+       * resume syncing and presence keeps beating. */
       projectsForRuntime(homeRuntimeId) {
         const rows = this.database.prepare(
           "SELECT project_root, project_id FROM projects WHERE home_runtime_id = ? ORDER BY registered_at"
         ).all(homeRuntimeId);
         return rows.map((row) => ({ projectRoot: row.project_root, projectId: row.project_id }));
       }
+      /**
+       * Register or revalidate a control root. The home runtime of a live row is
+       * immutable. A second root whose git common directory matches a live row
+       * for the same project is a lane. A root whose directory is gone is replaced.
+       * A live root that is a different repository is `project_home_conflict`.
+       */
       registerProject(registration) {
         const projectRoot = resolve8(registration.projectRoot);
         const projectKey = projectRuntimeKey(projectRoot);
         this.database.exec("BEGIN IMMEDIATE");
         try {
-          const byId = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_id = ?").get(registration.projectId);
-          const byKey = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_key = ?").get(projectKey);
-          const existing = byId ?? byKey;
-          if (existing) {
+          const byKey = this.projectRow("SELECT " + PROJECT_COLUMNS + " FROM projects WHERE project_key = ?", projectKey);
+          if (byKey) {
             const problems = [];
-            if (byId && byId.project_key !== projectKey) problems.push(`project ${registration.projectId} is already bound to a different control root`);
-            if (byKey && byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
-            if (existing.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
+            if (byKey.project_id !== registration.projectId) problems.push(`control root is already bound to a different project id ${byKey.project_id}`);
+            if (byKey.home_runtime_id !== registration.homeRuntimeId) problems.push(`project ${registration.projectId} home runtime is immutable and cannot be rebound`);
             if (problems.length > 0) {
               this.database.exec("ROLLBACK");
               throw runtimeError("project_home_conflict", ".kxm/project.yaml", problems.join("; "));
             }
-            const result = {
-              projectId: existing.project_id,
-              projectRoot: existing.project_root,
-              projectKey: existing.project_key,
-              homeRuntimeId: existing.home_runtime_id,
-              ...existing.config_revision !== null ? { configRevision: existing.config_revision } : {},
-              registeredAt: existing.registered_at
-            };
+            const result = registrationFromRow(byKey);
             this.database.exec("COMMIT");
             return result;
           }
-          this.database.prepare(`
-        INSERT INTO projects (project_id, project_root, project_key, home_runtime_id, config_revision, registered_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(registration.projectId, projectRoot, projectKey, registration.homeRuntimeId, registration.configRevision ?? null, registration.now);
+          const rows = this.database.prepare(
+            `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY registered_at`
+          ).all(registration.projectId);
+          const live = rows.filter((row) => controlRootDirectoryExists(row.project_root));
+          const dead = rows.filter((row) => !controlRootDirectoryExists(row.project_root));
+          if (live.length > 0) {
+            const anchor = live.find((row) => sameGitRepository(row.project_root, projectRoot));
+            if (!anchor) {
+              this.database.exec("ROLLBACK");
+              throw runtimeError(
+                "project_home_conflict",
+                ".kxm/project.yaml",
+                `project ${registration.projectId} is already bound to a different control root`
+              );
+            }
+            if (live.some((row) => row.home_runtime_id !== registration.homeRuntimeId)) {
+              this.database.exec("ROLLBACK");
+              throw runtimeError(
+                "project_home_conflict",
+                ".kxm/project.yaml",
+                `project ${registration.projectId} home runtime is immutable and cannot be rebound`
+              );
+            }
+            const laneOf = anchor.lane_of ?? anchor.project_key;
+            this.database.prepare(`
+          INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now, laneOf);
+            const result = this.insertedRegistration(registration, projectRoot, projectKey, laneOf);
+            this.database.exec("COMMIT");
+            return result;
+          }
+          if (dead.length > 0) {
+            this.database.prepare("DELETE FROM projects WHERE project_id = ?").run(registration.projectId);
+            this.insertHome(registration, projectRoot, projectKey);
+            this.database.exec("COMMIT");
+            registration.logger?.({
+              event: "project_registration_replaced",
+              projectId: registration.projectId,
+              projectRoot,
+              replacedRoot: dead[0]?.project_root,
+              replacedCount: dead.length
+            });
+            return this.insertedRegistration(registration, projectRoot, projectKey);
+          }
+          this.insertHome(registration, projectRoot, projectKey);
           this.database.exec("COMMIT");
-          return {
-            projectId: registration.projectId,
-            projectRoot,
-            projectKey,
-            homeRuntimeId: registration.homeRuntimeId,
-            ...registration.configRevision !== void 0 ? { configRevision: registration.configRevision } : {},
-            registeredAt: registration.now
-          };
+          return this.insertedRegistration(registration, projectRoot, projectKey);
         } catch (error) {
           try {
             this.database.exec("ROLLBACK");
@@ -21308,28 +21434,69 @@ CREATE TABLE projects (
           throw error;
         }
       }
+      /** Remove one control root. Returns false when that root was not registered. */
+      unregisterProject(projectRoot) {
+        const projectKey = projectRuntimeKey(resolve8(projectRoot));
+        this.database.exec("BEGIN IMMEDIATE");
+        try {
+          const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectKey);
+          if (!row) {
+            this.database.exec("COMMIT");
+            return false;
+          }
+          this.database.prepare("DELETE FROM projects WHERE project_key = ?").run(projectKey);
+          if (row.lane_of === null) {
+            const successor = this.database.prepare(
+              "SELECT project_key FROM projects WHERE project_id = ? ORDER BY registered_at LIMIT 1"
+            ).get(row.project_id);
+            if (successor) {
+              this.database.prepare("UPDATE projects SET lane_of = NULL WHERE project_key = ?").run(successor.project_key);
+              this.database.prepare(
+                "UPDATE projects SET lane_of = ? WHERE project_id = ? AND project_key != ? AND (lane_of IS NULL OR lane_of = ?)"
+              ).run(successor.project_key, row.project_id, successor.project_key, projectKey);
+            }
+          }
+          this.database.exec("COMMIT");
+          return true;
+        } catch (error) {
+          try {
+            this.database.exec("ROLLBACK");
+          } catch {
+          }
+          throw error;
+        }
+      }
+      /** The home row for a project id, or the earliest row when every row is a lane. */
       project(projectId) {
-        const row = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_id = ?").get(projectId);
-        return row ? {
-          projectId: row.project_id,
-          projectRoot: row.project_root,
-          projectKey: row.project_key,
-          homeRuntimeId: row.home_runtime_id,
-          ...row.config_revision !== null ? { configRevision: row.config_revision } : {},
-          registeredAt: row.registered_at
-        } : void 0;
+        const row = this.projectRow(
+          `SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_id = ? ORDER BY CASE WHEN lane_of IS NULL THEN 0 ELSE 1 END, registered_at LIMIT 1`,
+          projectId
+        );
+        return row ? registrationFromRow(row) : void 0;
       }
       projectByRoot(projectRoot) {
-        const key = projectRuntimeKey(projectRoot);
-        const row = this.database.prepare("SELECT project_id, project_root, project_key, home_runtime_id, config_revision, registered_at FROM projects WHERE project_key = ?").get(key);
-        return row ? {
-          projectId: row.project_id,
-          projectRoot: row.project_root,
-          projectKey: row.project_key,
-          homeRuntimeId: row.home_runtime_id,
-          ...row.config_revision !== null ? { configRevision: row.config_revision } : {},
-          registeredAt: row.registered_at
-        } : void 0;
+        const row = this.projectRow(`SELECT ${PROJECT_COLUMNS} FROM projects WHERE project_key = ?`, projectRuntimeKey(projectRoot));
+        return row ? registrationFromRow(row) : void 0;
+      }
+      projectRow(sql, parameter) {
+        return this.database.prepare(sql).get(parameter);
+      }
+      insertHome(registration, projectRoot, projectKey) {
+        this.database.prepare(`
+      INSERT INTO projects (project_key, project_id, project_root, home_runtime_id, config_revision, registered_at, lane_of)
+      VALUES (?, ?, ?, ?, ?, ?, NULL)
+    `).run(projectKey, registration.projectId, projectRoot, registration.homeRuntimeId, registration.configRevision ?? null, registration.now);
+      }
+      insertedRegistration(registration, projectRoot, projectKey, laneOf) {
+        return {
+          projectId: registration.projectId,
+          projectRoot,
+          projectKey,
+          homeRuntimeId: registration.homeRuntimeId,
+          ...registration.configRevision !== void 0 ? { configRevision: registration.configRevision } : {},
+          ...laneOf !== void 0 ? { laneOf } : {},
+          registeredAt: registration.now
+        };
       }
     };
     DRIVE_RECEIPT_MAX_BYTES = 8 * 1024;
@@ -22185,7 +22352,7 @@ var init_price_calc = __esm({
 
 // plugins/kxm/src/prices.ts
 import { createHash as createHash13 } from "node:crypto";
-import { existsSync as existsSync11, readFileSync as readFileSync9, statSync, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync9, statSync as statSync2, writeFileSync as writeFileSync7 } from "node:fs";
 import { join as join11 } from "node:path";
 function hashPriceCatalog(catalog) {
   const canonical2 = {
@@ -22297,7 +22464,7 @@ function parsePriceCatalog(text) {
   return catalog;
 }
 function loadPriceCatalog(rootOrPath) {
-  const candidatePath = existsSync11(join11(rootOrPath, ".kxm", "prices.yaml")) ? join11(rootOrPath, ".kxm", "prices.yaml") : existsSync11(join11(rootOrPath, "prices.yaml")) ? join11(rootOrPath, "prices.yaml") : existsSync11(rootOrPath) && statSync(rootOrPath).isFile() ? rootOrPath : void 0;
+  const candidatePath = existsSync11(join11(rootOrPath, ".kxm", "prices.yaml")) ? join11(rootOrPath, ".kxm", "prices.yaml") : existsSync11(join11(rootOrPath, "prices.yaml")) ? join11(rootOrPath, "prices.yaml") : existsSync11(rootOrPath) && statSync2(rootOrPath).isFile() ? rootOrPath : void 0;
   if (!candidatePath || !existsSync11(candidatePath)) {
     return void 0;
   }
@@ -23167,7 +23334,7 @@ var init_memory = __esm({
 
 // plugins/kxm/src/skills.ts
 import { createHash as createHash14 } from "node:crypto";
-import { existsSync as existsSync16, mkdirSync as mkdirSync11, readdirSync as readdirSync6, readFileSync as readFileSync14, renameSync as renameSync3, rmSync as rmSync4, statSync as statSync2, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync16, mkdirSync as mkdirSync11, readdirSync as readdirSync6, readFileSync as readFileSync14, renameSync as renameSync3, rmSync as rmSync4, statSync as statSync3, writeFileSync as writeFileSync12 } from "node:fs";
 import { dirname as dirname10, join as join16 } from "node:path";
 function skillContentSha256(content) {
   return createHash14("sha256").update(content, "utf8").digest("hex");
@@ -23243,7 +23410,7 @@ function boundedList(value, field) {
   return [...new Set(refs)];
 }
 function readdirSorted(dir) {
-  return readdirSync6(dir).filter((entry) => statSync2(join16(dir, entry)).isDirectory()).sort();
+  return readdirSync6(dir).filter((entry) => statSync3(join16(dir, entry)).isDirectory()).sort();
 }
 var import_yaml8, SKILL_CANDIDATE_SCHEMA, SKILL_EVALUATION_SCHEMA, SKILL_DECISION_SCHEMA, MAX_SKILL_NAME_CHARS, MAX_SKILL_CONTENT_CHARS, MAX_SKILL_EVIDENCE_REFS, MAX_SKILL_MODELS, PROMOTION_REQUIRED_EVALUATIONS, SkillLifecycleError, SkillLifecycle;
 var init_skills = __esm({
@@ -23587,11 +23754,11 @@ var init_dispatch_context = __esm({
 });
 
 // plugins/kxm/src/artifacts-exist.ts
-import { lstatSync as lstatSync5, realpathSync as realpathSync4, statSync as statSync3 } from "node:fs";
-import { isAbsolute as isAbsolute5, relative as relative4, resolve as resolve11 } from "node:path";
+import { lstatSync as lstatSync5, realpathSync as realpathSync5, statSync as statSync4 } from "node:fs";
+import { isAbsolute as isAbsolute6, relative as relative4, resolve as resolve11 } from "node:path";
 function staysUnder(root, candidate) {
   const child = relative4(root, candidate);
-  return child === "" || !isAbsolute5(child) && child !== ".." && !child.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`);
+  return child === "" || !isAbsolute6(child) && child !== ".." && !child.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`);
 }
 function verifyArtifactExists(rootInput, pathInput) {
   const lexicalRoot = resolve11(rootInput);
@@ -23602,12 +23769,12 @@ function verifyArtifactExists(rootInput, pathInput) {
   let realRoot;
   let realPath;
   try {
-    realRoot = realpathSync4(lexicalRoot);
+    realRoot = realpathSync5(lexicalRoot);
   } catch {
     return { ok: false, error: "artifact_unreadable", path: lexicalPath };
   }
   try {
-    realPath = realpathSync4(lexicalPath);
+    realPath = realpathSync5(lexicalPath);
   } catch {
     return { ok: false, error: "artifact_missing", path: lexicalPath };
   }
@@ -23619,7 +23786,7 @@ function verifyArtifactExists(rootInput, pathInput) {
     if (link.isSymbolicLink()) {
       return { ok: false, error: "artifact_outside_workspace_assets", path: lexicalPath };
     }
-    const artifact = statSync3(realPath);
+    const artifact = statSync4(realPath);
     if (!artifact.isFile()) return { ok: false, error: "artifact_not_file", path: lexicalPath };
     if (artifact.size < 1) return { ok: false, error: "artifact_empty", path: lexicalPath };
     return { ok: true, path: realPath, bytes: artifact.size };
@@ -24754,21 +24921,21 @@ var init_oneshot_producer = __esm({
 // plugins/kxm/src/hub-binding.ts
 import { existsSync as existsSync18, mkdirSync as mkdirSync12, readFileSync as readFileSync16, renameSync as renameSync4, rmSync as rmSync5, writeFileSync as writeFileSync13 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { dirname as dirname11, isAbsolute as isAbsolute6, join as join18, resolve as resolve12 } from "node:path";
+import { dirname as dirname11, isAbsolute as isAbsolute7, join as join18, resolve as resolve12 } from "node:path";
 function resolveUserStateRoot2(env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
-    if (!isAbsolute6(explicit)) throw new HubBindingError("local_state_root_not_absolute");
+    if (!isAbsolute7(explicit)) throw new HubBindingError("local_state_root_not_absolute");
     return resolve12(explicit);
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute6(localAppData) ? localAppData : join18(homedir5(), "AppData", "Local");
+    const base2 = localAppData && isAbsolute7(localAppData) ? localAppData : join18(homedir5(), "AppData", "Local");
     return resolve12(base2, "KXM");
   }
   if (process.platform === "darwin") return resolve12(homedir5(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute6(xdgState) ? xdgState : join18(homedir5(), ".local", "state");
+  const base = xdgState && isAbsolute7(xdgState) ? xdgState : join18(homedir5(), ".local", "state");
   return resolve12(base, "kxm");
 }
 function hubBindingFile(env = process.env) {
@@ -24906,7 +25073,7 @@ var init_logger = __esm({
 import { spawn as spawn2 } from "node:child_process";
 import { createHash as createHash15, createHmac as createHmac2, randomBytes as randomBytes2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync19, lstatSync as lstatSync6, mkdirSync as mkdirSync13, readFileSync as readFileSync17, renameSync as renameSync5, rmSync as rmSync6, writeFileSync as writeFileSync14 } from "node:fs";
-import { dirname as dirname12, isAbsolute as isAbsolute7, join as join19 } from "node:path";
+import { dirname as dirname12, isAbsolute as isAbsolute8, join as join19 } from "node:path";
 function kxmSupervisorTokenFile(paths) {
   return join19(paths.runtimeDir, "supervisor.token");
 }
@@ -25561,7 +25728,7 @@ var init_model_inventory = __esm({
 });
 
 // plugins/kxm/src/permission.ts
-import { spawnSync as spawnSync4 } from "node:child_process";
+import { spawnSync as spawnSync5 } from "node:child_process";
 import { createHash as createHash16 } from "node:crypto";
 import { existsSync as existsSync24, mkdtempSync, mkdirSync as mkdirSync20, readFileSync as readFileSync24, rmSync as rmSync8, writeFileSync as writeFileSync19 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26035,7 +26202,7 @@ function gitEnvironment2() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function git(root, args) {
-  const result = spawnSync4("git", ["-C", root, ...args], {
+  const result = spawnSync5("git", ["-C", root, ...args], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 15e3,
@@ -26053,7 +26220,7 @@ function git(root, args) {
   return result.stdout;
 }
 function gitBuffer(root, args) {
-  const result = spawnSync4("git", ["-C", root, ...args], {
+  const result = spawnSync5("git", ["-C", root, ...args], {
     env: gitEnvironment2(),
     timeout: 15e3,
     windowsHide: true,
@@ -26251,7 +26418,7 @@ function loadBaseProjectDeclarations(projectFile) {
   return members;
 }
 function initShadowGitRoot(directory) {
-  const result = spawnSync4("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
+  const result = spawnSync5("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 1e4,
@@ -26322,7 +26489,7 @@ import {
   rmSync as rmSync9,
   writeFileSync as writeFileSync20
 } from "node:fs";
-import { dirname as dirname15, isAbsolute as isAbsolute8, join as join29, relative as relative5, resolve as resolve20 } from "node:path";
+import { dirname as dirname15, isAbsolute as isAbsolute9, join as join29, relative as relative5, resolve as resolve20 } from "node:path";
 function resourceKindForTemplatePath(path4) {
   if (path4 === ".kxm/project.yaml") return "project";
   if (path4 === ".kxm/gates.yaml") return "gate-registry";
@@ -26409,7 +26576,7 @@ function backupFile(projectRoot, portablePath2) {
   return join29(transactionRoot(projectRoot), "backups", ...portablePath2.split("/"));
 }
 function portableManagedPath(path4) {
-  return path4.startsWith(".kxm/") && path4 !== KXM_TEMPLATE_PROVENANCE_PATH && path4.length <= 1024 && !path4.includes("\\") && !isAbsolute8(path4) && PORTABLE_PATH.test(path4) && !/[<>:"|?*]/.test(path4);
+  return path4.startsWith(".kxm/") && path4 !== KXM_TEMPLATE_PROVENANCE_PATH && path4.length <= 1024 && !path4.includes("\\") && !isAbsolute9(path4) && PORTABLE_PATH.test(path4) && !/[<>:"|?*]/.test(path4);
 }
 function readRegularBounded(file, label) {
   const stat = lstatSync7(file);
@@ -26640,7 +26807,7 @@ function readOperation(projectRoot, schemasDir) {
     seen.add(folded);
     prior = entry.path;
   }
-  if (!isAbsolute8(operation.projectRoot)) fail3("init_transaction_project_root_invalid", TRANSACTION_NAME, "operation project root must be absolute", "path");
+  if (!isAbsolute9(operation.projectRoot)) fail3("init_transaction_project_root_invalid", TRANSACTION_NAME, "operation project root must be absolute", "path");
   validateOperationIntent(projectRoot, operation);
   return operation;
 }
@@ -28210,8 +28377,9 @@ async function cmdKxmRunStatus(runtime, runId) {
     print(
       runtime.io,
       runtime.json,
-      { ok: true, command: "runs status", run, ...drive !== void 0 ? { drive } : {} },
-      `${formatRunStatusLine(run, drive)}${driveLine ? `
+      { ok: true, command: "runs status", projectRoot, run, ...drive !== void 0 ? { drive } : {} },
+      `${formatRunStatusLine(run, drive)}
+root ${projectRoot}${driveLine ? `
 ${driveLine}` : ""}`
     );
     return 0;
@@ -36904,7 +37072,7 @@ init_project();
 init_repo_root();
 init_harness();
 init_types();
-import { spawnSync as spawnSync5 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 var PLUGIN_SUPPORTED_HARNESSES = Object.freeze(["pi", "omp", "claude"]);
 async function cmdPluginInstall(runtime, options) {
   const repoRoot = findKxmRepoRoot(import.meta.url);
@@ -36943,7 +37111,7 @@ async function cmdPluginInstall(runtime, options) {
           detail: `would install kxm plugin into pi: ${command} ${args.join(" ")}`
         });
       } else {
-        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync5(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync6(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
         if (run.error || run.status !== 0 && run.status !== null) {
           results.push({
             harness: "pi",
@@ -36974,7 +37142,7 @@ async function cmdPluginInstall(runtime, options) {
           detail: `would install kxm plugin into omp: ${command} ${args.join(" ")}`
         });
       } else {
-        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync5(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync6(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
         if (run.error || run.status !== 0 && run.status !== null) {
           results.push({
             harness: "omp",
@@ -37009,9 +37177,9 @@ async function cmdPluginInstall(runtime, options) {
         if (runtime.io.spawnSync) {
           runtime.io.spawnSync(command, marketplaceArgs);
         } else {
-          spawnSync5(command, marketplaceArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
+          spawnSync6(command, marketplaceArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
         }
-        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, installArgs) : spawnSync5(command, installArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, installArgs) : spawnSync6(command, installArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
         if (run.error || run.status !== 0 && run.status !== null) {
           results.push({
             harness: "claude",
@@ -37132,9 +37300,10 @@ async function cmdDocsServe(runtime, options = {}) {
 
 // plugins/kxm/src/cli/lanes.ts
 init_project_config();
+init_runtime_store();
 init_runtime_supervisor();
 init_types();
-import { spawnSync as spawnSync6 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 import { chmodSync as chmodSync6, existsSync as existsSync30, mkdirSync as mkdirSync24, readFileSync as readFileSync29, writeFileSync as writeFileSync22 } from "node:fs";
 import { basename as basename8, dirname as dirname17, join as join36, resolve as resolve24 } from "node:path";
 var LANE_SCHEMA = "kxm.lanes.v1";
@@ -37144,13 +37313,13 @@ var SETTLED_RUN = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
 function lanesFile(runtime) {
   return join36(runtime.dirs.state, "lanes.json");
 }
-function gitEnv() {
+function gitEnv2() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function git2(cwd, args) {
-  const result = spawnSync6("git", ["-C", cwd, ...args], {
+  const result = spawnSync7("git", ["-C", cwd, ...args], {
     encoding: "utf8",
-    env: gitEnv(),
+    env: gitEnv2(),
     timeout: 3e4,
     windowsHide: true
   });
@@ -37483,10 +37652,32 @@ async function cmdLaneStatus(runtime, unit) {
   print(
     runtime.io,
     runtime.json,
-    { ok: true, command, lane: { ...view, status: runStatus } },
-    `${formatLaneLine(view)} status=${runStatus}`
+    { ok: true, command, root: record.path, lane: { ...view, status: runStatus } },
+    `${formatLaneLine(view)} status=${runStatus} root=${record.path}`
   );
   return 0;
+}
+async function unregisterLaneRoot(runtime, projectRoot) {
+  try {
+    const project = await Promise.resolve().then(() => (init_project(), project_exports));
+    const request = project.kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest;
+    const handle = await attachKxmSupervisor({ env: runtime.env });
+    if (handle) {
+      await request(handle, "POST", "/v1/projects/unregister", { projectRoot });
+      return void 0;
+    }
+    const paths = kxmRuntimePaths({ env: runtime.env });
+    if (!existsSync30(paths.registryDb)) return void 0;
+    const registry = new KxmRuntimeRegistry(paths.registryDb);
+    try {
+      registry.unregisterProject(projectRoot);
+    } finally {
+      registry.close();
+    }
+    return void 0;
+  } catch (error) {
+    return error instanceof Error ? error.message : "lane root could not be unregistered";
+  }
 }
 async function cmdLaneDrop(runtime, unit, options = {}) {
   const command = "lane drop";
@@ -37514,10 +37705,15 @@ async function cmdLaneDrop(runtime, unit, options = {}) {
   }
   if (runtime.dryRun) {
     printPlan(runtime, { command, unit, branchKept: record.branch }, [
+      { action: "delete", target: `runtime registry ${record.path}` },
       { action: "delete", target: record.path },
       { action: "write", target: lanesFile(runtime) }
     ], `drop lane ${unit}; branch ${record.branch} is not deleted`);
     return 0;
+  }
+  const unregistered = await unregisterLaneRoot(runtime, record.path);
+  if (unregistered !== void 0) {
+    return refuse(runtime, command, "lane_unregister_failed", `lane ${unit} could not be unregistered: ${unregistered.slice(0, 300)}`, { unit });
   }
   if (existsSync30(record.path)) {
     const removed = git2(root, ["worktree", "remove", ...force ? ["--force"] : [], record.path]);
@@ -37629,7 +37825,7 @@ function cmdLand(runtime, options = {}) {
 // plugins/kxm/src/cli/assign.ts
 init_project_config();
 init_types();
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { existsSync as existsSync31 } from "node:fs";
 import { join as join38 } from "node:path";
 var kxmAssignCliSeams = {};
@@ -37715,7 +37911,7 @@ async function cmdAssign(runtime, subcommand, args) {
     return 0;
   }
   const spawn6 = kxmAssignCliSeams.spawn ?? ((commandName, commandArgs, options) => {
-    const result2 = spawnSync7(commandName, commandArgs, {
+    const result2 = spawnSync8(commandName, commandArgs, {
       cwd: options.cwd,
       stdio: options.stdio,
       env: options.env,
@@ -46177,7 +46373,7 @@ var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 // plugins/kxm/src/tui.ts
 import { mkdirSync as mkdirSync25 } from "node:fs";
 import { join as join43, resolve as resolve26, dirname as dirname19 } from "node:path";
-import { spawnSync as spawnSync8 } from "node:child_process";
+import { spawnSync as spawnSync9 } from "node:child_process";
 
 // packages/core/tui/src/types/surface.ts
 var KXM_TUI_LIMITS = Object.freeze({
@@ -46322,7 +46518,7 @@ init_sqlite();
 init_telemetry();
 import { existsSync as existsSync32, readdirSync as readdirSync11, readFileSync as readFileSync30 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { isAbsolute as isAbsolute9, join as join42, resolve as resolve25 } from "node:path";
+import { isAbsolute as isAbsolute10, join as join42, resolve as resolve25 } from "node:path";
 var DEFAULT_BUSY_TIMEOUT_MS = 5e3;
 var RUNTIME_PROJECT_KEY = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 function processExists2(pid) {
@@ -46461,19 +46657,19 @@ function resolveKxmStateRoot(stateDir, options) {
   }
   const env = options?.env ?? process.env;
   const explicit = env.KXM_STATE_HOME?.trim() || env.KXM_USER_STATE_DIR?.trim() || env.KXM_STATE_ROOT?.trim();
-  if (explicit && isAbsolute9(explicit) && existsSync32(resolve25(explicit))) {
+  if (explicit && isAbsolute10(explicit) && existsSync32(resolve25(explicit))) {
     return resolve25(explicit);
   }
   let base;
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    base = localAppData && isAbsolute9(localAppData) ? localAppData : join42(homedir6(), "AppData", "Local");
+    base = localAppData && isAbsolute10(localAppData) ? localAppData : join42(homedir6(), "AppData", "Local");
     base = resolve25(base, "KXM");
   } else if (process.platform === "darwin") {
     base = resolve25(homedir6(), "Library", "Application Support", "KXM");
   } else {
     const xdgState = env.XDG_STATE_HOME?.trim();
-    base = xdgState && isAbsolute9(xdgState) ? xdgState : join42(homedir6(), ".local", "state");
+    base = xdgState && isAbsolute10(xdgState) ? xdgState : join42(homedir6(), ".local", "state");
     base = resolve25(base, "kxm");
   }
   if (existsSync32(base)) return base;
@@ -46734,16 +46930,16 @@ function applyMeshTuiKey(view, key, itemCount = 0) {
 function copyToClipboard(text) {
   try {
     if (process.platform === "darwin") {
-      const proc = spawnSync8("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync9("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
     if (process.platform === "win32") {
-      const proc = spawnSync8("clip", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync9("clip", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
-    const wl = spawnSync8("wl-copy", [text], { encoding: "utf8", windowsHide: true });
+    const wl = spawnSync9("wl-copy", [text], { encoding: "utf8", windowsHide: true });
     if (wl.status === 0) return true;
-    const xclip = spawnSync8("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
+    const xclip = spawnSync9("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
     return xclip.status === 0;
   } catch {
     return false;
@@ -46751,7 +46947,7 @@ function copyToClipboard(text) {
 }
 function spawnDegradeWorktree(repoRoot, runId, options) {
   const runner = options?.execFn ?? ((cmd, args) => {
-    const res = spawnSync8(cmd, args, {
+    const res = spawnSync9(cmd, args, {
       cwd: repoRoot,
       encoding: "utf8",
       windowsHide: true,
@@ -47535,7 +47731,7 @@ async function runMeshTui(input) {
 }
 
 // plugins/kxm/src/session-work.ts
-import { spawnSync as spawnSync9 } from "node:child_process";
+import { spawnSync as spawnSync10 } from "node:child_process";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync33, mkdirSync as mkdirSync26, readFileSync as readFileSync31, renameSync as renameSync8, writeFileSync as writeFileSync23 } from "node:fs";
 import { join as join44 } from "node:path";
@@ -47596,10 +47792,10 @@ function formatShipLine(ship) {
 }
 function readGitShip(cwd) {
   try {
-    const dirty = spawnSync9("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    const dirty = spawnSync10("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return void 0;
     const isDirty = dirty.stdout.trim().length > 0;
-    const upstream = spawnSync9("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    const upstream = spawnSync10("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
     if (upstream.status === 0) {
       return {
         dirty: isDirty,
@@ -47607,9 +47803,9 @@ function readGitShip(cwd) {
       };
     }
     for (const baseRef of ["origin/HEAD", "main", "origin/main", "master", "origin/master"]) {
-      const mb = spawnSync9("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
+      const mb = spawnSync10("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
       if (mb.status === 0 && mb.stdout.trim()) {
-        const count = spawnSync9("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
+        const count = spawnSync10("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
         if (count.status === 0) {
           return {
             dirty: isDirty,
@@ -48811,7 +49007,7 @@ init_redact();
 init_telemetry();
 init_routing();
 init_prices();
-import { spawnSync as spawnSync11 } from "node:child_process";
+import { spawnSync as spawnSync12 } from "node:child_process";
 import { createHash as createHash19 } from "node:crypto";
 import { existsSync as existsSync44, mkdtempSync as mkdtempSync3, readFileSync as readFileSync41, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
@@ -49668,8 +49864,8 @@ ${divider}
 
 // plugins/kxm/src/ssh-remote.ts
 init_safety_integrity();
-import { spawnSync as spawnSync10 } from "node:child_process";
-import { existsSync as existsSync41, mkdirSync as mkdirSync30, readFileSync as readFileSync38, readdirSync as readdirSync13, rmSync as rmSync12, statSync as statSync5 } from "node:fs";
+import { spawnSync as spawnSync11 } from "node:child_process";
+import { existsSync as existsSync41, mkdirSync as mkdirSync30, readFileSync as readFileSync38, readdirSync as readdirSync13, rmSync as rmSync12, statSync as statSync6 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
 import { join as join51, resolve as resolve30 } from "node:path";
 var MAX_SSH_OUTPUT_BYTES = 50 * 1024;
@@ -49744,7 +49940,7 @@ function parseSshConfig(configPath) {
     return [];
   }
 }
-function resolveSshHostG(host, execFn = spawnSync10) {
+function resolveSshHostG(host, execFn = spawnSync11) {
   try {
     const result = execFn("ssh", ["-G", host], { encoding: "utf-8" });
     if (result.status !== 0 || !result.stdout) {
@@ -49810,7 +50006,7 @@ function buildSshArgs(options) {
   args.push(options.host);
   return args;
 }
-function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync10) {
+function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync11) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join51(resolvedDir, "%C");
   try {
@@ -49822,7 +50018,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
     return false;
   }
 }
-function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync10) {
+function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync11) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join51(resolvedDir, "%C");
   try {
@@ -49836,7 +50032,7 @@ function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function executeSshRun(params) {
   const startTime = Date.now();
-  const execSyncFn = params.execFn ?? spawnSync10;
+  const execSyncFn = params.execFn ?? spawnSync11;
   if (params.action === "info") {
     if (params.host) {
       const hostInfo = resolveSshHostG(params.host, execSyncFn);
@@ -50277,7 +50473,7 @@ complete -c kxm -n "__fish_seen_subcommand_from goal" -a "create list get"
 // plugins/kxm/src/completion-install.ts
 import { existsSync as existsSync42, mkdirSync as mkdirSync31, readFileSync as readFileSync39, writeFileSync as writeFileSync27 } from "node:fs";
 import { homedir as homedir9 } from "node:os";
-import { basename as basename10, delimiter, dirname as dirname23, isAbsolute as isAbsolute10, join as join52, resolve as resolve31 } from "node:path";
+import { basename as basename10, delimiter, dirname as dirname23, isAbsolute as isAbsolute11, join as join52, resolve as resolve31 } from "node:path";
 var COMPLETION_MARKER = "# kxm completion";
 var PATH_MARKER = "# kxm path";
 function detectShell(env = process.env, platform = process.platform) {
@@ -50403,7 +50599,7 @@ ${line}
 }
 function kxmBinDir(env = process.env) {
   const argv1 = env.KXM_ENTRY ?? process.argv[1];
-  if (argv1 && isAbsolute10(argv1)) {
+  if (argv1 && isAbsolute11(argv1)) {
     const dir = dirname23(argv1);
     if (existsSync42(join52(dir, process.platform === "win32" ? "kxm.cmd" : "kxm"))) return dir;
   }
@@ -50931,7 +51127,7 @@ init_types();
 init_repo_root();
 function cliSpawn(runtime, command, args, extra) {
   if (runtime.io.spawnSync) return runtime.io.spawnSync(command, args);
-  const result = spawnSync11(command, [...args], {
+  const result = spawnSync12(command, [...args], {
     encoding: "utf8",
     windowsHide: true,
     shell: process.platform === "win32",

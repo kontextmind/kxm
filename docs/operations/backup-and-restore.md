@@ -237,14 +237,14 @@ It restores the registry and every project's event store and sidecar. Every chec
 
 ### Restore ceilings
 
-A backup newer than this build is refused with `runtime_schema_newer` before any file changes. KXM has no migrations: an older backup restores, but its store then refuses to open with `runtime_schema_outdated`. Restore an older backup with the release that wrote it; see [Upgrade KXM](upgrade.md#understand-schema-changes).
+A backup newer than this build is refused with `runtime_schema_newer` before any file changes. Hub and event stores are not migrated: an older backup of those restores, then the store refuses to open with `runtime_schema_outdated`. A registry backup at schema 1 opens in place: existing rows stay, and each gains an empty `lane_of` column. Restore any other older backup with the release that wrote it; see [Upgrade KXM](upgrade.md#understand-schema-changes).
 
 The ceilings come from `KXM_BACKUP_CEILINGS` in `plugins/kxm/src/database.ts` and match each store's own schema version:
 
 | Store id | Highest schema version restored |
 |---|---|
 | `hub-store` | 5 |
-| `registry` | 1 |
+| `registry` | 2 |
 | `events:<key>` | 7 |
 | `binding-store` | 1 (no current store uses it) |
 
@@ -280,7 +280,7 @@ Test a full restore on a spare machine before you rely on it, and repeat the tes
 | `backup_no_stores` | No `.kxm/state/kxm.db` under the checkout (or it was moved with `KXM_STATE_DIR` or `KXM_DATA_PATH`) and no event store for this checkout under the user state root | Run inside the checkout; copy a relocated database with the stopped-state procedure |
 | `Backup is incomplete (<n> omitted); not ok:`, exit 1 | A store or sidecar could not be copied, or appeared while the backup ran | Fix the source named after `omitted`, then run `kxm backup` again |
 | `restore_incomplete` | The manifest records `complete: false` | Restore a complete backup; the partial one is not restorable |
-| Runs are missing, or the Runtime refuses the project with `project_home_conflict`, after a restore | The checkout moved to another absolute path, and the registry still binds the project to the old one | Keep the checkout at its original path and restore there |
+| Runs are missing, or the Runtime refuses the project with `project_home_conflict`, after a restore | The checkout moved, and a live registration still points at the old directory. A missing directory is replaced on the next registration. A second live checkout that is not a worktree of the registered repository is still refused | Keep a live checkout at its original path. A worktree of that repository registers as a lane |
 | `restore_requires_all_projects` | The backup holds the Runtime registry or another project's event store: it was taken with `--all-projects`, or by a build from before backups were scoped | Pass `--all-projects` if rolling back every project is what you want; otherwise restore a backup taken without it |
 | `restore_runtime_running` | The Runtime supervisor is running | Run `kxm runtime stop`, pause whatever restarts it, then restore |
 | `restore_runtime_unverified` | `$S/runtime/registry.db` cannot be read, so restore cannot tell whether the supervisor is running | Stop the Runtime, move the registry aside, then restore; an `--all-projects` backup brings the registry back |

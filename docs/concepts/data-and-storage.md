@@ -162,7 +162,7 @@ Each database records its schema version in SQLite's `user_version`. When a proc
 - an older store fails with `runtime_schema_outdated`;
 - a store with tables but no version fails with `runtime_schema_shape_invalid`.
 
-KXM never upgrades a store in place, because the code would otherwise have to keep working against schema shapes it no longer tests. To cross a store version, stop the owner, back up if you need the history, delete the store with its `-wal` and `-shm` files, and let the owner recreate it: `kxm hub start` for `kxm.db`, and the Runtime for the registry and event stores. `kxm init` rebuilds no database. Legacy `.kxm/config/*.json` files are refused the same way.
+KXM does not upgrade hub stores or Runtime event stores in place, because the code would otherwise have to keep working against schema shapes it no longer tests. To cross one of those versions, stop the owner, back up if you need the history, delete the store with its `-wal` and `-shm` files, and let the owner recreate it: `kxm hub start` for `kxm.db`, and the Runtime for event stores. The Runtime registry is the exception: schema 1 opens as schema 2, and each existing row keeps its root with `lane_of` left empty. `kxm init` rebuilds no database. Legacy `.kxm/config/*.json` files are refused the same way.
 
 Every store opens in WAL mode with a 5-second busy timeout, `synchronous=NORMAL`, and foreign keys on. A database or sidecar that is a symbolic link is refused. [ADR-0003](../adr/ADR-0003-sqlite-only-store.md) records why SQLite is the only store.
 

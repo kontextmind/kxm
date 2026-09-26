@@ -14,6 +14,8 @@ import type { Runtime } from "../../plugins/kxm/src/cli/types.ts";
 import { kxmLocalBindingFile } from "../../plugins/kxm/src/bindings.ts";
 import { hubBindingScope } from "../../plugins/kxm/src/hub-binding.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
+import { KxmRuntimeRegistry, kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
+import { startKxmRuntimeSupervisor } from "../../plugins/kxm/src/runtime-supervisor.ts";
 import { parse, stringify } from "yaml";
 import { createTask, getTask, taskFilePath } from "../../plugins/kxm/src/task-manager.ts";
 import { createTestMesh } from "../helpers.ts";
@@ -1345,7 +1347,6 @@ test("kxm run and runtime commands cover workspace, project, and dry-run branche
 });
 
 import { kxmSupervisorStatus } from "../../plugins/kxm/src/runtime-supervisor.ts";
-import { kxmRuntimePaths } from "../../plugins/kxm/src/runtime-store.ts";
 
 async function waitForSupervisorExit(env: NodeJS.ProcessEnv): Promise<void> {
   const paths = kxmRuntimePaths({ env });
@@ -2323,6 +2324,60 @@ test("lane drop refuses a dirty worktree unless forced, and keeps the branch", a
     assert.equal(branch.status, 0, branch.stderr);
   } finally {
     removeLaneCheckout(root, origin, [unit]);
+  }
+});
+
+test("lane drop unregisters the lane root while the runtime is running and when it is stopped", async () => {
+  const { root, origin } = makeLaneCheckout();
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-lane-drop-state-"));
+  const runningUnit = "slice";
+  const stoppedUnit = "other";
+  let supervisor: Awaited<ReturnType<typeof startKxmRuntimeSupervisor>> | undefined;
+  try {
+    const created = capture();
+    assert.equal(await runCli(["lane", "create", runningUnit, "--json"], {}, created, root), 0, created.read().stderr);
+    const lanePath = (JSON.parse(created.read().stdout) as { lane: { path: string } }).lane.path;
+    const projectId = "prj_01JLANECLI00000000000000";
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    const now = "2026-09-26T00:00:00.000Z";
+    registry.registerProject({ projectId, projectRoot: root, homeRuntimeId: "rtm_lane", now });
+    registry.registerProject({ projectId, projectRoot: lanePath, homeRuntimeId: "rtm_lane", now });
+    assert.ok(registry.projectByRoot(lanePath)?.laneOf);
+    registry.close();
+
+    supervisor = await startKxmRuntimeSupervisor({ stateRoot });
+    const dropped = capture();
+    assert.equal(await runCli(["lane", "drop", runningUnit, "--json"], { KXM_STATE_HOME: stateRoot }, dropped, root), 0, dropped.read().stderr);
+    const afterRun = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.equal(afterRun.projectByRoot(lanePath), undefined);
+      assert.ok(afterRun.projectByRoot(root));
+    } finally {
+      afterRun.close();
+    }
+    await supervisor.stop();
+    supervisor = undefined;
+
+    const createdAgain = capture();
+    assert.equal(await runCli(["lane", "create", stoppedUnit, "--json"], {}, createdAgain, root), 0, createdAgain.read().stderr);
+    const stoppedPath = (JSON.parse(createdAgain.read().stdout) as { lane: { path: string } }).lane.path;
+    const stoppedRegistry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    stoppedRegistry.registerProject({ projectId, projectRoot: stoppedPath, homeRuntimeId: "rtm_lane", now });
+    assert.ok(stoppedRegistry.projectByRoot(stoppedPath)?.laneOf);
+    stoppedRegistry.close();
+    const droppedStopped = capture();
+    assert.equal(await runCli(["lane", "drop", stoppedUnit, "--json"], { KXM_STATE_HOME: stateRoot }, droppedStopped, root), 0, droppedStopped.read().stderr);
+    const afterStop = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      assert.equal(afterStop.projectByRoot(stoppedPath), undefined);
+      assert.ok(afterStop.projectByRoot(root));
+    } finally {
+      afterStop.close();
+    }
+  } finally {
+    if (supervisor) await supervisor.stop();
+    removeLaneCheckout(root, origin, [runningUnit, stoppedUnit]);
+    rmSync(stateRoot, { recursive: true, force: true });
   }
 });
 

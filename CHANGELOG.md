@@ -425,6 +425,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **A git worktree lane registers under its project.** The Runtime registry
+  keeps the home row and adds the lane as its own control root and event
+  store, with the same project id and home runtime (`lane_of` on the lane
+  row). A foreign clone with that id is still `project_home_conflict`. A
+  registered root whose directory is gone is replaced, and that replacement
+  logs one `project_registration_replaced` event. `kxm lane drop` unregisters
+  the lane root when the Runtime is running, and still drops the worktree
+  when the Runtime is stopped. `kxm runs status` and `kxm lane status` print
+  the root they read. Existing registry rows are kept; schema 1 gains the
+  column in place.
 - **`kxm land` names the pull request from the first commit subject and matches the Release run by time.**
   `--title` sets the title; otherwise the subject of the first commit on the
   branch is used, and a missing subject refuses `land_pr_title_missing`. The

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { discoverKxmProjectRoot, kxmResourceIdentifier } from "../project-config.ts";
+import { KxmRuntimeRegistry, kxmRuntimePaths } from "../runtime-store.ts";
 import { attachKxmSupervisor, ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { print, printPlan, workspaceDirs, type Runtime } from "./types.ts";
 
@@ -431,10 +432,35 @@ export async function cmdLaneStatus(runtime: Runtime, unit: string): Promise<num
   print(
     runtime.io,
     runtime.json,
-    { ok: true, command, lane: { ...view, status: runStatus } },
-    `${formatLaneLine(view)} status=${runStatus}`,
+    { ok: true, command, root: record.path, lane: { ...view, status: runStatus } },
+    `${formatLaneLine(view)} status=${runStatus} root=${record.path}`,
   );
   return 0;
+}
+
+/** Remove the lane root from the Runtime registry. A stopped supervisor is not
+ * an error: the row is deleted from the registry file when that file exists. */
+async function unregisterLaneRoot(runtime: Runtime, projectRoot: string): Promise<string | undefined> {
+  try {
+    const project = await import("./project.ts");
+    const request = project.kxmDriveCliSeams.runtimeRequest ?? kxmRuntimeRequest;
+    const handle = await attachKxmSupervisor({ env: runtime.env });
+    if (handle) {
+      await request(handle, "POST", "/v1/projects/unregister", { projectRoot });
+      return undefined;
+    }
+    const paths = kxmRuntimePaths({ env: runtime.env });
+    if (!existsSync(paths.registryDb)) return undefined;
+    const registry = new KxmRuntimeRegistry(paths.registryDb);
+    try {
+      registry.unregisterProject(projectRoot);
+    } finally {
+      registry.close();
+    }
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : "lane root could not be unregistered";
+  }
 }
 
 export async function cmdLaneDrop(runtime: Runtime, unit: string, options: { force?: boolean } = {}): Promise<number> {
@@ -463,10 +489,15 @@ export async function cmdLaneDrop(runtime: Runtime, unit: string, options: { for
   }
   if (runtime.dryRun) {
     printPlan(runtime, { command, unit, branchKept: record.branch }, [
+      { action: "delete", target: `runtime registry ${record.path}` },
       { action: "delete", target: record.path },
       { action: "write", target: lanesFile(runtime) },
     ], `drop lane ${unit}; branch ${record.branch} is not deleted`);
     return 0;
+  }
+  const unregistered = await unregisterLaneRoot(runtime, record.path);
+  if (unregistered !== undefined) {
+    return refuse(runtime, command, "lane_unregister_failed", `lane ${unit} could not be unregistered: ${unregistered.slice(0, 300)}`, { unit });
   }
   if (existsSync(record.path)) {
     const removed = git(root, ["worktree", "remove", ...(force ? ["--force"] : []), record.path]);
