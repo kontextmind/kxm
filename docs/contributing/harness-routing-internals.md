@@ -181,7 +181,7 @@ The developer runner is stricter. Its only Pi writer is `openrouter/qwen/qwen3-c
 For example, the native writer recipe:
 
 ```bash
-kxm lane run brief.md
+kxm lane run <unit> --brief <file> --workflow implement-only
 ```
 
 ## Related

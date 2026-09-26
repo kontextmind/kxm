@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -183,6 +183,8 @@ test("rendered files load as a valid KXM project bundle", () => {
     const report = writeGuideSetupFiles(files);
     assert.equal(report.existed.length, 0);
     assert.equal(report.written.length, files.length);
+    mkdirSync(join(root, "plans", "evidence"), { recursive: true });
+    cpSync("plans/evidence/route-guide-qwen-pi.md", join(root, "plans", "evidence", "route-guide-qwen-pi.md"));
 
     const bundle = loadKxmProject(root);
     assert.equal(bundle.agents.has("lead-systems-planner"), true);
@@ -226,35 +228,31 @@ test("writeGuideSetupFiles never overwrites existing files", () => {
   }
 });
 
-test("Pi guide models hash .kxm/project.yaml and omit origin when that file is absent", () => {
+test("Pi guide models pin origin to the immutable evidence note", () => {
   const plan = planGuideSetup({ inventory: inventory(["claude", "grok", "pi"]), selected: ["build-feature"] });
-  const piBindings = [...plan.agents.values()].filter((binding) => binding.harness === "pi");
-  assert.ok(piBindings.length > 0);
-  const piModels = (root: string) => renderGuideSetupFiles(root, plan).filter((file) => file.path.endsWith(".yaml") && file.path.includes(`${join("models", "")}`) && file.content.includes("harness: pi"));
+  const evidence = "plans/evidence/route-guide-qwen-pi.md";
+  const digest = createHash("sha256").update(readFileSync(evidence)).digest("hex");
+  const piModels = (root: string) => renderGuideSetupFiles(root, plan).filter((file) => file.path.includes(`${join("models", "")}`) && file.content.includes("harness: pi"));
+  const assertPinned = (root: string) => {
+    const files = piModels(root);
+    assert.ok(files.length > 0);
+    for (const file of files) {
+      assert.match(file.content, /source: plans\/evidence\/route-guide-qwen-pi\.md/);
+      assert.match(file.content, new RegExp(digest));
+      assert.equal(file.content.includes(".kxm/project.yaml"), false);
+    }
+  };
   const bare = mkdtempSync(join(tmpdir(), "kxm-guide-origin-bare-"));
   try {
-    const without = piModels(bare);
-    assert.ok(without.length > 0);
-    for (const file of without) assert.equal(file.content.includes("origin:"), false, file.path);
+    assertPinned(bare);
   } finally {
     rmSync(bare, { recursive: true, force: true });
   }
   const root = mkdtempSync(join(tmpdir(), "kxm-guide-origin-"));
   try {
-    const projectYaml = join(root, ".kxm", "project.yaml");
     mkdirSync(join(root, ".kxm"), { recursive: true });
-    writeFileSync(projectYaml, "schema: kxm.project.v1\nid: guide-origin\n");
-    const digest = createHash("sha256").update(readFileSync(projectYaml)).digest("hex");
-    const withOrigin = piModels(root);
-    assert.ok(withOrigin.length > 0);
-    for (const file of withOrigin) {
-      assert.match(file.content, /source: \.kxm\/project\.yaml/);
-      assert.match(file.content, new RegExp(digest));
-      for (const binding of piBindings) {
-        const invented = createHash("sha256").update(`${binding.provider}/${binding.model}`).digest("hex");
-        assert.equal(file.content.includes(invented), false);
-      }
-    }
+    writeFileSync(join(root, ".kxm", "project.yaml"), "schema: kxm.project.v1\nid: guide-origin\n");
+    assertPinned(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

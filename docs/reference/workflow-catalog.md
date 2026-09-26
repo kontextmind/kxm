@@ -1094,11 +1094,11 @@ This cross-reference points each software and security workflow at the KXM pages
 
 These three files live in this repository's `.kxm/workflows`. `kxm init` does not write them.
 
-| Workflow | Replaces |
+| Workflow | Runs through |
 |---|---|
-| `implement-only` | `kxm lane run`. The recipe is retired once this lands. |
-| `review-arch-only` | `kxm lane run`. The recipe is retired once this lands. |
-| `review-cli-only` | `kxm lane run`. The recipe is retired once this lands. |
+| `implement-only` | `kxm lane run`. Replaces a retired transport recipe. |
+| `review-arch-only` | `kxm lane run`. Replaces a retired transport recipe. |
+| `review-cli-only` | `kxm lane run`. Replaces a retired transport recipe. |
 
 ## Related
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
@@ -52,4 +52,98 @@ test("resolveBoundPolicy loads a committed policy and returns that identity", ()
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
+});
+
+function withBoundPolicy(body: (root: string, run: (script: string) => { status: number | null; stderr: string; stdout: string }) => void): void {
+  const fixture = mkdtempSync(join(resolve("."), ".tmp-roster-bind-"));
+  const root = spawnSync("realpath", [fixture], { encoding: "utf8" }).stdout.trim() || fixture;
+  try {
+    mkdirSync(join(root, ".kxm", "models"), { recursive: true });
+    mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
+    mkdirSync(join(root, "plans", "evidence"), { recursive: true });
+    for (const name of ["fable-claude.yaml", "gemini-agy.yaml", "grok-native.yaml", "opus-claude.yaml", "qwen-openrouter-pi.yaml", "sol-codex.yaml"]) {
+      cpSync(join(".kxm", "models", name), join(root, ".kxm", "models", name));
+    }
+    for (const name of ["planner.yaml", "reviewer-arch.yaml", "reviewer-cli.yaml", "writer.yaml"]) {
+      cpSync(join(".kxm", "roles", name), join(root, ".kxm", "roles", name));
+    }
+    cpSync("plans/evidence/route-qwen-openrouter-pi.md", join(root, "plans", "evidence", "route-qwen-openrouter-pi.md"));
+    const source = readFileSync("scripts/roster-policy.mjs", "utf8").replace(
+      "const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');",
+      `const ROOT = ${JSON.stringify(root)};`,
+    );
+    writeFileSync(join(root, "roster-policy.mjs"), source);
+    cpSync("scripts/harness-run.mjs", join(root, "harness-run.mjs"));
+    const git = (...args: string[]) => {
+      const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+      assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);
+    };
+    git("-c", "init.defaultBranch=main", "init", "--quiet");
+    git("add", "-A");
+    git("-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "policy");
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    const run = (script: string) => spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      encoding: "utf8",
+      env: { ...process.env, NODE_PATH: resolve("node_modules") },
+    });
+    body(root, run);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+}
+
+test("loadTrustedRosterPolicy refuses a working role file that differs from the committed bytes", () => {
+  withBoundPolicy((root, run) => {
+    const role = join(root, ".kxm", "roles", "writer.yaml");
+    const listed = spawnSync("git", ["-C", root, "ls-files", "--debug", "--", ".kxm/roles/writer.yaml"], { encoding: "utf8" });
+    const mtime = /mtime: (\d+):(\d+)/.exec(listed.stdout);
+    assert.ok(mtime);
+    const when = Number(mtime[1]) + Number(mtime[2]) / 1e9;
+    const original = readFileSync(role);
+    const flipped = Buffer.from(original.toString("utf8").replace("writer", "writre"));
+    assert.equal(flipped.length, original.length);
+    writeFileSync(role, flipped);
+    utimesSync(role, when, when);
+    const configured = spawnSync("git", ["-C", root, "config", "core.checkStat", "minimal"], { encoding: "utf8" });
+    assert.equal(configured.status, 0, configured.stderr);
+    const index = join(root, ".git", "index");
+    const later = when + 5;
+    utimesSync(index, later, later);
+    const ran = run(`
+      import { loadTrustedRosterPolicy } from ${JSON.stringify(pathToFileURL(join(root, "roster-policy.mjs")).href)};
+      loadTrustedRosterPolicy();
+    `);
+    assert.notEqual(ran.status, 0);
+    assert.match(`${ran.stderr}\n${ran.stdout}`, /working policy differs from committed bytes/);
+  });
+});
+
+test("resolveBoundPolicy refuses a bound commit that is not an ancestor of origin/main", () => {
+  withBoundPolicy((root, run) => {
+    const ran = run(`
+      import { execFileSync } from "node:child_process";
+      import { loadTrustedRosterPolicy, resolveBoundPolicy } from ${JSON.stringify(pathToFileURL(join(root, "roster-policy.mjs")).href)};
+      const loaded = loadTrustedRosterPolicy();
+      execFileSync("git", ["-C", ${JSON.stringify(root)}, "checkout", "--quiet", "-b", "side"]);
+      execFileSync("git", ["-C", ${JSON.stringify(root)}, "commit", "--quiet", "--allow-empty", "-m", "side"], { env: { ...process.env, GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "test@example.test", GIT_COMMITTER_NAME: "Test", GIT_COMMITTER_EMAIL: "test@example.test" } });
+      const side = execFileSync("git", ["-C", ${JSON.stringify(root)}, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+      execFileSync("git", ["-C", ${JSON.stringify(root)}, "checkout", "--quiet", "main"]);
+      resolveBoundPolicy({ ...loaded.identity, commit: side });
+    `);
+    assert.notEqual(ran.status, 0);
+    assert.match(`${ran.stderr}\n${ran.stdout}`, /Git evidence unavailable \(merge-base\)/);
+  });
+});
+
+test("resolveBoundPolicy refuses a changed blob or sha256 after bind", () => {
+  withBoundPolicy((root, run) => {
+    const ran = run(`
+      import { loadTrustedRosterPolicy, resolveBoundPolicy } from ${JSON.stringify(pathToFileURL(join(root, "roster-policy.mjs")).href)};
+      const loaded = loadTrustedRosterPolicy();
+      const flipped = "a".repeat(64);
+      resolveBoundPolicy({ ...loaded.identity, blob: flipped, sha256: flipped });
+    `);
+    assert.notEqual(ran.status, 0);
+    assert.match(`${ran.stderr}\n${ran.stdout}`, /bound identity mismatch/);
+  });
 });

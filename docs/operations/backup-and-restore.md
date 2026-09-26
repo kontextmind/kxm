@@ -15,7 +15,7 @@ KXM spreads state over six roots. Some of them move with environment variables, 
 ```mermaid
 flowchart TB
   subgraph R["$R checkout root: the Git checkout, never moves"]
-    R1["Project definition: .kxm/project.yaml, config.yaml, agents/, models/, workflows/, gates.yaml, roles/, roles, routes.yaml, the role files, prices.yaml, repo/, project/env.yaml"]
+    R1["Project definition: .kxm/project.yaml, config.yaml, agents/, workflows/, gates.yaml, .kxm/roles/, .kxm/models/, routes.yaml, prices.yaml, repo/, project/env.yaml"]
     R2["Durable records: .kxm/memory/, skills/, goals/, tasks/, candidates/"]
   end
   subgraph D["$D workspace: KXM_WORKSPACE_DIR or --workspace, default $R/.kxm"]
@@ -31,7 +31,7 @@ flowchart TB
     S2["hub-env.json, hub-binding.json, update.yaml, projects/HASH/repository-bindings.json"]
   end
   subgraph C["$C user config: KXM_USER_CONFIG_DIR, default ~/.config/kxm"]
-    C1["config.yaml, roles/, workflows/, roles, session.token"]
+    C1["config.yaml, workflows/, session.token. Checkout routing lives in .kxm/roles/ and .kxm/models/"]
   end
   subgraph T["$T federated telemetry: XDG_CONFIG_HOME/kxm/telemetry"]
     T1["model-metrics.jsonl, not written by any command today"]
@@ -71,13 +71,13 @@ The Runtime registry and the other projects' event stores are shared by every pr
 | `$S/runtime/registry.db` | Runtime registry: projects, their roots and home Runtime, the supervisor identity and claim | Only with `--all-projects` (`registry`) |
 | `$S/projects/<hash>/repository-bindings.json`, `$S/update.yaml` | Member repository paths; updater settings | No |
 | `$S/hub-env.json`, `$S/hub-binding.json`, `$C/session.token` | Credentials and the machine's hub binding | No; prefer regenerating secrets to copying them |
-| `$R/.kxm/` definition files and durable records | Project, roles, routes, prices, roster, memory, skills, goals, tasks, candidates | No; commit them to Git or copy the checkout |
+| `$R/.kxm/` definition files and durable records | Project, `.kxm/roles/`, `.kxm/models/`, routes, prices, memory, skills, goals, tasks, candidates | No; commit them to Git or copy the checkout |
 | Each member repository's `.kxm/repo/*.yaml` | Member definition and environment | No; they live in the member's own checkout |
 | `$W/worker-*.json`, `$W/pi-sessions/` | Worker routing and recovery manifests; Pi model history | No; manifests are required for resumable workers, Pi history is optional |
 | `$D/assets/`, `$D/logs/` | Retrospectives and evidence; logs and local usage accounting (`telemetry.jsonl`) | No |
 | `$C` | User-level roles, workflows and settings | No |
 
-A restore without `the role files`, `routes.yaml` or `prices.yaml` comes back healthy but with different admission and cost behavior, so treat them as part of the backup even though they are plain files. `kxm improve report --out-dir` can write candidates outside `$R/.kxm/candidates/`; include that directory if you use it.
+A restore without `.kxm/roles/`, `.kxm/models/`, `routes.yaml`, or `prices.yaml` comes back healthy but with different admission and cost behavior, so treat them as part of the backup even though they are plain files. `kxm improve report --out-dir` can write candidates outside `$R/.kxm/candidates/`; include that directory if you use it.
 
 These files are disposable and need no backup: `hub.pid`, `hub.stop`, `worker-*.pid`, `session-brief.json`, `update-check.json`, `runtime/supervisor.token`, `runtime/supervisor.error`.
 

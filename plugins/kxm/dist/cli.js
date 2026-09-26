@@ -50873,8 +50873,8 @@ init_telemetry();
 init_routing();
 init_prices();
 import { spawnSync as spawnSync12 } from "node:child_process";
-import { createHash as createHash20 } from "node:crypto";
-import { existsSync as existsSync44, mkdtempSync as mkdtempSync3, readFileSync as readFileSync41, rmSync as rmSync13 } from "node:fs";
+import { createHash as createHash19 } from "node:crypto";
+import { existsSync as existsSync44, mkdtempSync as mkdtempSync3, readFileSync as readFileSync40, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
 import { basename as basename11, extname as extname3, join as join54, resolve as resolve32 } from "node:path";
 import { createInterface as createInterface3 } from "node:readline";
@@ -52505,8 +52505,7 @@ ${line}
 // plugins/kxm/src/init-guide-setup.ts
 var import_yaml18 = __toESM(require_dist(), 1);
 init_routes();
-import { createHash as createHash19 } from "node:crypto";
-import { existsSync as existsSync43, mkdirSync as mkdirSync32, readFileSync as readFileSync40, writeFileSync as writeFileSync28 } from "node:fs";
+import { existsSync as existsSync43, mkdirSync as mkdirSync32, writeFileSync as writeFileSync28 } from "node:fs";
 import { dirname as dirname24, join as join53 } from "node:path";
 var ADMITTED_GUIDE_BINDINGS = Object.freeze({
   "anthropic/claude-fable-5.1": { harness: "claude", provider: "anthropic", model: "fable" },
@@ -52887,9 +52886,11 @@ function workflowDocument(workflow) {
     steps
   };
 }
+var GUIDE_PI_ORIGIN = {
+  source: "plans/evidence/route-guide-qwen-pi.md",
+  sha256: "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759"
+};
 function renderGuideSetupFiles(projectRoot, plan) {
-  const projectYaml = join53(projectRoot, ".kxm", "project.yaml");
-  const projectOrigin = existsSync43(projectYaml) ? { source: ".kxm/project.yaml", sha256: createHash19("sha256").update(readFileSync40(projectYaml)).digest("hex") } : void 0;
   const files = [];
   const roleStages = /* @__PURE__ */ new Map();
   for (const workflow of plan.workflows) {
@@ -52909,7 +52910,7 @@ function renderGuideSetupFiles(projectRoot, plan) {
       status: "admitted",
       permissions: [writer ? "edit" : "read-only"]
     };
-    if (binding.harness === "pi" && projectOrigin) modelDocument.origin = projectOrigin;
+    if (binding.harness === "pi") modelDocument.origin = { ...GUIDE_PI_ORIGIN };
     files.push({
       path: join53(projectRoot, ".kxm", "agents", `${role}.yaml`),
       content: (0, import_yaml18.stringify)(agentDocument(role, stage))
@@ -53038,7 +53039,7 @@ function applyKxmPackageUpdate(runtime, notice) {
     for (const step of planned) {
       if (step.kind === "verify") {
         if (!verifyReleaseAssetDigest(step.path, step.sha256)) {
-          const actual = existsSync44(step.path) ? createHash20("sha256").update(readFileSync41(step.path)).digest("hex") : "missing";
+          const actual = existsSync44(step.path) ? createHash19("sha256").update(readFileSync40(step.path)).digest("hex") : "missing";
           return {
             ok: false,
             error: "release_digest_mismatch",
@@ -53321,7 +53322,7 @@ async function cmdValidate(runtime, fileFlag) {
     return 1;
   }
   try {
-    const raw = file ? readFileSync41(file, "utf8") : inline;
+    const raw = file ? readFileSync40(file, "utf8") : inline;
     if (explicitFile && file && !raw.trimStart().startsWith("[")) {
       const value = parseRestrictedYaml2(raw, file);
       const issues = new KxmSchemaRegistry().validate("workflow", value, file);
@@ -53571,7 +53572,7 @@ async function maybeOfferCompletionInstall(runtime) {
     const { rcFile } = completionRcTarget(shell, { env: runtime.env });
     if (rcFile && existsSync44(rcFile)) {
       try {
-        if (readFileSync41(rcFile, "utf8").includes(scriptPath)) return;
+        if (readFileSync40(rcFile, "utf8").includes(scriptPath)) return;
       } catch {
       }
     }

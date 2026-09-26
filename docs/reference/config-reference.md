@@ -323,13 +323,19 @@ One file per agent; the filename is the agent ID that workflow steps
 reference. Schema: `schemas/agent.schema.json`; semantic checks in
 `validateBundle` in `plugins/kxm/src/project-config.ts`.
 
+An agent does not name a harness or a model. Routing starts at the agent's
+`role`, continues through `.kxm/roles/<role>.yaml`, and uses the selected
+`.kxm/models/<route>.yaml`. `harness` and `model` on an agent file fail load
+with `retired_agent_routing_fields`.
+
 | Field | Type and allowed values | Required, default | What reads it |
 |---|---|---|---|
 | `schema` | `kxm.agent.v1` | Required | Loader |
 | `purpose` | String, 1 to 2,000 characters | Required | Display; neutral in `kxm trust` |
+| `role` | Identifier | Optional | Loader: `.kxm/roles/<role>.yaml`, then the selected `.kxm/models/<route>.yaml` |
+| `effort` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Optional | Recorded on the agent. Dispatch effort comes from the attempt, not this field. |
+| `skills` | Unique identifiers, at most 64 | Optional | Skill names granted to the agent |
 | `instructions` | String, at most 16,000 characters | Optional | Not read by any code path yet. Step `instructions` are what reach the prompt. |
-| `harness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, the project's `defaultHarness` | Loader (`harness_unknown`, harness and model pairing); live dispatch launches this harness |
-| `model` | One selector: `{provider, model}`, `{profile}`, or `{tag, capabilities}` | Optional | See [Model selectors](#model-selectors) |
 | `executor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the executor-policy revision; no dispatch path selects an executor from it yet |
 | `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`): the preset must be registered. Narrowing an agent preset against the role preset is not validated yet (P3). |
 | `tools.allow`, `tools.deny` | Unique identifiers, at most 128 each | Optional | A tool in both lists is `tool_policy_contradiction`; steps may only narrow the ceiling |
@@ -344,80 +350,24 @@ reference. Schema: `schemas/agent.schema.json`; semantic checks in
 | `session.maxIdleMs` | Integer, 0 to 31,536,000,000 | Optional | Not read by any code path yet |
 
 Tool presets are names checked against a registered list. The live one-shot
-producer launches each harness with a fixed argument set and does not
-translate `tools` into harness flags. A read-only step uses the read-only set
-(`READ_ONLY_ONESHOT_ARGS` in `plugins/kxm/src/harness.ts`). A step with `write`
-access uses the audited writer set (`WRITER_ONESHOT_ARGS`), which exists only
-for `pi` (`-a` with extensions, skills, prompt templates and sessions off) and
-`grok` (`--always-approve` with subagents and web search off). Both approve
-every tool call, shell commands included, and neither confines the process to
-the checkout. A live write step on any other harness is handed off; see
+producer launches the harness named by the selected model file, with a fixed
+argument set, and does not translate `tools` into harness flags. A read-only
+step uses the read-only set (`READ_ONLY_ONESHOT_ARGS` in
+`plugins/kxm/src/harness.ts`). A step with `write` access uses the audited
+writer set (`WRITER_ONESHOT_ARGS`), which exists only for `pi` (`-a` with
+extensions, skills, prompt templates and sessions off) and `grok`
+(`--always-approve` with subagents and web search off). Both approve every
+tool call, shell commands included, and neither confines the process to the
+checkout. A live write step on any other harness is handed off; see
 [Steps the Runtime does not execute yet](#steps-the-runtime-does-not-execute-yet).
 
-### Model selectors
-
-A selector has exactly one of three shapes (`common.schema.json#/$defs/modelSelector`):
-
-| Shape | Fields | Resolves to |
-|---|---|---|
-| Direct | `provider` (identifier), `model` (1 to 200 characters) | That provider and model. The route string is `provider/model`, for example `openrouter/qwen/qwen3-coder-plus`. |
-| Profile | `profile` (identifier) | `.kxm/models/<profile>.yaml` (`model_profile_unknown` if missing) |
-| Tag | `tag` (identifier), optional `capabilities` (identifiers) | Every profile carrying the tag and all listed capabilities (`model_tag_unresolved` if none) |
-
-For live dispatch, only the direct shape works. The Runtime reads the agent's
-`model.provider` and `model.model` and joins them into the route string; a
-profile or tag selector validates at load time but live dispatch refuses the
-step with `producer_route_unsupported: invalid model declaration`. An agent
-with no model is refused too, except that an agent named `implementer`
-without a model falls back to `xai/grok-4.6`.
-
-### Harness and model pairing
-
-The loader checks that the agent's harness can host its model, using
-`validateHarnessModelPair` in `plugins/kxm/src/harness.ts`. It applies this
-check only to models reached through a profile or tag selector. A direct
-`{provider, model}` selector is not checked at load time; the live producer
-checks it when it probes the harness before dispatch.
-
-| Harness | Accepts |
-|---|---|
-| `claude` | Provider `anthropic`; rejects model IDs starting with `gpt-`, `o1-`, `o3-`, `grok-`, `gemini-`, `kimi-`, `moonshot-`, `deepseek-`, or `qwen-` |
-| `codex` | Provider `openai`; rejects `claude-`, `fable-`, `grok-`, `gemini-`, `kimi-`, `moonshot-`, `deepseek-`, and `qwen-` models |
-| `grok` | Provider `xai` and `grok-` models |
-| `agy` | Provider `google` and `gemini-` models |
-| `kimi` | Provider `moonshot` and `kimi`, `moonshot`, or `kimi-for-coding` models |
-| `deepseek` | Provider `deepseek` and `deepseek-` models |
-| `pi` | Refuses a native vendor's model named directly, through the vendor's Pi provider or behind an aggregator, except `antigravity/gemini-…` (`pi_native_impersonation_blocked`); see [the brake](harness-routing.md#what-the-brake-refuses) |
-
-A mismatch is reported as `harness_unhosted_model`. Which route to choose for a
-model that more than one harness can reach is covered in
-[Harness routing](harness-routing.md).
-
-### Live dispatch requirements
-
-Before a live attempt, the Runtime (`resolveProducerRoute` in
-`plugins/kxm/src/engine.ts`) requires all of the following. A failure hands the
-run off with `step_unsupported` and a `producer_route_unsupported` detail.
-
-1. The agent declares a direct `{provider, model}` selector (see above).
-2. `provider/model` is listed in `.kxm/routes.yaml` `admitted` and not in
-   `disabled`.
-3. If `.kxm/roles/<role>.yaml` exists, its roster contains exactly
-   `provider/model`. The role is the agent ID, except that agent
-   `implementer` maps to role `writer`.
-
-Example (validated with `kxm init --json`):
+Example (the shape `kxm init` writes for `implementer`):
 
 ```yaml
-# .kxm/agents/implementer.yaml — the filename is the agent id.
+# .kxm/agents/implementer.yaml. The filename is the agent id.
 schema: kxm.agent.v1
 purpose: Implement the approved change within the declared repository scope.
-instructions: Keep changes inside the files named by the approved plan.
-harness: grok                     # pi | claude | codex | grok | agy | kimi | deepseek
-model:                            # direct selector: provider + model
-  provider: xai
-  model: grok-4.6
-executor: local                   # local | ssh | exe-dev
+role: writer                      # .kxm/roles/writer.yaml -> .kxm/models/<route>.yaml
 tools:
   preset: workspace-writer        # coordinator | read-only | workspace-writer | tests-writer
   allow: [read, edit, write, bash]
@@ -425,45 +375,26 @@ tools:
 defaultRepositoryAccess: none     # ceiling for repositories not listed below
 repositories:
   control: write
-  api: write
 secrets:
   - ref: npm-token                # secret reference name
     as: NPM_TOKEN                 # environment variable name inside the attempt
     required: false
 network: provider-only            # none | provider-only | restricted | host
 resultSchema: kxm.assignment-result.v1
-session:
-  reuse: compatible-run-scope
-  maxIdleMs: 1800000
 ```
 
-A critic that uses a profile selector:
+`kxm init` creates `coordinator` (`role: planner`) and `implementer`
+(`role: writer`) without `harness` or `model`, and admits `anthropic/fable`
+and `xai/grok-4.6` in `.kxm/routes.yaml`. An interactive `kxm init` can add
+workflow-guide agents for reviewed pairs whose harness is authenticated, and
+admits their selectors too, but skips Google guide candidates because the
+Runtime cannot reach the `antigravity` Pi provider yet. `kxm run` and the
+Runtime read the agents. `kxm trust` diffs them.
 
-```yaml
-schema: kxm.agent.v1
-purpose: Architecture critic for the approved change.
-harness: claude
-model:
-  profile: critic-claude          # profile selector: .kxm/models/critic-claude.yaml
-tools:
-  preset: read-only
-defaultRepositoryAccess: read
-network: provider-only
-resultSchema: kxm.assignment-result.v1
-```
-
-Error codes: `executor_unknown`, `harness_unknown`, `tool_preset_unknown`,
-`tool_policy_contradiction`, `repository_unknown`, `model_profile_unknown`,
-`model_tag_unresolved`, `harness_unhosted_model`,
-`pi_native_impersonation_blocked`, the path codes under
-[Rules shared by the project bundle](#rules-shared-by-the-project-bundle), and
-Commands: `kxm init` creates `coordinator` (`role: planner`) and
-`implementer` (`role: writer`) without `harness` or `model`, and admits
-`anthropic/fable` and `xai/grok-4.6` in `.kxm/routes.yaml`; an interactive `kxm init` can add workflow-guide agents for
-reviewed harness/model pairs whose harness is authenticated, and admits their
-selectors too, but skips Google guide candidates because the Runtime cannot
-reach the `antigravity` Pi provider yet; `kxm run` and the Runtime read them;
-`kxm trust` diffs them.
+Error codes: `retired_agent_routing_fields`, `executor_unknown`,
+`tool_preset_unknown`, `tool_policy_contradiction`, `repository_unknown`, and
+the path codes under
+[Rules shared by the project bundle](#rules-shared-by-the-project-bundle).
 
 ## `.kxm/models/<id>.yaml` (`kxm.model.v2`)
 
