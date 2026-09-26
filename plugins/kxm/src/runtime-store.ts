@@ -166,6 +166,20 @@ function gitCommonDirectory(projectRoot: string): string | undefined {
   return process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
 }
 
+/** A primary checkout is the worktree whose git common dir is `<root>/.git`. */
+function isPrimaryWorktree(projectRoot: string, commonDir: string | undefined): boolean {
+  if (commonDir === undefined) return false;
+  const dotGit = resolve(projectRoot, ".git");
+  let canonical: string;
+  try {
+    canonical = realpathSync.native(dotGit);
+  } catch {
+    canonical = resolve(dotGit);
+  }
+  if (process.platform === "win32") canonical = canonical.toLocaleLowerCase("en-US");
+  return canonical === commonDir;
+}
+
 /**
  * Registry schema 1 keyed `projects` on project id, so a second control root
  * could not be stored. Schema 2 keys on the control root and adds `lane_of`.
@@ -349,8 +363,12 @@ export class KxmRuntimeRegistry {
   /**
    * Register or revalidate a control root. The home runtime of a live row is
    * immutable. A second root whose git common directory matches a live row
-   * for the same project is a lane. A root whose directory is gone is replaced.
-   * A live root that is a different repository is `project_home_conflict`.
+   * for the same project is a lane, unless the registering root is the primary
+   * worktree and the live home row is not: then the primary becomes the home
+   * row (same home runtime id) and every other live row of that repository
+   * becomes its lane. A primary never becomes a lane. A root whose directory
+   * is gone is replaced. A live root that is a different repository is
+   * `project_home_conflict`.
    */
   registerProject(registration: {
     projectId: string;
@@ -413,6 +431,34 @@ export class KxmRuntimeRegistry {
               "project_home_conflict",
               ".kxm/project.yaml",
               `project ${registration.projectId} home runtime is immutable and cannot be rebound`,
+            );
+          }
+          const sameRepo = live.filter((row) => commonByRoot.get(row.project_root) === candidateCommon);
+          const home = sameRepo.find((row) => row.lane_of === null);
+          const registeringIsPrimary = isPrimaryWorktree(projectRoot, candidateCommon);
+          const homeIsPrimary = home !== undefined && isPrimaryWorktree(home.project_root, commonByRoot.get(home.project_root));
+          if (registeringIsPrimary && !homeIsPrimary) {
+            this.insertHome(registration, projectRoot, projectKey);
+            for (const row of sameRepo) {
+              this.database.prepare("UPDATE projects SET lane_of = ? WHERE project_key = ?").run(projectKey, row.project_key);
+            }
+            this.database.exec("COMMIT");
+            registration.logger?.({
+              event: "project_home_promoted",
+              projectId: registration.projectId,
+              projectRoot,
+              homeRuntimeId: registration.homeRuntimeId,
+              previousHomeRoot: home?.project_root ?? null,
+              previousHomeKey: home?.project_key ?? null,
+            });
+            return this.insertedRegistration(registration, projectRoot, projectKey);
+          }
+          if (registeringIsPrimary) {
+            this.database.exec("ROLLBACK");
+            throw runtimeError(
+              "project_home_conflict",
+              ".kxm/project.yaml",
+              `project ${registration.projectId} primary checkout is already the home row`,
             );
           }
           const laneOf = anchor.lane_of ?? anchor.project_key;

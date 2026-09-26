@@ -1442,3 +1442,83 @@ test("a registered root whose directory is gone is replaced and logs one event",
     cleanup(root, stateRoot, replacement);
   }
 });
+
+test("a primary checkout takes the home row from a lane that registered first", () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-promote-");
+  const worktree = join(dirname(root), `${basename(root)}-lane`);
+  try {
+    const added = spawnSync("git", ["-C", root, "worktree", "add", "-b", "lane-b", worktree, "HEAD"], { encoding: "utf8", windowsHide: true });
+    assert.equal(added.status, 0, added.stderr);
+    const projectId = String(loadKxmProject(root).project.value.id);
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      const now = "2026-09-26T00:00:00.000Z";
+      const events: Array<Record<string, unknown>> = [];
+      const laneFirst = registry.registerProject({
+        projectId,
+        projectRoot: worktree,
+        homeRuntimeId: "rtm_one",
+        now,
+        logger: (entry) => events.push(entry),
+      });
+      assert.equal(laneFirst.laneOf, undefined);
+      const primary = registry.registerProject({
+        projectId,
+        projectRoot: root,
+        homeRuntimeId: "rtm_one",
+        now: "2026-09-26T01:00:00.000Z",
+        logger: (entry) => events.push(entry),
+      });
+      assert.equal(events.length, 1);
+      assert.equal(events[0]?.event, "project_home_promoted");
+      assert.equal(primary.laneOf, undefined);
+      assert.equal(primary.homeRuntimeId, "rtm_one");
+      assert.equal(registry.project(projectId)?.projectRoot, resolve(root));
+      assert.equal(registry.projectByRoot(worktree)?.laneOf, primary.projectKey);
+      assert.equal(registry.unregisterProject(worktree), true);
+      assert.equal(registry.projectByRoot(worktree), undefined);
+      assert.equal(registry.project(projectId)?.projectRoot, resolve(root));
+    } finally {
+      registry.close();
+    }
+  } finally {
+    spawnSync("git", ["-C", root, "worktree", "remove", "--force", worktree], { encoding: "utf8", windowsHide: true });
+    cleanup(root, stateRoot, worktree);
+  }
+});
+
+test("a dead row whose home runtime differs is refused and left in place", () => {
+  const { root, stateRoot } = committedProject("kxm-runtime-dead-home-");
+  const replacement = mkdtempSync(join(tmpdir(), "kxm-runtime-dead-home-next-"));
+  try {
+    const projectId = String(loadKxmProject(root).project.value.id);
+    const registry = new KxmRuntimeRegistry(kxmRuntimePaths({ stateRoot }).registryDb);
+    try {
+      const now = "2026-09-26T00:00:00.000Z";
+      const original = registry.registerProject({ projectId, projectRoot: root, homeRuntimeId: "rtm_one", now });
+      rmSync(root, { recursive: true, force: true });
+      assert.throws(
+        () => registry.registerProject({
+          projectId,
+          projectRoot: replacement,
+          homeRuntimeId: "rtm_two",
+          now: "2026-09-26T01:00:00.000Z",
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof KxmConfigError);
+          assert.equal(error.issues[0]?.code, "project_home_conflict");
+          return true;
+        },
+      );
+      const left = registry.project(projectId);
+      assert.equal(left?.projectKey, original.projectKey);
+      assert.equal(left?.homeRuntimeId, "rtm_one");
+      assert.equal(left?.projectRoot, original.projectRoot);
+      assert.equal(registry.projectByRoot(replacement), undefined);
+    } finally {
+      registry.close();
+    }
+  } finally {
+    cleanup(root, stateRoot, replacement);
+  }
+});
