@@ -6,3 +6,6 @@ vendor: openai
 status: admitted
 permissions:
   - read-only
+origin:
+  source: .kxm/roster.yaml
+  sha256: b2bd628604e8fec5afdff2a1f2c104ed14ff785686bb1f38272bc972a310c806

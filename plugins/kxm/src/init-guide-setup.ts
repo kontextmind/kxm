@@ -29,7 +29,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stringify } from "yaml";
 import { type HarnessInventory } from "./harness.ts";
@@ -487,9 +487,14 @@ function workflowDocument(workflow: GuideWorkflow): Record<string, unknown> {
 
 /**
  * Render the planned KXM resource files (`.kxm/agents/*.yaml`,
- * `.kxm/workflows/*.yaml`). Pure: no disk access.
+ * `.kxm/workflows/*.yaml`). A Pi model origin hashes `.kxm/project.yaml`
+ * when that file exists, and is omitted when it does not.
  */
 export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan): GuideSetupFile[] {
+  const projectYaml = join(projectRoot, ".kxm", "project.yaml");
+  const projectOrigin = existsSync(projectYaml)
+    ? { source: ".kxm/project.yaml", sha256: createHash("sha256").update(readFileSync(projectYaml)).digest("hex") }
+    : undefined;
   const files: GuideSetupFile[] = [];
   const roleStages = new Map<string, GuideStage>();
   for (const workflow of plan.workflows) {
@@ -509,12 +514,7 @@ export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan)
       status: "admitted",
       permissions: [writer ? "edit" : "read-only"],
     };
-    if (binding.harness === "pi") {
-      modelDocument.origin = {
-        source: ".kxm/project.yaml",
-        sha256: createHash("sha256").update(`${binding.provider}/${binding.model}`).digest("hex"),
-      };
-    }
+    if (binding.harness === "pi" && projectOrigin) modelDocument.origin = projectOrigin;
     files.push({
       path: join(projectRoot, ".kxm", "agents", `${role}.yaml`),
       content: stringify(agentDocument(role, stage, binding)),

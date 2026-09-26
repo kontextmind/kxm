@@ -17,6 +17,7 @@ import {
   removeRole,
   type KxmRoleDefinition,
 } from "../../plugins/kxm/src/role.ts";
+import { setRouteState } from "../../plugins/kxm/src/routes.ts";
 import {
   addWorkflowDefinition,
   getWorkflowDefinition,
@@ -901,6 +902,33 @@ test("role add writes a local role only at the project root, and only if the pro
     const repaired = await kxm(["role", "add", "writer", "--model", "fable-agent", "--overwrite"]);
     assert.equal(repaired.code, 0, repaired.err);
     assert.ok(loadKxmProject(project));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("setRouteState refuses an unknown route and does not default a new role to edit", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-route-bind-"));
+  try {
+    assert.throws(() => setRouteState(root, "xai/missing-model", "admitted", "planner"), /unknown route/);
+    assert.equal(existsSync(join(root, ".kxm", "routes.yaml")), false);
+    mkdirSync(join(root, ".kxm", "models"), { recursive: true });
+    writeFileSync(join(root, ".kxm", "models", "planner-route.yaml"), [
+      "schema: kxm.model.v2",
+      "id: planner-route",
+      "harness: claude",
+      "model: fable",
+      "vendor: anthropic",
+      "status: admitted",
+      "permissions:",
+      "  - read-only",
+      "",
+    ].join("\n"));
+    setRouteState(root, "anthropic/fable", "admitted", "planner");
+    const role = parseRoleFile(join(root, ".kxm", "roles", "planner.yaml"));
+    assert.equal(role?.purpose, "planner");
+    assert.equal(role?.permission, "read-only");
+    assert.deepEqual(role?.roster, [{ route: "planner-route" }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

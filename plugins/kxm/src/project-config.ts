@@ -1261,20 +1261,36 @@ function validateBundle(
 }
 
 function developerCeilings(): {
+  ok: true;
   ROUTES: Record<string, { provider: string; permissions: readonly string[]; models?: readonly string[]; roles?: readonly string[]; efforts?: readonly string[] }>;
   NATIVE_PI_BRAKE_PROVIDERS: string[];
   PI_ALLOWED_PROVIDERS: string[];
   PI_NATIVE_VENDOR_PROVIDERS: Record<string, string>;
-} {
+} | { ok: false; detail: string } {
   const script = join(findKxmRepoRoot(import.meta.url), "scripts", "harness-run.mjs");
-  const loaded = spawnSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
-    encoding: "utf8",
-    timeout: 15000,
-  });
-  if (loaded.status !== 0 || !loaded.stdout) {
-    return { ROUTES: {}, NATIVE_PI_BRAKE_PROVIDERS: [], PI_ALLOWED_PROVIDERS: [], PI_NATIVE_VENDOR_PROVIDERS: {} };
+  let loaded;
+  try {
+    loaded = spawnSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
+      encoding: "utf8",
+      timeout: 15000,
+    });
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
   }
-  return JSON.parse(loaded.stdout) as ReturnType<typeof developerCeilings>;
+  if (loaded.error) {
+    const code = (loaded.error as NodeJS.ErrnoException).code;
+    const detail = code === "ETIMEDOUT" || loaded.signal ? `timed out after 15s (${loaded.error.message})` : loaded.error.message;
+    return { ok: false, detail };
+  }
+  if (loaded.status !== 0 || !loaded.stdout) {
+    const stderr = (loaded.stderr ?? "").trim();
+    return { ok: false, detail: stderr || `scripts/harness-run.mjs exited ${loaded.status}` };
+  }
+  try {
+    return { ok: true, ...JSON.parse(loaded.stdout) as { ROUTES: Record<string, { provider: string; permissions: readonly string[]; models?: readonly string[]; roles?: readonly string[]; efforts?: readonly string[] }>; NATIVE_PI_BRAKE_PROVIDERS: string[]; PI_ALLOWED_PROVIDERS: string[]; PI_NATIVE_VENDOR_PROVIDERS: Record<string, string> } };
+  } catch (error) {
+    return { ok: false, detail: `ceilings JSON parse failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
@@ -1283,6 +1299,7 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
   const roles: Record<string, JsonObject> = {};
   const models: Record<string, JsonObject> = {};
   const evidence: Record<string, string> = {};
+  const parseIssues: KxmConfigIssue[] = [];
   const readMap = (dir: string, into: Record<string, JsonObject>, skipInventory: boolean) => {
     if (!existsSync(dir)) return;
     for (const name of readdirSync(dir)) {
@@ -1293,7 +1310,10 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
         const value = parseRestrictedYaml(readFileSync(join(dir, name), "utf8"), `${dir}/${name}`);
         into[id] = value;
       } catch (error) {
-        if (error instanceof KxmConfigError) return;
+        if (error instanceof KxmConfigError) {
+          parseIssues.push(...error.issues);
+          continue;
+        }
       }
     }
   };
@@ -1307,6 +1327,9 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
     if (existsSync(evidenceFile)) evidence[source] = readFileSync(evidenceFile, "utf8");
   }
   const ceilings = developerCeilings();
+  if (!ceilings.ok) {
+    return [...parseIssues, issue("semantic", "developer_ceilings_unavailable", ".kxm/roster.yaml", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+  }
   const result = validatePolicyDraft({ models, roles, evidence }, {
     ceilings: ceilings.ROUTES,
     nativePiBrakeProviders: ceilings.NATIVE_PI_BRAKE_PROVIDERS,
@@ -1314,8 +1337,8 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
     piNativeVendorProviders: ceilings.PI_NATIVE_VENDOR_PROVIDERS,
     vendorAliases: { "x-ai": "xai", moonshotai: "moonshot", "google-ai": "google", qwen: "alibaba" },
   });
-  if (result.ok) return [];
-  return result.issues.map((entry) => issue(entry.phase, entry.code, entry.file, entry.message));
+  if (result.ok) return parseIssues;
+  return [...parseIssues, ...result.issues.map((entry) => issue(entry.phase, entry.code, entry.file, entry.message))];
 }
 
 export function kxmCanonicalJson(value: JsonValue): string {

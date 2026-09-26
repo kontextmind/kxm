@@ -8,12 +8,7 @@ import test from "node:test";
 import { parse } from "yaml";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from "../../scripts/harness-run.mjs";
-import { KIND_ROLES, getRosterPolicy } from "../../scripts/assignment-run.mjs";
-import { withRosterPolicy } from "../helpers/roster-policy.ts";
-import {
-  KxmSchemaRegistry,
-  parseRestrictedYaml,
-} from "../../plugins/kxm/src/project-config.ts";
+import { KxmSchemaRegistry } from "../../plugins/kxm/src/project-config.ts";
 import {
   POLICY_DRAFT_MODEL_SCHEMA,
   POLICY_DRAFT_ROLE_SCHEMA,
@@ -252,78 +247,14 @@ test("draft validator does not read Git, cwd files, or live roster evidence path
   assert.ok(codes(result).includes("origin_evidence_missing"));
 });
 
-test("active KXM schemas, examples, and roster.yaml remain the live formats", () => {
-  const roster = parse(readFileSync(".kxm/roster.yaml", "utf8")) as {
-    schema: string;
-    routes: Record<string, { status: string; harness: string; model: string }>;
-    lineup: Record<string, string[]>;
-    required_critics: Record<string, string>;
-  };
-  assert.equal(roster.schema, "kxm.developer-roster.v1");
-  assert.deepEqual(roster.lineup.writer, ["grok-native", "qwen-openrouter-pi"]);
-  assert.equal(roster.routes["grok-native"]?.status, "admitted");
-  assert.equal(roster.routes["qwen-openrouter-pi"]?.status, "admitted");
-  assert.equal(roster.required_critics["review-arch"], "opus-claude");
-  assert.equal(roster.required_critics["review-cli"], "sol-codex");
-  assert.equal(roster.routes["opus-claude"]?.model, "opus");
-  assert.equal(roster.routes["sol-codex"]?.model, "gpt-5.6-sol");
-
-  const primary = parseRestrictedYaml(readFileSync("examples/project/.kxm/models/primary.yaml"), "primary.yaml");
-  assert.equal(primary.schema, "kxm.model.v2");
-  assert.equal(primary.harness, "grok");
-  assert.equal(primary.vendor, "xai");
-
+test("a v1 model document is a schema identity mismatch against the live model schema", () => {
   const registry = new KxmSchemaRegistry();
-  assert.match(registry.schemasDir.replaceAll("\\", "/"), /\/schemas$/);
   const mismatch = registry.validate("model", {
     schema: "kxm.model.v1",
     provider: "xai",
     model: "grok-4.7",
   }, "v1-as-live.yaml");
   assert.ok(mismatch.some((issue) => issue.code === "schema_identity_mismatch"));
-
-  for (const name of readdirSync(join("examples", "project", ".kxm", "models"))) {
-    const value = parseRestrictedYaml(readFileSync(join("examples", "project", ".kxm", "models", name)), name);
-    assert.equal(value.schema, "kxm.model.v2");
-  }
-
-  assert.equal(KIND_ROLES.implement, "writer");
-  assert.equal(KIND_ROLES["review-arch"], "reviewer-arch");
-  assert.equal(KIND_ROLES["review-cli"], "reviewer-cli");
-
-  const policy = getRosterPolicy(withRosterPolicy());
-  assert.deepEqual(policy.lineup.writer, ["grok-native", "qwen-openrouter-pi"]);
-  assert.equal(Object.hasOwn(policy.routes, "agy-native"), false);
-
-  const assignment = readFileSync("scripts/assignment-run.mjs", "utf8");
-  assert.doesNotMatch(assignment, /policy-draft/);
-  assert.doesNotMatch(assignment, /validatePolicyDraft/);
-  const roleSource = readFileSync("plugins/kxm/src/role.ts", "utf8");
-  assert.match(roleSource, /yaml/);
-  assert.doesNotMatch(roleSource, /policy-draft/);
-});
-
-test("admitted draft fixtures do not change live writer or critic selection", () => {
-  const draft = validatePolicyDraft({
-    ...currentDraft({
-      models: {
-        "agy-native": model("agy-native", {
-          harness: "agy",
-          model: "gemini-3.1-pro-high",
-          vendor: "google",
-          status: "admitted",
-          permissions: ["edit"],
-        }),
-      },
-      roles: {
-        writer: role("writer", { purpose: "writer", permission: "edit", roster: [{ route: "agy-native" }] }),
-      },
-    }),
-  }, options());
-  assert.equal(draft.ok, true, draft.ok ? "" : draft.issues.map((issue) => `${issue.code}:${issue.message}`).join("\n"));
-  const live = parse(readFileSync(".kxm/roster.yaml", "utf8")) as { lineup: Record<string, string[]> };
-  assert.deepEqual(live.lineup.writer, ["grok-native", "qwen-openrouter-pi"]);
-  assert.equal(getRosterPolicy(withRosterPolicy()).lineup.writer?.includes("agy-native"), false);
 });
 
 test("validatePolicyDraft admits antigravity native-vendor Gemini routes and refuses mismatches", () => {

@@ -9,3 +9,4 @@ roster:
     effort: medium
   - route: qwen-openrouter-pi
     effort: medium
+  - route: gemini-agy

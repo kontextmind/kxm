@@ -897,7 +897,13 @@ export async function cmdModelsScreen(runtime: Runtime): Promise<number> {
       if (!Number.isInteger(index) || !models[index]) continue;
       const model = models[index];
       if (command === "a" || command === "d") setRouteState(runtime.dirs.workdir, model, command === "a" ? "admitted" : "disabled");
-      else if (command === "r" || command === "x") setRouteState(runtime.dirs.workdir, model, "admitted", (await ask("role: ")).trim(), command === "x");
+      else if (command === "r" || command === "x") {
+        try {
+          setRouteState(runtime.dirs.workdir, model, "admitted", (await ask("role: ")).trim(), command === "x");
+        } catch (error) {
+          runtime.io.stderr(`${error instanceof Error ? error.message : "unknown route"}\n`);
+        }
+      }
     }
   } finally { rl.close(); }
 }

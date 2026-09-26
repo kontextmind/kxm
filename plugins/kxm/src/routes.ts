@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
+import { rolePurposeForId } from "./role.ts";
 
 const RETIRED_POLICY = ".kxm/producers.yaml";
 
@@ -47,19 +48,19 @@ export function setRouteState(root: string, model: string, state: "admitted" | "
         }
       }
     }
+    if (!routeId) throw new Error(`unknown route: no v2 model file matches '${model}'`);
     const existing = roster.findIndex((entry) => entry.route === routeId || entry.model === model);
-    if (routeId) {
-      if (removeRole) { if (existing >= 0) roster.splice(existing, 1); }
-      else if (existing < 0) roster.push({ route: routeId });
-      roleFile.schema = "kxm.role.v2";
-      roleFile.id ??= role;
-      roleFile.purpose ??= role;
-      roleFile.permission ??= "edit";
-      roleFile.description ??= role;
-      roleFile.roster = roster;
-      mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
-      writeFileSync(rolePath, stringify(roleFile), "utf8");
-    }
+    if (removeRole) { if (existing >= 0) roster.splice(existing, 1); }
+    else if (existing < 0) roster.push({ route: routeId });
+    const purpose = typeof roleFile.purpose === "string" ? roleFile.purpose : rolePurposeForId(role);
+    roleFile.schema = "kxm.role.v2";
+    roleFile.id ??= role;
+    roleFile.purpose ??= purpose;
+    roleFile.permission ??= purpose === "writer" ? "edit" : "read-only";
+    roleFile.description ??= role;
+    roleFile.roster = roster;
+    mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
+    writeFileSync(rolePath, stringify(roleFile), "utf8");
   }
   policy.updatedAt = new Date().toISOString();
   mkdirSync(join(root, ".kxm"), { recursive: true });

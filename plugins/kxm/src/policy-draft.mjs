@@ -454,20 +454,15 @@ function validateModelSemantics(model, label, options, evidence, issues) {
         issues.push(issue("semantic", "pi_native_vendor_forbidden", label, "native vendor cannot use Pi"));
       }
     }
-    const origin = model.origin;
-    if (isObject(origin) && typeof origin.source === "string" && typeof origin.sha256 === "string") {
-      if (!own(evidence, origin.source)) {
-        issues.push(issue("semantic", "origin_evidence_missing", label, `missing evidence bytes for ${origin.source}`));
-      } else if (sha256Bytes(evidence[origin.source]) !== origin.sha256) {
-        issues.push(issue("semantic", "origin_hash_mismatch", label, "origin evidence hash does not match supplied bytes"));
-      }
-    }
-  } else {
-    if (vendor !== ceiling.provider || (typeof model.model === "string" && model.model.includes("/"))) {
-      issues.push(issue("semantic", "native_vendor_mismatch", label, "native route vendor or model does not match the harness ceiling"));
-    }
-    if (own(model, "origin")) {
-      issues.push(issue("semantic", "origin_unexpected", label, "origin is only valid for Pi routes"));
+  } else if (vendor !== ceiling.provider || (typeof model.model === "string" && model.model.includes("/"))) {
+    issues.push(issue("semantic", "native_vendor_mismatch", label, "native route vendor or model does not match the harness ceiling"));
+  }
+  const origin = model.origin;
+  if (isObject(origin) && typeof origin.source === "string" && typeof origin.sha256 === "string") {
+    if (!own(evidence, origin.source)) {
+      issues.push(issue("semantic", "origin_evidence_missing", label, `missing evidence bytes for ${origin.source}`));
+    } else if (sha256Bytes(evidence[origin.source]) !== origin.sha256) {
+      issues.push(issue("semantic", "origin_hash_mismatch", label, "origin evidence hash does not match supplied bytes"));
     }
   }
 }

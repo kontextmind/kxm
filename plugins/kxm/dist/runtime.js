@@ -163,10 +163,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify5(x) {
+    function stringify7(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify5;
+    exports.stringify = stringify7;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -3834,7 +3834,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse8(serialize(uri, options), options);
+        parse10(serialize(uri, options), options);
       }
       return uri;
     }
@@ -3874,8 +3874,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative6, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse8(serialize(base, options), options);
-        relative6 = parse8(serialize(relative6, options), options);
+        base = parse10(serialize(base, options), options);
+        relative6 = parse10(serialize(relative6, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative6.scheme) {
@@ -4167,7 +4167,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse8(uri, opts) {
+    function parse10(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4204,7 +4204,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse8
+      parse: parse10
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -8917,7 +8917,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify5(item, ctx, onComment, onChompKeep) {
+    function stringify7(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -8946,7 +8946,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify5;
+    exports.stringify = stringify7;
   }
 });
 
@@ -8956,7 +8956,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -8978,7 +8978,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify5.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify7.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -9030,7 +9030,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify5.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify7.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -9171,7 +9171,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -9207,7 +9207,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify5.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify7.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -9274,12 +9274,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify6 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify6(collection, ctx, options);
+      const stringify8 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify8(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -9304,7 +9304,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify5.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify7.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -9371,7 +9371,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify5.stringify(item, itemCtx, () => comment = null);
+        let str = stringify7.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -10732,7 +10732,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -10747,7 +10747,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify5.createStringifyContext(doc, options);
+      const ctx = stringify7.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -10769,7 +10769,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify5.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify7.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -10777,7 +10777,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify5.stringify(doc.contents, ctx));
+        lines.push(stringify7.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -12913,7 +12913,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify5 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify7 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -12966,7 +12966,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify5;
+    exports.stringify = stringify7;
   }
 });
 
@@ -14677,7 +14677,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse8(src, reviver, options) {
+    function parse10(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -14696,7 +14696,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify5(value, replacer, options) {
+    function stringify7(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -14718,10 +14718,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse8;
+    exports.parse = parse10;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument3;
-    exports.stringify = stringify5;
+    exports.stringify = stringify7;
   }
 });
 
@@ -15349,20 +15349,15 @@ function validateModelSemantics(model, label, options, evidence, issues) {
         issues.push(issue2("semantic", "pi_native_vendor_forbidden", label, "native vendor cannot use Pi"));
       }
     }
-    const origin = model.origin;
-    if (isObject(origin) && typeof origin.source === "string" && typeof origin.sha256 === "string") {
-      if (!own(evidence, origin.source)) {
-        issues.push(issue2("semantic", "origin_evidence_missing", label, `missing evidence bytes for ${origin.source}`));
-      } else if (sha256Bytes(evidence[origin.source]) !== origin.sha256) {
-        issues.push(issue2("semantic", "origin_hash_mismatch", label, "origin evidence hash does not match supplied bytes"));
-      }
-    }
-  } else {
-    if (vendor !== ceiling.provider || typeof model.model === "string" && model.model.includes("/")) {
-      issues.push(issue2("semantic", "native_vendor_mismatch", label, "native route vendor or model does not match the harness ceiling"));
-    }
-    if (own(model, "origin")) {
-      issues.push(issue2("semantic", "origin_unexpected", label, "origin is only valid for Pi routes"));
+  } else if (vendor !== ceiling.provider || typeof model.model === "string" && model.model.includes("/")) {
+    issues.push(issue2("semantic", "native_vendor_mismatch", label, "native route vendor or model does not match the harness ceiling"));
+  }
+  const origin = model.origin;
+  if (isObject(origin) && typeof origin.source === "string" && typeof origin.sha256 === "string") {
+    if (!own(evidence, origin.source)) {
+      issues.push(issue2("semantic", "origin_evidence_missing", label, `missing evidence bytes for ${origin.source}`));
+    } else if (sha256Bytes(evidence[origin.source]) !== origin.sha256) {
+      issues.push(issue2("semantic", "origin_hash_mismatch", label, "origin evidence hash does not match supplied bytes"));
     }
   }
 }
@@ -18098,14 +18093,29 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
 }
 function developerCeilings() {
   const script = join2(findKxmRepoRoot(import.meta.url), "scripts", "harness-run.mjs");
-  const loaded = spawnSync2(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
-    encoding: "utf8",
-    timeout: 15e3
-  });
-  if (loaded.status !== 0 || !loaded.stdout) {
-    return { ROUTES: {}, NATIVE_PI_BRAKE_PROVIDERS: [], PI_ALLOWED_PROVIDERS: [], PI_NATIVE_VENDOR_PROVIDERS: {} };
+  let loaded;
+  try {
+    loaded = spawnSync2(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
+      encoding: "utf8",
+      timeout: 15e3
+    });
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
   }
-  return JSON.parse(loaded.stdout);
+  if (loaded.error) {
+    const code = loaded.error.code;
+    const detail = code === "ETIMEDOUT" || loaded.signal ? `timed out after 15s (${loaded.error.message})` : loaded.error.message;
+    return { ok: false, detail };
+  }
+  if (loaded.status !== 0 || !loaded.stdout) {
+    const stderr = (loaded.stderr ?? "").trim();
+    return { ok: false, detail: stderr || `scripts/harness-run.mjs exited ${loaded.status}` };
+  }
+  try {
+    return { ok: true, ...JSON.parse(loaded.stdout) };
+  } catch (error) {
+    return { ok: false, detail: `ceilings JSON parse failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 function developerRolePolicyIssues(projectRoot) {
   const rolesDir = join2(projectRoot, ".kxm", "roles");
@@ -18113,6 +18123,7 @@ function developerRolePolicyIssues(projectRoot) {
   const roles = {};
   const models = {};
   const evidence = {};
+  const parseIssues = [];
   const readMap = (dir, into, skipInventory) => {
     if (!existsSync3(dir)) return;
     for (const name of readdirSync(dir)) {
@@ -18123,7 +18134,10 @@ function developerRolePolicyIssues(projectRoot) {
         const value = parseRestrictedYaml2(readFileSync(join2(dir, name), "utf8"), `${dir}/${name}`);
         into[id] = value;
       } catch (error) {
-        if (error instanceof KxmConfigError) return;
+        if (error instanceof KxmConfigError) {
+          parseIssues.push(...error.issues);
+          continue;
+        }
       }
     }
   };
@@ -18137,6 +18151,9 @@ function developerRolePolicyIssues(projectRoot) {
     if (existsSync3(evidenceFile)) evidence[source] = readFileSync(evidenceFile, "utf8");
   }
   const ceilings = developerCeilings();
+  if (!ceilings.ok) {
+    return [...parseIssues, issue3("semantic", "developer_ceilings_unavailable", ".kxm/roster.yaml", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+  }
   const result = validatePolicyDraft({ models, roles, evidence }, {
     ceilings: ceilings.ROUTES,
     nativePiBrakeProviders: ceilings.NATIVE_PI_BRAKE_PROVIDERS,
@@ -18144,8 +18161,8 @@ function developerRolePolicyIssues(projectRoot) {
     piNativeVendorProviders: ceilings.PI_NATIVE_VENDOR_PROVIDERS,
     vendorAliases: { "x-ai": "xai", moonshotai: "moonshot", "google-ai": "google", qwen: "alibaba" }
   });
-  if (result.ok) return [];
-  return result.issues.map((entry) => issue3(entry.phase, entry.code, entry.file, entry.message));
+  if (result.ok) return parseIssues;
+  return [...parseIssues, ...result.issues.map((entry) => issue3(entry.phase, entry.code, entry.file, entry.message))];
 }
 function kxmCanonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -24894,22 +24911,30 @@ function loadPriceCatalogForEstimate(options) {
 }
 
 // plugins/kxm/src/engine.ts
-var import_yaml7 = __toESM(require_dist(), 1);
+var import_yaml9 = __toESM(require_dist(), 1);
 import { createHash as createHash15, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
 import { existsSync as existsSync12, readFileSync as readFileSync10 } from "node:fs";
 import { join as join15 } from "node:path";
 
 // plugins/kxm/src/routes.ts
-var import_yaml4 = __toESM(require_dist(), 1);
+var import_yaml6 = __toESM(require_dist(), 1);
 import { existsSync as existsSync9, readFileSync as readFileSync7, mkdirSync as mkdirSync3, writeFileSync as writeFileSync4, readdirSync as readdirSync5 } from "node:fs";
 import { join as join10 } from "node:path";
+
+// plugins/kxm/src/role.ts
+var import_yaml5 = __toESM(require_dist(), 1);
+
+// plugins/kxm/src/config.ts
+var import_yaml4 = __toESM(require_dist(), 1);
+
+// plugins/kxm/src/routes.ts
 var RETIRED_POLICY = ".kxm/producers.yaml";
 var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
 function loadRoutePolicy(root) {
   if (existsSync9(join10(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
   const path = join10(root, ".kxm", "routes.yaml");
   if (!existsSync9(path)) return empty();
-  const value = (0, import_yaml4.parse)(readFileSync7(path, "utf8"));
+  const value = (0, import_yaml6.parse)(readFileSync7(path, "utf8"));
   if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
   return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
 }
@@ -24919,7 +24944,7 @@ function listRoleBindings(root) {
   if (!existsSync9(dir)) return result;
   for (const file of readdirSync5(dir).filter((name) => name.endsWith(".yaml"))) {
     const role = file.slice(0, -5);
-    const value = (0, import_yaml4.parse)(readFileSync7(join10(dir, file), "utf8"));
+    const value = (0, import_yaml6.parse)(readFileSync7(join10(dir, file), "utf8"));
     result[role] = (value.roster ?? []).map((entry) => entry.route).filter((route) => typeof route === "string");
   }
   return result;
@@ -25878,7 +25903,7 @@ function memoryRecordToContextItem(record2, project) {
 }
 
 // plugins/kxm/src/memory.ts
-var import_yaml5 = __toESM(require_dist(), 1);
+var import_yaml7 = __toESM(require_dist(), 1);
 import { existsSync as existsSync10, mkdirSync as mkdirSync4, readdirSync as readdirSync6, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "node:fs";
 import { extname as extname2, join as join11, resolve as resolve7 } from "node:path";
 var MEMORY_SCHEMA = "kxm.memory.v1";
@@ -25910,7 +25935,7 @@ function parseFrontmatter(content) {
 }
 function parseMemoryRecord(raw, filename = "memory.md") {
   const { frontmatter, body } = parseFrontmatter(raw);
-  const data = (0, import_yaml5.parse)(frontmatter);
+  const data = (0, import_yaml7.parse)(frontmatter);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error(`invalid YAML frontmatter in ${filename}`);
   }
@@ -26006,7 +26031,7 @@ function loadAuthoredMemory(repoRoot) {
 }
 
 // plugins/kxm/src/skills.ts
-var import_yaml6 = __toESM(require_dist(), 1);
+var import_yaml8 = __toESM(require_dist(), 1);
 import { createHash as createHash12 } from "node:crypto";
 import { existsSync as existsSync11, mkdirSync as mkdirSync5, readdirSync as readdirSync7, readFileSync as readFileSync9, renameSync, rmSync, statSync as statSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname7, join as join12 } from "node:path";
@@ -26050,7 +26075,7 @@ function parseSkillFrontmatter(content) {
     return { frontmatter: null, body: content };
   }
   try {
-    const parsed = (0, import_yaml6.parse)(rawFm);
+    const parsed = (0, import_yaml8.parse)(rawFm);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return { frontmatter: parsed, body: rawBody };
     }
@@ -28523,7 +28548,7 @@ function selectorsNamedByRoutes(projectRoot, routeIds) {
     if (!existsSync12(file)) continue;
     let parsed;
     try {
-      parsed = (0, import_yaml7.parse)(readFileSync10(file, "utf8"));
+      parsed = (0, import_yaml9.parse)(readFileSync10(file, "utf8"));
     } catch {
       continue;
     }
@@ -28555,7 +28580,7 @@ function resolveProducerRoute(projectRoot, step, agentId) {
   const agentFile = join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
   if (existsSync12(agentFile)) {
     try {
-      const parsed = (0, import_yaml7.parse)(readFileSync10(agentFile, "utf8"));
+      const parsed = (0, import_yaml9.parse)(readFileSync10(agentFile, "utf8"));
       if (typeof parsed?.model === "string") {
         agentModel = parsed.model;
       } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
@@ -29839,7 +29864,7 @@ function unsupportedStep(plan, step, producerId) {
 function readYamlRecord(path) {
   if (!existsSync12(path)) return void 0;
   try {
-    const parsed = (0, import_yaml7.parse)(readFileSync10(path, "utf8"));
+    const parsed = (0, import_yaml9.parse)(readFileSync10(path, "utf8"));
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
   } catch {
     return void 0;
@@ -33363,7 +33388,7 @@ Instructions for Operator:
 };
 
 // plugins/kxm/src/modes.ts
-var import_yaml8 = __toESM(require_dist(), 1);
+var import_yaml10 = __toESM(require_dist(), 1);
 import { existsSync as existsSync18, readFileSync as readFileSync15 } from "node:fs";
 import { join as join21 } from "node:path";
 var DEFAULT_MODES_CONFIG = Object.freeze({
@@ -33434,7 +33459,7 @@ function loadModesConfig(projectRoot) {
   }
   try {
     const raw = readFileSync15(modesPath, "utf8");
-    const parsed = (0, import_yaml8.parse)(raw);
+    const parsed = (0, import_yaml10.parse)(raw);
     if (parsed && parsed.schema === "kxm.modes.v1" && parsed.majorModes) {
       return {
         schema: "kxm.modes.v1",
