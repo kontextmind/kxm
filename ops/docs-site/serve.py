@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import errno
 import re
 import socket
@@ -139,16 +140,38 @@ class SiteHandler(SimpleHTTPRequestHandler):
         super().do_HEAD()
 
 
-def bind(ip: str) -> ThreadingHTTPServer:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Serve the built MkDocs site on this machine's tailnet address only.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        metavar="n",
+        help="Bind only this port (1-65535). When omitted, try 80, then 8765 through 8780.",
+    )
+    args = parser.parse_args(argv)
+    if args.port is not None and not 1 <= args.port <= 65535:
+        parser.error("--port must be an integer from 1 to 65535")
+    return args
+
+
+def bind(ip: str, port: int | None = None) -> ThreadingHTTPServer:
     if ip in {"0.0.0.0", "::", ""} or not in_tailnet(ip):
         raise SystemExit("Refusing to bind a non-tailnet address.")
+    ports = [port] if port is not None else [80, *range(8765, 8781)]
     last: OSError | None = None
-    ports = [80, *range(8765, 8781)]
-    for port in ports:
+    for candidate in ports:
         try:
-            return ThreadingHTTPServer((ip, port), SiteHandler)
+            return ThreadingHTTPServer((ip, candidate), SiteHandler)
         except OSError as exc:
             last = exc
+            if port is not None:
+                if exc.errno == errno.EADDRINUSE:
+                    raise SystemExit(f"Port {port} is already in use on {ip}.") from exc
+                raise SystemExit(
+                    f"Could not bind port {port} on {ip}: {exc.strerror or exc}"
+                ) from exc
             if exc.errno in {errno.EACCES, errno.EPERM, errno.EADDRINUSE}:
                 continue
             raise
@@ -156,8 +179,9 @@ def bind(ip: str) -> ThreadingHTTPServer:
 
 
 def main() -> int:
+    args = parse_args()
     if not SITE.is_dir():
-        print("site/ is missing. Run: just docs-build", file=sys.stderr)
+        print("site/ is missing. Run: kxm docs build", file=sys.stderr)
         return 1
     ip = discover_tailnet()
     if not ip:
@@ -168,7 +192,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    httpd = bind(ip)
+    httpd = bind(ip, args.port)
     host, port = httpd.server_address[:2]
     if host in {"0.0.0.0", "::"}:
         httpd.server_close()

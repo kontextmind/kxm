@@ -423,14 +423,14 @@ function ensureSymlink(linkPath, target) {
   symlinkSync(rel, linkPath);
 }
 
+const MKDOCS_MISSING = "mkdocs build needs either mkdocs on PATH or uv. The command that works is: uv tool run --from mkdocs-material mkdocs build. uv tool install mkdocs-material does not, because the package exposes no executable.";
+
 function runMkdocs() {
-  const attempts = [];
   const onPath = spawnSync("mkdocs", ["build"], { cwd: repoRoot, stdio: "inherit" });
   if (!onPath.error) {
     if (onPath.status !== 0) process.exit(onPath.status ?? 1);
     return;
   }
-  attempts.push(onPath.error.code || "mkdocs missing");
   const uvBin = existsSync(join(process.env.HOME || "", ".local", "bin", "uv"))
     ? join(process.env.HOME, ".local", "bin", "uv")
     : "uv";
@@ -438,10 +438,13 @@ function runMkdocs() {
     cwd: repoRoot,
     stdio: "inherit",
   });
-  if (viaUv.error || viaUv.status !== 0) {
-    console.error(`mkdocs build failed (${attempts.join(", ")})`);
-    process.exit(viaUv.status || 1);
+  if (!viaUv.error && viaUv.status === 0) return;
+  if (onPath.error?.code === "ENOENT" && viaUv.error?.code === "ENOENT") {
+    console.error(MKDOCS_MISSING);
+    process.exit(1);
   }
+  console.error(`mkdocs build failed (${onPath.error?.code || "mkdocs missing"})`);
+  process.exit(viaUv.status || 1);
 }
 
 function main() {

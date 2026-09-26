@@ -1580,13 +1580,15 @@ kxm docs serve --dry-run --port 8765
 
 Runs `node plans/kxm-roadmap/update-dashboard.mjs` and returns that process's exit code. The generator refreshes the roadmap pages and the MkDocs inputs from `plans/kxm-roadmap/state.json`. `kxm docs build` validates the state file and refuses on schema failure.
 
+The build needs either `mkdocs` on `PATH` or `uv`. The command that works on this machine is `uv tool run --from mkdocs-material mkdocs build`. `uv tool install mkdocs-material` does not, because the package exposes no executable. When neither executable exists, the generator refuses with that same pair of options.
+
 - No command-specific options.
 - Honors `--dry-run`: prints `node plans/kxm-roadmap/update-dashboard.mjs` and does not start the process. JSON key: `detail` (that command line), plus `dryRun: true`.
 - Errors (exit 1): `project_required`, `docs_generator_missing` when `plans/kxm-roadmap/update-dashboard.mjs` is absent.
 
 ### `kxm docs serve`
 
-Runs `python3 ops/docs-site/serve.py` with output streamed to the terminal, and returns that process's exit code. `--port` is appended as `--port <port>` when it is set. The server binds a tailnet address; see `ops/docs-site/serve.py`.
+Runs `python3 ops/docs-site/serve.py` with output streamed to the terminal, and returns that process's exit code. `--port` is appended as `--port <port>` when it is set. The server binds a tailnet address. With `--port`, it binds only that port and exits if the port is taken. Without `--port`, it tries 80 and then 8765 through 8780. See `ops/docs-site/serve.py`.
 
 | Option | Argument | Default | Description |
 |---|---|---|---|

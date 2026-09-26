@@ -30324,10 +30324,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
    * @param {string} flag
    * @private
    */
-  unknownOption(flag2) {
+  unknownOption(flag) {
     if (this._allowUnknownOption) return;
     let suggestion = "";
-    if (flag2.startsWith("--") && this._showSuggestionAfterError) {
+    if (flag.startsWith("--") && this._showSuggestionAfterError) {
       let candidateFlags = [];
       let command = this;
       do {
@@ -30335,9 +30335,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
         candidateFlags = candidateFlags.concat(moreFlags);
         command = command.parent;
       } while (command && !command._enablePositionalOptions);
-      suggestion = suggestSimilar(flag2, candidateFlags);
+      suggestion = suggestSimilar(flag, candidateFlags);
     }
-    const message = `error: unknown option '${flag2}'${suggestion}`;
+    const message = `error: unknown option '${flag}'${suggestion}`;
     this.error(message, { code: "commander.unknownOption" });
   }
   /**
@@ -34136,7 +34136,7 @@ async function cmdWorkflowDefinitions(runtime, options) {
 }
 async function cmdWorkflowAdd(runtime, workflowId, options) {
   const scope = options.scope ?? "local";
-  const refuse4 = (error, message, code = 2) => {
+  const refuse3 = (error, message, code = 2) => {
     print(runtime.io, runtime.json, { ok: false, command: "workflow add", error, message }, `workflow add failed: ${message}`);
     return code;
   };
@@ -34144,12 +34144,12 @@ async function cmdWorkflowAdd(runtime, workflowId, options) {
     let content;
     if (options.template !== void 0) {
       if (options.file !== void 0 || options.pick !== void 0) {
-        return refuse4("workflow_add_conflict", "--template cannot be combined with --file or --pick");
+        return refuse3("workflow_add_conflict", "--template cannot be combined with --file or --pick");
       }
-      if (!workflowId) return refuse4("workflow_id_required", "usage: kxm workflow add <workflowId> --template <name>");
+      if (!workflowId) return refuse3("workflow_id_required", "usage: kxm workflow add <workflowId> --template <name>");
       const template = Object.hasOwn(WORKFLOW_TEMPLATES, options.template) ? WORKFLOW_TEMPLATES[options.template] : void 0;
       if (!template) {
-        return refuse4("workflow_template_unknown", `unknown template ${options.template}; choose ${Object.keys(WORKFLOW_TEMPLATES).join(", ")}`);
+        return refuse3("workflow_template_unknown", `unknown template ${options.template}; choose ${Object.keys(WORKFLOW_TEMPLATES).join(", ")}`);
       }
       content = { ...template, ...options.description !== void 0 ? { description: options.description } : {} };
     } else if (!workflowId || options.pick) {
@@ -34169,7 +34169,7 @@ async function cmdWorkflowAdd(runtime, workflowId, options) {
       }
       const picked = await resolvePickItem(runtime.io, `Select a workflow template to add (${scope})`, candidates, options.pick, runtime.env);
       if (!picked) {
-        return refuse4("workflow_id_required", "provide a workflowId or select an available workflow with --pick <id>", 1);
+        return refuse3("workflow_id_required", "provide a workflowId or select an available workflow with --pick <id>", 1);
       }
       workflowId ??= picked.id;
       if (options.file === void 0) {
@@ -34191,7 +34191,7 @@ async function cmdWorkflowAdd(runtime, workflowId, options) {
     if (scope === "local") {
       const projectRoot = discoverKxmProjectRoot(runtime.cwd);
       if (!projectRoot) {
-        return refuse4("project_not_found", "local workflows belong to a KXM project; run kxm init at the repository root, or pass --scope global");
+        return refuse3("project_not_found", "local workflows belong to a KXM project; run kxm init at the repository root, or pass --scope global");
       }
       const issues = kxmWorkflowWriteIssues(projectRoot, workflowId, document);
       if (issues.length > 0) {
@@ -34226,7 +34226,7 @@ ${issues.map((entry) => `  ${entry.file}: ${entry.code}: ${entry.message}`).join
     );
     return 0;
   } catch (err) {
-    return refuse4("workflow_add_failed", err instanceof Error ? err.message : String(err), 1);
+    return refuse3("workflow_add_failed", err instanceof Error ? err.message : String(err), 1);
   }
 }
 async function cmdWorkflowRemove(runtime, workflowId, options) {
@@ -36612,19 +36612,90 @@ async function cmdPluginInstall(runtime, options) {
   return ok ? 0 : 1;
 }
 
+// plugins/kxm/src/cli/docs.ts
+init_project_config();
+init_types();
+import { spawn as spawn4 } from "node:child_process";
+import { existsSync as existsSync29 } from "node:fs";
+import { join as join35 } from "node:path";
+var GENERATOR = "plans/kxm-roadmap/update-dashboard.mjs";
+var SERVER = "ops/docs-site/serve.py";
+function requireProject(runtime, command) {
+  const root = discoverKxmProjectRoot(runtime.cwd);
+  if (!root) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, command, error: "project_required" },
+      `kxm ${command} requires a KXM project (run kxm init first)`
+    );
+    return 1;
+  }
+  return root;
+}
+function requireFile(runtime, command, root, relative8, error) {
+  const file = join35(root, relative8);
+  if (existsSync29(file)) return file;
+  print(
+    runtime.io,
+    runtime.json,
+    { ok: false, command, error, path: relative8 },
+    `kxm ${command} requires ${relative8}`
+  );
+  return 1;
+}
+function printCommand(runtime, command, line) {
+  print(
+    runtime.io,
+    runtime.json,
+    { ok: true, command, dryRun: true, detail: line },
+    line
+  );
+  return 0;
+}
+function runInherited(command, args, cwd) {
+  return new Promise((resolveExit) => {
+    const child = spawn4(command, [...args], { cwd, stdio: "inherit" });
+    child.once("error", () => resolveExit(1));
+    child.once("exit", (code) => resolveExit(code ?? 1));
+  });
+}
+async function cmdDocsBuild(runtime) {
+  const command = "docs build";
+  const root = requireProject(runtime, command);
+  if (typeof root === "number") return root;
+  const file = requireFile(runtime, command, root, GENERATOR, "docs_generator_missing");
+  if (typeof file === "number") return file;
+  const line = `node ${GENERATOR}`;
+  if (runtime.dryRun) return printCommand(runtime, command, line);
+  return runInherited(process.execPath, [file], root);
+}
+async function cmdDocsServe(runtime, options = {}) {
+  const command = "docs serve";
+  const root = requireProject(runtime, command);
+  if (typeof root === "number") return root;
+  const file = requireFile(runtime, command, root, SERVER, "docs_server_missing");
+  if (typeof file === "number") return file;
+  const args = [file];
+  if (options.port !== void 0 && options.port !== "") args.push("--port", options.port);
+  const line = ["python3", SERVER, ...args.slice(1)].join(" ");
+  if (runtime.dryRun) return printCommand(runtime, command, line);
+  return runInherited("python3", args, root);
+}
+
 // plugins/kxm/src/cli/lanes.ts
 init_project_config();
 init_runtime_supervisor();
 init_types();
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { chmodSync as chmodSync6, existsSync as existsSync29, mkdirSync as mkdirSync24, readFileSync as readFileSync29, writeFileSync as writeFileSync22 } from "node:fs";
-import { basename as basename8, dirname as dirname18, join as join35, resolve as resolve25 } from "node:path";
+import { chmodSync as chmodSync6, existsSync as existsSync30, mkdirSync as mkdirSync24, readFileSync as readFileSync29, writeFileSync as writeFileSync22 } from "node:fs";
+import { basename as basename8, dirname as dirname18, join as join36, resolve as resolve25 } from "node:path";
 var LANE_SCHEMA = "kxm.lanes.v1";
 var SHA_RE = /^[a-f0-9]{40,64}$/;
 var TIMESTAMP_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z$/;
 var SETTLED_RUN = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
 function lanesFile(runtime) {
-  return join35(runtime.dirs.state, "lanes.json");
+  return join36(runtime.dirs.state, "lanes.json");
 }
 function gitEnv() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
@@ -36672,7 +36743,7 @@ function isLaneFile(value) {
 }
 function loadLanes(runtime, command) {
   const file = lanesFile(runtime);
-  if (!existsSync29(file)) return { schema: LANE_SCHEMA, lanes: {} };
+  if (!existsSync30(file)) return { schema: LANE_SCHEMA, lanes: {} };
   try {
     const parsed = JSON.parse(readFileSync29(file, "utf8"));
     if (!isLaneFile(parsed)) return refuse(runtime, command, "lanes_unreadable", `lane record ${file} is malformed`);
@@ -36731,7 +36802,7 @@ function withLaneCwd(runtime, unit, command = "lane") {
   const loaded = loadLanes(runtime, command);
   if (typeof loaded === "number") return loaded;
   const lane = loaded.lanes[unit];
-  if (!lane || !existsSync29(lane.path)) {
+  if (!lane || !existsSync30(lane.path)) {
     return refuse(runtime, command, "lane_missing", `lane ${unit} is not recorded or its worktree is absent`, { unit });
   }
   return {
@@ -36802,7 +36873,7 @@ function aheadBehind(path4, baseSha) {
   return { behind: Number(match[1]), ahead: Number(match[2]) };
 }
 function laneView(unit, record) {
-  const exists = existsSync29(record.path);
+  const exists = existsSync30(record.path);
   const counts = exists ? aheadBehind(record.path, record.baseSha) : { ahead: null, behind: null };
   return {
     unit,
@@ -36893,7 +36964,7 @@ async function cmdLaneCreate(runtime, unit, options = {}) {
   const loaded = loadLanes(runtime, command);
   if (typeof loaded === "number") return loaded;
   const path4 = laneWorktreePath(root, unit);
-  if (loaded.lanes[unit] || existsSync29(path4) || branchExists(root, unit)) {
+  if (loaded.lanes[unit] || existsSync30(path4) || branchExists(root, unit)) {
     return refuse(runtime, command, "lane_exists", `lane ${unit} already exists`, { unit });
   }
   const baseSha = resolveBase(root, base);
@@ -36918,7 +36989,7 @@ async function cmdLaneCreate(runtime, unit, options = {}) {
     return refuse(runtime, command, "lane_git_failed", `git worktree add failed: ${added.stderr.trim().slice(0, 300)}`, { unit });
   }
   const recordedPath = discoverKxmProjectRoot(path4) ?? path4;
-  if (!existsSync29(join35(recordedPath, ".kxm", "project.yaml"))) {
+  if (!existsSync30(join36(recordedPath, ".kxm", "project.yaml"))) {
     git2(root, ["worktree", "remove", "--force", path4]);
     return refuse(runtime, command, "lane_not_project", `lane ${recordedPath} has no .kxm/project.yaml; the worktree was removed`, { unit, path: recordedPath });
   }
@@ -36982,7 +37053,7 @@ async function cmdLaneDrop(runtime, unit, options = {}) {
   if (!record) return refuse(runtime, command, "lane_missing", `lane ${unit} is not recorded`, { unit });
   const force = options.force === true;
   if (!force) {
-    if (existsSync29(record.path)) {
+    if (existsSync30(record.path)) {
       const dirty = porcelainCount(record.path);
       if (dirty === null) {
         return refuse(runtime, command, "lane_git_failed", `lane ${unit} worktree status could not be read`, { unit });
@@ -37001,7 +37072,7 @@ async function cmdLaneDrop(runtime, unit, options = {}) {
     ], `drop lane ${unit}; branch ${record.branch} is not deleted`);
     return 0;
   }
-  if (existsSync29(record.path)) {
+  if (existsSync30(record.path)) {
     const removed = git2(root, ["worktree", "remove", ...force ? ["--force"] : [], record.path]);
     if (removed.status !== 0) {
       return refuse(runtime, command, "lane_git_failed", `git worktree remove failed: ${removed.stderr.trim().slice(0, 300)}`, { unit });
@@ -37071,8 +37142,8 @@ async function cmdLaneRun(runtime, unit, options) {
 init_project_config();
 init_repo_root();
 init_types();
-import { spawn as spawn4 } from "node:child_process";
-import { join as join36 } from "node:path";
+import { spawn as spawn5 } from "node:child_process";
+import { join as join37 } from "node:path";
 function childEnv() {
   const env = {};
   for (const [name, value] of Object.entries(process.env)) {
@@ -37091,7 +37162,7 @@ function cmdLand(runtime, options = {}) {
   if (!root) {
     return Promise.resolve(refuse2(runtime, "project_required", "land requires a KXM project (run kxm init first)"));
   }
-  const script = join36(findKxmRepoRoot(import.meta.url), "scripts", "pr-land.mjs");
+  const script = join37(findKxmRepoRoot(import.meta.url), "scripts", "pr-land.mjs");
   const args = [script];
   if (options.pr) args.push("--pr", options.pr);
   if (options.stage) args.push("--stage", options.stage);
@@ -37099,117 +37170,12 @@ function cmdLand(runtime, options = {}) {
   if (runtime.json) args.push("--json");
   if (runtime.dryRun) args.push("--dry-run");
   return new Promise((resolveExit) => {
-    const child = spawn4(process.execPath, args, { cwd: root, env: childEnv(), windowsHide: true });
+    const child = spawn5(process.execPath, args, { cwd: root, env: childEnv(), windowsHide: true });
     child.stdout.on("data", (chunk) => runtime.io.stdout(chunk.toString("utf8")));
     child.stderr.on("data", (chunk) => runtime.io.stderr(chunk.toString("utf8")));
     child.once("error", () => resolveExit(1));
     child.once("close", (code) => resolveExit(code ?? 1));
   });
-}
-
-// plugins/kxm/src/cli/assign.ts
-init_project_config();
-init_types();
-import { spawnSync as spawnSync7 } from "node:child_process";
-import { existsSync as existsSync30 } from "node:fs";
-import { join as join37 } from "node:path";
-var kxmAssignCliSeams = {};
-var RUNNER_REL = "scripts/assignment-run.mjs";
-function refuse3(runtime, command, error, text) {
-  print(runtime.io, runtime.json, { ok: false, command, error }, text);
-  return 1;
-}
-function flag(value) {
-  if (value === void 0) throw new Error("assign invocation missing a parsed flag");
-  return value;
-}
-function runnerArgv(subcommand, args) {
-  switch (subcommand) {
-    case "run":
-      return ["run", "--manifest", flag(args.manifest)];
-    case "witness":
-      return ["witness", "--record-dir", flag(args.recordDir)];
-    case "plan-current":
-      return [
-        "plan-current",
-        "--task-dir",
-        flag(args.taskDir),
-        "--plan",
-        flag(args.plan),
-        "--sha256",
-        flag(args.sha256),
-        "--base-commit",
-        flag(args.baseCommit),
-        "--expected-generation",
-        flag(args.expectedGeneration)
-      ];
-    case "attribute":
-      return [
-        "attribute",
-        "--task-dir",
-        flag(args.taskDir),
-        "--record-dir",
-        flag(args.recordDir),
-        "--class",
-        flag(args.classification),
-        "--explanation-file",
-        flag(args.explanationFile)
-      ];
-    case "observe-cost":
-      return ["observe-cost", "--task-dir", flag(args.taskDir), "--input", flag(args.input)];
-    case "accept": {
-      const argv = [
-        "accept",
-        "--task-dir",
-        flag(args.taskDir),
-        "--commit",
-        flag(args.commit),
-        "--record-dir",
-        flag(args.recordDir)
-      ];
-      for (const critic of args.critics ?? []) argv.push("--critic", critic);
-      if (args.observedPr !== void 0) argv.push("--observed-pr", args.observedPr);
-      if (args.observedCi !== void 0) argv.push("--observed-ci", args.observedCi);
-      return argv;
-    }
-    case "change-report":
-      return ["change-report", "--task-dir", flag(args.taskDir)];
-    default: {
-      const unreachable = subcommand;
-      throw new Error(`unknown assign verb ${String(unreachable)}`);
-    }
-  }
-}
-async function cmdAssign(runtime, subcommand, args) {
-  const command = `assign ${subcommand}`;
-  const root = discoverKxmProjectRoot(runtime.cwd);
-  if (!root) return refuse3(runtime, command, "project_required", `${command} requires a KXM project (run kxm init first)`);
-  if (!existsSync30(join37(root, "scripts", "assignment-run.mjs"))) {
-    return refuse3(runtime, command, "assign_runner_missing", `${command} requires scripts/assignment-run.mjs in the project root`);
-  }
-  const argv = ["node", RUNNER_REL, ...runnerArgv(subcommand, args)];
-  if (runtime.dryRun) {
-    const payload = { schema: CLI_RESULT_SCHEMA, ok: true, command, dryRun: true, argv };
-    runtime.io.stdout(runtime.json ? `${JSON.stringify(payload)}
-` : `${argv.join(" ")}
-`);
-    return 0;
-  }
-  const spawn5 = kxmAssignCliSeams.spawn ?? ((commandName, commandArgs, options) => {
-    const result2 = spawnSync7(commandName, commandArgs, {
-      cwd: options.cwd,
-      stdio: options.stdio,
-      env: options.env,
-      windowsHide: true
-    });
-    return { status: result2.status, ...result2.error ? { error: result2.error } : {} };
-  });
-  const result = spawn5("node", argv.slice(1), { cwd: root, stdio: "inherit", env: runtime.env });
-  if (result.status === null) {
-    const detail = result.error?.message ?? "the assignment runner could not be started";
-    return refuse3(runtime, command, "assign_spawn_failed", detail);
-  }
-  return result.status;
 }
 
 // plugins/kxm/src/cli/hub.ts
@@ -45658,7 +45624,7 @@ var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 // plugins/kxm/src/tui.ts
 import { mkdirSync as mkdirSync25 } from "node:fs";
 import { join as join42, resolve as resolve27, dirname as dirname20 } from "node:path";
-import { spawnSync as spawnSync8 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 
 // packages/core/tui/src/types/surface.ts
 var KXM_TUI_LIMITS = Object.freeze({
@@ -46215,16 +46181,16 @@ function applyMeshTuiKey(view, key, itemCount = 0) {
 function copyToClipboard(text) {
   try {
     if (process.platform === "darwin") {
-      const proc = spawnSync8("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync7("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
     if (process.platform === "win32") {
-      const proc = spawnSync8("clip", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync7("clip", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
-    const wl = spawnSync8("wl-copy", [text], { encoding: "utf8", windowsHide: true });
+    const wl = spawnSync7("wl-copy", [text], { encoding: "utf8", windowsHide: true });
     if (wl.status === 0) return true;
-    const xclip = spawnSync8("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
+    const xclip = spawnSync7("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
     return xclip.status === 0;
   } catch {
     return false;
@@ -46232,7 +46198,7 @@ function copyToClipboard(text) {
 }
 function spawnDegradeWorktree(repoRoot, runId, options) {
   const runner = options?.execFn ?? ((cmd, args) => {
-    const res = spawnSync8(cmd, args, {
+    const res = spawnSync7(cmd, args, {
       cwd: repoRoot,
       encoding: "utf8",
       windowsHide: true,
@@ -47016,7 +46982,7 @@ async function runMeshTui(input) {
 }
 
 // plugins/kxm/src/session-work.ts
-import { spawnSync as spawnSync9 } from "node:child_process";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync32, mkdirSync as mkdirSync26, readFileSync as readFileSync31, renameSync as renameSync8, writeFileSync as writeFileSync23 } from "node:fs";
 import { join as join43 } from "node:path";
@@ -47077,10 +47043,10 @@ function formatShipLine(ship) {
 }
 function readGitShip(cwd) {
   try {
-    const dirty = spawnSync9("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    const dirty = spawnSync8("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return void 0;
     const isDirty = dirty.stdout.trim().length > 0;
-    const upstream = spawnSync9("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    const upstream = spawnSync8("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
     if (upstream.status === 0) {
       return {
         dirty: isDirty,
@@ -47088,9 +47054,9 @@ function readGitShip(cwd) {
       };
     }
     for (const baseRef of ["origin/HEAD", "main", "origin/main", "master", "origin/master"]) {
-      const mb = spawnSync9("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
+      const mb = spawnSync8("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
       if (mb.status === 0 && mb.stdout.trim()) {
-        const count = spawnSync9("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
+        const count = spawnSync8("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
         if (count.status === 0) {
           return {
             dirty: isDirty,
@@ -48292,7 +48258,7 @@ init_redact();
 init_telemetry();
 init_routing();
 init_prices();
-import { spawnSync as spawnSync11 } from "node:child_process";
+import { spawnSync as spawnSync10 } from "node:child_process";
 import { createHash as createHash17 } from "node:crypto";
 import { existsSync as existsSync43, mkdtempSync as mkdtempSync3, readFileSync as readFileSync40, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
@@ -49149,7 +49115,7 @@ ${divider}
 
 // plugins/kxm/src/ssh-remote.ts
 init_safety_integrity();
-import { spawnSync as spawnSync10 } from "node:child_process";
+import { spawnSync as spawnSync9 } from "node:child_process";
 import { existsSync as existsSync40, mkdirSync as mkdirSync30, readFileSync as readFileSync38, readdirSync as readdirSync13, rmSync as rmSync12, statSync as statSync5 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
 import { join as join50, resolve as resolve31 } from "node:path";
@@ -49225,7 +49191,7 @@ function parseSshConfig(configPath) {
     return [];
   }
 }
-function resolveSshHostG(host, execFn = spawnSync10) {
+function resolveSshHostG(host, execFn = spawnSync9) {
   try {
     const result = execFn("ssh", ["-G", host], { encoding: "utf-8" });
     if (result.status !== 0 || !result.stdout) {
@@ -49291,7 +49257,7 @@ function buildSshArgs(options) {
   args.push(options.host);
   return args;
 }
-function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync10) {
+function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync9) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join50(resolvedDir, "%C");
   try {
@@ -49303,7 +49269,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
     return false;
   }
 }
-function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync10) {
+function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync9) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join50(resolvedDir, "%C");
   try {
@@ -49317,7 +49283,7 @@ function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function executeSshRun(params) {
   const startTime = Date.now();
-  const execSyncFn = params.execFn ?? spawnSync10;
+  const execSyncFn = params.execFn ?? spawnSync9;
   if (params.action === "info") {
     if (params.host) {
       const hostInfo = resolveSshHostG(params.host, execSyncFn);
@@ -50379,7 +50345,7 @@ init_types();
 init_repo_root();
 function cliSpawn(runtime, command, args, extra) {
   if (runtime.io.spawnSync) return runtime.io.spawnSync(command, args);
-  const result = spawnSync11(command, [...args], {
+  const result = spawnSync10(command, [...args], {
     encoding: "utf8",
     windowsHide: true,
     shell: process.platform === "win32",
@@ -51236,13 +51202,6 @@ var DRY_RUN_COMMANDS = /* @__PURE__ */ new Set([
   "lane drop",
   "lane run",
   "land",
-  "assign run",
-  "assign witness",
-  "assign plan-current",
-  "assign attribute",
-  "assign observe-cost",
-  "assign accept",
-  "assign change-report",
   "plugin install",
   "plugin",
   "runs status",
@@ -51343,7 +51302,9 @@ var DRY_RUN_COMMANDS = /* @__PURE__ */ new Set([
   "task run",
   "task sync",
   "studio layout",
-  "studio serve"
+  "studio serve",
+  "docs build",
+  "docs serve"
 ]);
 var DryRunRefused = class extends Error {
   code;
@@ -51551,47 +51512,6 @@ function createProgram(ctx, result) {
       ...options.bodyFile !== void 0 ? { bodyFile: options.bodyFile } : {}
     });
   });
-  const assignCmd = addGlobalOptions(program2.command("assign").description("Run this repository's developer assignment runner"));
-  assignCmd.helpCommand("help", "Show assign help");
-  addGlobalOptions(assignCmd.command("run").description("Dispatch a bound assignment manifest")).requiredOption("--manifest <path>", "Absolute path to the assignment manifest").action(async function assignRunAction(options) {
-    result.code = await cmdAssign(runtimeFrom(ctx, this), "run", { manifest: options.manifest });
-  });
-  addGlobalOptions(assignCmd.command("witness").description("Run the fixed verification witness for an existing assignment")).requiredOption("--record-dir <path>", "Absolute path to the assignment record directory").action(async function assignWitnessAction(options) {
-    result.code = await cmdAssign(runtimeFrom(ctx, this), "witness", { recordDir: options.recordDir });
-  });
-  addGlobalOptions(assignCmd.command("plan-current").description("Stamp or advance the current-plan pointer")).requiredOption("--task-dir <path>", "Absolute path to the task directory").requiredOption("--plan <path>", "Absolute path to the plan file").requiredOption("--sha256 <hex>", "SHA-256 of the plan file").requiredOption("--base-commit <sha>", "Base commit the pointer records").requiredOption("--expected-generation <n>", "Generation the pointer must currently have").action(async function assignPlanCurrentAction(options) {
-    result.code = await cmdAssign(runtimeFrom(ctx, this), "plan-current", {
-      taskDir: options.taskDir,
-      plan: options.plan,
-      sha256: options.sha256,
-      baseCommit: options.baseCommit,
-      expectedGeneration: options.expectedGeneration
-    });
-  });
-  addGlobalOptions(assignCmd.command("attribute").description("Attach a private attribution note")).requiredOption("--task-dir <path>", "Absolute path to the task directory").requiredOption("--record-dir <path>", "Absolute path to the assignment record directory").requiredOption("--class <class>", "orchestration, model, environment, or unclassified").requiredOption("--explanation-file <path>", "Absolute path to the note file").action(async function assignAttributeAction(options) {
-    result.code = await cmdAssign(runtimeFrom(ctx, this), "attribute", {
-      taskDir: options.taskDir,
-      recordDir: options.recordDir,
-      classification: options.class,
-      explanationFile: options.explanationFile
-    });
-  });
-  addGlobalOptions(assignCmd.command("observe-cost").description("Import one historical cost observation as cost-only")).requiredOption("--task-dir <path>", "Absolute path to the task directory").requiredOption("--input <path>", "Absolute path to the observation file").action(async function assignObserveCostAction(options) {
-    result.code = await cmdAssign(runtimeFrom(ctx, this), "observe-cost", { taskDir: options.taskDir, input: options.input });
-  });
-  addGlobalOptions(assignCmd.command("accept").description("Bind an exact witnessed commit and two critic PASS records")).requiredOption("--task-dir <path>", "Absolute path to the task directory").requiredOption("--commit <sha>", "Commit to accept").requiredOption("--record-dir <path>", "Absolute path to the writer record directory").requiredOption("--critic <path>", "Absolute path to a critic record directory; pass twice", (value, previous) => previous.concat(value), []).option("--observed-pr <id>", "Observed pull request id").option("--observed-ci <id>", "Observed CI run id").action(async function assignAcceptAction(options) {
-    result.code = await cmdAssign(runtimeFrom(ctx, this), "accept", {
-      taskDir: options.taskDir,
-      commit: options.commit,
-      recordDir: options.recordDir,
-      critics: options.critic,
-      ...options.observedPr !== void 0 ? { observedPr: options.observedPr } : {},
-      ...options.observedCi !== void 0 ? { observedCi: options.observedCi } : {}
-    });
-  });
-  addGlobalOptions(assignCmd.command("change-report").description("Report attempts, rework, costs, and retained verification history")).requiredOption("--task-dir <path>", "Absolute path to the task directory").action(async function assignChangeReportAction(options) {
-    result.code = await cmdAssign(runtimeFrom(ctx, this), "change-report", { taskDir: options.taskDir });
-  });
   addGlobalOptions(program2.command("run").description("Create a KXM run without executing steps; follow its prerequisites, then kxm runs drive <runId> --wait").argument("[workflow]", "Workflow id to run").argument("[prompt...]", "Run prompt (events keep its hash; the full text is kept in a local 0600 sidecar file)").option("--brief <file>", "Read the run prompt from a file instead of the positional prompt").option("--lane <unit>", "Discover the project from this lane's worktree").action(async function runAction(workflow2, promptParts, options) {
     result.code = await cmdKxmRunCli(runtimeFrom(ctx, this), workflow2, promptParts, options);
   }));
@@ -51622,6 +51542,14 @@ function createProgram(ctx, result) {
   });
   addGlobalOptions(runCmd.command("list").description("List recent runs for the current project")).action(async function runListAction() {
     result.code = await cmdKxmRunList(runtimeFrom(ctx, this));
+  });
+  const docsCmd = addGlobalOptions(program2.command("docs").description("Build and serve the tailnet docs site"));
+  docsCmd.helpCommand("help", "Show docs help");
+  addGlobalOptions(docsCmd.command("build").description("Regenerate the docs site from the roadmap state")).action(async function docsBuildAction() {
+    result.code = await cmdDocsBuild(runtimeFrom(ctx, this));
+  });
+  addGlobalOptions(docsCmd.command("serve").description("Serve the built docs site on this machine's tailnet address")).option("--port <port>", "Port passed through to the docs server").action(async function docsServeAction(options) {
+    result.code = await cmdDocsServe(runtimeFrom(ctx, this), options);
   });
   const tenantCmd = addGlobalOptions(program2.command("tenant").description("Composed tenant reads for machine clients (portal)"));
   tenantCmd.helpCommand("help", "Show tenant help");
