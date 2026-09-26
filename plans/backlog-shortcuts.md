@@ -236,6 +236,10 @@ a governance or proof gap, **medium** means a defect users will hit,
   read on `EAGAIN`. Moot for the transport recipes once they retire; still
   relevant to any caller that pipes an envelope.
 - **Planned where:** not planned.
+- **Interim that works (2026-09-26):** write the request envelope to a file
+  and run `just dispatch <file> < /dev/null`; the stdin read never happens.
+  Three consecutive `just review-cli` dispatches failed with `EAGAIN` while
+  a verify ran in the same lane; the file dispatch succeeded first time.
 
 ### S19. `kxm land` verify failure hides the cause (medium)
 
@@ -312,6 +316,71 @@ a governance or proof gap, **medium** means a defect users will hit,
   this run and reports each removal once, so the no-stale-data rule holds
   for generated pages too. Evidence: 2026-09-26 deep review.
 - **Planned where:** next docs-site slice, with the mkdocs nav warnings.
+
+### S24. Worktree lanes collide with the Runtime project registry (high)
+
+- **Shortcut:** every lane shares the project id in `.kxm/project.yaml`, and
+  the registry binds a project id to one control root with an immutable home
+  runtime. The second lane that posts a run is refused with
+  `project_home_conflict`. On 2026-09-26 the stale row still pointed at a
+  removed lane, so the interim was to stop the runtime, delete that row from
+  `registry.db`, and redispatch. That works once per lane and loses nothing
+  only because the removed root had no store left.
+- **Why:** `registerProject` in `plugins/kxm/src/runtime-store.ts` keys on
+  project id and control root and never learned about worktrees.
+- **Proper fix:** register a control root that is a git worktree of an
+  already-registered project under that project's common git dir, as a lane
+  of it: same project id, its own root and event store, home runtime shared.
+  `kxm lane drop` unregisters the lane root. One test per path: second lane
+  admitted, foreign clone with the same id still refused, drop unregisters.
+- **Planned where:** the next engine slice, before P2 of the role-authority
+  phase; it blocks `loop-dispatch` on the roadmap.
+
+### S25. The engine's one-shot effort comes from the model inventory, not the role roster (medium)
+
+- **Shortcut:** the first engine-dispatched writer (omp-align-p1, 2026-09-26)
+  ran `grok-4.7` at reasoning effort low. The one-shot producer passes its
+  resolved `thinking` value as the effort flag and the agent file sets none,
+  so the run got low; the writer role's roster says `effort: medium` for that
+  route, and the retired `just impl` recipe hard-coded medium. The run was left to finish under the critic gate
+  rather than cancelled.
+- **Why:** agents name a harness and model directly and never consult the
+  role roster; `effort` on a roster entry is decorative until P2.
+- **Proper fix:** P2 of the role-authority plan: agents gain `role:`, the
+  producer resolves route and effort through the roster entry, and the
+  producer's default is only the fallback when the roster entry has none. Until then, a per-agent `thinking` override is the interim, recorded
+  in the agent file and the config reference.
+- **Planned where:** P2 (`plans/plan-omp-config-alignment.md` section 5).
+
+### S26. The core test suite can hang after its last file (high)
+
+- **Shortcut:** twice on 2026-09-26 the `node --test` runner kept running
+  after every test file had finished: the docs-site verify (log silent for
+  35 minutes after a failed runtime-supervisor test) and the P1 writer's own
+  verify in the omp-align-p1 lane (runner idle in the event loop with no
+  child processes and no foreign holder of its pipes). The first was killed
+  by hand; the second was left to the one-hour step limit.
+- **Why:** a test leaves a handle open in the runner process, and the
+  runner waits for the loop to drain; which test is unknown.
+- **Proper fix:** find the leaking handle (`--test-force-exit` off, run with
+  `--trace-uncaught` and `process.getActiveResourcesInfo()` at the end of
+  each suspect file) and close it; until then run the suite with
+  `--test-force-exit` so a green run exits and a failed run reports, and
+  put a hard timeout on the `test` script.
+- **Planned where:** the next engine slice with S24; it costs a verify slot
+  for up to an hour each time it hits.
+
+### S27. The harness runner exports both `FORCE_COLOR` and `NO_COLOR` (low)
+
+- **Shortcut:** the P1 repair writer's first `npm run verify` failed four
+  stderr assertions because its process had both variables set; the same
+  command with them unset passed. The writer worked around it; nothing was
+  changed in the runner.
+- **Why:** `scripts/harness-run.mjs` (or the `just impl` recipe) sets one
+  for its own output and inherits the other from the operator's shell.
+- **Proper fix:** the runner clears `NO_COLOR` and `FORCE_COLOR` in the
+  child environment and sets neither; a test asserts the child env.
+- **Planned where:** with S18 when the transport recipes retire.
 
 ## Closed
 

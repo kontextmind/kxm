@@ -44,6 +44,24 @@ entry whose fix has landed is deleted, not archived.
 
 ## Engine and runtime
 
+- **A lane that changes `.kxm` schemas cannot be observed or re-driven by
+  the installed runtime until that change ships.** The runtime revalidates
+  the lane's project config on every request with the installed code, so
+  once the P1 writer rewrote the role files to v2, `kxm runs status`,
+  `cancel`, and a second `kxm lane run` all refused with
+  `schema_identity_mismatch`. Watch such a writer by process and tree, and
+  dispatch its repair through the harness runner. Evidence: omp-align-p1,
+  2026-09-26. Applies to: any schema or config-identity cutover.
+
+- **One control root per project id in the Runtime registry.** A lane
+  worktree carries the same `.kxm/project.yaml` id as the main checkout, so
+  the second root that posts a run is refused with `project_home_conflict`,
+  and a lane that was removed leaves a dead row behind. Until backlog S24
+  lands: stop the runtime, delete the dead row from `registry.db` under the
+  user state root, restart, redispatch. Never delete a row whose root still
+  exists. Evidence: omp-align-p1 dispatch, 2026-09-26. Applies to:
+  `kxm lane run` and `kxm run --lane`.
+
 - **The improvement loop is blind while writers bypass `kxm run`.** Every
   writer this week ran through the harness runner (`just impl-bg` and the
   critic recipes), which records no engine events, so `kxm improve report`
@@ -53,6 +71,9 @@ entry whose fix has landed is deleted, not archived.
   workflows land, dispatch through `kxm lane run --workflow implement-only`
   so attempts land in the run-events store; until then the sixth-tick
   improvement loop reports nothing by design.
+  The reports read the store of the control root they run in, so a lane's
+  attempts show up only when the report runs inside that lane, or once the
+  lane is registered under the project (backlog S24).
 
 - **A live agent step had a hard 120 second timeout with no configuration
   path.** The supervisor built the one-shot producer without a timeout.

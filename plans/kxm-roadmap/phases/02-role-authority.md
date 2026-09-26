@@ -12,7 +12,7 @@ Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role author
 
 ### P1 promote the draft: schemas live, models and roles rewritten to v2, v1 deleted
 
-`omp-p1`. Status: open. Detail: ready.
+`omp-p1`. Status: done. Detail: ready.
 
 Template: [feature](../../templates/feature.md).
 
@@ -21,6 +21,8 @@ Done criterion: just verify green; every .kxm/roles and .kxm/models file validat
 Evidence needed: The validator test named in the P1 row and the CHANGELOG entry.
 
 Plan section: plans/plan-omp-config-alignment.md#5-phases.
+
+Evidence: `test/core/policy-draft.test.ts`.
 
 ### P2 cut the loader and engine over to the v2 files
 
@@ -68,6 +70,7 @@ None.
 
 ## Questions
 
-- Section 7 of the plan lists the open questions; they stay open until P1 is dispatched.
+- Section 7 of the plan lists the open questions; they stay open until P2 is dispatched.
+- P2 waits on the lane registry slice (backlog S24) so the writer can run through kxm lane run.
 
 [Dashboard](../dashboard.md)

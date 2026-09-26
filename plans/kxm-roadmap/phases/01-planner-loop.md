@@ -82,7 +82,7 @@ Evidence: `test/core/engine.test.ts`.
 
 Template: `feature`.
 
-Done criterion: One real unit runs writer and both critics through the one-step workflows and its attempts appear in kxm improve report.
+Done criterion: One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report; P1 ran the writer that way but the critics and repairs went through the harness runner because the lane's schema cutover made the runtime refuse it.
 
 Evidence needed: The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, impl-bg.
 
