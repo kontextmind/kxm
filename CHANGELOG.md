@@ -14,6 +14,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   A required review is reported. The `land` workflow in `.kxm/workflows/land.yaml`
   runs the same gates and may be refused until gate-only workflows are supported.
   See the [CLI reference](docs/reference/cli-reference.md#kxm-land).
+- **`kxm assign` is the entry to the developer assignment runner.**
+  `run`, `witness`, `plan-current`, `attribute`, `observe-cost`, `accept` and
+  `change-report` spawn `scripts/assignment-run.mjs` with the same flags as the
+  just recipes. The runner still performs every check and writes every file.
+  The just recipes stay until one real unit has been accepted through
+  `kxm assign`. See the
+  [CLI reference](docs/reference/cli-reference.md#kxm-assign).
 
 - **`kxm lane` keeps one git worktree per unit beside the control checkout.**
   `create`, `list`, `status`, `drop` and `run` store a 0600 record in

@@ -58,7 +58,7 @@ Every top-level `kxm` command is owned by exactly one skill. A skill can own sev
 | `kxm-peer` | `peer` | Delegate to, fan out to, await and answer other agents |
 | `kxm-workflow` | `workflow`, `gate` | Record journal entries, pass checkpoints and wait on signed callbacks |
 | `kxm-definitions` | `role` | Inspect or edit roles, role hosts and model rosters without granting writer admission |
-| `kxm-runs` | `run`, `runs`, `lane` | Create, drive, inspect and cancel runs, manage worktree lanes, or smoke-test a workflow model-free |
+| `kxm-runs` | `run`, `runs`, `lane`, `assign` | Create, drive, inspect and cancel runs, manage worktree lanes, smoke-test a workflow, or call the assignment runner |
 | `kxm-context-memory` | `context`, `memory`, `explain` | Recall what the project knows, explain a context footprint, record memory candidates |
 | `kxm-skill-lifecycle` | `skills` | Turn a repeated practice into a governed skill candidate |
 | `kxm-routing-improve` | `routing`, `improve` | Find what KXM learned and what repeats, and read recorded route spend |

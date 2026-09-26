@@ -1,6 +1,7 @@
 ---
 name: kxm-runs
 description: Create, drive, and inspect local KXM runs, manage worktree lanes, and land a branch. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, create a lane, or land the current branch.
+description: Create, drive, and inspect local KXM runs, and manage worktree lanes. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, create a lane, or run the developer assignment loop (kxm assign run, witness, plan-current, attribute, observe-cost, accept, change-report).
 ---
 
 # KXM runs
@@ -27,6 +28,13 @@ create, or logs verbs under `runs`.
 | `kxm lane drop <unit>` | Remove the worktree and the record. The branch is not deleted | `--force`, `--json` |
 | `kxm lane run <unit>` | Create the lane if needed, start a run from a brief, and drive it | `--brief <file>` (required), `--workflow <id>`, `--base <ref>`, `--wait`, `--timeout-ms <n>`, `--json` |
 | `kxm land` | Verify, regenerate docs, push, open or reuse a pull request, rebase, unblock, squash-merge, watch the release, and note a milestone | `--pr <n>`, `--stage <name>`, `--body-file <path>`, `--json`, `--dry-run` |
+| `kxm assign run` | Dispatch one assignment manifest. The runner performs every check | `--manifest <path>` |
+| `kxm assign witness` | Run the fixed witness for an existing record | `--record-dir <path>` |
+| `kxm assign plan-current` | Stamp or advance the current-plan pointer | `--task-dir <path>`, `--plan <path>`, `--sha256 <hex>`, `--base-commit <sha>`, `--expected-generation <n>` |
+| `kxm assign attribute` | Attach a private note. It is not proof | `--task-dir <path>`, `--record-dir <path>`, `--class <class>`, `--explanation-file <path>` |
+| `kxm assign observe-cost` | Import one cost-only observation | `--task-dir <path>`, `--input <path>` |
+| `kxm assign accept` | Bind a witnessed commit and two critic records | `--task-dir <path>`, `--commit <sha>`, `--record-dir <path>`, `--critic <path>` twice, optional `--observed-pr <id>`, `--observed-ci <id>` |
+| `kxm assign change-report` | Report attempts, rework, and spend | `--task-dir <path>` |
 
 The run record and its events keep only the prompt's hash, but the full
 prompt text is kept in a local `run-events.db.run-prompts.json` file (mode
@@ -80,6 +88,7 @@ squash-merges. `release` waits for the tag and the npm publish. `milestone`
 reports `deep_review_required` when a phase flips to done or the body contains
 a `Milestone:` line, and does not run the review. `--dry-run` prints each
 stage's plan and does not mutate.
+`kxm assign` spawns `node scripts/assignment-run.mjs` from the project root and returns the child's exit code. Paths are passed through as given. `--dry-run` prints that argv and does not spawn. `--json` formats this command's own output and is not forwarded. The group does not load a working-directory `.env`. A project without `scripts/assignment-run.mjs` is refused with `assign_runner_missing`. Outside a KXM project the refusal is `project_required`. Witness, roster, and acceptance checks belong to the runner, documented in `docs/contributing/assignment-runner.md`.
 
 ## Refusals
 

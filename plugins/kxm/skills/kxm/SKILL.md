@@ -21,6 +21,7 @@ writers, or replace `.kxm/roster.yaml` trusted policy.
 | Work inside a durable workflow run, gates, signed callbacks | `kxm-workflow` | `workflow`, `gate` |
 | Role definitions, role hosts, model rosters | `kxm-definitions` | `role` |
 | Create, drive, inspect, or cancel a run, use a worktree lane, or land a branch | `kxm-runs` | `run`, `runs`, `lane`, `land` |
+| Create, drive, inspect, or cancel a run, use a worktree lane, or run the developer assignment loop | `kxm-runs` | `run`, `runs`, `lane`, `assign` |
 | What we know or decided, recall, context footprint, Git memory | `kxm-context-memory` | `context`, `memory`, `explain` |
 | Turn a repeated practice into a governed skill | `kxm-skill-lifecycle` | `skills` |
 | What KXM learned, repeated asks, recorded route spend | `kxm-routing-improve` | `routing`, `improve` |
