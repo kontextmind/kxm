@@ -31,7 +31,7 @@ const CONTROL_ROOT_REQUIRED = ["repositoryId", "projectKey"] as const;
 const GATE_REGISTRY_SCHEMA = "kxm.gate-registry.v1";
 const REVISION_REQUIRED = ["config", "executorPolicy", "toolPolicy", "memory"] as const;
 const PROJECT_LIMIT_REQUIRED = ["maxConcurrentRuns"] as const;
-const PROJECT_LIMIT_OPTIONAL = ["maxRunDurationMs", "maxAgentTimeMs"] as const;
+const PROJECT_LIMIT_OPTIONAL = ["maxRunDurationMs", "maxAgentTimeMs", "agentStepTimeoutMs"] as const;
 const PLAN_REQUIRED = ["schema", "workflowId", "coordinator", "limits", "transitionBudget", "hasBackEdges", "entryStepId", "order", "steps", "requirePlanHash"] as const;
 const PLAN_OPTIONAL = ["sourcePath", "reproOracle", "planHash"] as const;
 const LIMIT_OPTIONAL = ["maxTransitions", "maxRunDurationMs", "maxAgentTimeMs", "maxModelCost", "currency"] as const;
@@ -85,6 +85,7 @@ export interface KxmRunPlanEnvelope {
     readonly maxConcurrentRuns: number;
     readonly maxRunDurationMs?: number;
     readonly maxAgentTimeMs?: number;
+    readonly agentStepTimeoutMs?: number;
   };
   readonly plan: KxmCompiledPlan;
   readonly gates: KxmPinnedGates;
@@ -252,6 +253,7 @@ function parseEnvelope(parsed: unknown, run: KxmRunRecord): KxmRunPlanEnvelope {
     maxConcurrentRuns: asCount(limitsValue.maxConcurrentRuns, run.runId, "projectLimits.maxConcurrentRuns"),
     ...(limitsValue.maxRunDurationMs !== undefined ? { maxRunDurationMs: asDuration(limitsValue.maxRunDurationMs, run.runId, "projectLimits.maxRunDurationMs") } : {}),
     ...(limitsValue.maxAgentTimeMs !== undefined ? { maxAgentTimeMs: asDuration(limitsValue.maxAgentTimeMs, run.runId, "projectLimits.maxAgentTimeMs") } : {}),
+    ...(limitsValue.agentStepTimeoutMs !== undefined ? { agentStepTimeoutMs: asAgentStepTimeout(limitsValue.agentStepTimeoutMs, run.runId, "projectLimits.agentStepTimeoutMs") } : {}),
   };
   const plan = freezeKxmCompiledPlan(parseCompiledPlan(value.plan, run.runId));
   return {
@@ -694,6 +696,13 @@ function asCount(value: unknown, runId: string, label: string): number {
 function asDuration(value: unknown, runId: string, label: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     throw runtimeError("run_plan_corrupt", runId, `${label} is not a duration integer`);
+  }
+  return value;
+}
+
+function asAgentStepTimeout(value: unknown, runId: string, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 60_000) {
+    throw runtimeError("run_plan_corrupt", runId, `${label} is below 60000`);
   }
   return value;
 }

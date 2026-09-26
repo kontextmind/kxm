@@ -165,6 +165,7 @@ makes a directory a KXM project. Parser: `loadKxmProject` in
 | `limits.maxConcurrentRuns` | Integer, 1 to 128 | Optional, `1` | Runtime admission. A changed bound is refused (`scheduler_policy_conflict`) while admitted or queued runs still use the previous one. |
 | `limits.maxRunDurationMs` | Integer, 0 to 31,536,000,000 | Optional | Runtime. Combined with the workflow's own value; the smaller one wins. |
 | `limits.maxAgentTimeMs` | Integer, 0 to 31,536,000,000 | Optional | Runtime refuses to drive any run while it is set (`limit_unsupported`); leave it out |
+| `limits.agentStepTimeoutMs` | Integer, 60,000 to 31,536,000,000 | Optional, 3,600,000 | Wall clock for one live agent or moa step when the step omits `timeoutMs`. The supervisor passes it to the one-shot producer. A step `timeoutMs` narrower than this wins; a wider step value is refused (`step_unsupported`, field `timeoutMs`) |
 
 The Runtime binds one project `id` to one control root per state root, so a
 second checkout with the same ID is refused with `project_home_conflict`.
@@ -555,7 +556,7 @@ Duration budgets use the wall clock. `maxRunDurationMs` counts from the time the
 | `signal` | Identifier | Required for `wait` | Compiled and diffed; the Runtime does not match signals to wait steps yet |
 | `model` | Model selector | Optional | Intersected with each allowed agent's own model ceiling; an empty intersection is `model_selector_incompatible`. Live route resolution ignores it. The Runtime refuses it on gate steps. |
 | `maxAttempts` | Integer, 1 to 20 | Optional, `1` | Entering the step again after this many attempts fails the run (`budget_step_attempts`) |
-| `timeoutMs` | Integer, 0 to 31,536,000,000 | Optional | Not `0`. Gate steps: refused for `artifacts-exist` gates or below the gate's `timeoutMs`. Other kinds: unused; the producer times out at 120 s |
+| `timeoutMs` | Integer, 0 to 31,536,000,000 | Optional | Not `0`. Gate steps: refused for `artifacts-exist` gates or below the gate's `timeoutMs`. Agent and moa steps: the one-shot spawn uses this value when it is at most `limits.agentStepTimeoutMs`; a wider value is refused (`step_unsupported`, field `timeoutMs`). When the step omits it, the project limit applies (default 3,600,000). The process default of 120 seconds is only the last resort when neither is set |
 | `repositories` | Map of repository ID to `none`, `read`, or `write` | Optional | IDs must be declared (`repository_unknown`); may not exceed the agent's ceiling (`repository_scope_expansion`) |
 | `tools` | `{preset, allow, deny}` | Optional | Must keep the agent's preset and denials and allow only tools the agent allows (`tool_scope_expansion`). The Runtime refuses steps that declare `tools`. |
 | `secrets` | `[{ref, as, required}]` | Optional | Only refs the agent grants (`secret_scope_expansion`). The Runtime refuses steps that declare `secrets`. |

@@ -313,10 +313,21 @@ It writes `recording-resolved.json` in the record directory. It never changes
 
 ## Transport-only recipes
 
-`just impl|plan|review-arch|review-cli` and `just dispatch` send one
-`kxm.harness-request.v1` envelope through `scripts/harness-run.mjs` and print a
-`kxm.harness-result.v2` envelope. They are harness transport only. They mint no
-assignment, witness or acceptance proof, so their output cannot be accepted.
+Drive a one-step workflow in a lane. Each command writes a drive receipt and
+the checkout fingerprint. `just impl`, `just plan`, `just review-arch`,
+`just review-cli`, and `just impl-bg` are retired in favor of these. The
+recipes stay in the justfile until one real unit has been driven this way.
+
+```bash
+kxm lane run <unit> --workflow implement-only --brief <file>
+kxm lane run <unit> --workflow review-arch-only --brief <file>
+kxm lane run <unit> --workflow review-cli-only --brief <file>
+```
+
+`just dispatch` still sends one `kxm.harness-request.v1` envelope through
+`scripts/harness-run.mjs` and prints a `kxm.harness-result.v2` envelope. It
+mints no assignment, witness or acceptance proof, so its output cannot be
+accepted. The retired recipes did the same.
 
 ### Preflight refusals
 

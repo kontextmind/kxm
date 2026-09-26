@@ -1,0 +1,20 @@
+schema: kxm.workflow.v1
+description: One implementer step with a drive receipt. Replaces just impl.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: implement
+    kind: agent
+    agent: implementer
+    repositories:
+      control: write
+    maxAttempts: 1
+    timeoutMs: 3600000
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed

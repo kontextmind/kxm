@@ -76,7 +76,8 @@
       "properties": {
         "maxConcurrentRuns": { "type": "integer", "minimum": 1, "maximum": 128 },
         "maxRunDurationMs": { "$ref": "common.schema.json#/$defs/durationMs" },
-        "maxAgentTimeMs": { "$ref": "common.schema.json#/$defs/durationMs" }
+        "maxAgentTimeMs": { "$ref": "common.schema.json#/$defs/durationMs" },
+        "agentStepTimeoutMs": { "type": "integer", "minimum": 60000, "maximum": 31536000000 }
       },
       "additionalProperties": false
     }

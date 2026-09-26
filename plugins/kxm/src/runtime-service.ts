@@ -195,19 +195,29 @@ export function kxmDeclaredExecutorIds(bundle: KxmProjectBundle): string[] {
   ].filter((value): value is string => value !== undefined))].sort();
 }
 
+/** Wall-clock bound for one live agent or moa step when the step omits `timeoutMs`. */
+export const KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS = 3_600_000;
+export const KXM_MIN_AGENT_STEP_TIMEOUT_MS = 60_000;
+
 export function kxmProjectAdmissionLimits(bundle: KxmProjectBundle): {
   maxConcurrentRuns: number;
   maxRunDurationMs?: number;
   maxAgentTimeMs?: number;
+  agentStepTimeoutMs: number;
 } {
   const limits = objectValue(bundle.project.value.limits);
   const maxConcurrentRuns = typeof limits?.maxConcurrentRuns === "number" && Number.isInteger(limits.maxConcurrentRuns) && limits.maxConcurrentRuns >= 1
     ? limits.maxConcurrentRuns
     : 1;
+  const declared = limits?.agentStepTimeoutMs;
+  const agentStepTimeoutMs = typeof declared === "number" && Number.isInteger(declared) && declared >= KXM_MIN_AGENT_STEP_TIMEOUT_MS
+    ? declared
+    : KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
   return {
     maxConcurrentRuns,
     ...(typeof limits?.maxRunDurationMs === "number" ? { maxRunDurationMs: limits.maxRunDurationMs } : {}),
     ...(typeof limits?.maxAgentTimeMs === "number" ? { maxAgentTimeMs: limits.maxAgentTimeMs } : {}),
+    agentStepTimeoutMs,
   };
 }
 

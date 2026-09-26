@@ -87,6 +87,7 @@
         "reason": { "type": "string", "minLength": 1, "maxLength": 80 },
         "field": { "type": "string", "minLength": 1, "maxLength": 128 },
         "stepId": { "$ref": "common.schema.json#/$defs/identifier" },
+        "attemptId": { "$ref": "common.schema.json#/$defs/opaqueId" },
         "detail": { "type": "string", "minLength": 1, "maxLength": 4000 }
       },
       "additionalProperties": false

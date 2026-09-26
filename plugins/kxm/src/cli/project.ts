@@ -522,7 +522,12 @@ interface KxmStatusDrive {
   mode?: string;
   openedAt?: string;
   receipt?: {
-    settlement?: { kind?: string; status?: string; reason?: string };
+    settlement?: {
+      kind?: string;
+      status?: string;
+      reason?: string;
+      handoff?: { reason?: string; attemptId?: string };
+    };
   } | null;
   verified?: boolean;
   divergence?: string;
@@ -568,7 +573,14 @@ function formatRunStatusLine(
   drive: KxmStatusDrive | undefined,
 ): string {
   const reason = typeof drive?.receipt?.settlement?.reason === "string" ? drive.receipt.settlement.reason : "";
-  const statusLabel = run.status === "cancelled" ? formatCancelledStatus(reason) : run.status;
+  const handoff = drive?.receipt?.settlement?.handoff;
+  const attemptId = typeof handoff?.attemptId === "string" ? handoff.attemptId : "";
+  const handoffReason = typeof handoff?.reason === "string" ? handoff.reason : "";
+  const statusLabel = run.status === "cancelled"
+    ? formatCancelledStatus(reason)
+    : run.status === "cancelling" && attemptId.length > 0 && handoffReason.length > 0
+      ? `cancelling (attempt ${attemptId}, ${handoffReason})`
+      : run.status;
   return `run ${run.runId}: ${statusLabel} (workflow ${run.workflowId}, updated ${run.updatedAt})`;
 }
 

@@ -1,6 +1,4 @@
-import { join } from "node:path";
-import { beginOneShotEvidence } from "./oneshot-evidence.ts";
-import { kxmUserStateRoot } from "./bindings.ts";
+import { beginOneShotEvidence, oneShotEvidenceRoot } from "./oneshot-evidence.ts";
 import { defaultSpawn, type KxmOneShotProcessResult, type KxmOneShotSpawn } from "./oneshot-process.ts";
 export { defaultSpawn, type KxmOneShotProcessResult, type KxmOneShotSpawn } from "./oneshot-process.ts";
 import {
@@ -260,15 +258,17 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
 
       const spawnFn = options.spawnProcess ?? defaultSpawn;
       const cwd = options.projectRoot ?? process.cwd();
-      const evidence = await beginOneShotEvidence(options.evidenceRoot ?? join(kxmUserStateRoot(), "runtime", "oneshot-evidence"), {
+      const timeoutMs = request.timeoutMs ?? options.timeoutMs;
+      const evidence = await beginOneShotEvidence(options.evidenceRoot ?? oneShotEvidenceRoot(), {
         runId: request.runId, stepId: request.stepId, attemptId: request.attemptId, assignmentId: request.assignmentId,
         harness, provider: resolved.provider, model: resolved.model, cwd, command, args, input,
+        timeoutMs: timeoutMs ?? 120_000,
       }, [request.capability, ...Object.entries(env).filter(([key]) => /TOKEN|KEY|SECRET|PASSWORD|COOKIE|AUTH/i.test(key)).map(([, value]) => value ?? "")]);
       let procResult: KxmOneShotProcessResult;
       try {
         procResult = request.signal.aborted
           ? { stdout: "", stderr: "", code: null, started: false, observedChildExit: false, error: new Error("process_aborted") }
-          : await spawnFn(command, args, { cwd, env, input, timeoutMs: options.timeoutMs ?? 120_000, signal: request.signal });
+          : await spawnFn(command, args, { cwd, env, input, timeoutMs, signal: request.signal });
       } catch (error) {
         // A rejected adapter promise is not proof that no process/effect started.
         procResult = { stdout: "", stderr: "", code: null, observedChildExit: false, error: error instanceof Error ? error : new Error("process_adapter_error") };

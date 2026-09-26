@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { lstat, mkdir, open, rename } from "node:fs/promises";
 import { join } from "node:path";
+import { kxmUserStateRoot } from "./bindings.ts";
 import type { KxmOneShotProcessResult } from "./oneshot-process.ts";
 
 export const ONESHOT_EVIDENCE_SCHEMA = "kxm.oneshot-evidence.v2" as const;
@@ -34,6 +36,46 @@ export function parseOneShotEvidenceRecord(bytes: string): OneShotEvidenceRecord
   return parsed as OneShotEvidenceRecord;
 }
 
+/** Where live one-shot spawns write `intent.json` and `result.json`. */
+export function oneShotEvidenceRoot(): string {
+  return join(kxmUserStateRoot(), "runtime", "oneshot-evidence");
+}
+
+/**
+ * Whether the one-shot evidence for this attempt says the direct child exited.
+ * Missing, unreadable, or unfinished evidence is `undefined` (do not settle).
+ * A recorded `false` stays `false`.
+ */
+export function readOneShotObservedChildExit(runId: string, attemptId: string, root = oneShotEvidenceRoot()): boolean | undefined {
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return undefined;
+  }
+  let seenTrue = false;
+  let seenFalse = false;
+  const capped = names.slice(0, 4096);
+  for (const name of capped) {
+    if (!name.startsWith("evd_")) continue;
+    const dir = join(root, name);
+    try {
+      const info = lstatSync(dir);
+      if (!info.isDirectory() || info.isSymbolicLink()) continue;
+      const intent = parseOneShotEvidenceRecord(readFileSync(join(dir, "intent.json"), "utf8"));
+      if (intent.runId !== runId || intent.attemptId !== attemptId) continue;
+      const result = parseOneShotEvidenceRecord(readFileSync(join(dir, "result.json"), "utf8"));
+      if (result.observedChildExit === true) seenTrue = true;
+      else if (result.observedChildExit === false) seenFalse = true;
+    } catch {
+      // An unreadable or unfinished record is not evidence that the child exited.
+    }
+  }
+  if (seenFalse) return false;
+  if (seenTrue) return true;
+  return undefined;
+}
+
 /** Private diagnostic evidence, never a peer reply or acceptance authority.
  * Retained until operator archival; no automatic deletion of failed attempts.
  * Each record is bounded; inability to reserve/write evidence fails closed.
@@ -42,6 +84,7 @@ export async function beginOneShotEvidence(root: string, intent: {
   runId: string; stepId: string; attemptId: string; assignmentId: string;
   harness: string; provider: string; model: string; cwd: string;
   command: string; args: readonly string[]; input?: string | undefined;
+  timeoutMs?: number | undefined;
 }, sensitive: readonly string[]): Promise<{
   id: string;
   finish(result: KxmOneShotProcessResult, observation: unknown): Promise<string>;
@@ -92,6 +135,7 @@ export async function beginOneShotEvidence(root: string, intent: {
     schema: ONESHOT_EVIDENCE_SCHEMA, id, recordedAt: new Date().toISOString(),
     runId: intent.runId, stepId: intent.stepId, attemptId: intent.attemptId, assignmentId: intent.assignmentId,
     harness: intent.harness, provider: intent.provider, requestedModel: intent.model,
+    ...(intent.timeoutMs !== undefined ? { timeoutMs: intent.timeoutMs } : {}),
     cwd: intent.cwd, command: redact(intent.command),
     argv: bounded(JSON.stringify(intent.args), ARGV_LIMIT), stdin: intent.input === undefined ? null : bounded(intent.input),
     env: null,

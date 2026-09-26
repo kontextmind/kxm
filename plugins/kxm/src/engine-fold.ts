@@ -158,6 +158,7 @@ interface MutableAttempt {
   status: string;
   resultClass?: string | undefined;
   outcome?: string | undefined;
+  producerError?: string | undefined;
 }
 
 interface MutableAssignment {
@@ -317,7 +318,7 @@ function authorizedCancelStep(state: MutableState, step: KxmCompiledStep, curren
   if (status !== "cancelled" || !state.cancelRequested) return false;
   if (createdOnlySingletonCancel(state, step, current, status)) return true;
   if (!panelIssuedAttemptsTerminal(current) || !panelAssignmentsTerminal(current)) return false;
-  const members: Array<{ resultClass: string; outcome: string | undefined }> = [];
+  const members: Array<{ resultClass: string; outcome: string | undefined; producerError: string | undefined }> = [];
   for (const assignmentId of current.panel.order) {
     const assignment = current.panel.assignments[assignmentId];
     if (!assignment) return false;
@@ -328,9 +329,12 @@ function authorizedCancelStep(state: MutableState, step: KxmCompiledStep, curren
     }
     const currentAttempt = currentAttemptOf(assignment);
     if (!currentAttempt?.resultClass) return false;
-    members.push({ resultClass: currentAttempt.resultClass, outcome: currentAttempt.outcome });
+    members.push({ resultClass: currentAttempt.resultClass, outcome: currentAttempt.outcome, producerError: currentAttempt.producerError });
   }
   if (members.some((member) => member.resultClass === "outcome_unknown" || member.resultClass === "producer_rejected")) {
+    if (members.every((member) => member.resultClass === "producer_rejected" && member.producerError === "executing_unrecorded")) {
+      return true;
+    }
     return false;
   }
   const declared = members.filter((member) => member.resultClass === "outcome");
@@ -343,8 +347,8 @@ function authorizedCancelStep(state: MutableState, step: KxmCompiledStep, curren
 
 function currentAttemptOf(assignment: {
   currentAttemptId?: string | undefined;
-  attempts: { readonly [id: string]: { resultClass?: string | undefined; outcome?: string | undefined } | undefined };
-}): { resultClass?: string | undefined; outcome?: string | undefined } | undefined {
+  attempts: { readonly [id: string]: { resultClass?: string | undefined; outcome?: string | undefined; producerError?: string | undefined } | undefined };
+}): { resultClass?: string | undefined; outcome?: string | undefined; producerError?: string | undefined } | undefined {
   const attemptId = assignment.currentAttemptId;
   return attemptId ? assignment.attempts[attemptId] : undefined;
 }
@@ -735,8 +739,8 @@ function isProvenFailure(state: MutableState, plan: KxmCompiledPlan | undefined)
 }
 
 function foldDriveOpened(state: MutableState, event: KxmRunEvent): void {
-  if (state.status !== "running" && state.status !== "blocked_uncertain") {
-    throw runtimeError("run_events_illegal", state.runId, "run.drive_opened is only legal while running or blocked_uncertain");
+  if (state.status !== "running" && state.status !== "blocked_uncertain" && state.status !== "cancelling") {
+    throw runtimeError("run_events_illegal", state.runId, "run.drive_opened is only legal while running, blocked_uncertain, or cancelling");
   }
   const driveId = stringPayload(event, "driveId");
   const mode = stringPayload(event, "mode");
@@ -1093,9 +1097,13 @@ function foldAssignmentAdvance(state: MutableState, plan: KxmCompiledPlan, event
         }
       }
       if (attemptId && attempt) {
+        const producerError = typeof event.payload.producerError === "string" ? event.payload.producerError : undefined;
         nextAssignment = {
           ...nextAssignment,
-          attempts: { ...nextAssignment.attempts, [attemptId]: { ...attempt, resultClass } },
+          attempts: {
+            ...nextAssignment.attempts,
+            [attemptId]: { ...attempt, resultClass, ...(producerError !== undefined ? { producerError } : {}) },
+          },
         };
       }
     }

@@ -14,6 +14,7 @@ import {
 } from "./context-packet.ts";
 import { compileKxmWorkflow, type KxmCompiledPlan, type KxmCompiledStep } from "./engine-compile.ts";
 import { BUILTIN_HARNESSES, oneShotPermissionArgs, oneShotWriterArgs, validateHarnessModelPair } from "./harness.ts";
+import { readOneShotObservedChildExit } from "./oneshot-evidence.ts";
 import {
   effectiveRunDurationBudget,
   isTerminalRunStatus,
@@ -75,6 +76,7 @@ import {
   kxmIncrementMonotonicNs,
   kxmMonotonicNs,
   kxmPolicyRevisions,
+  KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS,
   kxmProjectAdmissionLimits,
   type KxmMemoryRevisionOptions,
   type KxmRuntimeContext,
@@ -157,6 +159,8 @@ export interface KxmProducerRequest {
   readonly harness?: string | undefined;
   /** Live producers select an audited argv profile from this ceiling. */
   readonly permission?: "read-only" | "edit" | undefined;
+  /** Agent and moa steps only. Absent means the producer options, then the process default. */
+  readonly timeoutMs?: number | undefined;
   readonly contextPacket?: FormalContextPacketV2 | undefined;
   readonly handoffManifest?: HandoffManifestV1 | undefined;
 }
@@ -405,6 +409,10 @@ async function driveAdmitted(
     if (started.handoff || isTerminalRunStatus(started.state.status)) return started;
   }
   let latest: KxmRunDriveResult = { state: foldStoredKxmRun(context, requireRun(context, runId)) };
+  if (latest.state.status === "cancelling") {
+    latest = await stepLocked(context, runId, producer, token);
+    if (latest.handoff || isTerminalRunStatus(latest.state.status)) return latest;
+  }
   while (latest.state.status === "running") {
     const overBudget = cancelRunDurationIfExceeded(context, runId);
     if (overBudget) return overBudget;
@@ -487,6 +495,7 @@ function receiptHandoff(handoff: KxmRunHandoff): KxmDriveReceiptHandoff {
     detail: handoff.detail,
     ...(handoff.field !== undefined ? { field: handoff.field } : {}),
     ...(handoff.stepId !== undefined ? { stepId: handoff.stepId } : {}),
+    ...(handoff.attemptId !== undefined ? { attemptId: handoff.attemptId } : {}),
   };
 }
 
@@ -557,6 +566,9 @@ export function recordDriveReceipt(
       producer: { id: closeInfo.producerId, closed: closeInfo.producerClosed },
     };
     context.eventStore.insertDriveReceipt(receipt);
+    if (closeInfo.kind === "handoff") {
+      releaseKxmRun(context.eventStore.path, session.runId, session.token);
+    }
   } catch {
     // The drive result governs; a missing receipt is visible on poll.
   }
@@ -719,7 +731,7 @@ export class KxmRunScheduler {
     }
     try {
       const run = requireRun(this.context, runId);
-      if (isTerminalRunStatus(run.status) || run.status === "cancelling") {
+      if (isTerminalRunStatus(run.status)) {
         return Promise.reject(runtimeError("run_busy", runId, `run ${runId} is already ${run.status}`));
       }
     } catch (error) {
@@ -1441,6 +1453,74 @@ function resolveProducerRoute(
   return { provider, model, selector };
 }
 
+function projectAgentStepTimeoutMs(context: KxmRuntimeContext, run: KxmRunRecord): number {
+  return loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.agentStepTimeoutMs ?? KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
+}
+
+function unsupportedAgentStepTimeout(step: KxmCompiledStep, limitMs: number): Omit<KxmRunHandoff, "stepId"> | undefined {
+  if (step.kind !== "agent" && step.kind !== "moa") return undefined;
+  if (step.timeoutMs === undefined || step.timeoutMs <= limitMs) return undefined;
+  return {
+    reason: "step_unsupported",
+    field: "timeoutMs",
+    detail: "step timeoutMs is wider than project limits.agentStepTimeoutMs",
+  };
+}
+
+function executingSingletonAttempt(
+  plan: KxmCompiledPlan,
+  state: KxmRunState,
+): { stepId: string; assignmentId: string; attemptId: string } | undefined {
+  const current = state.currentStep;
+  if (!current || current.panel.order.length !== 1) return undefined;
+  const step = plan.steps[current.stepId];
+  if (!step || (step.kind !== "agent" && step.kind !== "moa") || step.assignments.maximum > 1) return undefined;
+  const attemptId = unreconciledPanelAttemptId(state);
+  if (!attemptId) return undefined;
+  const located = kxmFoldPanelAttempt(current, attemptId);
+  if (located?.attempt.status !== "executing") return undefined;
+  return { stepId: current.stepId, assignmentId: located.assignmentId, attemptId };
+}
+
+function settleExitedExecutingAttempt(
+  context: KxmRuntimeContext,
+  run: KxmRunRecord,
+  executing: { stepId: string; assignmentId: string; attemptId: string },
+): KxmRunState {
+  const now = new Date().toISOString();
+  let sequence = context.eventStore.nextSequence(run.runId);
+  let mono = kxmMonotonicNs();
+  const events: KxmRunEvent[] = [];
+  const push = (eventType: string, payload: Record<string, unknown>): void => {
+    events.push({
+      ...kxmEventBase(context, run, now, mono),
+      eventId: newKxmEventId(),
+      eventType,
+      sequence: sequence++,
+      payload,
+    });
+    mono = kxmIncrementMonotonicNs(mono);
+  };
+  push("attempt.status_changed", { attemptId: executing.attemptId, status: "settling" });
+  push("assignment.result_recorded", {
+    assignmentId: executing.assignmentId,
+    resultClass: "producer_rejected",
+    status: "result_recorded",
+    producerError: "executing_unrecorded",
+    reason: "executing_unrecorded",
+  });
+  push("attempt.status_changed", { attemptId: executing.attemptId, status: "terminal" });
+  push("assignment.terminal", { assignmentId: executing.assignmentId, outcome: "failed", status: "terminal" });
+  push("step.status_changed", { stepId: executing.stepId, status: "cancelled", previousStatus: "running" });
+  push("run.status_changed", { status: "cancelled", reason: cancelReasonFromLog(context, run.runId) });
+  for (const event of events) context.eventStore.appendEvent(event);
+  context.eventStore.settleCapability(executing.attemptId, "settled");
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, events[events.length - 1]!.sequence);
+  context.eventStore.updateRunStatus(run.runId, "cancelled", now);
+  return next;
+}
+
 function prepareDispatch(
   context: KxmRuntimeContext,
   runId: string,
@@ -1454,6 +1534,23 @@ function prepareDispatch(
     return { kind: "return", state };
   }
   if (state.status === "cancelling" && kxmAttemptControllers(context.eventStore.path, runId).length === 0) {
+    const executing = executingSingletonAttempt(plan, state);
+    if (executing) {
+      const exited = readOneShotObservedChildExit(runId, executing.attemptId);
+      if (exited === true) {
+        return { kind: "return", state: settleExitedExecutingAttempt(context, run, executing) };
+      }
+      return {
+        kind: "return",
+        state,
+        handoff: {
+          reason: "attempt_unreconciled",
+          stepId: executing.stepId,
+          attemptId: executing.attemptId,
+          detail: "issued attempt is not held by this process",
+        },
+      };
+    }
     return {
       kind: "return",
       state,
@@ -1585,6 +1682,8 @@ function prepareDispatch(
 
   const unsupported = unsupportedStep(plan, step, producerId);
   if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
+  const wideTimeout = unsupportedAgentStepTimeout(step, projectAgentStepTimeoutMs(context, run));
+  if (wideTimeout) return { kind: "return", state, handoff: { ...wideTimeout, stepId } };
 
   let resolvedRoute: { provider: string; model: string; selector: string } | undefined;
   if (producerId !== "driver-simulated") {
@@ -1838,6 +1937,9 @@ function birthMember(
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
       thinking: input.stepAttempt <= 1 ? "low" : "medium",
       permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
+      ...((input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== undefined
+        ? { timeoutMs: input.step.timeoutMs }
+        : {}),
       contextPacket,
       ...(resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}),
     },
@@ -2716,9 +2818,10 @@ export function kxmLiveRunPrerequisites(
     for (const transition of Object.values(step.transitions)) {
       if (transition.to === "step") pending.push(transition.target);
     }
+    const limitMs = envelope.projectLimits.agentStepTimeoutMs ?? KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
     const unsupported = step.kind === "gate"
       ? unsupportedGateStep(plan, step, envelope, { projectRoot }) ?? starterGatePrerequisite(step, envelope.gates, projectRoot)
-      : unsupportedStep(plan, step, "oneshot");
+      : unsupportedAgentStepTimeout(step, limitMs) ?? unsupportedStep(plan, step, "oneshot");
     if (unsupported) {
       prerequisites.push({ ...unsupported, stepId });
       continue;

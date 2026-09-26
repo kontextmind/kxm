@@ -371,6 +371,7 @@ export interface KxmDriveReceiptHandoff {
   reason: string;
   field?: string;
   stepId?: string;
+  attemptId?: string;
   detail: string;
 }
 
