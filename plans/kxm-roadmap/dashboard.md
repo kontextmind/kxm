@@ -2,13 +2,68 @@
 
 Updated: 2026-09-26.
 
-Active blockers: 5. Active questions: 8. Later phases are excluded from both counts.
+Active blockers: 5. Active questions: 11. Later phases are excluded from both counts.
 
 ## Next
 
-### Python migration
+### Planner loop and lanes
 
 Status: open. Horizon: next.
+
+Source: `plans/plan-lane-cli.md`.
+
+Goal: The kxm verbs that let the planner dispatch a writer into a worktree lane and land its branch without just recipes: lane, land, assign, docs, and bounded one-shot steps.
+
+#### Open tasks
+
+- `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
+- `loop-land-followup` kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22).
+- `loop-supervise` kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20).
+
+#### Blockers
+
+None.
+
+#### Questions
+
+- The proof model behind kxm assign (backlog S11) is still an operator decision.
+- The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
+
+[Phase page](phases/01-planner-loop.md)
+
+## Active phases
+
+### Role authority from the v2 policy draft
+
+Status: open. Horizon: soon.
+
+Source: `plans/plan-omp-config-alignment.md`.
+
+Goal: Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role authority, retire kxm.role.v1, routes.yaml roles, roster.yaml and the code defaults, give agents a role reference, then add the opt-in fallback walk, tool-policy enforcement, provenance, and effort validation.
+
+#### Open tasks
+
+- `omp-p1` P1 promote the draft: schemas live, models and roles rewritten to v2, v1 deleted.
+- `omp-p2` P2 cut the loader and engine over to the v2 files.
+- `omp-p3` P3 tool policy enforcement.
+- `omp-p4` P4 opt-in fallback walk with route_switch events.
+- `omp-p5` P5 provenance and extends.
+- `omp-p6` P6 effort catalog.
+- `omp-p7` P7 quota-aware walk (optional).
+
+#### Blockers
+
+None.
+
+#### Questions
+
+- Section 7 of the plan lists the open questions; they stay open until P1 is dispatched.
+
+[Phase page](phases/02-role-authority.md)
+
+### Python migration
+
+Status: open. Horizon: soon.
 
 Source: `plans/plan-python-migration.md`.
 
@@ -32,9 +87,7 @@ None.
 
 - Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The evidence JSON paths and the python tree named there are not in this checkout.
 
-[Phase page](phases/01-python-migration.md)
-
-## Active phases
+[Phase page](phases/03-python-migration.md)
 
 ### Greenfield infra
 
@@ -56,7 +109,7 @@ None.
 
 - plans/plan-greenfield-infra.md is not observed from this checkout, so its status and blocked_by are not observed. Tasks below cite the tracker bullet that names the missing file.
 
-[Phase page](phases/02-greenfield-infra.md)
+[Phase page](phases/04-greenfield-infra.md)
 
 ### Per-tenant hosting
 
@@ -80,7 +133,7 @@ Goal: S0 through S5 from the tracker queue. The hosting plan file keeps no sched
 - The tracker names docs/operations.md for the S1 recipe. This checkout has docs/operations/backup-and-restore.md and no docs/operations.md.
 - The tracker names an S3 test title that is not in this checkout. The observed test is prose and empty replies cannot mint a passing outcome in test/core/pi-producer.test.ts.
 
-[Phase page](phases/03-per-tenant-hosting.md)
+[Phase page](phases/05-per-tenant-hosting.md)
 
 ### Cross-host
 
@@ -106,7 +159,7 @@ Goal: P0 through P6 from plans/plan-cross-host-phase.md, with delivered rows tak
 - The P1 test is present in test/core/hub-api.test.ts. The tracker row is not marked delivered, so the task stays open.
 - P5 is marked delivered. The same tracker row still says the cross-box witness is not run. Done evidence is the in-repo test.
 
-[Phase page](phases/04-cross-host.md)
+[Phase page](phases/06-cross-host.md)
 
 ### Still open
 
@@ -139,7 +192,7 @@ Goal: Tracker items that are not already tasks on the phases above.
 
 - Tracking says delivery order is Still open, the one queue. This roadmap orders phases as the brief requires, so the Python proposal is Next while S5 login is still open on the hosting phase.
 
-[Phase page](phases/07-still-open.md)
+[Phase page](phases/09-still-open.md)
 
 ## Later
 
@@ -165,7 +218,7 @@ None.
 
 - Frontmatter status is draft, blocked_by is empty, and delivery_status is proposed. Still open does not select this plan as a queue row, so the phase stays later.
 
-[Phase page](phases/05-workflow-modes.md)
+[Phase page](phases/07-workflow-modes.md)
 
 ### Usage and cost
 
@@ -188,19 +241,21 @@ None.
 
 - Frontmatter status is draft, blocked_by is empty, and delivery_status is proposed. The tracker's routing and cost questions stay on the Still open phase. This phase stays later.
 
-[Phase page](phases/06-usage-cost.md)
+[Phase page](phases/08-usage-cost.md)
 
 ## Phase index
 
 | Phase | Status | Horizon | Page |
 | --- | --- | --- | --- |
-| Python migration | open | next | [page](phases/01-python-migration.md) |
-| Greenfield infra | open | soon | [page](phases/02-greenfield-infra.md) |
-| Per-tenant hosting | open | soon | [page](phases/03-per-tenant-hosting.md) |
-| Cross-host | open | soon | [page](phases/04-cross-host.md) |
-| Workflow modes | later | later | [page](phases/05-workflow-modes.md) |
-| Usage and cost | later | later | [page](phases/06-usage-cost.md) |
-| Still open | open | soon | [page](phases/07-still-open.md) |
+| Planner loop and lanes | open | next | [page](phases/01-planner-loop.md) |
+| Role authority from the v2 policy draft | open | soon | [page](phases/02-role-authority.md) |
+| Python migration | open | soon | [page](phases/03-python-migration.md) |
+| Greenfield infra | open | soon | [page](phases/04-greenfield-infra.md) |
+| Per-tenant hosting | open | soon | [page](phases/05-per-tenant-hosting.md) |
+| Cross-host | open | soon | [page](phases/06-cross-host.md) |
+| Workflow modes | later | later | [page](phases/07-workflow-modes.md) |
+| Usage and cost | later | later | [page](phases/08-usage-cost.md) |
+| Still open | open | soon | [page](phases/09-still-open.md) |
 
 ## Goal
 
@@ -212,7 +267,7 @@ None recorded.
 
 ## Architecture drift
 
-Verified: null.
+Verified: 2026-09-26.
 
 | Claim | Page | Status |
 | --- | --- | --- |
@@ -238,3 +293,5 @@ No confirmed contacts.
 - 2026-09-26: Tailnet docs site created.
 - 2026-09-26: Roadmap seeded from state.json.
 - 2026-09-26: Portal mark applied.
+- 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
+- 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.

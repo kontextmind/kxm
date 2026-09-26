@@ -4,9 +4,63 @@ Updated: 2026-09-26.
 
 Record the local-first KXM shape that this checkout can show, and track the proposal and queue items the implementation tracker actually records.
 
-## Python migration
+## Planner loop and lanes
 
 Status: open. Horizon: next.
+
+Source: `plans/plan-lane-cli.md`.
+
+The kxm verbs that let the planner dispatch a writer into a worktree lane and land its branch without just recipes: lane, land, assign, docs, and bounded one-shot steps.
+
+### Tasks
+
+- `loop-lane` kxm lane create, list, status, drop, run with --brief and --lane. Evidence: `test/core/cli.test.ts`.
+- `loop-land` kxm land: verify, docs, push, pr, rebase, unblock, merge, release, milestone. Evidence: `test/core/pr-land.test.ts`.
+- `loop-assign` kxm assign over the assignment runner, seven verbs, argv pass-through. Evidence: `test/core/cli.test.ts`.
+- `loop-docs` Tailnet docs site, roadmap generator, and kxm docs build and serve. Evidence: `plans/kxm-roadmap/update-dashboard.mjs`.
+- `loop-timeouts` Configurable one-shot step timeout, cancel recovery, and the three one-step workflows. Evidence: `test/core/engine.test.ts`.
+- `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
+- `loop-land-followup` kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22).
+- `loop-supervise` kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20).
+
+### Blockers
+
+None.
+
+### Questions
+
+- The proof model behind kxm assign (backlog S11) is still an operator decision.
+- The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
+
+## Role authority from the v2 policy draft
+
+Status: open. Horizon: soon.
+
+Source: `plans/plan-omp-config-alignment.md`.
+
+Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role authority, retire kxm.role.v1, routes.yaml roles, roster.yaml and the code defaults, give agents a role reference, then add the opt-in fallback walk, tool-policy enforcement, provenance, and effort validation.
+
+### Tasks
+
+- `omp-p1` P1 promote the draft: schemas live, models and roles rewritten to v2, v1 deleted.
+- `omp-p2` P2 cut the loader and engine over to the v2 files.
+- `omp-p3` P3 tool policy enforcement.
+- `omp-p4` P4 opt-in fallback walk with route_switch events.
+- `omp-p5` P5 provenance and extends.
+- `omp-p6` P6 effort catalog.
+- `omp-p7` P7 quota-aware walk (optional).
+
+### Blockers
+
+None.
+
+### Questions
+
+- Section 7 of the plan lists the open questions; they stay open until P1 is dispatched.
+
+## Python migration
+
+Status: open. Horizon: soon.
 
 Source: `plans/plan-python-migration.md`.
 
@@ -188,3 +242,5 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-26: Tailnet docs site created.
 - 2026-09-26: Roadmap seeded from state.json.
 - 2026-09-26: Portal mark applied.
+- 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
+- 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.

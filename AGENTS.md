@@ -153,6 +153,12 @@ for setup or docs. Dual-critic `/fix` is Phase 7. For this repo's issue 127
 runner, that slim path is assignment → witness → (attribute/observe-cost as
 needed) → accept, not a scratch `just impl` call.
 
+The operator's standing instructions live in
+[`docs/contributing/operating-rules.md`](docs/contributing/operating-rules.md);
+the lessons behind them in
+[`docs/contributing/learnings.md`](docs/contributing/learnings.md). Read both
+before planning, dispatching, or landing.
+
 ## Plans and slices
 
 When a gate passes, a slice lands in the wrong phase, or a name/CLI change
