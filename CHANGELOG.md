@@ -425,6 +425,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **The test suite no longer passes `--test-timeout`.** Under `node --test` that flag bounds each file, so coverage on CI timed out `test/core/engine.test.ts` at three minutes. The wall clock in `scripts/run-bounded.mjs` still bounds each script.
 - **A git worktree lane registers under its project.** The Runtime registry
   keeps the home row and adds the lane as its own control root and event
   store, with the same project id and home runtime (`lane_of` on the lane

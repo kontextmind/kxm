@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-// Wall-clock guard for a test suite. Node's --test-timeout bounds one test;
-// this bounds the process that runs them.
+// Wall-clock guard for a test suite. Node's --test-timeout also bounds each
+// file (each file is a test), so the suite scripts do not pass it. This
+// bounds the process that runs them.
 
 import { spawn } from "node:child_process";
 
