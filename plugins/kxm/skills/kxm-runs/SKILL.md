@@ -1,6 +1,6 @@
 ---
 name: kxm-runs
-description: Create, drive, and inspect local KXM runs, and manage worktree lanes. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, or create a lane.
+description: Create, drive, and inspect local KXM runs, manage worktree lanes, and land a branch. kxm runs drive with --simulated executes a run model-free and settles it with a verified receipt. Use when asked to start a workflow run, check its status, read its receipt, cancel it, smoke-test a workflow, create a lane, or land the current branch.
 ---
 
 # KXM runs
@@ -26,6 +26,7 @@ create, or logs verbs under `runs`.
 | `kxm lane status <unit>` | One lane plus its last run status, or unknown when the supervisor is not answering | `--json` |
 | `kxm lane drop <unit>` | Remove the worktree and the record. The branch is not deleted | `--force`, `--json` |
 | `kxm lane run <unit>` | Create the lane if needed, start a run from a brief, and drive it | `--brief <file>` (required), `--workflow <id>`, `--base <ref>`, `--wait`, `--timeout-ms <n>`, `--json` |
+| `kxm land` | Verify, regenerate docs, push, open or reuse a pull request, rebase, unblock, squash-merge, watch the release, and note a milestone | `--pr <n>`, `--stage <name>`, `--body-file <path>`, `--json`, `--dry-run` |
 
 The run record and its events keep only the prompt's hash, but the full
 prompt text is kept in a local `run-events.db.run-prompts.json` file (mode
@@ -64,6 +65,21 @@ the receipt's settlement is terminal `completed`.
 file. `kxm run --lane <unit>` and `kxm runs status|drive|receipt|cancel --lane`
 discover the project from the lane worktree. `kxm lane run <unit> --brief <file>`
 creates the lane when it is missing, starts the run, and drives it.
+
+`kxm land` lands the current branch. With no `--stage` it runs these stages in
+order: `verify`, `docs`, `push`, `pr`, `rebase`, `unblock`, `merge`,
+`release`, `milestone`. `verify` runs `npm run verify` on a clean tree and is
+not replaced by the later stages. `docs` regenerates the roadmap when
+`plans/kxm-roadmap/update-dashboard.mjs` is present and commits only those
+generated pages. `push` publishes the branch. `pr` reuses the open pull
+request or creates one from `--body-file`. `rebase` rebases onto
+`origin/main` for at most five rounds, resolving only the dist rebuild, the
+CHANGELOG Unreleased union, and the tracker "Landed in this tree" union.
+`unblock` reruns one failed check and reports a required review. `merge`
+squash-merges. `release` waits for the tag and the npm publish. `milestone`
+reports `deep_review_required` when a phase flips to done or the body contains
+a `Milestone:` line, and does not run the review. `--dry-run` prints each
+stage's plan and does not mutate.
 
 ## Refusals
 

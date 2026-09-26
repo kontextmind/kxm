@@ -14,6 +14,7 @@ This catalog names common multi-agent workflows by area and lists, for each role
 8. [Research & Strategy](#research--strategy)
 9. [Business Operations](#business-operations)
 10. [Security & Reliability](#security--reliability)
+11. [Repository workflow: land](#repository-workflow-land)
 
 ---
 
@@ -1082,6 +1083,12 @@ This cross-reference points each software and security workflow at the KXM pages
 5. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Full-codebase taint tracking and dataflow analysis.
 
 ---
+
+## Repository workflow: land
+
+`.kxm/workflows/land.yaml` is a project workflow, not a catalog slug. It runs six command gates in order: `land-verify`, `land-docs`, `land-rebase`, `land-merge`, `land-release`, `land-milestone`. Each gate calls `node scripts/pr-land.mjs --stage <name> --json`. A failed merge returns to `land-rebase` at most three times, then the run fails. `npm run verify` remains the first stage of `kxm land` and is not replaced by this workflow.
+
+`kxm run land --dry-run --json` may be refused by live prerequisites until gate-only workflows are supported. The command `kxm land` runs the same stages without a run receipt.
 
 ## Related
 

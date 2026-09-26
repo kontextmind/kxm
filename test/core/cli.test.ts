@@ -2324,3 +2324,13 @@ test("lane run records lastRunId and refuses a second call while that run is ope
     removeLaneCheckout(root, origin, [unit]);
   }
 });
+
+test("kxm land dry-run prints the verify plan", async () => {
+  const io = capture();
+  const code = await runCli(["land", "--stage", "verify", "--dry-run", "--json"], {}, io);
+  assert.equal(code, 0, `${io.read().stderr}\n${io.read().stdout}`);
+  const stdout = io.read().stdout;
+  assert.match(stdout, /"stage":"verify"/);
+  assert.match(stdout, /"dryRun":true/);
+  assert.match(stdout, /npm run verify/);
+});

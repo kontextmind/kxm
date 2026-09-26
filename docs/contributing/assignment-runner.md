@@ -380,6 +380,37 @@ No test runs `run`, `witness` or `accept` end to end. Treat changes to
 `scripts/assignment-run.mjs` as high risk, and check them by running a real
 unit through the loop.
 
+## Landing
+
+`kxm land` is the entry point after a candidate is ready to merge. It runs
+`npm run verify` first. That gate is not replaced. On a green verify it
+regenerates documentation (`docs`), then runs the GitHub stages: `push`,
+`pr`, `rebase`, `unblock`, `merge`, `release`, and `milestone`.
+
+| Stage | Role |
+|---|---|
+| `verify` | Clean tree, then `npm run verify`, skipped when a receipt for this tree is younger than 30 minutes |
+| `docs` | Regenerate the roadmap after verify and before the merge. Absent generator: pass, skipped |
+| `push` | `git push -u origin <branch>`, with `--force-with-lease` after a rebase in this run |
+| `pr` | Reuse the open pull request, or create one from `--body-file` |
+| `rebase` | Up to five rounds onto `origin/main`. Only the dist rebuild, the CHANGELOG Unreleased union, and the tracker "Landed in this tree" union are resolved automatically |
+| `unblock` | Rerun one failed check. A required review is reported |
+| `merge` | Squash only. Poll until `MERGED`, up to 20 minutes |
+| `release` | Auto-release tag, Release workflow, then npm for 10 minutes. Prints `PUBLISHED <version>` |
+| `milestone` | Report `deep_review_required` when a phase completes or the body has a `Milestone:` line. Does not run the review |
+
+Refusals (exit 1): `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`,
+`land_push_rejected`, `land_pr_body_missing`, `land_conflict_manual`,
+`land_blocked`, `land_merge_failed`, `land_release_failed`,
+`land_publish_timeout`, `land_milestone_failed`. Usage errors exit 2.
+`--stage <name>` runs one stage. `--dry-run` prints the plan and does not mutate.
+
+The same stages are command gates in `.kxm/gates.yaml` (`land-verify`,
+`land-docs`, `land-rebase`, `land-merge`, `land-release`, `land-milestone`)
+and steps in `.kxm/workflows/land.yaml`. `kxm run land` may be refused until
+gate-only workflows are supported. See the
+[CLI reference](../reference/cli-reference.md#kxm-land).
+
 ## Related
 
 - [Develop KXM](development.md): the commit gate the witness runs
