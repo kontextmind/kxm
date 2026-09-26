@@ -419,7 +419,7 @@ A [trust diff](#trust-diff) change that widens what agents may do, such as a new
 
 ### Role
 
-A `kxm.role.v1` definition in `.kxm/roles/`, managed with `kxm role`, that describes a seat such as `planner`, `writer` or `verifier` and its model roster. When a role file exists, a Runtime step that uses the role may run only routes in its roster.
+A `kxm.role.v2` definition in `.kxm/roles/`, managed with `kxm role`, that describes a seat such as `planner`, `writer` or `verifier` and its model roster. When a role file exists, a Runtime step that uses the role may run only routes in its roster.
 
 ### Roster
 

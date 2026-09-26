@@ -138,6 +138,23 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Role and model files are live `kxm.role.v2` and `kxm.model.v2`.**
+  `schemas/role.schema.json` and `schemas/model.schema.json` are the files
+  `kxm config` validates. Each admitted roster route is a
+  `.kxm/models/<route-id>.yaml` (`harness`, `model`, `vendor`, `status`,
+  `permissions`, and `origin` when the route records one). Native routes may now carry an `origin` block; the validator's `origin_unexpected` refusal was removed. `kxm role modify`
+  takes `--add-route <route-id>` and `--remove-route <route-id>`. `kxm role add`
+  takes repeatable `--route <route-id>` (the first id is primary) instead of
+  `--harness` and `--model`. Adding a
+  route exits 1 when `.kxm/models/<route-id>.yaml` is missing
+  (`kxm: route '<route-id>' is not a file under .kxm/models/`).
+  The writer roster again includes `google/gemini-3.8-flash-high` as
+  `gemini-agy`. These selectors stayed off the v2 rosters because nothing
+  in the developer ceilings or the harness inventory can dispatch them:
+  `zai-coding-cn/glm-5.3-flash`, `qwen-token-plan/qwen3.8-flash`,
+  `qwen-token-plan/qwen3.8-max`, and `zai-coding-cn/glm-5.3`.
+  Dispatch still reads `.kxm/roster.yaml` until P2.
+
 - **Usage errors under `--json` print a `usage_error` envelope and exit 2.**
   A missing required option, unknown command, or other Commander usage error
   writes `kxm.cli-result.v1` to stdout with `command`, `error`, and `detail`.

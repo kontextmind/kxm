@@ -3,7 +3,6 @@ id: planner
 purpose: planner
 permission: read-only
 description: Plans the change before implementation.
-# fable primary (proven planning).
 roster:
-  - route: fable-claude
+  - route: implementation
     effort: medium

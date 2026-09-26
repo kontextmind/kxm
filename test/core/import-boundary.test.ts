@@ -63,8 +63,8 @@ const PACKED_LIBRARY_PATHS = [
   "plugins/kxm/src/restricted-yaml.d.mts",
   "plugins/kxm/src/policy-draft.mjs",
   "plugins/kxm/src/policy-draft.d.mts",
-  "schemas/policy-draft/model.v2.schema.json",
-  "schemas/policy-draft/role.v2.schema.json",
+  "schemas/model.schema.json",
+  "schemas/role.schema.json",
 ];
 
 interface ModuleEdge {

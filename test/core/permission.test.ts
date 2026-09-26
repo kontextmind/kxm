@@ -285,7 +285,7 @@ test("quorum gaps: join changes, oracle retargets, minimum lowering, reusable ev
 });
 
 test("model tags are authority: retagging retargets consumers and expands", () => {
-  const base: JsonObject = { schema: "kxm.model.v1", provider: "anthropic", model: "claude-fable-5-1", tags: ["critic"] };
+  const base: JsonObject = { schema: "kxm.model.v2", harness: "claude", vendor: "anthropic", model: "fable", status: "admitted", permissions: ["read-only"], tags: ["critic"] };
   const retagged = computeKxmResourcePermissionDiff("model", ".kxm/models/critic.yaml", base, { ...base, tags: ["implementation"] });
   assert(retagged.some((change) => change.field === "model" && change.direction === "expansion" && change.path === "/tags"));
   const prose = computeKxmResourcePermissionDiff("model", ".kxm/models/critic.yaml", base, structuredClone(base));
@@ -418,7 +418,7 @@ test("removing a model resource expands (tag retargeting), removing an agent nar
     // Add a second model profile, commit, then remove it.
     mkdirSync(join(root, ".kxm", "models"), { recursive: true });
     const modelFile = join(root, ".kxm", "models", "critic.yaml");
-    writeFileSync(modelFile, "schema: kxm.model.v1\nprovider: anthropic\nmodel: claude-fable-5-1\ntags:\n  - critic\n", "utf8");
+    writeFileSync(modelFile, "schema: kxm.model.v2\nharness: claude\nvendor: anthropic\nmodel: fable\nstatus: admitted\npermissions:\n  - read-only\ntags:\n  - critic\n", "utf8");
     git(root, ["add", "-A"]);
     git(root, ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "add model"]);
     rmSync(modelFile);

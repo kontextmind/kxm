@@ -657,6 +657,26 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
       schema: "kxm.agent.v1", purpose: "Inspect", repositories: { control: "write" },
       model: { provider: "openrouter", model: "qwen/qwen3-coder-plus" },
     }));
+    writeFileSync(join(project, ".kxm", "models", "qwen-route.yaml"), `schema: kxm.model.v2
+id: qwen-route
+harness: pi
+model: qwen/qwen3-coder-plus
+vendor: openrouter
+status: admitted
+permissions:
+  - edit
+origin:
+  source: .kxm/project.yaml
+  sha256: ${"ab".repeat(32)}
+`);
+    writeFileSync(join(project, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v2
+id: writer
+purpose: writer
+permission: edit
+description: Writer aligned to the dry-run implementer.
+roster:
+  - route: qwen-route
+`);
     writeFileSync(join(project, ".kxm", "routes.yaml"), "schema: kxm.routes.v2\nadmitted:\n  - openrouter/qwen/qwen3-coder-plus\ndisabled: []\nroles: {}\n");
     writeFileSync(join(project, "AGENTS.md"), "# Dry Run\n");
     assert.equal(spawnSync("git", ["-C", project, "add", "-A"]).status, 0);
@@ -707,7 +727,6 @@ test("every mutating command under --dry-run leaves the workspace, state root, a
       [["role", "add", "new-role"], "write"],
       [["role", "remove", "seed-role"], "delete"],
       [["role", "modify", "seed-role", "--add-skill", "extra"], "write"],
-      [["role", "set-host", "writer", "grok"], "write"],
       [["role", "resume", `run_${"0".repeat(32)}`, "carry on"], "request"],
       [["role", "resume", "wf_dry_run", "carry on"], "write"],
       [["workflow", "add", "new-flow"], "write"],

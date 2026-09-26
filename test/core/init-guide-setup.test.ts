@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -219,6 +220,40 @@ test("writeGuideSetupFiles never overwrites existing files", () => {
     const second = writeGuideSetupFiles(files);
     assert.ok(second.existed.includes(marker));
     assert.equal(readFileSync(marker, "utf8"), "marker: keep-me\n");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Pi guide models hash .kxm/project.yaml and omit origin when that file is absent", () => {
+  const plan = planGuideSetup({ inventory: inventory(["claude", "grok", "pi"]), selected: ["build-feature"] });
+  const piBindings = [...plan.agents.values()].filter((binding) => binding.harness === "pi");
+  assert.ok(piBindings.length > 0);
+  const piModels = (root: string) => renderGuideSetupFiles(root, plan).filter((file) => file.path.endsWith(".yaml") && file.path.includes(`${join("models", "")}`) && file.content.includes("harness: pi"));
+  const bare = mkdtempSync(join(tmpdir(), "kxm-guide-origin-bare-"));
+  try {
+    const without = piModels(bare);
+    assert.ok(without.length > 0);
+    for (const file of without) assert.equal(file.content.includes("origin:"), false, file.path);
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+  }
+  const root = mkdtempSync(join(tmpdir(), "kxm-guide-origin-"));
+  try {
+    const projectYaml = join(root, ".kxm", "project.yaml");
+    mkdirSync(join(root, ".kxm"), { recursive: true });
+    writeFileSync(projectYaml, "schema: kxm.project.v1\nid: guide-origin\n");
+    const digest = createHash("sha256").update(readFileSync(projectYaml)).digest("hex");
+    const withOrigin = piModels(root);
+    assert.ok(withOrigin.length > 0);
+    for (const file of withOrigin) {
+      assert.match(file.content, /source: \.kxm\/project\.yaml/);
+      assert.match(file.content, new RegExp(digest));
+      for (const binding of piBindings) {
+        const invented = createHash("sha256").update(`${binding.provider}/${binding.model}`).digest("hex");
+        assert.equal(file.content.includes(invented), false);
+      }
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

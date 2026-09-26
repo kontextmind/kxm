@@ -10,10 +10,11 @@
  * This module writes only current KXM project resources:
  *   - `.kxm/agents/<role-slug>.yaml`   (kxm.agent.v1)
  *   - `.kxm/workflows/<slug>.yaml`     (kxm.workflow.v1)
+ *   - `.kxm/roles/<role-slug>.yaml`    (kxm.role.v2)
+ *   - `.kxm/models/<route-id>.yaml`    (kxm.model.v2)
  *   - admitted selectors appended to `.kxm/routes.yaml`
  * It never writes retired legacy authority (`.kxm/config`, retired
- * `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy
- * and does not use the kxm.role.v1 subsystem.
+ * `.kxm/roster.json`) or the trusted `.kxm/roster.yaml` policy.
  *
  * Guide research ids are not dispatch ids. Only the admitted map below is
  * written, and only when that harness is authenticated. Unmapped ids are skipped.
@@ -27,7 +28,8 @@
  * admission decision says so.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stringify } from "yaml";
 import { type HarnessInventory } from "./harness.ts";
@@ -485,9 +487,14 @@ function workflowDocument(workflow: GuideWorkflow): Record<string, unknown> {
 
 /**
  * Render the planned KXM resource files (`.kxm/agents/*.yaml`,
- * `.kxm/workflows/*.yaml`). Pure: no disk access.
+ * `.kxm/workflows/*.yaml`). A Pi model origin hashes `.kxm/project.yaml`
+ * when that file exists, and is omitted when it does not.
  */
 export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan): GuideSetupFile[] {
+  const projectYaml = join(projectRoot, ".kxm", "project.yaml");
+  const projectOrigin = existsSync(projectYaml)
+    ? { source: ".kxm/project.yaml", sha256: createHash("sha256").update(readFileSync(projectYaml)).digest("hex") }
+    : undefined;
   const files: GuideSetupFile[] = [];
   const roleStages = new Map<string, GuideStage>();
   for (const workflow of plan.workflows) {
@@ -496,9 +503,36 @@ export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan)
   for (const [role, binding] of [...plan.agents.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const stage = roleStages.get(role);
     if (!stage) continue;
+    const routeId = role.replaceAll("_", "-");
+    const writer = isWriterRole(role);
+    const modelDocument: Record<string, unknown> = {
+      schema: "kxm.model.v2",
+      id: routeId,
+      harness: binding.harness,
+      model: binding.model,
+      vendor: binding.provider,
+      status: "admitted",
+      permissions: [writer ? "edit" : "read-only"],
+    };
+    if (binding.harness === "pi" && projectOrigin) modelDocument.origin = projectOrigin;
     files.push({
       path: join(projectRoot, ".kxm", "agents", `${role}.yaml`),
       content: stringify(agentDocument(role, stage, binding)),
+    });
+    files.push({
+      path: join(projectRoot, ".kxm", "models", `${routeId}.yaml`),
+      content: stringify(modelDocument),
+    });
+    files.push({
+      path: join(projectRoot, ".kxm", "roles", `${role}.yaml`),
+      content: stringify({
+        schema: "kxm.role.v2",
+        id: role,
+        purpose: writer ? "writer" : "experiment",
+        permission: writer ? "edit" : "read-only",
+        description: stage.domain.slice(0, 2000),
+        roster: [{ route: routeId }],
+      }),
     });
   }
   for (const workflow of plan.workflows) {

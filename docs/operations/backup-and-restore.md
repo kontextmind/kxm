@@ -15,7 +15,7 @@ KXM spreads state over six roots. Some of them move with environment variables, 
 ```mermaid
 flowchart TB
   subgraph R["$R checkout root: the Git checkout, never moves"]
-    R1["Project definition: .kxm/project.yaml, config.yaml, agents/, models/, workflows/, gates.yaml, roles/, role-hosts.yaml, routes.yaml, roster.yaml, prices.yaml, repo/, project/env.yaml"]
+    R1["Project definition: .kxm/project.yaml, config.yaml, agents/, models/, workflows/, gates.yaml, roles/, roles, routes.yaml, roster.yaml, prices.yaml, repo/, project/env.yaml"]
     R2["Durable records: .kxm/memory/, skills/, goals/, tasks/, candidates/"]
   end
   subgraph D["$D workspace: KXM_WORKSPACE_DIR or --workspace, default $R/.kxm"]
@@ -31,7 +31,7 @@ flowchart TB
     S2["hub-env.json, hub-binding.json, update.yaml, projects/HASH/repository-bindings.json"]
   end
   subgraph C["$C user config: KXM_USER_CONFIG_DIR, default ~/.config/kxm"]
-    C1["config.yaml, roles/, workflows/, role-hosts.yaml, session.token"]
+    C1["config.yaml, roles/, workflows/, roles, session.token"]
   end
   subgraph T["$T federated telemetry: XDG_CONFIG_HOME/kxm/telemetry"]
     T1["model-metrics.jsonl, not written by any command today"]

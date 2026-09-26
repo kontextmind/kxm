@@ -493,7 +493,7 @@ test("KXM init creates and revalidates project configuration without legacy envi
     assert.equal(created.action, "created");
     assert.equal(created.mode, "ready");
     assert.match(created.configRevision, /^sha256:[a-f0-9]{64}$/);
-    assert.equal(created.files.length, 8);
+    assert.equal(created.files.length, 12);
     assert(created.files.includes(".kxm/gates.yaml"));
     assert(created.files.includes(".kxm/routes.yaml"));
     assert.equal(existsSync(join(cwd, ".kxm", "project.yaml")), true);
@@ -602,6 +602,57 @@ test("KXM init joins with repeated CLI member bindings stored outside Git", asyn
     const repeated = JSON.parse(repeatedIo.read().stdout) as { action: string; localBindingFile: string };
     assert.equal(repeated.action, "validated");
     assert.equal(repeated.localBindingFile, joined.localBindingFile);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm role add --file refuses a roster route that is not a file under .kxm/models", async () => {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-add-file-route-")));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-role-add-file-route-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JROLEADDFILE000000000000", projectName: "Role file route" });
+    const userConfig = join(stateRoot, "user-config");
+    const env = { KXM_STATE_HOME: stateRoot, KXM_USER_CONFIG_DIR: userConfig };
+    const file = join(cwd, "unknown-role.yaml");
+    writeFileSync(file, [
+      "schema: kxm.role.v2",
+      "id: reviewer",
+      "purpose: experiment",
+      "permission: read-only",
+      "description: From a file",
+      "roster:",
+      "  - route: missing-route",
+      "",
+    ].join("\n"));
+    for (const scope of ["local", "global"] as const) {
+      const io = capture();
+      const code = await runCli(["role", "add", "reviewer", "--file", file, "--scope", scope], env, io, cwd);
+      assert.equal(code, 1, scope);
+      assert.match(io.read().stderr, /kxm: route 'missing-route' is not a file under \.kxm\/models\//);
+    }
+    assert.equal(existsSync(join(cwd, ".kxm", "roles", "reviewer.yaml")), false);
+    assert.equal(existsSync(join(userConfig, "roles", "reviewer.yaml")), false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+});
+
+test("kxm role add refuses a --route that is not a file under .kxm/models", async () => {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "kxm-role-add-route-")));
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-role-add-route-state-"));
+  try {
+    makeGitRoot(cwd);
+    initializeKxmProject(cwd, { projectId: "prj_01JROLEADDROUTE000000000", projectName: "Role route" });
+    const env = { KXM_STATE_HOME: stateRoot, KXM_USER_CONFIG_DIR: join(stateRoot, "user-config") };
+    const io = capture();
+    const code = await runCli(["role", "add", "reviewer", "--route", "missing-route", "--description", "Reviewer"], env, io, cwd);
+    assert.equal(code, 1);
+    assert.match(io.read().stderr, /kxm: route 'missing-route' is not a file under \.kxm\/models\//);
+    assert.equal(existsSync(join(cwd, ".kxm", "roles", "reviewer.yaml")), false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
@@ -900,6 +951,7 @@ test("task run refuses unavailable live work before mutation and honors an execu
         on: { passed: { target: "$terminal", terminalStatus: "completed" }, failed: { target: "$terminal", terminalStatus: "failed" } },
       }],
     }));
+    rmSync(join(cwd, ".kxm", "roles", "writer.yaml"), { force: true });
     writeFileSync(join(cwd, ".kxm", "agents", "implementer.yaml"), stringify({
       schema: "kxm.agent.v1", purpose: "Inspect the issue", repositories: { control: "write" },
       model: { provider: "anthropic", model: "claude-sonnet-4-6" },

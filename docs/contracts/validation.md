@@ -29,7 +29,7 @@ messages.
 `schemas/policy-draft` (`kxm.model.v2`, `kxm.role.v2`) and
 `validatePolicyDraft` are non-authoritative scaffolding. They are not live
 registry identities, operator settings, or admission. Live model files remain
-`kxm.model.v1` under `schemas`.
+`kxm.model.v2` under `schemas`.
 
 ## Validation pipeline
 

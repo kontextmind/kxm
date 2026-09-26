@@ -2,8 +2,7 @@ schema: kxm.role.v2
 id: reviewer-cli
 purpose: reviewer-cli
 permission: read-only
-description: Independent CLI and docs critic.
-# sol is the required cli critic.
+description: Independent CLI and docs critic for the example project.
 roster:
-  - route: sol-codex
+  - route: critic-gemini
     effort: low

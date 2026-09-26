@@ -24,14 +24,17 @@ const MODEL_KEYS = Object.freeze([
   "thinking", "tags", "capabilities", "priority", "fallbacks", "limits",
 ]);
 const ROLE_KEYS = Object.freeze([
-  "schema", "id", "purpose", "permission", "description", "roster",
+  "schema", "id", "purpose", "permission", "description", "extends", "roster",
   "skills", "tools", "produces", "consumes", "policy",
 ]);
 const ORIGIN_KEYS = Object.freeze(["source", "sha256"]);
 const LIMIT_KEYS = Object.freeze(["contextTokens", "outputTokens", "timeoutMs"]);
 const TOOL_KEYS = Object.freeze(["preset", "allow", "deny"]);
 const TEMPLATE_KEYS = Object.freeze(["template", "schema"]);
-const POLICY_KEYS = Object.freeze(["vendorIndependenceRequired", "maxTransitions", "requiresGateVerification"]);
+const POLICY_KEYS = Object.freeze(["vendorIndependenceRequired", "maxTransitions", "requiresGateVerification", "fallback"]);
+const FALLBACK_KEYS = Object.freeze(["onError", "maxSwitches", "revert"]);
+const FALLBACK_ERRORS = Object.freeze(["rate_limit", "transport", "provider_unavailable"]);
+const FALLBACK_REVERT = Object.freeze(["next_run", "never"]);
 const ROSTER_ENTRY_KEYS = Object.freeze(["route", "effort", "mode"]);
 const CRITIC_PURPOSES = Object.freeze(["reviewer-arch", "reviewer-cli"]);
 
@@ -318,6 +321,9 @@ function validateRoleShape(document, id, label, issues) {
   if (document.id !== undefined && document.id !== id) {
     issues.push(issue("schema", "identity_mismatch", label, `declared id ${String(document.id)} does not match ${id}`));
   }
+  if (document.extends !== undefined && !identifier(document.extends)) {
+    issues.push(issue("schema", "schema_pattern", label, "extends must be a role identifier"));
+  }
   if (document.purpose !== undefined && !POLICY_DRAFT_PURPOSES.includes(document.purpose)) {
     issues.push(issue("schema", "unsupported_purpose", label, "purpose must be a runner role label"));
   }
@@ -382,6 +388,23 @@ function validateRoleShape(document, id, label, issues) {
     if (document.policy.maxTransitions !== undefined && (!Number.isInteger(document.policy.maxTransitions) || document.policy.maxTransitions < 1)) {
       issues.push(issue("schema", "schema_type", `${label}.policy`, "maxTransitions must be a positive integer"));
     }
+    if (document.policy.fallback !== undefined) {
+      const fallback = document.policy.fallback;
+      const path = `${label}.policy.fallback`;
+      if (!closedObject(fallback, FALLBACK_KEYS, path, issues)) return;
+      if (fallback.onError !== undefined) {
+        if (!Array.isArray(fallback.onError) || new Set(fallback.onError).size !== fallback.onError.length
+          || fallback.onError.some((item) => !FALLBACK_ERRORS.includes(item))) {
+          issues.push(issue("schema", "schema_enum", path, "onError must be unique rate_limit, transport, or provider_unavailable values"));
+        }
+      }
+      if (fallback.maxSwitches !== undefined && (!Number.isInteger(fallback.maxSwitches) || fallback.maxSwitches < 0)) {
+        issues.push(issue("schema", "schema_type", path, "maxSwitches must be an integer >= 0"));
+      }
+      if (fallback.revert !== undefined && !FALLBACK_REVERT.includes(fallback.revert)) {
+        issues.push(issue("schema", "schema_enum", path, "revert must be next_run or never"));
+      }
+    }
   }
 }
 
@@ -431,20 +454,15 @@ function validateModelSemantics(model, label, options, evidence, issues) {
         issues.push(issue("semantic", "pi_native_vendor_forbidden", label, "native vendor cannot use Pi"));
       }
     }
-    const origin = model.origin;
-    if (isObject(origin) && typeof origin.source === "string" && typeof origin.sha256 === "string") {
-      if (!own(evidence, origin.source)) {
-        issues.push(issue("semantic", "origin_evidence_missing", label, `missing evidence bytes for ${origin.source}`));
-      } else if (sha256Bytes(evidence[origin.source]) !== origin.sha256) {
-        issues.push(issue("semantic", "origin_hash_mismatch", label, "origin evidence hash does not match supplied bytes"));
-      }
-    }
-  } else {
-    if (vendor !== ceiling.provider || (typeof model.model === "string" && model.model.includes("/"))) {
-      issues.push(issue("semantic", "native_vendor_mismatch", label, "native route vendor or model does not match the harness ceiling"));
-    }
-    if (own(model, "origin")) {
-      issues.push(issue("semantic", "origin_unexpected", label, "origin is only valid for Pi routes"));
+  } else if (vendor !== ceiling.provider || (typeof model.model === "string" && model.model.includes("/"))) {
+    issues.push(issue("semantic", "native_vendor_mismatch", label, "native route vendor or model does not match the harness ceiling"));
+  }
+  const origin = model.origin;
+  if (isObject(origin) && typeof origin.source === "string" && typeof origin.sha256 === "string") {
+    if (!own(evidence, origin.source)) {
+      issues.push(issue("semantic", "origin_evidence_missing", label, `missing evidence bytes for ${origin.source}`));
+    } else if (sha256Bytes(evidence[origin.source]) !== origin.sha256) {
+      issues.push(issue("semantic", "origin_hash_mismatch", label, "origin evidence hash does not match supplied bytes"));
     }
   }
 }
@@ -497,6 +515,27 @@ function validateRoleSemantics(role, id, label, models, options, issues) {
       issues.push(issue("semantic", "critic_route_count", label, "required critic purpose files must list exactly one admitted route"));
     } else if (admitted[0].permissions.length !== 1 || admitted[0].permissions[0] !== "read-only" || role.permission !== "read-only") {
       issues.push(issue("semantic", "permission_escalation", label, "critic purpose files must be read-only"));
+    }
+  }
+}
+
+function validateExtends(roles, issues) {
+  for (const [id, role] of roles) {
+    if (role.extends === undefined) continue;
+    const label = `roles/${id}`;
+    if (!roles.has(role.extends)) {
+      issues.push(issue("reference", "role_extends_unknown", label, `extends names unknown role ${role.extends}`));
+      continue;
+    }
+    const seen = new Set([id]);
+    let current = role.extends;
+    while (typeof current === "string" && current.length > 0) {
+      if (seen.has(current)) {
+        issues.push(issue("semantic", "role_extends_cycle", label, `extends cycle: ${[...seen, current].join(" -> ")}`));
+        break;
+      }
+      seen.add(current);
+      current = roles.get(current)?.extends;
     }
   }
 }
@@ -569,6 +608,7 @@ export function validatePolicyDraft(input, options) {
     normalized.id = entry.id;
     roles.set(entry.id, normalized);
   }
+  validateExtends(roles, issues);
   validateCriticVendors(roles, models, options, issues);
   if (issues.length > 0) return { ok: false, issues: sortIssues(issues) };
 

@@ -48,8 +48,7 @@ import {
   cmdRoleAdd,
   cmdRoleRemove,
   cmdRoleModify,
-  cmdRoleHosts,
-  cmdRoleSetHost,
+
   cmdRoleResume,
 } from "./cli/roles.ts";
 
@@ -215,7 +214,7 @@ const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "peer list", "peer send", "peer get", "peer await", "peer cancel", "peer fanout", "peer inbox", "peer reply",
   "workflow list", "workflow get", "workflow checkpoint", "workflow record", "workflow wait", "workflow signal",
   "workflow start", "workflow export", "workflow definitions", "workflow add", "workflow remove", "workflow modify",
-  "role list", "role get", "role add", "role remove", "role modify", "role hosts", "role set-host", "role resume",
+  "role list", "role get", "role add", "role remove", "role modify", "role resume",
   "gate validate", "gate artifacts-exist", "gate degrade", "gate signal", "gate github watch",
   "improve report",
   "context get", "context recall", "context state", "context episode", "context promote", "context explain",
@@ -1026,12 +1025,11 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
     .option("--file <path>", "Path to YAML role definition file")
     .option("--description <text>", "Role description")
     .option("--skills <skills>", "Comma-separated skills list")
-    .option("--harness <harness>", "Primary harness name (e.g. grok, claude, agy, pi)")
-    .option("--model <model>", "Primary model identifier (e.g. grok-4.6, fable, gemini-3.8-flash-high)")
+    .option("--route <route-id>", "Route id under .kxm/models/. Repeat to set the roster; the first id is primary", (value: string, previous: string[] | undefined) => (previous ?? []).concat(value))
     .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
     .option("--overwrite", "Overwrite existing role definition if present")
-    .option("--pick [selection]", "Pick from available role templates (index or id)")
-    .action(async function roleAddAction(this: Command, roleId?: string, options?: { file?: string; description?: string; skills?: string; harness?: string; model?: string; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean }) {
+    .option("--pick [selection]", "Pick a global role to copy (index or id)")
+    .action(async function roleAddAction(this: Command, roleId?: string, options?: { file?: string; description?: string; skills?: string; route?: string[]; scope?: "global" | "local"; overwrite?: boolean; pick?: string | boolean }) {
       result.code = await cmdRoleAdd(runtimeFrom(ctx, this), roleId, options ?? {});
     });
   addGlobalOptions(role.command("remove [roleId]").description("Remove a role definition"))
@@ -1044,24 +1042,12 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
     .option("--description <text>", "Updated description")
     .option("--add-skill <skill>", "Skill to add")
     .option("--remove-skill <skill>", "Skill to remove")
-    .option("--add-model <harness:model>", "Model to add to roster")
-    .option("--remove-model <model>", "Model to remove from roster")
+    .option("--add-route <route-id>", "Route id to add to the roster. The id must name a file under .kxm/models/")
+    .option("--remove-route <route-id>", "Route id to remove from the roster")
     .option("--scope <scope>", "Configuration scope: global or local")
     .option("--pick [selection]", "Pick a role to modify (index or id)")
-    .action(async function roleModifyAction(this: Command, roleId?: string, options?: { description?: string; addSkill?: string; removeSkill?: string; addModel?: string; removeModel?: string; scope?: "global" | "local"; pick?: string | boolean }) {
+    .action(async function roleModifyAction(this: Command, roleId?: string, options?: { description?: string; addSkill?: string; removeSkill?: string; addRoute?: string; removeRoute?: string; scope?: "global" | "local"; pick?: string | boolean }) {
       result.code = await cmdRoleModify(runtimeFrom(ctx, this), roleId, options ?? {});
-    });
-  addGlobalOptions(role.command("hosts").description("List role seats and resolved execution hosts from .kxm/role-hosts.yaml"))
-    .option("--scope <scope>", "Filter by scope: all, global, or local", "all")
-    .action(async function roleHostsAction(this: Command, options: { scope?: "all" | "global" | "local" }) {
-      result.code = await cmdRoleHosts(runtimeFrom(ctx, this), options);
-    });
-  addGlobalOptions(role.command("set-host <seatId> <host>").description("Bind a role seat to a host in .kxm/role-hosts.yaml"))
-    .option("--model <model>", "Model identifier for this seat")
-    .option("--effort <effort>", "Effort level: low, medium, high, xhigh")
-    .option("--scope <scope>", "Configuration scope: global or local (default: local)", "local")
-    .action(async function roleSetHostAction(this: Command, seatId: string, host: string, options: { model?: string; effort?: "low" | "medium" | "high" | "xhigh"; scope?: "global" | "local" }) {
-      result.code = await cmdRoleSetHost(runtimeFrom(ctx, this), seatId, host, options);
     });
   addGlobalOptions(role.command("resume <runId> [ruling]").description("Resume an audit-escalated role run with an operator directive"))
     .action(async function roleResumeAction(this: Command, runId: string, ruling?: string) {

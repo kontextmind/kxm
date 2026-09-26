@@ -4,14 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  DEFAULT_ROLE_SEATS,
-  loadRoleHostsConfig,
-  resolveRoleSeat,
-  saveRoleHostsConfig,
-  setRoleSeatHost,
-  type RoleHostsConfig,
-} from "../../plugins/kxm/src/role.ts";
-import {
   TERMINAL_RECEIPT_SCHEMA,
   validateTerminalReceipt,
   ProtocolError,
@@ -24,122 +16,6 @@ import {
   type WorkflowStageState,
 } from "../../plugins/kxm/src/workflow.ts";
 import { runCli, type CliIo } from "../../plugins/kxm/src/cli.ts";
-
-test("Role governance: load, save, set-host with YAML format and JSON fallback", () => {
-  const tempUserDir = mkdtempSync(join(tmpdir(), "kxm-user-role-hosts-"));
-  const tempRepoDir = mkdtempSync(join(tmpdir(), "kxm-repo-role-hosts-"));
-
-  try {
-    // 1. Initial empty load returns default schema and empty seats
-    const emptyLoad = loadRoleHostsConfig({ repoRoot: tempRepoDir, userConfigDir: tempUserDir });
-    assert.equal(emptyLoad.config.schema, "kxm.role-hosts.v1");
-    assert.deepEqual(emptyLoad.config.seats, {});
-    assert.equal(emptyLoad.scope, "default");
-
-    // 2. Save global config in YAML format
-    const globalConfig: RoleHostsConfig = {
-      schema: "kxm.role-hosts.v1",
-      seats: {
-        planner: { model: "anthropic/claude-fable-5.1", host: "pi" },
-        writer: { model: "x-ai/grok-4.6", host: "grok" },
-      },
-      hostProviders: {
-        hermes: "openrouter",
-      },
-    };
-    const globalSave = saveRoleHostsConfig(globalConfig, {
-      scope: "global",
-      userConfigDir: tempUserDir,
-      repoRoot: tempRepoDir,
-    });
-    assert.ok(globalSave.filePath.endsWith("role-hosts.yaml"));
-    const globalContent = readFileSync(globalSave.filePath, "utf8");
-    assert.ok(globalContent.includes("schema: kxm.role-hosts.v1"));
-    assert.ok(globalContent.includes("planner:"));
-
-    // 3. Local override with setRoleSeatHost
-    const setRes = setRoleSeatHost("writer", "pi", {
-      model: "openrouter/qwen/qwen3-coder-plus",
-      effort: "medium",
-      scope: "local",
-      repoRoot: tempRepoDir,
-      userConfigDir: tempUserDir,
-    });
-    assert.equal(setRes.seatId, "writer");
-    assert.equal(setRes.binding.host, "pi");
-    assert.equal(setRes.binding.model, "openrouter/qwen/qwen3-coder-plus");
-    assert.ok(setRes.filePath.endsWith(".kxm/role-hosts.yaml"));
-
-    // 4. Merged load: local writer overrides global writer, planner inherits from global
-    const merged = loadRoleHostsConfig({ repoRoot: tempRepoDir, userConfigDir: tempUserDir });
-    assert.equal(merged.scope, "local");
-    assert.equal(merged.config.seats?.writer?.host, "pi");
-    assert.equal(merged.config.seats?.writer?.model, "openrouter/qwen/qwen3-coder-plus");
-    assert.equal(merged.config.seats?.planner?.host, "pi");
-    assert.equal(merged.config.seats?.planner?.model, "anthropic/claude-fable-5.1");
-    assert.equal(merged.config.hostProviders?.hermes, "openrouter");
-
-    // 5. JSON fallback when role-hosts.json exists without YAML
-    const jsonRepoDir = mkdtempSync(join(tmpdir(), "kxm-json-repo-"));
-    const jsonKxmDir = join(jsonRepoDir, ".kxm");
-    mkdirSync(jsonKxmDir, { recursive: true });
-    writeFileSync(
-      join(jsonKxmDir, "role-hosts.json"),
-      JSON.stringify({
-        schema: "kxm.role-hosts.v1",
-        seats: {
-          "critic-cli": { host: "pi", model: "openai/gpt-5.6-sol" },
-        },
-      }),
-      "utf8",
-    );
-    const jsonLoaded = loadRoleHostsConfig({ repoRoot: jsonRepoDir, userConfigDir: tempUserDir });
-    assert.equal(jsonLoaded.config.seats?.["critic-cli"]?.model, "openai/gpt-5.6-sol");
-    rmSync(jsonRepoDir, { recursive: true, force: true });
-  } finally {
-    rmSync(tempUserDir, { recursive: true, force: true });
-    rmSync(tempRepoDir, { recursive: true, force: true });
-  }
-});
-
-test("Role governance: resolveRoleSeat precedence order", () => {
-  const tempUserDir = mkdtempSync(join(tmpdir(), "kxm-user-roles-resolve-"));
-  const tempRepoDir = mkdtempSync(join(tmpdir(), "kxm-repo-roles-resolve-"));
-
-  try {
-    // 1. Default fallback when no config exists
-    const defaultWriter = resolveRoleSeat("writer", { repoRoot: tempRepoDir, userConfigDir: tempUserDir });
-    assert.equal(defaultWriter.host, "grok");
-    assert.equal(defaultWriter.model, "x-ai/grok-4.6");
-    assert.equal(defaultWriter.source, "seat-default");
-
-    // 2. Configured in role-hosts.yaml takes precedence over default seat
-    setRoleSeatHost("writer", "pi", {
-      model: "openrouter/qwen/qwen3-coder-plus",
-      scope: "local",
-      repoRoot: tempRepoDir,
-      userConfigDir: tempUserDir,
-    });
-    const configuredWriter = resolveRoleSeat("writer", { repoRoot: tempRepoDir, userConfigDir: tempUserDir });
-    assert.equal(configuredWriter.host, "pi");
-    assert.equal(configuredWriter.model, "openrouter/qwen/qwen3-coder-plus");
-    assert.equal(configuredWriter.source, "role-hosts");
-
-    // 3. CLI --host override takes highest precedence
-    const overriddenWriter = resolveRoleSeat("writer", {
-      hostOverride: "agy",
-      modelOverride: "gemini-2.5-pro",
-      repoRoot: tempRepoDir,
-      userConfigDir: tempUserDir,
-    });
-    assert.equal(overriddenWriter.host, "agy");
-    assert.equal(overriddenWriter.model, "gemini-2.5-pro");
-    assert.equal(overriddenWriter.source, "override");
-  } finally {
-    rmSync(tempUserDir, { recursive: true, force: true });
-    rmSync(tempRepoDir, { recursive: true, force: true });
-  }
-});
 
 test("TerminalReceipt: schema validation, status enforcement, and failure modes", () => {
   // 1. Valid accepted receipt
@@ -269,61 +145,6 @@ test("Workflow governance: autoResumeLimit bounds retries and triggers audit esc
   assert.equal(run.status, "completed");
   assert.equal(stageDef.status, "passed");
   assert.ok(stageDef.summary?.includes("Waive rule 42"));
-});
-
-test("CLI commands: kxm role hosts and kxm role set-host execute cleanly", async () => {
-  const tempRepoDir = mkdtempSync(join(tmpdir(), "kxm-cli-role-"));
-  const tempUserDir = mkdtempSync(join(tmpdir(), "kxm-cli-user-"));
-
-  try {
-    let stdoutText = "";
-    let stderrText = "";
-    const mockIo: CliIo = {
-      stdout: (chunk: string) => { stdoutText += chunk; },
-      stderr: (chunk: string) => { stderrText += chunk; },
-    };
-
-    // 1. kxm role hosts --json
-    const hostsCode = await runCli(
-      ["role", "hosts", "--json"],
-      { ...process.env, KXM_USER_CONFIG_DIR: tempUserDir },
-      mockIo,
-      tempRepoDir,
-    );
-    assert.equal(hostsCode, 0);
-    const parsedHosts = JSON.parse(stdoutText);
-    assert.equal(parsedHosts.ok, true);
-    assert.equal(parsedHosts.command, "role hosts");
-    assert.ok(Array.isArray(parsedHosts.seats));
-    assert.ok(parsedHosts.seats.some((s: any) => s.seatId === "writer" && s.host === "grok"));
-
-    // 2. kxm role set-host writer pi --model openrouter/qwen/qwen3-coder-plus --json
-    stdoutText = "";
-    const setHostCode = await runCli(
-      [
-        "role", "set-host", "writer", "pi",
-        "--model", "openrouter/qwen/qwen3-coder-plus",
-        "--json",
-      ],
-      { ...process.env, KXM_USER_CONFIG_DIR: tempUserDir },
-      mockIo,
-      tempRepoDir,
-    );
-    assert.equal(setHostCode, 0);
-    const parsedSetHost = JSON.parse(stdoutText);
-    assert.equal(parsedSetHost.ok, true);
-    assert.equal(parsedSetHost.seatId, "writer");
-    assert.equal(parsedSetHost.host, "pi");
-    assert.equal(parsedSetHost.binding.model, "openrouter/qwen/qwen3-coder-plus");
-
-    // 3. Verify .kxm/role-hosts.yaml exists on disk
-    const onDiskYaml = readFileSync(join(tempRepoDir, ".kxm", "role-hosts.yaml"), "utf8");
-    assert.ok(onDiskYaml.includes("schema: kxm.role-hosts.v1"));
-    assert.ok(onDiskYaml.includes("openrouter/qwen/qwen3-coder-plus"));
-  } finally {
-    rmSync(tempRepoDir, { recursive: true, force: true });
-    rmSync(tempUserDir, { recursive: true, force: true });
-  }
 });
 
 test("CLI commands: kxm role resume resumes an audit-escalated run in database", async () => {

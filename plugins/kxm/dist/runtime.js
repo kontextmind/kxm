@@ -163,10 +163,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify5(x) {
+    function stringify7(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify5;
+    exports.stringify = stringify7;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -3834,7 +3834,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse8(serialize(uri, options), options);
+        parse10(serialize(uri, options), options);
       }
       return uri;
     }
@@ -3874,8 +3874,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative6, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse8(serialize(base, options), options);
-        relative6 = parse8(serialize(relative6, options), options);
+        base = parse10(serialize(base, options), options);
+        relative6 = parse10(serialize(relative6, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative6.scheme) {
@@ -4167,7 +4167,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse8(uri, opts) {
+    function parse10(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4204,7 +4204,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse8
+      parse: parse10
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -6943,8 +6943,8 @@ var require_discriminator = __commonJS({
           if (!tagRequired)
             throw new Error(`discriminator: "${tagName}" must be required`);
           return oneOfMapping;
-          function hasRequired({ required }) {
-            return Array.isArray(required) && required.includes(tagName);
+          function hasRequired({ required: required2 }) {
+            return Array.isArray(required2) && required2.includes(tagName);
           }
           function addMappings(sch, i) {
             if (sch.const) {
@@ -8917,7 +8917,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify5(item, ctx, onComment, onChompKeep) {
+    function stringify7(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -8946,7 +8946,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify5;
+    exports.stringify = stringify7;
   }
 });
 
@@ -8956,7 +8956,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -8978,7 +8978,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify5.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify7.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -9030,7 +9030,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify5.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify7.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -9171,7 +9171,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -9207,7 +9207,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify5.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify7.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -9274,12 +9274,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify6 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify6(collection, ctx, options);
+      const stringify8 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify8(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -9304,7 +9304,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify5.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify7.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -9371,7 +9371,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify5.stringify(item, itemCtx, () => comment = null);
+        let str = stringify7.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -10732,7 +10732,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify5 = require_stringify();
+    var stringify7 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -10747,7 +10747,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify5.createStringifyContext(doc, options);
+      const ctx = stringify7.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -10769,7 +10769,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify5.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify7.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -10777,7 +10777,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify5.stringify(doc.contents, ctx));
+        lines.push(stringify7.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -12913,7 +12913,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify5 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify7 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -12966,7 +12966,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify5;
+    exports.stringify = stringify7;
   }
 });
 
@@ -14658,7 +14658,7 @@ var require_public_api = __commonJS({
         return docs;
       return Object.assign([], { empty: true }, composer$1.streamInfo());
     }
-    function parseDocument2(source, options = {}) {
+    function parseDocument3(source, options = {}) {
       const { lineCounter: lineCounter2, prettyErrors } = parseOptions(options);
       const parser$1 = new parser.Parser(lineCounter2?.addNewLine);
       const composer$1 = new composer.Composer(options);
@@ -14677,14 +14677,14 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse8(src, reviver, options) {
+    function parse10(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
       } else if (options === void 0 && reviver && typeof reviver === "object") {
         options = reviver;
       }
-      const doc = parseDocument2(src, options);
+      const doc = parseDocument3(src, options);
       if (!doc)
         return null;
       doc.warnings.forEach((warning) => log.warn(doc.options.logLevel, warning));
@@ -14696,7 +14696,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify5(value, replacer, options) {
+    function stringify7(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -14718,10 +14718,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse8;
+    exports.parse = parse10;
     exports.parseAllDocuments = parseAllDocuments;
-    exports.parseDocument = parseDocument2;
-    exports.stringify = stringify5;
+    exports.parseDocument = parseDocument3;
+    exports.stringify = stringify7;
   }
 });
 
@@ -14778,14 +14778,14 @@ var require_dist = __commonJS({
 });
 
 // plugins/kxm/src/runtime-service.ts
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { existsSync as existsSync7, readdirSync as readdirSync3, readFileSync as readFileSync4 } from "node:fs";
 import { join as join7 } from "node:path";
 
 // plugins/kxm/src/project-config.ts
 var import__ = __toESM(require__(), 1);
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import { existsSync as existsSync3, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname as dirname2, extname, isAbsolute, join as join2, relative, resolve, sep } from "node:path";
 
@@ -14914,14 +14914,598 @@ function parseRestrictedYaml(input, label = "<yaml>", limits = KXM_YAML_LIMITS) 
   return value;
 }
 
+// plugins/kxm/src/project-config.ts
+import { pathToFileURL } from "node:url";
+
+// plugins/kxm/src/policy-draft.mjs
+import { createHash } from "node:crypto";
+var POLICY_DRAFT_MODEL_SCHEMA = "kxm.model.v2";
+var POLICY_DRAFT_ROLE_SCHEMA = "kxm.role.v2";
+var POLICY_DRAFT_PURPOSES = Object.freeze([
+  "writer",
+  "planner",
+  "reviewer-arch",
+  "reviewer-cli",
+  "experiment"
+]);
+var POLICY_DRAFT_PERMISSIONS = Object.freeze(["edit", "read-only"]);
+var POLICY_DRAFT_STATUSES = Object.freeze(["admitted", "candidate", "retired"]);
+var IDENTIFIER = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
+var ROUTE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+var SHA256 = /^[a-f0-9]{64}$/;
+var TOKEN = /[\s\x00-\x1f]/u;
+var EFFORTS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+var MODES = Object.freeze(["headless", "interactive", "either"]);
+var MODEL_KEYS = Object.freeze([
+  "schema",
+  "id",
+  "harness",
+  "model",
+  "vendor",
+  "status",
+  "permissions",
+  "origin",
+  "thinking",
+  "tags",
+  "capabilities",
+  "priority",
+  "fallbacks",
+  "limits"
+]);
+var ROLE_KEYS = Object.freeze([
+  "schema",
+  "id",
+  "purpose",
+  "permission",
+  "description",
+  "extends",
+  "roster",
+  "skills",
+  "tools",
+  "produces",
+  "consumes",
+  "policy"
+]);
+var ORIGIN_KEYS = Object.freeze(["source", "sha256"]);
+var LIMIT_KEYS = Object.freeze(["contextTokens", "outputTokens", "timeoutMs"]);
+var TOOL_KEYS = Object.freeze(["preset", "allow", "deny"]);
+var TEMPLATE_KEYS = Object.freeze(["template", "schema"]);
+var POLICY_KEYS = Object.freeze(["vendorIndependenceRequired", "maxTransitions", "requiresGateVerification", "fallback"]);
+var FALLBACK_KEYS = Object.freeze(["onError", "maxSwitches", "revert"]);
+var FALLBACK_ERRORS = Object.freeze(["rate_limit", "transport", "provider_unavailable"]);
+var FALLBACK_REVERT = Object.freeze(["next_run", "never"]);
+var ROSTER_ENTRY_KEYS = Object.freeze(["route", "effort", "mode"]);
+var CRITIC_PURPOSES = Object.freeze(["reviewer-arch", "reviewer-cli"]);
+function compareCodeUnits2(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function sortIssues2(issues) {
+  return [...issues].sort((left, right) => compareCodeUnits2(left.file, right.file) || compareCodeUnits2(left.phase, right.phase) || compareCodeUnits2(left.code, right.code) || compareCodeUnits2(left.message, right.message));
+}
+function issue2(phase, code, file, message) {
+  return { phase, code, file, message };
+}
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function own(object, key) {
+  return Object.hasOwn(object, key);
+}
+function extraKeys(value, allowed) {
+  return Object.keys(value).filter((key) => !allowed.includes(key));
+}
+function freezeDeep(value) {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) freezeDeep(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+function sha256Bytes(input) {
+  const bytes = typeof input === "string" ? Buffer.from(input, "utf8") : Buffer.from(input);
+  return createHash("sha256").update(bytes).digest("hex");
+}
+function canonicalVendor(value, aliases) {
+  if (typeof value !== "string") return "";
+  const lower = value.toLowerCase();
+  return own(aliases, lower) ? aliases[lower] : lower;
+}
+function identifier(value, max = 64) {
+  return typeof value === "string" && value.length >= 1 && value.length <= max && IDENTIFIER.test(value);
+}
+function routeId(value) {
+  return typeof value === "string" && value.length >= 1 && value.length <= 64 && ROUTE_ID.test(value);
+}
+function nonemptyToken(value, max = 512) {
+  return typeof value === "string" && value.length >= 1 && value.length <= max && !TOKEN.test(value);
+}
+function codePointCount(value) {
+  return [...value].length;
+}
+function sourcePath(value) {
+  if (!nonemptyToken(value)) return false;
+  if (value.startsWith("/") || value.includes("\\")) return false;
+  const parts = value.split("/");
+  return parts.length > 0 && parts.every((part) => part && part !== "." && part !== "..");
+}
+function uniqueStringList(value, allowed, { min = 1, max = 64 } = {}) {
+  if (!Array.isArray(value) || value.length < min || value.length > max) return false;
+  if (new Set(value).size !== value.length) return false;
+  return value.every((item) => allowed.includes(item));
+}
+function identifierList(value, { maxItems = 32, itemMax = 64 } = {}) {
+  if (!Array.isArray(value) || value.length > maxItems) return false;
+  if (new Set(value).size !== value.length) return false;
+  return value.every((item) => identifier(item, itemMax));
+}
+function parseDocument2(value, label, issues) {
+  if (typeof value === "string" || value instanceof Uint8Array) {
+    try {
+      return parseRestrictedYaml(value, label);
+    } catch (error) {
+      if (error instanceof RestrictedYamlError) issues.push(...error.issues);
+      else issues.push(issue2("parse", "invalid_yaml", label, error instanceof Error ? error.message : "invalid YAML"));
+      return void 0;
+    }
+  }
+  if (isObject(value)) return value;
+  issues.push(issue2("schema", "root_not_object", label, "resource root must be a mapping"));
+  return void 0;
+}
+function collectDocuments(raw, kind, issues) {
+  const collected = [];
+  const seen = /* @__PURE__ */ new Set();
+  if (raw === void 0) return collected;
+  if (Array.isArray(raw)) {
+    for (const [index, value] of raw.entries()) {
+      const label = `${kind}[${index}]`;
+      const document = parseDocument2(value, label, issues);
+      if (!document) continue;
+      const declared = document.id;
+      if (!routeId(declared) && !(kind === "roles" && identifier(declared))) {
+        issues.push(issue2("schema", "missing_id", label, `${kind.slice(0, -1)} identity is missing or invalid`));
+        continue;
+      }
+      if (seen.has(declared)) {
+        issues.push(issue2("schema", kind === "models" ? "duplicate_route_id" : "duplicate_role_id", label, `duplicate ${kind.slice(0, -1)} identity ${declared}`));
+        continue;
+      }
+      seen.add(declared);
+      collected.push({ id: declared, label: `${kind}/${declared}`, document });
+    }
+    return collected;
+  }
+  if (!isObject(raw)) {
+    issues.push(issue2("schema", "root_not_object", kind, `${kind} must be a mapping or array`));
+    return collected;
+  }
+  for (const id of Object.keys(raw).sort(compareCodeUnits2)) {
+    const label = `${kind}/${id}`;
+    if (kind === "models" ? !routeId(id) : !identifier(id)) {
+      issues.push(issue2("schema", "invalid_id", label, `invalid ${kind.slice(0, -1)} identity`));
+      continue;
+    }
+    if (seen.has(id)) {
+      issues.push(issue2("schema", kind === "models" ? "duplicate_route_id" : "duplicate_role_id", label, `duplicate ${kind.slice(0, -1)} identity ${id}`));
+      continue;
+    }
+    seen.add(id);
+    const document = parseDocument2(raw[id], label, issues);
+    if (!document) continue;
+    if (document.id !== void 0 && document.id !== id) {
+      issues.push(issue2("schema", "identity_mismatch", label, `declared id ${String(document.id)} does not match ${id}`));
+      continue;
+    }
+    collected.push({ id, label, document });
+  }
+  return collected;
+}
+function closedObject(value, allowed, label, issues, code = "schema_additionalProperties") {
+  if (!isObject(value)) {
+    issues.push(issue2("schema", "root_not_object", label, "value must be a mapping"));
+    return false;
+  }
+  const unexpected = extraKeys(value, allowed);
+  if (unexpected.length > 0) {
+    issues.push(issue2("schema", code, label, `unexpected properties: ${unexpected.join(", ")}`));
+    return false;
+  }
+  return true;
+}
+function required(value, keys, label, issues) {
+  for (const key of keys) {
+    if (!own(value, key)) issues.push(issue2("schema", "schema_required", label, `missing ${key}`));
+  }
+}
+function validateOrigin(origin, label, issues) {
+  if (!closedObject(origin, ORIGIN_KEYS, `${label}.origin`, issues)) return;
+  required(origin, ORIGIN_KEYS, `${label}.origin`, issues);
+  if (origin.source !== void 0 && !sourcePath(origin.source)) {
+    issues.push(issue2("schema", "origin_source_invalid", `${label}.origin`, "origin source must be a contained relative path"));
+  }
+  if (origin.sha256 !== void 0 && (typeof origin.sha256 !== "string" || !SHA256.test(origin.sha256))) {
+    issues.push(issue2("schema", "origin_hash_invalid", `${label}.origin`, "origin sha256 must be a 64-character hex digest"));
+  }
+}
+function validateModelShape(document, id, label, issues) {
+  if (!closedObject(document, MODEL_KEYS, label, issues)) return;
+  required(document, ["schema", "harness", "model", "vendor", "status", "permissions"], label, issues);
+  if (document.schema !== void 0 && document.schema !== POLICY_DRAFT_MODEL_SCHEMA) {
+    issues.push(issue2("schema", "schema_identity_mismatch", label, `expected ${POLICY_DRAFT_MODEL_SCHEMA}, received ${String(document.schema)}`));
+  }
+  if (document.id !== void 0 && document.id !== id) {
+    issues.push(issue2("schema", "identity_mismatch", label, `declared id ${String(document.id)} does not match ${id}`));
+  }
+  if (document.harness !== void 0 && !identifier(document.harness)) {
+    issues.push(issue2("schema", "schema_pattern", label, "harness must be an identifier"));
+  }
+  if (document.model !== void 0 && (typeof document.model !== "string" || codePointCount(document.model) < 1 || codePointCount(document.model) > 200)) {
+    issues.push(issue2("schema", "schema_pattern", label, "model must be a nonempty string"));
+  }
+  if (document.vendor !== void 0 && !nonemptyToken(document.vendor, 64)) {
+    issues.push(issue2("schema", "schema_pattern", label, "vendor must be a nonempty token"));
+  }
+  if (document.status !== void 0 && !POLICY_DRAFT_STATUSES.includes(document.status)) {
+    issues.push(issue2("schema", "unsupported_status", label, "status must be admitted, candidate, or retired"));
+  }
+  if (document.permissions !== void 0 && !uniqueStringList(document.permissions, POLICY_DRAFT_PERMISSIONS, { min: 1, max: 2 })) {
+    issues.push(issue2("schema", "schema_enum", label, "permissions must be unique edit and/or read-only"));
+  }
+  if (document.harness === "pi" && !own(document, "origin")) {
+    issues.push(issue2("schema", "schema_required", label, "Pi routes require origin source and sha256"));
+  }
+  if (own(document, "origin")) validateOrigin(document.origin, label, issues);
+  if (document.thinking !== void 0 && (typeof document.thinking !== "string" || document.thinking.length < 1 || document.thinking.length > 64)) {
+    issues.push(issue2("schema", "schema_pattern", label, "thinking must be a short string"));
+  }
+  if (document.tags !== void 0 && !identifierList(document.tags)) {
+    issues.push(issue2("schema", "schema_pattern", label, "tags must be unique identifiers"));
+  }
+  if (document.capabilities !== void 0 && !identifierList(document.capabilities)) {
+    issues.push(issue2("schema", "schema_pattern", label, "capabilities must be unique identifiers"));
+  }
+  if (document.priority !== void 0 && (!Number.isInteger(document.priority) || document.priority < -1e4 || document.priority > 1e4)) {
+    issues.push(issue2("schema", "schema_type", label, "priority must be an integer in range"));
+  }
+  if (document.fallbacks !== void 0) {
+    if (!Array.isArray(document.fallbacks) || document.fallbacks.length > 8) {
+      issues.push(issue2("schema", "schema_type", label, "fallbacks must be a bounded array"));
+    } else {
+      for (const [index, fallback] of document.fallbacks.entries()) {
+        if (!isObject(fallback)) {
+          issues.push(issue2("schema", "root_not_object", `${label}.fallbacks[${index}]`, "fallback must be a mapping"));
+          continue;
+        }
+        const keys = Object.keys(fallback);
+        const profile = keys.length === 1 && own(fallback, "profile") && identifier(fallback.profile);
+        const tag = own(fallback, "tag") && identifier(fallback.tag) && extraKeys(fallback, ["tag", "capabilities"]).length === 0 && (fallback.capabilities === void 0 || identifierList(fallback.capabilities));
+        const provider = own(fallback, "provider") && own(fallback, "model") && extraKeys(fallback, ["provider", "model"]).length === 0 && identifier(fallback.provider) && typeof fallback.model === "string" && codePointCount(fallback.model) >= 1 && codePointCount(fallback.model) <= 200;
+        if (!profile && !tag && !provider) {
+          issues.push(issue2("schema", "schema_oneOf", `${label}.fallbacks[${index}]`, "fallback does not match a retained v1 selector"));
+        }
+      }
+    }
+  }
+  if (document.limits !== void 0) {
+    if (!closedObject(document.limits, LIMIT_KEYS, `${label}.limits`, issues)) return;
+    for (const key of ["contextTokens", "outputTokens"]) {
+      if (document.limits[key] !== void 0 && (!Number.isInteger(document.limits[key]) || document.limits[key] < 1)) {
+        issues.push(issue2("schema", "schema_type", `${label}.limits`, `${key} must be a positive integer`));
+      }
+    }
+    if (document.limits.timeoutMs !== void 0 && (!Number.isInteger(document.limits.timeoutMs) || document.limits.timeoutMs < 0 || document.limits.timeoutMs > 31536e6)) {
+      issues.push(issue2("schema", "schema_type", `${label}.limits`, "timeoutMs must be a non-negative integer between 0 and 31536000000"));
+    }
+  }
+}
+function validateTemplateList(value, label, issues) {
+  if (!Array.isArray(value)) {
+    issues.push(issue2("schema", "schema_type", label, "must be an array"));
+    return;
+  }
+  for (const [index, entry] of value.entries()) {
+    const path = `${label}[${index}]`;
+    if (!closedObject(entry, TEMPLATE_KEYS, path, issues)) continue;
+    if (typeof entry.template !== "string" || !entry.template) {
+      issues.push(issue2("schema", "schema_required", path, "template is required"));
+    }
+    if (entry.schema !== void 0 && typeof entry.schema !== "string") {
+      issues.push(issue2("schema", "schema_type", path, "schema must be a string"));
+    }
+  }
+}
+function validateRoleShape(document, id, label, issues) {
+  if (!closedObject(document, ROLE_KEYS, label, issues)) return;
+  required(document, ["schema", "purpose", "permission", "description", "roster"], label, issues);
+  if (document.schema !== void 0 && document.schema !== POLICY_DRAFT_ROLE_SCHEMA) {
+    issues.push(issue2("schema", "schema_identity_mismatch", label, `expected ${POLICY_DRAFT_ROLE_SCHEMA}, received ${String(document.schema)}`));
+  }
+  if (document.id !== void 0 && document.id !== id) {
+    issues.push(issue2("schema", "identity_mismatch", label, `declared id ${String(document.id)} does not match ${id}`));
+  }
+  if (document.extends !== void 0 && !identifier(document.extends)) {
+    issues.push(issue2("schema", "schema_pattern", label, "extends must be a role identifier"));
+  }
+  if (document.purpose !== void 0 && !POLICY_DRAFT_PURPOSES.includes(document.purpose)) {
+    issues.push(issue2("schema", "unsupported_purpose", label, "purpose must be a runner role label"));
+  }
+  if (document.permission !== void 0 && !POLICY_DRAFT_PERMISSIONS.includes(document.permission)) {
+    issues.push(issue2("schema", "schema_enum", label, "permission must be edit or read-only"));
+  }
+  if (document.description !== void 0 && (typeof document.description !== "string" || document.description.length < 1 || document.description.length > 2e3)) {
+    issues.push(issue2("schema", "schema_type", label, "description must be a bounded string"));
+  }
+  if (document.roster !== void 0) {
+    if (!Array.isArray(document.roster) || document.roster.length > 32) {
+      issues.push(issue2("schema", "schema_type", label, "roster must be a bounded array"));
+    } else {
+      const seenRoutes = /* @__PURE__ */ new Set();
+      for (const [index, entry] of document.roster.entries()) {
+        const path = `${label}.roster[${index}]`;
+        if (!closedObject(entry, ROSTER_ENTRY_KEYS, path, issues)) continue;
+        if (!routeId(entry.route)) {
+          issues.push(issue2("schema", "schema_pattern", path, "roster route must be a route identity"));
+          continue;
+        }
+        if (seenRoutes.has(entry.route)) {
+          issues.push(issue2("schema", "duplicate_route_id", path, `duplicate roster route ${entry.route}`));
+        }
+        seenRoutes.add(entry.route);
+        if (entry.effort !== void 0 && !EFFORTS.includes(entry.effort)) {
+          issues.push(issue2("schema", "schema_enum", path, "effort is not a known helper effort"));
+        }
+        if (entry.mode !== void 0 && !MODES.includes(entry.mode)) {
+          issues.push(issue2("schema", "schema_enum", path, "mode must be headless, interactive, or either"));
+        }
+      }
+    }
+  }
+  if (document.skills !== void 0) {
+    if (!Array.isArray(document.skills) || document.skills.length > 64 || document.skills.some((item) => typeof item !== "string" || item.length < 1 || item.length > 128)) {
+      issues.push(issue2("schema", "schema_type", label, "skills must be bounded strings"));
+    }
+  }
+  if (document.tools !== void 0) {
+    if (!closedObject(document.tools, TOOL_KEYS, `${label}.tools`, issues)) return;
+    if (document.tools.preset !== void 0 && typeof document.tools.preset !== "string") {
+      issues.push(issue2("schema", "schema_type", `${label}.tools`, "preset must be a string"));
+    }
+    for (const key of ["allow", "deny"]) {
+      if (document.tools[key] !== void 0 && (!Array.isArray(document.tools[key]) || document.tools[key].some((item) => typeof item !== "string"))) {
+        issues.push(issue2("schema", "schema_type", `${label}.tools`, `${key} must be a string array`));
+      }
+    }
+  }
+  if (document.produces !== void 0) validateTemplateList(document.produces, `${label}.produces`, issues);
+  if (document.consumes !== void 0) validateTemplateList(document.consumes, `${label}.consumes`, issues);
+  if (document.policy !== void 0) {
+    if (!closedObject(document.policy, POLICY_KEYS, `${label}.policy`, issues)) return;
+    if (document.policy.vendorIndependenceRequired !== void 0 && typeof document.policy.vendorIndependenceRequired !== "boolean") {
+      issues.push(issue2("schema", "schema_type", `${label}.policy`, "vendorIndependenceRequired must be boolean"));
+    }
+    if (document.policy.requiresGateVerification !== void 0 && typeof document.policy.requiresGateVerification !== "boolean") {
+      issues.push(issue2("schema", "schema_type", `${label}.policy`, "requiresGateVerification must be boolean"));
+    }
+    if (document.policy.maxTransitions !== void 0 && (!Number.isInteger(document.policy.maxTransitions) || document.policy.maxTransitions < 1)) {
+      issues.push(issue2("schema", "schema_type", `${label}.policy`, "maxTransitions must be a positive integer"));
+    }
+    if (document.policy.fallback !== void 0) {
+      const fallback = document.policy.fallback;
+      const path = `${label}.policy.fallback`;
+      if (!closedObject(fallback, FALLBACK_KEYS, path, issues)) return;
+      if (fallback.onError !== void 0) {
+        if (!Array.isArray(fallback.onError) || new Set(fallback.onError).size !== fallback.onError.length || fallback.onError.some((item) => !FALLBACK_ERRORS.includes(item))) {
+          issues.push(issue2("schema", "schema_enum", path, "onError must be unique rate_limit, transport, or provider_unavailable values"));
+        }
+      }
+      if (fallback.maxSwitches !== void 0 && (!Number.isInteger(fallback.maxSwitches) || fallback.maxSwitches < 0)) {
+        issues.push(issue2("schema", "schema_type", path, "maxSwitches must be an integer >= 0"));
+      }
+      if (fallback.revert !== void 0 && !FALLBACK_REVERT.includes(fallback.revert)) {
+        issues.push(issue2("schema", "schema_enum", path, "revert must be next_run or never"));
+      }
+    }
+  }
+}
+function subset(values, allowed) {
+  return values.every((value) => allowed.includes(value));
+}
+function validateModelSemantics(model, label, options, evidence, issues) {
+  const aliases = options.vendorAliases ?? {};
+  const ceiling = options.ceilings[model.harness];
+  if (!ceiling) {
+    issues.push(issue2("semantic", "unsupported_harness", label, `no code-owned ceiling for harness ${String(model.harness)}`));
+    return;
+  }
+  const vendor = canonicalVendor(model.vendor, aliases);
+  if (options.piAllowedProviders.includes(vendor)) {
+    issues.push(issue2("semantic", "vendor_aggregator", label, "vendor must name the model vendor, not a billing aggregator"));
+  }
+  if (!subset(model.permissions, ceiling.permissions)) {
+    issues.push(issue2("semantic", "permission_escalation", label, "route permissions exceed the harness ceiling"));
+  }
+  if (Array.isArray(ceiling.models) && ceiling.models.length > 0 && !ceiling.models.includes(model.model)) {
+    issues.push(issue2("semantic", "model_not_in_ceiling", label, "exact model is not listed on the harness ceiling"));
+  }
+  if (model.harness === "pi") {
+    const parts = typeof model.model === "string" ? model.model.split("/") : [];
+    const nativeVendors = isObject(options.piNativeVendorProviders) ? options.piNativeVendorProviders : {};
+    const provider = parts[0];
+    const owned = own(nativeVendors, provider) ? canonicalVendor(nativeVendors[provider], aliases) : "";
+    const minParts = owned ? 2 : 3;
+    const maxParts = owned ? 2 : Number.POSITIVE_INFINITY;
+    if (parts.length < minParts || parts.length > maxParts || parts.some((part) => !part) || !options.piAllowedProviders.includes(provider) || owned && !/^gemini-[a-z0-9.-]+$/.test(parts[1])) {
+      issues.push(issue2("semantic", "unsupported_pi_model", label, "Pi model must use an allowlisted aggregator prefix"));
+    } else if (owned) {
+      if (owned !== vendor) {
+        issues.push(issue2("semantic", "pi_native_vendor_forbidden", label, "native vendor cannot use Pi"));
+      }
+    } else {
+      const prefix = canonicalVendor(parts[1], aliases);
+      if (options.nativePiBrakeProviders.includes(prefix) || options.nativePiBrakeProviders.includes(vendor)) {
+        issues.push(issue2("semantic", "pi_native_vendor_forbidden", label, "native vendor cannot use Pi"));
+      }
+    }
+  } else if (vendor !== ceiling.provider || typeof model.model === "string" && model.model.includes("/")) {
+    issues.push(issue2("semantic", "native_vendor_mismatch", label, "native route vendor or model does not match the harness ceiling"));
+  }
+  const origin = model.origin;
+  if (isObject(origin) && typeof origin.source === "string" && typeof origin.sha256 === "string") {
+    if (!own(evidence, origin.source)) {
+      issues.push(issue2("semantic", "origin_evidence_missing", label, `missing evidence bytes for ${origin.source}`));
+    } else if (sha256Bytes(evidence[origin.source]) !== origin.sha256) {
+      issues.push(issue2("semantic", "origin_hash_mismatch", label, "origin evidence hash does not match supplied bytes"));
+    }
+  }
+}
+function admittedRoute(model) {
+  return model.status === "admitted";
+}
+function validateRoleSemantics(role, id, label, models, options, issues) {
+  if (!Array.isArray(role.roster)) return;
+  for (const [index, entry] of role.roster.entries()) {
+    const path = `${label}.roster[${index}]`;
+    const model = models.get(entry.route);
+    if (!model) {
+      issues.push(issue2("reference", "route_unknown", path, `roster references unknown route ${entry.route}`));
+      continue;
+    }
+    const ceiling = options.ceilings[model.harness];
+    if (!ceiling) continue;
+    if (Array.isArray(ceiling.roles) && ceiling.roles.length > 0 && !ceiling.roles.includes(role.purpose)) {
+      issues.push(issue2("semantic", "purpose_ceiling_mismatch", path, `purpose ${role.purpose} is not allowed on harness ${model.harness}`));
+    }
+    if (!model.permissions.includes(role.permission)) {
+      issues.push(issue2("semantic", "permission_escalation", path, "role permission is not granted by the route"));
+    }
+    if (!ceiling.permissions.includes(role.permission)) {
+      issues.push(issue2("semantic", "permission_escalation", path, "role permission exceeds the harness ceiling"));
+    }
+    if (Array.isArray(ceiling.efforts) && ceiling.efforts.length > 0 && entry.effort !== void 0 && !ceiling.efforts.includes(entry.effort)) {
+      issues.push(issue2("semantic", "effort_ceiling_mismatch", path, "effort is not allowed on the harness ceiling"));
+    }
+    if (!admittedRoute(model)) {
+      issues.push(issue2("semantic", "route_not_admitted", path, `route ${entry.route} is ${model.status} and is not treated as admitted`));
+    }
+    if (model.harness === "pi") {
+      if (role.permission === "edit" && !["writer", "experiment"].includes(role.purpose)) {
+        issues.push(issue2("semantic", "permission_escalation", path, "Pi critic/planner cannot edit"));
+      }
+      if (role.purpose === "writer" && (model.permissions.length !== 1 || model.permissions[0] !== "edit")) {
+        issues.push(issue2("semantic", "permission_escalation", path, "Pi writer requires edit permission only"));
+      }
+    }
+  }
+  if (id === role.purpose && CRITIC_PURPOSES.includes(role.purpose)) {
+    const admitted = role.roster.map((entry) => models.get(entry.route)).filter((model) => model && admittedRoute(model));
+    if (admitted.length !== 1) {
+      issues.push(issue2("semantic", "critic_route_count", label, "required critic purpose files must list exactly one admitted route"));
+    } else if (admitted[0].permissions.length !== 1 || admitted[0].permissions[0] !== "read-only" || role.permission !== "read-only") {
+      issues.push(issue2("semantic", "permission_escalation", label, "critic purpose files must be read-only"));
+    }
+  }
+}
+function validateExtends(roles, issues) {
+  for (const [id, role] of roles) {
+    if (role.extends === void 0) continue;
+    const label = `roles/${id}`;
+    if (!roles.has(role.extends)) {
+      issues.push(issue2("reference", "role_extends_unknown", label, `extends names unknown role ${role.extends}`));
+      continue;
+    }
+    const seen = /* @__PURE__ */ new Set([id]);
+    let current = role.extends;
+    while (typeof current === "string" && current.length > 0) {
+      if (seen.has(current)) {
+        issues.push(issue2("semantic", "role_extends_cycle", label, `extends cycle: ${[...seen, current].join(" -> ")}`));
+        break;
+      }
+      seen.add(current);
+      current = roles.get(current)?.extends;
+    }
+  }
+}
+function validateCriticVendors(roles, models, options, issues) {
+  const aliases = options.vendorAliases ?? {};
+  const critics = [];
+  for (const purpose of CRITIC_PURPOSES) {
+    const role = roles.get(purpose);
+    if (!role || role.purpose !== purpose) continue;
+    const admitted = (role.roster ?? []).map((entry) => models.get(entry.route)).filter((model) => model && admittedRoute(model));
+    if (admitted.length === 1) critics.push({ purpose, vendor: canonicalVendor(admitted[0].vendor, aliases) });
+  }
+  if (critics.length === 2 && critics[0].vendor === critics[1].vendor) {
+    issues.push(issue2("semantic", "critic_vendor_collision", "roles/reviewer-arch", "required critics must have independent vendors"));
+  }
+  const writer = roles.get("writer");
+  if (writer && critics.length > 0) {
+    for (const entry of writer.roster ?? []) {
+      const model = models.get(entry.route);
+      if (!model || !admittedRoute(model)) continue;
+      const vendor = canonicalVendor(model.vendor, aliases);
+      if (critics.some((critic) => critic.vendor === vendor)) {
+        issues.push(issue2("semantic", "writer_critic_vendor_collision", "roles/writer", "writer and critics must have independent vendors"));
+      }
+    }
+  }
+}
+function validatePolicyDraft(input, options) {
+  const issues = [];
+  if (!isObject(input)) {
+    return { ok: false, issues: [issue2("schema", "root_not_object", "<draft>", "draft input must be a mapping")] };
+  }
+  const unexpected = extraKeys(input, ["models", "roles", "evidence"]);
+  if (unexpected.length > 0) {
+    issues.push(issue2("schema", "schema_additionalProperties", "<draft>", `unexpected properties: ${unexpected.join(", ")}`));
+  }
+  if (!isObject(options) || !isObject(options.ceilings) || !Array.isArray(options.nativePiBrakeProviders) || !Array.isArray(options.piAllowedProviders)) {
+    issues.push(issue2("semantic", "ceilings_required", "<options>", "code-owned ceilings and vendor brakes must be supplied explicitly"));
+    return { ok: false, issues: sortIssues2(issues) };
+  }
+  const evidence = isObject(input.evidence) ? input.evidence : {};
+  if (input.evidence !== void 0 && !isObject(input.evidence)) {
+    issues.push(issue2("schema", "root_not_object", "evidence", "evidence must be a mapping of source path to bytes"));
+  }
+  const modelDocs = collectDocuments(input.models, "models", issues);
+  const roleDocs = collectDocuments(input.roles, "roles", issues);
+  for (const entry of modelDocs) validateModelShape(entry.document, entry.id, entry.label, issues);
+  for (const entry of roleDocs) validateRoleShape(entry.document, entry.id, entry.label, issues);
+  if (issues.length > 0) return { ok: false, issues: sortIssues2(issues) };
+  const models = /* @__PURE__ */ new Map();
+  for (const entry of modelDocs) {
+    validateModelSemantics(entry.document, entry.label, options, evidence, issues);
+    const normalized = cloneJson(entry.document);
+    normalized.id = entry.id;
+    models.set(entry.id, normalized);
+  }
+  const roles = /* @__PURE__ */ new Map();
+  for (const entry of roleDocs) {
+    validateRoleSemantics(entry.document, entry.id, entry.label, models, options, issues);
+    const normalized = cloneJson(entry.document);
+    normalized.id = entry.id;
+    roles.set(entry.id, normalized);
+  }
+  validateExtends(roles, issues);
+  validateCriticVendors(roles, models, options, issues);
+  if (issues.length > 0) return { ok: false, issues: sortIssues2(issues) };
+  const data = freezeDeep({
+    models: Object.fromEntries([...models.entries()].sort(([left], [right]) => compareCodeUnits2(left, right))),
+    roles: Object.fromEntries([...roles.entries()].sort(([left], [right]) => compareCodeUnits2(left, right)))
+  });
+  return { ok: true, data };
+}
+
 // plugins/kxm/src/template.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 var KXM_TEMPLATE_ID = "builtin-minimal";
 var KXM_TEMPLATE_PROVENANCE_PATH = ".kxm/template-provenance.yaml";
 var CURRENT_KXM_TEMPLATE_VARIANT = "v4-registry";
 var SUPPORTED_KXM_TEMPLATE_VARIANTS = ["v1", "v2", "v3-policy", "v4-registry"];
-function compareCodeUnits2(left, right) {
+function compareCodeUnits3(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function canonicalJson(value) {
@@ -14929,10 +15513,10 @@ function canonicalJson(value) {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) return `[${value.map((candidate) => canonicalJson(candidate)).join(",")}]`;
-  return `{${Object.keys(value).sort(compareCodeUnits2).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  return `{${Object.keys(value).sort(compareCodeUnits3).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
 function kxmContentSha256(input) {
-  return `sha256:${createHash("sha256").update(input).digest("hex")}`;
+  return `sha256:${createHash2("sha256").update(input).digest("hex")}`;
 }
 function authorityProjection(value) {
   const projected = structuredClone(value);
@@ -15077,8 +15661,41 @@ function coreTemplate(projectId, projectName, variant) {
       schema: "kxm.routes.v2",
       updatedAt: "2026-09-23T00:00:00.000Z",
       admitted: ["anthropic/fable", "xai/grok-4.6"],
-      disabled: [],
-      roles: { implementer: ["xai/grok-4.6"] }
+      disabled: []
+    });
+    files.set(".kxm/models/grok-default.yaml", {
+      schema: "kxm.model.v2",
+      id: "grok-default",
+      harness: "grok",
+      model: "grok-4.6",
+      vendor: "xai",
+      status: "admitted",
+      permissions: ["edit"]
+    });
+    files.set(".kxm/models/fable-default.yaml", {
+      schema: "kxm.model.v2",
+      id: "fable-default",
+      harness: "claude",
+      model: "fable",
+      vendor: "anthropic",
+      status: "admitted",
+      permissions: ["read-only"]
+    });
+    files.set(".kxm/roles/writer.yaml", {
+      schema: "kxm.role.v2",
+      id: "writer",
+      purpose: "writer",
+      permission: "edit",
+      description: "Primary implementation agent.",
+      roster: [{ route: "grok-default" }]
+    });
+    files.set(".kxm/roles/planner.yaml", {
+      schema: "kxm.role.v2",
+      id: "planner",
+      purpose: "planner",
+      permission: "read-only",
+      description: "Plans the change before implementation.",
+      roster: [{ route: "fable-default" }]
     });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",
@@ -15107,7 +15724,7 @@ function renderKxmTemplate(projectId, projectName, variant = CURRENT_KXM_TEMPLAT
       authoritySha256: kxmAuthoritySha256(value),
       bytes: bytes.byteLength
     };
-  }).sort((left, right) => compareCodeUnits2(left.path, right.path));
+  }).sort((left, right) => compareCodeUnits3(left.path, right.path));
   const templateRevision = provenanceRevision(records);
   const provenance = {
     schema: "kxm.template-provenance.v1",
@@ -15121,7 +15738,7 @@ function renderKxmTemplate(projectId, projectName, variant = CURRENT_KXM_TEMPLAT
     KXM_TEMPLATE_PROVENANCE_PATH,
     Buffer.from((0, import_yaml2.stringify)(provenance, { lineWidth: 0 }), "utf8")
   ]);
-  fileEntries.sort(([left], [right]) => compareCodeUnits2(left, right));
+  fileEntries.sort(([left], [right]) => compareCodeUnits3(left, right));
   const files = new Map(fileEntries);
   return { projectId, projectName, templateRevision, provenance, files, values };
 }
@@ -15986,7 +16603,7 @@ function resolveDispatchStatus(entry, detected, authenticated, issues) {
     return { status: "no", supported: false, reason: "not_authenticated" };
   }
   if (authenticated === null) {
-    const authIssue = issues.find((issue3) => issue3 === "auth_context_required" || issue3 === "auth_unknown" || issue3 === "auth_unparsed" || issue3.startsWith("auth_"));
+    const authIssue = issues.find((issue4) => issue4 === "auth_context_required" || issue4 === "auth_unknown" || issue4 === "auth_unparsed" || issue4.startsWith("auth_"));
     return { status: "no", supported: false, reason: authIssue ?? issues[0] ?? "auth_unknown" };
   }
   return { status: "yes", supported: true };
@@ -16501,8 +17118,8 @@ function formatHarnessUpdate(steps) {
 var KxmConfigError = class extends Error {
   issues;
   constructor(issues) {
-    const sorted = sortIssues2(issues);
-    super(sorted.map((issue3) => `${issue3.file}: ${issue3.code}: ${issue3.message}`).join("\n"));
+    const sorted = sortIssues3(issues);
+    super(sorted.map((issue4) => `${issue4.file}: ${issue4.code}: ${issue4.message}`).join("\n"));
     this.name = "KxmConfigError";
     this.issues = sorted;
   }
@@ -16515,12 +17132,13 @@ var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
   agent: { identity: "kxm.agent.v1", file: "agent.schema.json" },
-  model: { identity: "kxm.model.v1", file: "model.schema.json" },
+  model: { identity: "kxm.model.v2", file: "model.schema.json" },
+  role: { identity: "kxm.role.v2", file: "role.schema.json" },
   environment: { identity: "kxm.environment.v1", file: "environment.schema.json" },
   workflow: { identity: "kxm.workflow.v1", file: "workflow.schema.json" },
   "gate-registry": { identity: "kxm.gate-registry.v1", file: "gate-registry.schema.json" }
 });
-var IDENTIFIER = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
+var IDENTIFIER2 = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 var WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$|clock\$)$/i;
 var BUILTIN_EXECUTORS = ["local", "ssh", "exe-dev"];
 var BUILTIN_TOOL_PRESETS = ["coordinator", "read-only", "workspace-writer", "tests-writer"];
@@ -16532,17 +17150,17 @@ var SECRET_VALUE_PATTERNS = [
   /\bAKIA[A-Z0-9]{16}\b/,
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/
 ];
-function compareCodeUnits3(left, right) {
+function compareCodeUnits4(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
-function sortIssues2(issues) {
-  return [...issues].sort((left, right) => compareCodeUnits3(left.file, right.file) || compareCodeUnits3(left.phase, right.phase) || compareCodeUnits3(left.code, right.code) || compareCodeUnits3(left.message, right.message));
+function sortIssues3(issues) {
+  return [...issues].sort((left, right) => compareCodeUnits4(left.file, right.file) || compareCodeUnits4(left.phase, right.phase) || compareCodeUnits4(left.code, right.code) || compareCodeUnits4(left.message, right.message));
 }
-function issue2(phase, code, file, message) {
+function issue3(phase, code, file, message) {
   return { phase, code, file, message };
 }
 function fail2(phase, code, file, message) {
-  throw new KxmConfigError([issue2(phase, code, file, message)]);
+  throw new KxmConfigError([issue3(phase, code, file, message)]);
 }
 function isJsonObject2(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -16635,7 +17253,7 @@ var KxmSchemaRegistry = class {
   validate(kind, value, file) {
     const definition = RESOURCE_SCHEMA[kind];
     if (value.schema !== definition.identity) {
-      return [issue2("schema", "schema_identity_mismatch", file, `expected ${definition.identity}, received ${String(value.schema)}`)];
+      return [issue3("schema", "schema_identity_mismatch", file, `expected ${definition.identity}, received ${String(value.schema)}`)];
     }
     const validator = this.validators.get(kind);
     if (!validator) throw new Error(`missing KXM validator for ${kind}`);
@@ -16659,7 +17277,7 @@ var KxmSchemaRegistry = class {
   }
   validateAuxiliary(value, file, identity, validator) {
     if (value.schema !== identity) {
-      return [issue2("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
+      return [issue3("schema", "schema_identity_mismatch", file, `expected ${identity}, received ${String(value.schema)}`)];
     }
     if (validator(value)) return [];
     return (validator.errors ?? []).map((error) => schemaIssue(file, error));
@@ -16669,7 +17287,7 @@ var cachedRunEventRegistry;
 function validateRunEvent(value, file) {
   const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
   if (!registry.runEventValidator(value)) {
-    throw new KxmConfigError([issue2(
+    throw new KxmConfigError([issue3(
       "schema",
       "run_event_invalid",
       file,
@@ -16685,7 +17303,7 @@ function syncEventSchemaErrors(value) {
 function validateDriveReceipt(value, file) {
   const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
   if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.drive-receipt.v1") {
-    throw new KxmConfigError([issue2(
+    throw new KxmConfigError([issue3(
       "schema",
       "drive_receipt_invalid",
       file,
@@ -16693,7 +17311,7 @@ function validateDriveReceipt(value, file) {
     )]);
   }
   if (!registry.driveReceiptValidator(value)) {
-    throw new KxmConfigError([issue2(
+    throw new KxmConfigError([issue3(
       "schema",
       "drive_receipt_invalid",
       file,
@@ -16704,10 +17322,10 @@ function validateDriveReceipt(value, file) {
 function validateCoordinator(value, file) {
   const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
   if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.coordinator.v1") {
-    throw new KxmConfigError([issue2("schema", "coordinator_invalid", file, "expected kxm.coordinator.v1")]);
+    throw new KxmConfigError([issue3("schema", "coordinator_invalid", file, "expected kxm.coordinator.v1")]);
   }
   if (!registry.coordinatorValidator(value)) {
-    throw new KxmConfigError([issue2(
+    throw new KxmConfigError([issue3(
       "schema",
       "coordinator_invalid",
       file,
@@ -16718,10 +17336,10 @@ function validateCoordinator(value, file) {
 function validateIntakeMessage(value, file) {
   const registry = cachedRunEventRegistry ??= new KxmSchemaRegistry();
   if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "kxm.intake-message.v1") {
-    throw new KxmConfigError([issue2("schema", "intake_message_invalid", file, "expected kxm.intake-message.v1")]);
+    throw new KxmConfigError([issue3("schema", "intake_message_invalid", file, "expected kxm.intake-message.v1")]);
   }
   if (!registry.intakeMessageValidator(value)) {
-    throw new KxmConfigError([issue2(
+    throw new KxmConfigError([issue3(
       "schema",
       "intake_message_invalid",
       file,
@@ -16732,7 +17350,7 @@ function validateIntakeMessage(value, file) {
 function schemaIssue(file, error) {
   const location = error.instancePath || "/";
   const suffix = error.params && "additionalProperty" in error.params ? ` (${String(error.params.additionalProperty)})` : "";
-  return issue2("schema", `schema_${error.keyword}`, file, `${location} ${error.message ?? "is invalid"}${suffix}`);
+  return issue3("schema", `schema_${error.keyword}`, file, `${location} ${error.message ?? "is invalid"}${suffix}`);
 }
 function canonicalHostPath(path) {
   const resolved = resolve(path);
@@ -16758,7 +17376,7 @@ function portableBindingIssue(root, pathHint, repositoryId) {
     if (!existsSync3(current)) break;
     const stat = lstatSync(current);
     if (stat.isSymbolicLink()) {
-      return issue2("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
+      return issue3("path", "repository_binding_path_link", ".kxm/project.yaml", `portable pathHint for ${repositoryId} traverses a symbolic link or junction`);
     }
   }
   const binding = resolve(root, ...pathHint.split("/"));
@@ -16766,7 +17384,7 @@ function portableBindingIssue(root, pathHint, repositoryId) {
     const realRoot = canonicalHostPath(root);
     const realBinding = canonicalHostPath(binding);
     if (!containedHostPath(realRoot, realBinding)) {
-      return issue2("path", "repository_binding_outside_project", ".kxm/project.yaml", `portable pathHint for ${repositoryId} resolves outside the authoritative project root`);
+      return issue3("path", "repository_binding_outside_project", ".kxm/project.yaml", `portable pathHint for ${repositoryId} resolves outside the authoritative project root`);
     }
   }
   return void 0;
@@ -16781,7 +17399,7 @@ function portablePath(path) {
   return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== ".." && !WINDOWS_RESERVED.test((segment.split(".")[0] ?? segment).replace(/[ .]+$/g, "")) && !segment.endsWith(".") && !segment.endsWith(" ") && !segment.includes(":"));
 }
 function kxmResourceIdentifier(id) {
-  return id.length <= 64 && IDENTIFIER.test(id) && !WINDOWS_RESERVED.test(id);
+  return id.length <= 64 && IDENTIFIER2.test(id) && !WINDOWS_RESERVED.test(id);
 }
 function resourceIdentifier(id) {
   return kxmResourceIdentifier(id);
@@ -16859,7 +17477,7 @@ function readTemplateProvenance(registry, root) {
       fail2("path", "template_provenance_path_invalid", label, `managed path ${path} is not a portable project-configuration path`);
     }
     if (seen.has(folded)) fail2("path", "template_provenance_path_collision", label, `managed path ${path} collides after case folding`);
-    if (prior && compareCodeUnits3(prior, path) >= 0) fail2("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
+    if (prior && compareCodeUnits4(prior, path) >= 0) fail2("semantic", "template_provenance_order_invalid", label, "managed file entries must use strict code-unit order");
     seen.add(folded);
     prior = path;
   }
@@ -16876,27 +17494,27 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind, r
     fail2("path", "resource_directory_invalid", displayPath(root, directory), "resource directory must be a regular directory");
   }
   const issues = [];
-  const entries = readdirSync(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits3(left.name, right.name));
+  const entries = readdirSync(directory, { withFileTypes: true }).sort((left, right) => compareCodeUnits4(left.name, right.name));
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      issues.push(issue2("path", "nested_resource_directory", displayPath(root, join2(directory, entry.name)), "nested resource directories are not allowed"));
+      issues.push(issue3("path", "nested_resource_directory", displayPath(root, join2(directory, entry.name)), "nested resource directories are not allowed"));
       continue;
     }
     if (!entry.name.toLowerCase().endsWith(".yaml") && !entry.name.toLowerCase().endsWith(".yml")) continue;
     if (!entry.isFile() || extname(entry.name) !== ".yaml") {
-      issues.push(issue2("path", "resource_filename_invalid", displayPath(root, join2(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
+      issues.push(issue3("path", "resource_filename_invalid", displayPath(root, join2(directory, entry.name)), "resource must be a regular file with the exact .yaml extension"));
       continue;
     }
     const id = basename(entry.name, ".yaml");
     if (kind === "model" && id === "inventory") continue;
     if (id === replacedId) continue;
     if (!resourceIdentifier(id)) {
-      issues.push(issue2("path", "resource_id_invalid", displayPath(root, join2(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
+      issues.push(issue3("path", "resource_id_invalid", displayPath(root, join2(directory, entry.name)), `filename-derived identity ${id} is invalid or platform-reserved`));
       continue;
     }
     const collision = [...resources.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
     if (collision) {
-      issues.push(issue2("path", "resource_id_collision", displayPath(root, join2(directory, entry.name)), `${id} case-folds to existing ${collision}`));
+      issues.push(issue3("path", "resource_id_collision", displayPath(root, join2(directory, entry.name)), `${id} case-folds to existing ${collision}`));
       continue;
     }
     try {
@@ -16931,7 +17549,7 @@ function mapResource(resource, map, issues) {
   if (!id) return;
   const collision = [...map.keys()].find((candidate) => candidate.toLocaleLowerCase("en-US") === id.toLocaleLowerCase("en-US"));
   if (collision) {
-    issues.push(issue2("path", "resource_id_collision", resource.logicalPath, `${id} case-folds to existing ${collision}`));
+    issues.push(issue3("path", "resource_id_collision", resource.logicalPath, `${id} case-folds to existing ${collision}`));
     return;
   }
   map.set(id, resource);
@@ -16955,7 +17573,7 @@ function validatePortablePaths(resource, issues) {
   }
   for (const candidate of candidates) {
     if (!portablePath(candidate.path)) {
-      issues.push(issue2("path", "portable_path_invalid", resource.logicalPath, `${candidate.label} is not a normalized forward-slash relative path: ${candidate.path}`));
+      issues.push(issue3("path", "portable_path_invalid", resource.logicalPath, `${candidate.label} is not a normalized forward-slash relative path: ${candidate.path}`));
     }
   }
 }
@@ -16965,14 +17583,14 @@ function selectorCandidates(selectorValue, models, file, label, issues) {
   const profile = stringValue(selector.profile);
   if (profile) {
     const model = models.get(profile);
-    if (!model) issues.push(issue2("reference", "model_profile_unknown", file, `${label} references unknown model profile ${profile}`));
+    if (!model) issues.push(issue3("reference", "model_profile_unknown", file, `${label} references unknown model profile ${profile}`));
     return model ? [model] : [];
   }
   const tag = stringValue(selector.tag);
   if (!tag) return [];
   const capabilities = new Set(names(selector.capabilities));
   const candidates = [...models.values()].filter((model) => names(model.value.tags).includes(tag) && [...capabilities].every((capability) => names(model.value.capabilities).includes(capability)));
-  if (candidates.length === 0) issues.push(issue2("reference", "model_tag_unresolved", file, `${label} selector tag ${tag} has no matching profile`));
+  if (candidates.length === 0) issues.push(issue3("reference", "model_tag_unresolved", file, `${label} selector tag ${tag} has no matching profile`));
   return candidates;
 }
 function modelCandidates(selectorValue, models) {
@@ -16985,7 +17603,7 @@ function modelCandidates(selectorValue, models) {
     return [{
       key: `profile:${profile}`,
       profile,
-      ...stringValue(resource.value.provider) ? { provider: stringValue(resource.value.provider) } : {},
+      ...stringValue(resource.value.provider) || stringValue(resource.value.vendor) ? { provider: stringValue(resource.value.provider) ?? stringValue(resource.value.vendor) } : {},
       ...stringValue(resource.value.model) ? { model: stringValue(resource.value.model) } : {}
     }];
   }
@@ -16995,7 +17613,7 @@ function modelCandidates(selectorValue, models) {
     return [...models.values()].filter((resource) => names(resource.value.tags).includes(tag) && [...capabilities].every((capability) => names(resource.value.capabilities).includes(capability))).map((resource) => ({
       key: `profile:${resource.id ?? "unknown"}`,
       ...resource.id ? { profile: resource.id } : {},
-      ...stringValue(resource.value.provider) ? { provider: stringValue(resource.value.provider) } : {},
+      ...stringValue(resource.value.provider) || stringValue(resource.value.vendor) ? { provider: stringValue(resource.value.provider) ?? stringValue(resource.value.vendor) } : {},
       ...stringValue(resource.value.model) ? { model: stringValue(resource.value.model) } : {}
     }));
   }
@@ -17027,13 +17645,13 @@ function validateEnvironment(resource, issues) {
     const secret = objectValue(candidate);
     const name = secret && stringValue(secret.name);
     if (!name) continue;
-    if (secretNames.has(name)) issues.push(issue2("semantic", "secret_name_duplicate", resource.logicalPath, `secret environment name ${name} is duplicated`));
+    if (secretNames.has(name)) issues.push(issue3("semantic", "secret_name_duplicate", resource.logicalPath, `secret environment name ${name} is duplicated`));
     secretNames.add(name);
-    if (Object.hasOwn(values, name)) issues.push(issue2("semantic", "environment_name_conflict", resource.logicalPath, `${name} appears in both values and secrets`));
+    if (Object.hasOwn(values, name)) issues.push(issue3("semantic", "environment_name_conflict", resource.logicalPath, `${name} appears in both values and secrets`));
   }
   for (const [name, value] of Object.entries(values)) {
     if (typeof value === "string" && SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
-      issues.push(issue2("semantic", "probable_secret_value", resource.logicalPath, `${name} resembles a credential and must be represented by secrets[].ref`));
+      issues.push(issue3("semantic", "probable_secret_value", resource.logicalPath, `${name} resembles a credential and must be represented by secrets[].ref`));
     }
   }
 }
@@ -17045,29 +17663,29 @@ function validateToolScope(agent, step, file, stepId, issues) {
   if (!requested) return;
   const ceiling = objectValue(agent.value.tools);
   if (!ceiling) {
-    issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} requests tools but agent ${agent.id ?? "unknown"} declares no tool ceiling`));
+    issues.push(issue3("semantic", "tool_scope_expansion", file, `${stepId} requests tools but agent ${agent.id ?? "unknown"} declares no tool ceiling`));
     return;
   }
   const requestedPreset = stringValue(requested.preset);
   const ceilingPreset = stringValue(ceiling.preset);
   if (requestedPreset !== ceilingPreset) {
-    issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} tool preset ${String(requestedPreset)} does not preserve agent ${agent.id ?? "unknown"} preset ${String(ceilingPreset)}`));
+    issues.push(issue3("semantic", "tool_scope_expansion", file, `${stepId} tool preset ${String(requestedPreset)} does not preserve agent ${agent.id ?? "unknown"} preset ${String(ceilingPreset)}`));
   }
   const allowed = new Set(names(ceiling.allow));
   const denied = new Set(names(ceiling.deny));
   for (const tool of names(requested.allow)) {
-    if (!allowed.has(tool) || denied.has(tool)) issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} requests tool ${tool} beyond agent ${agent.id ?? "unknown"} explicit allowlist`));
+    if (!allowed.has(tool) || denied.has(tool)) issues.push(issue3("semantic", "tool_scope_expansion", file, `${stepId} requests tool ${tool} beyond agent ${agent.id ?? "unknown"} explicit allowlist`));
   }
   const requestedDenied = new Set(names(requested.deny));
   for (const tool of denied) {
-    if (!requestedDenied.has(tool)) issues.push(issue2("semantic", "tool_scope_expansion", file, `${stepId} drops agent ${agent.id ?? "unknown"} denial for ${tool}`));
+    if (!requestedDenied.has(tool)) issues.push(issue3("semantic", "tool_scope_expansion", file, `${stepId} drops agent ${agent.id ?? "unknown"} denial for ${tool}`));
   }
 }
 function validateToolPolicy(resource, policy, label, issues) {
   if (!policy) return;
   const allowed = new Set(names(policy.allow));
   for (const tool of names(policy.deny)) {
-    if (allowed.has(tool)) issues.push(issue2("semantic", "tool_policy_contradiction", resource.logicalPath, `${label} both allows and denies ${tool}`));
+    if (allowed.has(tool)) issues.push(issue3("semantic", "tool_policy_contradiction", resource.logicalPath, `${label} both allows and denies ${tool}`));
   }
 }
 function validateAgentScope(agent, step, repositories, file, stepId, issues) {
@@ -17078,14 +17696,14 @@ function validateAgentScope(agent, step, repositories, file, stepId, issues) {
     if (!repositories.has(repositoryId)) continue;
     const ceiling = agentRepositories[repositoryId] ?? defaultAccess ?? "none";
     if (accessRank(requested) > accessRank(ceiling)) {
-      issues.push(issue2("semantic", "repository_scope_expansion", file, `${stepId} requests ${String(requested)} access to ${repositoryId} beyond agent ${agent.id ?? "unknown"} ceiling ${String(ceiling)}`));
+      issues.push(issue3("semantic", "repository_scope_expansion", file, `${stepId} requests ${String(requested)} access to ${repositoryId} beyond agent ${agent.id ?? "unknown"} ceiling ${String(ceiling)}`));
     }
   }
   const grants = new Set(valuesOf(agent.value, "secrets").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate)).map((candidate) => stringValue(candidate.ref)).filter((candidate) => Boolean(candidate)));
   for (const candidate of valuesOf(step, "secrets")) {
     const reference = stringValue(objectValue(candidate)?.ref);
     if (reference && !grants.has(reference)) {
-      issues.push(issue2("semantic", "secret_scope_expansion", file, `${stepId} requests secret ${reference} beyond agent ${agent.id ?? "unknown"} ceiling`));
+      issues.push(issue3("semantic", "secret_scope_expansion", file, `${stepId} requests secret ${reference} beyond agent ${agent.id ?? "unknown"} ceiling`));
     }
   }
 }
@@ -17100,7 +17718,7 @@ function gateOutcomeImpossible(step, stepId, file) {
   const impossible = declared.filter((outcome) => !produced.includes(outcome) && outcome !== "implementation_failure" && outcome !== "repro_missing");
   const missing = produced.filter((outcome) => !declared.includes(outcome));
   if (impossible.length === 0 || missing.length === 0) return void 0;
-  return issue2("semantic", "gate_outcome_impossible", file, `${stepId} declares ${impossible.join(", ")}, which a gate step with expect ${expect} never produces; it settles on ${produced.join(" or ")}, so declare ${missing.join(" and ")}`);
+  return issue3("semantic", "gate_outcome_impossible", file, `${stepId} declares ${impossible.join(", ")}, which a gate step with expect ${expect} never produces; it settles on ${produced.join(" or ")}, so declare ${missing.join(" and ")}`);
 }
 function transition(value) {
   if (typeof value === "string") return { target: value };
@@ -17116,13 +17734,13 @@ function transition(value) {
 function validateWorkflow(workflow, agents, models, repositories, gates, issues) {
   const file = workflow.logicalPath;
   const coordinator = stringValue(workflow.value.coordinator) ?? "coordinator";
-  if (!agents.has(coordinator)) issues.push(issue2("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
+  if (!agents.has(coordinator)) issues.push(issue3("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
   const steps = valuesOf(workflow.value, "steps").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const stepIndex = /* @__PURE__ */ new Map();
   for (const [index, step] of steps.entries()) {
     const id = stringValue(step.id);
     if (!id) continue;
-    if (stepIndex.has(id)) issues.push(issue2("semantic", "step_id_duplicate", file, `step ${id} is duplicated`));
+    if (stepIndex.has(id)) issues.push(issue3("semantic", "step_id_duplicate", file, `step ${id} is duplicated`));
     else stepIndex.set(id, index);
   }
   for (const field of ["reproOracle", "planHash"]) {
@@ -17132,16 +17750,16 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     const evidenceKey = stringValue(oracle.evidenceKey);
     const index = stageId === void 0 ? void 0 : stepIndex.get(stageId);
     if (index === void 0) {
-      issues.push(issue2("reference", "oracle_stage_unknown", file, `${field} references unknown stage ${String(stageId)}`));
+      issues.push(issue3("reference", "oracle_stage_unknown", file, `${field} references unknown stage ${String(stageId)}`));
       continue;
     }
     const evidence = new Set(valuesOf(steps[index] ?? {}, "requiredEvidence").map((candidate) => stringValue(objectValue(candidate)?.key)).filter((candidate) => Boolean(candidate)));
-    if (!evidenceKey || !evidence.has(evidenceKey)) issues.push(issue2("reference", "oracle_evidence_unknown", file, `${field} references undeclared evidence ${String(evidenceKey)} in ${stageId}`));
+    if (!evidenceKey || !evidence.has(evidenceKey)) issues.push(issue3("reference", "oracle_evidence_unknown", file, `${field} references undeclared evidence ${String(evidenceKey)} in ${stageId}`));
   }
   const planStages = new Set(names(workflow.value.requirePlanHash));
-  if (planStages.size > 0 && !objectValue(workflow.value.planHash)) issues.push(issue2("semantic", "plan_hash_missing", file, "requirePlanHash requires planHash"));
+  if (planStages.size > 0 && !objectValue(workflow.value.planHash)) issues.push(issue3("semantic", "plan_hash_missing", file, "requirePlanHash requires planHash"));
   for (const stageId of planStages) {
-    if (!stepIndex.has(stageId)) issues.push(issue2("reference", "plan_hash_stage_unknown", file, `requirePlanHash references unknown stage ${stageId}`));
+    if (!stepIndex.has(stageId)) issues.push(issue3("reference", "plan_hash_stage_unknown", file, `requirePlanHash references unknown stage ${stageId}`));
   }
   const adjacency = steps.map(() => /* @__PURE__ */ new Set());
   const terminalReachable = /* @__PURE__ */ new Set();
@@ -17153,23 +17771,23 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     validateToolPolicy(workflow, objectValue(step.tools), `${stepId}.tools`, issues);
     const primaryAgentId = stringValue(step.agent);
     if ((kind === "agent" || kind === "moa") && primaryAgentId && !agents.has(primaryAgentId)) {
-      issues.push(issue2("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
+      issues.push(issue3("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
     }
     const gate = stringValue(step.gate);
     if (kind === "gate" && gate) {
-      if (!gates) issues.push(issue2("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
-      else if (!gates.has(gate)) issues.push(issue2("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
+      if (!gates) issues.push(issue3("reference", "gate_registry_missing", file, `${stepId} requires .kxm/gates.yaml`));
+      else if (!gates.has(gate)) issues.push(issue3("reference", "gate_unknown", file, `${stepId} references unregistered gate ${gate}`));
     }
     if (step.expect !== void 0 && (kind !== "gate" || !["pass", "fail"].includes(String(step.expect)))) {
-      issues.push(issue2("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
+      issues.push(issue3("semantic", "gate_expect_invalid", file, `${stepId} expect is gate-only pass or fail`));
     }
     if (kind === "gate" && Object.keys(objectValue(step.on) ?? {}).some((outcome) => outcome === "implementation_failure" || outcome === "repro_missing")) {
-      issues.push(issue2("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
+      issues.push(issue3("semantic", "gate_outcome_renamed", file, `${stepId} must use implementation-failure and repro-missing`));
     }
     const impossibleOutcome = kind === "gate" ? gateOutcomeImpossible(step, stepId, file) : void 0;
     if (impossibleOutcome) issues.push(impossibleOutcome);
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
-      if (!repositories.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
+      if (!repositories.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
     selectorCandidates(step.model, models, file, `${stepId}.model`, issues);
     const assignment = objectValue(step.assignments);
@@ -17177,7 +17795,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     const allowedAgents = declaredAgents.length > 0 ? declaredAgents : primaryAgentId ? [primaryAgentId] : [];
     for (const agentId of allowedAgents) {
       const agent = agents.get(agentId);
-      if (!agent) issues.push(issue2("reference", "assignment_agent_unknown", file, `${stepId} allows unknown agent ${agentId}`));
+      if (!agent) issues.push(issue3("reference", "assignment_agent_unknown", file, `${stepId} allows unknown agent ${agentId}`));
       else {
         validateAgentScope(agent, step, repositories, file, stepId, issues);
         if (step.model !== void 0 && agent.value.model !== void 0) {
@@ -17185,37 +17803,37 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
           const ceilingModels = modelCandidates(agent.value.model, models);
           const effectiveModels = requestedModels.filter((requested) => ceilingModels.some((ceiling) => compatibleModel(requested, ceiling)));
           if (requestedModels.length > 0 && effectiveModels.length === 0) {
-            issues.push(issue2("semantic", "model_selector_incompatible", file, `${stepId} model selector has no candidate within agent ${agentId} ceiling`));
+            issues.push(issue3("semantic", "model_selector_incompatible", file, `${stepId} model selector has no candidate within agent ${agentId} ceiling`));
           }
         }
       }
     }
     if (primaryAgentId && allowedAgents.length > 0 && !allowedAgents.includes(primaryAgentId)) {
-      issues.push(issue2("semantic", "primary_agent_ineligible", file, `${stepId} primary agent ${primaryAgentId} is not in allowedAgents`));
+      issues.push(issue3("semantic", "primary_agent_ineligible", file, `${stepId} primary agent ${primaryAgentId} is not in allowedAgents`));
     }
     const minimum = numberValue(assignment?.minimum, 1);
     const target = numberValue(assignment?.target, minimum);
     const maximum = numberValue(assignment?.maximum, target);
     const maxParallel = numberValue(assignment?.maxParallel, maximum);
-    if (!(minimum <= target && target <= maximum)) issues.push(issue2("semantic", "assignment_bounds_invalid", file, `${stepId} must satisfy minimum <= target <= maximum`));
-    if (maxParallel > maximum) issues.push(issue2("semantic", "assignment_parallelism_invalid", file, `${stepId} maxParallel exceeds maximum`));
+    if (!(minimum <= target && target <= maximum)) issues.push(issue3("semantic", "assignment_bounds_invalid", file, `${stepId} must satisfy minimum <= target <= maximum`));
+    if (maxParallel > maximum) issues.push(issue3("semantic", "assignment_parallelism_invalid", file, `${stepId} maxParallel exceeds maximum`));
     if (assignment && allowedAgents.length > 0 && maximum > allowedAgents.length && kind === "moa") {
-      issues.push(issue2("semantic", "assignment_pool_too_small", file, `${stepId} maximum ${maximum} exceeds ${allowedAgents.length} eligible agents`));
+      issues.push(issue3("semantic", "assignment_pool_too_small", file, `${stepId} maximum ${maximum} exceeds ${allowedAgents.length} eligible agents`));
     }
     const maxWriteRepositories = assignment && typeof assignment.maxWriteRepositories === "number" ? assignment.maxWriteRepositories : void 0;
     if (maxWriteRepositories !== void 0) {
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
-      if (maxWriteRepositories > writable) issues.push(issue2("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
+      if (maxWriteRepositories > writable) issues.push(issue3("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
     const join23 = objectValue(step.join);
     const minimumPassed = join23 && typeof join23.minimumPassed === "number" ? join23.minimumPassed : void 0;
-    if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue2("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
+    if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue3("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
       const candidates = diversityCandidates(step.model, allowedAgents, agents, models);
       for (const dimension of distinctBy) {
         const distinct = new Set(candidates.map((candidate) => candidate[dimension]).filter((value) => Boolean(value)));
-        if (distinct.size < target) issues.push(issue2("semantic", "model_diversity_impossible", file, `${stepId} requires ${target} distinct ${dimension} values but resolves ${distinct.size}`));
+        if (distinct.size < target) issues.push(issue3("semantic", "model_diversity_impossible", file, `${stepId} requires ${target} distinct ${dimension} values but resolves ${distinct.size}`));
       }
     }
     const evidenceKeys = /* @__PURE__ */ new Set();
@@ -17224,29 +17842,29 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       if (!requirement) continue;
       const key = stringValue(requirement.key);
       if (key) {
-        if (evidenceKeys.has(key)) issues.push(issue2("semantic", "evidence_key_duplicate", file, `${stepId} evidence key ${key} is duplicated`));
+        if (evidenceKeys.has(key)) issues.push(issue3("semantic", "evidence_key_duplicate", file, `${stepId} evidence key ${key} is duplicated`));
         evidenceKeys.add(key);
       }
       const policy = objectValue(requirement.producerPolicy);
       if (!policy) continue;
       const eligible = names(policy.eligibleAgents);
       const producerMinimum = numberValue(policy.minimumProducers, 1);
-      if (producerMinimum > target || producerMinimum > eligible.length) issues.push(issue2("semantic", "producer_minimum_impossible", file, `${stepId}.${String(key)} producer minimum exceeds its eligible or target pool`));
+      if (producerMinimum > target || producerMinimum > eligible.length) issues.push(issue3("semantic", "producer_minimum_impossible", file, `${stepId}.${String(key)} producer minimum exceeds its eligible or target pool`));
       for (const agentId of eligible) {
-        if (!agents.has(agentId)) issues.push(issue2("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
-        if (allowedAgents.length > 0 && !allowedAgents.includes(agentId)) issues.push(issue2("semantic", "producer_agent_ineligible", file, `${stepId}.${String(key)} producer ${agentId} is outside allowedAgents`));
+        if (!agents.has(agentId)) issues.push(issue3("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
+        if (allowedAgents.length > 0 && !allowedAgents.includes(agentId)) issues.push(issue3("semantic", "producer_agent_ineligible", file, `${stepId}.${String(key)} producer ${agentId} is outside allowedAgents`));
       }
       const degradation = objectValue(policy.degradation);
-      if (degradation && numberValue(degradation.minimumProducers, 1) >= producerMinimum) issues.push(issue2("semantic", "producer_degradation_invalid", file, `${stepId}.${String(key)} degradation must lower minimumProducers`));
+      if (degradation && numberValue(degradation.minimumProducers, 1) >= producerMinimum) issues.push(issue3("semantic", "producer_degradation_invalid", file, `${stepId}.${String(key)} degradation must lower minimumProducers`));
     }
     const writes = Object.values(objectValue(step.repositories) ?? {}).some((access) => access === "write");
     const planHashStage = stringValue(objectValue(workflow.value.planHash)?.stageId);
     const planHashIndex = planHashStage === void 0 ? void 0 : stepIndex.get(planHashStage);
     if (writes && planHashIndex !== void 0 && index > planHashIndex && !planStages.has(stepId)) {
-      issues.push(issue2("semantic", "mutation_missing_plan_hash", file, `${stepId} mutates after the approved-plan stage but is absent from requirePlanHash`));
+      issues.push(issue3("semantic", "mutation_missing_plan_hash", file, `${stepId} mutates after the approved-plan stage but is absent from requirePlanHash`));
     }
     const outcomes = objectValue(step.on) ?? {};
-    if (Object.keys(outcomes).length === 0) issues.push(issue2("semantic", "step_transitions_missing", file, `${stepId} has no declared transitions`));
+    if (Object.keys(outcomes).length === 0) issues.push(issue3("semantic", "step_transitions_missing", file, `${stepId} has no declared transitions`));
     for (const [outcome, rawTransition] of Object.entries(outcomes)) {
       const parsed = transition(rawTransition);
       if (parsed.target === "$terminal") {
@@ -17256,29 +17874,29 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       }
       const targetIndex = parsed.target === void 0 ? void 0 : stepIndex.get(parsed.target);
       if (targetIndex === void 0) {
-        issues.push(issue2("reference", "transition_target_unknown", file, `${stepId}.${outcome} references unknown target ${String(parsed.target)}`));
+        issues.push(issue3("reference", "transition_target_unknown", file, `${stepId}.${outcome} references unknown target ${String(parsed.target)}`));
         continue;
       }
       adjacency[index]?.add(targetIndex);
       if (targetIndex <= index) {
         hasBackEdge = true;
-        if (parsed.maxTransitions === void 0) issues.push(issue2("semantic", "back_edge_unbounded", file, `${stepId}.${outcome} back-edge requires maxTransitions`));
+        if (parsed.maxTransitions === void 0) issues.push(issue3("semantic", "back_edge_unbounded", file, `${stepId}.${outcome} back-edge requires maxTransitions`));
       }
     }
   }
   if (hasBackEdge && typeof objectValue(workflow.value.limits)?.maxTransitions !== "number") {
-    issues.push(issue2("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
+    issues.push(issue3("semantic", "workflow_cycle_unbounded", file, "workflow with back-edges requires limits.maxTransitions"));
   }
   const readyIndex = stepIndex.get("ready");
   const verifyIndex = stepIndex.get("verify");
   if (readyIndex !== void 0 && verifyIndex !== void 0) {
     const verifyTargets = adjacency[verifyIndex] ?? /* @__PURE__ */ new Set();
     if (!verifyTargets.has(readyIndex)) {
-      issues.push(issue2("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
+      issues.push(issue3("semantic", "verify_must_precede_ready", file, "verify must transition to ready"));
     }
     for (const [srcIndex, targets] of adjacency.entries()) {
       if (targets.has(readyIndex) && srcIndex !== verifyIndex) {
-        issues.push(issue2("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
+        issues.push(issue3("semantic", "verify_must_precede_ready", file, `step ${String(steps[srcIndex]?.id)} transitions to ready bypassing verify`));
       }
     }
   }
@@ -17293,7 +17911,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         queue.push(target);
       }
     }
-    for (const [index, step] of steps.entries()) if (!reachable.has(index)) issues.push(issue2("semantic", "step_unreachable", file, `step ${String(step.id)} is unreachable from the first step`));
+    for (const [index, step] of steps.entries()) if (!reachable.has(index)) issues.push(issue3("semantic", "step_unreachable", file, `step ${String(step.id)} is unreachable from the first step`));
     for (const [requiredIndex, requiredStep] of steps.entries()) {
       if (requiredStep.kind !== "gate" && requiredStep.kind !== "approval") continue;
       const reachableWithoutRequired = /* @__PURE__ */ new Set();
@@ -17309,7 +17927,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         }
       }
       if ([...completedTerminalSources].some((source) => source !== requiredIndex && reachableWithoutRequired.has(source))) {
-        issues.push(issue2("semantic", "required_step_bypass", file, `a completed path can bypass required ${String(requiredStep.id)}`));
+        issues.push(issue3("semantic", "required_step_bypass", file, `a completed path can bypass required ${String(requiredStep.id)}`));
       }
     }
     const canTerminate = new Set(terminalReachable);
@@ -17323,7 +17941,7 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
         }
       }
     }
-    for (const index of reachable) if (!canTerminate.has(index)) issues.push(issue2("semantic", "step_cannot_terminate", file, `step ${String(steps[index]?.id)} has no path to a terminal transition`));
+    for (const index of reachable) if (!canTerminate.has(index)) issues.push(issue3("semantic", "step_cannot_terminate", file, `step ${String(steps[index]?.id)} has no path to a terminal transition`));
   }
 }
 function validateModelReferences(models, issues) {
@@ -17336,7 +17954,7 @@ function validateModelReferences(models, issues) {
   const visited = /* @__PURE__ */ new Set();
   const walk = (id, path) => {
     if (visiting.has(id)) {
-      issues.push(issue2("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path, id].join(" -> ")}`));
+      issues.push(issue3("semantic", "model_fallback_cycle", models.get(id)?.logicalPath ?? ".kxm/models", `fallback profile cycle: ${[...path, id].join(" -> ")}`));
       return;
     }
     if (visited.has(id)) return;
@@ -17364,17 +17982,17 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     if (!id) continue;
     const folded = id.toLocaleLowerCase("en-US");
     const previous = foldedRepositories.get(folded);
-    if (previous) issues.push(issue2("path", "repository_id_collision", project.logicalPath, `${id} case-folds to existing ${previous}`));
+    if (previous) issues.push(issue3("path", "repository_id_collision", project.logicalPath, `${id} case-folds to existing ${previous}`));
     else foldedRepositories.set(folded, id);
     repositoryIds.add(id);
     if (entry.role === "control") controls += 1;
   }
-  if (controls !== 1) issues.push(issue2("semantic", "control_repository_count", project.logicalPath, `expected exactly one control repository, received ${controls}`));
+  if (controls !== 1) issues.push(issue3("semantic", "control_repository_count", project.logicalPath, `expected exactly one control repository, received ${controls}`));
   for (const repository of repositories.values()) {
-    if (repository.value.projectId !== project.value.id) issues.push(issue2("reference", "repository_project_mismatch", repository.logicalPath, "projectId does not match the authoritative project"));
+    if (repository.value.projectId !== project.value.id) issues.push(issue3("reference", "repository_project_mismatch", repository.logicalPath, "projectId does not match the authoritative project"));
     const id = stringValue(repository.value.repositoryId);
-    if (!id || !repositoryIds.has(id)) issues.push(issue2("reference", "repository_definition_unknown", repository.logicalPath, `repositoryId ${String(id)} is not bound by project.yaml`));
-    if (repository.id !== id) issues.push(issue2("reference", "repository_binding_identity_mismatch", repository.logicalPath, `binding ${String(repository.id)} declares repositoryId ${String(id)}`));
+    if (!id || !repositoryIds.has(id)) issues.push(issue3("reference", "repository_definition_unknown", repository.logicalPath, `repositoryId ${String(id)} is not bound by project.yaml`));
+    if (repository.id !== id) issues.push(issue3("reference", "repository_binding_identity_mismatch", repository.logicalPath, `binding ${String(repository.id)} declares repositoryId ${String(id)}`));
   }
   for (const resource of [project, ...environments]) validatePortablePaths(resource, issues);
   for (const environment of environments) validateEnvironment(environment, issues);
@@ -17384,25 +18002,25 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     const definition = objectValue(value);
     const executable = Array.isArray(definition?.argv) ? definition.argv[0] : void 0;
     if (definition?.kind === "command" && typeof executable === "string" && (executable === "." || executable === ".." || executable.includes("\\") || !executable.startsWith("/") && executable.includes("/"))) {
-      issues.push(issue2("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
+      issues.push(issue3("semantic", "gate_executable_invalid", ".kxm/gates.yaml", `${id} argv[0] must be a bare executable or absolute POSIX path`));
     }
   }
   const presets = new Set(options.registeredToolPresets ?? BUILTIN_TOOL_PRESETS);
   const harnesses = new Set(options.registeredHarnesses ?? BUILTIN_HARNESS_IDS);
   const defaultExecutor = stringValue(project.value.defaultExecutor);
-  if (defaultExecutor && !executors.has(defaultExecutor)) issues.push(issue2("reference", "executor_unknown", project.logicalPath, `defaultExecutor ${defaultExecutor} is not registered`));
+  if (defaultExecutor && !executors.has(defaultExecutor)) issues.push(issue3("reference", "executor_unknown", project.logicalPath, `defaultExecutor ${defaultExecutor} is not registered`));
   const defaultHarness = stringValue(project.value.defaultHarness) ?? DEFAULT_HARNESS;
-  if (!harnesses.has(defaultHarness)) issues.push(issue2("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
+  if (!harnesses.has(defaultHarness)) issues.push(issue3("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
   for (const agent of agents.values()) {
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
-    if (executor && !executors.has(executor)) issues.push(issue2("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
+    if (executor && !executors.has(executor)) issues.push(issue3("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
     const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue2("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
+    if (!harnesses.has(harness)) issues.push(issue3("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
-    if (preset && !presets.has(preset)) issues.push(issue2("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
+    if (preset && !presets.has(preset)) issues.push(issue3("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
-      if (!repositoryIds.has(repositoryId)) issues.push(issue2("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
+      if (!repositoryIds.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
     }
     const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
     const declaredHarness = stringValue(agent.value.harness);
@@ -17412,14 +18030,14 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
         const candidateModel = stringValue(candidate.value.model);
         const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
         if (!validation.valid) {
-          issues.push(issue2("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
+          issues.push(issue3("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
         }
       }
     }
   }
   validateModelReferences(models, issues);
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
-  if (!workflows.has(defaultWorkflow)) issues.push(issue2("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
+  if (!workflows.has(defaultWorkflow)) issues.push(issue3("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
   if (projectRoot) {
     const writerRolePath = join2(projectRoot, ".kxm", "roles", "writer.yaml");
@@ -17429,7 +18047,27 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
         const rawRole = parseRestrictedYaml2(writerRole ?? readFileSync(writerRolePath, "utf8"));
         const roleObj = objectValue(rawRole);
         const rosterEntries = valuesOf(roleObj ?? {}, "roster").map((candidate) => objectValue(candidate)).filter((entry) => Boolean(entry));
-        const enabledRosterModels = rosterEntries.filter((entry) => entry.enabled !== false).map((entry) => stringValue(entry.model)).filter((m) => Boolean(m));
+        const enabledRosterModels = rosterEntries.flatMap((entry) => {
+          const direct = stringValue(entry.model);
+          const route = stringValue(entry.route);
+          const named = direct ? [direct] : [];
+          if (route) {
+            const modelFile = join2(projectRoot, ".kxm", "models", `${route}.yaml`);
+            if (existsSync3(modelFile)) {
+              try {
+                const modelDoc = objectValue(parseRestrictedYaml2(readFileSync(modelFile, "utf8"), modelFile));
+                const model = modelDoc ? stringValue(modelDoc.model) : void 0;
+                const vendor = modelDoc ? stringValue(modelDoc.vendor) : void 0;
+                const harness = modelDoc ? stringValue(modelDoc.harness) : void 0;
+                if (model) named.push(model);
+                if (vendor && model) named.push(`${vendor}/${model}`);
+                if (harness && model) named.push(`${harness}/${model}`);
+              } catch {
+              }
+            }
+          }
+          return named;
+        });
         const agentModelObj = objectValue(implementerAgent.value.model);
         const agentModelStr = stringValue(implementerAgent.value.model);
         const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : void 0;
@@ -17438,7 +18076,7 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
         if (enabledRosterModels.length > 0 && canonicalAgentModel) {
           const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
           if (!matches) {
-            issues.push(issue2("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
+            issues.push(issue3("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
           }
         }
       } catch (error) {
@@ -17448,7 +18086,83 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
       }
     }
   }
-  return sortIssues2(issues);
+  if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roster.yaml"))) {
+    issues.push(...developerRolePolicyIssues(projectRoot));
+  }
+  return sortIssues3(issues);
+}
+function developerCeilings() {
+  const script = join2(findKxmRepoRoot(import.meta.url), "scripts", "harness-run.mjs");
+  let loaded;
+  try {
+    loaded = spawnSync2(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
+      encoding: "utf8",
+      timeout: 15e3
+    });
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+  if (loaded.error) {
+    const code = loaded.error.code;
+    const detail = code === "ETIMEDOUT" || loaded.signal ? `timed out after 15s (${loaded.error.message})` : loaded.error.message;
+    return { ok: false, detail };
+  }
+  if (loaded.status !== 0 || !loaded.stdout) {
+    const stderr = (loaded.stderr ?? "").trim();
+    return { ok: false, detail: stderr || `scripts/harness-run.mjs exited ${loaded.status}` };
+  }
+  try {
+    return { ok: true, ...JSON.parse(loaded.stdout) };
+  } catch (error) {
+    return { ok: false, detail: `ceilings JSON parse failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+function developerRolePolicyIssues(projectRoot) {
+  const rolesDir = join2(projectRoot, ".kxm", "roles");
+  const modelsDir = join2(projectRoot, ".kxm", "models");
+  const roles = {};
+  const models = {};
+  const evidence = {};
+  const parseIssues = [];
+  const readMap = (dir, into, skipInventory) => {
+    if (!existsSync3(dir)) return;
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".yaml")) continue;
+      const id = basename(name, ".yaml");
+      if (skipInventory && id === "inventory") continue;
+      try {
+        const value = parseRestrictedYaml2(readFileSync(join2(dir, name), "utf8"), `${dir}/${name}`);
+        into[id] = value;
+      } catch (error) {
+        if (error instanceof KxmConfigError) {
+          parseIssues.push(...error.issues);
+          continue;
+        }
+      }
+    }
+  };
+  readMap(rolesDir, roles, false);
+  readMap(modelsDir, models, true);
+  for (const model of Object.values(models)) {
+    const origin = objectValue(model.origin);
+    const source = origin ? stringValue(origin.source) : void 0;
+    if (!source || evidence[source] !== void 0) continue;
+    const evidenceFile = isAbsolute(source) ? source : join2(projectRoot, source);
+    if (existsSync3(evidenceFile)) evidence[source] = readFileSync(evidenceFile, "utf8");
+  }
+  const ceilings = developerCeilings();
+  if (!ceilings.ok) {
+    return [...parseIssues, issue3("semantic", "developer_ceilings_unavailable", ".kxm/roster.yaml", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+  }
+  const result = validatePolicyDraft({ models, roles, evidence }, {
+    ceilings: ceilings.ROUTES,
+    nativePiBrakeProviders: ceilings.NATIVE_PI_BRAKE_PROVIDERS,
+    piAllowedProviders: ceilings.PI_ALLOWED_PROVIDERS,
+    piNativeVendorProviders: ceilings.PI_NATIVE_VENDOR_PROVIDERS,
+    vendorAliases: { "x-ai": "xai", moonshotai: "moonshot", "google-ai": "google", qwen: "alibaba" }
+  });
+  if (result.ok) return parseIssues;
+  return [...parseIssues, ...result.issues.map((entry) => issue3(entry.phase, entry.code, entry.file, entry.message))];
 }
 function kxmCanonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -17459,8 +18173,8 @@ function canonicalize(value) {
   return kxmCanonicalJson(value);
 }
 function bundleRevision(resources) {
-  const hash = createHash2("sha256");
-  for (const resource of [...resources].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath))) {
+  const hash = createHash3("sha256");
+  for (const resource of [...resources].sort((left, right) => compareCodeUnits4(left.logicalPath, right.logicalPath))) {
     hash.update(resource.logicalPath, "utf8");
     hash.update("\0", "utf8");
     hash.update(canonicalize(resource.value), "utf8");
@@ -17486,7 +18200,7 @@ function discoverGitRoot(start = process.cwd()) {
 }
 function assertNoRegisteredGates(options) {
   if ("registeredGates" in options) {
-    throw new KxmConfigError([issue2("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
+    throw new KxmConfigError([issue3("semantic", "registered_gates_removed", ".kxm/gates.yaml", "registeredGates was removed; declare gates in .kxm/gates.yaml")]);
   }
 }
 function loadKxmProject(projectRoot, options = {}) {
@@ -17499,7 +18213,7 @@ function loadProjectBundle(projectRoot, options, candidate) {
   const root = resolve(projectRoot);
   const legacyPresent = legacyConfigFilesAt(root);
   if (legacyPresent.length > 0) {
-    throw new KxmConfigError(legacyPresent.map((file) => issue2(
+    throw new KxmConfigError(legacyPresent.map((file) => issue3(
       "semantic",
       "legacy_state_unsupported",
       file,
@@ -17514,20 +18228,25 @@ function loadProjectBundle(projectRoot, options, candidate) {
   if (templateProvenance && templateProvenance.inputs && typeof templateProvenance.inputs === "object" && !Array.isArray(templateProvenance.inputs)) {
     const provenanceProjectId = stringValue(templateProvenance.inputs.projectId);
     if (provenanceProjectId !== stringValue(project.value.id)) {
-      earlyIssues.push(issue2("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
+      earlyIssues.push(issue3("semantic", "template_provenance_project_mismatch", ".kxm/template-provenance.yaml", "template provenance belongs to a different project identity"));
     }
   }
   const declaredRepositoryIds = new Set(valuesOf(project.value, "repositories").map((candidate2) => stringValue(objectValue(candidate2)?.id)).filter((candidate2) => candidate2 !== void 0));
-  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits3)) {
+  for (const repositoryId of Object.keys(options.repositoryBindings ?? {}).sort(compareCodeUnits4)) {
     if (!resourceIdentifier(repositoryId)) {
-      earlyIssues.push(issue2("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
+      earlyIssues.push(issue3("path", "repository_binding_id_invalid", ".kxm/project.yaml", `host-local binding identity ${repositoryId} is invalid`));
     } else if (!declaredRepositoryIds.has(repositoryId)) {
-      earlyIssues.push(issue2("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
+      earlyIssues.push(issue3("reference", "repository_binding_unknown", ".kxm/project.yaml", `host-local binding references unknown repository ${repositoryId}`));
     }
   }
   if (earlyIssues.length > 0) throw new KxmConfigError(earlyIssues);
   const agents = listNamedResources(registry, root, join2(root, ".kxm", "agents"), ".kxm/agents", "agent");
   const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model");
+  const roles = listNamedResources(registry, root, join2(root, ".kxm", "roles"), ".kxm/roles", "role", writerRole === void 0 ? void 0 : "writer");
+  if (writerRole !== void 0) {
+    const logicalPath = ".kxm/roles/writer.yaml";
+    roles.set("writer", { kind: "role", id: "writer", file: join2(root, logicalPath), logicalPath, value: resourceValue(registry, writerRole, logicalPath, "role") });
+  }
   const workflows = listNamedResources(registry, root, join2(root, ".kxm", "workflows"), ".kxm/workflows", "workflow", workflowCandidate?.id);
   if (workflowCandidate) {
     const { id, document } = workflowCandidate;
@@ -17557,20 +18276,20 @@ function loadProjectBundle(projectRoot, options, candidate) {
     const repositoryId = entry && stringValue(entry.id);
     const pathHint = entry && stringValue(entry.pathHint);
     const role = entry && stringValue(entry.role);
-    const required = entry?.required !== false;
+    const required2 = entry?.required !== false;
     if (!repositoryId) continue;
     const hasLocalBinding = Object.hasOwn(options.repositoryBindings ?? {}, repositoryId);
     const localBinding = options.repositoryBindings?.[repositoryId];
     if (hasLocalBinding && (!localBinding || !isAbsolute(localBinding))) {
-      loadIssues.push(issue2("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
+      loadIssues.push(issue3("path", "repository_binding_not_absolute", ".kxm/project.yaml", `host-local binding for ${repositoryId} must be absolute`));
       continue;
     }
     if (role === "control" && localBinding && !sameHostPath(localBinding, root)) {
-      loadIssues.push(issue2("path", "control_repository_binding_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must bind to the authoritative project root`));
+      loadIssues.push(issue3("path", "control_repository_binding_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must bind to the authoritative project root`));
       continue;
     }
     if (role === "control" && pathHint !== void 0 && pathHint !== ".") {
-      loadIssues.push(issue2("path", "control_repository_path_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must use pathHint .`));
+      loadIssues.push(issue3("path", "control_repository_path_invalid", ".kxm/project.yaml", `control repository ${repositoryId} must use pathHint .`));
       continue;
     }
     if (!hasLocalBinding && role !== "control" && pathHint && portablePath(pathHint)) {
@@ -17582,28 +18301,28 @@ function loadProjectBundle(projectRoot, options, candidate) {
     }
     const binding = hasLocalBinding && localBinding ? resolve(localBinding) : role === "control" ? root : pathHint && portablePath(pathHint) ? resolve(root, ...pathHint.split("/")) : void 0;
     if (!binding) {
-      if (required) loadIssues.push(issue2("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
+      if (required2) loadIssues.push(issue3("discovery", "repository_binding_missing", ".kxm/project.yaml", `required repository ${repositoryId} has no portable pathHint or host-local binding`));
       continue;
     }
     if (!existsSync3(binding)) {
-      if (required || hasLocalBinding) loadIssues.push(issue2("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
+      if (required2 || hasLocalBinding) loadIssues.push(issue3("discovery", "repository_binding_unavailable", ".kxm/project.yaml", `${hasLocalBinding ? "explicit" : "required"} repository binding ${repositoryId} is unavailable`));
       continue;
     }
     const bindingStat = lstatSync(binding);
     if (bindingStat.isSymbolicLink() || !bindingStat.isDirectory()) {
-      loadIssues.push(issue2("path", "repository_binding_invalid", ".kxm/project.yaml", `repository binding ${repositoryId} must be a regular directory`));
+      loadIssues.push(issue3("path", "repository_binding_invalid", ".kxm/project.yaml", `repository binding ${repositoryId} must be a regular directory`));
       continue;
     }
     if (role === "member") {
       const repositoryGitRoot = discoverGitRoot(binding);
       if (!repositoryGitRoot || !sameHostPath(repositoryGitRoot, binding)) {
-        loadIssues.push(issue2("discovery", "repository_git_root_invalid", ".kxm/project.yaml", `member repository ${repositoryId} must bind to its authoritative Git worktree root`));
+        loadIssues.push(issue3("discovery", "repository_git_root_invalid", ".kxm/project.yaml", `member repository ${repositoryId} must bind to its authoritative Git worktree root`));
         continue;
       }
     }
     const memberLegacy = binding === root ? [] : legacyConfigFilesAt(binding);
     if (memberLegacy.length > 0) {
-      throw new KxmConfigError(memberLegacy.map((file) => issue2(
+      throw new KxmConfigError(memberLegacy.map((file) => issue3(
         "semantic",
         "legacy_state_unsupported",
         `${repositoryId}/${file}`,
@@ -17613,7 +18332,7 @@ function loadProjectBundle(projectRoot, options, candidate) {
     const foldedBinding = canonicalHostPath(binding).toLocaleLowerCase("en-US");
     const priorBinding = seenBindings.get(foldedBinding);
     if (priorBinding && priorBinding !== repositoryId) {
-      loadIssues.push(issue2("path", "repository_binding_collision", ".kxm/project.yaml", `${repositoryId} and ${priorBinding} use the same repository binding`));
+      loadIssues.push(issue3("path", "repository_binding_collision", ".kxm/project.yaml", `${repositoryId} and ${priorBinding} use the same repository binding`));
       continue;
     }
     seenBindings.set(foldedBinding, repositoryId);
@@ -17623,7 +18342,7 @@ function loadProjectBundle(projectRoot, options, candidate) {
       try {
         const resource = readResource(registry, root, repositoryFile, `.kxm/repositories/${repositoryId}/repo.yaml`, "repository", repositoryId, binding);
         if (resource.value.repositoryId !== repositoryId) {
-          loadIssues.push(issue2("reference", "repository_binding_identity_mismatch", resource.logicalPath, `binding ${repositoryId} declares repositoryId ${String(resource.value.repositoryId)}`));
+          loadIssues.push(issue3("reference", "repository_binding_identity_mismatch", resource.logicalPath, `binding ${repositoryId} declares repositoryId ${String(resource.value.repositoryId)}`));
         } else {
           mapResource(resource, repositories, loadIssues);
           definitionValidated = repositories.get(repositoryId) === resource;
@@ -17632,13 +18351,13 @@ function loadProjectBundle(projectRoot, options, candidate) {
         if (error instanceof KxmConfigError) loadIssues.push(...error.issues);
         else throw error;
       }
-    } else if (required || hasLocalBinding) {
-      loadIssues.push(issue2("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
+    } else if (required2 || hasLocalBinding) {
+      loadIssues.push(issue3("discovery", "repository_definition_missing", `.kxm/repositories/${repositoryId}/repo.yaml`, `${hasLocalBinding ? "explicit" : "required"} repository ${repositoryId} has no repo.yaml`));
     }
     const environmentFile = join2(binding, ".kxm", "repo", "env.yaml");
     if (existsSync3(environmentFile)) {
       if (!definitionValidated) {
-        loadIssues.push(issue2("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
+        loadIssues.push(issue3("reference", "repository_environment_without_definition", `.kxm/repositories/${repositoryId}/env.yaml`, `repository ${repositoryId} environment requires a validated matching repo.yaml`));
       } else {
         try {
           environments.push(readResource(registry, root, environmentFile, `.kxm/repositories/${repositoryId}/env.yaml`, "environment", void 0, binding));
@@ -17652,13 +18371,14 @@ function loadProjectBundle(projectRoot, options, candidate) {
   if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
   const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
   if (issues.length > 0) throw new KxmConfigError(issues);
-  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits3(left.logicalPath, right.logicalPath));
+  const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...roles.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits4(left.logicalPath, right.logicalPath));
   return {
     projectRoot: root,
     project,
     repositories,
     agents,
     models,
+    roles,
     workflows,
     environments,
     ...gateRegistry ? { gateRegistry } : {},
@@ -17685,7 +18405,7 @@ function legacyConfigFilesAt(root) {
       return files;
     }
     if (stat.isDirectory()) {
-      for (const entry of readdirSync(workflowsDir, { withFileTypes: true }).filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json")).sort((left, right) => compareCodeUnits3(left.name, right.name))) {
+      for (const entry of readdirSync(workflowsDir, { withFileTypes: true }).filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".json")).sort((left, right) => compareCodeUnits4(left.name, right.name))) {
         files.push(`.kxm/config/workflows/${entry.name}`);
       }
     }
@@ -17694,7 +18414,7 @@ function legacyConfigFilesAt(root) {
 }
 
 // plugins/kxm/src/runtime-store.ts
-import { createHash as createHash6, randomUUID } from "node:crypto";
+import { createHash as createHash7, randomUUID } from "node:crypto";
 import { existsSync as existsSync6, lstatSync as lstatSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname5, resolve as resolve6 } from "node:path";
 
@@ -17702,7 +18422,7 @@ import { dirname as dirname5, resolve as resolve6 } from "node:path";
 import { existsSync as existsSync4 } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve as resolve2 } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL as pathToFileURL2 } from "node:url";
 var requireFromHere = createRequire(import.meta.url);
 function loadNative() {
   try {
@@ -17741,13 +18461,13 @@ var DatabaseSync = class {
 };
 function openReadOnlyDatabase(path) {
   if (existsSync4(`${path}-wal`)) return new DatabaseSync(path, { readOnly: true });
-  const uri = pathToFileURL(resolve2(path));
+  const uri = pathToFileURL2(resolve2(path));
   uri.searchParams.set("immutable", "1");
   return new DatabaseSync(uri.href, { readOnly: true });
 }
 
 // plugins/kxm/src/runtime-paths.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import { realpathSync as realpathSync2 } from "node:fs";
 import { join as join4, resolve as resolve4 } from "node:path";
 
@@ -17801,14 +18521,14 @@ function projectRuntimeKey(projectRoot) {
     canonical = resolve4(projectRoot);
   }
   const folded = process.platform === "win32" ? canonical.toLocaleLowerCase("en-US") : canonical;
-  return createHash3("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
+  return createHash4("sha256").update(folded, "utf8").digest("hex").slice(0, 24);
 }
 function kxmProjectRunEventsPath(projectRoot, env) {
   return join4(kxmRuntimePaths({ env }).projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
 }
 
 // plugins/kxm/src/sync-transform.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 
 // plugins/kxm/src/redact.ts
 var SECRET_PATTERNS = [
@@ -17847,7 +18567,7 @@ var KXM_DEFAULT_SYNC_POLICY = Object.freeze({
   diffs: false,
   environmentValues: false
 });
-var KXM_DEFAULT_SYNC_POLICY_REVISION = `sha256:${createHash4("sha256").update(kxmCanonicalJson(KXM_DEFAULT_SYNC_POLICY), "utf8").digest("hex")}`;
+var KXM_DEFAULT_SYNC_POLICY_REVISION = `sha256:${createHash5("sha256").update(kxmCanonicalJson(KXM_DEFAULT_SYNC_POLICY), "utf8").digest("hex")}`;
 var MIN_REGISTERED_SECRET_CHARS = 4;
 var REDACTED = "[redacted]";
 var PATH_REDACTED = "[path]";
@@ -18139,7 +18859,7 @@ function kxmSyncEventBytes(event) {
 }
 
 // plugins/kxm/src/database.ts
-import { createHash as createHash5, randomBytes } from "node:crypto";
+import { createHash as createHash6, randomBytes } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
@@ -18153,8 +18873,8 @@ import {
 } from "node:fs";
 import { basename as basename2, dirname as dirname4, isAbsolute as isAbsolute3, join as join5, relative as relative3, resolve as resolve5, sep as sep3 } from "node:path";
 function databaseError(code, file, message) {
-  const issue3 = { phase: "semantic", code, file, message };
-  return new KxmConfigError([issue3]);
+  const issue4 = { phase: "semantic", code, file, message };
+  return new KxmConfigError([issue4]);
 }
 function checkedParent(path, description) {
   const parent = dirname4(path);
@@ -18377,10 +19097,10 @@ function checkIntegrity(database) {
 }
 function fileSha256(filePath) {
   const bytes = readFileSync2(filePath);
-  return `sha256:${createHash5("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash6("sha256").update(bytes).digest("hex")}`;
 }
-function backupDatabaseFile(sourcePath, targetPath, storeId) {
-  const resolvedSource = resolve5(sourcePath);
+function backupDatabaseFile(sourcePath2, targetPath, storeId) {
+  const resolvedSource = resolve5(sourcePath2);
   const resolvedTarget = resolve5(targetPath);
   const sourceStat = lstatSync2(resolvedSource, { throwIfNoEntry: false });
   if (!sourceStat || !sourceStat.isFile() || sourceStat.isSymbolicLink()) {
@@ -18505,9 +19225,9 @@ function kxmBackupCeiling(storeId) {
   if (storeId.startsWith("events:")) return KXM_BACKUP_CEILINGS.events;
   return KXM_BACKUP_CEILINGS[storeId] ?? KXM_BACKUP_CEILINGS["hub-store"];
 }
-function pushStore(stores, storeId, sourcePath) {
-  if (stores.some((store) => store.storeId === storeId || store.sourcePath === sourcePath)) return;
-  stores.push({ storeId, sourcePath, maxSupportedVersion: kxmBackupCeiling(storeId) });
+function pushStore(stores, storeId, sourcePath2) {
+  if (stores.some((store) => store.storeId === storeId || store.sourcePath === sourcePath2)) return;
+  stores.push({ storeId, sourcePath: sourcePath2, maxSupportedVersion: kxmBackupCeiling(storeId) });
 }
 function pushEventStore(stores, files, paths, key) {
   const dbPath = join5(paths.projectsDir, key, "run-events.db");
@@ -18575,8 +19295,8 @@ function discoverBackupSources(projectRoot, options = {}) {
   const stateRoot = discoverUserRuntime(runtimeProjectKey, options, stores, files);
   return { stores, files, runtimeProjectKey, ...stateRoot !== void 0 ? { stateRoot } : {} };
 }
-function backupPlainFile(sourcePath, targetPath, id) {
-  const resolvedSource = resolve5(sourcePath);
+function backupPlainFile(sourcePath2, targetPath, id) {
+  const resolvedSource = resolve5(sourcePath2);
   const sourceStat = lstatSync2(resolvedSource, { throwIfNoEntry: false });
   if (!sourceStat || !sourceStat.isFile() || sourceStat.isSymbolicLink()) {
     throw databaseError("runtime_path_invalid", resolvedSource, `backup file ${resolvedSource} must be a regular file, not a link or directory`);
@@ -18596,8 +19316,8 @@ function backupPlainFile(sourcePath, targetPath, id) {
     bytes: sourceStat.size
   };
 }
-function backupFilename(sourcePath, id, used) {
-  let filename = basename2(sourcePath);
+function backupFilename(sourcePath2, id, used) {
+  let filename = basename2(sourcePath2);
   if (used.has(filename)) {
     filename = `${id.replace(/[^a-zA-Z0-9_.-]/g, "_")}-${filename}`;
   }
@@ -18705,7 +19425,7 @@ function createBackup(options = {}) {
     ...omitted.length > 0 ? { omitted } : {}
   };
   const manifestJson = JSON.stringify(manifest, null, 2) + "\n";
-  const manifestSha256 = `sha256:${createHash5("sha256").update(manifestJson, "utf8").digest("hex")}`;
+  const manifestSha256 = `sha256:${createHash6("sha256").update(manifestJson, "utf8").digest("hex")}`;
   manifest.manifestSha256 = manifestSha256;
   const finalJson = JSON.stringify(manifest, null, 2) + "\n";
   const manifestPath = join5(outDir, "manifest.json");
@@ -18718,22 +19438,22 @@ function pathUnder(root, path) {
   if (rel === "" || rel === ".." || rel.startsWith(`..${sep3}`) || isAbsolute3(rel)) return void 0;
   return rel;
 }
-function restoreTarget(manifest, sourcePath, id, options, currentStateRoot) {
-  const stateRel = pathUnder(manifest.stateRoot, sourcePath);
-  const projectRel = pathUnder(manifest.projectRoot, sourcePath);
+function restoreTarget(manifest, sourcePath2, id, options, currentStateRoot) {
+  const stateRel = pathUnder(manifest.stateRoot, sourcePath2);
+  const projectRel = pathUnder(manifest.projectRoot, sourcePath2);
   if (stateRel !== void 0 && (projectRel === void 0 || stateRel.length <= projectRel.length)) {
     const ownEvents = manifest.runtimeProjectKey !== void 0 ? join5("runtime", "projects", manifest.runtimeProjectKey, "run-events.db") : void 0;
-    const own = ownEvents !== void 0 && (stateRel === ownEvents || stateRel === `${ownEvents}.run-prompts.json`);
-    if (own && !options.allProjects && options.projectRoot !== void 0) {
+    const own2 = ownEvents !== void 0 && (stateRel === ownEvents || stateRel === `${ownEvents}.run-prompts.json`);
+    if (own2 && !options.allProjects && options.projectRoot !== void 0) {
       const eventsPath = kxmProjectRunEventsPath(resolve5(options.projectRoot), options.env ?? process.env);
       return { targetPath: stateRel === ownEvents ? eventsPath : `${eventsPath}.run-prompts.json`, machineWide: false };
     }
-    return { targetPath: join5(currentStateRoot(), stateRel), machineWide: !own };
+    return { targetPath: join5(currentStateRoot(), stateRel), machineWide: !own2 };
   }
   if (projectRel !== void 0) {
-    return { targetPath: options.projectRoot ? join5(resolve5(options.projectRoot), projectRel) : sourcePath, machineWide: false };
+    return { targetPath: options.projectRoot ? join5(resolve5(options.projectRoot), projectRel) : sourcePath2, machineWide: false };
   }
-  return { targetPath: sourcePath, machineWide: id !== "hub-store" };
+  return { targetPath: sourcePath2, machineWide: id !== "hub-store" };
 }
 function planRestore(manifestPathOrDir, options = {}) {
   let manifestPath = resolve5(manifestPathOrDir);
@@ -19069,7 +19789,7 @@ var KXM_RUN_EVENT_SCHEMA = "kxm.run-event.v1";
 var KXM_ABSENT_MEMORY_REVISION = "ctxrev_absent";
 function hashKxmDriveLog(events) {
   const body = events.map((event) => `${event.eventId}:${event.sequence}`).join("\n");
-  return `sha256:${createHash6("sha256").update(body, "utf8").digest("hex")}`;
+  return `sha256:${createHash7("sha256").update(body, "utf8").digest("hex")}`;
 }
 function verifyKxmDriveReceipt(receipt, events, foldedStatus, binding) {
   const reasons = [];
@@ -20224,7 +20944,7 @@ function newKxmObservationId() {
 function newKxmEvidenceId() {
   return `gev_${randomUUID().replaceAll("-", "")}`;
 }
-var SHA256 = /^sha256:[a-f0-9]{64}$/;
+var SHA2562 = /^sha256:[a-f0-9]{64}$/;
 var OPAQUE = /^[a-z][a-z0-9]{1,15}_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/;
 var FORBIDDEN_TEXT_KEYS = /* @__PURE__ */ new Set(["stdout", "stderr", "error", "errorText", "stdoutText", "stderrText", "errorMessage", "message"]);
 var GATE_ATTEMPT_KEYS = [
@@ -20303,7 +21023,7 @@ function gateRowContentHash(table, row) {
   const copy = { ...row };
   delete copy.contentHash;
   void table;
-  return `sha256:${createHash6("sha256").update(kxmCanonicalJson(copy), "utf8").digest("hex")}`;
+  return `sha256:${createHash7("sha256").update(kxmCanonicalJson(copy), "utf8").digest("hex")}`;
 }
 function assertClosedGateObservation(kind, row, id = "observation") {
   if (row.completeness === "incomplete") return;
@@ -20355,7 +21075,7 @@ function assertId(value, prefix, id, label) {
   }
 }
 function assertSha(value, id, label) {
-  if (typeof value !== "string" || !SHA256.test(value)) throw gateRowInvalid(id, `${label} is not a sha256 hash`);
+  if (typeof value !== "string" || !SHA2562.test(value)) throw gateRowInvalid(id, `${label} is not a sha256 hash`);
 }
 function assertFlag(value, id, label) {
   if (value !== 0 && value !== 1) throw gateRowInvalid(id, `${label} must be 0 or 1`);
@@ -21741,7 +22461,7 @@ function isTerminalRunStatus(status) {
 }
 
 // plugins/kxm/src/engine-plan.ts
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 
 // plugins/kxm/src/engine-compile.ts
 var KXM_COMPILED_WORKFLOW_SCHEMA = "kxm.compiled-workflow.v1";
@@ -21757,8 +22477,8 @@ var BANNED_RUNTIME_HINT = "not yet supported";
 var KxmEngineCompileError = class extends Error {
   issues;
   constructor(issues) {
-    const sorted = sortIssues3(issues);
-    super(sorted.map((issue3) => `${issue3.workflowId}: ${issue3.code}: ${issue3.message}`).join("\n"));
+    const sorted = sortIssues4(issues);
+    super(sorted.map((issue4) => `${issue4.workflowId}: ${issue4.code}: ${issue4.message}`).join("\n"));
     this.name = "KxmEngineCompileError";
     this.issues = sorted;
   }
@@ -21894,7 +22614,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const join23 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
-  const outcomes = Object.keys(transitions).sort(compareCodeUnits4);
+  const outcomes = Object.keys(transitions).sort(compareCodeUnits5);
   const orderedTransitions = /* @__PURE__ */ Object.create(null);
   for (const outcome of outcomes) {
     const transition2 = transitions[outcome];
@@ -22224,26 +22944,26 @@ function deepFreeze(value) {
   }
   return Object.freeze(value);
 }
-function compareCodeUnits4(left, right) {
+function compareCodeUnits5(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function compareOptional(left, right) {
   if (left === right) return 0;
   if (left === void 0) return -1;
   if (right === void 0) return 1;
-  return compareCodeUnits4(left, right);
+  return compareCodeUnits5(left, right);
 }
-function sortIssues3(issues) {
+function sortIssues4(issues) {
   return [...issues].sort((left, right) => {
     const byStep = compareOptional(left.stepId, right.stepId);
     if (byStep !== 0) return byStep;
     const byOutcome = compareOptional(left.outcome, right.outcome);
     if (byOutcome !== 0) return byOutcome;
-    return compareCodeUnits4(left.code, right.code);
+    return compareCodeUnits5(left.code, right.code);
   });
 }
-function pushIssue(sink, issue3) {
-  sink.issues.push({ workflowId: sink.workflowId, ...issue3 });
+function pushIssue(sink, issue4) {
+  sink.issues.push({ workflowId: sink.workflowId, ...issue4 });
 }
 
 // plugins/kxm/src/engine-plan.ts
@@ -22288,7 +23008,7 @@ var JOIN_OPTIONAL = ["minimumPassed", "cancelRemaining"];
 var EVIDENCE_REQUIRED = ["key", "kind", "minimum", "reusableAcrossAttempts"];
 var EVIDENCE_OPTIONAL = ["producerPolicy"];
 function kxmSha256(input) {
-  return `sha256:${createHash7("sha256").update(input, "utf8").digest("hex")}`;
+  return `sha256:${createHash8("sha256").update(input, "utf8").digest("hex")}`;
 }
 function kxmStepAskSha256(plan, stepId, agentId) {
   const step = Object.hasOwn(plan.steps, stepId) ? plan.steps[stepId] : void 0;
@@ -22459,9 +23179,9 @@ function parseGates(raw, plan, runId) {
   }
   return { registry, definitions, controlRoot };
 }
-function parseRegistryPin(raw, runId, required) {
+function parseRegistryPin(raw, runId, required2) {
   if (raw === null) {
-    if (required) throw runtimeError("run_plan_corrupt", runId, "gate steps require a non-null registry pin");
+    if (required2) throw runtimeError("run_plan_corrupt", runId, "gate steps require a non-null registry pin");
     return null;
   }
   const value = asObject(raw, runId, "gates.registry");
@@ -22644,7 +23364,7 @@ function parseStep(raw, stepId, runId) {
     repositories,
     ...value.tools !== void 0 ? { tools: asJsonObject(value.tools, runId, `${stepId}.tools`) } : {},
     secrets: asObjectArray(value.secrets, runId, `${stepId}.secrets`).map((entry) => ({ ...entry })),
-    ...value.model !== void 0 ? { model: cloneJson(value.model) } : {},
+    ...value.model !== void 0 ? { model: cloneJson2(value.model) } : {},
     requiredEvidence: asUnknownArray(value.requiredEvidence, runId, `${stepId}.requiredEvidence`).map((entry, index) => parseEvidence(entry, stepId, index, runId)),
     outcomes,
     transitions,
@@ -22782,9 +23502,9 @@ function asObject(value, runId, label) {
   }
   return value;
 }
-function assertExactKeys(value, required, optional, runId, label) {
-  const allowed = /* @__PURE__ */ new Set([...required, ...optional]);
-  for (const key of required) {
+function assertExactKeys(value, required2, optional, runId, label) {
+  const allowed = /* @__PURE__ */ new Set([...required2, ...optional]);
+  for (const key of required2) {
     if (!(key in value)) throw runtimeError("run_plan_corrupt", runId, `${label} is missing ${key}`);
   }
   for (const key of Object.keys(value)) {
@@ -22853,9 +23573,9 @@ function asJsonObject(value, runId, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw runtimeError("run_plan_corrupt", runId, `${label} is not an object`);
   }
-  return cloneJson(value);
+  return cloneJson2(value);
 }
-function cloneJson(value) {
+function cloneJson2(value) {
   return JSON.parse(JSON.stringify(value));
 }
 function sameSet(left, right) {
@@ -22964,8 +23684,8 @@ function verifyKxmGateEvidence(store, run, envelope2, events, state) {
         throw runtimeError("gate_evidence_hash_mismatch", run.runId, "evidence outcome does not match the observation and expect");
       }
       const step = envelope2.plan.steps[row.stepId];
-      const required = step?.requiredEvidence.filter((item) => item.kind === "gate") ?? [];
-      const expectedKey = required.length === 1 ? required[0].key : null;
+      const required2 = step?.requiredEvidence.filter((item) => item.kind === "gate") ?? [];
+      const expectedKey = required2.length === 1 ? required2[0].key : null;
       if (row.evidenceKey !== expectedKey) {
         throw runtimeError("gate_evidence_unexpected", run.runId, "evidence_key does not match the declared requiredEvidence key");
       }
@@ -23360,11 +24080,11 @@ function pump(storePath, owner) {
 }
 
 // plugins/kxm/src/runtime-service.ts
-function compareCodeUnits5(left, right) {
+function compareCodeUnits6(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 function sha256Of(input) {
-  return `sha256:${createHash8("sha256").update(input, "utf8").digest("hex")}`;
+  return `sha256:${createHash9("sha256").update(input, "utf8").digest("hex")}`;
 }
 function objectValue3(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
@@ -23412,9 +24132,9 @@ function collectMemoryFiles(dir, baseDir, ignoreSubdirs = /* @__PURE__ */ new Se
   return results;
 }
 function computeKxmMemoryRevision(bundle, options = {}) {
-  const hash = createHash8("sha256");
+  const hash = createHash9("sha256");
   const memoryDir = options.memoryDir ?? join7(bundle.projectRoot, ".kxm", "memory");
-  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
+  const memoryFiles = collectMemoryFiles(memoryDir, memoryDir, /* @__PURE__ */ new Set(["candidates"])).sort((left, right) => compareCodeUnits6(left.relPath, right.relPath));
   for (const file of memoryFiles) {
     hash.update(`memory:${file.relPath}\0`, "utf8");
     hash.update(readFileSync4(file.fullPath));
@@ -23422,14 +24142,14 @@ function computeKxmMemoryRevision(bundle, options = {}) {
   }
   const skillsDir = options.skillsDir ?? join7(bundle.projectRoot, ".kxm", "skills");
   const promotedSkillsDir = join7(skillsDir, "promoted");
-  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits5(left.relPath, right.relPath));
+  const skillFiles = collectMemoryFiles(promotedSkillsDir, promotedSkillsDir).sort((left, right) => compareCodeUnits6(left.relPath, right.relPath));
   for (const file of skillFiles) {
     hash.update(`skill:${file.relPath}\0`, "utf8");
     hash.update(readFileSync4(file.fullPath));
     hash.update("\0", "utf8");
   }
   if (options.promotedState && options.promotedState.length > 0) {
-    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits5(left.id, right.id));
+    const currentItems = options.promotedState.filter((item) => !item.status || item.status === "current").slice().sort((left, right) => compareCodeUnits6(left.id, right.id));
     for (const item of currentItems) {
       hash.update(`state:${item.id}\0`, "utf8");
       hash.update(kxmCanonicalJson(item), "utf8");
@@ -23577,7 +24297,7 @@ function acceptKxmRun(context, bundle, request, options = {}) {
   }
   const revisions = kxmPolicyRevisions(bundle, options);
   const memoryRevision = options.memoryRevision ?? revisions.memoryRevision;
-  const promptSha256 = `sha256:${createHash8("sha256").update(request.prompt, "utf8").digest("hex")}`;
+  const promptSha256 = `sha256:${createHash9("sha256").update(request.prompt, "utf8").digest("hex")}`;
   return context.eventStore.transaction(() => {
     const prior = context.eventStore.command(commandId);
     if (prior) {
@@ -23859,13 +24579,13 @@ function assertKxmConfigError(error) {
 
 // plugins/kxm/src/runtime-supervisor.ts
 import { spawn as spawn3 } from "node:child_process";
-import { createHash as createHash15, createHmac, randomBytes as randomBytes3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+import { createHash as createHash16, createHmac, randomBytes as randomBytes3, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 import { chmodSync as chmodSync2, existsSync as existsSync16, lstatSync as lstatSync6, mkdirSync as mkdirSync9, readFileSync as readFileSync13, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync9 } from "node:fs";
 import { createServer } from "node:http";
 import { dirname as dirname11, isAbsolute as isAbsolute7, join as join18 } from "node:path";
 
 // plugins/kxm/src/oneshot-evidence.ts
-import { createHash as createHash9, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash10, randomUUID as randomUUID3 } from "node:crypto";
 import { lstatSync as lstatSync4, readdirSync as readdirSync4, readFileSync as readFileSync5 } from "node:fs";
 import { lstat, mkdir, open, rename } from "node:fs/promises";
 import { join as join8 } from "node:path";
@@ -23874,7 +24594,7 @@ var RETIRED_ONESHOT_EVIDENCE_SCHEMAS = /* @__PURE__ */ new Set(["kxm.oneshot-evi
 var TEXT_LIMIT = 4 * 1024 * 1024;
 var ARGV_LIMIT = 64 * 1024;
 var RECORD_LIMIT = 16 * 1024 * 1024;
-var digest = (value) => `sha256:${createHash9("sha256").update(value).digest("hex")}`;
+var digest = (value) => `sha256:${createHash10("sha256").update(value).digest("hex")}`;
 function parseOneShotEvidenceRecord(bytes) {
   let parsed;
   try {
@@ -24016,7 +24736,7 @@ async function beginOneShotEvidence(root, intent, sensitive) {
 
 // plugins/kxm/src/prices.ts
 var import_yaml3 = __toESM(require_dist(), 1);
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 import { existsSync as existsSync8, readFileSync as readFileSync6, statSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { join as join9 } from "node:path";
 
@@ -24079,7 +24799,7 @@ function hashPriceCatalog(catalog) {
       }))
     })).sort((a, b) => a.id.localeCompare(b.id))
   };
-  return createHash10("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
+  return createHash11("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
 }
 function parsePriceCatalog(text) {
   const parsed = (0, import_yaml3.parse)(text);
@@ -24127,9 +24847,9 @@ function parsePriceCatalog(text) {
         throw new Error(`tier at index ${tIndex} for model ${m.id} must be an object`);
       }
       const t = tItem;
-      const rate = (field, short, required = false) => {
+      const rate = (field, short, required2 = false) => {
         const value = t[field] !== void 0 ? t[field] : t[short];
-        if (value == null && !required) return null;
+        if (value == null && !required2) return null;
         if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
           throw new Error(`tier ${tIndex} for model ${m.id} requires finite non-negative ${field}`);
         }
@@ -24191,22 +24911,30 @@ function loadPriceCatalogForEstimate(options) {
 }
 
 // plugins/kxm/src/engine.ts
-var import_yaml7 = __toESM(require_dist(), 1);
-import { createHash as createHash14, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
+var import_yaml9 = __toESM(require_dist(), 1);
+import { createHash as createHash15, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
 import { existsSync as existsSync12, readFileSync as readFileSync10 } from "node:fs";
 import { join as join15 } from "node:path";
 
 // plugins/kxm/src/routes.ts
-var import_yaml4 = __toESM(require_dist(), 1);
+var import_yaml6 = __toESM(require_dist(), 1);
 import { existsSync as existsSync9, readFileSync as readFileSync7, mkdirSync as mkdirSync3, writeFileSync as writeFileSync4, readdirSync as readdirSync5 } from "node:fs";
 import { join as join10 } from "node:path";
+
+// plugins/kxm/src/role.ts
+var import_yaml5 = __toESM(require_dist(), 1);
+
+// plugins/kxm/src/config.ts
+var import_yaml4 = __toESM(require_dist(), 1);
+
+// plugins/kxm/src/routes.ts
 var RETIRED_POLICY = ".kxm/producers.yaml";
 var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
 function loadRoutePolicy(root) {
   if (existsSync9(join10(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
   const path = join10(root, ".kxm", "routes.yaml");
   if (!existsSync9(path)) return empty();
-  const value = (0, import_yaml4.parse)(readFileSync7(path, "utf8"));
+  const value = (0, import_yaml6.parse)(readFileSync7(path, "utf8"));
   if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
   return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
 }
@@ -24216,8 +24944,8 @@ function listRoleBindings(root) {
   if (!existsSync9(dir)) return result;
   for (const file of readdirSync5(dir).filter((name) => name.endsWith(".yaml"))) {
     const role = file.slice(0, -5);
-    const value = (0, import_yaml4.parse)(readFileSync7(join10(dir, file), "utf8"));
-    result[role] = (value.roster ?? []).map((entry) => entry.model).filter((model) => typeof model === "string");
+    const value = (0, import_yaml6.parse)(readFileSync7(join10(dir, file), "utf8"));
+    result[role] = (value.roster ?? []).map((entry) => entry.route).filter((route) => typeof route === "string");
   }
   return result;
 }
@@ -24639,8 +25367,8 @@ function oneOf(value, field, allowed) {
   }
   return value;
 }
-function idRefs(value, field, required = false) {
-  if (value === void 0 || value === null) return required ? [] : void 0;
+function idRefs(value, field, required2 = false) {
+  if (value === void 0 || value === null) return required2 ? [] : void 0;
   if (!Array.isArray(value)) {
     throw new ProtocolError(400, `${field} must be an array of identifiers`, "invalid_context_field");
   }
@@ -25175,7 +25903,7 @@ function memoryRecordToContextItem(record2, project) {
 }
 
 // plugins/kxm/src/memory.ts
-var import_yaml5 = __toESM(require_dist(), 1);
+var import_yaml7 = __toESM(require_dist(), 1);
 import { existsSync as existsSync10, mkdirSync as mkdirSync4, readdirSync as readdirSync6, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "node:fs";
 import { extname as extname2, join as join11, resolve as resolve7 } from "node:path";
 var MEMORY_SCHEMA = "kxm.memory.v1";
@@ -25207,7 +25935,7 @@ function parseFrontmatter(content) {
 }
 function parseMemoryRecord(raw, filename = "memory.md") {
   const { frontmatter, body } = parseFrontmatter(raw);
-  const data = (0, import_yaml5.parse)(frontmatter);
+  const data = (0, import_yaml7.parse)(frontmatter);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error(`invalid YAML frontmatter in ${filename}`);
   }
@@ -25303,8 +26031,8 @@ function loadAuthoredMemory(repoRoot) {
 }
 
 // plugins/kxm/src/skills.ts
-var import_yaml6 = __toESM(require_dist(), 1);
-import { createHash as createHash11 } from "node:crypto";
+var import_yaml8 = __toESM(require_dist(), 1);
+import { createHash as createHash12 } from "node:crypto";
 import { existsSync as existsSync11, mkdirSync as mkdirSync5, readdirSync as readdirSync7, readFileSync as readFileSync9, renameSync, rmSync, statSync as statSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname7, join as join12 } from "node:path";
 var SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
@@ -25329,7 +26057,7 @@ var SkillLifecycleError = class extends Error {
   }
 };
 function skillContentSha256(content) {
-  return createHash11("sha256").update(content, "utf8").digest("hex");
+  return createHash12("sha256").update(content, "utf8").digest("hex");
 }
 function skillIdFor(name, contentSha256) {
   const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
@@ -25347,7 +26075,7 @@ function parseSkillFrontmatter(content) {
     return { frontmatter: null, body: content };
   }
   try {
-    const parsed = (0, import_yaml6.parse)(rawFm);
+    const parsed = (0, import_yaml8.parse)(rawFm);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return { frontmatter: parsed, body: rawBody };
     }
@@ -25972,7 +26700,7 @@ function evaluateArtifactsGate(context, definition) {
 
 // plugins/kxm/src/engine-command.ts
 import { spawn as spawn2 } from "node:child_process";
-import { createHash as createHash12 } from "node:crypto";
+import { createHash as createHash13 } from "node:crypto";
 
 // plugins/kxm/src/safety-integrity.ts
 var DESTRUCTIVE_COMMAND_PATTERNS = Object.freeze([
@@ -26020,7 +26748,7 @@ function createCommandObserver(input) {
   return new CommandObserver(input);
 }
 var StreamDigest = class {
-  hash = createHash12("sha256");
+  hash = createHash13("sha256");
   bytes = 0;
   complete = 0;
   digest() {
@@ -26760,8 +27488,8 @@ function appendEvaluatedTail(seq, envelope2, ids, stepId, outcome) {
   }
 }
 function evidenceKeyFor(envelope2, stepId) {
-  const required = envelope2.plan.steps[stepId]?.requiredEvidence.filter((item) => item.kind === "gate") ?? [];
-  return required.length === 1 ? required[0].key : null;
+  const required2 = envelope2.plan.steps[stepId]?.requiredEvidence.filter((item) => item.kind === "gate") ?? [];
+  return required2.length === 1 ? required2[0].key : null;
 }
 function placeholderReceipt(observationId, kind, now) {
   return {
@@ -26867,7 +27595,7 @@ function hashFromStore(context, runId) {
 }
 
 // plugins/kxm/src/routing.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 var ROUTING_RECORD_V2_SCHEMA = "kxm.routing-record.v2";
 var BEHAVIORAL_HASH_VERSION = 1;
 var MAX_PROVIDER_METADATA_FIELDS = 32;
@@ -26890,7 +27618,7 @@ function behavioralConfigHash(input) {
     workflowDefinitionSha256: input.workflowDefinitionSha256?.trim() ?? null,
     verifierConfigSha256: input.verifierConfigSha256?.trim() ?? null
   };
-  return createHash13("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
+  return createHash14("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
 }
 function boundedInt(value, field) {
   if (value === void 0 || value === null) return void 0;
@@ -27066,7 +27794,7 @@ function requireTrustedProducer(producer) {
   }
 }
 function hashCapabilitySecret(secret) {
-  return `sha256:${createHash14("sha256").update(`${CAPABILITY_PREFIX}${secret}`, "utf8").digest("hex")}`;
+  return `sha256:${createHash15("sha256").update(`${CAPABILITY_PREFIX}${secret}`, "utf8").digest("hex")}`;
 }
 function mintKxmCapabilitySecret() {
   const secret = `kxmcap_${randomBytes2(32).toString("base64url")}`;
@@ -27199,7 +27927,7 @@ async function driveAdmitted(context, runId, producer, token, options = {}) {
   return latest;
 }
 function newDriveId(runId, token, runtimeId, monotonicNs) {
-  return `drv_${createHash14("sha256").update(`${runId}\0${token}\0${runtimeId}\0${monotonicNs}`, "utf8").digest("hex").slice(0, 24)}`;
+  return `drv_${createHash15("sha256").update(`${runId}\0${token}\0${runtimeId}\0${monotonicNs}`, "utf8").digest("hex").slice(0, 24)}`;
 }
 function driveErrorSummary(error) {
   const raw = error instanceof KxmConfigError ? error.issues[0]?.code : void 0;
@@ -27813,6 +28541,26 @@ function commitCommandUncertainty(context, prepared, token, reason, observation,
   }
 }
 var kxmPanelDispatchSeams = {};
+function selectorsNamedByRoutes(projectRoot, routeIds) {
+  const selectors = /* @__PURE__ */ new Set();
+  for (const routeId2 of routeIds) {
+    const file = join15(projectRoot, ".kxm", "models", `${routeId2}.yaml`);
+    if (!existsSync12(file)) continue;
+    let parsed;
+    try {
+      parsed = (0, import_yaml9.parse)(readFileSync10(file, "utf8"));
+    } catch {
+      continue;
+    }
+    const model = typeof parsed.model === "string" ? parsed.model : "";
+    const vendor = typeof parsed.vendor === "string" ? parsed.vendor : "";
+    const harness = typeof parsed.harness === "string" ? parsed.harness : "";
+    if (model) selectors.add(model);
+    if (vendor && model) selectors.add(`${vendor}/${model}`);
+    if (harness && model) selectors.add(`${harness}/${model}`);
+  }
+  return [...selectors];
+}
 function unreconciledPanelAttemptId(state) {
   const current = state.currentStep;
   if (!current) return void 0;
@@ -27832,7 +28580,7 @@ function resolveProducerRoute(projectRoot, step, agentId) {
   const agentFile = join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
   if (existsSync12(agentFile)) {
     try {
-      const parsed = (0, import_yaml7.parse)(readFileSync10(agentFile, "utf8"));
+      const parsed = (0, import_yaml9.parse)(readFileSync10(agentFile, "utf8"));
       if (typeof parsed?.model === "string") {
         agentModel = parsed.model;
       } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
@@ -27891,7 +28639,8 @@ function resolveProducerRoute(projectRoot, step, agentId) {
   const role = agentId === "implementer" ? "writer" : agentId;
   const roleBindings = listRoleBindings(projectRoot);
   const roster = roleBindings[role];
-  if (roster && !roster.includes(selector)) {
+  const rosterSelectors = roster ? selectorsNamedByRoutes(projectRoot, roster) : void 0;
+  if (rosterSelectors && !rosterSelectors.includes(selector)) {
     return {
       error: {
         reason: "step_unsupported",
@@ -28212,7 +28961,7 @@ function birthMember(context, input) {
   if (promptText === void 0) {
     throw runtimeError("run_prompt_mismatch", run.runId, "prompt text missing from accepted run prompt store");
   }
-  const promptHash = createHash14("sha256").update(promptText, "utf8").digest("hex");
+  const promptHash = createHash15("sha256").update(promptText, "utf8").digest("hex");
   const expectedHash = run.promptSha256.replace(/^sha256:/, "");
   if (promptHash !== expectedHash) {
     throw runtimeError("run_prompt_mismatch", run.runId, "prompt text does not match accepted promptSha256");
@@ -29115,7 +29864,7 @@ function unsupportedStep(plan, step, producerId) {
 function readYamlRecord(path) {
   if (!existsSync12(path)) return void 0;
   try {
-    const parsed = (0, import_yaml7.parse)(readFileSync10(path, "utf8"));
+    const parsed = (0, import_yaml9.parse)(readFileSync10(path, "utf8"));
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
   } catch {
     return void 0;
@@ -30353,7 +31102,7 @@ function publishKxmSupervisorToken(paths, token) {
   }
 }
 function hashKxmSupervisorToken(token) {
-  return `sha256:${createHash15("sha256").update(`kxm-runtime-supervisor\0${token}`, "utf8").digest("hex")}`;
+  return `sha256:${createHash16("sha256").update(`kxm-runtime-supervisor\0${token}`, "utf8").digest("hex")}`;
 }
 function readKxmSupervisorToken(paths) {
   const file = kxmSupervisorTokenFile(paths);
@@ -30716,7 +31465,7 @@ async function startKxmRuntimeSupervisor(options = {}) {
   try {
     return await startKxmRuntimeSupervisorInner(paths, options.port, now, env);
   } catch (error) {
-    if (!(error instanceof KxmConfigError && error.issues.some((issue3) => issue3.code === "runtime_supervisor_conflict"))) {
+    if (!(error instanceof KxmConfigError && error.issues.some((issue4) => issue4.code === "runtime_supervisor_conflict"))) {
       recordSupervisorError(paths, error.message);
     }
     throw error;
@@ -30734,7 +31483,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
   const token = randomBytes3(32).toString("hex");
   const tokenHash = hashKxmSupervisorToken(token);
   const registry = new KxmRuntimeRegistry(paths.registryDb);
-  const runtimeId = `rtm_${createHash15("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes3(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
+  const runtimeId = `rtm_${createHash16("sha256").update(`${paths.stateRoot}\0${process.pid}\0${now()}\0${randomBytes3(16).toString("hex")}`, "utf8").digest("hex").slice(0, 24)}`;
   const requestedPort = requestedPortOption ?? 0;
   let activeRuntimeId = runtimeId;
   const contexts = /* @__PURE__ */ new Map();
@@ -31809,7 +32558,7 @@ function createKxmPiProducer(options = {}) {
 }
 
 // plugins/kxm/src/improve.ts
-import { createHash as createHash16 } from "node:crypto";
+import { createHash as createHash17 } from "node:crypto";
 import { existsSync as existsSync17, mkdirSync as mkdirSync10, writeFileSync as writeFileSync10 } from "node:fs";
 import { join as join20, relative as relative5, resolve as resolve11 } from "node:path";
 var CANDIDATE_SCHEMA = "kxm.candidate.v1";
@@ -32027,7 +32776,7 @@ function groupRoutingRecords(records, options = {}) {
     }
     const candidateKind = isCandidate ? classifyCandidateKind(group.stepId, group.agentRole) : void 0;
     const safeSlug = group.stepId.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 16) || "step";
-    const keyHash = createHash16("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
+    const keyHash = createHash17("sha256").update(`${group.workflowHash}:${group.stepId}:${group.agentRole}:${group.promptHash}`).digest("hex").slice(0, 10);
     const candidateId = isCandidate && candidateKind ? `cand_${candidateKind.replace(/-/g, "_")}_${safeSlug}_${keyHash}` : void 0;
     keyed.push({
       key: group.key,
@@ -32639,7 +33388,7 @@ Instructions for Operator:
 };
 
 // plugins/kxm/src/modes.ts
-var import_yaml8 = __toESM(require_dist(), 1);
+var import_yaml10 = __toESM(require_dist(), 1);
 import { existsSync as existsSync18, readFileSync as readFileSync15 } from "node:fs";
 import { join as join21 } from "node:path";
 var DEFAULT_MODES_CONFIG = Object.freeze({
@@ -32710,7 +33459,7 @@ function loadModesConfig(projectRoot) {
   }
   try {
     const raw = readFileSync15(modesPath, "utf8");
-    const parsed = (0, import_yaml8.parse)(raw);
+    const parsed = (0, import_yaml10.parse)(raw);
     if (parsed && parsed.schema === "kxm.modes.v1" && parsed.majorModes) {
       return {
         schema: "kxm.modes.v1",

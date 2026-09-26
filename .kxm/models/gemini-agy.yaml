@@ -1,0 +1,8 @@
+schema: kxm.model.v2
+id: gemini-agy
+harness: agy
+model: gemini-3.8-flash-high
+vendor: google
+status: admitted
+permissions:
+  - edit

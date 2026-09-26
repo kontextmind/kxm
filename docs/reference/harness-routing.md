@@ -133,21 +133,28 @@ The harness and the selector have to agree. Pi refuses `provider: xai` and `open
 
 ### Role roster entries
 
-A role file lists the selectors a role may run. For example, `.kxm/roles/writer.yaml`:
+A `kxm.role.v2` role file lists route ids, not selectors. Each `roster[].route` is resolved through `.kxm/models/<route-id>.yaml`, which carries `harness`, `model`, `vendor`, `status`, and `permissions`. The entry itself may set `effort` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`) and `mode` (`headless`, `interactive`, or `either`). This checkout's writer role is `.kxm/roles/writer.yaml`:
 
 ```yaml
-schema: kxm.role.v1
+schema: kxm.role.v2
 id: writer
+purpose: writer
+permission: edit
+description: Primary implementation agent.
+# Rotation priority = order. Effort default: medium for implementation.
 roster:
-  - model: xai/grok-4.6
-    enabled: true
-  - model: openrouter/qwen/qwen3-coder-plus
-    enabled: true
+  - route: grok-native
+    effort: medium
+  - route: qwen-openrouter-pi
+    effort: medium
+  - route: gemini-agy
 ```
 
-Every roster entry is a selector. When the engine checks the roster, it reads only `model`. The role schema accepts a `harness:` key on an entry, but dispatch never reads it: the harness still comes from the agent that runs the step. `kxm role list` prints the first entry as `(harness:xai/grok-4.6)`; there, "harness" is a placeholder label, not a harness.
+`grok-native` resolves to `.kxm/models/grok-native.yaml`: harness `grok`, model `grok-4.7`, vendor `xai`, status `admitted`, permission `edit`. `qwen-openrouter-pi` is harness `pi`, model `openrouter/qwen/qwen3-coder-plus`, vendor `alibaba`. `gemini-agy` is harness `agy`, model `gemini-3.8-flash-high`, vendor `google`. `kxm role list` prints the first route id as the primary, for example `(grok-native)`.
 
-The consequence matters when a roster mixes routes, as this one does. If the implementer agent declares `harness: grok`, only `xai/grok-4.6` can run under it. Under that agent, a Pi selector fails closed with `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`. To run a Pi selector, create a separate agent with `harness:` omitted. The engine does not walk the roster to fail over on its own.
+The model that runs a step still comes from the agent file. The harness is the agent's `harness:`, or Pi when the agent omits it. A route file records which harness can host that model; it does not replace the agent. If the implementer agent declares `harness: grok`, only the Grok selector can run under it. A Pi selector under that agent fails closed with `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`. To run a Pi selector, create a separate agent with `harness:` omitted. The engine does not walk the roster to fail over on its own.
+
+Dispatch still reads `.kxm/roster.yaml` until P2. Role files are what `kxm role` and the Runtime membership check use.
 
 ### Route ids in `.kxm/routes.yaml`
 

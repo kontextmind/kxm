@@ -1,0 +1,11 @@
+schema: kxm.model.v2
+id: grok-native
+harness: grok
+model: grok-4.7
+vendor: xai
+status: admitted
+permissions:
+  - edit
+origin:
+  source: .kxm/roster.yaml
+  sha256: b2bd628604e8fec5afdff2a1f2c104ed14ff785686bb1f38272bc972a310c806

@@ -5,17 +5,13 @@ import { createInterface } from "node:readline";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { DatabaseSync, openReadOnlyDatabase } from "../sqlite.ts";
 import {
-  DEFAULT_ROLES,
-  DEFAULT_ROLE_SEATS,
   listRoles,
   getRole,
   addRole,
   removeRole,
   modifyRole,
-  loadRoleHostsConfig,
-  setRoleSeatHost,
-  resolveRoleSeat,
   parseRoleFile,
+  rolePurposeForId,
   type KxmRoleDefinition,
 } from "../role.ts";
 import { discoverKxmProjectRoot, kxmRoleWriteIssues } from "../project-config.ts";
@@ -112,7 +108,7 @@ export async function cmdRoleList(
   const lines: string[] = ["ROLES:"];
   for (const r of roles) {
     const scopeTag = r.scope === "overridden" ? "[local override]" : `[${r.scope}]`;
-    const modelTag = r.primaryModel ? `(${r.primaryHarness ?? "harness"}:${r.primaryModel})` : "";
+    const modelTag = r.primaryRoute ? `(${r.primaryRoute})` : "";
     lines.push(`  ${r.id.padEnd(16)} ${scopeTag.padEnd(16)} ${modelTag.padEnd(28)} ${r.description}`);
   }
   print(runtime.io, false, {}, `${lines.join("\n")}\n`);
@@ -149,8 +145,7 @@ export async function cmdRoleAdd(
     file?: string | undefined;
     description?: string | undefined;
     skills?: string | undefined;
-    harness?: string | undefined;
-    model?: string | undefined;
+    route?: string[] | undefined;
     scope?: "global" | "local" | undefined;
     overwrite?: boolean | undefined;
     pick?: string | boolean | undefined;
@@ -159,12 +154,7 @@ export async function cmdRoleAdd(
   const scope = options.scope ?? "local";
   let base: KxmRoleDefinition | undefined;
   if (!roleId || options.pick) {
-    const candidates: PickCandidate[] = Object.values(DEFAULT_ROLES).map((r) => ({
-      id: r.id,
-      description: r.description,
-      label: "template",
-      payload: r,
-    }));
+    const candidates: PickCandidate[] = [];
     if (scope === "local") {
       const globalRoles = listRoles({ scope: "global", userConfigDir: runtime.env.KXM_USER_CONFIG_DIR });
       for (const gr of globalRoles) {
@@ -175,7 +165,7 @@ export async function cmdRoleAdd(
         }
       }
     }
-    const picked = await resolvePickItem(runtime.io, `Select a role template to add (${scope})`, candidates, options.pick, runtime.env);
+    const picked = await resolvePickItem(runtime.io, `Select a global role to add (${scope})`, candidates, options.pick, runtime.env);
     if (!picked) {
       if (!roleId) {
         runtime.io.stderr("role add failed: missing roleId or pick selection\n");
@@ -188,24 +178,50 @@ export async function cmdRoleAdd(
   }
 
   const skills = options.skills ? options.skills.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
-  const roster = options.model ? [{ harness: options.harness ?? "pi", model: options.model }] : undefined;
+  const routes = (options.route ?? []).filter((route) => route.length > 0);
+  const roster = routes.length > 0 ? routes.map((route) => ({ route })) : undefined;
+  // A constructed or copied role takes --route, and the first id is the primary.
+  // A missing model file is the same refusal as modify --add-route. --file is checked
+  // after its roster is parsed, for both local and global scope.
+  const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+  const refuseMissingRoute = (routeId: string): boolean => {
+    const modelFile = join(projectRoot, ".kxm", "models", `${routeId}.yaml`);
+    if (existsSync(modelFile)) return false;
+    runtime.io.stderr(`kxm: route '${routeId}' is not a file under .kxm/models/\n`);
+    return true;
+  };
+  if (roster && !options.file) {
+    for (const entry of roster) {
+      if (refuseMissingRoute(entry.route)) return 1;
+    }
+  }
+  const purpose = rolePurposeForId(roleId ?? "experiment");
   let roleDef: KxmRoleDefinition;
   if (options.file) {
     const filePath = resolve(runtime.cwd, options.file);
     const content = readFileSync(filePath, "utf8");
     roleDef = parseYaml(content) as KxmRoleDefinition;
     roleDef.id = roleId!;
+    roleDef.schema = "kxm.role.v2";
+    roleDef.purpose ??= rolePurposeForId(roleDef.id);
+    roleDef.permission ??= roleDef.purpose === "writer" ? "edit" : "read-only";
+    for (const entry of roleDef.roster ?? []) {
+      if (typeof entry?.route === "string" && entry.route.length > 0 && refuseMissingRoute(entry.route)) return 1;
+    }
   } else if (base) {
     roleDef = {
       ...base,
+      schema: "kxm.role.v2",
       description: options.description || base.description,
       skills: skills ?? base.skills,
       roster: roster ?? base.roster,
     };
   } else {
     roleDef = {
-      schema: "kxm.role.v1",
+      schema: "kxm.role.v2",
       id: roleId!,
+      purpose,
+      permission: purpose === "writer" ? "edit" : "read-only",
       description: options.description || `Role ${roleId}`,
       skills: skills ?? [],
       roster: roster ?? [],
@@ -327,8 +343,8 @@ export async function cmdRoleModify(
     description?: string | undefined;
     addSkill?: string | undefined;
     removeSkill?: string | undefined;
-    addModel?: string | undefined;
-    removeModel?: string | undefined;
+    addRoute?: string | undefined;
+    removeRoute?: string | undefined;
     scope?: "global" | "local" | undefined;
     pick?: string | boolean | undefined;
   },
@@ -379,14 +395,18 @@ export async function cmdRoleModify(
   }
 
   let roster = [...(role.roster ?? [])];
-  if (options.addModel) {
-    const [harnessOrModel, maybeModel] = options.addModel.split(":");
-    const harness = maybeModel ? harnessOrModel! : "pi";
-    const model = maybeModel || harnessOrModel!;
-    roster.push({ harness, model });
+  if (options.addRoute) {
+    const routeId = options.addRoute;
+    const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
+    const modelFile = join(projectRoot, ".kxm", "models", `${routeId}.yaml`);
+    if (!existsSync(modelFile)) {
+      runtime.io.stderr(`kxm: route '${routeId}' is not a file under .kxm/models/\n`);
+      return 1;
+    }
+    if (!roster.some((entry) => entry.route === routeId)) roster.push({ route: routeId });
   }
-  if (options.removeModel) {
-    roster = roster.filter((entry) => entry.model !== options.removeModel);
+  if (options.removeRoute) {
+    roster = roster.filter((entry) => entry.route !== options.removeRoute);
   }
 
   const updates: Partial<KxmRoleDefinition> = {
@@ -415,130 +435,6 @@ export async function cmdRoleModify(
     return 0;
   } catch (err: unknown) {
     runtime.io.stderr(`role modify failed: ${(err as Error).message}\n`);
-    return 1;
-  }
-}
-
-export async function cmdRoleHosts(
-  runtime: Runtime,
-  options: { scope?: "all" | "global" | "local" | undefined } = {},
-): Promise<number> {
-  const hostsConfig = loadRoleHostsConfig({
-    scope: options.scope,
-    repoRoot: runtime.cwd,
-    userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
-  });
-
-  const seatIds = Array.from(
-    new Set([
-      ...Object.keys(DEFAULT_ROLE_SEATS),
-      ...Object.keys(hostsConfig.config.seats ?? {}),
-    ]),
-  ).sort();
-
-  const seats = seatIds.map((seatId) => {
-    const resolved = resolveRoleSeat(seatId, {
-      repoRoot: runtime.cwd,
-      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
-    });
-    return {
-      seatId,
-      host: resolved.host,
-      model: resolved.model,
-      provider: resolved.provider,
-      effort: resolved.effort,
-      source: resolved.source,
-      configuredHost: hostsConfig.config.seats?.[seatId]?.host,
-      configuredModel: hostsConfig.config.seats?.[seatId]?.model,
-    };
-  });
-
-  if (runtime.json) {
-    print(
-      runtime.io,
-      true,
-      {
-        ok: true,
-        command: "role hosts",
-        scope: hostsConfig.scope,
-        filePath: hostsConfig.filePath,
-        seats,
-        hostProviders: hostsConfig.config.hostProviders ?? {},
-      },
-      "",
-    );
-    return 0;
-  }
-
-  const lines: string[] = [
-    `ROLE SEATS (${hostsConfig.scope}${hostsConfig.filePath ? ` at ${hostsConfig.filePath}` : ""}):`,
-  ];
-  for (const s of seats) {
-    const modelStr = s.model ? ` [${s.model}]` : "";
-    const sourceTag = `(via ${s.source})`;
-    lines.push(`  ${s.seatId.padEnd(16)} -> host: ${s.host.padEnd(12)} ${modelStr.padEnd(30)} ${sourceTag}`);
-  }
-  if (hostsConfig.config.hostProviders && Object.keys(hostsConfig.config.hostProviders).length > 0) {
-    lines.push("\nHOST PROVIDERS:");
-    for (const [h, p] of Object.entries(hostsConfig.config.hostProviders)) {
-      lines.push(`  ${h.padEnd(16)} -> provider: ${p}`);
-    }
-  }
-  print(runtime.io, false, {}, `${lines.join("\n")}\n`);
-  return 0;
-}
-
-export async function cmdRoleSetHost(
-  runtime: Runtime,
-  seatId: string,
-  host: string,
-  options: {
-    model?: string | undefined;
-    effort?: "low" | "medium" | "high" | "xhigh" | undefined;
-    scope?: "global" | "local" | undefined;
-  } = {},
-): Promise<number> {
-  if (!seatId || !host) {
-    runtime.io.stderr("kxm role set-host requires <seatId> and <host>\n");
-    return 1;
-  }
-
-  try {
-    const result = setRoleSeatHost(seatId, host, {
-      model: options.model,
-      effort: options.effort,
-      scope: options.scope ?? "local",
-      repoRoot: runtime.cwd,
-      userConfigDir: runtime.env.KXM_USER_CONFIG_DIR,
-      dryRun: runtime.dryRun,
-    });
-    if (runtime.dryRun) {
-      printPlan(
-        runtime,
-        { command: "role set-host", seatId, host, binding: result.binding, filePath: result.filePath, scope: result.scope },
-        [{ action: "write", target: result.filePath }],
-        `bind seat '${seatId}' to host '${host}'`,
-      );
-      return 0;
-    }
-
-    print(
-      runtime.io,
-      runtime.json,
-      {
-        ok: true,
-        command: "role set-host",
-        seatId,
-        host,
-        binding: result.binding,
-        filePath: result.filePath,
-        scope: result.scope,
-      },
-      `Bound seat '${seatId}' to host '${host}' in ${result.filePath}\n`,
-    );
-    return 0;
-  } catch (err: unknown) {
-    runtime.io.stderr(`role set-host failed: ${(err as Error).message}\n`);
     return 1;
   }
 }

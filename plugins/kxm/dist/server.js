@@ -14943,6 +14943,59 @@ var KXM_YAML_LIMITS = Object.freeze({
   maxKeys: 8192
 });
 
+// plugins/kxm/src/policy-draft.mjs
+var POLICY_DRAFT_PURPOSES = Object.freeze([
+  "writer",
+  "planner",
+  "reviewer-arch",
+  "reviewer-cli",
+  "experiment"
+]);
+var POLICY_DRAFT_PERMISSIONS = Object.freeze(["edit", "read-only"]);
+var POLICY_DRAFT_STATUSES = Object.freeze(["admitted", "candidate", "retired"]);
+var EFFORTS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+var MODES = Object.freeze(["headless", "interactive", "either"]);
+var MODEL_KEYS = Object.freeze([
+  "schema",
+  "id",
+  "harness",
+  "model",
+  "vendor",
+  "status",
+  "permissions",
+  "origin",
+  "thinking",
+  "tags",
+  "capabilities",
+  "priority",
+  "fallbacks",
+  "limits"
+]);
+var ROLE_KEYS = Object.freeze([
+  "schema",
+  "id",
+  "purpose",
+  "permission",
+  "description",
+  "extends",
+  "roster",
+  "skills",
+  "tools",
+  "produces",
+  "consumes",
+  "policy"
+]);
+var ORIGIN_KEYS = Object.freeze(["source", "sha256"]);
+var LIMIT_KEYS = Object.freeze(["contextTokens", "outputTokens", "timeoutMs"]);
+var TOOL_KEYS = Object.freeze(["preset", "allow", "deny"]);
+var TEMPLATE_KEYS = Object.freeze(["template", "schema"]);
+var POLICY_KEYS = Object.freeze(["vendorIndependenceRequired", "maxTransitions", "requiresGateVerification", "fallback"]);
+var FALLBACK_KEYS = Object.freeze(["onError", "maxSwitches", "revert"]);
+var FALLBACK_ERRORS = Object.freeze(["rate_limit", "transport", "provider_unavailable"]);
+var FALLBACK_REVERT = Object.freeze(["next_run", "never"]);
+var ROSTER_ENTRY_KEYS = Object.freeze(["route", "effort", "mode"]);
+var CRITIC_PURPOSES = Object.freeze(["reviewer-arch", "reviewer-cli"]);
+
 // plugins/kxm/src/template.ts
 var import_yaml2 = __toESM(require_dist(), 1);
 
@@ -15439,7 +15492,8 @@ var RESOURCE_SCHEMA = Object.freeze({
   project: { identity: "kxm.project.v1", file: "project.schema.json" },
   repository: { identity: "kxm.repository.v1", file: "repository.schema.json" },
   agent: { identity: "kxm.agent.v1", file: "agent.schema.json" },
-  model: { identity: "kxm.model.v1", file: "model.schema.json" },
+  model: { identity: "kxm.model.v2", file: "model.schema.json" },
+  role: { identity: "kxm.role.v2", file: "role.schema.json" },
   environment: { identity: "kxm.environment.v1", file: "environment.schema.json" },
   workflow: { identity: "kxm.workflow.v1", file: "workflow.schema.json" },
   "gate-registry": { identity: "kxm.gate-registry.v1", file: "gate-registry.schema.json" }

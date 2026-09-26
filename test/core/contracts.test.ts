@@ -111,7 +111,8 @@ function validateResource(
     "kxm.project.v1": "project",
     "kxm.repository.v1": "repository",
     "kxm.agent.v1": "agent",
-    "kxm.model.v1": "model",
+    "kxm.model.v2": "model",
+    "kxm.role.v2": "role",
     "kxm.environment.v1": "environment",
     "kxm.workflow.v1": "workflow",
     "kxm.gate-registry.v1": "gate-registry",
@@ -170,7 +171,7 @@ function validateExampleSemantics(resources: LoadedResource[]): void {
     .map((resource) => [pathIdentity(resource), resource]));
   const agentResources = resources.filter((resource) => resource.value.schema === "kxm.agent.v1");
   const models = resources
-    .filter((resource) => resource.value.schema === "kxm.model.v1")
+    .filter((resource) => resource.value.schema === "kxm.model.v2")
     .map((resource) => ({ id: pathIdentity(resource), value: resource.value }));
   const modelProfiles = new Set(models.map((model) => model.id));
   const modelTags = new Set(models.flatMap((model) => arrayValue(model.value.tags ?? [], "model.tags").map(String)));
@@ -239,7 +240,7 @@ function validateExampleSemantics(resources: LoadedResource[]): void {
           const tag = stringValue(selector.tag, "moa.model.tag");
           const providers = new Set(models
             .filter((model) => arrayValue(model.value.tags ?? [], "model.tags").includes(tag))
-            .map((model) => stringValue(model.value.provider, "model.provider")));
+            .map((model) => stringValue(model.value.provider ?? model.value.vendor, "model.provider")));
           assert(providers.size >= target, `MOA tag ${tag} cannot satisfy provider-distinct target ${target}`);
         }
       }
