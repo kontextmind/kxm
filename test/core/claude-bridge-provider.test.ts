@@ -158,6 +158,7 @@ test("registration exposes the static catalog under provider id claude-bridge", 
   assert.equal(config?.name, "Claude Bridge");
   assert.equal(config?.api, "claude-bridge");
   assert.equal(config?.baseUrl, "claude-bridge");
+  assert.equal(config?.apiKey, "claude-bridge");
   const models = config?.models as Array<{ id: string }>;
   const ids = models.map((entry) => entry.id);
   assert.deepEqual(ids, [...MODEL_IDS_IN_ORDER]);
@@ -317,6 +318,21 @@ test("no standalone detection emits no registration warning", () => {
   assert.equal(missingProvider.registered, false);
   assert.equal(missingProvider.conflict, false);
   assert.equal(claudeBridgeRegistrationNotice(missingProvider), undefined);
+
+  const throwingPi = {
+    ...clean.api,
+    registerProvider() {
+      throw new Error('"apiKey" or "oauth" is required when defining models.');
+    },
+  };
+  const failed = registerClaudeBridgeProvider(throwingPi as unknown as ExtensionAPI);
+  assert.equal(failed.registered, false);
+  assert.equal(failed.conflict, false);
+  assert.match(failed.warning ?? "", /claude-bridge provider registration failed/);
+  assert.match(failed.warning ?? "", /apiKey/);
+  const failedNotice = claudeBridgeRegistrationNotice(failed);
+  assert.equal(failedNotice?.type, "warning");
+  assert.match(failedNotice?.message ?? "", /claude-bridge provider registration failed/);
 });
 
 test("host probes used by the fake exist on Pi ExtensionAPI types", () => {

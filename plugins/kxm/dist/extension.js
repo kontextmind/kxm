@@ -36307,6 +36307,12 @@ function claudeBridgeConflictWarning(registered) {
   );
 }
 function claudeBridgeRegistrationNotice(report, pi) {
+  if (report?.warning) {
+    return {
+      message: boundedRegistrationWarning(report.warning),
+      type: "warning"
+    };
+  }
   const conflict = Boolean(report?.conflict) || (pi ? claudeBridgeStandaloneToolsPresent(pi) : false);
   if (!conflict) return void 0;
   return {
@@ -36325,14 +36331,24 @@ function registerClaudeBridgeProvider(pi) {
   if (typeof pi.registerProvider !== "function") {
     return { registered: false, conflict: false };
   }
-  pi.registerProvider(PROVIDER_ID2, {
-    name: PROVIDER_NAME2,
-    baseUrl: PROVIDER_ID2,
-    api: CLAUDE_BRIDGE_API,
-    models: registeredClaudeBridgeModels(),
-    streamSimple: streamClaudeBridge
-  });
-  return { registered: true, conflict: false };
+  try {
+    pi.registerProvider(PROVIDER_ID2, {
+      name: PROVIDER_NAME2,
+      baseUrl: PROVIDER_ID2,
+      apiKey: PROVIDER_ID2,
+      api: CLAUDE_BRIDGE_API,
+      models: registeredClaudeBridgeModels(),
+      streamSimple: streamClaudeBridge
+    });
+    return { registered: true, conflict: false };
+  } catch (error2) {
+    const reason = error2 instanceof Error ? error2.message : String(error2);
+    return {
+      registered: false,
+      conflict: false,
+      warning: `kxm: claude-bridge provider registration failed (${reason}). Configure apiKey or ensure provider auth is valid.`
+    };
+  }
 }
 
 // plugins/kxm/src/diagnostics.ts
