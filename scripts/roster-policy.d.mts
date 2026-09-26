@@ -14,6 +14,7 @@ export interface RosterPolicy {
 }
 export interface PolicyIdentity { readonly commit: string; readonly blob: string; readonly sha256: string }
 export interface LoadedPolicy { readonly identity: PolicyIdentity; readonly policy: RosterPolicy }
+export function refuseRetiredRosterFile(root: string): void;
 export function loadTrustedRosterPolicy(): LoadedPolicy;
 export function resolveBoundPolicy(identity: PolicyIdentity): LoadedPolicy;
 export function canonicalVendor(value: string): string;

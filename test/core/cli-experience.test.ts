@@ -666,7 +666,7 @@ permissions:
   - edit
 origin:
   source: .kxm/project.yaml
-  sha256: ${"ab".repeat(32)}
+  sha256: ${createHash("sha256").update(readFileSync(join(project, ".kxm", "project.yaml"))).digest("hex")}
 `);
     writeFileSync(join(project, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v2
 id: writer

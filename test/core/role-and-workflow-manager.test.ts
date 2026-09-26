@@ -872,11 +872,9 @@ test("role add writes a local role only at the project root, and only if the pro
     rmSync(join(roles, "writer.yaml"));
     mkdirSync(join(root, "user-config", "roles"), { recursive: true });
     writeFileSync(join(root, "user-config", "roles", "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\ndescription: Global writer.\nroster:\n  - route: grok-default\n");
-    // An implementer on a model the built-in writer template's roster leaves out.
     const implementer = join(project, ".kxm", "agents", "implementer.yaml");
     const undeclared = readFileSync(implementer, "utf8").replace(/^harness:.*\n/m, "").replace(/^model:.*\n(?: {2}.*\n)*/m, "");
-    writeFileSync(implementer, `${undeclared}harness: claude\nmodel:\n  provider: anthropic\n  model: claude-fable-5-1\n`);
-    // Role files are the authority. An agent model outside the writer roster still loads.
+    writeFileSync(implementer, undeclared.endsWith("\n") ? undeclared : `${undeclared}\n`);
     assert.ok(loadKxmProject(project));
 
     // From a subdirectory, the role lands where the loader reads it.

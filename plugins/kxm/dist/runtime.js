@@ -17474,7 +17474,7 @@ function readTemplateProvenance(registry, root) {
   }
   return value;
 }
-function listNamedResources(registry, root, directory, logicalDirectory, kind, replacedId) {
+function listNamedResources(registry, root, directory, logicalDirectory, kind, replacedId, collected) {
   const resources = /* @__PURE__ */ new Map();
   if (!existsSync3(directory)) return resources;
   const stat = lstatSync(directory);
@@ -17513,7 +17513,10 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind, r
       else throw error;
     }
   }
-  if (issues.length > 0) throw new KxmConfigError(issues);
+  if (issues.length > 0) {
+    if (collected) collected.push(...issues);
+    else throw new KxmConfigError(issues);
+  }
   return resources;
 }
 function valuesOf(object, field) {
@@ -17777,6 +17780,9 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
+    if ((kind === "agent" || kind === "moa") && step.model !== void 0) {
+      issues.push(issue3("semantic", "producer_route_unsupported", file, `${stepId} model is not honored; remove model from the step`));
+    }
     selectorCandidates(step.model, models, file, `${stepId}.model`, issues);
     const assignment = objectValue(step.assignments);
     const declaredAgents = assignment ? names(assignment.allowedAgents) : [];
@@ -17959,7 +17965,7 @@ function validateModelReferences(models, issues) {
   };
   for (const id of models.keys()) walk(id, []);
 }
-function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot) {
+function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot, roles = /* @__PURE__ */ new Map()) {
   const issues = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const repositoryIds = /* @__PURE__ */ new Set();
@@ -18000,6 +18006,9 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   const defaultHarness = stringValue(project.value.defaultHarness) ?? DEFAULT_HARNESS;
   if (!harnesses.has(defaultHarness)) issues.push(issue3("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
   for (const agent of agents.values()) {
+    if (agent.value.model !== void 0 || agent.value.harness !== void 0) {
+      issues.push(issue3("semantic", "retired_agent_routing_fields", agent.logicalPath, "routing resolves from role; remove model and harness"));
+    }
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
     if (executor && !executors.has(executor)) issues.push(issue3("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
@@ -18033,7 +18042,62 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roles"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
   }
+  if (projectRoot) {
+    issues.push(...rosterModelIssues(projectRoot, roles));
+    issues.push(...originHashIssues(projectRoot, models));
+  }
   return sortIssues3(issues);
+}
+function rosterModelIssues(projectRoot, roles) {
+  const issues = [];
+  for (const role of roles.values()) {
+    for (const entry of valuesOf(role.value, "roster")) {
+      const route = stringValue(objectValue(entry)?.route);
+      if (!route) continue;
+      const logical = `.kxm/models/${route}.yaml`;
+      const file = join2(projectRoot, ".kxm", "models", `${route}.yaml`);
+      let harness;
+      try {
+        if (existsSync3(file)) harness = stringValue(parseRestrictedYaml2(readFileSync(file, "utf8"), logical).harness);
+      } catch {
+        harness = void 0;
+      }
+      if (!harness) {
+        issues.push(issue3("semantic", "roster_model_unreadable", role.logicalPath, `roster route ${route} does not resolve to a readable ${logical} carrying harness`));
+      }
+    }
+  }
+  return issues;
+}
+function originHashIssues(projectRoot, models) {
+  const issues = [];
+  for (const model of models.values()) {
+    const origin = objectValue(model.value.origin);
+    const source = origin ? stringValue(origin.source) : void 0;
+    const digest2 = origin ? stringValue(origin.sha256) : void 0;
+    if (!source || !digest2) continue;
+    const file = resolve(projectRoot, source);
+    const escaped = relative(projectRoot, file);
+    if (isAbsolute(source) || escaped.startsWith("..") || isAbsolute(escaped)) {
+      issues.push(issue3("semantic", "origin_evidence_missing", model.logicalPath, `missing evidence bytes for ${source}`));
+      continue;
+    }
+    let actual;
+    try {
+      actual = createHash3("sha256").update(readFileSync(file, "utf8"), "utf8").digest("hex");
+    } catch (error) {
+      const code = error.code;
+      if (code === "ENOENT" || code === "EACCES" || code === "EPERM" || code === "EISDIR") {
+        issues.push(issue3("semantic", "origin_evidence_missing", model.logicalPath, `missing evidence bytes for ${source}`));
+        continue;
+      }
+      throw error;
+    }
+    if (actual !== digest2) {
+      issues.push(issue3("semantic", "origin_hash_mismatch", model.logicalPath, "origin evidence hash does not match supplied bytes"));
+    }
+  }
+  return issues;
 }
 function developerCeilings() {
   const script = join2(findKxmRepoRoot(import.meta.url), "scripts", "harness-run.mjs");
@@ -18083,6 +18147,7 @@ function developerRolePolicyIssues(projectRoot) {
           parseIssues.push(...error.issues);
           continue;
         }
+        throw error;
       }
     }
   };
@@ -18186,7 +18251,8 @@ function loadProjectBundle(projectRoot, options, candidate) {
   }
   if (earlyIssues.length > 0) throw new KxmConfigError(earlyIssues);
   const agents = listNamedResources(registry, root, join2(root, ".kxm", "agents"), ".kxm/agents", "agent");
-  const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model");
+  const modelIssues = [];
+  const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model", void 0, modelIssues);
   const roles = listNamedResources(registry, root, join2(root, ".kxm", "roles"), ".kxm/roles", "role", writerRole === void 0 ? void 0 : "writer");
   if (writerRole !== void 0) {
     const logicalPath = ".kxm/roles/writer.yaml";
@@ -18313,8 +18379,8 @@ function loadProjectBundle(projectRoot, options, candidate) {
       }
     }
   }
-  if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root);
+  if (loadIssues.length > 0) throw new KxmConfigError([...loadIssues, ...modelIssues]);
+  const issues = [...modelIssues, ...validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, roles)];
   if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...roles.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits4(left.logicalPath, right.logicalPath));
   return {
@@ -28760,6 +28826,9 @@ function commitCommandUncertainty(context, prepared, token, reason, observation,
 }
 var kxmPanelDispatchSeams = {};
 function readYamlFile(file) {
+  return readModelDocument(file);
+}
+function readModelDocument(file) {
   if (!existsSync12(file)) return void 0;
   try {
     const parsed = (0, import_yaml9.parse)(readFileSync10(file, "utf8"));
@@ -28820,8 +28889,18 @@ function resolveProducerRoute(projectRoot, step, agentId) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const record2 = entry;
     if (typeof record2.route !== "string" || record2.route.length === 0) continue;
-    const doc = readYamlFile(join15(projectRoot, ".kxm", "models", `${record2.route}.yaml`));
-    if (!doc || doc.status !== "admitted") continue;
+    const modelPath = join15(projectRoot, ".kxm", "models", `${record2.route}.yaml`);
+    const doc = readModelDocument(modelPath);
+    if (!doc) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: model file '.kxm/models/${record2.route}.yaml' is missing or unreadable`
+        }
+      };
+    }
+    if (doc.status !== "admitted") continue;
     const modelName = typeof doc.model === "string" ? doc.model : "";
     const vendor = typeof doc.vendor === "string" ? doc.vendor : "";
     const harness = typeof doc.harness === "string" ? doc.harness : "";

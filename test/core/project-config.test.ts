@@ -131,7 +131,116 @@ test("KXM loader fails closed on schema, path, reference, and semantic errors", 
     for (const file of [critic1, critic2, critic3]) {
       writeFileSync(file, `${readFileSync(file, "utf8").trimEnd()}\nmodel:\n  profile: critic-claude\n`);
     }
+    const fixFile = join(root, ".kxm", "workflows", "fix.yaml");
+    writeFileSync(fixFile, readFileSync(fixFile, "utf8").replace("      maximum: 3\n      maxParallel: 3\n", "      maximum: 3\n      maxParallel: 3\n      distinctBy:\n        - provider\n"));
     assert.throws(() => loadKxmProject(root), (error) => issueCodes(error).includes("model_diversity_impossible"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an agent file with model or harness is refused at load", () => {
+  const root = temporaryFixture("kxm-retired-agent-route-");
+  try {
+    const implementer = join(root, ".kxm", "agents", "implementer.yaml");
+    const planner = join(root, ".kxm", "agents", "planner.yaml");
+    writeFileSync(implementer, `${readFileSync(implementer, "utf8").trimEnd()}\nharness: codex\n`);
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.some((entry) => entry.code === "retired_agent_routing_fields" && entry.file.endsWith("implementer.yaml") && entry.message === "routing resolves from role; remove model and harness"),
+    );
+    writeFileSync(implementer, readFileSync(implementer, "utf8").replace("\nharness: codex\n", "\n"));
+    writeFileSync(planner, `${readFileSync(planner, "utf8").trimEnd()}\nmodel:\n  provider: anthropic\n  model: fable\n`);
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.some((entry) => entry.code === "retired_agent_routing_fields" && entry.file.endsWith("planner.yaml")),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an agent or moa step that declares model is refused at load", () => {
+  const root = temporaryFixture("kxm-step-model-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "model-step.yaml"), `schema: kxm.workflow.v1
+description: Steps that still declare a model.
+coordinator: coordinator
+limits:
+  maxTransitions: 4
+steps:
+  - id: write
+    kind: agent
+    agent: implementer
+    model:
+      provider: xai
+      model: grok-4.6
+    on:
+      passed: panel
+      failed:
+        target: $terminal
+        terminalStatus: failed
+  - id: panel
+    kind: moa
+    agent: implementer
+    model:
+      provider: xai
+      model: grok-4.6
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.filter((entry) => entry.code === "producer_route_unsupported").map((entry) => entry.message).sort().join("\n")
+          === "panel model is not honored; remove model from the step\nwrite model is not honored; remove model from the step",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a roster entry whose model file is missing or unparseable is refused at load", () => {
+  const root = temporaryFixture("kxm-roster-model-");
+  try {
+    writeFileSync(join(root, ".kxm", "roles", "experiment.yaml"), `schema: kxm.role.v2
+id: experiment
+purpose: experiment
+permission: read-only
+description: Roster brake.
+roster:
+  - route: absent
+  - route: broken
+`);
+    writeFileSync(join(root, ".kxm", "models", "broken.yaml"), "a: [\n");
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.filter((entry) => entry.code === "roster_model_unreadable").map((entry) => entry.message).sort().join("\n")
+          === "roster route absent does not resolve to a readable .kxm/models/absent.yaml carrying harness\nroster route broken does not resolve to a readable .kxm/models/broken.yaml carrying harness",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an origin hash mismatch is refused by loadKxmProject", () => {
+  const root = temporaryFixture("kxm-origin-mismatch-");
+  try {
+    const model = join(root, ".kxm", "models", "primary.yaml");
+    writeFileSync(model, `${readFileSync(model, "utf8").trimEnd()}\norigin:\n  source: .kxm/project.yaml\n  sha256: ${"ab".repeat(32)}\n`);
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.some((entry) => entry.code === "origin_hash_mismatch" && entry.message === "origin evidence hash does not match supplied bytes"),
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
-import { assembleRosterPolicy, validateRosterDocument, type RosterPolicy } from "../../scripts/roster-policy.mjs";
+import { assembleRosterPolicy, refuseRetiredRosterFile, validateRosterDocument, type RosterPolicy } from "../../scripts/roster-policy.mjs";
+
+test("roster-policy refuses .kxm/roster.yaml", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-retired-roster-yaml-"));
+  try {
+    mkdirSync(join(root, ".kxm"));
+    writeFileSync(join(root, ".kxm", "roster.yaml"), "schema: kxm.developer-roster.v1\nroutes: {}\n");
+    assert.throws(
+      () => refuseRetiredRosterFile(root),
+      /Roster policy refused: retired_roster_file: retired \.kxm\/roster\.yaml present; use \.kxm\/models and \.kxm\/roles/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 const qwenEvidence = "qwen origin fixture\n";
 const antigravityEvidence = "antigravity origin fixture\n";

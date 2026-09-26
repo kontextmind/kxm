@@ -99,35 +99,43 @@ pi auth check --model openrouter/qwen/qwen3-coder-plus --json --no-refresh
 
 ### How KXM builds a route
 
-- **Selector.** The selector is `<model.provider>/<model.model>`, taken from the agent YAML. The provider must not contain `/`. The model id may, for example `qwen/qwen3-coder-plus` under `openrouter`.
-- **Harness.** The harness is the agent's `harness:`, or the project's `defaultHarness` (Pi) when the agent omits it. The selector string does not choose the harness, and neither does a roster entry.
-- **Admission.** The selector must be admitted, and it must be in the role roster when that role file exists. Agent id `implementer` maps to role `writer`.
+- **Selector.** The selector is `<vendor>/<model>` from the selected `.kxm/models/<route>.yaml`. The agent names a `role`, `.kxm/roles/<role>.yaml` lists route ids, and the chosen roster entry names that model file. The model id may contain `/`, for example `openrouter/qwen/qwen3-coder-plus`.
+- **Harness.** The harness is the `harness` field on that model file. An agent file does not select it.
+- **Admission.** The selector must be admitted. The engine uses the first roster entry whose model file is readable and whose route is admitted.
 - **Dispatch probe.** Before spawning anything, the producer probes the exact harness, provider and model triple. It refuses unhosted pairs and the Pi brake.
 - **Effort.** The Runtime sets the thinking effort per attempt: the first attempt of a step runs at `low`, and any later attempt of the same step at `medium`. The live producer passes it as `--effort` to `claude`, as `model_reasoning_effort` to `codex` and as `--reasoning-effort` to `grok`. `agy`, `kimi` and `pi` get no effort flag. A roster entry's `effort` is display-only.
 
 ### Agent YAML
 
-This is the native route, from `.kxm/agents/implementer.yaml`:
+An agent names a role and nothing else about the route:
+
+```yaml
+role: writer
+```
+
+`harness` and `model` on an agent file are refused at load (`retired_agent_routing_fields`). A step `model` is refused at load and again at dispatch (`producer_route_unsupported`).
+
+### Model file
+
+This is the native route, from `.kxm/models/grok-native.yaml`:
 
 ```yaml
 harness: grok
-model:
-  provider: xai
-  model: grok-4.6
+model: grok-4.7
+vendor: xai
 ```
 
-The selector is `xai/grok-4.6` and the harness is `grok`. The live one-shot producer spawns `grok --model grok-4.6 … --output-format json --single <prompt>`.
+The selector is `xai/grok-4.7` and the harness is `grok`. The live one-shot producer spawns `grok --model grok-4.7 … --output-format json --single <prompt>`.
 
-This is the same model through Pi and OpenRouter:
+This is the same vendor through Pi and OpenRouter, which the brake refuses:
 
 ```yaml
-# harness omitted: Pi
-model:
-  provider: openrouter
-  model: x-ai/grok-4.6
+harness: pi
+model: openrouter/x-ai/grok-4.6
+vendor: xai
 ```
 
-The selector is `openrouter/x-ai/grok-4.6` and the harness is `pi`. The Pi brake refuses it before Pi starts, because the vendor segment `x-ai` is xAI, which has a native harness. A vendor with no native harness runs in the same shape: with `model: qwen/qwen3-coder-plus`, Pi is spawned with `--model openrouter/qwen/qwen3-coder-plus`, its read-only flags (section 3) and `-p --mode json`. Write `model.model` exactly as the provider names it. For OpenRouter that is the vendor slug, so `x-ai`, not `xai`.
+The selector is `openrouter/x-ai/grok-4.6` and the harness is `pi`. The Pi brake refuses it before Pi starts, because the vendor segment `x-ai` is xAI, which has a native harness. A vendor with no native harness runs in the same shape: with `model: openrouter/qwen/qwen3-coder-plus`, Pi is spawned with `--model openrouter/qwen/qwen3-coder-plus`, its read-only flags (section 3) and `-p --mode json`. Write `model` exactly as the provider names it. For OpenRouter that is the vendor slug, so `x-ai`, not `xai`.
 
 The harness and the selector have to agree. Pi refuses `provider: xai` and `openrouter/x-ai/…`. `grok` refuses `provider: openrouter`. [What the brake refuses](#what-the-brake-refuses) has the exact messages.
 
@@ -152,9 +160,9 @@ roster:
 
 `grok-native` resolves to `.kxm/models/grok-native.yaml`: harness `grok`, model `grok-4.7`, vendor `xai`, status `admitted`, permission `edit`. `qwen-openrouter-pi` is harness `pi`, model `openrouter/qwen/qwen3-coder-plus`, vendor `alibaba`. `gemini-agy` is harness `agy`, model `gemini-3.8-flash-high`, vendor `google`. `kxm role list` prints the first route id as the primary, for example `(grok-native)`.
 
-The model that runs a step still comes from the agent file. The harness is the agent's `harness:`, or Pi when the agent omits it. A route file records which harness can host that model; it does not replace the agent. If the implementer agent declares `harness: grok`, only the Grok selector can run under it. A Pi selector under that agent fails closed with `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`. To run a Pi selector, create a separate agent with `harness:` omitted. The engine does not walk the roster to fail over on its own.
+Dispatch resolves a step from the agent `role`, then `.kxm/roles/<role>.yaml`, then the selected `.kxm/models/<route>.yaml`. That model file carries `harness`, `model`, `vendor`, `status`, and `permissions`. The engine walks the roster in order and uses the first admitted route whose model file is readable. A missing or unreadable model file is a refusal (`roster_model_unreadable` at load, `producer_route_unsupported` at dispatch), not a skip to the next entry. A route file that names a harness the model cannot run on still fails closed with `harness_unhosted_model`.
 
-Dispatch reads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml`. Role files are what `kxm role` and the Runtime membership check use.
+Role files are what `kxm role` and the Runtime membership check use.
 
 ### Route ids in `.kxm/routes.yaml`
 
@@ -308,7 +316,7 @@ kxm routing report --file ./run-events.jsonl --equivalent-list-cost
 
 ## 3. Examples: the same model, two routes
 
-Each example shows the agent YAML for the native route and for the same model through Pi, and which one the rules pick. For a native vendor, the Pi brake refuses the Pi column; it is shown so that you recognize the id. Whether a route is admitted is in your `.kxm/routes.yaml`. List prices and context sizes are in `.kxm/models/inventory.yaml` after `kxm models inventory-refresh`, and `pi --list-models` shows context, max output, thinking and image support per model. A provider missing from `pi --list-models` usually has no credentials, which is itself a readiness hint.
+Each example shows the model file for the native route and for the same model through Pi, and which one the rules pick. For a native vendor, the Pi brake refuses the Pi column; it is shown so that you recognize the id. Whether a route is admitted is in your `.kxm/routes.yaml`. List prices and context sizes are in `.kxm/models/inventory.yaml` after `kxm models inventory-refresh`, and `pi --list-models` shows context, max output, thinking and image support per model. A provider missing from `pi --list-models` usually has no credentials, which is itself a readiness hint.
 
 ### How the live producer runs each harness
 
@@ -330,7 +338,7 @@ The Runtime does not run a step live when it has `write` access to a repository;
 
 | | Native `grok` | Pi + OpenRouter |
 |---|---|---|
-| Agent YAML | `harness: grok`, `provider: xai`, `model: grok-4.6` | `harness:` omitted, `provider: openrouter`, `model: x-ai/grok-4.6` |
+| Model file | `harness: grok`, `model: grok-4.6`, `vendor: xai` | `harness: pi`, `model: openrouter/x-ai/grok-4.6`, `vendor: xai` |
 | Selector | `xai/grok-4.6` | `openrouter/x-ai/grok-4.6` |
 | Billing | grok.com subscription (OAuth) | OpenRouter credit |
 | Recorded `costBasis` | `unknown` | None: the brake refuses it before dispatch |
@@ -350,7 +358,7 @@ pi auth check --provider xai --json --no-refresh
 
 | | Native `codex` | Pi + OpenRouter |
 |---|---|---|
-| Agent YAML | `harness: codex`, `provider: openai`, `model: gpt-5.6-sol` | `harness:` omitted, `provider: openrouter`, `model: openai/gpt-5.6-sol` |
+| Model file | `harness: codex`, `model: gpt-5.6-sol`, `vendor: openai` | `harness: pi`, `model: openrouter/openai/gpt-5.6-sol`, `vendor: openai` |
 | Selector | `openai/gpt-5.6-sol` | `openrouter/openai/gpt-5.6-sol` |
 | Readiness | Needs `codex` auth `yes` with `authMethod: ChatGPT` | Never reached: the brake refuses it first |
 | Billing | ChatGPT subscription | OpenRouter credit |
@@ -373,7 +381,7 @@ A larger context window on the OpenRouter route does not make OpenRouter an allo
 
 | | Native `claude` | Pi + OpenRouter |
 |---|---|---|
-| Agent YAML | `harness: claude`, `provider: anthropic`, `model: fable` | `harness:` omitted, `provider: openrouter`, `model: anthropic/claude-fable-5.1` |
+| Model file | `harness: claude`, `model: fable`, `vendor: anthropic` | `harness: pi`, `model: openrouter/anthropic/claude-fable-5.1`, `vendor: anthropic` |
 | Selector | `anthropic/fable` | `openrouter/anthropic/claude-fable-5.1` |
 | Billing | claude.ai subscription | OpenRouter credit |
 | Recorded `costBasis` | `unmetered`, `priceRef: subscription:claude`, plus a list estimate when `prices.yaml` has an `anthropic` row dated today | None: refused before dispatch |
@@ -385,7 +393,7 @@ A larger context window on the OpenRouter route does not make OpenRouter an allo
 
 | | Native `agy` | `antigravity` Pi provider | Pi + OpenRouter |
 |---|---|---|---|
-| Agent YAML | `harness: agy`, `provider: google`, `model: gemini-3.8-flash-high` | `harness:` omitted, `provider: antigravity`, `model: gemini-3.8-flash` | `harness:` omitted, `provider: openrouter`, `model: google/gemini-3.8-flash` |
+| Model file | `harness: agy`, `model: gemini-3.8-flash-high`, `vendor: google` | `harness: pi`, `model: antigravity/gemini-3.8-flash`, `vendor: google` | `harness: pi`, `model: openrouter/google/gemini-3.8-flash`, `vendor: google` |
 | Selector | `google/gemini-3.8-flash-high` | `antigravity/gemini-3.8-flash` | `openrouter/google/gemini-3.8-flash` |
 | Readiness | Needs `agy` auth `yes` (`antigravity-oauth`) | Registered only by the KXM Pi extension. `pi auth check` never loads extensions, so `pi auth check --provider antigravity` returns `provider_not_found`. | Never reached: the brake refuses it (vendor segment `google`) |
 | Billing | Google subscription | Google subscription | OpenRouter credit |

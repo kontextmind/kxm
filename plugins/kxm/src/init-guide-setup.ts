@@ -446,13 +446,12 @@ function isWriterRole(roleSlug: string): boolean {
   return WRITER_ROLE_PATTERN.test(roleSlug);
 }
 
-function agentDocument(roleSlug: string, stage: GuideStage, binding: AgentBinding): Record<string, unknown> {
+function agentDocument(roleSlug: string, stage: GuideStage): Record<string, unknown> {
   const writer = isWriterRole(roleSlug);
   return {
     schema: "kxm.agent.v1",
     purpose: `${stage.domain} (workflow-guide ${stage.title}; candidate verification is the operator's responsibility)`,
-    harness: binding.harness,
-    model: { provider: binding.provider, model: binding.model },
+    role: roleSlug,
     tools: { preset: writer ? "workspace-writer" : "read-only" },
     defaultRepositoryAccess: writer ? "none" : "read",
     repositories: { control: writer ? "write" : "read" },
@@ -517,7 +516,7 @@ export function renderGuideSetupFiles(projectRoot: string, plan: GuideSetupPlan)
     if (binding.harness === "pi" && projectOrigin) modelDocument.origin = projectOrigin;
     files.push({
       path: join(projectRoot, ".kxm", "agents", `${role}.yaml`),
-      content: stringify(agentDocument(role, stage, binding)),
+      content: stringify(agentDocument(role, stage)),
     });
     files.push({
       path: join(projectRoot, ".kxm", "models", `${routeId}.yaml`),

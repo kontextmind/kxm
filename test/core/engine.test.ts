@@ -4209,32 +4209,40 @@ roster:
 test("live route refuses an agent step that sets model", () => {
   const { root, stateRoot } = engineProject("kxm-engine-step-model-");
   try {
-    writeFileSync(join(root, ".kxm", "workflows", "one-step.yaml"), `schema: kxm.workflow.v1
-description: Single agent step with a model override.
-coordinator: coordinator
-limits:
-  maxTransitions: 2
-steps:
-  - id: only
-    kind: agent
-    agent: implementer
-    model:
-      provider: xai
-      model: grok-4.6
-    on:
-      passed:
-        target: $terminal
-        terminalStatus: completed
-      failed:
-        target: $terminal
-        terminalStatus: failed
-`);
     const bundle = loadKxmProject(root);
+    const steps = bundle.workflows.get("one-step")?.value.steps;
+    assert.ok(Array.isArray(steps) && steps[0] && typeof steps[0] === "object" && !Array.isArray(steps[0]));
+    (steps[0] as JsonObject).model = { provider: "xai", model: "grok-4.6" };
     const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
     const refusal = found.find((entry) => entry.field === "model" && entry.reason === "step_unsupported");
     assert.ok(refusal, "an agent step model is refused");
     assert.match(refusal.detail ?? "", /agent step model is not honored; remove model from the step/);
     assert.doesNotMatch(refusal.detail ?? "", /kxm routes admit/);
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("resolveProducerRoute refuses a missing roster model file instead of continuing", () => {
+  const { root, stateRoot } = engineProject("kxm-engine-model-file-");
+  try {
+    writeFileSync(join(root, ".kxm", "models", "gone.yaml"), "schema: kxm.model.v2\nid: gone\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - edit\n");
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), `schema: kxm.role.v2
+id: writer
+purpose: writer
+permission: edit
+description: First route is removed after load.
+roster:
+  - route: gone
+  - route: grok-default
+`);
+    const bundle = loadKxmProject(root);
+    rmSync(join(root, ".kxm", "models", "gone.yaml"));
+    const found = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    assert.ok(found.some((entry) => entry.detail?.includes("model file '.kxm/models/gone.yaml' is missing or unreadable")));
+    writeFileSync(join(root, ".kxm", "models", "gone.yaml"), "a: [\n");
+    const unreadable = kxmLiveRunPrerequisites(bundle, "one-step", root);
+    assert.ok(unreadable.some((entry) => entry.detail?.includes("model file '.kxm/models/gone.yaml' is missing or unreadable")));
   } finally {
     removeTempDir(root, stateRoot);
   }
@@ -4493,7 +4501,6 @@ test("admission: agent without model returns handoff before birth", async () => 
   try {
     writeFileSync(join(root, ".kxm", "agents", "no-model-agent.yaml"), `schema: kxm.agent.v1
 purpose: Test agent without model
-harness: grok
 tools:
   preset: read-only
 defaultRepositoryAccess: none

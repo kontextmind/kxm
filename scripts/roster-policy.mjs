@@ -10,7 +10,7 @@ import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_ANTIGRAVITY_MODEL_I
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODEL_DIR = '.kxm/models';
 const ROLE_DIR = '.kxm/roles';
-const RETIRED_POLICY = '.kxm/roster.json';
+const RETIRED_ROSTER_FILES = ['.kxm/roster.json', '.kxm/roster.yaml'];
 const TRUSTED = 'refs/remotes/origin/main';
 const SKIP_MODELS = new Set(['inventory.yaml']);
 const ROLES = ['writer', 'planner', 'reviewer-arch', 'reviewer-cli', 'experiment'];
@@ -57,8 +57,13 @@ function frozen(value) {
   if (value && typeof value === 'object') { for (const child of Object.values(value)) frozen(child); Object.freeze(value); }
   return value;
 }
+export function refuseRetiredRosterFile(root) {
+  for (const retired of RETIRED_ROSTER_FILES) {
+    if (existsSync(path.join(root, retired))) refuse(`retired_roster_file: retired ${retired} present; use ${MODEL_DIR} and ${ROLE_DIR}`);
+  }
+}
 function control() {
-  if (existsSync(path.join(ROOT, RETIRED_POLICY))) refuse(`retired ${RETIRED_POLICY} present; use ${MODEL_DIR} and ${ROLE_DIR}`);
+  refuseRetiredRosterFile(ROOT);
   if (realpathSync(gitText('rev-parse', '--show-toplevel')) !== realpathSync(ROOT)) refuse('module is outside its control repository');
   const head = gitText('rev-parse', '--verify', 'HEAD^{commit}');
   const trusted = gitText('rev-parse', '--verify', `${TRUSTED}^{commit}`);

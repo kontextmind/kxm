@@ -1354,6 +1354,10 @@ interface ResolvedProducerRoute {
 }
 
 function readYamlFile(file: string): Record<string, unknown> | undefined {
+  return readModelDocument(file);
+}
+
+function readModelDocument(file: string): Record<string, unknown> | undefined {
   if (!existsSync(file)) return undefined;
   try {
     const parsed = parse(readFileSync(file, "utf8")) as unknown;
@@ -1420,8 +1424,18 @@ function resolveProducerRoute(
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const record = entry as { route?: unknown; effort?: unknown };
     if (typeof record.route !== "string" || record.route.length === 0) continue;
-    const doc = readYamlFile(join(projectRoot, ".kxm", "models", `${record.route}.yaml`));
-    if (!doc || doc.status !== "admitted") continue;
+    const modelPath = join(projectRoot, ".kxm", "models", `${record.route}.yaml`);
+    const doc = readModelDocument(modelPath);
+    if (!doc) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: model file '.kxm/models/${record.route}.yaml' is missing or unreadable`,
+        },
+      };
+    }
+    if (doc.status !== "admitted") continue;
     const modelName = typeof doc.model === "string" ? doc.model : "";
     const vendor = typeof doc.vendor === "string" ? doc.vendor : "";
     const harness = typeof doc.harness === "string" ? doc.harness : "";

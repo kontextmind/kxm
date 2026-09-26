@@ -186,9 +186,10 @@ test("rendered files load as a valid KXM project bundle", () => {
 
     const bundle = loadKxmProject(root);
     assert.equal(bundle.agents.has("lead-systems-planner"), true);
-    const lead = bundle.agents.get("lead-systems-planner")?.value as { model?: { provider?: string; model?: string } };
-    assert.equal(lead.model?.provider, "anthropic");
-    assert.equal(lead.model?.model, "fable");
+    const lead = bundle.agents.get("lead-systems-planner")?.value as { role?: string; harness?: unknown; model?: unknown };
+    assert.equal(lead.role, "lead-systems-planner");
+    assert.equal(lead.harness, undefined);
+    assert.equal(lead.model, undefined);
 
     const workflow = bundle.workflows.get("build-feature");
     const workflowValue = workflow?.value as { steps?: unknown[] } | undefined;
@@ -256,6 +257,19 @@ test("Pi guide models hash .kxm/project.yaml and omit origin when that file is a
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("generated init-guide agents carry role and no harness or model", () => {
+  const plan = planGuideSetup({ inventory: inventory(["claude", "grok", "pi"]), selected: ["build-feature"] });
+  const files = renderGuideSetupFiles(join("/tmp", "unused"), plan).filter((file) => file.path.includes(`${join("agents", "")}`));
+  assert.ok(files.length > 0);
+  for (const file of files) {
+    const doc = parse(file.content) as { role?: string; harness?: unknown; model?: unknown };
+    assert.equal(typeof doc.role, "string");
+    assert.ok(doc.role && doc.role.length > 0);
+    assert.equal(doc.harness, undefined);
+    assert.equal(doc.model, undefined);
   }
 });
 
