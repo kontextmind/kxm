@@ -23,6 +23,9 @@ blocked_by: []
 
 # Unified plan synthesis 2026-09-24 (Fable)
 
+> [!NOTE]
+> Witness usernames in this note (`kxm-witness-admin` and `kxm-witness-other`) predate [ADR-0006](../../docs/adr/ADR-0006-machine-account-names.md). Renames wait for an approved inventory. Do not invent a replacement for a specific account.
+
 Claude Fable (high effort) synthesis of every open task across the plan set. Run 2026-09-24: $10.05, 70 turns, 608 s. **Input gap:** Fable's sandbox could not read the session plan, so rows it marks `[transcribe from session file]` must be reconciled against `2026-09-24-session-handoff.md`. The session plan wins every conflict. Not yet applied: no plan files were deleted or moved.
 
 Gathering is complete. Here is the synthesis.

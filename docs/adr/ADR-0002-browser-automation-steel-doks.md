@@ -4,13 +4,13 @@ id: "ADR-0002"
 type: "adr"
 title: "Self-hosted Steel on DOKS for reusable browser automation and human takeover"
 project: "kxm"
-status: "accepted"
+status: "superseded"
 owner: "@operator"
 created: "2026-09-14"
 updated: "2026-09-27"
 authority: "decision"
 confidence: "verified"
-summary: "Adopt self-hosted Steel on DigitalOcean Kubernetes (DOKS) with agent-browser and Playwright as KXM's primary browser automation infrastructure."
+summary: "The 2026-09-14 choice of self-hosted Steel. The DOKS deployment in this record was superseded on 2026-09-27 by ADR-0007. Obscura is the Playwright default (ADR-0005)."
 tags: ["architecture", "decision", "browser", "steel", "doks", "playwright"]
 related: ["docs/guides/browser-automation.md", "docs/guides/agent-skills.md", "docs/adr/ADR-0005-obscura-default-playwright.md"]
 details:
@@ -20,10 +20,14 @@ details:
     - "Provide dual exploratory (agent-browser) and regression (Playwright) interfaces"
     - "Enforce strict credential isolation via pass-cli"
   supersedes: null
-  superseded_by: null
+  superseded_by: "ADR-0007"
 ---
 
 # ADR-0002: Self-hosted Steel on DOKS for reusable browser automation
+
+## Status
+
+Superseded on 2026-09-27 by [ADR-0007](ADR-0007-steel-caddy-authentik.md) for where Steel runs and how clients authenticate. [ADR-0005](ADR-0005-obscura-default-playwright.md) keeps Obscura as the Playwright default. The sections below are the 2026-09-14 decision. They are not the current deployment. Steel and Caddy do not enforce `STEEL_API_KEY`.
 
 ## Context and problem statement
 
@@ -100,8 +104,7 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 
 - **Verification**: Health endpoint `$STEEL_API_URL/v1/health` verified with HTTP 200 and Let's Encrypt TLS.
 - **Integration Test**: `test/core/browser.test.ts` validates session lifecycle, CDP endpoint formatting, takeover transitions, and secret redaction.
-- **Security Check**: `pass-cli` verified as the authoritative store for Steel credentials in the operators' password manager.
-- **Edge auth (2026-09-27)**: `steel.kontextmind.com` and `steel.theneuro.me`, including the CDP WebSocket, are behind Authentik forward auth. Steel does not check `STEEL_API_KEY`. Clients send `Authorization: Basic`. Unauthenticated requests are redirected to `id.kxmd.dev`. The legacy `x-steel-api-key` header and `apiKey` query parameter remain a temporary proxy shim.
+- **Security Check**: `pass-cli` was the credential store named in this 2026-09-14 decision. Current clients read the `svc-steel` credential with `op read`, as [ADR-0007](ADR-0007-steel-caddy-authentik.md) records.
 
 ## Related
 

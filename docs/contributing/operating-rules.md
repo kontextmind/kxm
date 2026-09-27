@@ -2,7 +2,7 @@
 title: "Operating rules"
 description: "Standing instructions from the operator that every agent session on this repository follows, with the date each was given. Read before planning, dispatching, landing, or editing the roadmap."
 audience: "agents and maintainers"
-updated: "2026-09-26"
+updated: "2026-09-27"
 ---
 
 # Operating rules
@@ -57,6 +57,18 @@ replacement.
   `kxm` verbs land; the transport recipes (`impl`, `plan`, `review-*`,
   `impl-bg`) retire last, after one real unit has run through the one-step
   workflows. (2026-09-26.)
+
+## Accounts
+
+- **Machine account names follow [ADR-0006](../adr/ADR-0006-machine-account-names.md).**
+  Platform-wide accounts are `svc-<system>-<purpose>`. Tenant-scoped accounts
+  are `svc-<tenant>-<system>-<purpose>`, where `<tenant>` is the tenant slug.
+  Test, witness, and proof accounts use those shapes with a `test-` prefix
+  and are never members of production groups. Authentik-managed accounts
+  (outposts and `ak-*`) are exempt. Recorded names such as `kxm-agent`,
+  `kxm-witness-*`, `witness9`, and `kxmdproof` stay until an approved
+  inventory. Do not invent a replacement for a specific account.
+  (2026-09-27.)
 
 ## Decisions and debt
 

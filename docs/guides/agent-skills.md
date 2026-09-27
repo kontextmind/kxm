@@ -68,7 +68,7 @@ Tools map the same way: peer tools to `kxm-peer`, workflow tools to `kxm-workflo
 
 ## Browser automation skills
 
-Playwright testing and verification use Obscura ([ADR-0005](../adr/ADR-0005-obscura-default-playwright.md)). The Steel skills cover human takeover, MFA, and the live session viewer. Those hosts sit behind Authentik forward auth: send `Authorization: Basic` (`STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`) and keep the credential out of URLs. `kxm-browser-verify` owns `vision`. The other browser skills own no `kxm` command. See [Browser automation](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
+Playwright testing and verification use Obscura ([ADR-0005](../adr/ADR-0005-obscura-default-playwright.md)). The Steel skills cover remote and hosted browsing, human takeover, MFA, and the live session viewer. Steel is `https://steel.kontextmind.com`, reached only through Caddy and Authentik ([ADR-0007](../adr/ADR-0007-steel-caddy-authentik.md)). Send `Authorization: Basic` (`STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`) and keep the credential out of URLs. `STEEL_API_KEY` is deprecated and is not enforced. `kxm` 0.7.135 or newer is required for Steel. `kxm-browser-verify` owns `vision`. The other browser skills own no `kxm` command. See [Browser automation](browser-automation.md).
 
 | Skill | Use it to |
 |---|---|

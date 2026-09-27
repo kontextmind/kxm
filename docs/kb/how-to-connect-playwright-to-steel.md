@@ -43,16 +43,19 @@ const { url, headers } = formatCDPConnect(
 );
 ```
 
-The URL has this shape:
+The URL has this shape. The session field `websocketUrl` is the origin
+`wss://steel.kontextmind.com/` (it used to be `ws://steel-browser/`). The
+connect path is `/v1/devtools`:
 
 ```text
-wss://<steel-host>/v1/devtools?sessionId=<session-id>
+wss://steel.kontextmind.com/v1/devtools?sessionId=<session-id>
 ```
 
 `headers` is `{ Authorization: "Basic <base64>" }`. Pass that object to
-Playwright. Do not log it. A legacy `STEEL_API_KEY` still appends `apiKey` to
-the URL for the temporary proxy shim; prefer the Authentik variables so the
-credential stays out of the URL.
+Playwright. Do not log it. `STEEL_API_KEY` is deprecated and is not enforced
+by Steel or Caddy. Do not put `apiKey` on the URL. `STEEL_AUTH_HEADER`, then
+`STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, override it.
+`kxm` 0.7.135 or newer is required.
 
 ## 2. Connect in Playwright
 

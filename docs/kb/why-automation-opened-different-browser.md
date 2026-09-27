@@ -42,6 +42,7 @@ You expected automation to run on Obscura, or on a Steel takeover session, but a
      opens a local browser.
    - **Fix:** use `resolveObscuraCdpEndpoint()` (default
      `http://127.0.0.1:9222`). For a Steel takeover session, set
-     `KXM_BROWSER=steel` and load `STEEL_API_URL` plus `STEEL_AUTH_USER` and
-     `STEEL_AUTH_TOKEN` (or `STEEL_AUTH_BASIC`). A legacy `STEEL_API_KEY` still
-     works through the proxy shim and warns once.
+     `KXM_BROWSER=steel` and load `STEEL_AUTH_BASIC` with `op read` (or
+     `STEEL_AUTH_HEADER`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`).
+     `STEEL_API_KEY` is deprecated. Steel and Caddy do not enforce it.
+     `kxm` 0.7.135 or newer is required for Steel.

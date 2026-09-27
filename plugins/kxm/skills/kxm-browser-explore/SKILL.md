@@ -21,11 +21,12 @@ Use this skill for exploratory navigation, DOM inspection, scraping, and interac
 Ensure an active Steel session exists and obtain its CDP endpoint:
 
 ```bash
-# CDP URL only. The Authentik credential is an Authorization header, not a query parameter.
-CDP_URL="wss://<steel-host>/v1/devtools?sessionId=<sessionId>"
+# CDP path only. The session websocketUrl is wss://steel.kontextmind.com/.
+# The Authentik credential is an Authorization header, not a query parameter.
+CDP_URL="wss://steel.kontextmind.com/v1/devtools?sessionId=<sessionId>"
 ```
 
-Build that URL with `formatCDPConnect()` so the `Authorization: Basic` header is available for the handshake. `STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, supplies it. A Bearer token is not accepted.
+Build that URL with `formatCDPConnect()` so the `Authorization` header is available for the handshake. Precedence is `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`. Those override `STEEL_API_KEY`, which Steel and Caddy do not enforce. A Bearer token is not accepted. `kxm` 0.7.135 or newer is required. Read `basic_auth` with `op read` and do not write it to disk.
 
 ### 2. Connect a client that can send the header
 

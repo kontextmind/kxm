@@ -22,23 +22,24 @@ browser can keep running on your Steel deployment until its timeout.
 
 ## 1. List active sessions
 
-Load `STEEL_API_URL`, `STEEL_AUTH_USER`, and `STEEL_AUTH_TOKEN` from your secret
-manager first. With `pass-cli`, for example:
+Load the `svc-steel` credential from 1Password into this process. Do not write
+it to disk. `STEEL_API_URL` defaults to `https://steel.kontextmind.com`.
+`STEEL_API_KEY` is deprecated and is not enforced.
 
 ```bash
-export STEEL_API_URL="https://<steel-host>"
-export STEEL_AUTH_USER="svc-steel"
-export STEEL_AUTH_TOKEN="$(pass-cli item view --vault-name "<vault>" --item-title "<item>" --field password)"
-basic="$(printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n')"
-
-printf 'Authorization: Basic %s\n' "$basic" | curl -sS -H @- "$STEEL_API_URL/v1/sessions" | jq .
+export STEEL_AUTH_BASIC="$(op read 'op://kontextmind/Steel (svc-steel)/basic_auth')"
+case "$STEEL_AUTH_BASIC" in
+  Basic\ *) header="$STEEL_AUTH_BASIC" ;;
+  *) header="Basic $STEEL_AUTH_BASIC" ;;
+esac
+printf 'Authorization: %s\n' "$header" | curl -sS -H @- "${STEEL_API_URL:-https://steel.kontextmind.com}/v1/sessions" | jq .
 ```
 
 ## 2. Release an orphaned session
 
 ```bash
-printf 'Authorization: Basic %s\n' "$basic" \
-  | curl -sS -X POST -H @- "$STEEL_API_URL/v1/sessions/<session-id>/release"
+printf 'Authorization: %s\n' "$header" \
+  | curl -sS -X POST -H @- "${STEEL_API_URL:-https://steel.kontextmind.com}/v1/sessions/<session-id>/release"
 ```
 
 ## 3. Sweep orphans with the KXM client

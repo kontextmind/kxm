@@ -200,21 +200,23 @@ The Runtime supervisor runs `kxm run` workflows and syncs their summaries to the
 
 ## Browser automation
 
-Playwright testing and verification use Obscura. Steel is for human takeover, MFA, and the live session viewer. `resolveBrowserCdpEndpoint()` in `plugins/kxm/src/browser.ts` returns the CDP URL. `resolveBrowserCdpConnect()` returns that URL and the handshake headers, and `connectBrowserOverCdp()` passes them to `chromium.connectOverCDP`. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it. See [Browser automation](../guides/browser-automation.md).
+Playwright testing and verification use Obscura. Steel is for remote and hosted browsing, human takeover, MFA, and the live session viewer. `resolveBrowserCdpEndpoint()` in `plugins/kxm/src/browser.ts` returns the CDP URL. `resolveBrowserCdpConnect()` returns that URL and the handshake headers, and `connectBrowserOverCdp()` passes them to `chromium.connectOverCDP`. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it. Steel needs `kxm` 0.7.135 or newer. See [Browser automation](../guides/browser-automation.md) and [ADR-0007](../adr/ADR-0007-steel-caddy-authentik.md).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `KXM_BROWSER` | `obscura` | `obscura` selects the Obscura CDP URL and sends no Steel headers. `steel` selects `formatCDPConnect()` (the session URL plus `Authorization`, or the legacy API-key header) and requires a session id. Any other value throws |
+| `KXM_BROWSER` | `obscura` | `obscura` selects the Obscura CDP URL and sends no Steel headers. `steel` selects `/v1/devtools` plus `Authorization` and requires a session id. Any other value throws |
 | `OBSCURA_CDP_URL` | `http://127.0.0.1:${OBSCURA_PORT:-9222}` | CDP URL passed to `chromium.connectOverCDP()`. When set, it wins over `OBSCURA_PORT` for that URL |
 | `OBSCURA_PORT` | `9222` | TCP port for `obscura serve`. Used in the default CDP URL when `OBSCURA_CDP_URL` is unset. The launcher refuses to start when this port disagrees with the port in `OBSCURA_CDP_URL` |
-| `STEEL_API_URL` | A KontextMind-operated deployment | Base URL of your Steel API. Set it before using `KXM_BROWSER=steel` |
+| `STEEL_API_URL` | `https://steel.kontextmind.com` | Base URL of the Steel API. `steel.theneuro.me` is an alias of that server |
 | `STEEL_UI_URL` | `$STEEL_API_URL/ui` | Base URL of the Steel session viewer |
-| `STEEL_AUTH_HEADER` | unset | Full `Authorization` value. Wins over the other Steel auth variables |
+| `STEEL_AUTH_HEADER` | unset | Full `Authorization` value. First among the Steel auth variables |
 | `STEEL_AUTH_BASIC` | unset | `base64(user:token)`, with or without a leading `Basic` prefix. Sent as `Authorization: Basic` |
-| `STEEL_AUTH_USER` | unset | Authentik username. Used with `STEEL_AUTH_TOKEN`. An incomplete pair fails closed |
+| `STEEL_AUTH_USER` | unset | Authentik username `svc-steel`. Used with `STEEL_AUTH_TOKEN`. An incomplete pair fails closed |
 | `STEEL_AUTH_TOKEN` | unset | Authentik app password. Used with `STEEL_AUTH_USER` |
-| `STEEL_API_KEY` | A `pass-cli` lookup | Deprecated. Sent as `x-steel-api-key` and as `?apiKey=` on the CDP URL for the temporary proxy shim. The library warns once. Not sent when an Authentik variable is set |
-| `USE_PASS_CLI` | enabled | Set to `false` to disable the legacy `STEEL_API_KEY` `pass-cli` fallback |
+| `STEEL_API_KEY` | unset | Deprecated. Steel and Caddy do not enforce it. The three variables above override it. The library warns once |
+| `USE_PASS_CLI` | enabled | Set to `false` to skip the legacy `STEEL_API_KEY` lookup. That lookup does not authenticate |
+
+`STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` with `STEEL_AUTH_TOKEN`, override `STEEL_API_KEY`. Load field `basic_auth` from 1Password vault `kontextmind`, item `Steel (svc-steel)`, with `op read` into `STEEL_AUTH_BASIC`. Do not write the value to disk. The CDP path is `/v1/devtools` with an `Authorization` header. Sessions return `websocketUrl` `wss://steel.kontextmind.com/`.
 
 Obscura's own `OBSCURA_TIMEZONE` (default `Europe/Berlin`) and `OBSCURA_CDP_TOKEN` (required only for a non-loopback bind) are read by the Obscura process, not by KXM.
 

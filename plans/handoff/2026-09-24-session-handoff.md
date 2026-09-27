@@ -22,6 +22,9 @@ blocked_by: []
 
 # Session handoff 2026-09-24
 
+> [!NOTE]
+> Machine usernames in this handoff (`kxm-provisioner`, `agent-ilo-asus`) predate [ADR-0006](../../docs/adr/ADR-0006-machine-account-names.md). Renames wait for an approved inventory. Do not invent a replacement for a specific account.
+
 ## State at handoff
 
 - `main` = `origin/main` = `7561b5b` (Opus admitted as planner/reviewer-arch). No open PRs or issues. The working tree was clean before this branch.

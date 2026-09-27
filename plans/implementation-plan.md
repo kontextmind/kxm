@@ -131,6 +131,33 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Decided
 
+- **Steel reachability and machine account names (2026-09-27).**
+  Steel LXC 240 (startup order 40) is `steel.kontextmind.com`;
+  `steel.theneuro.me` is an alias. The only path is Caddy on VM 230
+  `kxmd-proxy` plus Authentik forward auth. Direct LAN, tailnet, and
+  host-forward access is blocked. Sessions return `websocketUrl`
+  `wss://steel.kontextmind.com/`. CDP is `/v1/devtools` with
+  `Authorization`. Groups: `steel-users`, `kxmd-users`, `kxmd-admins`,
+  `kxmd-owners`. `STEEL_API_KEY` is not enforced. Clients use `svc-steel`
+  via `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then
+  `STEEL_AUTH_USER`+`STEEL_AUTH_TOKEN`. `STEEL_API_URL` defaults to
+  `https://steel.kontextmind.com`. Credential: 1Password vault
+  `kontextmind`, item `Steel (svc-steel)`, field `basic_auth`, `op read`,
+  never written to disk. `kxm` >= 0.7.135. Obscura stays the Playwright
+  default. Record: [ADR-0007](../docs/adr/ADR-0007-steel-caddy-authentik.md).
+  Proxmox boot order (VMID, `up` seconds): firewall 200, gateway 201,
+  kxmd-pg 220 up=30, kxmd-temporal 221 up=40, kxmd-services / kxm-control
+  300 up=30, kxmd-studio / hub 241 up=20. VM 300 is `kxmd-services`. VM 230
+  is `kxmd-proxy`. Ops:
+  [deploy.md](../docs/operations/deploy.md#boot-the-kxmd-proxmox-host).
+  New machine accounts: `svc-<system>-<purpose>`, tenant
+  `svc-<tenant>-<system>-<purpose>`, test/witness/proof with a `test-`
+  prefix and never in production groups. Authentik outposts and `ak-*`
+  are exempt. Recorded names (`kxm-agent`, `kxm-witness-*`, `witness9`,
+  `kxmdproof`, and the 2026-09-25 `kxmd-g-*` / `kxmd-h1-*` service shapes)
+  are not renamed until an approved inventory. Do not invent replacements.
+  Record: [ADR-0006](../docs/adr/ADR-0006-machine-account-names.md).
+
 - **Workforce ids (2026-09-27).** Role ids stay the purpose vocabulary
   (`planner`, `writer`, `reviewer-arch`, `reviewer-cli`). Agent ids and
   agent-step ids use that same vocabulary. Route ids are
