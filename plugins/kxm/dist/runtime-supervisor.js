@@ -30773,13 +30773,22 @@ function recoverKxmRun(context, runId, request) {
 }
 
 // plugins/kxm/src/oneshot-producer.ts
-function lastBalancedJsonObject(text) {
+function isClosingFence(line) {
+  return /^(`{3,}|~{3,})\s*$/.test(line.trim());
+}
+function stripOneClosingFence(trimmed) {
+  const lineBreak = Math.max(trimmed.lastIndexOf("\n"), trimmed.lastIndexOf("\r"));
+  const lastLine = lineBreak < 0 ? trimmed : trimmed.slice(lineBreak + 1);
+  if (!isClosingFence(lastLine)) return trimmed;
+  if (lineBreak < 0) return "";
+  return trimmed.slice(0, lineBreak).trimEnd();
+}
+function lastTopLevelObjectSpan(text) {
   let depth = 0;
   let inString = false;
   let escape2 = false;
   let start = -1;
-  let lastStart = -1;
-  let lastEnd = -1;
+  let last;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (inString) {
@@ -30806,51 +30815,28 @@ function lastBalancedJsonObject(text) {
     if (ch === "}") {
       if (depth === 0) continue;
       depth--;
-      if (depth === 0) {
-        lastStart = start;
-        lastEnd = i;
-      }
+      if (depth === 0 && start >= 0) last = { start, end: i + 1 };
     }
   }
-  if (lastStart < 0) return void 0;
-  return text.slice(lastStart, lastEnd + 1);
-}
-function standaloneObjectText(text) {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return void 0;
-  const slice = lastBalancedJsonObject(trimmed);
-  return slice === trimmed ? slice : void 0;
-}
-function outcomeOfObjectText(text) {
-  const slice = standaloneObjectText(text);
-  if (slice === void 0) return void 0;
-  try {
-    const result = JSON.parse(slice);
-    if (!result || typeof result !== "object" || Array.isArray(result)) return void 0;
-    const outcome = result.outcome;
-    return typeof outcome === "string" ? outcome : void 0;
-  } catch {
-    return void 0;
-  }
-}
-function isClosingFence(line) {
-  return /^(`{3,}|~{3,})\s*$/.test(line.trim());
+  return last;
 }
 function determineOutcome(text, allowedOutcomes) {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
-  const whole = outcomeOfObjectText(trimmed);
-  if (whole !== void 0) return allowedOutcomes.includes(whole) ? whole : "failed";
-  const lines = trimmed.split(/\r?\n/);
-  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
-  if (lines.length > 0 && isClosingFence(lines[lines.length - 1])) {
-    lines.pop();
-    while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  const body = stripOneClosingFence(trimmed);
+  if (!body) return "failed";
+  const span = lastTopLevelObjectSpan(body);
+  if (!span || span.end !== body.length) return "failed";
+  const slice = body.slice(span.start, span.end);
+  try {
+    const result = JSON.parse(slice);
+    if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
+    const outcome = result.outcome;
+    if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
+    return outcome;
+  } catch {
+    return "failed";
   }
-  if (lines.length === 0) return "failed";
-  const declared = outcomeOfObjectText(lines[lines.length - 1]);
-  if (declared === void 0 || !allowedOutcomes.includes(declared)) return "failed";
-  return declared;
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();

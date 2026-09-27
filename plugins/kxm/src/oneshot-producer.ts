@@ -51,19 +51,30 @@ export interface KxmOneShotProducer extends KxmProducer {
   close(): Promise<void>;
 }
 
-// The last complete top-level `{...}`. One forward pass tracks strings,
-// escapes, and brace depth. A `{` that lifts depth from 0 to 1 opens a
-// candidate; the matching `}` that returns depth from 1 to 0 closes it.
-// The last such span wins. Callers accept the span only when it is the
-// entire trimmed reply or the entire final line; an inner object is not
-// an outcome.
-function lastBalancedJsonObject(text: string): string | undefined {
+function isClosingFence(line: string): boolean {
+  return /^(`{3,}|~{3,})\s*$/.test(line.trim());
+}
+
+// Drop one closing code fence when it is the last line. The caller has already
+// trimmed the reply. Any other tail stays, so prose after the object still fails.
+function stripOneClosingFence(trimmed: string): string {
+  const lineBreak = Math.max(trimmed.lastIndexOf("\n"), trimmed.lastIndexOf("\r"));
+  const lastLine = lineBreak < 0 ? trimmed : trimmed.slice(lineBreak + 1);
+  if (!isClosingFence(lastLine)) return trimmed;
+  if (lineBreak < 0) return "";
+  return trimmed.slice(0, lineBreak).trimEnd();
+}
+
+// Last top-level `{...}` in one forward pass. Strings and escapes hide
+// braces. A `{` that lifts depth from 0 to 1 opens a candidate; the `}`
+// that returns depth to 0 closes it. An object that opens while an outer
+// object is still open is not recorded. `end` is exclusive.
+function lastTopLevelObjectSpan(text: string): { start: number; end: number } | undefined {
   let depth = 0;
   let inString = false;
   let escape = false;
   let start = -1;
-  let lastStart = -1;
-  let lastEnd = -1;
+  let last: { start: number; end: number } | undefined;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (inString) {
@@ -90,60 +101,34 @@ function lastBalancedJsonObject(text: string): string | undefined {
     if (ch === "}") {
       if (depth === 0) continue;
       depth--;
-      if (depth === 0) {
-        lastStart = start;
-        lastEnd = i;
-      }
+      if (depth === 0 && start >= 0) last = { start, end: i + 1 };
     }
   }
-  if (lastStart < 0) return undefined;
-  return text.slice(lastStart, lastEnd + 1);
+  return last;
 }
 
-// A standalone object is one balanced `{...}` covering the entire trimmed text.
-function standaloneObjectText(text: string): string | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return undefined;
-  const slice = lastBalancedJsonObject(trimmed);
-  return slice === trimmed ? slice : undefined;
-}
-
-function outcomeOfObjectText(text: string): string | undefined {
-  const slice = standaloneObjectText(text);
-  if (slice === undefined) return undefined;
-  try {
-    const result: unknown = JSON.parse(slice);
-    if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
-    const outcome = (result as Record<string, unknown>).outcome;
-    return typeof outcome === "string" ? outcome : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function isClosingFence(line: string): boolean {
-  return /^(`{3,}|~{3,})\s*$/.test(line.trim());
-}
-
-// The whole reply is one JSON object, or the object stands alone on the final
-// line. A closing code fence after that line is allowed. Prose after the
-// object, an ambiguous tail, a truncated reply, and a missing or disallowed
-// outcome settle failed.
+// The outcome object is the top-level object whose end is the end of the
+// trimmed reply. One closing code fence may follow it. Then JSON.parse, a
+// plain object, and a string outcome that the step allows. Anything else
+// is failed: prose after the object, no object, a disallowed outcome, or
+// an inner object at the end of a truncated outer object.
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
-  const whole = outcomeOfObjectText(trimmed);
-  if (whole !== undefined) return allowedOutcomes.includes(whole) ? whole : "failed";
-  const lines = trimmed.split(/\r?\n/);
-  while (lines.length > 0 && lines[lines.length - 1]!.trim() === "") lines.pop();
-  if (lines.length > 0 && isClosingFence(lines[lines.length - 1]!)) {
-    lines.pop();
-    while (lines.length > 0 && lines[lines.length - 1]!.trim() === "") lines.pop();
+  const body = stripOneClosingFence(trimmed);
+  if (!body) return "failed";
+  const span = lastTopLevelObjectSpan(body);
+  if (!span || span.end !== body.length) return "failed";
+  const slice = body.slice(span.start, span.end);
+  try {
+    const result: unknown = JSON.parse(slice);
+    if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
+    const outcome = (result as Record<string, unknown>).outcome;
+    if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
+    return outcome;
+  } catch {
+    return "failed";
   }
-  if (lines.length === 0) return "failed";
-  const declared = outcomeOfObjectText(lines[lines.length - 1]!);
-  if (declared === undefined || !allowedOutcomes.includes(declared)) return "failed";
-  return declared;
 }
 
 export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}): KxmOneShotProducer {
