@@ -109,7 +109,7 @@
     {
       "name": "kxm-browser-verify",
       "path": "./skills/kxm-browser-verify",
-      "ownedCommands": [],
+      "ownedCommands": ["vision"],
       "intent": "Reproduce a UI bug, gather evidence, and write a durable Playwright test"
     },
     {
