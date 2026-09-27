@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated: 2026-09-26.
+Updated: 2026-09-27.
 
 Active blockers: 5. Active questions: 12. Later phases are excluded from both counts.
 
@@ -192,7 +192,7 @@ Goal: Tracker items that are not already tasks on the phases above.
 
 - Tracking says delivery order is Still open, the one queue. This roadmap orders phases as the brief requires, so the Python proposal is Next while S5 login is still open on the hosting phase.
 
-[Phase page](phases/09-still-open.md)
+[Phase page](phases/10-still-open.md)
 
 ## Later
 
@@ -243,6 +243,33 @@ None.
 
 [Phase page](phases/08-usage-cost.md)
 
+### Bare kxm first run
+
+Status: later. Horizon: later.
+
+Source: `plans/plan-kxm-harness-first-run.md`.
+
+Goal: On a TTY, bare kxm opens the existing dashboard and a first-run panel that probes harnesses, hands auth to each harness or an op:// reference, and writes user defaults. Static workflow files stay the trust anchor. A hybrid composer is proposed and not selected.
+
+#### Open tasks
+
+- `first-run-p0` P0 sequence gate: dependencies on main before any product change.
+- `first-run-p1` P1 read-only kxm doctor.
+- `first-run-wizard` P2 through P5 bare kxm TTY, wizard, DeepSeek honesty, and repair.
+- `first-run-hybrid` P6 through P8 hybrid workflow catalog, only if the operator accepts option B.
+
+#### Blockers
+
+- omp-alignment P3 through P7 are still open, and P4 fallback is a precondition.
+- kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
+
+#### Questions
+
+- The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.
+- Option B, a validated workflow file composed from a catalog, waits for an operator decision. The plan recommends it and does not schedule it.
+
+[Phase page](phases/09-harness-first-run.md)
+
 ## Phase index
 
 | Phase | Status | Horizon | Page |
@@ -255,7 +282,8 @@ None.
 | Cross-host | open | soon | [page](phases/06-cross-host.md) |
 | Workflow modes | later | later | [page](phases/07-workflow-modes.md) |
 | Usage and cost | later | later | [page](phases/08-usage-cost.md) |
-| Still open | open | soon | [page](phases/09-still-open.md) |
+| Bare kxm first run | later | later | [page](phases/09-harness-first-run.md) |
+| Still open | open | soon | [page](phases/10-still-open.md) |
 
 ## Goal
 
@@ -273,9 +301,9 @@ Verified: 2026-09-26.
 | --- | --- | --- |
 | plans/plan-greenfield-infra.md is in this checkout | `docs/architecture/hosted-direction.md` | missing |
 | docs/operations.md is the hosting recipe path named by the tracker | `docs/architecture/inventory.md` | missing |
-| plans/evidence/python-migration-mg0.json is in this checkout | `docs/roadmap/phases/01-python-migration.md` | missing |
-| a python/ tree is in this checkout | `docs/roadmap/phases/01-python-migration.md` | missing |
-| the S3 test title in the tracker matches a test title in this checkout | `docs/roadmap/phases/03-per-tenant-hosting.md` | mismatch |
+| plans/evidence/python-migration-mg0.json is in this checkout | `docs/roadmap/phases/03-python-migration.md` | missing |
+| a python/ tree is in this checkout | `docs/roadmap/phases/03-python-migration.md` | missing |
+| the S3 test title in the tracker matches a test title in this checkout | `docs/roadmap/phases/05-per-tenant-hosting.md` | mismatch |
 
 ## Constraints
 
@@ -296,3 +324,4 @@ No confirmed contacts.
 - 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
+- 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.

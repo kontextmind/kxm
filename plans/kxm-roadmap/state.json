@@ -1,6 +1,6 @@
 {
   "schema": "kxm.roadmap.v1",
-  "updated": "2026-09-26",
+  "updated": "2026-09-27",
   "goal": "Record the local-first KXM shape that this checkout can show, and track the proposal and queue items the implementation tracker actually records.",
   "constraints": [
     "SQLite remains the hub store recorded in this checkout.",
@@ -34,6 +34,10 @@
     {
       "date": "2026-09-26",
       "line": "P1 role authority landed (#337): v2 role and model files are live."
+    },
+    {
+      "date": "2026-09-27",
+      "line": "Draft plan for bare kxm first-run, sequenced after role-authority P3-P7."
     }
   ],
   "architecture": {
@@ -60,17 +64,17 @@
       },
       {
         "claim": "plans/evidence/python-migration-mg0.json is in this checkout",
-        "page": "docs/roadmap/phases/01-python-migration.md",
+        "page": "docs/roadmap/phases/03-python-migration.md",
         "status": "missing"
       },
       {
         "claim": "a python/ tree is in this checkout",
-        "page": "docs/roadmap/phases/01-python-migration.md",
+        "page": "docs/roadmap/phases/03-python-migration.md",
         "status": "missing"
       },
       {
         "claim": "the S3 test title in the tracker matches a test title in this checkout",
-        "page": "docs/roadmap/phases/03-per-tenant-hosting.md",
+        "page": "docs/roadmap/phases/05-per-tenant-hosting.md",
         "status": "mismatch"
       }
     ]
@@ -572,6 +576,68 @@
           "title": "Keep usage, quota, metered cost, list cost, and unknown distinct",
           "status": "open",
           "evidence": "",
+          "template": "none",
+          "detail": "brief"
+        }
+      ]
+    },
+    {
+      "id": "first-run",
+      "slug": "harness-first-run",
+      "title": "Bare kxm first run",
+      "goal": "On a TTY, bare kxm opens the existing dashboard and a first-run panel that probes harnesses, hands auth to each harness or an op:// reference, and writes user defaults. Static workflow files stay the trust anchor. A hybrid composer is proposed and not selected.",
+      "source": "plans/plan-kxm-harness-first-run.md",
+      "priority": "later",
+      "blockers": [
+        "omp-alignment P3 through P7 are still open, and P4 fallback is a precondition.",
+        "kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0."
+      ],
+      "questions": [
+        "The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.",
+        "Option B, a validated workflow file composed from a catalog, waits for an operator decision. The plan recommends it and does not schedule it."
+      ],
+      "tasks": [
+        {
+          "id": "first-run-p0",
+          "title": "P0 sequence gate: dependencies on main before any product change",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-kxm-harness-first-run.md#6-sequence",
+          "doneCriterion": "The cloud-bind flag, the naming validator, and omp P3 through P7 are on main, and this plan says so.",
+          "evidenceNeeded": "Commit or PR links in the plan change log.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "first-run-p1",
+          "title": "P1 read-only kxm doctor",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-kxm-harness-first-run.md#7-phases",
+          "doneCriterion": "kxm doctor --json reports harness, auth, version, project, provenance, hub scope, and the onboarding marker, and writes nothing.",
+          "evidenceNeeded": "A named test in test/core/cli.test.ts or test/core/harness.test.ts.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "first-run-wizard",
+          "title": "P2 through P5 bare kxm TTY, wizard, DeepSeek honesty, and repair",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-kxm-harness-first-run.md#4-target-experience",
+          "doneCriterion": "A TTY with no args opens the existing dash. A non-TTY still exits 2. The wizard writes no secret into .kxm. doctor --repair is idempotent.",
+          "evidenceNeeded": "CLI tests for TTY, --yes, and secret refusal.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "first-run-hybrid",
+          "title": "P6 through P8 hybrid workflow catalog, only if the operator accepts option B",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-kxm-harness-first-run.md#53-recommendation",
+          "doneCriterion": "A composed file is a normal kxm.workflow.v1 document. A code intent that drops a critic is refused. Release selects land.yaml.",
+          "evidenceNeeded": "Catalog tests and a receipt that names the workflow hash.",
           "template": "none",
           "detail": "brief"
         }

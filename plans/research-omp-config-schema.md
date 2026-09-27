@@ -7,13 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-09-27"
 authority: "hypothesis"
 confidence: "verified"
 summary: "Reference for omp 18.3.1 config: config.yml settings (modelRoles, retry.fallbackChains, task.*, plan, prewalk, advisor, providers), models.yml provider and model schema, agent markdown frontmatter, rules, commands, prompts, hooks, mcp.json, plugin.json, and the absence of a declarative workflow file. Each surface is explained key by key with an example and mapped onto the KXM file that plays the same part. Read from the installed package source, not from docs."
 tags: ["research", "omp", "roles", "roster", "models", "agents", "config"]
 related:
   - plan-omp-config-alignment.md
+  - plan-kxm-harness-first-run.md
   - research-omp-config-examples.md
   - evidence/omp-config-settings-18.3.1.md
   - plan-usage-cost-quota-tracking.md

@@ -4,7 +4,7 @@ Status: open. Horizon: next.
 
 Source: `plans/plan-lane-cli.md`.
 
-Updated: 2026-09-26.
+Updated: 2026-09-27.
 
 The kxm verbs that let the planner dispatch a writer into a worktree lane and land its branch without just recipes: lane, land, assign, docs, and bounded one-shot steps.
 

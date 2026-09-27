@@ -1,6 +1,6 @@
 # Master plan
 
-Updated: 2026-09-26.
+Updated: 2026-09-27.
 
 Record the local-first KXM shape that this checkout can show, and track the proposal and queue items the implementation tracker actually records.
 
@@ -207,6 +207,31 @@ None.
 
 - Frontmatter status is draft, blocked_by is empty, and delivery_status is proposed. The tracker's routing and cost questions stay on the Still open phase. This phase stays later.
 
+## Bare kxm first run
+
+Status: later. Horizon: later.
+
+Source: `plans/plan-kxm-harness-first-run.md`.
+
+On a TTY, bare kxm opens the existing dashboard and a first-run panel that probes harnesses, hands auth to each harness or an op:// reference, and writes user defaults. Static workflow files stay the trust anchor. A hybrid composer is proposed and not selected.
+
+### Tasks
+
+- `first-run-p0` P0 sequence gate: dependencies on main before any product change.
+- `first-run-p1` P1 read-only kxm doctor.
+- `first-run-wizard` P2 through P5 bare kxm TTY, wizard, DeepSeek honesty, and repair.
+- `first-run-hybrid` P6 through P8 hybrid workflow catalog, only if the operator accepts option B.
+
+### Blockers
+
+- omp-alignment P3 through P7 are still open, and P4 fallback is a precondition.
+- kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
+
+### Questions
+
+- The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.
+- Option B, a validated workflow file composed from a catalog, waits for an operator decision. The plan recommends it and does not schedule it.
+
 ## Still open
 
 Status: open. Horizon: soon.
@@ -246,3 +271,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
+- 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
