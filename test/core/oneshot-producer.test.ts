@@ -1131,6 +1131,108 @@ test("one-shot refuses a missing model instead of a silent default", async () =>
   }
 });
 
+async function settleOneShotText(text: string, allowedOutcomes: readonly string[]): Promise<string> {
+  const producer = createKxmOneShotProducer({
+    defaultModel: "grok-4.7",
+    probeHarness: (() => ({ detected: true, authenticated: true as const, authMethod: "subscription", issues: [] })) as never,
+    spawnProcess: async () => ({
+      stdout: JSON.stringify({ result: text, usage: { input_tokens: 3, output_tokens: 2 } }),
+      stderr: "",
+      code: 0,
+      started: true,
+      observedChildExit: true,
+    }),
+  });
+  try {
+    const result = await producer.produce({
+      runId: "run_outcome",
+      harness: "grok",
+      stepId: "review",
+      stepAttempt: 1,
+      assignmentId: "asg_outcome",
+      attemptId: "att_outcome",
+      agentId: "critic",
+      capability: "secret",
+      allowedOutcomes: [...allowedOutcomes],
+      signal: new AbortController().signal,
+    });
+    return result.outcome;
+  } finally {
+    await producer.close();
+  }
+}
+
+test("prose followed by an outcome object yields the allowed outcome", async () => {
+  const text = [
+    "## Review",
+    "PASS appears in the brief and does not settle the step.",
+    '{"outcome":"passed","summary":"clean transport"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("a bare JSON outcome object still settles", async () => {
+  assert.equal(await settleOneShotText('{"outcome":"passed","summary":"alone"}', ["passed", "failed"]), "passed");
+});
+
+test("prose with no JSON object stays failed", async () => {
+  const text = "Review: PASS\nThe witness is clean and nothing is BLOCK.\nNo structured result was returned.";
+  assert.equal(await settleOneShotText(text, ["passed", "failed", "blocked"]), "failed");
+});
+
+test("a JSON object whose outcome is disallowed stays failed", async () => {
+  const text = 'The model answered.\n{"outcome":"passed","summary":"not on the list"}';
+  assert.equal(await settleOneShotText(text, ["failed", "blocked"]), "failed");
+});
+
+test("a JSON object inside an earlier code fence does not win over the last object", async () => {
+  const text = [
+    "Example only:",
+    "```json",
+    '{"outcome":"failed","summary":"fence sample"}',
+    "```",
+    "Actual result:",
+    '{"outcome":"passed","summary":"last object"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("nested braces and braces inside strings parse as the last outcome object", async () => {
+  const text = [
+    'Notes before the result mention {braces} and a sample {"outcome":"failed"}.',
+    '{"outcome":"passed","summary":"he said \\"}\\" and {still}","nested":{"note":"inner } brace","ok":true}}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("an outcome object followed by prose stays failed", async () => {
+  const text = 'Before finishing I would return {"outcome":"passed"}. The tests still fail, so I stopped.';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+  const trailed = '{"outcome":"passed","summary":"declared"}\nThe tests still fail, so I stopped.';
+  assert.equal(await settleOneShotText(trailed, ["passed", "failed"]), "failed");
+});
+
+test("a truncated reply does not settle from an inner object", async () => {
+  const text = '{"outcome":"failed","detail":{"outcome":"passed"}';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a megabyte of unclosed braces still settles the final outcome line", async () => {
+  const prefix = `{${"{".repeat(1024).repeat(1024)}`;
+  const text = `${prefix}\n{"outcome":"failed"}`;
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a final fenced standalone object settles as the allowed outcome", async () => {
+  const text = [
+    "Review notes stay above the result.",
+    "```json",
+    '{"outcome":"passed","summary":"fenced"}',
+    "```",
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
 // Opt-in real test behind KXM_SMOKE
 const smokeTest = process.env.KXM_SMOKE ? test : test.skip;
 smokeTest("real Claude one-shot dispatch behind KXM_SMOKE", async () => {

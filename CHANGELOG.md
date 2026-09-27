@@ -6,8 +6,6 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
-- **Playwright uses Obscura by default.** `resolveBrowserCdpEndpoint()` returns `OBSCURA_CDP_URL` or `http://127.0.0.1:${OBSCURA_PORT:-9222}`. `KXM_BROWSER=steel` still returns the Steel session CDP URL. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it with `--allow-private-network`. `npm run e2e` runs the Playwright smoke test in `test/e2e/` over CDP and does not run `playwright install`. Steel remains the path for human takeover, MFA, and the live session viewer. See [ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md) and [How do I connect Playwright to Obscura?](docs/kb/how-to-connect-playwright-to-obscura.md).
-
 - **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**
   The bound is the step `timeoutMs`, or the project `limits.agentStepTimeoutMs`
   when the step omits it (minimum 60 seconds, default one hour). A wider step
@@ -33,6 +31,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   A required review is reported. The `land` workflow in `.kxm/workflows/land.yaml`
   runs the same gates and may be refused until gate-only workflows are supported.
   See the [CLI reference](docs/reference/cli-reference.md#kxm-land).
+
 - **`kxm assign` is the entry to the developer assignment runner.**
   `run`, `witness`, `plan-current`, `attribute`, `observe-cost`, `accept` and
   `change-report` spawn `scripts/assignment-run.mjs` with the same flags as the
@@ -138,19 +137,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   hub check and still lose run history, the prompts that explain it, the project definition,
   and the bindings that make the box reproducible.
 
+- **Playwright uses Obscura by default.** `resolveBrowserCdpEndpoint()` returns `OBSCURA_CDP_URL` or `http://127.0.0.1:${OBSCURA_PORT:-9222}`. `KXM_BROWSER=steel` still returns the Steel session CDP URL. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it with `--allow-private-network`. `npm run e2e` runs the Playwright smoke test in `test/e2e/` over CDP and does not run `playwright install`. Steel remains the path for human takeover, MFA, and the live session viewer. See [ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md) and [How do I connect Playwright to Obscura?](docs/kb/how-to-connect-playwright-to-obscura.md).
+
 ### Changed
 
-- **Steel clients authenticate to Authentik with `Authorization: Basic`.**
-  `STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, set that
-  header on Steel HTTP requests and on the CDP options from `formatCDPConnect()`.
-  `KXM_BROWSER=steel` passes those headers through `connectBrowserOverCdp()`
-  into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
-  headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
-  those variables are set. A 302 to the identity provider fails closed and does
-  not follow the login redirect. `STEEL_API_KEY` still sends the legacy
-  `x-steel-api-key` header and `apiKey` query parameter for the temporary proxy
-  shim, and warns once. See
-  [Browser automation](docs/guides/browser-automation.md).
 - **Dispatch reads role and model files, and agents bind a role.**
   `scripts/roster-policy.mjs` builds the developer policy from
   `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.
@@ -162,6 +152,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   admitted and named by no roster, so it is absent from `routes` and the
   lineups. `gemini-agy` is in the writer lineup. An agent `tools.preset`
   may only narrow its role preset; that rule is recorded and enforced in P3.
+
 - **Role and model files are live `kxm.role.v2` and `kxm.model.v2`.**
   `schemas/role.schema.json` and `schemas/model.schema.json` are the files
   `kxm config` validates. Each admitted roster route is a
@@ -219,6 +210,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   the example project and the unsupported-gate fixture now route gate failures on
   `implementation-failure`. **Check your workflows:** a gate step that routes failures only
   on `failed` no longer loads.
+
 - **`kxm run` prints how to drive the run it created, and drive refusals say why.** The
   text output's second line is
   `drive it model-free: kxm runs drive <runId> --simulated --wait (or cancel: kxm runs cancel <runId>)`,
@@ -230,11 +222,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   a workflow that declares `limits.maxAgentTimeMs`, for example, reports `limit_unsupported`
   on that field. Top-level help names the product KXM instead of KontextMind,
   and `kxm init` text output lists each validation issue as `file: code: message`.
+
 - **`kxm suggest` recommends only KXM command skills.** Suggested skills come from the
   command skills shipped in `plugins/kxm/skills` (such as `kxm-workflow`, `kxm-runs`,
   `kxm-peer` and `kxm-context-memory`), never from skills that do not ship
   (`troubleshooting`, `modern-web-guidance`) or from the KontextMind knowledge-plane
   skills.
+
 - **The Claude plugin's MCP errors name the user's next step, and a session appears to
   peers before its first tool call.** An unreachable hub names the URL and `kxm hub start`
   or `/plugin configure kxm@kxm`; `invalid_auth` names the project token; a
@@ -246,6 +240,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   server registers right after the MCP handshake instead of at the first tool call, and it
   leaves the hub when stdin closes. The server instructions point Claude at `kxm_context`
   and at telling the user the next step, in under 800 characters.
+
 - **The Claude plugin README is rewritten, and its tool table is pinned to the MCP
   server.** It covers requirements (`node` on `PATH`, a hub, and the `kxm` CLI for the
   operator only), installing from Claude Code or the shell, each `userConfig` option and
@@ -255,6 +250,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   be entered again), and troubleshooting for each user-directed error. A test fails when
   the README's `## MCP tools` rows and the server's `tools/list` disagree in either
   direction. The configuration docs now say that `kxm_await` waits at most 60 seconds.
+
 - **The skill suite is rescoped: every command has one owning skill, and `kxm-setup` is
   renamed `kxm-mind-setup` with no alias.** `skill-suite.json` declares all 29 bundled
   skills (13 KXM command skills, 7 browser skills, 9 KontextMind knowledge-plane skills),
@@ -269,6 +265,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   stopping where the user reviews and commits `.kxm` changes, and `kxm session brief`
   (which saves a 24-hour operator token) appears only under its operator steps. **Rename:**
   anything that names the `kxm-setup` skill must name `kxm-mind-setup`.
+
 - **Context packets rank by deterministic task relevance.** `kxm context get`,
   `kxm_context` and Runtime dispatch order eligible items by nine keys: open
   contradictions first, project before `_shared` defaults, items that share a word with
@@ -280,6 +277,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   stops smaller ones from fitting, and non-current state and proposed skills no longer
   consume budget. `audit.relevance` reports numbers only (`taskTokens`,
   `matchedCandidates`, and a rounded score per selected item).
+
 - **`kxm_improvement_report` returns ranked, redacted cross-run signals.** Alongside the
   per-area reports, `GET /v1/improvements` returns `signals`: journal entries from the
   project's runs merged by evidence class, then an error's stage, then a normalized
@@ -289,14 +287,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   is labelled `unknown`, never 0; security signals rank first. The journal and
   retrospective loop covers hub webhook runs only; `kxm run` (Runtime) runs have no
   journal yet.
+
 - **Recall ranks exact phrases, then token relevance, then id, and returns a relevance
   per item.** `kxm context recall` and `kxm_recall` previously returned substring matches
   in id order. Items that neither contain the query nor share a word with it are still
   left out, and results still carry metadata only, never summaries.
+
 - **The hub logs task and query sizes, not their text.** `context_packet_assembled` now
   records `taskChars`, `taskTokens` and `matchedCandidates`, and `context_recall` records
   `queryChars` and `queryTokens`. The caller still receives its own request in the
   response.
+
 - **Engine routing records carry an ask identity and only gate-negative outcomes.** Every
   `routing.attempt.recorded` record carries four engine-reserved `providerMetadata` keys,
   written after the producer's so a producer cannot spoof them: `workflowId`, `askSha256`
@@ -306,6 +307,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   only as `blocked` (a back edge) or `failed` (a producer error, an undeclared outcome or a
   failing terminal); acceptance is resolved later from the event log. Records written
   before this change are not backfilled.
+
 - **`improvement.promotionPolicy` reports review readiness and never authorizes.**
   `kxm improve` now reads `improvement.*` and reports, per candidate, `readyForReview` and a
   reason under the configured policy: `manual_pr` is always ready for an operator PR,
@@ -317,12 +319,14 @@ All notable user-facing changes are documented here. The project follows [Semant
   out-of-range thresholds fall back to 10, 0.95 and 0.5.
   `improvement.telemetryHalfLifeDays` orders report rows through `weightedRecurrence` and
   never decides candidacy.
+
 - **`kxm routing report` reads Runtime records by default and counts only event-log
   acceptance as a Runtime pass.** Without `--file` it reads the current project's Runtime
   event store and then `.kxm/logs/telemetry.jsonl` (the same sources as `kxm improve`),
   and `--json` output gains `sources`. A Runtime attempt counts as a pass only when its run
   completed and the step was not re-entered. The ranking code is unchanged, and the rework
   column still reads `transitions`, which Runtime records do not set.
+
 - **`kxm improve --target` is removed.** It was accepted and never applied. Passing it
   is now an unknown-option error. `KXM_IMPROVE_TARGET` still labels telemetry when it is
   written; no report reads that label.
@@ -423,6 +427,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   in both the JSON payload and the prose line, so `--json` consumers are not left with a bare
   code and no way forward; a stored-but-unusable binding otherwise reads later like a
   network fault and gets debugged as one.
+
 - **`kxm hub view` and the session brief label the binding `loopback` or `remote`.**
   "Attached across a network" and "attached on this box" looked identical before, and only
   one of them puts a bearer on a wire. `localhost`, `127.0.0.1`, `::1` and `*.localhost` are
@@ -438,9 +443,22 @@ All notable user-facing changes are documented here. The project follows [Semant
   folder names dropped the `kxm-` prefix. `docs/vnext/` is `docs/contracts/`,
   `examples/vnext/` is `examples/project/`. Dated evidence under `plans/` and
   `.kxm/logs/` keeps its original wording.
+
 - **Read-only run projection:** `GET /v1/runs/:id` folds the event log without
   persisting a projection write, so a read cannot mutate run state or surface a
   false `run_projection_divergent`.
+
+- **Steel clients authenticate to Authentik with `Authorization: Basic`.**
+  `STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, set that
+  header on Steel HTTP requests and on the CDP options from `formatCDPConnect()`.
+  `KXM_BROWSER=steel` passes those headers through `connectBrowserOverCdp()`
+  into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
+  headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
+  those variables are set. A 302 to the identity provider fails closed and does
+  not follow the login redirect. `STEEL_API_KEY` still sends the legacy
+  `x-steel-api-key` header and `apiKey` query parameter for the temporary proxy
+  shim, and warns once. See
+  [Browser automation](docs/guides/browser-automation.md).
 
 ### Removed
 
@@ -452,6 +470,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   Transfer policy from `.kxm/roster.yaml` to the role and model files and
   delete the retired roster before running KXM. KXM refuses a leftover
   `.kxm/roster.yaml`.
+
 - **`.kxm/template-provenance.yaml` was removed from this project, a repository
   change rather than a product change,** because the installed kxm no longer
   recognizes its recorded revision and a project without the file validates as
@@ -459,8 +478,10 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
-- **`kxm vision` is owned by the browser-verify skill.** `plugins/kxm/skill-suite.json` lists `vision` on `kxm-browser-verify`, the skill that already teaches `kxm vision assert`.
+- **A committed checkout counts as authored work, and a one-shot outcome must be a standalone JSON object.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`. A one-shot outcome is accepted when the whole reply is one JSON object, or when that object stands alone on the final line. A closing code fence around the final object is allowed. An object followed by prose, a truncated reply, and an ambiguous tail settle `failed`.
+
 - **The test suite no longer passes `--test-timeout`.** Under `node --test` that flag bounds each file, so coverage on CI timed out `test/core/engine.test.ts` at three minutes. The wall clock in `scripts/run-bounded.mjs` still bounds each script.
+
 - **A git worktree lane registers under its project.** The Runtime registry
   keeps the home row and adds the lane as its own control root and event
   store, with the same project id and home runtime (`lane_of` on the lane
@@ -475,11 +496,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   unsettled run in that lane's event store unless `--force` is set. Unregister
   answers 409 `runtime_project_busy` or `runtime_project_has_lanes` unless the
   body sets `force`.
+
 - **`npm test` exits when the suite finishes.** The script passes
   `--test-force-exit`, so a green run does not sit in the event loop and a
   red run still prints its failures. Two full runs of the suite without the
   flag also exited once the files finished; the handle that kept an earlier
   run alive was not reproduced in this tree.
+
 - **`kxm land` names the pull request from the first commit subject and matches the Release run by time.**
   `--title` sets the title; otherwise the subject of the first commit on the
   branch is used, and a missing subject refuses `land_pr_title_missing`. The
@@ -496,14 +519,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   writes nothing. A `--file` in the shape written through 0.7.92 is refused, and
   `--overwrite` repairs a file left in that shape. See
   `docs/reference/cli-reference.md#kxm-workflow-add`.
+
 - **`kxm workflow add --pick <global-id>` copies the global definition.** In local scope,
   picking a global definition wrote the one-step scaffold under its id and reported
   success. It now writes the global definition's content, with `--description` replacing
   its description, and the loader check refuses one the project cannot load.
+
 - **`kxm role add --pick <global-id>` copies the global role.** In local scope, picking a
   global role wrote an empty `Role <id>` with no skills or roster under its ID. It now
   writes the global role's content, with `--description`, `--skills` and `--model`
   replacing those fields the way they do for a built-in template.
+
 - **`kxm role add` no longer leaves a project that refuses to load.** A local add now needs
   a KXM project (`project_not_found` otherwise, and no stray `.kxm/` that would make
   `kxm init` refuse), writes under the project root from any subdirectory, and is checked
@@ -511,6 +537,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   `writer` role whose roster leaves out the `implementer` agent's model, including the
   built-in `writer` template for such a project, is refused with `role_invalid`, exit 2,
   and nothing is written, also under `--dry-run`.
+
 - **Live `kxm runs drive` can author on an audited writer profile.** A write-repository
   step on pi (`-a`, with extensions, skills, and the session off) or grok
   (`--always-approve`, with subagents and web search off) runs against the checkout.
@@ -565,18 +592,23 @@ All notable user-facing changes are documented here. The project follows [Semant
   run (`webhook_payload_replayed`). A reused delivery ID with a different body is
   refused with 409 `webhook_delivery_conflict`, and a duplicate start returns only
   `duplicate`, `runId` and `status`. Update any custom sender to the new contract.
+
 - **Agents never borrow the hub admin token.** With `KXM_AUTH_TOKEN` unset, the Pi
   extension and the `kxm peer` / `kxm workflow` agent commands used the persisted admin
   token. They now use only this project's saved project token, as the Claude MCP server
   does, and otherwise stop with a message naming the fix (`project_token_missing`, exit 2,
   on the CLI).
+
 - **The hop limit bounds agent forwarding chains.** `kxm_send` and `kxm_fanout` from Pi
   or the Claude MCP server send one hop past the inbound request being handled, so a
   chain of agents forwarding to each other stops at `hop_limit_reached`.
+
 - **Workflow prompts no longer point agents at `.kxm/config`**, a path KXM refuses.
+
 - **`kxm gate signal`, `kxm workflow wait` and `kxm role resume` inside a KXM project reach
   the hub for hub runs.** They go to the local Runtime only for a run its store holds, and
   the lookup leaves no files behind, so `--dry-run` changes nothing.
+
 - **`kxm peer inbox` lists the requests waiting for a named CLI agent.** It returned
   `{"messages":[]}` every time. The hub now serves `GET /v1/agents/:id/inbox`
   (agent-authenticated, project-scoped): the caller's queued and delivered requests,
@@ -584,6 +616,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   `codex`) to list requests peers queued for it while it was offline, then answer them
   with `kxm peer reply`. The Pi extension's `kxm_inbox` tool now refuses instead of
   returning an empty list, because Pi activates each inbound request as a turn itself.
+
 - **A restarted Claude Code session keeps the requests it acknowledged but never answered.**
   The MCP server acknowledges a request on arrival, and the hub pushes only unacknowledged
   requests again on reconnect, so a session that restarted under the same agent name (the
@@ -606,11 +639,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   user-directed fixes) followed by the unchanged memory brief. The plugin version stays
   0.7.1, so an existing install gets the hook only after the reinstall described in the
   plugin README.
+
 - **The Claude plugin's MCP server never authenticates with the hub admin token.** With a
   blank `auth_token` it fell back to the admin token saved in `hub-env.json` and registered
   the agent in a project nobody had issued it a token for. It now uses `KXM_AUTH_TOKEN` or
   this project's saved project token, and with neither it refuses before contacting the
   hub. The operator CLI and the Runtime supervisor resolve credentials as before.
+
 - **`kxm workflow add` writes workflows that load.** The one-step scaffold and the three
   built-in templates used `role:` where an agent step needs `agent:`, the scaffold added a
   top-level `id`, and the templates' gate steps named a `verify-gate` no project defines
@@ -635,6 +670,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   Workflow-step candidates now propose a `kind: gate` step and a `gates.yaml` entry with a
   placeholder command, and skill candidates are labelled consolidation. Candidates remain
   proposals; nothing is applied.
+
 - **Runtime-dispatched agents receive committed, pinned project memory and hash-verified
   promoted skills.** The engine built each agent's context packet with no project items, so
   `.kxm/memory` and promoted skills never reached a `kxm run` agent. Now, when either
@@ -644,6 +680,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   memory revision. Otherwise the context is withheld with a `dispatch_context_*` gap in the
   packet (never in the prompt) and the step still runs. Promoted skills render under a new
   `### Active Skills` heading. No hub call is made at dispatch.
+
 - **Journal entries accept all ten categories and stage provenance.** The shared
   `kxm_workflow_record` tool (MCP, Pi and `kxm workflow record`) offered 5 of the 10
   categories, required an area and dropped `stageId`. It now takes every category and an
@@ -654,11 +691,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   approval and premature settlement) carry the stage and attempt; the checkpoint and
   premature-settlement cases are the ones under test. `kxm workflow record` gained
   `--stage-id` and accepts `record <runId> <category> <summary>` when area is omitted.
+
 - **Late journal entries and promotions refresh the exported retrospective.** A terminal
   run's retrospective is re-exported when an entry is recorded or a promotion decided
   afterwards. Retrospectives also count only error entries as recurring error classes and
   propose up to 12 ranked error and lesson signals. A promotion now publishes its update to
   the run's project rather than to the run id.
+
 - **Context packets deliver the evidence they select.** Evidence items could be selected
   and budgeted but no packet section carried them; packets now have an `evidence` section,
   and the repro and implementer roles receive evidence, so the error, observation and
@@ -695,6 +734,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **`kxm hub start` no longer generates and persists an admin token when it is
   about to refuse** because another hub already owns the claim. A refused start
   used to leave behind credentials the running hub never issued.
+
 - **Runtime intake contract fixes (released in 0.7.46, found in review):**
   a lost intake insert race accepted different content under an already-used
   idempotency key; resume drained only one page, so held intent beyond 500
@@ -707,6 +747,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   arrival order, so a backdated timestamp cannot jump the queue; persisted records
   are cross-checked against every duplicated column on read; and the intake schema
   no longer admits contradictory states.
+
 - **A coordinator rebind could widen a tool ceiling by clearing its allow list.**
   An absent or empty allow list imposes no restriction, so dropping a populated one
   is now refused (`coordinator_rebind_clears_allowlist`). Resume drains held intent
@@ -716,6 +757,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   require a policy rebind after upgrade — and the equivalence test is shared, so a
   row written by 0.7.46 is not a `coordinator_write_lost` conflict just because it
   was found by losing an insert race instead of reading the slot.
+
 - **A failed `BEGIN` poisoned the database connection.** The transaction marker was
   claimed before `BEGIN` and the statement sat outside the `try/finally`, so a
   `BEGIN` that gave up on a busy writer left every later transaction failing with a
@@ -749,6 +791,8 @@ All notable user-facing changes are documented here. The project follows [Semant
   counts we observed. The throttle is per connection
   object in this process — it is not cross-process, and it does not leak to another
   connection to the same database.
+
+- **`kxm vision` is owned by the browser-verify skill.** `plugins/kxm/skill-suite.json` lists `vision` on `kxm-browser-verify`, the skill that already teaches `kxm vision assert`.
 
 ## 0.7.0 - 2026-09-11
 
