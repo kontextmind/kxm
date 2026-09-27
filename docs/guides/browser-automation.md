@@ -5,9 +5,9 @@ Give agents a real browser without giving them your desktop. Playwright testing 
 ## Before you begin
 
 - For Playwright: Node, and `node scripts/obscura.mjs` (it downloads pinned Obscura v0.2.3). [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md) records that default.
-- For takeover: a Steel deployment you operate, reachable over HTTPS, and its API key. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
+- For takeover: a Steel deployment you operate, reachable over HTTPS, and an Authentik app password when that host is behind forward auth. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
 - `curl` and `jq`. Optionally `agent-browser` for exploration. Playwright tests use Obscura; do not run `playwright install`.
-- A secret manager for the API key. The bundled skills use `pass-cli`.
+- A secret manager for the Authentik app password and site credentials. The bundled skills use `pass-cli`.
 - The `kxm-browser-*` skills from the plugin or Pi package. See [Agent skills](agent-skills.md#browser-automation-skills).
 
 ## Components
@@ -18,7 +18,7 @@ Give agents a real browser without giving them your desktop. Playwright testing 
 | Steel | Isolated Chromium sessions, a REST API, a CDP WebSocket, and a session viewer for takeover |
 | `agent-browser` | Fast, token-efficient exploration: accessibility snapshots, navigation, DOM inspection |
 | Playwright | Assertions, bug reproductions, visual proof and permanent regression tests |
-| Secret manager | The only place the Steel API key and site credentials live |
+| Secret manager | The only place the Authentik app password and site credentials live |
 | Human operator | Completes MFA, CAPTCHA, SSO or consent in the Steel session viewer |
 
 ## Run Playwright on Obscura
@@ -30,28 +30,39 @@ node scripts/obscura.mjs --ensure
 npm run e2e
 ```
 
-Set `video: "off"` in Playwright. Obscura does not record video. Connect with the worker-scoped `browser` fixture and `chromium.connectOverCDP()`. `chromium.connect` and `use.connectOptions` are not supported.
+Set `video: "off"` in Playwright. Obscura does not record video. Connect with the worker-scoped `browser` fixture and `connectBrowserOverCdp()`. That helper calls `chromium.connectOverCDP()` with no Steel headers unless `KXM_BROWSER=steel`. `chromium.connect` and `use.connectOptions` are not supported.
 
 ## Configure the Steel endpoint
 
 The KXM browser library reads these variables, and the shell procedure below uses the same names so both agree.
 
+KontextMind's Steel hosts (`steel.kontextmind.com` and `steel.theneuro.me`, including the `wss://` CDP endpoint) sit behind Authentik forward auth at the reverse proxy. Steel itself does not check an API key. Unauthenticated requests receive a 302 redirect to the Authentik login at `id.kxmd.dev`. Authentik accepts an app password only as `Authorization: Basic`. A Bearer token is refused.
+
 | Variable | Default | Effect |
 |---|---|---|
 | `STEEL_API_URL` | A KontextMind-operated deployment | Base URL of your Steel API. Always set it |
 | `STEEL_UI_URL` | `$STEEL_API_URL/ui` | Base URL of the session viewer |
-| `STEEL_API_KEY` | A `pass-cli` lookup | The API key. When unset, the library runs a `pass-cli` lookup of a fixed KontextMind vault item |
-| `USE_PASS_CLI` | enabled | Set to `false` to disable that `pass-cli` fallback |
+| `STEEL_AUTH_HEADER` | unset | Full `Authorization` value. Wins over the other auth variables |
+| `STEEL_AUTH_BASIC` | unset | `base64(user:token)`, with or without a leading `Basic` prefix. Sent as `Authorization: Basic` |
+| `STEEL_AUTH_USER` | unset | Authentik username, for example `svc-steel`. Used with `STEEL_AUTH_TOKEN` |
+| `STEEL_AUTH_TOKEN` | unset | Authentik app password. Used with `STEEL_AUTH_USER` |
+| `STEEL_API_KEY` | A `pass-cli` lookup | Deprecated. Sent as `x-steel-api-key` and as `?apiKey=` on the CDP URL, which the proxy still accepts as a temporary shim. The library warns once on stderr |
+| `USE_PASS_CLI` | enabled | Set to `false` to disable the legacy `STEEL_API_KEY` `pass-cli` fallback |
+
+Set one Authentik credential. Precedence is `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` together with `STEEL_AUTH_TOKEN`. If only one of the user or token pair is set, configuration fails instead of falling back to the legacy key. When any of those are set, the legacy key is not sent and is not placed in a URL. The `pass-cli` fallback looks up `STEEL_API_KEY` only.
 
 > [!WARNING]
-> Set `STEEL_API_URL` and `STEEL_API_KEY` explicitly. Without them the library falls back to KontextMind's own deployment and vault item, which are not yours to use.
+> Set `STEEL_API_URL` and an Authentik credential explicitly. Without them the library falls back to KontextMind's own deployment and vault item, which are not yours to use. Never put the credential in a URL, a prompt, or a log.
 
 ```bash
 export STEEL_API_URL="https://steel.example.com"
-# Read the key from your secret manager; <vault> and <item> are yours.
-export STEEL_API_KEY="$(pass-cli item view --vault-name '<vault>' --item-title '<item>' --field STEEL_API_KEY)"
+# Read the app password from your secret manager; <vault> and <item> are yours.
+export STEEL_AUTH_USER="svc-steel"
+export STEEL_AUTH_TOKEN="$(pass-cli item view --vault-name '<vault>' --item-title '<item>' --field password)"
 export USE_PASS_CLI=false
 ```
+
+`STEEL_AUTH_BASIC` is the same pair already encoded: `printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n'`. Prefer the user and token pair, or the pre-encoded value, and keep them in the environment of the process that calls Steel.
 
 | Endpoint | Purpose |
 |---|---|
@@ -59,20 +70,20 @@ export USE_PASS_CLI=false
 | `GET /v1/sessions/<id>` | Inspect one session; `GET /v1/sessions` lists them all |
 | `POST /v1/sessions/<id>/release` | Release a session |
 | `POST /v1/scrape`, `POST /v1/screenshot` | One-shot page fetch or screenshot without a session |
-| `wss://<steel-host>/v1/devtools?sessionId=<id>&apiKey=<key>` | CDP endpoint for `agent-browser` and Playwright |
+| `wss://<steel-host>/v1/devtools?sessionId=<id>` | CDP endpoint. Send `Authorization` on the WebSocket handshake; do not add the credential to this URL |
 | `$STEEL_UI_URL?sessionId=<id>` | Session viewer for human takeover |
-
-The CDP URL carries the API key in its query string. Treat it as a secret: never paste it into chat, a prompt, an issue or a log.
 
 ## Run a browser task
 
-1. Define a helper that sends the key as a header read from standard input, so it never appears in a process list:
+1. Define a helper that sends `Authorization` on stdin, so the secret never appears in a process list:
 
    ```bash
    steel() {  # usage: steel METHOD PATH [JSON-BODY]
+     local basic
      local args=(-sS -X "$1" "$STEEL_API_URL$2" -H @- -H 'Content-Type: application/json')
      if [ -n "${3:-}" ]; then args+=(-d "$3"); fi
-     printf 'x-steel-api-key: %s\n' "$STEEL_API_KEY" | curl "${args[@]}"
+     basic="$(printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n')"
+     printf 'Authorization: Basic %s\n' "$basic" | curl "${args[@]}"
    }
    ```
 
@@ -83,7 +94,19 @@ The CDP URL carries the API key in its query string. Treat it as a secret: never
    echo "Session: $SESSION_ID"
    ```
 
-3. For exploration, attach `agent-browser --cdp "<cdp-url>"`. Playwright tests use Obscura. Set `KXM_BROWSER=steel` and `chromium.connectOverCDP(<cdp-url>)` only when the test must drive this takeover session. Check the session's state with `steel GET "/v1/sessions/$SESSION_ID"`.
+3. Playwright tests use Obscura. To drive this takeover session, set `KXM_BROWSER=steel` and pass the headers from `formatCDPConnect()` into `chromium.connectOverCDP`. `connectBrowserOverCdp()` does that when `KXM_BROWSER=steel`. `agent-browser --cdp` accepts a URL only and cannot send that header. Do not put the credential in the URL. Check the session's state with `steel GET "/v1/sessions/$SESSION_ID"`.
+
+   ```typescript
+   import { chromium } from "playwright";
+   import { formatCDPConnect, resolveSteelConfig } from "@kontextmind/kxm/runtime";
+
+   const { url, headers } = formatCDPConnect(
+     { id: sessionId, websocketUrl: "" },
+     resolveSteelConfig(),
+   );
+   const browser = await chromium.connectOverCDP(url, { headers });
+   ```
+
 4. For a quick fetch that needs no session, scrape instead:
 
    ```bash
@@ -99,7 +122,9 @@ The CDP URL carries the API key in its query string. Treat it as a secret: never
 <details><summary>PowerShell</summary>
 
 ```powershell
-$headers = @{ "x-steel-api-key" = $env:STEEL_API_KEY }
+$pair = "{0}:{1}" -f $env:STEEL_AUTH_USER, $env:STEEL_AUTH_TOKEN
+$basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
+$headers = @{ Authorization = "Basic $basic" }
 $session = Invoke-RestMethod -Method Post -Uri "$env:STEEL_API_URL/v1/sessions" -Headers $headers -ContentType "application/json" -Body '{"timeout": 300000}'
 Invoke-RestMethod -Method Post -Uri "$env:STEEL_API_URL/v1/sessions/$($session.id)/release" -Headers $headers
 ```
@@ -139,9 +164,11 @@ The KXM browser library tracks these states in the process that owns the session
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `401` or `403` from Steel | Missing or wrong API key | Re-export `STEEL_API_KEY` from your secret manager |
+| `302` to `id.kxmd.dev` | The request had no Authentik app password | Export `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, or `STEEL_AUTH_BASIC`. A Bearer token is not accepted |
+| `401` or `403` | Wrong app password, or a legacy key the shim rejected | Re-export the Authentik credential from your secret manager. Re-export `STEEL_API_KEY` only when that is the credential you still use |
 | Requests go to an unexpected host | `STEEL_API_URL` is unset | Export it before starting the agent |
 | Playwright opens a local browser | The client called `chromium.launch()` or `chromium.connect()` | Use the worker-scoped fixture and `connectOverCDP` against Obscura |
+| Steel CDP connects without auth | `connectOverCDP` was called with only the URL | Call `connectOverCDP(url, { headers })` with the headers from `formatCDPConnect()` or `connectBrowserOverCdp()` |
 | `Access to private/internal IP address` | Obscura was started without `--allow-private-network` | Run `node scripts/obscura.mjs`, which passes that flag |
 | Signed-in state is gone | The session expired or was released | Create a new session and repeat the takeover |
 | The viewer shows the page but clicks do nothing | The viewer is a screencast, and some capture modes do not forward clicks | Use the DevTools inspector at `$STEEL_API_URL/v1/devtools/inspector.html`, with the agent paused |

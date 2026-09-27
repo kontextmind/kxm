@@ -7,7 +7,7 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-23"
+updated: "2026-09-27"
 authority: "instruction"
 confidence: "verified"
 summary: "Troubleshoot unresponsive Steel sessions, CDP attachment errors, auth loops, and orphaned browser containers."
@@ -53,4 +53,4 @@ Use this prompt to troubleshoot unresponsive sessions, CDP attachment errors, au
 
 4. **Verify WebSocket / CDP Ingress**:
    - Ensure the reverse proxy or ingress in front of Steel passes WebSocket upgrades through. On Kubernetes with ingress-nginx, that is the `nginx.ingress.kubernetes.io/websocket-services` annotation.
-   - If CDP fails with 401, verify `x-steel-api-key` header or `?apiKey=` query parameter.
+   - If the response is a 302 to `id.kxmd.dev`, or CDP fails with 401, send `Authorization: Basic` from `STEEL_AUTH_BASIC` or from `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`. A Bearer token is not accepted. Do not put the credential in the URL. The legacy `x-steel-api-key` header and `?apiKey=` query parameter remain only for the temporary proxy shim.

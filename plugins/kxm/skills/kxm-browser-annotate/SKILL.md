@@ -37,13 +37,13 @@ Use this skill to capture visual screenshots of specific UI sections or elements
 
 ```typescript
 import { chromium } from "playwright";
-import { resolveSteelConfig, formatCDPEndpoint } from "@kontextmind/kxm/runtime";
+import { resolveSteelConfig, formatCDPConnect } from "@kontextmind/kxm/runtime";
 
 async function captureSection(sessionId: string, selector: string, outputPath: string) {
   const config = resolveSteelConfig();
-  const cdpUrl = formatCDPEndpoint({ id: sessionId, websocketUrl: "" }, config);
+  const { url, headers } = formatCDPConnect({ id: sessionId, websocketUrl: "" }, config);
 
-  const browser = await chromium.connectOverCDP(cdpUrl);
+  const browser = await chromium.connectOverCDP(url, { headers });
   const context = browser.contexts()[0] || await browser.newContext();
   const page = context.pages()[0] || await context.newPage();
 
