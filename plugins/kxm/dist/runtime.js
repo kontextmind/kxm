@@ -33328,6 +33328,100 @@ function resolveViewportDimensions(presetOrDims) {
   }
   return presetOrDims;
 }
+var SteelAuthConfigError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "SteelAuthConfigError";
+  }
+};
+var SteelAuthRedirectError = class extends Error {
+  status;
+  host;
+  constructor(status, host) {
+    super(
+      `Steel request was redirected (${status}) to ${host}. Send Authorization: Basic via STEEL_AUTH_BASIC or STEEL_AUTH_USER and STEEL_AUTH_TOKEN. A Bearer token is not accepted.`
+    );
+    this.name = "SteelAuthRedirectError";
+    this.status = status;
+    this.host = host;
+  }
+};
+var LEGACY_STEEL_AUTH_WARNING = "kxm: STEEL_API_KEY is deprecated for Steel. Authentik forward auth accepts app passwords only as Authorization: Basic. Set STEEL_AUTH_BASIC, or STEEL_AUTH_USER and STEEL_AUTH_TOKEN. The legacy x-steel-api-key header and apiKey query parameter remain for the temporary proxy shim.\n";
+var legacySteelAuthWarned = false;
+function resetLegacySteelAuthWarningForTests() {
+  legacySteelAuthWarned = false;
+}
+function warnLegacySteelAuth() {
+  if (legacySteelAuthWarned) return;
+  legacySteelAuthWarned = true;
+  process.stderr.write(LEGACY_STEEL_AUTH_WARNING);
+}
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return void 0;
+}
+function normalizeAuthorization(raw) {
+  if (/[\r\n]/.test(raw)) {
+    throw new SteelAuthConfigError("Steel authorization value contains a line break.");
+  }
+  const value = raw.trim();
+  if (!value) {
+    throw new SteelAuthConfigError("Steel authorization value is empty.");
+  }
+  const basicPrefix = /^basic\s+(.+)$/i.exec(value);
+  if (basicPrefix) {
+    const credential = basicPrefix[1] ?? "";
+    if (!credential || /\s/.test(credential)) {
+      throw new SteelAuthConfigError("Steel Basic credential must be a single base64 token.");
+    }
+    return `Basic ${credential}`;
+  }
+  if (/\s/.test(value)) {
+    return value;
+  }
+  return `Basic ${value}`;
+}
+function resolveSteelAuthorization(overrides) {
+  const header = firstNonEmpty(overrides?.authHeader, overrides?.authorization, process.env.STEEL_AUTH_HEADER);
+  if (header) return normalizeAuthorization(header);
+  const basic = firstNonEmpty(overrides?.authBasic, process.env.STEEL_AUTH_BASIC);
+  if (basic) return normalizeAuthorization(basic);
+  const user = firstNonEmpty(overrides?.authUser, process.env.STEEL_AUTH_USER);
+  const token = firstNonEmpty(overrides?.authToken, process.env.STEEL_AUTH_TOKEN);
+  if (user || token) {
+    if (!user || !token) {
+      throw new SteelAuthConfigError(
+        "Steel Basic auth needs both STEEL_AUTH_USER and STEEL_AUTH_TOKEN, or STEEL_AUTH_BASIC."
+      );
+    }
+    return `Basic ${Buffer.from(`${user}:${token}`, "utf8").toString("base64")}`;
+  }
+  return void 0;
+}
+function steelRequestHeaders(config) {
+  if (config.authorization) {
+    return { Authorization: config.authorization };
+  }
+  if (config.apiKey) {
+    return { "x-steel-api-key": config.apiKey };
+  }
+  return {};
+}
+function steelAuthRedirectError(res) {
+  let host = "the identity provider";
+  const location = res.headers.get("location");
+  if (location) {
+    try {
+      host = new URL(location, "https://id.kxmd.dev").host;
+    } catch {
+      host = "the identity provider";
+    }
+  }
+  return new SteelAuthRedirectError(res.status, host);
+}
 function resolvePassCliApiKey(execFn = (cmd) => execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5e3 })) {
   if (typeof process === "undefined" || process.env.USE_PASS_CLI === "false") {
     return void 0;
@@ -33360,11 +33454,17 @@ function resolvePassCliApiKey(execFn = (cmd) => execSync(cmd, { encoding: "utf8"
 }
 function resolveSteelConfig(overrides) {
   const apiUrl = overrides?.apiUrl || process.env.STEEL_API_URL || "https://steel.kontextmind.com";
-  const apiKey = overrides?.apiKey || process.env.STEEL_API_KEY || resolvePassCliApiKey();
+  const authorization = resolveSteelAuthorization(overrides);
+  let apiKey;
+  if (!authorization) {
+    apiKey = overrides?.apiKey || process.env.STEEL_API_KEY || resolvePassCliApiKey();
+    if (apiKey) warnLegacySteelAuth();
+  }
   const uiUrl = overrides?.uiUrl || (overrides?.apiUrl ? `${overrides.apiUrl.replace(/\/$/, "")}/ui` : void 0) || process.env.STEEL_UI_URL || `${apiUrl.replace(/\/$/, "")}/ui`;
   return {
     apiUrl: apiUrl.replace(/\/$/, ""),
     apiKey,
+    authorization,
     uiUrl,
     timeoutMs: overrides?.timeoutMs || 3e5
     // 5 minutes default
@@ -33378,7 +33478,7 @@ function formatCDPEndpoint(session, config) {
   const host = urlObj.host;
   const searchParams = new URLSearchParams();
   searchParams.set("sessionId", session.id);
-  if (config.apiKey) {
+  if (!config.authorization && config.apiKey) {
     searchParams.set("apiKey", config.apiKey);
   }
   return `${wsProtocol}//${host}/v1/devtools?${searchParams.toString()}`;
@@ -33417,9 +33517,16 @@ function resolveBrowserCdpEndpoint(session, config) {
   }
   throw new Error(`Unsupported KXM_BROWSER value ${JSON.stringify(process.env.KXM_BROWSER)}; expected "obscura" or "steel"`);
 }
+function formatCDPConnect(session, config) {
+  return {
+    url: formatCDPEndpoint(session, config),
+    headers: steelRequestHeaders(config)
+  };
+}
 function sanitizeLogOutput(input) {
   if (typeof input === "string") {
-    return input.replace(/apiKey=[^&]+/g, "apiKey=[REDACTED]").replace(/steel_[a-f0-9]+/g, "steel_[REDACTED]");
+    const redacted = input.replace(/apiKey=[^&\s]+/gi, "apiKey=[REDACTED]").replace(/([?&]authorization=)[^&\s]+/gi, "$1[REDACTED]").replace(/authorization:\s*(?:basic\s+)?\S+/gi, "authorization: [REDACTED]").replace(/\bBasic\s+(?:[A-Za-z0-9+/]*[+/=0-9][A-Za-z0-9+/]*={0,2})/g, "Basic [REDACTED]").replace(/steel_[a-f0-9]+/g, "steel_[REDACTED]");
+    return redacted;
   }
   if (Array.isArray(input)) {
     return input.map(sanitizeLogOutput);
@@ -33512,14 +33619,29 @@ var SteelClient = class {
   getConfig() {
     return { ...this.config };
   }
+  /**
+   * URL and headers for `chromium.connectOverCDP(url, { headers })`.
+   * The URL omits credentials when Authentik Basic auth is configured.
+   */
+  cdpConnectOptions(session) {
+    return formatCDPConnect(session, this.config);
+  }
   headers() {
-    const h = {
-      "Content-Type": "application/json"
+    return {
+      "Content-Type": "application/json",
+      ...steelRequestHeaders(this.config)
     };
-    if (this.config.apiKey) {
-      h["x-steel-api-key"] = this.config.apiKey;
+  }
+  async steelFetch(url, init) {
+    const headers = {
+      ...this.headers(),
+      ...init.headers
+    };
+    const res = await fetch(url, { ...init, headers, redirect: "manual" });
+    if (res.status >= 300 && res.status < 400 || res.type === "opaqueredirect") {
+      throw steelAuthRedirectError(res);
     }
-    return h;
+    return res;
   }
   /**
    * Launch a new Steel browser session on DOKS.
@@ -33539,13 +33661,12 @@ var SteelClient = class {
     if (options?.proxy) {
       body.proxy = options.proxy;
     }
-    const res = await fetch(`${this.config.apiUrl}/v1/sessions`, {
+    const res = await this.steelFetch(`${this.config.apiUrl}/v1/sessions`, {
       method: "POST",
-      headers: this.headers(),
       body: JSON.stringify(body)
     });
     if (!res.ok) {
-      const errText = await res.text();
+      const errText = sanitizeLogOutput(await res.text());
       throw new Error(`Failed to create Steel session (${res.status}): ${errText}`);
     }
     const data = await res.json();
@@ -33570,9 +33691,8 @@ var SteelClient = class {
    * Get details of an existing session.
    */
   async getSession(sessionId) {
-    const res = await fetch(`${this.config.apiUrl}/v1/sessions/${encodeURIComponent(sessionId)}`, {
-      method: "GET",
-      headers: this.headers()
+    const res = await this.steelFetch(`${this.config.apiUrl}/v1/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "GET"
     });
     if (res.status === 404) {
       const cached = this.activeSessions.get(sessionId);
@@ -33679,9 +33799,8 @@ Instructions for Operator:
    */
   async releaseSession(sessionId) {
     try {
-      const res = await fetch(`${this.config.apiUrl}/v1/sessions/${encodeURIComponent(sessionId)}/release`, {
-        method: "POST",
-        headers: this.headers()
+      const res = await this.steelFetch(`${this.config.apiUrl}/v1/sessions/${encodeURIComponent(sessionId)}/release`, {
+        method: "POST"
       });
       const session = this.activeSessions.get(sessionId);
       if (session) {
@@ -33691,7 +33810,8 @@ Instructions for Operator:
       }
       this.activeSessions.delete(sessionId);
       return res.ok;
-    } catch {
+    } catch (error) {
+      if (error instanceof SteelAuthRedirectError) throw error;
       this.activeSessions.delete(sessionId);
       return false;
     }
@@ -33700,13 +33820,12 @@ Instructions for Operator:
    * Perform a direct stateless scrape without manual session management.
    */
   async scrape(url) {
-    const res = await fetch(`${this.config.apiUrl}/v1/scrape`, {
+    const res = await this.steelFetch(`${this.config.apiUrl}/v1/scrape`, {
       method: "POST",
-      headers: this.headers(),
       body: JSON.stringify({ url })
     });
     if (!res.ok) {
-      const err = await res.text();
+      const err = sanitizeLogOutput(await res.text());
       throw new Error(`Scrape failed (${res.status}): ${err}`);
     }
     return res.json();
@@ -33715,13 +33834,12 @@ Instructions for Operator:
    * Perform a direct screenshot action.
    */
   async screenshot(url, fullPage = false) {
-    const res = await fetch(`${this.config.apiUrl}/v1/screenshot`, {
+    const res = await this.steelFetch(`${this.config.apiUrl}/v1/screenshot`, {
       method: "POST",
-      headers: this.headers(),
       body: JSON.stringify({ url, fullPage })
     });
     if (!res.ok) {
-      const err = await res.text();
+      const err = sanitizeLogOutput(await res.text());
       throw new Error(`Screenshot failed (${res.status}): ${err}`);
     }
     return res.json();
@@ -33730,9 +33848,8 @@ Instructions for Operator:
    * Detect and list orphaned or timed-out active sessions.
    */
   async checkOrphanedSessions(maxIdleMs = 6e5) {
-    const res = await fetch(`${this.config.apiUrl}/v1/sessions`, {
-      method: "GET",
-      headers: this.headers()
+    const res = await this.steelFetch(`${this.config.apiUrl}/v1/sessions`, {
+      method: "GET"
     });
     if (!res.ok) {
       return [];
@@ -34675,6 +34792,8 @@ export {
   PiSession,
   SAFE_HARNESS_COMMAND_ID,
   SUBAGENT_TYPES,
+  SteelAuthConfigError,
+  SteelAuthRedirectError,
   SteelClient,
   SubagentManager,
   TRANSACTION_BUSY_BACKOFF_MS,
@@ -34720,6 +34839,7 @@ export {
   findWinNpmInnerExe,
   foldStoredKxmRun,
   formatAnnotationFeedbackPrompt,
+  formatCDPConnect,
   formatCDPEndpoint,
   formatHarnessInventory,
   formatHarnessUpdate,
@@ -34798,12 +34918,14 @@ export {
   rebuildKxmRunProjection,
   redactLogValue,
   registerKxmRuntimeCloseHook,
+  resetLegacySteelAuthWarningForTests,
   resolveActiveMode,
   resolveBrowserCdpEndpoint,
   resolveDispatchStatus,
   resolveObscuraCdpEndpoint,
   resolvePassCliApiKey,
   resolveSshHostG,
+  resolveSteelAuthorization,
   resolveSteelConfig,
   resolveViewportDimensions,
   restoreBackup,
@@ -34815,6 +34937,8 @@ export {
   runtimeSyncIntervalMs,
   sanitizeLogOutput,
   startKxmRuntimeSupervisor,
+  steelAuthRedirectError,
+  steelRequestHeaders,
   syncKxmOutbox,
   tableColumns,
   truncateSshOutput,

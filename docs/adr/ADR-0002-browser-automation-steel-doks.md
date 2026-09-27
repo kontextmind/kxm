@@ -7,7 +7,7 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-14"
+updated: "2026-09-27"
 authority: "decision"
 confidence: "verified"
 summary: "Adopt self-hosted Steel on DigitalOcean Kubernetes (DOKS) with agent-browser and Playwright as KXM's primary browser automation infrastructure."
@@ -100,7 +100,8 @@ AI coding agents and orchestration workflows in KXM require browser interaction 
 
 - **Verification**: Health endpoint `$STEEL_API_URL/v1/health` verified with HTTP 200 and Let's Encrypt TLS.
 - **Integration Test**: `test/core/browser.test.ts` validates session lifecycle, CDP endpoint formatting, takeover transitions, and secret redaction.
-- **Security Check**: `pass-cli` verified as the authoritative store for `STEEL_API_KEY` in the operators' password manager.
+- **Security Check**: `pass-cli` verified as the authoritative store for Steel credentials in the operators' password manager.
+- **Edge auth (2026-09-27)**: `steel.kontextmind.com` and `steel.theneuro.me`, including the CDP WebSocket, are behind Authentik forward auth. Steel does not check `STEEL_API_KEY`. Clients send `Authorization: Basic`. Unauthenticated requests are redirected to `id.kxmd.dev`. The legacy `x-steel-api-key` header and `apiKey` query parameter remain a temporary proxy shim.
 
 ## Related
 

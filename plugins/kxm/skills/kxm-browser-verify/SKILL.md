@@ -61,6 +61,33 @@ export const test = base.extend<{}, { browser: Browser }>({
     await use(browser);
     await browser.close();
   }, { scope: "worker" }],
+import { test, expect, chromium } from "@playwright/test";
+import { formatCDPConnect, resolveSteelConfig } from "@kontextmind/kxm/runtime";
+
+test("reproduce and verify UI issue", async () => {
+  const sessionId = process.env.STEEL_SESSION_ID;
+  if (!sessionId) {
+    throw new Error("STEEL_SESSION_ID environment variable is required");
+  }
+
+  // Authorization: Basic on the CDP handshake. The URL has no credential.
+  const { url, headers } = formatCDPConnect(
+    { id: sessionId, websocketUrl: "" },
+    resolveSteelConfig(),
+  );
+  const browser = await chromium.connectOverCDP(url, { headers });
+  const context = browser.contexts()[0] || await browser.newContext();
+  const page = context.pages()[0] || await context.newPage();
+
+  await page.goto("https://app.example.com/dashboard");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  // Exercise reproducible interaction
+  await page.getByRole("button", { name: "Save Changes" }).click();
+  await expect(page.getByText("Changes saved successfully")).toBeVisible();
+
+  // Disconnect client without destroying the remote container
+  await browser.close();
 });
 
 export { expect } from "@playwright/test";

@@ -26,7 +26,7 @@ You expected automation to run on Obscura, or on a Steel takeover session, but a
 1. **The script called `chromium.launch()` instead of
    `chromium.connectOverCDP()`.**
    - `chromium.launch()` starts a browser on the local machine.
-   - **Fix:** in Playwright, connect with `chromium.connectOverCDP(cdpUrl)`.
+   - **Fix:** in Playwright, connect with `chromium.connectOverCDP(url, { headers })` from `formatCDPConnect()`.
 2. **`agent-browser` ran without `--cdp`.**
    - `agent-browser open <url>` without `--cdp` starts a local headless
      browser.
@@ -42,3 +42,13 @@ You expected automation to run on Obscura, or on a Steel takeover session, but a
    - **Fix:** use `resolveObscuraCdpEndpoint()` (default
      `http://127.0.0.1:9222`). For a Steel takeover session, set
      `KXM_BROWSER=steel` and load `STEEL_API_URL` and `STEEL_API_KEY`.
+   - **Fix:** attach with Playwright and the headers from `formatCDPConnect()`.
+     `agent-browser --cdp` takes a URL only and cannot send the Authentik
+     `Authorization` header, so do not put the credential in that URL. See
+     [How do I connect Playwright to the existing Steel session?](how-to-connect-playwright-to-steel.md).
+4. **Environment variables were missing.**
+   - A script that falls back to local execution when the Steel session is
+     unset launches a local browser.
+   - **Fix:** load `STEEL_API_URL` and `STEEL_AUTH_USER` plus `STEEL_AUTH_TOKEN`
+     (or `STEEL_AUTH_BASIC`) from your secret manager before the run. A legacy
+     `STEEL_API_KEY` still works through the proxy shim.

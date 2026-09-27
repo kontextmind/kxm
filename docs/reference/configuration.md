@@ -33,6 +33,7 @@ Names that start with `KXM_` are not all operator settings. This map covers ever
 | Operator CLI and sessions | `KXM_USER_CONFIG_DIR`, `KXM_USER_TELEMETRY_DIR`, `KXM_SESSION_TOKEN`, `KXM_SESSION_BRIEF`, `KXM_WORKFLOW_*`, `GITHUB_TOKEN`, and others | [CLI and session settings](#cli-and-session-settings) |
 | Nous model providers | `KXM_NOUS_PROVIDERS`, `KXM_NOUS_PROXY_URL`, `KXM_NOUS_DISCOVERY_TIMEOUT_MS`, `KXM_NOUS_CATALOG_FILE`, `NOUS_API_KEY` | [Nous providers](../guides/nous-providers.md) |
 | Browser automation | `KXM_BROWSER`, `OBSCURA_CDP_URL`, `OBSCURA_PORT`, `STEEL_API_URL`, `STEEL_API_KEY`, `STEEL_UI_URL`, `USE_PASS_CLI` | [Browser settings](#browser-automation) |
+| Browser automation | `STEEL_API_URL`, `STEEL_UI_URL`, `STEEL_AUTH_HEADER`, `STEEL_AUTH_BASIC`, `STEEL_AUTH_USER`, `STEEL_AUTH_TOKEN`, `STEEL_API_KEY` (legacy), `USE_PASS_CLI` | [Browser automation](../guides/browser-automation.md) |
 | Set by a harness, not by you | `KXM_PROJECT_DIR` (Claude Code plugin), `KXM_ATTEMPT_TOKEN` (Runtime attempts), `KXM_WORKER_IDENTITY_KEY`, `KXM_WORKER_GENERATION`, `KXM_WORKER_CHILD_INCARCATION`, `KXM_WORKER_SESSION_SCOPE` (worker supervisor to its Pi child) | [Internal variables](#internal-variables) |
 | Maintainer and test only | `KXM_SMOKE*`, `KXM_ASSET*`, `KXM_RELEASE_TAG`, `KXM_PUBLISH_WAIT_MS`, `KXM_DETERMINISTIC_TEST_CLOCK`, `KXM_WORKER_STOP_AFTER_MS`, `KXM_STUDIO_ONCE` | [Development](../contributing/development.md) |
 | Maintainer critic script | `KXM_CRITIC_DIR`, `KXM_REVIEW_TARGET` | [Maintainer critic script](#maintainer-critic-script) |
