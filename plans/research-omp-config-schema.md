@@ -571,7 +571,7 @@ pass on this branch.
   is deleted and a leftover is refused. Agent files bind `role:` and do not
   carry `harness` or `model`. `DEFAULT_ROLES` and `DEFAULT_ROLE_SEATS` are
   gone. `scripts/roster-policy.mjs` and `engine.ts` read the v2 files.
-  `just impl`, `just plan`, and `just review-arch` are gone; `kxm lane run`
+  The justfile recipes impl, plan, and review-arch are gone; `kxm lane run`
   is transport and does not mint assignment proof.
 - **Ids.** Role, agent, and agent-step ids share one vocabulary:
   `planner`, `writer`, `reviewer-arch`, `reviewer-cli`. Route ids are
@@ -581,8 +581,8 @@ pass on this branch.
   takes the first admitted route. `resolveRequiredCritics` uses that same
   first entry for `reviewer-arch` and `reviewer-cli`, which is `claude-fable`
   and `codex-gpt-5-6-sol`. There is still no automatic fallback walk (P4).
-  #343's architecture critic ran on opus anyway: the parent `just review-arch`
-  recipe hardcoded `claude` / `opus` / `medium` and never opened the role
+  #343's architecture critic ran on opus anyway: the parent justfile recipe
+  review-arch hardcoded `claude` / `opus` / `medium` and never opened the role
   file, which listed only `fable-claude`. The helper model list is now
   `fable` only, so a request for `opus` fails closed. Acceptance already
   required `claude` / `fable`.

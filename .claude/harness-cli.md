@@ -20,8 +20,8 @@ The `claude` and `codex` rows were re-probed on 2026-09-24 against the installed
 `codex` 0.156.1 with `exec`, `-m gpt-6-astra`, `-c model_reasoning_effort=...`,
 `--sandbox read-only`, `--ignore-user-config`, `-c approval_policy="never"`, `--json` and a
 stdin `-` prompt; the other rows were not re-audited.
-That probe is not the architecture critic. On the parent of #343, `just review-arch`
-hardcoded `model: opus` and did not read `.kxm/roles/reviewer-arch.yaml`, which
+That probe is not the architecture critic. On the parent of #343, the justfile
+recipe review-arch hardcoded `model: opus` and did not read `.kxm/roles/reviewer-arch.yaml`, which
 listed only `fable-claude`. That is why #343's critic ran on opus. #343 deleted
 the recipe. The helper model list is `fable` only; a request for `opus` fails closed.
 Installed ≠ auth-verified ≠ helper-eligible.

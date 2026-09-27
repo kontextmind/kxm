@@ -1453,6 +1453,40 @@ test("a live drive request carries the route harness, provider, and model", asyn
 test("live dispatch thinking is the roster effort and is absent when the roster entry has none", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-roster-effort-");
   try {
+    writeFileSync(join(root, ".kxm", "roles", "unset.yaml"), `schema: kxm.role.v2
+id: unset
+purpose: experiment
+permission: read-only
+description: effort omitted
+roster:
+  - route: grok-default
+`);
+    writeFileSync(join(root, ".kxm", "agents", "unset.yaml"), `schema: kxm.agent.v1
+purpose: Effort omitted.
+role: unset
+tools:
+  preset: read-only
+defaultRepositoryAccess: none
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
+    writeFileSync(join(root, ".kxm", "workflows", "unset.yaml"), `schema: kxm.workflow.v1
+description: Effort omitted.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: unset
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
     writeFileSync(join(root, ".kxm", "roles", "measured.yaml"), `schema: kxm.role.v2
 id: measured
 purpose: experiment
@@ -1506,7 +1540,9 @@ steps:
       assert.equal(plainDrive.handoff, undefined);
       assert.equal(plainDrive.state.status, "completed");
       assert.equal(seen[0]?.agentId, "implementer");
-      assert.equal(seen[0]?.thinking, undefined);
+      // `kxm init` writes the writer roster with effort medium; one-step still
+      // dispatches the implementer alias of that agent.
+      assert.equal(seen[0]?.thinking, "medium");
 
       const measured = acceptKxmRun(context, bundle, { workflowId: "measured", prompt: "with effort" });
       pinKxmCompiledPlan(context, bundle, measured.run.runId);
@@ -1515,6 +1551,14 @@ steps:
       assert.equal(measuredDrive.state.status, "completed");
       assert.equal(seen[1]?.agentId, "measured");
       assert.equal(seen[1]?.thinking, "high");
+
+      const omitted = acceptKxmRun(context, bundle, { workflowId: "unset", prompt: "no effort" });
+      pinKxmCompiledPlan(context, bundle, omitted.run.runId);
+      const omittedDrive = await driveKxmRun(context, omitted.run.runId, producer as never);
+      assert.equal(omittedDrive.handoff, undefined);
+      assert.equal(omittedDrive.state.status, "completed");
+      assert.equal(seen[2]?.agentId, "unset");
+      assert.equal(seen[2]?.thinking, undefined);
     } finally {
       closeKxmRuntimeContext(context);
     }

@@ -17364,7 +17364,14 @@ function lintWorkforce(root) {
     }
     const roster = Array.isArray(role.doc.roster) ? role.doc.roster : [];
     for (const item of roster) {
-      const route = item && typeof item === "object" ? item.route : void 0;
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const route = item.route;
+      const effort = item.effort;
+      const routeLabel = typeof route === "string" && route ? route : "(missing route)";
+      if (typeof effort !== "string" || !ROSTER_EFFORTS.has(effort)) {
+        const detail = typeof effort === "string" ? `effort '${effort}' is not one of off, minimal, low, medium, high, xhigh, max` : "has no effort";
+        push(errors, "error", "roster_effort_required", `.kxm/roles/${role.id}.yaml`, `roster route '${routeLabel}' ${detail}`);
+      }
       if (typeof route !== "string" || !route) continue;
       const found = lookupById(modelRecords, route, "route");
       if (!found) {
@@ -17445,11 +17452,12 @@ function lintWorkforce(root) {
   }
   return { errors, warnings };
 }
-var import_yaml2, ROLE_IDS, ROUTE_RENAMES, AGENT_RENAMES, WORKFLOW_RENAMES, STEP_RENAMES, RENAMES, RESERVED_WORKFLOW_IDS, warned;
+var import_yaml2, ROSTER_EFFORTS, ROLE_IDS, ROUTE_RENAMES, AGENT_RENAMES, WORKFLOW_RENAMES, STEP_RENAMES, RENAMES, RESERVED_WORKFLOW_IDS, warned;
 var init_workforce_names = __esm({
   "plugins/kxm/src/workforce-names.mjs"() {
     "use strict";
     import_yaml2 = __toESM(require_dist(), 1);
+    ROSTER_EFFORTS = /* @__PURE__ */ new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
     ROLE_IDS = Object.freeze([
       "writer",
       "planner",
@@ -17694,7 +17702,7 @@ function coreTemplate(projectId, projectName, variant) {
       purpose: "writer",
       permission: "edit",
       description: "Primary implementation agent.",
-      roster: [{ route: "grok-grok-4-6" }]
+      roster: [{ route: "grok-grok-4-6", effort: "medium" }]
     });
     files.set(".kxm/roles/planner.yaml", {
       schema: "kxm.role.v2",
@@ -17702,7 +17710,7 @@ function coreTemplate(projectId, projectName, variant) {
       purpose: "planner",
       permission: "read-only",
       description: "Plans the change before implementation.",
-      roster: [{ route: "claude-fable" }]
+      roster: [{ route: "claude-fable", effort: "medium" }]
     });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",
