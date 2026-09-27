@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -218,10 +218,11 @@ test("the checkout role and model files assemble a policy that validates", () =>
     .filter((name) => name.endsWith(".yaml") && !(skipInventory && name === "inventory.yaml"))
     .map((name) => parse(readFileSync(join(dir, name), "utf8")));
   const policy = assembleRosterPolicy(load(".kxm/models", true), load(".kxm/roles", false));
-  const validated = validateRosterDocument(policy, (source: string) => source === "plans/evidence/route-qwen-openrouter-pi.md" ? readFileSync(source) : undefined);
-  assert.deepEqual(validated.lineup.writer, ["grok-native", "qwen-openrouter-pi", "gemini-agy"]);
-  assert.equal(validated.required_critics["review-arch"], "fable-claude");
-  assert.equal(validated.required_critics["review-cli"], "sol-codex");
-  assert.equal(validated.routes["qwen-openrouter-pi"]?.permissions[0], "edit");
+  const validated = validateRosterDocument(policy, (source: string) => existsSync(source) ? readFileSync(source) : undefined);
+  assert.deepEqual(validated.lineup.writer, ["grok-grok-4-7", "pi-qwen3-coder-plus-openrouter", "agy-gemini-3-8-flash-high", "agy-gemini-3-8-flash-medium"]);
+  assert.deepEqual(validated.lineup.planner, ["claude-fable", "pi-qwen3-8-flash-openrouter"]);
+  assert.equal(validated.required_critics["review-arch"], "claude-fable");
+  assert.equal(validated.required_critics["review-cli"], "codex-gpt-5-6-sol");
+  assert.equal(validated.routes["pi-qwen3-coder-plus-openrouter"]?.permissions[0], "edit");
 });
 

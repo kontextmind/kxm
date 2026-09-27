@@ -493,3 +493,46 @@ test("schema versus pure-validator parity: timeoutMs constraints", () => {
   assertDraftAndModel(grokNativeDraft({ limits: { timeoutMs: -1 } }), validateModel, false, "timeoutMs negative");
   assertDraftAndModel(grokNativeDraft({ limits: { timeoutMs: 1.5 } }), validateModel, false, "timeoutMs non-integer");
 });
+
+test("a required critic may list a read-only fallback and refuses an edit route", () => {
+  const fallback = model("pi-glm", {
+    harness: "pi",
+    model: "openrouter/z-ai/glm-5.3-flash",
+    vendor: "z-ai",
+    status: "admitted",
+    permissions: ["read-only"],
+    origin: { source: "evidence.md", sha256: evidenceHash },
+  });
+  const ok = validatePolicyDraft(currentDraft({
+    models: { "pi-glm": fallback },
+    roles: {
+      "reviewer-arch": role("reviewer-arch", {
+        purpose: "reviewer-arch",
+        permission: "read-only",
+        roster: [{ route: "fable-claude" }, { route: "pi-glm" }],
+      }),
+    },
+  }), options());
+  assert.equal(ok.ok, true, ok.ok ? "" : ok.issues.map((issue) => `${issue.code}:${issue.message}`).join("\n"));
+
+  const editFallback = model("pi-glm-edit", {
+    harness: "pi",
+    model: "openrouter/z-ai/glm-5.3-flash",
+    vendor: "z-ai",
+    status: "admitted",
+    permissions: ["edit"],
+    origin: { source: "evidence.md", sha256: evidenceHash },
+  });
+  const bad = validatePolicyDraft(currentDraft({
+    models: { "pi-glm-edit": editFallback },
+    roles: {
+      "reviewer-arch": role("reviewer-arch", {
+        purpose: "reviewer-arch",
+        permission: "read-only",
+        roster: [{ route: "fable-claude" }, { route: "pi-glm-edit" }],
+      }),
+    },
+  }), options());
+  assert.equal(bad.ok, false);
+  assert.ok(codes(bad).includes("permission_escalation"));
+});

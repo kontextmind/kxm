@@ -915,7 +915,7 @@ test("task run refuses unavailable live work before mutation and honors an execu
     initializeKxmProject(cwd, { projectId: "prj_01JTASKRUN0000000000000", projectName: "Task route" });
     const projectFile = join(cwd, ".kxm", "project.yaml");
     writeFileSync(projectFile, readFileSync(projectFile, "utf8").replace("defaultHarness: pi", "defaultHarness: claude"));
-    for (const agentId of ["coordinator", "implementer"]) {
+    for (const agentId of ["planner", "writer"]) {
       const agentPath = join(cwd, ".kxm", "agents", `${agentId}.yaml`);
       const agent = parse(readFileSync(agentPath, "utf8"));
       delete agent.harness;
@@ -1404,7 +1404,7 @@ test("kxm trust diff and check classify expansions against HEAD", async () => {
     assert.equal(await runCli(["trust", "diff", "--json"], env, cleanDiffIo, cwd), 0);
     assert.equal((JSON.parse(cleanDiffIo.read().stdout) as { changes: unknown[] }).changes.length, 0);
 
-    const agentFile = join(cwd, ".kxm", "agents", "coordinator.yaml");
+    const agentFile = join(cwd, ".kxm", "agents", "planner.yaml");
     writeFileSync(agentFile, readFileSync(agentFile, "utf8").replace("network: provider-only", "network: host"), "utf8");
     const expandedIo = capture();
     assert.equal(await runCli(["trust", "check", "--json"], env, expandedIo, cwd), 1);
@@ -1415,7 +1415,7 @@ test("kxm trust diff and check classify expansions against HEAD", async () => {
     };
     assert.equal(expanded.ok, false);
     assert.equal(expanded.requiresReview, true);
-    assert(expanded.changes.some((change) => change.field === "network" && change.direction === "expansion" && change.resource === ".kxm/agents/coordinator.yaml"));
+    assert(expanded.changes.some((change) => change.field === "network" && change.direction === "expansion" && change.resource === ".kxm/agents/planner.yaml"));
 
     const expandedTextIo = capture();
     assert.equal(await runCli(["trust", "check"], env, expandedTextIo, cwd), 1);
@@ -2703,8 +2703,8 @@ test("kxm run implement-only --dry-run plans with no prerequisites", async () =>
   try {
     makeGitRoot(cwd);
     initializeKxmProject(cwd, { projectId: "prj_01JIMPLONLY0000000000000", projectName: "Implement Only" });
-    const source = join(dirname(fileURLToPath(import.meta.url)), "../../.kxm/workflows/implement-only.yaml");
-    cpSync(source, join(cwd, ".kxm", "workflows", "implement-only.yaml"));
+    const source = join(dirname(fileURLToPath(import.meta.url)), "../../.kxm/workflows/writer-only.yaml");
+    cpSync(source, join(cwd, ".kxm", "workflows", "writer-only.yaml"));
     spawnSync("git", ["-C", cwd, "add", "-A"], { windowsHide: true });
     spawnSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"], { windowsHide: true });
     const dryIo = capture();

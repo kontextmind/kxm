@@ -188,7 +188,7 @@ The starter `defaultHarness: pi` and `npm test` gate are generic settings, not r
 - Global options: `--json` and `--dry-run` only; `--workspace` exits 2 with `workspace_option_unsupported`.
 - `--project-id` must match `prj_` followed by 6 to 128 letters, digits, `_`, or `-`. `--repository` is repeatable; each value must be `<id>=<absolute path>`, and a repeated ID fails with `repository_binding_argument_duplicate`.
 - Needs a Git repository. Does not need a hub or the Runtime.
-- Writes `.kxm/project.yaml`, `.kxm/agents/coordinator.yaml`, `.kxm/agents/implementer.yaml`, `.kxm/gates.yaml`, `.kxm/repo/repo.yaml`, `.kxm/workflows/default.yaml`, and `.kxm/template-provenance.yaml`, using a `.kxm-init-transaction` directory at the Git root while a create or repair is in flight. Repository bindings are written under the user state root, never into Git. `--dry-run` writes nothing.
+- Writes `.kxm/project.yaml`, `.kxm/agents/planner.yaml`, `.kxm/agents/writer.yaml`, `.kxm/gates.yaml`, `.kxm/repo/repo.yaml`, `.kxm/workflows/default.yaml`, and `.kxm/template-provenance.yaml`, using a `.kxm-init-transaction` directory at the Git root while a create or repair is in flight. `planner.yaml` keeps the alias `coordinator`, and `writer.yaml` keeps the alias `implementer`. Repository bindings are written under the user state root, never into Git. `--dry-run` writes nothing.
 - On an interactive terminal without `--json` or `--dry-run`, a successful create or join offers to install shell completion (suppress with `KXM_SKIP_COMPLETION_PROMPT=1`) and to write workflow-guide agents (suppress with `KXM_SKIP_GUIDE_SETUP_PROMPT=1`). Guided setup keeps a role only when one of its guide candidates is on a fixed map of reviewed harness/model pairs and that harness is authenticated; it writes the agent and workflow files, appends those selectors to `.kxm/routes.yaml`, and skips every other candidate. Google candidates are not on the map and are always skipped, because the Runtime's Pi one-shot cannot reach Google's `antigravity` Pi provider yet (see [Harness routing](harness-routing.md#google-through-the-antigravity-pi-provider)).
 - JSON keys: `action` (`planned`, `created`, `joined`, `repaired`, `resumed`, or `validated`), `mode`, `inspectedFrom`, `projectRoot`, `changesRequired`, `legacyInputs`, `issues`, `configRevision`, `files`, `plannedOnly`, and, when relevant, `guidance`, `localBindingFile`, `bindingsChanged`, `repairPlan`, `resumePending`, `transactionKind`.
 - Exit 0 for every completed action and every dry-run plan. Exit 1 when the result is planning-only (legacy state, blocked repair, partial state without provenance) or for `initialization_failed` (with `issues`) and `initialization_io_failed`. A planning-only text result prints the reason and then one `<file>: <code>: <message>` line per validation issue, for example `.kxm/workflows/first.yaml: gate_outcome_impossible: ...`.
@@ -200,7 +200,7 @@ kxm init --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"init","action":"planned","mode":"create","inspectedFrom":"/work/proj","projectRoot":"/work/proj","changesRequired":true,"legacyInputs":[],"issues":[],"files":[".kxm/agents/coordinator.yaml",".kxm/agents/implementer.yaml",".kxm/gates.yaml",".kxm/project.yaml",".kxm/repo/repo.yaml",".kxm/template-provenance.yaml",".kxm/workflows/default.yaml"],"plannedOnly":true}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"init","action":"planned","mode":"create","inspectedFrom":"/work/proj","projectRoot":"/work/proj","changesRequired":true,"legacyInputs":[],"issues":[],"files":[".kxm/agents/planner.yaml",".kxm/agents/writer.yaml",".kxm/gates.yaml",".kxm/models/claude-fable.yaml",".kxm/models/grok-grok-4-6.yaml",".kxm/project.yaml",".kxm/repo/repo.yaml",".kxm/roles/planner.yaml",".kxm/roles/writer.yaml",".kxm/routes.yaml",".kxm/template-provenance.yaml",".kxm/workflows/default.yaml"],"plannedOnly":true}
 ```
 
 Create the project:
@@ -419,7 +419,7 @@ kxm trust diff
 
 ```text
 permission diff: sha256:80457232cbfc… -> sha256:7428fde55ca4…
-EXPANSION  .kxm/agents/coordinator.yaml /repositories/control repository-access changed (expansion)
+EXPANSION  .kxm/agents/planner.yaml /repositories/control repository-access changed (expansion)
 1 expansion(s) require explicit reviewed trust action
 ```
 
@@ -452,7 +452,7 @@ kxm trust check
 
 ```text
 permission diff: sha256:80457232cbfc… -> sha256:7428fde55ca4…
-EXPANSION  .kxm/agents/coordinator.yaml /repositories/control repository-access changed (expansion)
+EXPANSION  .kxm/agents/planner.yaml /repositories/control repository-access changed (expansion)
 1 expansion(s) require explicit reviewed trust action
 trust check failed: review every expansion above before merging
 ```
@@ -462,7 +462,7 @@ kxm trust check --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":false,"command":"trust check",...,"requiresReview":true,"expansions":1,"narrowings":0,"neutralChanges":0,"changes":[{"resource":".kxm/agents/coordinator.yaml","path":"/repositories/control","field":"repository-access","direction":"expansion",...}]}
+{"schema":"kxm.cli-result.v1","ok":false,"command":"trust check",...,"requiresReview":true,"expansions":1,"narrowings":0,"neutralChanges":0,"changes":[{"resource":".kxm/agents/planner.yaml","path":"/repositories/control","field":"repository-access","direction":"expansion",...}]}
 ```
 
 <a id="hub-commands"></a>
@@ -1069,7 +1069,7 @@ Lists admitted and disabled routes.
 
 No command-specific options.
 
-- Reads only. JSON keys: `policy` (`schema`, `updatedAt`, `admitted`, `disabled`) and `membership` (strings `<role> <route-id>` from `.kxm/roles/*.yaml`). `policy` has no `roles` field. A model file named by no roster, such as `opus-claude`, is absent from `membership`.
+- Reads only. JSON keys: `policy` (`schema`, `updatedAt`, `admitted`, `disabled`) and `membership` (strings `<role> <route-id>` from `.kxm/roles/*.yaml`). `policy` has no `roles` field. A model file named by no roster is absent from `membership`, and this repository's workforce lint fails on that file.
 
 ```bash
 kxm routes list
@@ -1083,18 +1083,17 @@ admitted openai/gpt-5.6-sol
 admitted openrouter/qwen/qwen3-coder-plus
 admitted openrouter/qwen/qwen3.8-flash
 admitted openrouter/z-ai/glm-5.3-flash
-admitted qwen-token-plan/deepseek-v4.1-flash
-admitted qwen-token-plan/qwen3.8-flash
-admitted qwen-token-plan/qwen3.8-max
 admitted xai/grok-4.7
-admitted zai-coding-cn/glm-5.3
-admitted zai-coding-cn/glm-5.3-flash
-planner fable-claude
-reviewer-arch fable-claude
-reviewer-cli sol-codex
-writer grok-native
-writer qwen-openrouter-pi
-writer gemini-agy
+planner claude-fable
+planner pi-qwen3-8-flash-openrouter
+reviewer-arch claude-fable
+reviewer-arch pi-glm-5-3-flash-openrouter
+reviewer-cli codex-gpt-5-6-sol
+reviewer-cli pi-qwen3-8-flash-openrouter
+writer grok-grok-4-7
+writer pi-qwen3-coder-plus-openrouter
+writer agy-gemini-3-8-flash-high
+writer agy-gemini-3-8-flash-medium
 ```
 
 ```bash
@@ -1102,7 +1101,7 @@ kxm routes list --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-24T00:00:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","openai/gpt-5.6-sol","openrouter/qwen/qwen3-coder-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","qwen-token-plan/deepseek-v4.1-flash","qwen-token-plan/qwen3.8-flash","qwen-token-plan/qwen3.8-max","xai/grok-4.7","zai-coding-cn/glm-5.3","zai-coding-cn/glm-5.3-flash"],"disabled":[]},"membership":["planner fable-claude","reviewer-arch fable-claude","reviewer-cli sol-codex","writer grok-native","writer qwen-openrouter-pi","writer gemini-agy"]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-27T00:00:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","openai/gpt-5.6-sol","openrouter/qwen/qwen3-coder-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","xai/grok-4.7"],"disabled":[]},"membership":["planner claude-fable","planner pi-qwen3-8-flash-openrouter","reviewer-arch claude-fable","reviewer-arch pi-glm-5-3-flash-openrouter","reviewer-cli codex-gpt-5-6-sol","reviewer-cli pi-qwen3-8-flash-openrouter","writer grok-grok-4-7","writer pi-qwen3-coder-plus-openrouter","writer agy-gemini-3-8-flash-high","writer agy-gemini-3-8-flash-medium"]}
 ```
 
 ### `kxm routes count`
@@ -1247,10 +1246,10 @@ kxm role add demo-role --description "Demo role" --dry-run --json
 {"schema":"kxm.cli-result.v1","ok":true,"command":"role add","roleId":"demo-role","id":"demo-role","filePath":"/work/proj/.kxm/roles/demo-role.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/proj/.kxm/roles/demo-role.yaml"}]}
 ```
 
-Add a reviewer whose primary route is `fable-claude`, with `grok-native` second (Not run):
+Add a reviewer whose primary route is `claude-fable`, with `grok-grok-4-7` second (Not run):
 
 ```bash
-kxm role add reviewer --description "Independent reviewer" --route fable-claude --route grok-native --skills kxm
+kxm role add reviewer --description "Independent reviewer" --route claude-fable --route grok-grok-4-7 --skills kxm
 ```
 
 ```bash
@@ -1307,7 +1306,7 @@ kxm role get writer --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role get","roleId":"writer","scope":"local","filePath":"/work/kxm/.kxm/roles/writer.yaml","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":[],"roster":[{"route":"grok-native","effort":"medium"},{"route":"qwen-openrouter-pi","effort":"medium"},{"route":"gemini-agy"}]}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role get","roleId":"writer","scope":"local","filePath":"/work/kxm/.kxm/roles/writer.yaml","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":[],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-3-8-flash-high"},{"route":"agy-gemini-3-8-flash-medium"}]}}
 ```
 
 Captured from this checkout with `node scripts/kxm.mjs role get writer --json`. The path is shortened to `/work/kxm`.
@@ -1317,13 +1316,13 @@ kxm role modify writer --add-skill kxm --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"writer","id":"writer","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":["kxm"],"roster":[{"route":"grok-native","effort":"medium"},{"route":"qwen-openrouter-pi","effort":"medium"},{"route":"gemini-agy"}]},"filePath":"/work/kxm/.kxm/roles/writer.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/kxm/.kxm/roles/writer.yaml"}]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"writer","id":"writer","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":["kxm"],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-3-8-flash-high"},{"route":"agy-gemini-3-8-flash-medium"}]},"filePath":"/work/kxm/.kxm/roles/writer.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/kxm/.kxm/roles/writer.yaml"}]}
 ```
 
 Add an existing route to a role's roster (Not run):
 
 ```bash
-kxm role modify reviewer --add-route fable-claude --add-skill kxm-peer
+kxm role modify reviewer --add-route claude-fable --add-skill kxm-peer
 ```
 
 ### `kxm role resume`

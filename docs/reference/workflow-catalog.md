@@ -1096,9 +1096,9 @@ These three files live in this repository's `.kxm/workflows`. `kxm init` does no
 
 | Workflow | Runs through |
 |---|---|
-| `implement-only` | `kxm lane run`. Replaces a retired transport recipe. |
-| `review-arch-only` | `kxm lane run`. Replaces a retired transport recipe. |
-| `review-cli-only` | `kxm lane run`. Replaces a retired transport recipe. |
+| `writer-only` | `kxm lane run`. `implement-only` still resolves to this file. |
+| `reviewer-arch-only` | `kxm lane run`. `review-arch-only` still resolves to this file. |
+| `reviewer-cli-only` | `kxm lane run`. `review-cli-only` still resolves to this file. |
 
 ## Related
 

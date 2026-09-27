@@ -38,7 +38,7 @@ function committedProject(prefix: string): string {
 }
 
 function editProject(root: string, edit: (content: string) => string): void {
-  const path = join(root, ".kxm", "agents", "coordinator.yaml");
+  const path = join(root, ".kxm", "agents", "planner.yaml");
   writeFileSync(path, edit(readFileSync(path, "utf8")), "utf8");
 }
 

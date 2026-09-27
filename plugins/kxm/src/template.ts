@@ -175,35 +175,64 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
   ]);
   if (variant === "v4-registry") {
     const coordinator = files.get(".kxm/agents/coordinator.yaml");
-    if (coordinator) files.set(".kxm/agents/coordinator.yaml", { ...coordinator, role: "planner" });
+    if (coordinator) {
+      files.delete(".kxm/agents/coordinator.yaml");
+      files.set(".kxm/agents/planner.yaml", { ...coordinator, role: "planner", aliases: ["coordinator"] });
+    }
     const implementer = files.get(".kxm/agents/implementer.yaml");
-    if (implementer) files.set(".kxm/agents/implementer.yaml", { ...implementer, role: "writer" });
+    if (implementer) {
+      files.delete(".kxm/agents/implementer.yaml");
+      files.set(".kxm/agents/writer.yaml", { ...implementer, role: "writer", aliases: ["implementer"] });
+    }
     const workflow = files.get(".kxm/workflows/default.yaml");
     if (workflow) {
       const limits = { ...(workflow.limits as JsonObject) };
       delete limits.maxAgentTimeMs;
-      files.set(".kxm/workflows/default.yaml", { ...workflow, limits });
+      const steps = (workflow.steps as JsonObject[]).map((step) => {
+        if (step.id === "plan") {
+          const on = { ...(step.on as JsonObject), passed: "writer" };
+          return { ...step, agent: "planner", on };
+        }
+        if (step.id === "implement") {
+          const assignments = { ...(step.assignments as JsonObject), allowedAgents: ["writer"] };
+          return { ...step, id: "writer", aliases: ["implement"], agent: "writer", assignments };
+        }
+        if (step.id === "verify") {
+          const on = { ...(step.on as JsonObject) };
+          const failure = on["implementation-failure"];
+          if (failure && typeof failure === "object" && !Array.isArray(failure)) {
+            on["implementation-failure"] = { ...(failure as JsonObject), target: "writer" };
+          }
+          return { ...step, on };
+        }
+        return step;
+      });
+      files.set(".kxm/workflows/default.yaml", { ...workflow, coordinator: "planner", limits, steps });
     }
     // The two models the template names, and nothing else. A fresh project can
     // be driven without falling through to an unadmitted default model.
+    // Route ids follow <harness>-<model-slug>. grok-default and fable-default
+    // remain aliases so an existing --route flag still resolves.
     files.set(".kxm/routes.yaml", {
       schema: "kxm.routes.v2",
-      updatedAt: "2026-09-23T00:00:00.000Z",
+      updatedAt: "2026-09-27T00:00:00.000Z",
       admitted: ["anthropic/fable", "xai/grok-4.6"],
       disabled: [],
     });
-    files.set(".kxm/models/grok-default.yaml", {
+    files.set(".kxm/models/grok-grok-4-6.yaml", {
       schema: "kxm.model.v2",
-      id: "grok-default",
+      id: "grok-grok-4-6",
+      aliases: ["grok-default"],
       harness: "grok",
       model: "grok-4.6",
       vendor: "xai",
       status: "admitted",
       permissions: ["edit"],
     });
-    files.set(".kxm/models/fable-default.yaml", {
+    files.set(".kxm/models/claude-fable.yaml", {
       schema: "kxm.model.v2",
-      id: "fable-default",
+      id: "claude-fable",
+      aliases: ["fable-default"],
       harness: "claude",
       model: "fable",
       vendor: "anthropic",
@@ -216,7 +245,7 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
       purpose: "writer",
       permission: "edit",
       description: "Primary implementation agent.",
-      roster: [{ route: "grok-default" }],
+      roster: [{ route: "grok-grok-4-6" }],
     });
     files.set(".kxm/roles/planner.yaml", {
       schema: "kxm.role.v2",
@@ -224,7 +253,7 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
       purpose: "planner",
       permission: "read-only",
       description: "Plans the change before implementation.",
-      roster: [{ route: "fable-default" }],
+      roster: [{ route: "claude-fable" }],
     });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",

@@ -26,8 +26,26 @@ a `default` workflow, `gates.yaml` and `template-provenance.yaml`.
 | `run/` | SSH control sockets from `kxm ssh` | Ignored |
 
 The role files under `.kxm/roles/` and the model files under `.kxm/models/`
-carry the developer policy. The assignment runner reads them at
-`refs/remotes/origin/main`.
+carry the developer policy. The assignment runner reads them at one commit
+(`HEAD`, which must be an ancestor of `refs/remotes/origin/main`). A rename
+does not rewrite a commit that still uses the old ids. An old id resolves
+only when that id is absent and the other side is present.
+
+Ids in this checkout follow one convention per kind:
+
+| Kind | Convention | This checkout |
+|---|---|---|
+| Role | The purpose: `planner`, `writer`, `reviewer-arch`, `reviewer-cli` | Unchanged |
+| Agent | The same id as its `role` | `planner`, `writer`, `reviewer-arch`, `reviewer-cli` |
+| Route | `<harness>-<model-slug>[-<provider>]`, with `.` written as `-` | `grok-grok-4-7`, `claude-fable`, `pi-qwen3-coder-plus-openrouter` |
+| Workflow | `default`, `land`, or `<role>-only` | `default`, `land`, `writer-only`, `reviewer-arch-only`, `reviewer-cli-only` |
+| Agent step | The agent's role id | `writer`, `reviewer-arch`, `reviewer-cli` |
+
+`coordinator`, `implementer`, `critic-arch`, and `critic-cli` are aliases of
+the agent ids. `implement`, `review-arch`, and `review-cli` are aliases of
+the step ids. Route aliases include `grok-native`, `fable-claude`, and
+`sol-codex`. Using an alias prints `kxm: deprecated <kind> id '<from>' resolves to '<to>'`.
+`opus-claude` does not resolve to another model.
 
 The [configuration reference](../docs/reference/config-reference.md#workspace-layout-tracked-ignored-and-state)
 describes every file, the ignore rules to add, and the state KXM keeps outside

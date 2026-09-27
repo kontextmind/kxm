@@ -11,6 +11,7 @@ import {
 } from "./restricted-yaml.mjs";
 import { pathToFileURL } from "node:url";
 import { validatePolicyDraft } from "./policy-draft.mjs";
+import { findYamlBasename, lintWorkforce, lookupById, noteDeprecatedId, STEP_RENAMES } from "../../../scripts/workforce-names.mjs";
 import { resolveKxmTemplateBaseline } from "./template.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS } from "./harness.ts";
@@ -590,6 +591,20 @@ function names(value: JsonValue | undefined): string[] {
   return Array.isArray(value) ? value.filter((candidate): candidate is string => typeof candidate === "string") : [];
 }
 
+/** Resolve an agent, workflow, or route, including a deprecated alias. */
+export function lookupKxmResource<T extends { id?: string; value: JsonObject }>(
+  resources: Iterable<T>,
+  requested: string,
+  kind: "agent" | "workflow" | "route",
+): T | undefined {
+  const records = [...resources].map((resource) => ({
+    id: resource.id,
+    aliases: names(resource.value.aliases),
+    resource,
+  }));
+  return lookupById(records, requested, kind)?.record.resource;
+}
+
 function mapResource(resource: KxmResource, map: Map<string, KxmResource>, issues: KxmConfigIssue[]): void {
   const id = resource.id;
   if (!id) return;
@@ -872,14 +887,31 @@ function validateWorkflow(
 ): void {
   const file = workflow.logicalPath;
   const coordinator = stringValue(workflow.value.coordinator) ?? "coordinator";
-  if (!agents.has(coordinator)) issues.push(issue("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
+  if (!lookupKxmResource(agents.values(), coordinator, "agent")) issues.push(issue("reference", "coordinator_unknown", file, `coordinator ${coordinator} does not exist`));
   const steps = valuesOf(workflow.value, "steps").map((candidate) => objectValue(candidate)).filter((candidate): candidate is JsonObject => Boolean(candidate));
   const stepIndex = new Map<string, number>();
+  const primarySteps = new Set<string>();
   for (const [index, step] of steps.entries()) {
     const id = stringValue(step.id);
     if (!id) continue;
     if (stepIndex.has(id)) issues.push(issue("semantic", "step_id_duplicate", file, `step ${id} is duplicated`));
-    else stepIndex.set(id, index);
+    else {
+      stepIndex.set(id, index);
+      primarySteps.add(id);
+    }
+  }
+  for (const [index, step] of steps.entries()) {
+    const id = stringValue(step.id);
+    if (!id) continue;
+    const aliases = new Set(names(step.aliases));
+    for (const [oldId, newId] of STEP_RENAMES) {
+      if (id === newId) aliases.add(oldId);
+      if (id === oldId) aliases.add(newId);
+    }
+    for (const alias of aliases) {
+      if (alias === id || primarySteps.has(alias) || stepIndex.has(alias)) continue;
+      stepIndex.set(alias, index);
+    }
   }
 
   for (const field of ["reproOracle", "planHash"] as const) {
@@ -910,7 +942,7 @@ function validateWorkflow(
     const kind = stringValue(step.kind);
     validateToolPolicy(workflow, objectValue(step.tools), `${stepId}.tools`, issues);
     const primaryAgentId = stringValue(step.agent);
-    if ((kind === "agent" || kind === "moa") && primaryAgentId && !agents.has(primaryAgentId)) {
+    if ((kind === "agent" || kind === "moa") && primaryAgentId && !lookupKxmResource(agents.values(), primaryAgentId, "agent")) {
       issues.push(issue("reference", "agent_unknown", file, `${stepId} references unknown agent ${primaryAgentId}`));
     }
     const gate = stringValue(step.gate);
@@ -938,7 +970,7 @@ function validateWorkflow(
     const declaredAgents = assignment ? names(assignment.allowedAgents) : [];
     const allowedAgents = declaredAgents.length > 0 ? declaredAgents : primaryAgentId ? [primaryAgentId] : [];
     for (const agentId of allowedAgents) {
-      const agent = agents.get(agentId);
+      const agent = lookupKxmResource(agents.values(), agentId, "agent");
       if (!agent) issues.push(issue("reference", "assignment_agent_unknown", file, `${stepId} allows unknown agent ${agentId}`));
       else {
         validateAgentScope(agent, step, repositories, file, stepId, issues);
@@ -1003,7 +1035,7 @@ function validateWorkflow(
       const producerMinimum = numberValue(policy.minimumProducers, 1);
       if (producerMinimum > target || producerMinimum > eligible.length) issues.push(issue("semantic", "producer_minimum_impossible", file, `${stepId}.${String(key)} producer minimum exceeds its eligible or target pool`));
       for (const agentId of eligible) {
-        if (!agents.has(agentId)) issues.push(issue("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
+        if (!lookupKxmResource(agents.values(), agentId, "agent")) issues.push(issue("reference", "producer_agent_unknown", file, `${stepId}.${String(key)} references unknown producer ${agentId}`));
         if (allowedAgents.length > 0 && !allowedAgents.includes(agentId)) issues.push(issue("semantic", "producer_agent_ineligible", file, `${stepId}.${String(key)} producer ${agentId} is outside allowedAgents`));
       }
       const degradation = objectValue(policy.degradation);
@@ -1025,6 +1057,10 @@ function validateWorkflow(
         terminalReachable.add(index);
         if (parsed.terminalStatus === "completed") completedTerminalSources.add(index);
         continue;
+      }
+      if (parsed.target && parsed.target !== "$terminal" && !primarySteps.has(parsed.target) && stepIndex.has(parsed.target)) {
+        const canonical = stringValue(steps[stepIndex.get(parsed.target) ?? -1]?.id);
+        if (canonical) noteDeprecatedId("step", parsed.target, canonical);
       }
       const targetIndex = parsed.target === undefined ? undefined : stepIndex.get(parsed.target);
       if (targetIndex === undefined) {
@@ -1195,7 +1231,7 @@ function validateBundle(
   validateModelReferences(models, issues);
 
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
-  if (!workflows.has(defaultWorkflow)) issues.push(issue("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
+  if (!lookupKxmResource(workflows.values(), defaultWorkflow, "workflow")) issues.push(issue("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
 
   // Developer policy is the role files under .kxm/roles/ (with the model
@@ -1220,8 +1256,9 @@ function rosterModelIssues(projectRoot: string, roles: ReadonlyMap<string, KxmRe
     for (const entry of valuesOf(role.value, "roster")) {
       const route = stringValue(objectValue(entry)?.route);
       if (!route) continue;
-      const logical = `.kxm/models/${route}.yaml`;
-      const file = join(projectRoot, ".kxm", "models", `${route}.yaml`);
+      const resolved = findYamlBasename(join(projectRoot, ".kxm", "models"), route, "route") ?? route;
+      const logical = `.kxm/models/${resolved}.yaml`;
+      const file = join(projectRoot, ".kxm", "models", `${resolved}.yaml`);
       let harness: string | undefined;
       try {
         if (existsSync(file)) harness = stringValue(parseRestrictedYaml(readFileSync(file, "utf8"), logical).harness);
@@ -1305,6 +1342,7 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
   // is this package's developer policy, so it runs when the loaded project
   // is that package.
   if (resolve(projectRoot) !== findKxmRepoRoot(import.meta.url)) return [];
+  const lintIssues = lintWorkforce(projectRoot).errors.map((entry) => issue("semantic", entry.code, entry.file, entry.message));
   const rolesDir = join(projectRoot, ".kxm", "roles");
   const modelsDir = join(projectRoot, ".kxm", "models");
   const roles: Record<string, JsonObject> = {};
@@ -1340,7 +1378,7 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
   }
   const ceilings = developerCeilings();
   if (!ceilings.ok) {
-    return [...parseIssues, issue("semantic", "developer_ceilings_unavailable", ".kxm/models", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+    return [...parseIssues, ...lintIssues, issue("semantic", "developer_ceilings_unavailable", ".kxm/models", `developer ceilings could not be loaded: ${ceilings.detail}`)];
   }
   const result = validatePolicyDraft({ models, roles, evidence }, {
     ceilings: ceilings.ROUTES,
@@ -1349,8 +1387,8 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
     piNativeVendorProviders: ceilings.PI_NATIVE_VENDOR_PROVIDERS,
     vendorAliases: { "x-ai": "xai", moonshotai: "moonshot", "google-ai": "google", qwen: "alibaba" },
   });
-  if (result.ok) return parseIssues;
-  return [...parseIssues, ...result.issues.map((entry) => issue(entry.phase, entry.code, entry.file, entry.message))];
+  if (result.ok) return [...parseIssues, ...lintIssues];
+  return [...parseIssues, ...lintIssues, ...result.issues.map((entry) => issue(entry.phase, entry.code, entry.file, entry.message))];
 }
 
 export function kxmCanonicalJson(value: JsonValue): string {

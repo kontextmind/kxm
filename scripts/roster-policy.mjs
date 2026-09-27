@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_ANTIGRAVITY_MODEL_ID, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from './harness-run.mjs';
+import { lookupById } from './workforce-names.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODEL_DIR = '.kxm/models';
@@ -201,12 +202,17 @@ export function assembleRosterPolicy(models, roles) {
     text(role.id, 'role id');
     if (!Array.isArray(role.roster)) refuse('lineup contains unsupported or duplicate values');
     const ids = [];
+    const modelRecords = models
+      .filter((doc) => doc && typeof doc.id === 'string')
+      .map((doc) => ({ id: doc.id, aliases: Array.isArray(doc.aliases) ? doc.aliases : [] }));
     for (const entry of role.roster) {
       record(entry, 'roster entry');
       text(entry.route, 'roster route');
-      ids.push(entry.route);
-      if (!rolesByRoute[entry.route]) rolesByRoute[entry.route] = [];
-      if (!rolesByRoute[entry.route].includes(role.id)) rolesByRoute[entry.route].push(role.id);
+      const resolved = lookupById(modelRecords, entry.route, 'route');
+      const routeId = resolved?.record.id ?? entry.route;
+      ids.push(routeId);
+      if (!rolesByRoute[routeId]) rolesByRoute[routeId] = [];
+      if (!rolesByRoute[routeId].includes(role.id)) rolesByRoute[routeId].push(role.id);
     }
     lineup[role.id] = ids;
   }

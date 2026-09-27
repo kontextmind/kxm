@@ -208,8 +208,8 @@ test("same-policy pins differ only by runId; re-pin is idempotent; revision drif
       assert.equal(again.idempotent, true);
       assert.equal(context.eventStore.events(first.run.runId, 0, 20).filter((event) => event.payload.runPlanHash).length, 1);
       writeFileSync(
-        join(root, ".kxm", "agents", "implementer.yaml"),
-        readFileSync(join(root, ".kxm", "agents", "implementer.yaml"), "utf8").replace("Implement the approved change", "Implement the drifted change"),
+        join(root, ".kxm", "agents", "writer.yaml"),
+        readFileSync(join(root, ".kxm", "agents", "writer.yaml"), "utf8").replace("Implement the approved change", "Implement the drifted change"),
       );
       const drifted = loadKxmProject(root);
       assert.notEqual(drifted.configRevision, bundle.configRevision);
@@ -1102,8 +1102,8 @@ test("scheduler admits concurrently, conflicts on queued policy replacement, and
       const queuedPending = scheduler.enqueue(queuedRun.run.runId, blocking);
       await new Promise((resolve) => setTimeout(resolve, 20));
       writeFileSync(
-        join(root, ".kxm", "agents", "coordinator.yaml"),
-        readFileSync(join(root, ".kxm", "agents", "coordinator.yaml"), "utf8").replace("Coordinate the pinned workflow", "Coordinate the drifted workflow"),
+        join(root, ".kxm", "agents", "planner.yaml"),
+        readFileSync(join(root, ".kxm", "agents", "planner.yaml"), "utf8").replace("Coordinate the pinned workflow", "Coordinate the drifted workflow"),
       );
       const drifted = loadKxmProject(root);
       assert.notEqual(drifted.configRevision, bundle.configRevision);
@@ -1119,8 +1119,8 @@ test("scheduler admits concurrently, conflicts on queued policy replacement, and
 
       const idle = KxmRunScheduler.for(context, bundle);
       writeFileSync(
-        join(root, ".kxm", "agents", "coordinator.yaml"),
-        readFileSync(join(root, ".kxm", "agents", "coordinator.yaml"), "utf8").replace("Coordinate the drifted workflow", "Coordinate the rebound workflow"),
+        join(root, ".kxm", "agents", "planner.yaml"),
+        readFileSync(join(root, ".kxm", "agents", "planner.yaml"), "utf8").replace("Coordinate the drifted workflow", "Coordinate the rebound workflow"),
       );
       const rebound = loadKxmProject(root);
       assert.notEqual(rebound.configRevision, bundle.configRevision);
@@ -4278,7 +4278,7 @@ test("live route refuses a role whose first admitted route is disabled", () => {
 test("live write refuses a writer route without edit", () => {
   const { root, stateRoot } = engineProject("kxm-engine-writer-no-edit-");
   try {
-    writeFileSync(join(root, ".kxm", "models", "grok-default.yaml"), "schema: kxm.model.v2\nid: grok-default\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
+    writeFileSync(join(root, ".kxm", "models", "grok-grok-4-6.yaml"), "schema: kxm.model.v2\nid: grok-grok-4-6\naliases:\n  - grok-default\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
     writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), "schema: kxm.workflow.v1\ndescription: Write\ncoordinator: coordinator\nlimits:\n  maxTransitions: 2\nsteps:\n  - id: write-step\n    kind: agent\n    agent: implementer\n    repositories:\n      control: write\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n");
     setRouteState(root, "xai/grok-4.6", "admitted");
     const bundle = loadKxmProject(root);

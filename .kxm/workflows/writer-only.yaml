@@ -1,12 +1,16 @@
 schema: kxm.workflow.v1
-description: One implementer step with a drive receipt.
-coordinator: coordinator
+description: One writer step with a drive receipt.
+aliases:
+  - implement-only
+coordinator: planner
 limits:
   maxTransitions: 2
 steps:
-  - id: implement
+  - id: writer
+    aliases:
+      - implement
     kind: agent
-    agent: implementer
+    agent: writer
     repositories:
       control: write
     maxAttempts: 1

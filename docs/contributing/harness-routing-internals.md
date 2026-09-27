@@ -5,6 +5,12 @@ This page records how the KXM repository applies [harness routing](../reference/
 > [!IMPORTANT]
 > The files are the authority, not this page: `.kxm/routes.yaml`, `.kxm/roles/*.yaml`, `.kxm/models/*.yaml`, and `.kxm/prices.yaml`. Product routing decisions are recorded under Tracking → Decided in `plans/implementation-plan.md`.
 
+## Current ids (2026-09-27)
+
+The command transcripts below are the 2026-09-23 capture. The files now use one id shape per kind. A route id is `<harness>-<model-slug>[-<provider>]`, with `.` written as `-`. An agent id equals its role. A workflow id is `default`, `land`, or `<role>-only`. An agent step id equals that role.
+
+This checkout's routes are `grok-grok-4-7`, `pi-qwen3-coder-plus-openrouter`, `agy-gemini-3-8-flash-high`, `agy-gemini-3-8-flash-medium`, `claude-fable`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Old ids resolve as aliases.
+
 ## This checkout's routes and roster
 
 `node scripts/kxm.mjs role get writer`:
@@ -64,11 +70,11 @@ On the capture machine, `kxm harness list` showed `claude` detected but logged o
 The issue-127 runner (`kxm assign`, see the [assignment runner](assignment-runner.md)) reads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml` at `refs/remotes/origin/main`. See [Developer assignment policy](../reference/config-reference.md#developer-assignment-policy). Routes there name the harness, the model and the vendor explicitly:
 
 ```yaml
-  grok-native:
+  grok-grok-4-7:
     harness: grok
-    model: grok-4.6
+    model: grok-4.7
     vendor: xai
-  qwen-openrouter-pi:
+  pi-qwen3-coder-plus-openrouter:
     harness: pi
     model: openrouter/qwen/qwen3-coder-plus
     vendor: alibaba
@@ -107,19 +113,19 @@ These extend the generic examples on the reference page with this checkout's adm
 | | Native `grok` | Pi + OpenRouter |
 |---|---|---|
 | Selector | `xai/grok-4.6`: admitted, and first in the writer roster | `openrouter/x-ai/grok-4.6`: not admitted |
-| Developer roster | `grok-native`, the writer route with `edit` | Refused: `native vendor cannot use Pi` |
+| Developer roster | `grok-grok-4-7`, the writer route with `edit` | Refused: `native vendor cannot use Pi` |
 | Readiness | `grok` shows auth `yes` | `pi auth check --provider openrouter` returned `not_ready` |
 | Billing | grok.com subscription (OAuth) | $2.00 input, $6.00 output, $0.50 cached input |
 | Context | 500K (Pi's `xai` row; `grok models` does not print one) | 500,000 |
 
-Pi's own `xai` provider reported `ready` (OAuth) on the capture machine. When the grok quota runs out, the next writer in the lineup is `qwen-openrouter-pi`, a different vendor.
+Pi's own `xai` provider reported `ready` (OAuth) on the capture machine. When the grok quota runs out, the next writer in the lineup is `pi-qwen3-coder-plus-openrouter`, a different vendor.
 
 ### GPT-5.6 Sol
 
 | | Native `codex` | Pi + OpenRouter |
 |---|---|---|
 | Selector | `openai/gpt-5.6-sol`: admitted, the CLI critic | `openrouter/openai/gpt-5.6-sol`: not admitted |
-| Developer roster | `sol-codex`: `reviewer-cli`, `read-only` | Refused |
+| Developer roster | `codex-gpt-5-6-sol`: `reviewer-cli`, `read-only` | Refused |
 | Billing | ChatGPT subscription | $2.00 input, $10.00 output, $0.20 cached input |
 | Context | Pi's `openai-codex` row, the same ChatGPT backend, lists 272K | 1,050,000 |
 
@@ -130,7 +136,7 @@ In the inventory, `openai/gpt-5.6-sol` has sources `openrouter+nous` and carries
 | | Native `claude` | Pi + OpenRouter |
 |---|---|---|
 | Selector | `anthropic/fable`: admitted, planner and architecture critic | `openrouter/anthropic/claude-fable-5.1`: not admitted |
-| Developer roster | `fable-claude`: `planner` and `reviewer-arch`, `read-only` | Refused |
+| Developer roster | `claude-fable`: `planner` and `reviewer-arch`, `read-only` | Refused |
 | Readiness | Detected `yes`, auth `no`, dispatch `no (not_authenticated)` | `not_ready` |
 | Billing | claude.ai subscription | $10.00 input, $50.00 output, $0.25 cached input |
 | Context | 1M (Pi's `anthropic` row) | 1,000,000 |
@@ -159,10 +165,10 @@ The code differs from that decision: `.kxm/routes.yaml` admits `google/gemini-3.
 
 | Model | Vendor-plan route | OpenRouter route | Notes |
 |---|---|---|---|
-| Qwen3.8 Flash | `qwen-token-plan/qwen3.8-flash`: admitted, in the writer roster; `ready` (`api_key`) | `openrouter/qwen/qwen3.8-flash`: admitted; $0.15 input, $0.47 output | `prices.yaml` gives both routes the same rates. Prefer the plan when it is authenticated. |
-| Qwen3 Coder Plus | none | `openrouter/qwen/qwen3-coder-plus`: $0.65 input, $3.25 output | The only admitted Pi writer: exact model, `edit` permission. |
-| GLM 5.3 and 5.3 Flash | `zai-coding-cn/glm-5.3` and `…/glm-5.3-flash`: admitted as failover critics and writer | `openrouter/z-ai/glm-5.3-flash`: admitted; $0.09 input, $0.30 output | Z.ai has no native harness. |
-| DeepSeek V4.1 Flash | `qwen-token-plan/deepseek-v4.1-flash`: admitted | `deepseek/deepseek-v4.1-flash` in the OpenRouter feed: $0.15 input, $0.60 output | Bills a DeepSeek model through Alibaba's plan, and passes the product brake because it names no vendor segment. An open admission question, not a precedent. |
+| Qwen3.8 Flash | `qwen-token-plan/qwen3.8-flash`: removed from the admitted list on 2026-09-27; `qwen-token-plan` is not allowlisted | `openrouter/qwen/qwen3.8-flash`: admitted, route `pi-qwen3-8-flash-openrouter`, read-only fallback for planner and reviewer-cli | `prices.yaml` keeps both rows. |
+| Qwen3 Coder Plus | none | `openrouter/qwen/qwen3-coder-plus`: route `pi-qwen3-coder-plus-openrouter` | The only admitted Pi writer: exact model, `edit` permission. |
+| GLM 5.3 and 5.3 Flash | `zai-coding-cn/glm-5.3` and `…/glm-5.3-flash`: removed from the admitted list on 2026-09-27; `zai-coding-cn` is not allowlisted | `openrouter/z-ai/glm-5.3-flash`: admitted, route `pi-glm-5-3-flash-openrouter`, read-only fallback for reviewer-arch | Z.ai has no native harness. |
+| DeepSeek V4.1 Flash | `qwen-token-plan/deepseek-v4.1-flash`: removed from the admitted list on 2026-09-27 | `deepseek/deepseek-v4.1-flash` in the OpenRouter feed | Bills a DeepSeek model through Alibaba's plan. `deepseek` is a native-vendor Pi brake, so this is not a route. |
 
 The developer runner is stricter. Its only Pi writer is `openrouter/qwen/qwen3-coder-plus`, and it does not allowlist `qwen-token-plan` or `zai-coding-cn`. Today OpenRouter is the right answer here for Qwen3 Coder Plus, Qwen3.8 Flash and GLM 5.3 Flash.
 

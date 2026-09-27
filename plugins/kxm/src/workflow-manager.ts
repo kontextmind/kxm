@@ -63,23 +63,25 @@ function verifyStep(retryStep: string): Record<string, unknown> {
 /**
  * Built-in `kxm workflow add --template` definitions. Each is a complete
  * kxm.workflow.v1 document (the file name is the workflow id) that uses only
- * what `kxm init` creates: the coordinator and implementer agents, the control
+ * what `kxm init` creates: the planner and writer agents, the control
  * repository, and the `test` gate. Agent steps declare `failed` because the
- * producer falls back to it.
+ * producer falls back to it. `coordinator` and `implementer` still resolve
+ * as aliases of `planner` and `writer`.
  */
 export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
   "implement-and-verify": {
     schema: "kxm.workflow.v1",
-    description: "Implement a change, then run the project's test gate; a failing gate sends the work back to implement.",
-    coordinator: "coordinator",
+    description: "Implement a change, then run the project's test gate; a failing gate sends the work back to writer.",
+    coordinator: "planner",
     limits: {
       maxTransitions: 8,
     },
     steps: [
       {
-        id: "implement",
+        id: "writer",
+        aliases: ["implement"],
         kind: "agent",
-        agent: "implementer",
+        agent: "writer",
         maxAttempts: 3,
         repositories: { control: "write" },
         on: {
@@ -87,57 +89,60 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
           failed: failed(),
         },
       },
-      verifyStep("implement"),
+      verifyStep("writer"),
     ],
   },
   "dual-critic-review": {
     schema: "kxm.workflow.v1",
-    description: "Implement, review twice, then run the project's test gate. Both reviews run as the coordinator agent; for independent critics, add agents under .kxm/agents and point review-arch and review-cli at them.",
-    coordinator: "coordinator",
+    description: "Write, review twice, then run the project's test gate. Both reviews run as the planner agent; for independent reviewers, add reviewer-arch and reviewer-cli agents and point the review steps at them.",
+    coordinator: "planner",
     limits: {
       maxTransitions: 12,
     },
     steps: [
       {
-        id: "implement",
+        id: "writer",
+        aliases: ["implement"],
         kind: "agent",
-        agent: "implementer",
+        agent: "writer",
         maxAttempts: 3,
         repositories: { control: "write" },
         on: {
-          passed: "review-arch",
+          passed: "reviewer-arch",
           failed: failed(),
         },
       },
       {
-        id: "review-arch",
+        id: "reviewer-arch",
+        aliases: ["review-arch", "critic-arch"],
         kind: "agent",
-        agent: "coordinator",
+        agent: "planner",
         maxAttempts: 3,
         repositories: { control: "read" },
         on: {
-          passed: "review-cli",
-          failed: { target: "implement", maxTransitions: 2 },
+          passed: "reviewer-cli",
+          failed: { target: "writer", maxTransitions: 2 },
         },
       },
       {
-        id: "review-cli",
+        id: "reviewer-cli",
+        aliases: ["review-cli", "critic-cli"],
         kind: "agent",
-        agent: "coordinator",
+        agent: "planner",
         maxAttempts: 3,
         repositories: { control: "read" },
         on: {
           passed: "verify",
-          failed: { target: "implement", maxTransitions: 2 },
+          failed: { target: "writer", maxTransitions: 2 },
         },
       },
-      verifyStep("implement"),
+      verifyStep("writer"),
     ],
   },
   "spec-and-plan": {
     schema: "kxm.workflow.v1",
-    description: "Plan a change, then review the plan. Both steps run as the coordinator agent and only read the repository.",
-    coordinator: "coordinator",
+    description: "Plan a change, then review the plan. Both steps run as the planner agent and only read the repository.",
+    coordinator: "planner",
     limits: {
       maxTransitions: 8,
     },
@@ -145,18 +150,19 @@ export const WORKFLOW_TEMPLATES: Record<string, Record<string, unknown>> = {
       {
         id: "plan",
         kind: "agent",
-        agent: "coordinator",
+        agent: "planner",
         maxAttempts: 3,
         repositories: { control: "read" },
         on: {
-          passed: "review-arch",
+          passed: "reviewer-arch",
           failed: failed(),
         },
       },
       {
-        id: "review-arch",
+        id: "reviewer-arch",
+        aliases: ["review-arch", "critic-arch"],
         kind: "agent",
-        agent: "coordinator",
+        agent: "planner",
         maxAttempts: 3,
         repositories: { control: "read" },
         on: {
@@ -173,13 +179,13 @@ export function scaffoldWorkflowDefinition(description: string): Record<string, 
   return {
     schema: "kxm.workflow.v1",
     description,
-    coordinator: "coordinator",
+    coordinator: "planner",
     limits: { maxTransitions: 8 },
     steps: [
       {
         id: "step-1",
         kind: "agent",
-        agent: "implementer",
+        agent: "writer",
         repositories: { control: "write" },
         on: { passed: completed(), failed: failed() },
       },

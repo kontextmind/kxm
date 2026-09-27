@@ -55,7 +55,7 @@ to add.
 .kxm/project.yaml ── repositories[] ──> .kxm/repo/repo.yaml (+ env.yaml) in each repository
    │ defaultWorkflow, defaultHarness, limits
    ▼
-.kxm/workflows/<id>.yaml ── coordinator ──> .kxm/agents/coordinator.yaml
+.kxm/workflows/<id>.yaml ── coordinator ──> .kxm/agents/planner.yaml
    │ steps[]
    ├─ kind agent | moa | approval | wait ──> .kxm/agents/<id>.yaml
    │                                           ├─ role ──> .kxm/roles/<role>.yaml
@@ -361,13 +361,14 @@ tool call, shell commands included, and neither confines the process to the
 checkout. A live write step on any other harness is handed off; see
 [Steps the Runtime does not execute yet](#steps-the-runtime-does-not-execute-yet).
 
-Example (the shape `kxm init` writes for `implementer`):
+Example (the shape `kxm init` writes for `writer`):
 
 ```yaml
-# .kxm/agents/implementer.yaml. The filename is the agent id.
+# .kxm/agents/writer.yaml. The filename is the agent id, and it matches role.
 schema: kxm.agent.v1
 purpose: Implement the approved change within the declared repository scope.
 role: writer                      # .kxm/roles/writer.yaml -> .kxm/models/<route>.yaml
+aliases: [implementer]            # deprecated id; still resolves, with a warning
 tools:
   preset: workspace-writer        # coordinator | read-only | workspace-writer | tests-writer
   allow: [read, edit, write, bash]
@@ -383,9 +384,10 @@ network: provider-only            # none | provider-only | restricted | host
 resultSchema: kxm.assignment-result.v1
 ```
 
-`kxm init` creates `coordinator` (`role: planner`) and `implementer`
-(`role: writer`) without `harness` or `model`, and admits `anthropic/fable`
-and `xai/grok-4.6` in `.kxm/routes.yaml`. An interactive `kxm init` can add
+`kxm init` creates `planner` (`role: planner`, alias `coordinator`) and `writer`
+(`role: writer`, alias `implementer`) without `harness` or `model`, and admits
+`anthropic/fable` and `xai/grok-4.6` in `.kxm/routes.yaml`. The model files are
+`claude-fable` and `grok-grok-4-6`. An interactive `kxm init` can add
 workflow-guide agents for reviewed pairs whose harness is authenticated, and
 admits their selectors too, but skips Google guide candidates because the
 Runtime cannot reach the `antigravity` Pi provider yet. `kxm run` and the
@@ -408,7 +410,8 @@ bytes.
 | Field | Type and allowed values | Required, default | What reads it |
 |---|---|---|---|
 | `schema` | `kxm.model.v2` | Required | Loader |
-| `id` | Kebab identifier, 1 to 64 characters | Optional; the filename is the id | Loader |
+| `id` | `<harness>-<model-slug>[-<provider>]`, 1 to 64 characters | Optional; the filename is the id | Loader. This repository's workforce lint requires the pattern |
+| `aliases` | Deprecated route ids, at most 16 | Optional | Still resolve to this file; a warning names the canonical id |
 | `harness` | Identifier, 1 to 64 characters | Required | Developer ceilings and dispatch membership |
 | `model` | String, 1 to 200 characters | Required | Dispatch membership (`model`, `vendor/model`, `harness/model`) |
 | `vendor` | String, 1 to 64 characters | Required | The lab that trained the model, not the biller |
@@ -425,7 +428,8 @@ bytes.
 
 ```yaml
 schema: kxm.model.v2
-id: grok-native
+id: grok-grok-4-7          # <harness>-<model-slug>; "." in the model id is "-"
+aliases: [grok-native]     # deprecated id; still resolves, with a warning
 harness: grok
 model: grok-4.7
 vendor: xai
@@ -931,9 +935,9 @@ purpose: writer
 permission: edit
 description: Primary implementation agent.
 roster:
-  - route: grok-native
+  - route: grok-grok-4-7
     effort: medium
-  - route: qwen-openrouter-pi
+  - route: pi-qwen3-coder-plus-openrouter
     effort: medium
 ```
 
@@ -1027,50 +1031,51 @@ independent vendors`, and `retired .kxm/roster.json present`.
 
 ```yaml
 # Assembled by scripts/roster-policy.mjs from .kxm/roles/*.yaml and .kxm/models/*.yaml.
+# Route ids are <harness>-<model-slug>[-<provider>]. The first critic in each
+# lineup is the required critic. Later entries are read-only fallbacks.
 routes:
-  grok-native:                  # route id: lowercase words joined by "-"
+  grok-grok-4-7:
     harness: grok
-    model: grok-4.6             # native harnesses take a bare model id
+    model: grok-4.7             # native harnesses take a bare model id
     vendor: xai
     roles: [writer]
     permissions: [edit]
     status: admitted            # admitted | retired
-  qwen-openrouter-pi:
+  pi-qwen3-coder-plus-openrouter:
     harness: pi
     model: openrouter/qwen/qwen3-coder-plus   # Pi: allowed provider prefix + vendor/model
     vendor: alibaba
     roles: [writer]
     permissions: [edit]
     status: admitted
-  fable-claude:
+  claude-fable:
     harness: claude
     model: fable
     vendor: anthropic
     roles: [planner, reviewer-arch]
     permissions: [read-only]
     status: admitted
-  sol-codex:
+  codex-gpt-5-6-sol:
     harness: codex
     model: gpt-5.6-sol
     vendor: openai
     roles: [reviewer-cli]
     permissions: [read-only]
     status: admitted
-lineup:                         # routes admitted for each role
-  writer: [grok-native, qwen-openrouter-pi, gemini-agy]
-  planner: [fable-claude]
-  reviewer-arch: [fable-claude]
-  reviewer-cli: [sol-codex]
+lineup:                         # routes admitted for each role, preference order
+  writer: [grok-grok-4-7, pi-qwen3-coder-plus-openrouter, agy-gemini-3-8-flash-high, agy-gemini-3-8-flash-medium]
+  planner: [claude-fable, pi-qwen3-8-flash-openrouter]
+  reviewer-arch: [claude-fable, pi-glm-5-3-flash-openrouter]
+  reviewer-cli: [codex-gpt-5-6-sol, pi-qwen3-8-flash-openrouter]
 required_critics:
-  review-arch: fable-claude
-  review-cli: sol-codex
+  review-arch: claude-fable
+  review-cli: codex-gpt-5-6-sol
 model_origins:                  # required for every Pi route model
   openrouter/qwen/qwen3-coder-plus:
     vendor: alibaba
     evidence:
-      source: docs/workflow-guide.md
-      commit: 69341ca200c31b98b5ba2371437398f0ce501089
-      sha256: 358d436dbf1b6f3904252afba167e643d33d597d16148ac1286b1c21b81448a4
+      source: plans/evidence/route-qwen-openrouter-pi.md
+      sha256: b15f8a54adc398b33e75609e959076eee310bf4ff6623d0b8470ea3da95e6c54
 ```
 
 Validated with `validateRosterDocument` from `scripts/roster-policy.mjs`,

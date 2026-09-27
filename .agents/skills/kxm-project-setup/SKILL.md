@@ -22,7 +22,7 @@ to run in their own terminal or in Claude Code.
    `ready`, `repair`, or `legacy`, and `issues` lists anything to fix first.
 2. `kxm init --name "<display name>"` prints
    `initialized KXM project at <root>`. It writes `.kxm/project.yaml`,
-   `.kxm/agents/coordinator.yaml`, `.kxm/agents/implementer.yaml`,
+   `.kxm/agents/planner.yaml`, `.kxm/agents/writer.yaml`,
    `.kxm/gates.yaml`, `.kxm/repo/repo.yaml`, `.kxm/template-provenance.yaml`,
    and `.kxm/workflows/default.yaml`. Outside Git it fails with
    `git_root_required`. In an existing project, plain `kxm init` validates,
@@ -44,7 +44,7 @@ After the user's commit:
 1. `kxm workflow add first --template spec-and-plan` prints
    `Added workflow 'first' to local (<root>/.kxm/workflows/first.yaml)`. Add
    `--dry-run` first to see the path without writing. The template has two
-   steps, `plan` then `review-arch`, both run by the `coordinator` agent with
+   steps, `plan` then `reviewer-arch`, both run by the `planner` agent with
    `repositories: control: read`. It writes nothing and runs no test command,
    and a failed review goes back to `plan` at most twice.
 2. `kxm init` validates it and prints `validated KXM project at <root>`.
@@ -71,7 +71,7 @@ After the user's commit:
 4. `kxm runs status <runId>` prints `created`.
 5. `kxm runs drive <runId> --simulated --wait --timeout-ms 60000` prints a
    `kxm.drive-receipt.v1` whose settlement is terminal `completed`, and exits 0.
-   The run moves from `plan` to `review-arch` to `completed`. Always pass
+   The run moves from `plan` to `reviewer-arch` to `completed`. Always pass
    `--simulated`; without it, drive calls live harnesses.
 6. `kxm runs status <runId>` prints `completed … (receipt verified)`.
 7. `kxm runs receipt <runId>` and `kxm runs list`. Cancel a stuck run with

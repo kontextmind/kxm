@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { listRoleBindings, loadRoutePolicy } from "./routes.ts";
+import { findYamlBasename } from "../../../scripts/workforce-names.mjs";
 import { applyAuthoringWitness, captureWorktreeWitness } from "./worktree-witness.ts";
 import {
   buildFormalContextPacket,
@@ -101,7 +102,7 @@ import {
   type KxmRunRecord,
   type KxmRunStatus,
 } from "./runtime-store.ts";
-import { KxmConfigError, kxmCanonicalJson, type JsonValue, type KxmProjectBundle } from "./project-config.ts";
+import { KxmConfigError, kxmCanonicalJson, lookupKxmResource, type JsonValue, type KxmProjectBundle } from "./project-config.ts";
 import { evaluateArtifactsGate } from "./engine-artifacts.ts";
 import { createCommandObserver } from "./engine-command.ts";
 import {
@@ -277,7 +278,7 @@ export function pinKxmCompiledPlan(
     if (String(bundle.project.value.id) !== run.projectId) {
       throw runtimeError("run_owner_mismatch", runId, "bundle project does not match the run");
     }
-    const workflow = bundle.workflows.get(run.workflowId);
+    const workflow = lookupKxmResource(bundle.workflows.values(), run.workflowId, "workflow");
     if (!workflow) throw runtimeError("run_workflow_unknown", run.workflowId, `workflow ${run.workflowId} does not exist in this project`);
     const revisions = kxmPolicyRevisions(bundle, options);
     if (
@@ -1397,7 +1398,8 @@ function resolveProducerRoute(
       },
     };
   }
-  const agent = readYamlFile(join(projectRoot, ".kxm", "agents", `${agentId}.yaml`));
+  const agentFile = findYamlBasename(join(projectRoot, ".kxm", "agents"), agentId, "agent") ?? agentId;
+  const agent = readYamlFile(join(projectRoot, ".kxm", "agents", `${agentFile}.yaml`));
   const role = typeof agent?.role === "string" ? agent.role : "";
   if (!role) {
     return {
@@ -1424,7 +1426,8 @@ function resolveProducerRoute(
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const record = entry as { route?: unknown; effort?: unknown };
     if (typeof record.route !== "string" || record.route.length === 0) continue;
-    const modelPath = join(projectRoot, ".kxm", "models", `${record.route}.yaml`);
+    const routeFile = findYamlBasename(join(projectRoot, ".kxm", "models"), record.route, "route") ?? record.route;
+    const modelPath = join(projectRoot, ".kxm", "models", `${routeFile}.yaml`);
     const doc = readModelDocument(modelPath);
     if (!doc) {
       return {
@@ -1487,7 +1490,7 @@ function resolveProducerRoute(
       model: selector.slice(slash + 1),
       selector,
       harness,
-      routeId: record.route,
+      routeId: routeFile,
       role,
       permissions,
       ...(typeof record.effort === "string" ? { effort: record.effort } : {}),
@@ -2871,7 +2874,7 @@ export function kxmLiveRunPrerequisites(
   workflowId: string,
   projectRoot: string,
 ): KxmRunHandoff[] {
-  const workflow = bundle.workflows.get(workflowId);
+  const workflow = lookupKxmResource(bundle.workflows.values(), workflowId, "workflow");
   if (!workflow) throw runtimeError("run_workflow_unknown", workflowId, `workflow ${workflowId} does not exist in this project`);
   const plan = compileKxmWorkflow({ id: workflowId, value: workflow.value, logicalPath: workflow.logicalPath });
   const envelope = { plan, projectLimits: kxmProjectAdmissionLimits(bundle), gates: pinnedGatesForCompiledPlan(plan, bundle, projectRoot) };

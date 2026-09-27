@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
@@ -14,19 +14,25 @@ test("resolveBoundPolicy loads a committed policy and returns that identity", ()
     mkdirSync(join(root, ".kxm", "models"), { recursive: true });
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
     mkdirSync(join(root, "plans", "evidence"), { recursive: true });
-    for (const name of ["fable-claude.yaml", "gemini-agy.yaml", "grok-native.yaml", "opus-claude.yaml", "qwen-openrouter-pi.yaml", "sol-codex.yaml"]) {
+    for (const name of readdirSync(join(".kxm", "models"))) {
+      if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
       cpSync(join(".kxm", "models", name), join(root, ".kxm", "models", name));
     }
     for (const name of ["planner.yaml", "reviewer-arch.yaml", "reviewer-cli.yaml", "writer.yaml"]) {
       cpSync(join(".kxm", "roles", name), join(root, ".kxm", "roles", name));
     }
-    cpSync("plans/evidence/route-qwen-openrouter-pi.md", join(root, "plans", "evidence", "route-qwen-openrouter-pi.md"));
+    for (const name of readdirSync(join("plans", "evidence"))) {
+      if (name.startsWith("route-") && name.endsWith(".md")) {
+        cpSync(join("plans", "evidence", name), join(root, "plans", "evidence", name));
+      }
+    }
     const source = readFileSync("scripts/roster-policy.mjs", "utf8").replace(
       "const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');",
       `const ROOT = ${JSON.stringify(root)};`,
     );
     writeFileSync(join(root, "roster-policy.mjs"), source);
     cpSync("scripts/harness-run.mjs", join(root, "harness-run.mjs"));
+    cpSync("scripts/workforce-names.mjs", join(root, "workforce-names.mjs"));
     const git = (...args: string[]) => {
       const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
       assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);
@@ -42,8 +48,8 @@ test("resolveBoundPolicy loads a committed policy and returns that identity", ()
       if (resolved.identity.blob !== loaded.identity.blob) throw new Error("blob");
       if (resolved.identity.sha256 !== loaded.identity.sha256) throw new Error("sha256");
       if (resolved.identity.commit !== loaded.identity.commit) throw new Error("commit");
-      if (!resolved.policy.lineup.writer.includes("grok-native")) throw new Error("writer lineup");
-      if (resolved.policy.lineup["reviewer-arch"][0] !== "fable-claude") throw new Error("reviewer-arch");
+      if (!resolved.policy.lineup.writer.includes("grok-grok-4-7")) throw new Error("writer lineup");
+      if (resolved.policy.lineup["reviewer-arch"][0] !== "claude-fable") throw new Error("reviewer-arch");
     `], {
       encoding: "utf8",
       env: { ...process.env, NODE_PATH: resolve("node_modules") },
@@ -61,19 +67,25 @@ function withBoundPolicy(body: (root: string, run: (script: string) => { status:
     mkdirSync(join(root, ".kxm", "models"), { recursive: true });
     mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
     mkdirSync(join(root, "plans", "evidence"), { recursive: true });
-    for (const name of ["fable-claude.yaml", "gemini-agy.yaml", "grok-native.yaml", "opus-claude.yaml", "qwen-openrouter-pi.yaml", "sol-codex.yaml"]) {
+    for (const name of readdirSync(join(".kxm", "models"))) {
+      if (!name.endsWith(".yaml") || name === "inventory.yaml") continue;
       cpSync(join(".kxm", "models", name), join(root, ".kxm", "models", name));
     }
     for (const name of ["planner.yaml", "reviewer-arch.yaml", "reviewer-cli.yaml", "writer.yaml"]) {
       cpSync(join(".kxm", "roles", name), join(root, ".kxm", "roles", name));
     }
-    cpSync("plans/evidence/route-qwen-openrouter-pi.md", join(root, "plans", "evidence", "route-qwen-openrouter-pi.md"));
+    for (const name of readdirSync(join("plans", "evidence"))) {
+      if (name.startsWith("route-") && name.endsWith(".md")) {
+        cpSync(join("plans", "evidence", name), join(root, "plans", "evidence", name));
+      }
+    }
     const source = readFileSync("scripts/roster-policy.mjs", "utf8").replace(
       "const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');",
       `const ROOT = ${JSON.stringify(root)};`,
     );
     writeFileSync(join(root, "roster-policy.mjs"), source);
     cpSync("scripts/harness-run.mjs", join(root, "harness-run.mjs"));
+    cpSync("scripts/workforce-names.mjs", join(root, "workforce-names.mjs"));
     const git = (...args: string[]) => {
       const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
       assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);

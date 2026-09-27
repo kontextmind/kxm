@@ -1,5 +1,7 @@
 schema: kxm.model.v2
-id: gemini-agy
+id: agy-gemini-3-8-flash-high
+aliases:
+  - gemini-agy
 harness: agy
 model: gemini-3.8-flash-high
 vendor: google

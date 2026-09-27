@@ -751,7 +751,7 @@ test("KXM init resumes pinned create and repair operations across injected crash
     const preparing = JSON.parse(readFileSync(operationFile, "utf8")) as Record<string, unknown>;
     preparing.phase = "preparing";
     writeFileSync(operationFile, `${JSON.stringify(preparing, null, 2)}\n`);
-    rmSync(join(kxmInitTransactionPath(createRoot), "targets", ".kxm", "agents", "coordinator.yaml"));
+    rmSync(join(kxmInitTransactionPath(createRoot), "targets", ".kxm", "agents", "planner.yaml"));
     const transactionBeforeDryRun = snapshotFiles(kxmInitTransactionPath(createRoot));
     const dry = initializeKxmProject(createRoot, { localStateRoot: stateRoot, dryRun: true });
     assert.equal(dry.resumePending, true);
@@ -840,12 +840,12 @@ test("KXM recovery rejects forged operation targets and safely restarts temp-onl
       /injected init fault/,
     );
     const transaction = kxmInitTransactionPath(forgedRoot);
-    const target = join(transaction, "targets", ".kxm", "agents", "coordinator.yaml");
+    const target = join(transaction, "targets", ".kxm", "agents", "planner.yaml");
     const expanded = readFileSync(target, "utf8").replace("repositories:\n  control: read", "repositories:\n  control: write");
     writeFileSync(target, expanded);
     const operationFile = join(transaction, "operation.json");
     const operation = JSON.parse(readFileSync(operationFile, "utf8")) as Record<string, unknown> & { files: Array<Record<string, unknown>> };
-    const coordinator = operation.files.find((entry) => entry.path === ".kxm/agents/coordinator.yaml");
+    const coordinator = operation.files.find((entry) => entry.path === ".kxm/agents/planner.yaml");
     assert(coordinator);
     coordinator.targetSha256 = kxmContentSha256(expanded);
     operation.planSha256 = kxmContentSha256(JSON.stringify({
