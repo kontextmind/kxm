@@ -65,18 +65,21 @@ function stripOneClosingFence(trimmed: string): string {
   return trimmed.slice(0, lineBreak).trimEnd();
 }
 
-// Last top-level `{...}` in one forward pass. Strings and escapes hide
-// braces. A `{` that lifts depth from 0 to 1 opens a candidate; the `}`
-// that returns depth to 0 closes it. An object that opens while an outer
-// object is still open is not recorded. `end` is exclusive.
-function lastTopLevelObjectSpan(text: string): { start: number; end: number } | undefined {
+// How many `}` characters, counting from the end of the reply, we will try
+// as the end of an outcome object.
+const MAX_OUTCOME_CLOSERS = 32;
+
+// Naive quote-and-brace scan of the prose before a candidate object.
+// Strings and escapes hide braces. A `"` toggles string state, and `\`
+// escapes only inside a string. Balanced means no `{` is still open outside
+// strings and the quote count is even, so every string the scan opened is
+// closed. An odd quote count leaves a string open. That prefix is ambiguous.
+function prefixIsBalanced(prefix: string): boolean {
   let depth = 0;
   let inString = false;
   let escape = false;
-  let start = -1;
-  let last: { start: number; end: number } | undefined;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = 0; i < prefix.length; i++) {
+    const ch = prefix[i];
     if (inString) {
       if (escape) {
         escape = false;
@@ -94,41 +97,56 @@ function lastTopLevelObjectSpan(text: string): { start: number; end: number } | 
       continue;
     }
     if (ch === "{") {
-      if (depth === 0) start = i;
       depth++;
       continue;
     }
     if (ch === "}") {
       if (depth === 0) continue;
       depth--;
-      if (depth === 0 && start >= 0) last = { start, end: i + 1 };
     }
   }
-  return last;
+  return depth === 0 && !inString;
 }
 
-// The outcome object is the top-level object whose end is the end of the
-// trimmed reply. One closing code fence may follow it. Then JSON.parse, a
-// plain object, and a string outcome that the step allows. Anything else
-// is failed: prose after the object, no object, a disallowed outcome, or
-// an inner object at the end of a truncated outer object.
+// The outcome object is a JSON object that ends the trimmed reply. One
+// closing code fence may follow it. Candidates are slices from a `{` to a
+// recent `}`, nearest last. JSON.parse decides whether the slice is a plain
+// object; the quote scan above never decides string state inside the slice.
+// The slice must end the reply, its outcome must be allowed, and the prefix
+// before its `{` must be balanced. An ambiguous prefix is rejected and the
+// next older candidate is tried. Nothing left means failed: prose after the
+// object, no object, a disallowed outcome, an inner object at the end of a
+// truncated outer object, or a stray quote in the prose.
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
   const body = stripOneClosingFence(trimmed);
   if (!body) return "failed";
-  const span = lastTopLevelObjectSpan(body);
-  if (!span || span.end !== body.length) return "failed";
-  const slice = body.slice(span.start, span.end);
-  try {
-    const result: unknown = JSON.parse(slice);
-    if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
-    const outcome = (result as Record<string, unknown>).outcome;
-    if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
-    return outcome;
-  } catch {
-    return "failed";
+  let seenClosers = 0;
+  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
+    if (body[closeAt] !== "}") continue;
+    seenClosers++;
+    const end = closeAt + 1;
+    // A candidate has to end the reply. One closer can sit at that position.
+    if (end !== body.length) continue;
+    for (let openAt = closeAt - 1; openAt >= 0; openAt--) {
+      if (body[openAt] !== "{") continue;
+      let result: unknown;
+      try {
+        result = JSON.parse(body.slice(openAt, end));
+      } catch {
+        continue;
+      }
+      // This opener consumed the closer. An earlier `{` would prepend bytes
+      // to a complete JSON value, so it cannot be a candidate for this end.
+      if (!result || typeof result !== "object" || Array.isArray(result)) break;
+      const outcome = (result as Record<string, unknown>).outcome;
+      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) break;
+      if (!prefixIsBalanced(body.slice(0, openAt))) break;
+      return outcome;
+    }
   }
+  return "failed";
 }
 
 export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}): KxmOneShotProducer {

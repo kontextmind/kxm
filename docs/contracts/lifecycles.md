@@ -106,11 +106,14 @@ created → accepted → dispatched → executing → result_recorded → termin
 | `terminal` | The logical assignment outcome is final and immutable: passed, failed, or cancelled |
 
 A producer reply becomes a terminal outcome **only** through a declared result. A one-shot
-reply declares that result when its last top-level JSON object extends to the end of the
-trimmed text. One closing code fence may follow the object, with whitespace. The object may
+reply declares that result when a JSON object extends to the end of the trimmed text.
+One closing code fence may follow the object, with whitespace. The object may
 be the whole reply, a fenced reply, or the end of surrounding prose, on one line or several.
-Prose after the object, a reply with no such object, and an object that starts inside a
-still-open outer object settle `failed`.
+`JSON.parse` decides that the slice is an object. The text before its opening brace must
+be balanced: no `{` still open outside strings, and an even, closed quote count. A stray
+`"` in that prefix is ambiguous and settles `failed`. Prose after the object, a reply with
+no such object, a disallowed outcome, and an inner object at the end of a truncated outer
+object settle `failed`.
 
 Naming an outcome *word* anywhere in a reply is not a result. `"the gate did not pass, so I
 would not call this passed"` must not advance a step, and an empty or unstructured reply is

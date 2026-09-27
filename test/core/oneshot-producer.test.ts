@@ -1238,6 +1238,30 @@ test("an inner object at the end of a truncated outer settles failed", async () 
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
+test("a prose quote before a truncated outer object does not settle the inner outcome", async () => {
+  const text = [
+    'Note the "fix.',
+    '{"outcome":"failed","detail":{"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a stray inch-mark quote before a final outcome object stays failed", async () => {
+  const text = [
+    'a 27" monitor screenshot',
+    '{"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a closed prose quote before a final outcome object still settles", async () => {
+  const text = [
+    'He said "done".',
+    '{"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
 test("a megabyte unbalanced prefix ending in an outcome object settles", async () => {
   const closers = "}".repeat(1024 * 1024);
   assert.equal(

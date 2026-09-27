@@ -30783,14 +30783,13 @@ function stripOneClosingFence(trimmed) {
   if (lineBreak < 0) return "";
   return trimmed.slice(0, lineBreak).trimEnd();
 }
-function lastTopLevelObjectSpan(text) {
+var MAX_OUTCOME_CLOSERS = 32;
+function prefixIsBalanced(prefix) {
   let depth = 0;
   let inString = false;
   let escape2 = false;
-  let start = -1;
-  let last;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = 0; i < prefix.length; i++) {
+    const ch = prefix[i];
     if (inString) {
       if (escape2) {
         escape2 = false;
@@ -30808,35 +30807,43 @@ function lastTopLevelObjectSpan(text) {
       continue;
     }
     if (ch === "{") {
-      if (depth === 0) start = i;
       depth++;
       continue;
     }
     if (ch === "}") {
       if (depth === 0) continue;
       depth--;
-      if (depth === 0 && start >= 0) last = { start, end: i + 1 };
     }
   }
-  return last;
+  return depth === 0 && !inString;
 }
 function determineOutcome(text, allowedOutcomes) {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
   const body = stripOneClosingFence(trimmed);
   if (!body) return "failed";
-  const span = lastTopLevelObjectSpan(body);
-  if (!span || span.end !== body.length) return "failed";
-  const slice = body.slice(span.start, span.end);
-  try {
-    const result = JSON.parse(slice);
-    if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
-    const outcome = result.outcome;
-    if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
-    return outcome;
-  } catch {
-    return "failed";
+  let seenClosers = 0;
+  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
+    if (body[closeAt] !== "}") continue;
+    seenClosers++;
+    const end = closeAt + 1;
+    if (end !== body.length) continue;
+    for (let openAt = closeAt - 1; openAt >= 0; openAt--) {
+      if (body[openAt] !== "{") continue;
+      let result;
+      try {
+        result = JSON.parse(body.slice(openAt, end));
+      } catch {
+        continue;
+      }
+      if (!result || typeof result !== "object" || Array.isArray(result)) break;
+      const outcome = result.outcome;
+      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) break;
+      if (!prefixIsBalanced(body.slice(0, openAt))) break;
+      return outcome;
+    }
   }
+  return "failed";
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();
