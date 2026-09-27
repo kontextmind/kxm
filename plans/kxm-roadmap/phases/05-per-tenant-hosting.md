@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/plan-per-tenant-hosting.md`.
 
-Updated: 2026-09-26.
+Updated: 2026-09-27.
 
 S0 through S5 from the tracker queue. The hosting plan file keeps no schedule of its own.
 

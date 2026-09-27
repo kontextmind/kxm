@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/implementation-plan.md`.
 
-Updated: 2026-09-26.
+Updated: 2026-09-27.
 
 Tracker items that are not already tasks on the phases above.
 
