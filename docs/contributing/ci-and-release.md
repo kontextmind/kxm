@@ -1,11 +1,12 @@
 # CI and release
 
-Every pull request and every push to `main` that changes code runs a
-three-minute merge-safety gate, the complete suite with coverage floors runs
-nightly, every merge to `main` cuts a patch release, and every release is
-verified before it reaches npm. This
-page explains which checks run where, how a merge becomes a published version,
-and which smoke tests stay manual. It is for contributors and maintainers.
+Pull requests run lint, typecheck, and the unit suite on Linux Node 24.
+Pushes to `main` also run that suite and the full OS × Node matrix.
+The complete suite with coverage floors runs nightly, every merge to `main`
+cuts a patch release, and every release is verified before it reaches npm.
+This page explains which checks run where, how a merge becomes a published
+version, and which smoke tests stay manual. It is for contributors and
+maintainers.
 
 ## The pipeline at a glance
 
@@ -14,9 +15,10 @@ release and an npm publish; the nightly job adds the slower suites.
 
 ```mermaid
 flowchart LR
-  PR[Pull request] -->|"validate:pr, docs lint, plugin validation"| MERGE{Merged?}
+  PR[Pull request] -->|"unit shards, docs lint, plugin validation"| REQ["CI / required"]
+  REQ --> MERGE{Merged?}
   MERGE -->|yes| MAIN[main]
-  MAIN -->|"same three-minute validate:pr"| PUSH[Push CI]
+  MAIN -->|"unit shards plus validate:pr matrix"| PUSH[Push CI]
   MAIN -->|"Auto-Release: next patch tag"| TAG[Tag vX.Y.Z]
   TAG -->|dispatch| REL[Release workflow]
   REL -->|"verify, stamp version, pack"| GH[GitHub release<br/>kxm-X.Y.Z.tgz]
@@ -35,46 +37,75 @@ together.
 | Trigger | Workflow (job) | What it runs |
 |---|---|---|
 | Before you push | Local | `npm run verify` |
-| Pull request and push to `main` | `ci.yml` (Validate, two Node legs) | `validate:pr`, the three-minute gate; skipped for documentation-only changes |
+| Pull request, push to `main`, or manual | `ci.yml` (`required`) | Aggregates the lanes below into one pass/fail check named `CI / required` |
 | Pull request and push | `ci.yml` (Docs lint) | `lint:docs` and `check:versions`, always |
-| Pull request and push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin; skipped for documentation-only changes |
+| Code pull request and code push | `ci.yml` (Unit engine and Unit, Linux Node 24) | `engine.test.ts` split by test name; `permission.test.ts` and `runtime.test.ts` one file at a time; every other unit file together. Typecheck and `check-generated` run on the light lane |
+| Platform-sensitive pull request | `ci.yml` (Unit, Windows Node 24) | The same four unit lanes on `windows-latest` |
+| Push to `main`, or manual | `ci.yml` (Validate matrix) | `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24; not on a pull request |
+| Code pull request and code push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin |
 | Daily at 04:00 UTC, or manual | `nightly.yml` | `test:coverage:complete`, `check`, `check:generated`, `npm pack --dry-run` |
 | Merged pull request | `auto-release.yml` | Tags the merge commit and dispatches `release.yml` |
 | Tag push or dispatch | `release.yml` | Verifies, packs and publishes (see [Release flow](#release-flow)) |
 | Manual only | `smoke.yml` | Real Pi smoke, currently disabled (see [Smoke tests](#smoke-tests)) |
-| Pull request, or manual | `e2e.yml` | `npm run e2e` on `ubuntu-latest`: Obscura v0.2.3 plus the Playwright smoke test. This workflow does not enable CI, Nightly, or Real Pi smoke |
+| Pull request, or manual | `e2e.yml` | `npm run e2e` on `ubuntu-latest`: Obscura v0.2.3 plus the Playwright smoke test. Separate from `ci.yml` |
 
 The npm scripts behind those rows:
 
 | Script | Composition |
 |---|---|
 | `verify` | `npm test` (core and package unit tests), `check`, `check:generated` |
+| `test:ci-shard` | One unit lane: build, then `engine <index> <total>`, `serial`, or `light` over `test/core/*.test.ts` and `packages/core/*/tests/unit/*.test.ts` |
 | `validate:pr` | `build`, `typecheck`, a compact contract and smoke set of nine `test/core` files, `check:versions`, and the generated-`dist` check |
-| `validate:ci` | `test:coverage` (core and package tests, 91/80/92 floors), `check`, `npm pack --dry-run`; not run by CI today, available locally |
+| `validate:ci` | `test:coverage` (core and package tests, 91/80/92 floors), `check`, `npm pack --dry-run`; the Release workflow runs it, and it stays available locally |
 | `test:coverage:complete` | Core, simulation and package tests with 93/80/93 floors |
 | `check` | `typecheck`, `lint:docs`, `check:versions` |
 
-Three differences matter when a check fails on one side only:
+What moved off the pull-request lane, and what did not:
 
-- CI runs a compact contract and smoke set, not the core suite. The full core
-  suite and the package unit tests under `packages/core/*/tests` run in your
-  local `npm run verify`; run it before every push.
-- Coverage and `test/simulations` run only in the nightly complete suite, never
-  on a pull request or a push to `main`.
-- A regression the compact set misses can reach `main` and show up in the
-  nightly run, so treat a nightly failure as a release blocker.
+- The four `validate:pr` cells — Linux and Windows, Node 22.19.0 and Node 24 —
+  run on a push to `main` and on `workflow_dispatch`. They do not run on a
+  pull request. The nine files inside `validate:pr` still run on a code pull
+  request, because they are part of the Linux Node 24 unit suite.
+- Node 22.19.0 does not run the unit suite on a pull request. It runs
+  `validate:pr` on `main`.
+- Windows runs the unit suite on a pull request only when the classifier marks
+  the change platform-sensitive. Every push to `main` that changes code still
+  runs `validate:pr` on Windows.
+- Coverage, `test/simulations`, and `npm pack --dry-run` stay in the nightly
+  complete suite. They were not part of pull-request CI before this split.
+- Plugin validation still runs on code pull requests and code pushes.
 
-### Validate matrix and required checks
+Run `npm run verify` locally before every push. A nightly failure is a release
+blocker: it is the only place the simulation suite and coverage floors run.
 
-The Validate job runs on Node 22.19.0 and Node 24, on Linux and Windows. Linux
-uses the ARC scale set `kontextmind-doks` with a three-minute job timeout.
-Windows uses GitHub-hosted `windows-latest` with a fifteen-minute timeout so
-`npm ci` can finish. The branch ruleset requires the job names
-`Validate (linux, Node 22.19.0)` and `Validate (linux, Node 24)` only; the
-Windows names are reported but not required, so a Windows-only failure does not
-block merge. Renaming a required Linux job or the matrix means updating the
-ruleset in the same change. A newer push cancels an older pull request run;
-runs on `main` are never cancelled.
+### Lanes and the required check
+
+Code pull requests run Docs lint, two Linux Node 24 engine shards, a serial
+lane (`permission.test.ts` then `runtime.test.ts`), a light lane for every
+other unit file, and Plugin validation. The light lane typechecks and checks
+generated bundles. `engine.test.ts` is split by test name because that file
+alone was 174 seconds; the serial lane keeps the next two longest files off
+the light pool, which was 268 seconds when every non-engine file shared one
+job. Linux jobs use the npm cache from
+`actions/setup-node`. Restoring a `node_modules` tarball was slower than
+`npm ci` on the Linux runners (about 24s versus 17s on 2026-09-24), so that
+cache stays on the Windows jobs, where `npm ci` is the slow step.
+
+The job `required` always runs. Its check name is `CI / required`. It fails
+when a lane fails or is cancelled, and it passes when a lane was skipped
+because the change did not need it. Add `CI / required` as a required status
+check in the `protect-main` ruleset. Skipped matrix legs are not required
+names, so they do not block auto-merge. This repository change does not edit
+that ruleset.
+
+A newer push cancels an older pull request run. Runs on `main` are never
+cancelled. Unit and Validate matrices use `fail-fast`.
+
+The Validate matrix still runs on Node 22.19.0 and Node 24, on Linux and
+Windows, for pushes to `main` and for `workflow_dispatch`. Linux uses the ARC
+scale set `kontextmind-doks` with a three-minute job timeout. Windows uses
+GitHub-hosted `windows-latest` with a fifteen-minute timeout so `npm ci` can
+finish. Those four job names are not the required check anymore.
 
 ### CI jobs stay queued while a runner is online
 
@@ -111,20 +142,26 @@ autoscaler. Do not relabel `km-gh-rn01` or push an empty commit as a routing
 workaround.
 
 > [!NOTE]
-> Windows Validate uses GitHub-hosted `windows-latest`, not a self-hosted
-> homelab runner and not the ARC scale set. Do not add a `kontextmind-doks`
-> label to a Windows runner. Nightly complete coverage and release stay on
-> Linux. Windows-specific fixtures (for example the `pi.cmd` worker launch in
-> `test/core/worker.test.ts`) also run in the hosted Windows Validate legs.
+> Windows jobs use GitHub-hosted `windows-latest`, not a self-hosted homelab
+> runner and not the ARC scale set. Do not add a `kontextmind-doks` label to a
+> Windows runner. Nightly complete coverage and release stay on Linux.
+> Platform-sensitive pull requests run the unit suite on Windows, which
+> includes `test/core/worker.test.ts`. The main Validate legs run the compact
+> `validate:pr` gate.
 
 ### The docs-only classifier
 
 The first job, Classify changes, lists the changed paths and sets `code=false`
-when every path matches `*.md`, `docs/*`, `.kxm/assets/*`, `LICENSE`, the issue
-and PR templates, or `dependabot.yml`. Validate and Plugin validation read it:
-for a documentation-only change they report success without checking out the
-code, so the required job names still pass. Docs lint always runs.
-`ci-contract.test.ts` pins this behavior.
+when every path matches `*.md` (including `plans/**/*.md`), `docs/**`,
+`.kxm/assets/**`, `LICENSE`, the issue and PR templates, or `dependabot.yml`.
+A non-markdown file under `plans/` is code. Unit lanes, Plugin validation,
+and the Validate matrix are skipped. Docs lint runs, and `CI / required`
+passes. `scripts/ci-classify.mjs` and `ci-contract.test.ts` pin this behavior.
+
+`platform=true` when a path is a package manifest, the lockfile, a file under
+`scripts/` or `.github/workflows/`, or a filename that names path, process,
+shell, spawn, worker, supervisor, repo-root, or ssh-remote behavior. A
+platform-sensitive pull request also runs the Windows Node 24 unit lanes.
 
 > [!WARNING]
 > Several tests and code paths read documentation files by path. A pull request

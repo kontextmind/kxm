@@ -41,20 +41,29 @@ See [Develop KXM](docs/contributing/development.md#change-the-protocol).
 
 ## What CI checks
 
-Every pull request and every push to `main` runs these checks:
+Pull requests and pushes to `main` share one aggregate status check,
+`CI / required`. Mark that name required in branch protection. Docs-only and
+plan-markdown changes skip the code jobs; `CI / required` still passes.
 
-- **Validate** on Node 22.19.0 and Node 24: `npm run validate:pr`, a
-  three-minute merge-safety gate (build, typecheck, a compact contract and
-  smoke set, version parity, generated `dist`). Skipped for
-  documentation-only changes.
-- **Docs lint**: `npm run lint:docs` and `npm run check:versions`, always.
+A code pull request runs, on Linux Node 24:
+
+- **Docs lint**: `npm run lint:docs` and `npm run check:versions`.
+- **Typecheck**, the **unit suite** (`engine.test.ts` in two shards,
+  `permission.test.ts` and `runtime.test.ts` one file at a time, every other
+  unit file in one job), and the generated-bundle check.
 - **Plugin validation**: `claude plugin validate --strict` on the marketplace
-  and the plugin. Skipped for documentation-only changes.
+  and the plugin.
 
-CI does not run the full core suite, so run `npm run verify` locally before
-every push. The complete suite with coverage floors runs nightly. Every merged pull request is released as a new patch version
-automatically, so do not bump versions yourself. See
-[CI and release](docs/contributing/ci-and-release.md).
+A pull request that changes path, process, shell, or spawn code, a package
+manifest, the lockfile, `scripts/`, or a workflow also runs those unit lanes
+on Windows Node 24.
+
+Pushes to `main` and manual runs keep that Linux unit suite and also run
+`npm run validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.
+Nightly still runs the complete suite with coverage floors. Run
+`npm run verify` locally before every push. Every merged pull request is
+released as a new patch version automatically, so do not bump versions
+yourself. See [CI and release](docs/contributing/ci-and-release.md).
 
 ## Contributor guides
 

@@ -227,6 +227,17 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   runner's code ceiling and explicitly reject `grok-4.6` there; this test
   correction does not alter product defaults or authorize a new route.
 
+- **CI lanes (2026-09-27).** The `CI` workflow is active again. Pull requests
+  run docs lint, typecheck, and the unit suite on Linux Node 24: two
+  `engine.test.ts` shards, a serial lane for `permission.test.ts` and
+  `runtime.test.ts`, and a light lane for every other unit file.
+  `CI / required` is the aggregate status check to mark required; this change
+  does not edit branch protection. Pushes to `main` and `workflow_dispatch`
+  also run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.
+  A pull request that touches path, process, shell, spawn, package, lockfile,
+  `scripts/`, or workflow files also runs those unit lanes on Windows Node 24.
+  `Nightly` and `Real Pi smoke` stay disabled. `Release` still runs `validate:ci`.
+
 - **CI test pause (2026-09-24).** GitHub workflows `CI`, `Nightly` and
   `Real Pi smoke` are disabled server-side, and required status checks are
   removed from ruleset `protect-main`. `Auto-Release` and `Release` stay on,
