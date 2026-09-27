@@ -24508,8 +24508,16 @@ function gitText(cwd, args) {
   if (result.error || result.status !== 0) return void 0;
   return result.stdout ?? "";
 }
+function repositoryHasNoCommits(cwd) {
+  const listed = gitText(cwd, ["rev-list", "--max-count=1", "--all"]);
+  return listed !== void 0 && listed.trim() === "";
+}
 function captureWorktreeWitness(cwd) {
-  const head = gitText(cwd, ["rev-parse", "HEAD"]) ?? "";
+  const headRun = gitText(cwd, ["rev-parse", "HEAD"]);
+  if (headRun === void 0 && !repositoryHasNoCommits(cwd)) {
+    return { unwitnessed: true, fingerprint: "" };
+  }
+  const head = headRun ?? "";
   const porcelain = gitText(cwd, ["status", "--porcelain=v1", "-uall"]);
   const diff = gitText(cwd, ["diff", "--no-ext-diff"]);
   const staged = gitText(cwd, ["diff", "--cached", "--no-ext-diff"]);
@@ -29929,19 +29937,42 @@ function openingQuote(text, closer) {
   }
   return -1;
 }
-function determineOutcome(text, allowedOutcomes) {
-  const slice = lastBalancedJsonObject(text);
-  if (slice !== void 0) {
-    try {
-      const result = JSON.parse(slice);
-      if (result && typeof result === "object" && !Array.isArray(result)) {
-        const outcome = result.outcome;
-        if (typeof outcome === "string" && allowedOutcomes.includes(outcome)) return outcome;
-      }
-    } catch {
-    }
+function standaloneObjectText(text) {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return void 0;
+  const slice = lastBalancedJsonObject(trimmed);
+  return slice === trimmed ? slice : void 0;
+}
+function outcomeOfObjectText(text) {
+  const slice = standaloneObjectText(text);
+  if (slice === void 0) return void 0;
+  try {
+    const result = JSON.parse(slice);
+    if (!result || typeof result !== "object" || Array.isArray(result)) return void 0;
+    const outcome = result.outcome;
+    return typeof outcome === "string" ? outcome : void 0;
+  } catch {
+    return void 0;
   }
-  return "failed";
+}
+function isClosingFence(line) {
+  return /^(`{3,}|~{3,})\s*$/.test(line.trim());
+}
+function determineOutcome(text, allowedOutcomes) {
+  const trimmed = text.trim();
+  if (!trimmed) return "failed";
+  const whole = outcomeOfObjectText(trimmed);
+  if (whole !== void 0) return allowedOutcomes.includes(whole) ? whole : "failed";
+  const lines = trimmed.split(/\r?\n/);
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length > 0 && isClosingFence(lines[lines.length - 1])) {
+    lines.pop();
+    while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  }
+  if (lines.length === 0) return "failed";
+  const declared = outcomeOfObjectText(lines[lines.length - 1]);
+  if (declared === void 0 || !allowedOutcomes.includes(declared)) return "failed";
+  return declared;
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();

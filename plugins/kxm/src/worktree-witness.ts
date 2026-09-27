@@ -23,10 +23,23 @@ function gitText(cwd: string, args: readonly string[]): string | undefined {
   return result.stdout ?? "";
 }
 
+function repositoryHasNoCommits(cwd: string): boolean {
+  // `rev-parse HEAD` prints the same failure for an unborn branch and for a
+  // HEAD that names a missing ref. An empty `rev-list --all` is the repository
+  // with no commits. Any other failure is not that case.
+  const listed = gitText(cwd, ["rev-list", "--max-count=1", "--all"]);
+  return listed !== undefined && listed.trim() === "";
+}
+
 export function captureWorktreeWitness(cwd: string): WorktreeWitness {
-  // A repository with no commits has no HEAD. That is an empty head term, not
-  // an unwitnessed checkout: the other three commands still describe the tree.
-  const head = gitText(cwd, ["rev-parse", "HEAD"]) ?? "";
+  // No commits yet: keep an empty head term so porcelain and the diffs still
+  // witness the tree. A rev-parse failure in a repository that has commits, or
+  // any failure to ask git whether commits exist, is unwitnessed.
+  const headRun = gitText(cwd, ["rev-parse", "HEAD"]);
+  if (headRun === undefined && !repositoryHasNoCommits(cwd)) {
+    return { unwitnessed: true, fingerprint: "" };
+  }
+  const head = headRun ?? "";
   const porcelain = gitText(cwd, ["status", "--porcelain=v1", "-uall"]);
   const diff = gitText(cwd, ["diff", "--no-ext-diff"]);
   const staged = gitText(cwd, ["diff", "--cached", "--no-ext-diff"]);

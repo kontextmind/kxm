@@ -107,6 +107,16 @@ test("a git failure stays unwitnessed and keeps the current authoring outcomes",
   }
 });
 
+test("a rev-parse failure in a repository that has commits is unwitnessed", () => {
+  withRepo((root) => {
+    commitFile(root, "base.txt", "base\n", "base");
+    git(root, ["symbolic-ref", "HEAD", "refs/heads/missing"]);
+    const witness = captureWorktreeWitness(root);
+    assert.equal(witness.unwitnessed, true);
+    assert.equal(witness.fingerprint, "");
+  });
+});
+
 test("a repository with no commits still witnesses a working tree edit", () => {
   withRepo((root) => {
     const before = captureWorktreeWitness(root);

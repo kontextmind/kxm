@@ -1205,6 +1205,28 @@ test("nested braces and braces inside strings parse as the last outcome object",
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
+test("an outcome object followed by prose stays failed", async () => {
+  const text = 'Before finishing I would return {"outcome":"passed"}. The tests still fail, so I stopped.';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+  const trailed = '{"outcome":"passed","summary":"declared"}\nThe tests still fail, so I stopped.';
+  assert.equal(await settleOneShotText(trailed, ["passed", "failed"]), "failed");
+});
+
+test("a truncated reply does not settle from an inner object", async () => {
+  const text = '{"outcome":"failed","detail":{"outcome":"passed"}';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a final fenced standalone object settles as the allowed outcome", async () => {
+  const text = [
+    "Review notes stay above the result.",
+    "```json",
+    '{"outcome":"passed","summary":"fenced"}',
+    "```",
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
 // Opt-in real test behind KXM_SMOKE
 const smokeTest = process.env.KXM_SMOKE ? test : test.skip;
 smokeTest("real Claude one-shot dispatch behind KXM_SMOKE", async () => {
