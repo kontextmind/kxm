@@ -77,7 +77,7 @@ Local pages require the launcher flag `--allow-private-network` (the launcher al
 
 ## Steel, only for takeover
 
-When the case is human takeover, MFA, or the live session viewer, set `KXM_BROWSER=steel` and a session id. `connectBrowserOverCdp()` passes `formatCDPConnect()` headers into `chromium.connectOverCDP`. Closing the Playwright browser disconnects the client and does not release the Steel session.
+When the case is human takeover, MFA, or the live session viewer, set `KXM_BROWSER=steel` and a session id. That path needs `kxm` 0.7.135 or newer. `connectBrowserOverCdp()` passes `formatCDPConnect()` headers into `chromium.connectOverCDP` for `/v1/devtools` on `wss://steel.kontextmind.com/`. The `Authorization` header is the `svc-steel` credential (`STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`). `STEEL_API_KEY` is deprecated and is not enforced. Closing the Playwright browser disconnects the client and does not release the Steel session.
 
 ```typescript
 import { chromium } from "playwright";

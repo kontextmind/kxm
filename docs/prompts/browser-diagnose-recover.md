@@ -52,5 +52,5 @@ Use this prompt to troubleshoot unresponsive sessions, CDP attachment errors, au
    - For each orphan, invoke `POST /v1/sessions/:id/release`.
 
 4. **Verify WebSocket / CDP Ingress**:
-   - Ensure the reverse proxy or ingress in front of Steel passes WebSocket upgrades through. On Kubernetes with ingress-nginx, that is the `nginx.ingress.kubernetes.io/websocket-services` annotation.
-   - If the response is a 302 to `id.kxmd.dev`, or CDP fails with 401, send `Authorization: Basic` from `STEEL_AUTH_BASIC` or from `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`. A Bearer token is not accepted. Do not put the credential in the URL. The legacy `x-steel-api-key` header and `?apiKey=` query parameter remain only for the temporary proxy shim.
+   - Steel is reached only through Caddy and Authentik forward auth. Direct LAN, tailnet, and host-forward connections are blocked. The CDP path is `/v1/devtools` with an `Authorization` header.
+   - If the response is a 302 to `id.kxmd.dev`, or CDP fails with 401 or 403, send `Authorization: Basic` from `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`. A Bearer token is not accepted. Do not put the credential in the URL. `STEEL_API_KEY` is deprecated. Steel and Caddy do not enforce it. Sessions return `websocketUrl` `wss://steel.kontextmind.com/`. `kxm` 0.7.135 or newer is required.

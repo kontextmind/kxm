@@ -15,16 +15,17 @@ Use this skill to investigate and resolve connectivity failures, CDP attachment 
 - **Diagnosis**:
   - KontextMind Steel is behind Authentik forward auth. Unauthenticated requests redirect to `id.kxmd.dev`. Authentik accepts an app password only as `Authorization: Basic`. A Bearer token is refused.
   - Check that `STEEL_AUTH_BASIC` is set, or that both `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN` are set (`test -n "$STEEL_AUTH_TOKEN" && echo set`); never print the value.
-  - A legacy `STEEL_API_KEY` still uses `x-steel-api-key` and `?apiKey=` through the temporary proxy shim. Prefer the Authentik variables so the credential stays out of URLs.
-- **Remedy**: Re-export the Authentik app password into the session environment. Do not log it.
+  - `STEEL_API_KEY` is deprecated. Steel and Caddy do not enforce it. Do not put a credential in the URL. Direct LAN, tailnet, and host-forward connections are blocked.
+  - `websocketUrl` `ws://steel-browser/` means the client is older than `kxm` 0.7.135. The server returns `wss://steel.kontextmind.com/`.
+- **Remedy**: Re-read the `svc-steel` field `basic_auth` with `op read 'op://kontextmind/Steel (svc-steel)/basic_auth'` into `STEEL_AUTH_BASIC`. Do not log it or write it to disk. Precedence is `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`.
 
 ### 2. CDP WebSocket Attachment Failure
 
 - **Symptom**: `WebSocket connection to wss://... failed: 404/500`.
 - **Diagnosis**:
   - Check if the target session ID has already been released or timed out.
-  - Verify ingress WebSocket headers: ensure `nginx.ingress.kubernetes.io/websocket-services` is enabled.
-- **Remedy**: Query `GET /v1/sessions/<id>`. If status is `released`, launch a fresh session.
+  - The CDP path is `/v1/devtools` on `wss://steel.kontextmind.com/` with an `Authorization` header. Caddy must pass the WebSocket upgrade. A credential in the URL is not accepted.
+- **Remedy**: Query `GET /v1/sessions/<id>` with the same `Authorization` header. If status is `released`, launch a fresh session.
 
 ### 3. Session Timeout & Expiration
 

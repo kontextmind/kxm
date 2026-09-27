@@ -142,6 +142,28 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Docs match the 2026-09-27 Steel and machine-account infrastructure.**
+  Steel (`steel.kontextmind.com`, alias `steel.theneuro.me`) is reached only
+  through Caddy on `kxmd-proxy` (VM 230) and Authentik forward auth. Direct
+  LAN, tailnet, and host-forward access is blocked. Sessions return
+  `websocketUrl` `wss://steel.kontextmind.com/` (previously
+  `ws://steel-browser/`). The CDP path is `/v1/devtools` with an
+  `Authorization` header. Allowed groups are `steel-users`, `kxmd-users`,
+  `kxmd-admins`, and `kxmd-owners`. `STEEL_API_URL` defaults to
+  `https://steel.kontextmind.com`. `STEEL_API_KEY` is deprecated and is not
+  enforced by Steel or Caddy. Migrate to `STEEL_AUTH_HEADER`, then
+  `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`; those
+  override the key. The `svc-steel` credential is 1Password vault
+  `kontextmind`, item `Steel (svc-steel)`, field `basic_auth`, read with
+  `op read` and never written to disk. Steel requires `kxm` 0.7.135 or
+  newer. Playwright stays on Obscura ([ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md)).
+  The Proxmox boot order and VM names are in
+  [Deploy KXM](docs/operations/deploy.md#boot-the-kxmd-proxmox-host).
+  Machine accounts follow
+  [ADR-0006](docs/adr/ADR-0006-machine-account-names.md). The DOKS deployment
+  record is superseded by
+  [ADR-0007](docs/adr/ADR-0007-steel-caddy-authentik.md).
+
 - **Workforce ids use one convention, and old ids still resolve.**
   Role ids stay `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`.
   Agent ids and agent-step ids use those same names. Route ids are
@@ -472,9 +494,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
   headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
   those variables are set. A 302 to the identity provider fails closed and does
-  not follow the login redirect. `STEEL_API_KEY` still sends the legacy
-  `x-steel-api-key` header and `apiKey` query parameter for the temporary proxy
-  shim, and warns once. See
+  not follow the login redirect. `STEEL_API_KEY` is deprecated. Steel and
+  Caddy do not enforce it. `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then
+  `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN` override it. A client that still
+  has only the legacy key warns once and is not authenticated. See
   [Browser automation](docs/guides/browser-automation.md).
 
 ### Removed

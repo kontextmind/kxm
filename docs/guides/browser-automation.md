@@ -5,9 +5,9 @@ Give agents a real browser without giving them your desktop. Playwright testing 
 ## Before you begin
 
 - For Playwright: Node, and `node scripts/obscura.mjs` (it downloads pinned Obscura v0.2.3). [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md) records that default.
-- For takeover: a Steel deployment you operate, reachable over HTTPS, and an Authentik app password when that host is behind forward auth. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
+- For Steel: `kxm` 0.7.135 or newer. [ADR-0007](../adr/ADR-0007-steel-caddy-authentik.md) is the current server. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) is the superseded Kubernetes deployment.
 - `curl` and `jq`. Optionally `agent-browser` for exploration. Playwright tests use Obscura; do not run `playwright install`.
-- A secret manager for the Authentik app password and site credentials. The bundled skills use `pass-cli`.
+- The 1Password CLI (`op`) for the `svc-steel` credential. Read it at runtime. Do not write it to disk.
 - The `kxm-browser-*` skills from the plugin or Pi package. See [Agent skills](agent-skills.md#browser-automation-skills).
 
 ## Components
@@ -36,33 +36,37 @@ Set `video: "off"` in Playwright. Obscura does not record video. Connect with th
 
 The KXM browser library reads these variables, and the shell procedure below uses the same names so both agree.
 
-KontextMind's Steel hosts (`steel.kontextmind.com` and `steel.theneuro.me`, including the `wss://` CDP endpoint) sit behind Authentik forward auth at the reverse proxy. Steel itself does not check an API key. Unauthenticated requests receive a 302 redirect to the Authentik login at `id.kxmd.dev`. Authentik accepts an app password only as `Authorization: Basic`. A Bearer token is refused.
+The Steel server is `https://steel.kontextmind.com`. `steel.theneuro.me` is an alias of that same server. The only path is Caddy on `kxmd-proxy` (VM 230) with Authentik forward auth. Direct LAN, tailnet, and host-forward connections are blocked. Unauthenticated requests receive a 302 redirect to `id.kxmd.dev`.
+
+Sessions return `websocketUrl` `wss://steel.kontextmind.com/`. The previous value was `ws://steel-browser/`. Connect Chrome DevTools Protocol at `/v1/devtools` and send `Authorization` on the handshake. The URL never carries a credential.
+
+Authentik accepts the `svc-steel` credential as `Authorization: Basic`. A Bearer token is refused. These groups may connect: `steel-users`, `kxmd-users`, `kxmd-admins`, and `kxmd-owners`. Steel needs `kxm` 0.7.135 or newer.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `STEEL_API_URL` | A KontextMind-operated deployment | Base URL of your Steel API. Always set it |
+| `STEEL_API_URL` | `https://steel.kontextmind.com` | Base URL of the Steel API |
 | `STEEL_UI_URL` | `$STEEL_API_URL/ui` | Base URL of the session viewer |
-| `STEEL_AUTH_HEADER` | unset | Full `Authorization` value. Wins over the other auth variables |
-| `STEEL_AUTH_BASIC` | unset | `base64(user:token)`, with or without a leading `Basic` prefix. Sent as `Authorization: Basic` |
-| `STEEL_AUTH_USER` | unset | Authentik username, for example `svc-steel`. Used with `STEEL_AUTH_TOKEN` |
+| `STEEL_AUTH_HEADER` | unset | Full `Authorization` value. First in the precedence below |
+| `STEEL_AUTH_BASIC` | unset | `base64(user:token)`, with or without a leading `Basic` prefix |
+| `STEEL_AUTH_USER` | unset | Authentik username `svc-steel`. Used with `STEEL_AUTH_TOKEN` |
 | `STEEL_AUTH_TOKEN` | unset | Authentik app password. Used with `STEEL_AUTH_USER` |
-| `STEEL_API_KEY` | A `pass-cli` lookup | Deprecated. Sent as `x-steel-api-key` and as `?apiKey=` on the CDP URL, which the proxy still accepts as a temporary shim. The library warns once on stderr |
-| `USE_PASS_CLI` | enabled | Set to `false` to disable the legacy `STEEL_API_KEY` `pass-cli` fallback |
+| `STEEL_API_KEY` | unset | Deprecated. Steel and Caddy do not enforce it. See the migration note |
+| `USE_PASS_CLI` | enabled | Turns the legacy `STEEL_API_KEY` lookup off when set to `false` |
 
-Set one Authentik credential. Precedence is `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` together with `STEEL_AUTH_TOKEN`. If only one of the user or token pair is set, configuration fails instead of falling back to the legacy key. When any of those are set, the legacy key is not sent and is not placed in a URL. The `pass-cli` fallback looks up `STEEL_API_KEY` only.
+Set one Authentik credential. Precedence is `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` together with `STEEL_AUTH_TOKEN`. Those three override `STEEL_API_KEY`. If only one of the user or token pair is set, configuration fails closed. When any Authentik variable is set, the legacy key is not sent.
 
 > [!WARNING]
-> Set `STEEL_API_URL` and an Authentik credential explicitly. Without them the library falls back to KontextMind's own deployment and vault item, which are not yours to use. Never put the credential in a URL, a prompt, or a log.
+> `STEEL_API_KEY` is deprecated. Steel and Caddy do not enforce it. A client that still sends `x-steel-api-key` or `?apiKey=` is not authenticated. Migrate by setting one Authentik variable above and removing `STEEL_API_KEY`. Read the credential with `op read`. Never write it to disk, a URL, a prompt, or a log.
 
 ```bash
-export STEEL_API_URL="https://steel.example.com"
-# Read the app password from your secret manager; <vault> and <item> are yours.
-export STEEL_AUTH_USER="svc-steel"
-export STEEL_AUTH_TOKEN="$(pass-cli item view --vault-name '<vault>' --item-title '<item>' --field password)"
-export USE_PASS_CLI=false
+# Optional. This is already the default.
+export STEEL_API_URL="https://steel.kontextmind.com"
+# Vault kontextmind, item "Steel (svc-steel)", field basic_auth.
+# The value stays in this process. Do not redirect it to a file.
+export STEEL_AUTH_BASIC="$(op read 'op://kontextmind/Steel (svc-steel)/basic_auth')"
 ```
 
-`STEEL_AUTH_BASIC` is the same pair already encoded: `printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n'`. Prefer the user and token pair, or the pre-encoded value, and keep them in the environment of the process that calls Steel.
+`STEEL_AUTH_USER` is `svc-steel` when you set the user and token pair instead of `STEEL_AUTH_BASIC`. Keep the value in the environment of the process that calls Steel.
 
 | Endpoint | Purpose |
 |---|---|
@@ -70,20 +74,29 @@ export USE_PASS_CLI=false
 | `GET /v1/sessions/<id>` | Inspect one session; `GET /v1/sessions` lists them all |
 | `POST /v1/sessions/<id>/release` | Release a session |
 | `POST /v1/scrape`, `POST /v1/screenshot` | One-shot page fetch or screenshot without a session |
-| `wss://<steel-host>/v1/devtools?sessionId=<id>` | CDP endpoint. Send `Authorization` on the WebSocket handshake; do not add the credential to this URL |
+| `wss://steel.kontextmind.com/v1/devtools?sessionId=<id>` | CDP path. Send `Authorization` on the handshake. The session `websocketUrl` is `wss://steel.kontextmind.com/` |
 | `$STEEL_UI_URL?sessionId=<id>` | Session viewer for human takeover |
 
 ## Run a browser task
 
-1. Define a helper that sends `Authorization` on stdin, so the secret never appears in a process list:
+1. Define a helper that sends `Authorization` on stdin, so the secret never appears in a process list. `STEEL_API_URL` defaults to `https://steel.kontextmind.com` when unset:
 
    ```bash
    steel() {  # usage: steel METHOD PATH [JSON-BODY]
-     local basic
-     local args=(-sS -X "$1" "$STEEL_API_URL$2" -H @- -H 'Content-Type: application/json')
+     local header args
+     args=(-sS -X "$1" "${STEEL_API_URL:-https://steel.kontextmind.com}$2" -H @- -H 'Content-Type: application/json')
      if [ -n "${3:-}" ]; then args+=(-d "$3"); fi
-     basic="$(printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n')"
-     printf 'Authorization: Basic %s\n' "$basic" | curl "${args[@]}"
+     if [ -n "${STEEL_AUTH_HEADER:-}" ]; then
+       header="$STEEL_AUTH_HEADER"
+     elif [ -n "${STEEL_AUTH_BASIC:-}" ]; then
+       case "$STEEL_AUTH_BASIC" in
+         Basic\ *) header="$STEEL_AUTH_BASIC" ;;
+         *) header="Basic $STEEL_AUTH_BASIC" ;;
+       esac
+     else
+       header="Basic $(printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n')"
+     fi
+     printf 'Authorization: %s\n' "$header" | curl "${args[@]}"
    }
    ```
 
@@ -157,16 +170,18 @@ The KXM browser library tracks these states in the process that owns the session
 
 - **Timeouts.** Sessions end on their own when the timeout expires. Set a longer timeout at creation when a person will need time for a login step.
 - **Orphan sweeps.** List sessions with `steel GET /v1/sessions` and release any you do not track. The library flags untracked sessions older than 10 minutes, and tracked ones idle that long unless a human holds them.
-- **Shared memory.** Give Chromium a large `/dev/shm`, or tabs crash. On Kubernetes, mount a memory-backed `emptyDir` there; the reference deployment uses 2 GiB.
+- **Shared memory.** Give Chromium a large `/dev/shm` on Steel LXC 240, or tabs crash.
 - **No shared profiles.** Concurrent sessions must not write to the same browser profile.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `302` to `id.kxmd.dev` | The request had no Authentik app password | Export `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, or `STEEL_AUTH_BASIC`. A Bearer token is not accepted |
-| `401` or `403` | Wrong app password, or a legacy key the shim rejected | Re-export the Authentik credential from your secret manager. Re-export `STEEL_API_KEY` only when that is the credential you still use |
-| Requests go to an unexpected host | `STEEL_API_URL` is unset | Export it before starting the agent |
+| `302` to `id.kxmd.dev` | The request had no Authentik credential | Export `STEEL_AUTH_BASIC` from `op read`, or the user and token pair. A Bearer token is not accepted |
+| `401` or `403` | Wrong `svc-steel` credential, or the account is outside the allowed groups | Re-read `basic_auth` with `op read`. `STEEL_API_KEY` does not authenticate |
+| Connection refused on a LAN, tailnet, or host-forward address | Those paths are blocked | Use `https://steel.kontextmind.com` through Caddy |
+| `websocketUrl` is `ws://steel-browser/` | The client is older than `kxm` 0.7.135 | Upgrade `kxm`. The server returns `wss://steel.kontextmind.com/` |
+| Requests go to an unexpected host | `STEEL_API_URL` points somewhere else | Unset it to use `https://steel.kontextmind.com`, or set that URL |
 | Playwright opens a local browser | The client called `chromium.launch()` or `chromium.connect()` | Use the worker-scoped fixture and `connectOverCDP` against Obscura |
 | Steel CDP connects without auth | `connectOverCDP` was called with only the URL | Call `connectOverCDP(url, { headers })` with the headers from `formatCDPConnect()` or `connectBrowserOverCdp()` |
 | `Access to private/internal IP address` | Obscura was started without `--allow-private-network` | Run `node scripts/obscura.mjs`, which passes that flag |
@@ -199,5 +214,6 @@ The KXM browser library tracks these states in the process that owns the session
 
 - The seven browser skills: [Agent skills](agent-skills.md#browser-automation-skills)
 - Why Obscura is the Playwright default: [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md)
-- Why Steel, and the reference deployment: [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md)
+- Where Steel runs now: [ADR-0007](../adr/ADR-0007-steel-caddy-authentik.md)
+- The superseded Kubernetes deployment: [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md)
 - Estimate the `browser` mode's prompt footprint: [`kxm explain`](../reference/cli-reference.md#kxm-explain)

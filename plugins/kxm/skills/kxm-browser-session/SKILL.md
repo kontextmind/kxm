@@ -5,7 +5,7 @@ description: Start, attach to, inspect, and release self-hosted Steel browser se
 
 # KXM Browser Session Management
 
-Use this skill to create, inspect, attach automation tools to, and release isolated browser sessions running on your self-hosted Steel deployment. Set `STEEL_API_URL` (and optionally `STEEL_UI_URL`) to your deployment; KXM does not provide one.
+Use this skill to create, inspect, attach automation tools to, and release isolated browser sessions on the Steel server. `STEEL_API_URL` defaults to `https://steel.kontextmind.com`. `steel.theneuro.me` is an alias of that server. `kxm` 0.7.135 or newer is required.
 
 Playwright testing and verification use Obscura by default (`resolveBrowserCdpEndpoint()`, or `npm run e2e`). Use this skill's Steel session for human takeover, MFA, and the live session viewer. Attach Playwright to that session only when `KXM_BROWSER=steel`.
 
@@ -18,9 +18,9 @@ Playwright testing and verification use Obscura by default (`resolveBrowserCdpEn
 
 ## Prerequisites
 
-1. Your own Steel deployment, with `STEEL_API_URL` set to its base URL (for example `https://steel.example.com`) and `STEEL_UI_URL` set if the viewer lives elsewhere (default `$STEEL_API_URL/ui`).
-2. Authentik app-password auth in the environment. The KontextMind Steel hosts are behind Authentik forward auth, which accepts `Authorization: Basic` and refuses a Bearer token. Export `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN` (or the pre-encoded `STEEL_AUTH_BASIC`) from your password manager, for example `export STEEL_AUTH_TOKEN="$(pass-cli item view --vault-name '<vault>' --item-title '<item>' --field password)"`. Never paste the token into a prompt. `STEEL_API_KEY` is a deprecated shim (`x-steel-api-key` and `?apiKey=`); do not put credentials in URLs.
-3. Network access to remote CDP endpoints on port 443 / 9223.
+1. `kxm` 0.7.135 or newer. The server is `https://steel.kontextmind.com`. Caddy and Authentik forward auth are the only path. Direct LAN, tailnet, and host-forward access is blocked. Sessions return `websocketUrl` `wss://steel.kontextmind.com/` (previously `ws://steel-browser/`).
+2. The `svc-steel` Authentik credential in the environment. Allowed groups are `steel-users`, `kxmd-users`, `kxmd-admins`, and `kxmd-owners`. Read it at runtime and do not write it to disk: `export STEEL_AUTH_BASIC="$(op read 'op://kontextmind/Steel (svc-steel)/basic_auth')"`. Precedence is `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`. Those override `STEEL_API_KEY`. `STEEL_API_KEY` is deprecated. Steel and Caddy do not enforce it. A Bearer token is refused. Never put the credential in a URL.
+3. HTTPS to `steel.kontextmind.com` for the CDP path `/v1/devtools`. Send `Authorization` on the handshake.
 
 ## Session Lifecycle States
 
@@ -48,7 +48,7 @@ Playwright testing and verification use Obscura by default (`resolveBrowserCdpEn
 - **Inputs**: Task ID, target URL, session timeout (default 300s, max 1800s), optional proxy or viewport dimensions.
 - **Outputs**:
   - `sessionId`: Unique session UUID.
-  - `cdpUrl`: Remote CDP WebSocket URL (`wss://<steel-host>/v1/devtools?sessionId=<id>`). Send `Authorization: Basic` on the handshake. The URL has no credential when Authentik auth is configured.
+  - `cdpUrl`: `wss://steel.kontextmind.com/v1/devtools?sessionId=<id>`. Send `Authorization` on the handshake. The URL has no credential. The session `websocketUrl` is `wss://steel.kontextmind.com/`.
   - `sessionViewerUrl`: Interactive web session viewer URL (`$STEEL_UI_URL?sessionId=<id>`).
   - `status`: `live` | `idle` | `released`.
 

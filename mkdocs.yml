@@ -161,6 +161,8 @@ nav:
           - SQLite only store: adr/ADR-0003-sqlite-only-store.md
           - Edge identity: adr/ADR-0004-edge-identity-authentik.md
           - Obscura for Playwright: adr/ADR-0005-obscura-default-playwright.md
+          - Machine account names: adr/ADR-0006-machine-account-names.md
+          - Steel through Caddy: adr/ADR-0007-steel-caddy-authentik.md
   - Contributing:
       - Assignment runner: contributing/assignment-runner.md
       - CI and release: contributing/ci-and-release.md

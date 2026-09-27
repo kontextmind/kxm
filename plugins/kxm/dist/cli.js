@@ -51929,7 +51929,7 @@ var DEFAULT_MODES_CONFIG = Object.freeze({
     browser: {
       description: "Remote Steel browser sessions and visual testing",
       tools: ["steel_session", "steel_scrape", "steel_screenshot"],
-      promptSnippet: "Use Steel on DOKS for browser automation; invoke takeover on MFA."
+      promptSnippet: "Playwright tests use Obscura. Steel is remote browsing and takeover through Caddy and Authentik; send Authorization, never a credential in the URL."
     }
   }
 });

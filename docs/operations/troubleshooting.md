@@ -1,6 +1,6 @@
 # Troubleshoot KXM
 
-This page is a reference of symptoms, causes and fixes, grouped by area. Start with the quick check, then go to the area that matches: install, hub and authentication, Claude Code, peer messaging, Pi workers, workflows, Runtime runs, context and memory, or operations.
+This page is a reference of symptoms, causes and fixes, grouped by area. Start with the quick check, then go to the area that matches: install, hub and authentication, Claude Code, peer messaging, Pi workers, workflows, Runtime runs, context and memory, Steel, or operations.
 
 ## Start with a quick check
 
@@ -239,6 +239,26 @@ See [Context and memory](../guides/context-and-memory.md).
 
 For backup and restore errors such as `backup_no_stores`, see [Back up and restore KXM](backup-and-restore.md#troubleshooting). The dashboard's action keys do not act on runs; see [Monitor KXM](monitoring.md#keys).
 
+## Steel
+
+Steel is `https://steel.kontextmind.com` (`steel.theneuro.me` is an alias). Caddy and Authentik forward auth are the only path. Playwright tests use Obscura. The procedure is [Browser automation](../guides/browser-automation.md). `kxm` 0.7.135 or newer is required.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Connection refused or timeout on a LAN, tailnet, or host-forward address | Direct access to LXC 240 is blocked | Use `https://steel.kontextmind.com` |
+| `302` to `id.kxmd.dev` | No Authentik credential on the request | Set `STEEL_AUTH_HEADER`, or `STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN` |
+| `401` or `403` | The `svc-steel` credential is wrong, or the account is outside `steel-users`, `kxmd-users`, `kxmd-admins`, and `kxmd-owners` | Re-read the credential with `op read`. `STEEL_API_KEY` is not enforced |
+| `websocketUrl` is `ws://steel-browser/` | The client predates `kxm` 0.7.135 | Upgrade `kxm`. The server returns `wss://steel.kontextmind.com/` |
+| CDP fails and the URL contains `apiKey` | `STEEL_API_KEY` was placed on `/v1/devtools` | Connect to `/v1/devtools` with an `Authorization` header and no credential in the URL |
+
+Read the credential into the process only:
+
+```bash
+export STEEL_AUTH_BASIC="$(op read 'op://kontextmind/Steel (svc-steel)/basic_auth')"
+```
+
+The vault is `kontextmind`, the item is `Steel (svc-steel)`, and the field is `basic_auth`. Do not write that value to disk.
+
 ## Collect a useful bug report
 
 Include:
@@ -263,4 +283,6 @@ Never attach tokens, private prompts, credentials, raw `pi-agent-*.log` files, o
 - [Monitor KXM](monitoring.md)
 - [Deploy KXM](deploy.md)
 - [CLI reference](../reference/cli-reference.md)
+- [Browser automation](../guides/browser-automation.md)
+- [Steel through Caddy and Authentik](../adr/ADR-0007-steel-caddy-authentik.md)
 - [Claude Code plugin](../../plugins/kxm/README.md)
