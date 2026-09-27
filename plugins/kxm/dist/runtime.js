@@ -33483,6 +33483,12 @@ function formatCDPEndpoint(session, config) {
   }
   return `${wsProtocol}//${host}/v1/devtools?${searchParams.toString()}`;
 }
+function formatCDPConnect(session, config) {
+  return {
+    url: formatCDPEndpoint(session, config),
+    headers: steelRequestHeaders(config)
+  };
+}
 var DEFAULT_OBSCURA_CDP_URL = "http://127.0.0.1:9222";
 var DEFAULT_OBSCURA_PORT = 9222;
 function obscuraListenPort() {
@@ -33504,24 +33510,26 @@ function resolveObscuraCdpEndpoint() {
   if (port === DEFAULT_OBSCURA_PORT) return DEFAULT_OBSCURA_CDP_URL;
   return `http://127.0.0.1:${port}`;
 }
-function resolveBrowserCdpEndpoint(session, config) {
+function resolveBrowserCdpConnect(session, config) {
   const browser = (process.env.KXM_BROWSER ?? "").trim().toLowerCase();
   if (browser === "" || browser === "obscura") {
-    return resolveObscuraCdpEndpoint();
+    return { url: resolveObscuraCdpEndpoint(), headers: {} };
   }
   if (browser === "steel") {
     if (!session?.id) {
       throw new Error("KXM_BROWSER=steel requires a Steel session id");
     }
-    return formatCDPEndpoint(session, config ?? resolveSteelConfig());
+    return formatCDPConnect(session, config ?? resolveSteelConfig());
   }
   throw new Error(`Unsupported KXM_BROWSER value ${JSON.stringify(process.env.KXM_BROWSER)}; expected "obscura" or "steel"`);
 }
-function formatCDPConnect(session, config) {
-  return {
-    url: formatCDPEndpoint(session, config),
-    headers: steelRequestHeaders(config)
-  };
+function resolveBrowserCdpEndpoint(session, config) {
+  return resolveBrowserCdpConnect(session, config).url;
+}
+async function connectBrowserOverCdp(connectOverCDP, session, config) {
+  const { url, headers } = resolveBrowserCdpConnect(session, config);
+  if (Object.keys(headers).length === 0) return connectOverCDP(url);
+  return connectOverCDP(url, { headers });
 }
 function sanitizeLogOutput(input) {
   if (typeof input === "string") {
@@ -34820,6 +34828,7 @@ export {
   closeKxmRuntimeContext,
   computeGateEvidenceOutcome,
   computeKxmMemoryRevision,
+  connectBrowserOverCdp,
   createAnnotationFeedback,
   createBackup,
   createKxmOneShotProducer,
@@ -34920,6 +34929,7 @@ export {
   registerKxmRuntimeCloseHook,
   resetLegacySteelAuthWarningForTests,
   resolveActiveMode,
+  resolveBrowserCdpConnect,
   resolveBrowserCdpEndpoint,
   resolveDispatchStatus,
   resolveObscuraCdpEndpoint,

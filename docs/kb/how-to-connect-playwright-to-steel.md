@@ -20,7 +20,11 @@ related: ["docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwrigh
 Obscura is the default for Playwright testing and verification. Use this page when `KXM_BROWSER=steel` and you are attaching to a live Steel session for human takeover, MFA, or the session viewer. The default path is [How do I connect Playwright to Obscura?](how-to-connect-playwright-to-obscura.md).
 
 Run Playwright against a remote Steel session instead of a local browser by
-connecting over the Chrome DevTools Protocol (CDP). `resolveBrowserCdpEndpoint(session)` returns the same URL as `formatCDPEndpoint()` when `KXM_BROWSER=steel`.
+connecting over the Chrome DevTools Protocol (CDP). When `KXM_BROWSER=steel`,
+`resolveBrowserCdpEndpoint(session)` returns the same URL as `formatCDPEndpoint()`.
+The handshake needs the headers from `resolveBrowserCdpConnect(session)` or
+`formatCDPConnect()`. `connectBrowserOverCdp()` passes those headers into
+`chromium.connectOverCDP`.
 
 ## 1. Build the CDP endpoint
 

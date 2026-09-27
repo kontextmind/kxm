@@ -11,11 +11,13 @@ import {
   resolveSteelAuthorization,
   resolvePassCliApiKey,
   formatCDPEndpoint,
-  resolveBrowserCdpEndpoint,
-  resolveObscuraCdpEndpoint,
-  DEFAULT_OBSCURA_CDP_URL,
   formatCDPConnect,
   steelRequestHeaders,
+  resolveBrowserCdpEndpoint,
+  resolveBrowserCdpConnect,
+  connectBrowserOverCdp,
+  resolveObscuraCdpEndpoint,
+  DEFAULT_OBSCURA_CDP_URL,
   sanitizeLogOutput,
   createAnnotationFeedback,
   formatAnnotationFeedbackPrompt,
@@ -817,7 +819,20 @@ describe("KXM Browser & Steel Integration", () => {
 });
 
 describe("resolveBrowserCdpEndpoint", () => {
-  const keys = ["KXM_BROWSER", "OBSCURA_CDP_URL", "OBSCURA_PORT", "STEEL_API_URL", "STEEL_API_KEY", "STEEL_UI_URL", "USE_PASS_CLI"] as const;
+  const keys = [
+    "KXM_BROWSER",
+    "OBSCURA_CDP_URL",
+    "OBSCURA_PORT",
+    "STEEL_API_URL",
+    "STEEL_API_KEY",
+    "STEEL_UI_URL",
+    "STEEL_AUTH_HEADER",
+    "STEEL_AUTH_BASIC",
+    "STEEL_AUTH_USER",
+    "STEEL_AUTH_TOKEN",
+    "USE_PASS_CLI",
+    "PASS_CLI_OUTPUT_MOCK",
+  ] as const;
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -890,6 +905,122 @@ describe("resolveBrowserCdpEndpoint", () => {
     const fromEnv = resolveBrowserCdpEndpoint(session);
     assert.ok(fromEnv.startsWith("ws://steel.env.local/v1/devtools?"));
     assert.ok(fromEnv.includes("apiKey=steel_envkey123"));
+  });
+
+  type CdpCall = { url: string; options?: { headers?: Record<string, string> } };
+
+  function recordCdpCall(
+    calls: CdpCall[],
+    url: string,
+    options?: { headers?: Record<string, string> },
+  ): void {
+    if (options === undefined) calls.push({ url });
+    else calls.push({ url, options });
+  }
+
+  function onlyCdpCall(calls: CdpCall[]): CdpCall {
+    assert.strictEqual(calls.length, 1);
+    const call = calls[0];
+    assert.ok(call);
+    return call;
+  }
+
+  function captureStderr(fn: () => void): string {
+    const chunks: string[] = [];
+    const original = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      fn();
+      return chunks.join("");
+    } finally {
+      process.stderr.write = original;
+    }
+  }
+
+  it("passes Authentik headers into connectOverCDP when KXM_BROWSER=steel", async () => {
+    resetLegacySteelAuthWarningForTests();
+    process.env.KXM_BROWSER = "steel";
+    process.env.USE_PASS_CLI = "false";
+    process.env.STEEL_API_URL = "https://steel.example.com";
+    process.env.STEEL_API_KEY = "steel_should_not_appear";
+    process.env.STEEL_AUTH_USER = "svc-steel";
+    process.env.STEEL_AUTH_TOKEN = "app-password";
+    const session = { id: "sess_auth", websocketUrl: "" };
+    const expected = Buffer.from("svc-steel:app-password", "utf8").toString("base64");
+    const calls: CdpCall[] = [];
+
+    const stderr = captureStderr(() => {
+      const connect = resolveBrowserCdpConnect(session);
+      assert.deepStrictEqual(connect.headers, { Authorization: `Basic ${expected}` });
+      assert.ok(connect.url.includes("sessionId=sess_auth"));
+      assert.ok(!connect.url.includes("apiKey"));
+      assert.ok(!connect.url.includes("steel_should_not_appear"));
+      assert.ok(!connect.url.includes("app-password"));
+      assert.strictEqual(connect.url, formatCDPConnect(session, resolveSteelConfig()).url);
+    });
+    assert.strictEqual(stderr, "");
+
+    const browser = await connectBrowserOverCdp(async (url, options) => {
+      recordCdpCall(calls, url, options);
+      return { connected: true };
+    }, session);
+    assert.deepStrictEqual(browser, { connected: true });
+    const call = onlyCdpCall(calls);
+    assert.ok(call.url.includes("sessionId=sess_auth"));
+    assert.ok(!call.url.includes("apiKey"));
+    assert.deepStrictEqual(call.options?.headers, { Authorization: `Basic ${expected}` });
+    assert.ok(!JSON.stringify(call.options).includes("x-steel-api-key"));
+  });
+
+  it("keeps the legacy Steel API key on the KXM_BROWSER=steel handshake and warns once", async () => {
+    resetLegacySteelAuthWarningForTests();
+    process.env.KXM_BROWSER = "steel";
+    process.env.USE_PASS_CLI = "false";
+    process.env.STEEL_API_URL = "https://steel.example.com";
+    const legacyKey = "steel_legacykey123";
+    process.env.STEEL_API_KEY = legacyKey;
+    const session = { id: "sess_legacy", websocketUrl: "" };
+    const calls: CdpCall[] = [];
+
+    const first = captureStderr(() => {
+      void connectBrowserOverCdp(async (url, options) => {
+        recordCdpCall(calls, url, options);
+        return "ok";
+      }, session);
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const call = onlyCdpCall(calls);
+    assert.match(call.url, /apiKey=steel_legacykey123/);
+    assert.deepStrictEqual(call.options?.headers, { "x-steel-api-key": legacyKey });
+    assert.match(first, /STEEL_API_KEY is deprecated/);
+    assert.ok(!first.includes(legacyKey));
+
+    const second = captureStderr(() => {
+      void connectBrowserOverCdp(async () => "ok", session);
+    });
+    assert.strictEqual(second, "");
+  });
+
+  it("connects to Obscura without Steel headers", async () => {
+    process.env.STEEL_AUTH_USER = "svc-steel";
+    process.env.STEEL_AUTH_TOKEN = "app-password";
+    process.env.STEEL_API_KEY = "steel_secret";
+    const calls: CdpCall[] = [];
+    const browser = await connectBrowserOverCdp(
+      async (url, options) => {
+        recordCdpCall(calls, url, options);
+        return "browser";
+      },
+      { id: "sess_ignored", websocketUrl: "" },
+    );
+    assert.strictEqual(browser, "browser");
+    const call = onlyCdpCall(calls);
+    assert.strictEqual(call.url, DEFAULT_OBSCURA_CDP_URL);
+    assert.strictEqual(call.options, undefined);
+    assert.deepStrictEqual(resolveBrowserCdpConnect().headers, {});
   });
 });
 

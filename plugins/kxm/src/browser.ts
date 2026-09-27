@@ -381,6 +381,27 @@ export function formatCDPEndpoint(session: Pick<SteelSession, "id" | "websocketU
   return `${wsProtocol}//${host}/v1/devtools?${searchParams.toString()}`;
 }
 
+export interface SteelCdpConnect {
+  /** WebSocket URL. Credentials stay out of it when Authentik Basic auth is set. */
+  url: string;
+  /** Pass as the second argument to `chromium.connectOverCDP(url, { headers })`. */
+  headers: Record<string, string>;
+}
+
+/**
+ * CDP URL plus the headers Playwright must send on the WebSocket handshake.
+ * Call `chromium.connectOverCDP(url, { headers })`. Do not put the credential in the URL.
+ */
+export function formatCDPConnect(
+  session: Pick<SteelSession, "id" | "websocketUrl">,
+  config: SteelConfig,
+): SteelCdpConnect {
+  return {
+    url: formatCDPEndpoint(session, config),
+    headers: steelRequestHeaders(config),
+  };
+}
+
 export const DEFAULT_OBSCURA_CDP_URL = "http://127.0.0.1:9222";
 const DEFAULT_OBSCURA_PORT = 9222;
 
@@ -410,45 +431,50 @@ export function resolveObscuraCdpEndpoint(): string {
 }
 
 /**
- * Playwright CDP endpoint.
- * Obscura by default. `KXM_BROWSER=steel` uses {@link formatCDPEndpoint} for `session`.
+ * Playwright CDP target.
+ * Obscura by default, with empty headers. `KXM_BROWSER=steel` uses {@link formatCDPConnect}.
  */
-export function resolveBrowserCdpEndpoint(
+export function resolveBrowserCdpConnect(
   session?: Pick<SteelSession, "id" | "websocketUrl">,
   config?: SteelConfig,
-): string {
+): SteelCdpConnect {
   const browser = (process.env.KXM_BROWSER ?? "").trim().toLowerCase();
   if (browser === "" || browser === "obscura") {
-    return resolveObscuraCdpEndpoint();
+    return { url: resolveObscuraCdpEndpoint(), headers: {} };
   }
   if (browser === "steel") {
     if (!session?.id) {
       throw new Error("KXM_BROWSER=steel requires a Steel session id");
     }
-    return formatCDPEndpoint(session, config ?? resolveSteelConfig());
+    return formatCDPConnect(session, config ?? resolveSteelConfig());
   }
   throw new Error(`Unsupported KXM_BROWSER value ${JSON.stringify(process.env.KXM_BROWSER)}; expected "obscura" or "steel"`);
 }
 
-export interface SteelCdpConnect {
-  /** WebSocket URL. Credentials stay out of it when Authentik Basic auth is set. */
-  url: string;
-  /** Pass as the second argument to `chromium.connectOverCDP(url, { headers })`. */
-  headers: Record<string, string>;
+/**
+ * Playwright CDP endpoint.
+ * Obscura by default. `KXM_BROWSER=steel` returns the URL from {@link formatCDPConnect}.
+ * Pass {@link resolveBrowserCdpConnect} headers into `chromium.connectOverCDP`, or call {@link connectBrowserOverCdp}.
+ */
+export function resolveBrowserCdpEndpoint(
+  session?: Pick<SteelSession, "id" | "websocketUrl">,
+  config?: SteelConfig,
+): string {
+  return resolveBrowserCdpConnect(session, config).url;
 }
 
 /**
- * CDP URL plus the headers Playwright must send on the WebSocket handshake.
- * Call `chromium.connectOverCDP(url, { headers })`. Do not put the credential in the URL.
+ * Connect Playwright over CDP.
+ * Obscura is called with the URL only. `KXM_BROWSER=steel` passes Authentik or legacy Steel headers on the handshake.
  */
-export function formatCDPConnect(
-  session: Pick<SteelSession, "id" | "websocketUrl">,
-  config: SteelConfig,
-): SteelCdpConnect {
-  return {
-    url: formatCDPEndpoint(session, config),
-    headers: steelRequestHeaders(config),
-  };
+export async function connectBrowserOverCdp<T>(
+  connectOverCDP: (url: string, options?: { headers?: Record<string, string> }) => Promise<T>,
+  session?: Pick<SteelSession, "id" | "websocketUrl">,
+  config?: SteelConfig,
+): Promise<T> {
+  const { url, headers } = resolveBrowserCdpConnect(session, config);
+  if (Object.keys(headers).length === 0) return connectOverCDP(url);
+  return connectOverCDP(url, { headers });
 }
 
 /**

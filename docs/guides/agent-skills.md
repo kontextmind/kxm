@@ -68,8 +68,7 @@ Tools map the same way: peer tools to `kxm-peer`, workflow tools to `kxm-workflo
 
 ## Browser automation skills
 
-Playwright testing and verification use Obscura. The Steel skills cover human takeover, MFA, and the live session viewer. They own no `kxm` command. See [Browser automation](browser-automation.md), [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md), and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
-These skills drive a remote Steel browser that you host. KontextMind's hosts are behind Authentik forward auth: send `Authorization: Basic` (`STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`) and keep the credential out of URLs. They own no `kxm` command. See [Browser automation](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
+Playwright testing and verification use Obscura ([ADR-0005](../adr/ADR-0005-obscura-default-playwright.md)). The Steel skills cover human takeover, MFA, and the live session viewer. Those hosts sit behind Authentik forward auth: send `Authorization: Basic` (`STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`) and keep the credential out of URLs. They own no `kxm` command. See [Browser automation](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
 
 | Skill | Use it to |
 |---|---|

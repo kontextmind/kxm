@@ -143,7 +143,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **Steel clients authenticate to Authentik with `Authorization: Basic`.**
   `STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, set that
   header on Steel HTTP requests and on the CDP options from `formatCDPConnect()`.
-  `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
+  `KXM_BROWSER=steel` passes those headers through `connectBrowserOverCdp()`
+  into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
+  headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
   those variables are set. A 302 to the identity provider fails closed and does
   not follow the login redirect. `STEEL_API_KEY` still sends the legacy
   `x-steel-api-key` header and `apiKey` query parameter for the temporary proxy

@@ -5,12 +5,9 @@ Give agents a real browser without giving them your desktop. Playwright testing 
 ## Before you begin
 
 - For Playwright: Node, and `node scripts/obscura.mjs` (it downloads pinned Obscura v0.2.3). [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md) records that default.
-- For takeover: a Steel deployment you operate, reachable over HTTPS, and its API key. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
+- For takeover: a Steel deployment you operate, reachable over HTTPS, and an Authentik app password when that host is behind forward auth. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
 - `curl` and `jq`. Optionally `agent-browser` for exploration. Playwright tests use Obscura; do not run `playwright install`.
-- A secret manager for the API key. The bundled skills use `pass-cli`.
-- A Steel deployment you operate, reachable over HTTPS, and an Authentik app password when that host is behind forward auth. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
-- `curl` and `jq`. Optionally `agent-browser` for exploration and Playwright for tests.
-- A secret manager for the app password and site credentials. The bundled skills use `pass-cli`.
+- A secret manager for the Authentik app password and site credentials. The bundled skills use `pass-cli`.
 - The `kxm-browser-*` skills from the plugin or Pi package. See [Agent skills](agent-skills.md#browser-automation-skills).
 
 ## Components
@@ -21,7 +18,7 @@ Give agents a real browser without giving them your desktop. Playwright testing 
 | Steel | Isolated Chromium sessions, a REST API, a CDP WebSocket, and a session viewer for takeover |
 | `agent-browser` | Fast, token-efficient exploration: accessibility snapshots, navigation, DOM inspection |
 | Playwright | Assertions, bug reproductions, visual proof and permanent regression tests |
-| Secret manager | The only place the Steel API key and site credentials live |
+| Secret manager | The only place the Authentik app password and site credentials live |
 | Human operator | Completes MFA, CAPTCHA, SSO or consent in the Steel session viewer |
 
 ## Run Playwright on Obscura
@@ -33,9 +30,7 @@ node scripts/obscura.mjs --ensure
 npm run e2e
 ```
 
-Set `video: "off"` in Playwright. Obscura does not record video. Connect with the worker-scoped `browser` fixture and `chromium.connectOverCDP()`. `chromium.connect` and `use.connectOptions` are not supported.
-| Secret manager | The only place the Authentik app password and site credentials live |
-| Human operator | Completes MFA, CAPTCHA, SSO or consent in the session viewer |
+Set `video: "off"` in Playwright. Obscura does not record video. Connect with the worker-scoped `browser` fixture and `connectBrowserOverCdp()`. That helper calls `chromium.connectOverCDP()` with no Steel headers unless `KXM_BROWSER=steel`. `chromium.connect` and `use.connectOptions` are not supported.
 
 ## Configure the Steel endpoint
 
@@ -99,8 +94,7 @@ export USE_PASS_CLI=false
    echo "Session: $SESSION_ID"
    ```
 
-3. For exploration, attach `agent-browser --cdp "<cdp-url>"`. Playwright tests use Obscura. Set `KXM_BROWSER=steel` and `chromium.connectOverCDP(<cdp-url>)` only when the test must drive this takeover session. Check the session's state with `steel GET "/v1/sessions/$SESSION_ID"`.
-4. Attach Playwright over CDP. Build the URL with `formatCDPConnect()` and pass the headers on the handshake. `agent-browser --cdp` accepts a URL only and does not send that header, so use Playwright against an Authentik-protected host. Check the session's state with `steel GET "/v1/sessions/$SESSION_ID"`.
+3. Playwright tests use Obscura. To drive this takeover session, set `KXM_BROWSER=steel` and pass the headers from `formatCDPConnect()` into `chromium.connectOverCDP`. `connectBrowserOverCdp()` does that when `KXM_BROWSER=steel`. `agent-browser --cdp` accepts a URL only and cannot send that header. Do not put the credential in the URL. Check the session's state with `steel GET "/v1/sessions/$SESSION_ID"`.
 
    ```typescript
    import { chromium } from "playwright";
@@ -113,13 +107,13 @@ export USE_PASS_CLI=false
    const browser = await chromium.connectOverCDP(url, { headers });
    ```
 
-5. For a quick fetch that needs no session, scrape instead:
+4. For a quick fetch that needs no session, scrape instead:
 
    ```bash
    steel POST /v1/scrape '{"url": "https://example.com"}'
    ```
 
-6. Release the session when the task ends, even when it failed. Disconnecting a client does not release the session; it stays open for a human until it is released or times out.
+5. Release the session when the task ends, even when it failed. Disconnecting a client does not release the session; it stays open for a human until it is released or times out.
 
    ```bash
    steel POST "/v1/sessions/$SESSION_ID/release"
@@ -174,8 +168,8 @@ The KXM browser library tracks these states in the process that owns the session
 | `401` or `403` | Wrong app password, or a legacy key the shim rejected | Re-export the Authentik credential from your secret manager. Re-export `STEEL_API_KEY` only when that is the credential you still use |
 | Requests go to an unexpected host | `STEEL_API_URL` is unset | Export it before starting the agent |
 | Playwright opens a local browser | The client called `chromium.launch()` or `chromium.connect()` | Use the worker-scoped fixture and `connectOverCDP` against Obscura |
+| Steel CDP connects without auth | `connectOverCDP` was called with only the URL | Call `connectOverCDP(url, { headers })` with the headers from `formatCDPConnect()` or `connectBrowserOverCdp()` |
 | `Access to private/internal IP address` | Obscura was started without `--allow-private-network` | Run `node scripts/obscura.mjs`, which passes that flag |
-| Playwright opens a local browser | The client did not attach over CDP | Use `connectOverCDP(url, { headers })` with the headers from `formatCDPConnect()` |
 | Signed-in state is gone | The session expired or was released | Create a new session and repeat the takeover |
 | The viewer shows the page but clicks do nothing | The viewer is a screencast, and some capture modes do not forward clicks | Use the DevTools inspector at `$STEEL_API_URL/v1/devtools/inspector.html`, with the agent paused |
 

@@ -69,9 +69,7 @@ Use `STEEL_AUTH_BASIC` in place of the computed value when that variable is alre
 
 ### 2. Attaching Automation Clients
 
-- **Playwright**: For tests, connect to Obscura with `chromium.connectOverCDP()` through the worker-scoped `browser` fixture. For a Steel takeover session, set `KXM_BROWSER=steel` and connect to the URL from `resolveBrowserCdpEndpoint(session)`.
-- **agent-browser**: Connect using `agent-browser --cdp "<cdpUrl>"`.
-- **Playwright**: `const { url, headers } = formatCDPConnect({ id: sessionId, websocketUrl: "" }, resolveSteelConfig())`, then `chromium.connectOverCDP(url, { headers })`.
+- **Playwright**: Tests connect to Obscura through the worker-scoped `browser` fixture and `connectBrowserOverCdp()`. For a Steel takeover session, set `KXM_BROWSER=steel` and pass a session id. That path calls `chromium.connectOverCDP(url, { headers })` with the headers from `formatCDPConnect()`.
 - **agent-browser**: `--cdp` accepts a URL only and cannot send the Authentik header. Use Playwright against an Authentik-protected host. Do not put the credential in the CDP URL.
 
 ### 3. Inspecting Session State

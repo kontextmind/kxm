@@ -32,8 +32,7 @@ Names that start with `KXM_` are not all operator settings. This map covers ever
 | Runtime supervisor | `KXM_STATE_HOME`, `KXM_RUNTIME_SYNC_INTERVAL_MS`, `KXM_RUNTIME_STOP_GRACE_MS` | [Runtime supervisor settings](#runtime-supervisor-settings) |
 | Operator CLI and sessions | `KXM_USER_CONFIG_DIR`, `KXM_USER_TELEMETRY_DIR`, `KXM_SESSION_TOKEN`, `KXM_SESSION_BRIEF`, `KXM_WORKFLOW_*`, `GITHUB_TOKEN`, and others | [CLI and session settings](#cli-and-session-settings) |
 | Nous model providers | `KXM_NOUS_PROVIDERS`, `KXM_NOUS_PROXY_URL`, `KXM_NOUS_DISCOVERY_TIMEOUT_MS`, `KXM_NOUS_CATALOG_FILE`, `NOUS_API_KEY` | [Nous providers](../guides/nous-providers.md) |
-| Browser automation | `KXM_BROWSER`, `OBSCURA_CDP_URL`, `OBSCURA_PORT`, `STEEL_API_URL`, `STEEL_API_KEY`, `STEEL_UI_URL`, `USE_PASS_CLI` | [Browser settings](#browser-automation) |
-| Browser automation | `STEEL_API_URL`, `STEEL_UI_URL`, `STEEL_AUTH_HEADER`, `STEEL_AUTH_BASIC`, `STEEL_AUTH_USER`, `STEEL_AUTH_TOKEN`, `STEEL_API_KEY` (legacy), `USE_PASS_CLI` | [Browser automation](../guides/browser-automation.md) |
+| Browser automation | `KXM_BROWSER`, `OBSCURA_CDP_URL`, `OBSCURA_PORT`, `STEEL_API_URL`, `STEEL_UI_URL`, `STEEL_AUTH_HEADER`, `STEEL_AUTH_BASIC`, `STEEL_AUTH_USER`, `STEEL_AUTH_TOKEN`, `STEEL_API_KEY` (legacy), `USE_PASS_CLI` | [Browser settings](#browser-automation) |
 | Set by a harness, not by you | `KXM_PROJECT_DIR` (Claude Code plugin), `KXM_ATTEMPT_TOKEN` (Runtime attempts), `KXM_WORKER_IDENTITY_KEY`, `KXM_WORKER_GENERATION`, `KXM_WORKER_CHILD_INCARCATION`, `KXM_WORKER_SESSION_SCOPE` (worker supervisor to its Pi child) | [Internal variables](#internal-variables) |
 | Maintainer and test only | `KXM_SMOKE*`, `KXM_ASSET*`, `KXM_RELEASE_TAG`, `KXM_PUBLISH_WAIT_MS`, `KXM_DETERMINISTIC_TEST_CLOCK`, `KXM_WORKER_STOP_AFTER_MS`, `KXM_STUDIO_ONCE` | [Development](../contributing/development.md) |
 | Maintainer critic script | `KXM_CRITIC_DIR`, `KXM_REVIEW_TARGET` | [Maintainer critic script](#maintainer-critic-script) |
@@ -201,17 +200,21 @@ The Runtime supervisor runs `kxm run` workflows and syncs their summaries to the
 
 ## Browser automation
 
-Playwright testing and verification use Obscura. Steel is for human takeover, MFA, and the live session viewer. `resolveBrowserCdpEndpoint()` in `plugins/kxm/src/browser.ts` chooses the CDP URL. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it. See [Browser automation](../guides/browser-automation.md).
+Playwright testing and verification use Obscura. Steel is for human takeover, MFA, and the live session viewer. `resolveBrowserCdpEndpoint()` in `plugins/kxm/src/browser.ts` returns the CDP URL. `resolveBrowserCdpConnect()` returns that URL and the handshake headers, and `connectBrowserOverCdp()` passes them to `chromium.connectOverCDP`. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it. See [Browser automation](../guides/browser-automation.md).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `KXM_BROWSER` | `obscura` | `obscura` selects the Obscura CDP URL. `steel` selects the Steel session URL from `formatCDPEndpoint()` and requires a session id. Any other value throws |
+| `KXM_BROWSER` | `obscura` | `obscura` selects the Obscura CDP URL and sends no Steel headers. `steel` selects `formatCDPConnect()` (the session URL plus `Authorization`, or the legacy API-key header) and requires a session id. Any other value throws |
 | `OBSCURA_CDP_URL` | `http://127.0.0.1:${OBSCURA_PORT:-9222}` | CDP URL passed to `chromium.connectOverCDP()`. When set, it wins over `OBSCURA_PORT` for that URL |
 | `OBSCURA_PORT` | `9222` | TCP port for `obscura serve`. Used in the default CDP URL when `OBSCURA_CDP_URL` is unset. The launcher refuses to start when this port disagrees with the port in `OBSCURA_CDP_URL` |
 | `STEEL_API_URL` | A KontextMind-operated deployment | Base URL of your Steel API. Set it before using `KXM_BROWSER=steel` |
 | `STEEL_UI_URL` | `$STEEL_API_URL/ui` | Base URL of the Steel session viewer |
-| `STEEL_API_KEY` | A `pass-cli` lookup | Steel API key. When unset, the library runs a `pass-cli` lookup of a fixed KontextMind vault item |
-| `USE_PASS_CLI` | enabled | Set to `false` to disable that `pass-cli` fallback |
+| `STEEL_AUTH_HEADER` | unset | Full `Authorization` value. Wins over the other Steel auth variables |
+| `STEEL_AUTH_BASIC` | unset | `base64(user:token)`, with or without a leading `Basic` prefix. Sent as `Authorization: Basic` |
+| `STEEL_AUTH_USER` | unset | Authentik username. Used with `STEEL_AUTH_TOKEN`. An incomplete pair fails closed |
+| `STEEL_AUTH_TOKEN` | unset | Authentik app password. Used with `STEEL_AUTH_USER` |
+| `STEEL_API_KEY` | A `pass-cli` lookup | Deprecated. Sent as `x-steel-api-key` and as `?apiKey=` on the CDP URL for the temporary proxy shim. The library warns once. Not sent when an Authentik variable is set |
+| `USE_PASS_CLI` | enabled | Set to `false` to disable the legacy `STEEL_API_KEY` `pass-cli` fallback |
 
 Obscura's own `OBSCURA_TIMEZONE` (default `Europe/Berlin`) and `OBSCURA_CDP_TOKEN` (required only for a non-loopback bind) are read by the Obscura process, not by KXM.
 

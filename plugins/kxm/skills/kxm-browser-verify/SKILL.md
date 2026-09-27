@@ -47,47 +47,25 @@ node scripts/obscura.mjs --ensure
 npm run e2e
 ```
 
-`npm run e2e` runs the launcher and then `playwright test`. The endpoint comes from `resolveObscuraCdpEndpoint()` (`OBSCURA_CDP_URL`, or `http://127.0.0.1:${OBSCURA_PORT:-9222}`).
+`npm run e2e` runs the launcher and then `playwright test`. `connectBrowserOverCdp()` uses Obscura (`OBSCURA_CDP_URL`, or `http://127.0.0.1:${OBSCURA_PORT:-9222}`) unless `KXM_BROWSER=steel`.
 
 Override the worker-scoped `browser` fixture:
 
 ```typescript
 import { test as base, chromium, type Browser } from "@playwright/test";
-import { resolveObscuraCdpEndpoint } from "@kontextmind/kxm/runtime";
+import { connectBrowserOverCdp } from "@kontextmind/kxm/runtime";
 
 export const test = base.extend<{}, { browser: Browser }>({
   browser: [async ({}, use) => {
-    const browser = await chromium.connectOverCDP(resolveObscuraCdpEndpoint());
+    const sessionId = process.env.STEEL_SESSION_ID?.trim();
+    const session = sessionId ? { id: sessionId, websocketUrl: "" } : undefined;
+    const browser = await connectBrowserOverCdp(
+      (url, options) => chromium.connectOverCDP(url, options),
+      session,
+    );
     await use(browser);
     await browser.close();
   }, { scope: "worker" }],
-import { test, expect, chromium } from "@playwright/test";
-import { formatCDPConnect, resolveSteelConfig } from "@kontextmind/kxm/runtime";
-
-test("reproduce and verify UI issue", async () => {
-  const sessionId = process.env.STEEL_SESSION_ID;
-  if (!sessionId) {
-    throw new Error("STEEL_SESSION_ID environment variable is required");
-  }
-
-  // Authorization: Basic on the CDP handshake. The URL has no credential.
-  const { url, headers } = formatCDPConnect(
-    { id: sessionId, websocketUrl: "" },
-    resolveSteelConfig(),
-  );
-  const browser = await chromium.connectOverCDP(url, { headers });
-  const context = browser.contexts()[0] || await browser.newContext();
-  const page = context.pages()[0] || await context.newPage();
-
-  await page.goto("https://app.example.com/dashboard");
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-
-  // Exercise reproducible interaction
-  await page.getByRole("button", { name: "Save Changes" }).click();
-  await expect(page.getByText("Changes saved successfully")).toBeVisible();
-
-  // Disconnect client without destroying the remote container
-  await browser.close();
 });
 
 export { expect } from "@playwright/test";
@@ -99,10 +77,34 @@ Local pages require the launcher flag `--allow-private-network` (the launcher al
 
 ## Steel, only for takeover
 
-When the case is human takeover, MFA, or the live session viewer, set `KXM_BROWSER=steel` and attach to the Steel session CDP URL from `resolveBrowserCdpEndpoint(session)`. That path is `formatCDPEndpoint()`. Closing the Playwright browser disconnects the client and does not release the Steel session.
+When the case is human takeover, MFA, or the live session viewer, set `KXM_BROWSER=steel` and a session id. `connectBrowserOverCdp()` passes `formatCDPConnect()` headers into `chromium.connectOverCDP`. Closing the Playwright browser disconnects the client and does not release the Steel session.
+
+```typescript
+import { chromium } from "playwright";
+import { connectBrowserOverCdp } from "@kontextmind/kxm/runtime";
+
+const browser = await connectBrowserOverCdp(
+  (url, options) => chromium.connectOverCDP(url, options),
+  { id: sessionId, websocketUrl: "" },
+);
+```
 
 ## Artifact Retention & Sanitization
 
 - Save test traces to `.kxm/artifacts/browser/trace-<runId>.zip`.
 - Sanitize recorded traces and screenshots: mask password fields, authorization headers, and personal data.
 - Keep permanent regression tests under `test/e2e/`. Scratch reproduction scripts stay out of that directory.
+
+## Vision Gate (screenshot assertion)
+
+After capturing a screenshot, a deterministic vision gate can assert UI state through an admitted vision route — bounded prompt, strict `{"verdict": true|false}` verdict, fail-closed (no free-form chat):
+
+```bash
+kxm vision assert --image .kxm/artifacts/browser/shot.png \
+  --question "Does the page show the error banner?" \
+  --expect false
+```
+
+- Exit 0 only when the verdict resolves and matches `--expect`; fail-closed divergences (`route_not_admitted`, `image unreadable`, `verdict unreadable`) exit 1.
+- The route must be admitted in `.kxm/routes.yaml` (default: `zai-coding-cn/glm-5.3-flash`, the 12/12-accuracy verified vision route).
+- The gate is a supplement to deterministic Playwright assertions, never a replacement.
