@@ -1,0 +1,11 @@
+schema: kxm.model.v2
+id: pi-qwen3-8-flash-openrouter
+harness: pi
+model: openrouter/qwen/qwen3.8-flash
+vendor: alibaba
+status: admitted
+permissions:
+  - read-only
+origin:
+  source: plans/evidence/route-pi-qwen3-8-flash-openrouter.md
+  sha256: 5708fa2f5bee50afa8dd42f31bb829fa99ca6fa068e647321d3fbd8a1befaf2e

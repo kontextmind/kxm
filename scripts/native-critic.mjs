@@ -8,12 +8,12 @@ import { buildArgv } from "./harness-run.mjs";
 
 // Launch intent only: these labels are not observed model identity or admission.
 export function nativeCriticLaunch(harness) {
-  if (!["fable", "astra", "opus"].includes(harness)) {
-    throw new Error("usage: native-critic.mjs <fable|astra|opus> <prompt>");
+  if (!["fable", "astra"].includes(harness)) {
+    throw new Error("usage: native-critic.mjs <fable|astra> <prompt>");
   }
-  const model = harness === "fable" ? "fable" : harness === "opus" ? "opus" : "gpt-6-astra";
-  const command = harness === "fable" || harness === "opus" ? "claude" : "codex";
-  const args = harness === "fable" || harness === "opus"
+  const model = harness === "fable" ? "fable" : "gpt-6-astra";
+  const command = harness === "fable" ? "claude" : "codex";
+  const args = harness === "fable"
     ? ["-p", "--model", model, "--effort", "medium", "--output-format", "json", "--no-session-persistence", "--tools", "Read,Glob,Grep", "--setting-sources", "user"]
     : buildArgv({ harness: "codex", model, effort: "low", permission: "read-only", prompt_file: "-" });
   return { model, command, args };

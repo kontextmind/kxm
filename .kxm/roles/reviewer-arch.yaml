@@ -3,7 +3,9 @@ id: reviewer-arch
 purpose: reviewer-arch
 permission: read-only
 description: Independent architecture critic.
-# fable is the required arch critic.
+# claude-fable is the required arch critic. The Pi fallback is a different vendor.
 roster:
-  - route: fable-claude
+  - route: claude-fable
+    effort: medium
+  - route: pi-glm-5-3-flash-openrouter
     effort: medium

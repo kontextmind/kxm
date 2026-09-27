@@ -1,5 +1,7 @@
 schema: kxm.model.v2
-id: grok-native
+id: grok-grok-4-7
+aliases:
+  - grok-native
 harness: grok
 model: grok-4.7
 vendor: xai

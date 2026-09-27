@@ -3,7 +3,7 @@
 # `kxm run land --dry-run --json`.
 schema: kxm.workflow.v1
 description: Land the current branch through verify, docs, rebase, merge, release, and milestone gates.
-coordinator: coordinator
+coordinator: planner
 limits:
   maxTransitions: 24
 steps:

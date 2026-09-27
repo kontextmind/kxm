@@ -208,8 +208,8 @@ test("same-policy pins differ only by runId; re-pin is idempotent; revision drif
       assert.equal(again.idempotent, true);
       assert.equal(context.eventStore.events(first.run.runId, 0, 20).filter((event) => event.payload.runPlanHash).length, 1);
       writeFileSync(
-        join(root, ".kxm", "agents", "implementer.yaml"),
-        readFileSync(join(root, ".kxm", "agents", "implementer.yaml"), "utf8").replace("Implement the approved change", "Implement the drifted change"),
+        join(root, ".kxm", "agents", "writer.yaml"),
+        readFileSync(join(root, ".kxm", "agents", "writer.yaml"), "utf8").replace("Implement the approved change", "Implement the drifted change"),
       );
       const drifted = loadKxmProject(root);
       assert.notEqual(drifted.configRevision, bundle.configRevision);
@@ -1102,8 +1102,8 @@ test("scheduler admits concurrently, conflicts on queued policy replacement, and
       const queuedPending = scheduler.enqueue(queuedRun.run.runId, blocking);
       await new Promise((resolve) => setTimeout(resolve, 20));
       writeFileSync(
-        join(root, ".kxm", "agents", "coordinator.yaml"),
-        readFileSync(join(root, ".kxm", "agents", "coordinator.yaml"), "utf8").replace("Coordinate the pinned workflow", "Coordinate the drifted workflow"),
+        join(root, ".kxm", "agents", "planner.yaml"),
+        readFileSync(join(root, ".kxm", "agents", "planner.yaml"), "utf8").replace("Coordinate the pinned workflow", "Coordinate the drifted workflow"),
       );
       const drifted = loadKxmProject(root);
       assert.notEqual(drifted.configRevision, bundle.configRevision);
@@ -1119,8 +1119,8 @@ test("scheduler admits concurrently, conflicts on queued policy replacement, and
 
       const idle = KxmRunScheduler.for(context, bundle);
       writeFileSync(
-        join(root, ".kxm", "agents", "coordinator.yaml"),
-        readFileSync(join(root, ".kxm", "agents", "coordinator.yaml"), "utf8").replace("Coordinate the drifted workflow", "Coordinate the rebound workflow"),
+        join(root, ".kxm", "agents", "planner.yaml"),
+        readFileSync(join(root, ".kxm", "agents", "planner.yaml"), "utf8").replace("Coordinate the drifted workflow", "Coordinate the rebound workflow"),
       );
       const rebound = loadKxmProject(root);
       assert.notEqual(rebound.configRevision, bundle.configRevision);
@@ -1453,6 +1453,40 @@ test("a live drive request carries the route harness, provider, and model", asyn
 test("live dispatch thinking is the roster effort and is absent when the roster entry has none", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-roster-effort-");
   try {
+    writeFileSync(join(root, ".kxm", "roles", "unset.yaml"), `schema: kxm.role.v2
+id: unset
+purpose: experiment
+permission: read-only
+description: effort omitted
+roster:
+  - route: grok-default
+`);
+    writeFileSync(join(root, ".kxm", "agents", "unset.yaml"), `schema: kxm.agent.v1
+purpose: Effort omitted.
+role: unset
+tools:
+  preset: read-only
+defaultRepositoryAccess: none
+network: provider-only
+resultSchema: kxm.assignment-result.v1
+`);
+    writeFileSync(join(root, ".kxm", "workflows", "unset.yaml"), `schema: kxm.workflow.v1
+description: Effort omitted.
+coordinator: coordinator
+limits:
+  maxTransitions: 2
+steps:
+  - id: only
+    kind: agent
+    agent: unset
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
     writeFileSync(join(root, ".kxm", "roles", "measured.yaml"), `schema: kxm.role.v2
 id: measured
 purpose: experiment
@@ -1506,7 +1540,9 @@ steps:
       assert.equal(plainDrive.handoff, undefined);
       assert.equal(plainDrive.state.status, "completed");
       assert.equal(seen[0]?.agentId, "implementer");
-      assert.equal(seen[0]?.thinking, undefined);
+      // `kxm init` writes the writer roster with effort medium; one-step still
+      // dispatches the implementer alias of that agent.
+      assert.equal(seen[0]?.thinking, "medium");
 
       const measured = acceptKxmRun(context, bundle, { workflowId: "measured", prompt: "with effort" });
       pinKxmCompiledPlan(context, bundle, measured.run.runId);
@@ -1515,6 +1551,14 @@ steps:
       assert.equal(measuredDrive.state.status, "completed");
       assert.equal(seen[1]?.agentId, "measured");
       assert.equal(seen[1]?.thinking, "high");
+
+      const omitted = acceptKxmRun(context, bundle, { workflowId: "unset", prompt: "no effort" });
+      pinKxmCompiledPlan(context, bundle, omitted.run.runId);
+      const omittedDrive = await driveKxmRun(context, omitted.run.runId, producer as never);
+      assert.equal(omittedDrive.handoff, undefined);
+      assert.equal(omittedDrive.state.status, "completed");
+      assert.equal(seen[2]?.agentId, "unset");
+      assert.equal(seen[2]?.thinking, undefined);
     } finally {
       closeKxmRuntimeContext(context);
     }
@@ -4278,7 +4322,7 @@ test("live route refuses a role whose first admitted route is disabled", () => {
 test("live write refuses a writer route without edit", () => {
   const { root, stateRoot } = engineProject("kxm-engine-writer-no-edit-");
   try {
-    writeFileSync(join(root, ".kxm", "models", "grok-default.yaml"), "schema: kxm.model.v2\nid: grok-default\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
+    writeFileSync(join(root, ".kxm", "models", "grok-grok-4-6.yaml"), "schema: kxm.model.v2\nid: grok-grok-4-6\naliases:\n  - grok-default\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
     writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), "schema: kxm.workflow.v1\ndescription: Write\ncoordinator: coordinator\nlimits:\n  maxTransitions: 2\nsteps:\n  - id: write-step\n    kind: agent\n    agent: implementer\n    repositories:\n      control: write\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n");
     setRouteState(root, "xai/grok-4.6", "admitted");
     const bundle = loadKxmProject(root);

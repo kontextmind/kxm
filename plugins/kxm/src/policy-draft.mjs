@@ -20,7 +20,7 @@ const TOKEN = /[\s\x00-\x1f]/u;
 const EFFORTS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const MODES = Object.freeze(["headless", "interactive", "either"]);
 const MODEL_KEYS = Object.freeze([
-  "schema", "id", "harness", "model", "vendor", "status", "permissions", "origin",
+  "schema", "id", "aliases", "harness", "model", "vendor", "status", "permissions", "origin",
   "thinking", "tags", "capabilities", "priority", "fallbacks", "limits",
 ]);
 const ROLE_KEYS = Object.freeze([
@@ -225,6 +225,9 @@ function validateModelShape(document, id, label, issues) {
   }
   if (document.id !== undefined && document.id !== id) {
     issues.push(issue("schema", "identity_mismatch", label, `declared id ${String(document.id)} does not match ${id}`));
+  }
+  if (document.aliases !== undefined && !identifierList(document.aliases)) {
+    issues.push(issue("schema", "schema_pattern", label, "aliases must be unique identifiers"));
   }
   if (document.harness !== undefined && !identifier(document.harness)) {
     issues.push(issue("schema", "schema_pattern", label, "harness must be an identifier"));
@@ -511,9 +514,12 @@ function validateRoleSemantics(role, id, label, models, options, issues) {
     const admitted = role.roster
       .map((entry) => models.get(entry.route))
       .filter((model) => model && admittedRoute(model));
-    if (admitted.length !== 1) {
-      issues.push(issue("semantic", "critic_route_count", label, "required critic purpose files must list exactly one admitted route"));
-    } else if (admitted[0].permissions.length !== 1 || admitted[0].permissions[0] !== "read-only" || role.permission !== "read-only") {
+    // The first roster entry is the required critic. Later entries are
+    // fallbacks so one provider outage does not stop the role. Every entry
+    // stays read-only; vendor independence uses the first entry only.
+    if (admitted.length < 1) {
+      issues.push(issue("semantic", "critic_route_count", label, "required critic purpose files must list at least one admitted route"));
+    } else if (role.permission !== "read-only" || admitted.some((model) => model.permissions.length !== 1 || model.permissions[0] !== "read-only")) {
       issues.push(issue("semantic", "permission_escalation", label, "critic purpose files must be read-only"));
     }
   }
@@ -549,7 +555,7 @@ function validateCriticVendors(roles, models, options, issues) {
     const admitted = (role.roster ?? [])
       .map((entry) => models.get(entry.route))
       .filter((model) => model && admittedRoute(model));
-    if (admitted.length === 1) critics.push({ purpose, vendor: canonicalVendor(admitted[0].vendor, aliases) });
+    if (admitted.length >= 1) critics.push({ purpose, vendor: canonicalVendor(admitted[0].vendor, aliases) });
   }
   if (critics.length === 2 && critics[0].vendor === critics[1].vendor) {
     issues.push(issue("semantic", "critic_vendor_collision", "roles/reviewer-arch", "required critics must have independent vendors"));

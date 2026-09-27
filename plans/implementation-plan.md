@@ -131,6 +131,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Decided
 
+- **Workforce ids (2026-09-27).** Role ids stay the purpose vocabulary
+  (`planner`, `writer`, `reviewer-arch`, `reviewer-cli`). Agent ids and
+  agent-step ids use that same vocabulary. Route ids are
+  `<harness>-<model-slug>[-<provider>]`. Old ids keep resolving through
+  `aliases` and the built-in rename table. `opus` stays unadmitted, so
+  `opus-claude` is removed rather than renamed. Selectors with no
+  allowlisted harness (`qwen-token-plan/*`, `zai-coding-cn/*`) left
+  `.kxm/routes.yaml`; their `prices.yaml` rows stay. The OpenRouter and
+  `agy` selectors that already fit a ceiling are fallback routes.
+
 - **Tool choice (2026-09-25).** Use the best tool for the job. Prefer Python
   when it is the better tool. Prefer Bun over npm when Bun can install or run
   the package. A missing or stale install is reconciled by `kxm-control`.

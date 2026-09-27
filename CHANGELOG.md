@@ -13,8 +13,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   effective value is written on the one-shot evidence. A `cancelling` run whose
   executing attempt's child already exited settles `executing_unrecorded`.
   Admission is released when a drive closes with a handoff, so a later drive
-  is admitted, and `runs status` names the attempt. `implement-only`,
-  `review-arch-only`, and `review-cli-only` are one-step workflows, driven with
+  is admitted, and `runs status` names the attempt. `writer-only`,
+  `reviewer-arch-only`, and `reviewer-cli-only` are one-step workflows
+  (`implement-only`, `review-arch-only`, and `review-cli-only` still resolve), driven with
   `kxm lane run <unit> --workflow <id> --brief <file>`. See
   [kxm lane](docs/reference/cli-reference.md#kxm-lane),
   [runs status](docs/reference/cli-reference.md#kxm-runs-status),
@@ -141,6 +142,22 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Workforce ids use one convention, and old ids still resolve.**
+  Role ids stay `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`.
+  Agent ids and agent-step ids use those same names. Route ids are
+  `<harness>-<model-slug>[-<provider>]`. `kxm init` writes `planner.yaml`
+  and `writer.yaml`; `coordinator` and `implementer` remain aliases.
+  `opus-claude` is removed because `opus` is not an admitted selector.
+  `qwen-token-plan/*` and `zai-coding-cn/*` left `.kxm/routes.yaml` because
+  those harnesses are not allowlisted.   `node scripts/workforce-lint.mjs`
+  fails `npm run check` and `npm run validate:pr` when a route, a roster
+  entry, or an id breaks the convention, and when a roster entry omits
+  `effort` or names one outside `off`, `minimal`, `low`, `medium`, `high`,
+  `xhigh`, and `max`. An admitted selector with no route is a warning.
+  The Claude helper accepts `fable` only. #343's architecture critic ran on
+  `opus` because the justfile recipe review-arch hardcoded that model while
+  `reviewer-arch` listed only `fable-claude`. That recipe is gone; a request
+  for `opus` fails closed.
 - **Dispatch reads role and model files, and agents bind a role.**
   `scripts/roster-policy.mjs` builds the developer policy from
   `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.
@@ -148,9 +165,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   and that role's roster. A step `model` does not override that route.
   `kxm routes` prints `policy` (`admitted`, `disabled`) and `membership`
   from the role files. `.kxm/routes.yaml` keeps admitted and disabled
-  selectors. `reviewer-arch` resolves to `fable-claude`. `opus-claude` is
-  admitted and named by no roster, so it is absent from `routes` and the
-  lineups. `gemini-agy` is in the writer lineup. An agent `tools.preset`
+  selectors. `reviewer-arch` resolves to `claude-fable` (alias `fable-claude`).
+  `agy-gemini-3-8-flash-high` (alias `gemini-agy`) is in the writer lineup.
+  An agent `tools.preset`
   may only narrow its role preset; that rule is recorded and enforced in P3.
 
 - **Role and model files are live `kxm.role.v2` and `kxm.model.v2`.**

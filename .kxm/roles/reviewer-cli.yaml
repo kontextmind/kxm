@@ -3,7 +3,9 @@ id: reviewer-cli
 purpose: reviewer-cli
 permission: read-only
 description: Independent CLI and docs critic.
-# sol is the required cli critic.
+# codex-gpt-5-6-sol is the required cli critic. The Pi fallback is a different vendor.
 roster:
-  - route: sol-codex
+  - route: codex-gpt-5-6-sol
+    effort: low
+  - route: pi-qwen3-8-flash-openrouter
     effort: low

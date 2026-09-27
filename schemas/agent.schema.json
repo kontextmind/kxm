@@ -13,6 +13,13 @@
     "executor": { "$ref": "common.schema.json#/$defs/identifier" },
     "harness": { "$ref": "common.schema.json#/$defs/identifier" },
     "role": { "$ref": "common.schema.json#/$defs/identifier" },
+    "aliases": {
+      "type": "array",
+      "description": "Deprecated agent ids that still resolve to this file.",
+      "items": { "$ref": "common.schema.json#/$defs/identifier" },
+      "uniqueItems": true,
+      "maxItems": 16
+    },
     "effort": { "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"] },
     "skills": {
       "type": "array",

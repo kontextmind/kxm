@@ -3,7 +3,9 @@ id: planner
 purpose: planner
 permission: read-only
 description: Plans the change before implementation.
-# fable primary (proven planning).
+# claude-fable is primary. The Pi fallback is a different vendor.
 roster:
-  - route: fable-claude
+  - route: claude-fable
+    effort: medium
+  - route: pi-qwen3-8-flash-openrouter
     effort: medium

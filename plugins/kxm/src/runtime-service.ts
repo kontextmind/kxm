@@ -5,6 +5,7 @@ import type { ContextItem } from "./context.ts";
 import {
   KxmConfigError,
   loadKxmProject,
+  lookupKxmResource,
   kxmCanonicalJson,
   type JsonObject,
   type JsonValue,
@@ -402,7 +403,7 @@ export function acceptKxmRun(
   const now = options.now ?? new Date().toISOString();
   const monotonicNs = options.monotonicNs ?? kxmMonotonicNs();
 
-  const workflow = bundle.workflows.get(request.workflowId);
+  const workflow = lookupKxmResource(bundle.workflows.values(), request.workflowId, "workflow");
   if (!workflow) {
     throw runtimeError("run_workflow_unknown", ".kxm/workflows", `workflow ${request.workflowId} does not exist in this project`);
   }

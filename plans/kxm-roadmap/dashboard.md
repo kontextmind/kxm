@@ -2,7 +2,7 @@
 
 Updated: 2026-09-27.
 
-Active blockers: 5. Active questions: 12. Later phases are excluded from both counts.
+Active blockers: 5. Active questions: 11. Later phases are excluded from both counts.
 
 ## Next
 
@@ -43,7 +43,6 @@ Goal: Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role 
 
 #### Open tasks
 
-- `omp-p2` P2 cut the loader and engine over to the v2 files.
 - `omp-p3` P3 tool policy enforcement.
 - `omp-p4` P4 opt-in fallback walk with route_switch events.
 - `omp-p5` P5 provenance and extends.
@@ -56,8 +55,7 @@ None.
 
 #### Questions
 
-- Section 7 of the plan lists the open questions; they stay open until P2 is dispatched.
-- P2 waits on the lane registry slice (backlog S24) so the writer can run through kxm lane run.
+- P2 landed in #343. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files, and whether P4 needs an error classifier before the fallback walk.
 
 [Phase page](phases/02-role-authority.md)
 
@@ -352,3 +350,4 @@ No confirmed contacts.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
 - 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.
+- 2026-09-27: P2 role authority landed (#343): the loader and engine read the v2 role and model files.

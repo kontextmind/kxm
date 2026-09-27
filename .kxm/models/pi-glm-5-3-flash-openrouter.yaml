@@ -1,0 +1,11 @@
+schema: kxm.model.v2
+id: pi-glm-5-3-flash-openrouter
+harness: pi
+model: openrouter/z-ai/glm-5.3-flash
+vendor: z-ai
+status: admitted
+permissions:
+  - read-only
+origin:
+  source: plans/evidence/route-pi-glm-5-3-flash-openrouter.md
+  sha256: 977e55649590af2c30f006d835d4f6c3948cf78a19a00a3c8fa3764dee2f0e46

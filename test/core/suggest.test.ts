@@ -50,7 +50,7 @@ test("suggest uses the probed Claude route exclusively for supported read-only w
   for (const constraint of ["using Claude only", "using only Claude Code", "Claude-only", "exclusively with Claude"]) {
     const suggestion = suggestWorkflowAndRoles(`Investigate an architecture spike ${constraint}`, { availableHarnesses });
     assert.equal(suggestion.template, "spec-and-plan");
-    assert.deepEqual(suggestion.roles.map((role) => [role.agent, role.harness]), [["coordinator", "claude"]]);
+    assert.deepEqual(suggestion.roles.map((role) => [role.agent, role.harness]), [["planner", "claude"]]);
     if (!suggestion.execution.supported) assert.fail(suggestion.execution.reason);
     assert.match(suggestion.execution.createCommand, /^kxm run architecture-spike -- /);
     assert.equal(suggestion.execution.driveCommand, "kxm runs drive <runId> --wait");
@@ -97,12 +97,12 @@ test("suggest exposes live writer admission and real verification prerequisites 
   const suggestion = suggestWorkflowAndRoles("Fix a bug in an isolated worktree", { availableHarnesses });
   assert.equal(suggestion.workflowId, "bug-fix");
   assert.equal(suggestion.template, "implement-and-verify");
-  assert.deepEqual(suggestion.roles, [{ agent: "implementer", harness: "grok", role: "implement" }]);
+  assert.deepEqual(suggestion.roles, [{ agent: "writer", harness: "grok", role: "writer" }]);
   if (!suggestion.execution.supported) assert.fail(suggestion.execution.reason);
   assert.match(suggestion.execution.createCommand, /^kxm run bug-fix -- /);
   assert.equal(suggestion.execution.driveCommand, "kxm runs drive <runId> --wait");
   const prerequisites = suggestion.execution.prerequisites.join("\n");
-  assert.match(prerequisites, /\.kxm\/agents\/implementer\.yaml/);
+  assert.match(prerequisites, /\.kxm\/agents\/writer\.yaml/);
   assert.match(prerequisites, /harness grok/);
   assert.match(prerequisites, /role on/);
   assert.match(prerequisites, /\.kxm\/routes\.yaml/);

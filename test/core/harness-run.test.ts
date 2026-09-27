@@ -122,6 +122,7 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
     const cases = [
       { harness: "grok", role: "planner", model: "grok-4.7", permission: "edit", prompt_file: prompt },
       { harness: "claude", role: "writer", model: "fable", permission: "read-only", prompt_file: prompt },
+      { harness: "claude", role: "reviewer-arch", model: "opus", permission: "read-only", prompt_file: prompt },
       { harness: "codex", role: "reviewer-cli", model: "gpt-5", permission: "read-only", prompt_file: prompt },
       { harness: "grok", role: "writer", model: "grok-4.7", permission: "read-only", prompt_file: prompt },
       { harness: "kimi", role: "writer", model: "kimi-for-coding", permission: "edit", prompt_file: prompt },
@@ -452,6 +453,7 @@ test("native Astra critic binds the requested model to safe Codex argv without l
     "-c", 'approval_policy="never"', "--json", "-",
   ]);
   assert.throws(() => nativeCriticLaunch("unknown"), /usage:/);
+  assert.throws(() => nativeCriticLaunch("opus"), /usage:/);
 });
 
 test("agy argv uses prompt text, json schema path, effort, and print-timeout; no prompt-file or stdin", () => {

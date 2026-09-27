@@ -1,7 +1,10 @@
 schema: kxm.model.v2
-id: opus-claude
+id: claude-fable
+aliases:
+  - fable-claude
+  - fable-default
 harness: claude
-model: opus
+model: fable
 vendor: anthropic
 status: admitted
 permissions:

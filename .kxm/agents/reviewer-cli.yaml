@@ -1,8 +1,10 @@
 schema: kxm.agent.v1
-purpose: Coordinate the pinned workflow and emit schema-validated commands.
-role: planner
+purpose: CLI and verification critic for the approved workflow change.
+role: reviewer-cli
+aliases:
+  - critic-cli
 tools:
-  preset: coordinator
+  preset: read-only
 defaultRepositoryAccess: read
 repositories:
   control: read

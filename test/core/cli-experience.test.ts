@@ -827,9 +827,9 @@ test("workflow add templates validate and plan a run, and a gate outcome the ste
     }
     const expectedStages: Record<string, string[]> = {
       demo: ["step-1"],
-      "implement-and-verify": ["implement", "verify"],
-      "dual-critic-review": ["implement", "review-arch", "review-cli", "verify"],
-      "spec-and-plan": ["plan", "review-arch"],
+      "implement-and-verify": ["writer", "verify"],
+      "dual-critic-review": ["writer", "reviewer-arch", "reviewer-cli", "verify"],
+      "spec-and-plan": ["plan", "reviewer-arch"],
     };
     const bundle = loadKxmProject(project);
     for (const id of ids) {

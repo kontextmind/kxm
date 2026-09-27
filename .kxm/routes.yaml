@@ -1,5 +1,11 @@
 schema: kxm.routes.v2
-updatedAt: '2026-09-24T00:00:00.000Z'
+updatedAt: '2026-09-27T00:00:00.000Z'
+# Removed 2026-09-27 because no allowlisted harness can run them. prices.yaml rows stay.
+# qwen-token-plan/deepseek-v4.1-flash — qwen-token-plan is not allowlisted, and deepseek is a native-vendor Pi brake.
+# qwen-token-plan/qwen3.8-flash — qwen-token-plan is not an allowlisted harness or Pi provider.
+# qwen-token-plan/qwen3.8-max — qwen-token-plan is not an allowlisted harness or Pi provider.
+# zai-coding-cn/glm-5.3 — zai-coding-cn is not an allowlisted harness or Pi provider.
+# zai-coding-cn/glm-5.3-flash — zai-coding-cn is not an allowlisted harness or Pi provider.
 admitted:
 - anthropic/fable
 - google/gemini-3.8-flash-high
@@ -8,10 +14,5 @@ admitted:
 - openrouter/qwen/qwen3-coder-plus
 - openrouter/qwen/qwen3.8-flash
 - openrouter/z-ai/glm-5.3-flash
-- qwen-token-plan/deepseek-v4.1-flash
-- qwen-token-plan/qwen3.8-flash
-- qwen-token-plan/qwen3.8-max
 - xai/grok-4.7
-- zai-coding-cn/glm-5.3
-- zai-coding-cn/glm-5.3-flash
 disabled: []

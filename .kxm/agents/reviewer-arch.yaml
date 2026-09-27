@@ -1,6 +1,8 @@
 schema: kxm.agent.v1
 purpose: Architecture critic for the approved workflow change.
 role: reviewer-arch
+aliases:
+  - critic-arch
 tools:
   preset: read-only
 defaultRepositoryAccess: read

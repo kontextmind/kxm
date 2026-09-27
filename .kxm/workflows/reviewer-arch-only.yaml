@@ -1,12 +1,16 @@
 schema: kxm.workflow.v1
-description: One read-only CLI critic step.
-coordinator: coordinator
+description: One read-only architecture critic step.
+aliases:
+  - review-arch-only
+coordinator: planner
 limits:
   maxTransitions: 2
 steps:
-  - id: critic-cli
+  - id: reviewer-arch
+    aliases:
+      - critic-arch
     kind: agent
-    agent: critic-cli
+    agent: reviewer-arch
     repositories:
       control: read
     maxAttempts: 1

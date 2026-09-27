@@ -1,5 +1,7 @@
 schema: kxm.model.v2
-id: sol-codex
+id: codex-gpt-5-6-sol
+aliases:
+  - sol-codex
 harness: codex
 model: gpt-5.6-sol
 vendor: openai

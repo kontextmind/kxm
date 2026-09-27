@@ -5,8 +5,11 @@ permission: edit
 description: Primary implementation agent.
 # Rotation priority = order. Effort default: medium for implementation.
 roster:
-  - route: grok-native
+  - route: grok-grok-4-7
     effort: medium
-  - route: qwen-openrouter-pi
+  - route: pi-qwen3-coder-plus-openrouter
     effort: medium
-  - route: gemini-agy
+  - route: agy-gemini-3-8-flash-high
+    effort: medium
+  - route: agy-gemini-3-8-flash-medium
+    effort: medium

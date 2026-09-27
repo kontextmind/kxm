@@ -872,7 +872,7 @@ test("role add writes a local role only at the project root, and only if the pro
     rmSync(join(roles, "writer.yaml"));
     mkdirSync(join(root, "user-config", "roles"), { recursive: true });
     writeFileSync(join(root, "user-config", "roles", "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\ndescription: Global writer.\nroster:\n  - route: grok-default\n");
-    const implementer = join(project, ".kxm", "agents", "implementer.yaml");
+    const implementer = join(project, ".kxm", "agents", "writer.yaml");
     const undeclared = readFileSync(implementer, "utf8").replace(/^harness:.*\n/m, "").replace(/^model:.*\n(?: {2}.*\n)*/m, "");
     writeFileSync(implementer, undeclared.endsWith("\n") ? undeclared : `${undeclared}\n`);
     assert.ok(loadKxmProject(project));

@@ -11,6 +11,7 @@ import { runVisionGate } from "../vision-gate.ts";
 import {
   KxmConfigError,
   discoverKxmProjectRoot,
+  lookupKxmResource,
   type KxmInitializationPlan,
 } from "../project-config.ts";
 import { initializeKxmProject } from "../init.ts";
@@ -439,7 +440,7 @@ export function resolveKxmRunTarget(
   }
   const bundle = loadKxmProject(projectRoot, {});
   const workflowId = workflow ?? String(bundle.project.value.defaultWorkflow ?? "default");
-  if (!bundle.workflows.has(workflowId)) {
+  if (!lookupKxmResource(bundle.workflows.values(), workflowId, "workflow")) {
     print(runtime.io, runtime.json, { ok: false, command: "run", error: "run_workflow_unknown", workflow: workflowId, ...envelope }, `workflow ${workflowId} does not exist in this project`);
     return 1;
   }

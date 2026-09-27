@@ -15,6 +15,7 @@ import {
   type KxmRoleDefinition,
 } from "../role.ts";
 import { discoverKxmProjectRoot, kxmRoleWriteIssues } from "../project-config.ts";
+import { findYamlBasename } from "../workforce-names.mjs";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import { resumeWorkflowFromRuling, type WorkflowRun } from "../workflow.ts";
@@ -185,8 +186,7 @@ export async function cmdRoleAdd(
   // after its roster is parsed, for both local and global scope.
   const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
   const refuseMissingRoute = (routeId: string): boolean => {
-    const modelFile = join(projectRoot, ".kxm", "models", `${routeId}.yaml`);
-    if (existsSync(modelFile)) return false;
+    if (findYamlBasename(join(projectRoot, ".kxm", "models"), routeId, "route")) return false;
     runtime.io.stderr(`kxm: route '${routeId}' is not a file under .kxm/models/\n`);
     return true;
   };
@@ -398,8 +398,7 @@ export async function cmdRoleModify(
   if (options.addRoute) {
     const routeId = options.addRoute;
     const projectRoot = discoverKxmProjectRoot(runtime.cwd) ?? runtime.cwd;
-    const modelFile = join(projectRoot, ".kxm", "models", `${routeId}.yaml`);
-    if (!existsSync(modelFile)) {
+    if (!findYamlBasename(join(projectRoot, ".kxm", "models"), routeId, "route")) {
       runtime.io.stderr(`kxm: route '${routeId}' is not a file under .kxm/models/\n`);
       return 1;
     }

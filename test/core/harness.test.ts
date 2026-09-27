@@ -321,8 +321,8 @@ test("fresh template names admitted harnesses; omitted harness still loads; unkn
     initializeKxmProject(root, { projectId: "prj_01JHARNESSTEST00000000000", projectName: "Harness", localStateRoot: stateRoot });
     const bundle = loadKxmProject(root);
     assert.equal(bundle.project.value.defaultHarness, "pi");
-    assert.equal(bundle.agents.get("implementer")?.value.role, "writer");
-    assert.equal(bundle.agents.get("coordinator")?.value.role, "planner");
+    assert.equal(bundle.agents.get("writer")?.value.role, "writer");
+    assert.equal(bundle.agents.get("planner")?.value.role, "planner");
     writeFileSync(join(root, ".kxm", "agents", "coordinator.yaml"), [
       "schema: kxm.agent.v1",
       "purpose: Coordinate the pinned workflow and emit schema-validated commands.",

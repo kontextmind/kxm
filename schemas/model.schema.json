@@ -14,6 +14,18 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "aliases": {
+      "type": "array",
+      "description": "Deprecated route ids that still resolve to this file. A deprecation warning is printed when one is used.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "uniqueItems": true,
+      "maxItems": 16
+    },
     "harness": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
