@@ -26,7 +26,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 | [Continuous improvement](guides/continuous-improvement.md) | Leads, workflow authors | Journals, retrospectives, improvement reports and coded-repeat candidates |
 | [Governed skills](guides/governed-skills.md) | Operators, skill authors | The candidate, evaluation, promotion and rejection lifecycle |
 | [Agent skills](guides/agent-skills.md) | Users of any harness | The bundled `SKILL.md` suite and how each harness loads it |
-| [Browser automation](guides/browser-automation.md) | Developers, operators | Steel browser sessions, Playwright, safe credentials and human takeover |
+| [Browser automation](guides/browser-automation.md) | Developers, operators | Obscura for Playwright, Steel for takeover, safe credentials |
 | [Nous providers](guides/nous-providers.md) | Pi operators | Opt-in Nous Portal models for Pi agents |
 
 ### Browser knowledge base
@@ -35,7 +35,8 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 |---|---|---|
 | [How are credentials retrieved without exposing them to the model?](kb/how-credentials-retrieved-safely.md) | Browser operators | How agents log in without the model seeing secrets |
 | [How do I capture a UI section and annotate changes for an agent?](kb/how-to-capture-and-annotate-section.md) | Browser operators | Send an agent a marked-up UI section to change |
-| [How do I connect Playwright to the existing Steel session?](kb/how-to-connect-playwright-to-steel.md) | Browser operators | Attach Playwright to an existing Steel session |
+| [How do I connect Playwright to Obscura?](kb/how-to-connect-playwright-to-obscura.md) | Browser operators | Attach Playwright to the default Obscura browser |
+| [How do I connect Playwright to the existing Steel session?](kb/how-to-connect-playwright-to-steel.md) | Browser operators | Attach Playwright to a Steel session for takeover |
 | [How do I recover an expired session or remove an orphaned browser?](kb/how-to-recover-expired-session-or-orphan.md) | Browser operators | Restore a session or remove an orphaned browser |
 | [How does an agent resume after MFA?](kb/how-to-resume-after-mfa.md) | Browser operators | Continue agent work after a person completes MFA |
 | [How do I take over a browser session to log in?](kb/how-to-take-over-session.md) | Browser operators | Log in by hand inside an agent's browser session |
@@ -75,7 +76,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 | [Architecture](concepts/architecture.md) | Integrators, maintainers | The components, message and workflow lifecycles, and KXM's limits |
 | [Trust model](concepts/trust-model.md) | Operators, security reviewers | Who holds which credential, project boundaries, and what provenance proves |
 | [Data and storage](concepts/data-and-storage.md) | Operators, security reviewers | What each store holds, where it lives and how long it is kept |
-| [Architecture decision records](adr/README.md) | Maintainers | The decision records: [browser automation](adr/ADR-0002-browser-automation-steel-doks.md), [SQLite-only store](adr/ADR-0003-sqlite-only-store.md), [edge identity](adr/ADR-0004-edge-identity-authentik.md) |
+| [Architecture decision records](adr/README.md) | Maintainers | The decision records: [browser automation](adr/ADR-0002-browser-automation-steel-doks.md), [Obscura for Playwright](adr/ADR-0005-obscura-default-playwright.md), [SQLite-only store](adr/ADR-0003-sqlite-only-store.md), [edge identity](adr/ADR-0004-edge-identity-authentik.md) |
 | [KXM contract package](contracts/README.md) | Maintainers, reviewers | The normative specifications for the local-first architecture, listed below |
 
 ### Contracts

@@ -165,6 +165,8 @@ up or restores stores a running supervisor wrote.
 | Release packs `kxm-<v>.tgz`, uploads to a draft fail-closed, proves the digest and never clobbers | `kxm-release-github.test.ts`, `ci-contract.test.ts` |
 | npm publish requires a published release and a matching asset digest | `kxm-publish-npm.test.ts` |
 | CI required jobs are unconditional; runner selector, coverage floors and release triggers are pinned | `ci-contract.test.ts` |
+| Playwright CDP defaults to Obscura; `KXM_BROWSER=steel` uses the Steel session URL | `browser.test.ts` |
+| Obscura Playwright smoke loads a local page over CDP | `test/e2e/obscura-smoke.spec.ts` via `npm run e2e` (not `node --test`) |
 | Skill suite: manifest shape, one owner per command, strict YAML frontmatter, no legacy names, mirror parity | `skill-suite.test.ts` ("every bundled SKILL.md frontmatter parses as strict YAML") |
 | The extension and MCP server never import the hub, store or workflow; library bundles stay host-neutral | `import-boundary.test.ts` |
 | Workspace packages keep their layers, required files and by-name imports | `package-layers.test.ts` |

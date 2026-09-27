@@ -12,7 +12,7 @@ authority: "decision"
 confidence: "verified"
 summary: "Adopt self-hosted Steel on DigitalOcean Kubernetes (DOKS) with agent-browser and Playwright as KXM's primary browser automation infrastructure."
 tags: ["architecture", "decision", "browser", "steel", "doks", "playwright"]
-related: ["docs/guides/browser-automation.md", "docs/guides/agent-skills.md"]
+related: ["docs/guides/browser-automation.md", "docs/guides/agent-skills.md", "docs/adr/ADR-0005-obscura-default-playwright.md"]
 details:
   decision_drivers:
     - "Eliminate per-minute SaaS browser provider costs"

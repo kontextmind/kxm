@@ -33383,6 +33383,40 @@ function formatCDPEndpoint(session, config) {
   }
   return `${wsProtocol}//${host}/v1/devtools?${searchParams.toString()}`;
 }
+var DEFAULT_OBSCURA_CDP_URL = "http://127.0.0.1:9222";
+var DEFAULT_OBSCURA_PORT = 9222;
+function obscuraListenPort() {
+  const raw = process.env.OBSCURA_PORT?.trim() ?? "";
+  if (raw === "") return DEFAULT_OBSCURA_PORT;
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new Error(`OBSCURA_PORT must be an integer from 1 to 65535 (received ${JSON.stringify(process.env.OBSCURA_PORT)})`);
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`OBSCURA_PORT must be an integer from 1 to 65535 (received ${JSON.stringify(process.env.OBSCURA_PORT)})`);
+  }
+  return port;
+}
+function resolveObscuraCdpEndpoint() {
+  const explicit = process.env.OBSCURA_CDP_URL?.trim() ?? "";
+  if (explicit !== "") return explicit;
+  const port = obscuraListenPort();
+  if (port === DEFAULT_OBSCURA_PORT) return DEFAULT_OBSCURA_CDP_URL;
+  return `http://127.0.0.1:${port}`;
+}
+function resolveBrowserCdpEndpoint(session, config) {
+  const browser = (process.env.KXM_BROWSER ?? "").trim().toLowerCase();
+  if (browser === "" || browser === "obscura") {
+    return resolveObscuraCdpEndpoint();
+  }
+  if (browser === "steel") {
+    if (!session?.id) {
+      throw new Error("KXM_BROWSER=steel requires a Steel session id");
+    }
+    return formatCDPEndpoint(session, config ?? resolveSteelConfig());
+  }
+  throw new Error(`Unsupported KXM_BROWSER value ${JSON.stringify(process.env.KXM_BROWSER)}; expected "obscura" or "steel"`);
+}
 function sanitizeLogOutput(input) {
   if (typeof input === "string") {
     return input.replace(/apiKey=[^&]+/g, "apiKey=[REDACTED]").replace(/steel_[a-f0-9]+/g, "steel_[REDACTED]");
@@ -34612,6 +34646,7 @@ export {
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_LOG_MAX_FILES,
   DEFAULT_MODES_CONFIG,
+  DEFAULT_OBSCURA_CDP_URL,
   DEFAULT_RUNTIME_STOP_GRACE_MS,
   DEFAULT_RUNTIME_SYNC_INTERVAL_MS,
   DEFAULT_SOCKET_DIR,
@@ -34764,7 +34799,9 @@ export {
   redactLogValue,
   registerKxmRuntimeCloseHook,
   resolveActiveMode,
+  resolveBrowserCdpEndpoint,
   resolveDispatchStatus,
+  resolveObscuraCdpEndpoint,
   resolvePassCliApiKey,
   resolveSshHostG,
   resolveSteelConfig,

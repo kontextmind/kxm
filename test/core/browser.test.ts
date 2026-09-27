@@ -1,11 +1,16 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import http from "node:http";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   SteelClient,
   resolveSteelConfig,
   resolvePassCliApiKey,
   formatCDPEndpoint,
+  resolveBrowserCdpEndpoint,
+  resolveObscuraCdpEndpoint,
+  DEFAULT_OBSCURA_CDP_URL,
   sanitizeLogOutput,
   createAnnotationFeedback,
   formatAnnotationFeedbackPrompt,
@@ -519,5 +524,106 @@ describe("KXM Browser & Steel Integration", () => {
 
     const custom = resolveViewportDimensions({ width: 800, height: 600 });
     assert.deepStrictEqual(custom, { width: 800, height: 600 });
+  });
+});
+
+describe("resolveBrowserCdpEndpoint", () => {
+  const keys = ["KXM_BROWSER", "OBSCURA_CDP_URL", "OBSCURA_PORT", "STEEL_API_URL", "STEEL_API_KEY", "STEEL_UI_URL", "USE_PASS_CLI"] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of keys) saved[key] = process.env[key];
+    for (const key of keys) delete process.env[key];
+  });
+
+  afterEach(() => {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it("defaults to Obscura on loopback and honors OBSCURA_CDP_URL and OBSCURA_PORT", () => {
+    assert.strictEqual(resolveObscuraCdpEndpoint(), DEFAULT_OBSCURA_CDP_URL);
+    assert.strictEqual(resolveBrowserCdpEndpoint(), DEFAULT_OBSCURA_CDP_URL);
+
+    process.env.KXM_BROWSER = "  Obscura  ";
+    process.env.OBSCURA_CDP_URL = "  ws://127.0.0.1:9222  ";
+    assert.strictEqual(resolveBrowserCdpEndpoint(), "ws://127.0.0.1:9222");
+
+    process.env.OBSCURA_CDP_URL = "   ";
+    process.env.OBSCURA_PORT = "9333";
+    assert.strictEqual(resolveBrowserCdpEndpoint(), "http://127.0.0.1:9333");
+
+    process.env.OBSCURA_PORT = "9222";
+    assert.strictEqual(resolveBrowserCdpEndpoint(), DEFAULT_OBSCURA_CDP_URL);
+
+    process.env.OBSCURA_PORT = "65535";
+    assert.strictEqual(resolveObscuraCdpEndpoint(), "http://127.0.0.1:65535");
+  });
+
+  it("rejects a bad Obscura port, an unknown browser, and steel without a session", () => {
+    process.env.OBSCURA_PORT = "nope";
+    assert.throws(() => resolveObscuraCdpEndpoint(), /OBSCURA_PORT must be an integer/);
+    process.env.OBSCURA_PORT = "0";
+    assert.throws(() => resolveBrowserCdpEndpoint(), /OBSCURA_PORT must be an integer/);
+    process.env.OBSCURA_PORT = "65536";
+    assert.throws(() => resolveBrowserCdpEndpoint(), /OBSCURA_PORT must be an integer/);
+
+    delete process.env.OBSCURA_PORT;
+    process.env.KXM_BROWSER = "chrome";
+    assert.throws(() => resolveBrowserCdpEndpoint(), /Unsupported KXM_BROWSER/);
+
+    process.env.KXM_BROWSER = "steel";
+    assert.throws(() => resolveBrowserCdpEndpoint(), /requires a Steel session id/);
+    assert.throws(() => resolveBrowserCdpEndpoint({ id: "", websocketUrl: "" }), /requires a Steel session id/);
+  });
+
+  it("uses the Steel session CDP endpoint only when KXM_BROWSER=steel", () => {
+    process.env.KXM_BROWSER = " Steel ";
+    process.env.OBSCURA_CDP_URL = "http://127.0.0.1:9222";
+    const session = { id: "sess_12345", websocketUrl: "ws://ignored" };
+    const config = {
+      apiUrl: "https://steel.example.com",
+      apiKey: "steel_secret_key",
+      uiUrl: "https://steel.example.com/ui",
+    };
+    const endpoint = resolveBrowserCdpEndpoint(session, config);
+    assert.strictEqual(endpoint, formatCDPEndpoint(session, config));
+    assert.ok(endpoint.startsWith("wss://steel.example.com/v1/devtools?"));
+    assert.ok(endpoint.includes("sessionId=sess_12345"));
+    assert.ok(!endpoint.includes("127.0.0.1"));
+
+    delete process.env.OBSCURA_CDP_URL;
+    process.env.USE_PASS_CLI = "false";
+    process.env.STEEL_API_URL = "http://steel.env.local";
+    process.env.STEEL_API_KEY = "steel_envkey123";
+    const fromEnv = resolveBrowserCdpEndpoint(session);
+    assert.ok(fromEnv.startsWith("ws://steel.env.local/v1/devtools?"));
+    assert.ok(fromEnv.includes("apiKey=steel_envkey123"));
+  });
+});
+
+describe("obscura launcher", () => {
+  it("pins Obscura v0.2.3 and refuses a port that disagrees with OBSCURA_CDP_URL", () => {
+    const source = readFileSync("scripts/obscura.mjs", "utf8");
+    assert.match(source, /const OBSCURA_VERSION = "v0\.2\.3"/);
+    assert.match(source, /obscura-x86_64-linux\.tar\.gz/);
+    assert.match(source, /1534d1e6ddaf3d080ec4091eb41d0a4d8cc042a48b607d3c410fc13b482a9eec/);
+    assert.match(source, /--allow-private-network/);
+    assert.match(source, /\/json\/version/);
+    assert.doesNotMatch(source, /playwright install/);
+
+    const mismatch = spawnSync(process.execPath, ["scripts/obscura.mjs", "--ensure"], {
+      encoding: "utf8",
+      env: { ...process.env, OBSCURA_PORT: "9222", OBSCURA_CDP_URL: "http://127.0.0.1:9333" },
+    });
+    assert.notEqual(mismatch.status, 0);
+    assert.match(mismatch.stderr, /OBSCURA_PORT=9222 does not match/);
+
+    const help = spawnSync(process.execPath, ["scripts/obscura.mjs", "--help"], { encoding: "utf8" });
+    assert.equal(help.status, 0);
+    assert.match(help.stdout, /--ensure/);
+    assert.match(help.stdout, /--stop/);
   });
 });

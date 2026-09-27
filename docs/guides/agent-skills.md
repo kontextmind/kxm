@@ -68,7 +68,7 @@ Tools map the same way: peer tools to `kxm-peer`, workflow tools to `kxm-workflo
 
 ## Browser automation skills
 
-These skills drive a remote Steel browser that you host. They own no `kxm` command. See [Browser automation](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
+Playwright testing and verification use Obscura. The Steel skills cover human takeover, MFA, and the live session viewer. They own no `kxm` command. See [Browser automation](browser-automation.md), [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md), and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
 
 | Skill | Use it to |
 |---|---|
@@ -76,7 +76,7 @@ These skills drive a remote Steel browser that you host. They own no `kxm` comma
 | `kxm-browser-takeover` | Hand a session to a human for MFA, login, CAPTCHA or sensitive consent, then resume |
 | `kxm-browser-auth` | Use stored credentials and authenticated browser profiles safely |
 | `kxm-browser-explore` | Explore a site, inspect its DOM and map a user flow with `agent-browser` |
-| `kxm-browser-verify` | Reproduce a UI bug, gather evidence and write a durable Playwright test |
+| `kxm-browser-verify` | Reproduce a UI bug on Obscura, gather evidence and write a durable Playwright test |
 | `kxm-browser-diagnostics` | Diagnose Steel connectivity, CDP errors and timeouts, and clean up orphaned sessions |
 | `kxm-browser-annotate` | Capture page sections, attach structured annotations and hand the changes to an agent |
 

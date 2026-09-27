@@ -264,6 +264,7 @@ Other scripts you will use:
 | `npm run test:coverage` | Core suite with coverage floors |
 | `npm run test:coverage:complete` | Core plus simulations with the higher nightly floors |
 | `npm run lint:docs` | Markdown lint only |
+| `npm run e2e` | Start Obscura if needed, then Playwright in `test/e2e/` (`node --test` does not collect that directory) |
 | `npm run validate:pr` | The three-minute CI gate; see [CI and release](ci-and-release.md) |
 | `npm run validate:ci` | Coverage suite, `check` and a package dry run (not run by CI today) |
 | `npm run validate:claude` | Strict Claude plugin and marketplace validation |

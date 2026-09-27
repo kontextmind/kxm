@@ -21,6 +21,7 @@
     "packages/core/*/src/**/*.ts",
     "packages/core/*/tests/**/*.ts",
     "test/**/*.ts",
-    "examples/**/*.ts"
+    "examples/**/*.ts",
+    "playwright.config.ts"
   ]
 }
