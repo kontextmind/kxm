@@ -15,7 +15,7 @@ import {
   type KxmRoleDefinition,
 } from "../role.ts";
 import { discoverKxmProjectRoot, kxmRoleWriteIssues } from "../project-config.ts";
-import { findYamlBasename } from "../../../../scripts/workforce-names.mjs";
+import { findYamlBasename } from "../workforce-names.mjs";
 import { ensureKxmSupervisor, kxmRuntimeRequest } from "../runtime-supervisor.ts";
 import { projectRuntimeOwnsRun } from "../runtime-store.ts";
 import { resumeWorkflowFromRuling, type WorkflowRun } from "../workflow.ts";

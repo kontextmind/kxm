@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { lintWorkforce, lookupById, resetDeprecatedIdWarnings } from "../../scripts/workforce-names.mjs";
+import { lintWorkforce, lookupById, resetDeprecatedIdWarnings } from "../../plugins/kxm/src/workforce-names.mjs";
 
 test("this checkout's workforce ids match the convention and the admitted list", () => {
   const report = lintWorkforce(process.cwd());

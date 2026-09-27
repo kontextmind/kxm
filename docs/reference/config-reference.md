@@ -670,11 +670,11 @@ the reason, field, and detail. The Runtime uses these reasons:
 | `gate_uncertain_blocked` | The run is `blocked_uncertain` and waits for an external signal or an operator |
 
 Example (validated with `kxm init --json` and compiled with
-`compileKxmWorkflow`). Besides the `implementer` and `critic-arch` agents and
-the `critic-claude` profile shown above, it needs a `coordinator` agent, a
-`planner` agent (harness `claude`, model `anthropic/fable`, read access), a
-`critic-cli` agent (harness `codex`, model `openai/gpt-5.6-sol`, read access),
-and a second profile tagged `critic`, `critic-sol` (`openai/gpt-5.6-sol`).
+`compileKxmWorkflow`). Besides the `writer` and `reviewer-arch` agents and
+the `critic-claude` profile shown above, it needs a `planner` agent (the
+workflow coordinator; `coordinator` still resolves as an alias), a
+`reviewer-cli` agent, and a second profile tagged `critic`, `critic-sol`
+(`openai/gpt-5.6-sol`). Routes, not agent files, name the harness and model.
 The two providers among the `critic` candidates satisfy
 `distinctBy: [provider]` with `target: 2`.
 
@@ -682,7 +682,7 @@ The two providers among the `critic` candidates satisfy
 # .kxm/workflows/review.yaml — the filename is the workflow id.
 schema: kxm.workflow.v1
 description: Plan, implement, review with two critics, verify, approve, and wait for CI.
-coordinator: coordinator            # agent id; defaults to "coordinator"
+coordinator: planner               # agent id; omitted value falls back to "coordinator", an alias of planner
 limits:
   maxTransitions: 12                # required once any back-edge exists
   maxRunDurationMs: 14400000
@@ -692,7 +692,7 @@ planHash:                           # capture the approved plan when "plan" pass
   stageId: plan
   evidenceKey: plan
 requirePlanHash:                    # writing steps after "plan" must be listed here
-  - implement
+  - writer
   - verify
 steps:
   - id: plan
@@ -708,19 +708,20 @@ steps:
       - key: plan
         kind: artifact
     on:
-      passed: implement             # shorthand transition: a step id
+      passed: writer                # shorthand transition: a step id
       blocked:
         target: $terminal
         terminalStatus: failed
 
-  - id: implement
+  - id: writer
     kind: agent
-    agent: implementer
+    agent: writer
+    aliases: [implement]
     maxAttempts: 3
     repositories:
       control: write
     assignments:
-      allowedAgents: [implementer]
+      allowedAgents: [writer]
       minimum: 1
       target: 1
       maximum: 1
@@ -738,13 +739,13 @@ steps:
 
   - id: review
     kind: moa                       # panel of agents
-    agent: critic-arch              # primary agent; must be in allowedAgents
+    agent: reviewer-arch            # primary agent; must be in allowedAgents
     model:
       tag: critic                   # intersected with each agent's own model ceiling
     repositories:
       control: read
     assignments:
-      allowedAgents: [critic-arch, critic-cli]
+      allowedAgents: [reviewer-arch, reviewer-cli]
       minimum: 2
       target: 2
       maximum: 2
@@ -758,14 +759,14 @@ steps:
         kind: assignment-result
         producerPolicy:
           minimumProducers: 2
-          eligibleAgents: [critic-arch, critic-cli]
+          eligibleAgents: [reviewer-arch, reviewer-cli]
           acceptedStatuses: [passed]
           degradation:
             minimumProducers: 1
     on:
       passed: verify
       changes-requested:            # back-edge: needs maxTransitions
-        target: implement
+        target: writer
         maxTransitions: 2
 
   - id: verify
@@ -781,7 +782,7 @@ steps:
     on:
       passed: approve
       implementation-failure:
-        target: implement
+        target: writer
         maxTransitions: 2
 
   - id: approve
@@ -811,9 +812,9 @@ steps:
         terminalStatus: failed
 ```
 
-This example validates, but a live drive would be handed off at `implement`
-(write access), at `review` (`critic-arch` uses a profile selector), and at
-`approve` and `ci` (dispatched to `coordinator`, which declares no model). Use
+This example validates, but a live drive would be handed off at `writer`
+(write access), at `review` (`reviewer-arch` uses a profile selector), and at
+`approve` and `ci` (dispatched to `coordinator`, which resolves to `planner`). Use
 it as a field reference; the
 [worked example](#worked-example-a-minimal-two-step-project) is one that runs.
 
@@ -826,7 +827,7 @@ compiles and pins the plan, then drives it live, or without models with
 `kxm workflow add <id>` a one-step scaffold, under `.kxm/workflows/` (or
 `~/.config/kxm/workflows/` with `--scope global`, which the loader never
 reads). Both are valid `kxm.workflow.v1` definitions that use only what
-`kxm init` creates: the `coordinator` and `implementer` agents, the `control`
+`kxm init` creates: the `planner` and `writer` agents (`coordinator` and `implementer` remain aliases), the `control`
 repository, and the `test` gate. The templates route gate failures on
 `implementation-failure`. A local add is checked by the project loader first:
 if the project would not load with the new file, it is refused with
@@ -1690,8 +1691,8 @@ Directory layout (inside a Git repository):
 └── .kxm/
     ├── project.yaml
     ├── repo/repo.yaml
-    ├── agents/coordinator.yaml
-    ├── agents/implementer.yaml
+    ├── agents/planner.yaml
+    ├── agents/writer.yaml
     ├── gates.yaml
     ├── routes.yaml
     └── workflows/default.yaml
@@ -1722,11 +1723,13 @@ repositoryId: control
 defaultAccess: write
 ```
 
-`.kxm/agents/coordinator.yaml` (every workflow needs its coordinator agent):
+`.kxm/agents/planner.yaml` (every workflow needs its coordinator agent):
 
 ```yaml
 schema: kxm.agent.v1
 purpose: Coordinate the pinned workflow.
+role: planner
+aliases: [coordinator]
 tools:
   preset: coordinator
 defaultRepositoryAccess: read
@@ -1736,15 +1739,13 @@ network: provider-only
 resultSchema: kxm.assignment-result.v1
 ```
 
-`.kxm/agents/implementer.yaml`:
+`.kxm/agents/writer.yaml`:
 
 ```yaml
 schema: kxm.agent.v1
 purpose: Implement the requested change in the control repository.
-harness: grok
-model:
-  provider: xai
-  model: grok-4.6
+role: writer
+aliases: [implementer]
 tools:
   preset: workspace-writer
 defaultRepositoryAccess: none
@@ -1770,13 +1771,14 @@ gates:
 ```yaml
 schema: kxm.workflow.v1
 description: Implement a change, then run the test suite.
-coordinator: coordinator
+coordinator: planner
 limits:
   maxTransitions: 4
 steps:
-  - id: implement
+  - id: writer
     kind: agent
-    agent: implementer
+    agent: writer
+    aliases: [implement]
     maxAttempts: 2
     repositories:
       control: write
@@ -1803,7 +1805,7 @@ steps:
         target: $terminal
         terminalStatus: completed
       implementation-failure:
-        target: implement
+        target: writer
         maxTransitions: 2
 ```
 
@@ -1819,11 +1821,11 @@ disabled: []
 
 Why each piece is there:
 
-- `implement` routes a failure straight to a terminal `failed` status and
+- `writer` routes a failure straight to a terminal `failed` status and
   declares `failed`, the outcome the producer falls back to.
 - `verify` declares `implementation-failure`, the outcome a failing command
   produces. Routing that edge on `failed` instead is refused when the project
-  loads (`gate_outcome_impossible`). The edge back to `implement` makes it a
+  loads (`gate_outcome_impossible`). The edge back to `writer` makes it a
   back-edge, so it carries `maxTransitions: 2` and the workflow carries
   `limits.maxTransitions`.
 - The gate step lists `control: write`; the Runtime refuses command gate steps
@@ -1846,9 +1848,9 @@ kxm runs drive <runId> --simulated --wait    # model-free drive; runs npm test f
 
 The simulated drive records `passed` for the agent step, runs `npm test` in the
 project root, and settles `completed` when it exits 0. When `npm test` fails,
-the run returns to `implement` and fails with `budget_step_attempts` once
-`implement` has used its two attempts. A live drive of this workflow is refused
-today, because the `implement` step has write access (see
+the run returns to `writer` and fails with `budget_step_attempts` once
+`writer` has used its two attempts. A live drive of this workflow is refused
+today, because the `writer` step has write access (see
 [Steps the Runtime does not execute yet](#steps-the-runtime-does-not-execute-yet)).
 Stop the Runtime afterwards with `kxm runtime stop`.
 

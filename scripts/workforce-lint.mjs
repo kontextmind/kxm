@@ -4,7 +4,7 @@
 // that breaks the workforce convention. An admitted model with no route is a
 // warning and does not fail the process.
 
-import { lintWorkforce } from "./workforce-names.mjs";
+import { lintWorkforce } from "../plugins/kxm/src/workforce-names.mjs";
 
 const root = process.argv[2] ?? process.cwd();
 const report = lintWorkforce(root);

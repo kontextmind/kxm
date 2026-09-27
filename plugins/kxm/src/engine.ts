@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { listRoleBindings, loadRoutePolicy } from "./routes.ts";
-import { findYamlBasename } from "../../../scripts/workforce-names.mjs";
+import { findYamlBasename } from "./workforce-names.mjs";
 import { applyAuthoringWitness, captureWorktreeWitness } from "./worktree-witness.ts";
 import {
   buildFormalContextPacket,

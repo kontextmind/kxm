@@ -29,10 +29,13 @@ test("resolveBoundPolicy loads a committed policy and returns that identity", ()
     const source = readFileSync("scripts/roster-policy.mjs", "utf8").replace(
       "const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');",
       `const ROOT = ${JSON.stringify(root)};`,
+    ).replace(
+      "from '../plugins/kxm/src/workforce-names.mjs'",
+      "from './workforce-names.mjs'",
     );
     writeFileSync(join(root, "roster-policy.mjs"), source);
     cpSync("scripts/harness-run.mjs", join(root, "harness-run.mjs"));
-    cpSync("scripts/workforce-names.mjs", join(root, "workforce-names.mjs"));
+    cpSync("plugins/kxm/src/workforce-names.mjs", join(root, "workforce-names.mjs"));
     const git = (...args: string[]) => {
       const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
       assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);
@@ -82,10 +85,13 @@ function withBoundPolicy(body: (root: string, run: (script: string) => { status:
     const source = readFileSync("scripts/roster-policy.mjs", "utf8").replace(
       "const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');",
       `const ROOT = ${JSON.stringify(root)};`,
+    ).replace(
+      "from '../plugins/kxm/src/workforce-names.mjs'",
+      "from './workforce-names.mjs'",
     );
     writeFileSync(join(root, "roster-policy.mjs"), source);
     cpSync("scripts/harness-run.mjs", join(root, "harness-run.mjs"));
-    cpSync("scripts/workforce-names.mjs", join(root, "workforce-names.mjs"));
+    cpSync("plugins/kxm/src/workforce-names.mjs", join(root, "workforce-names.mjs"));
     const git = (...args: string[]) => {
       const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
       assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);

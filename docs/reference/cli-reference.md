@@ -1410,7 +1410,7 @@ Refusals (exit 1): `lane_missing`, `lane_dirty`, `lane_run_open`, `lane_git_fail
 
 Creates the lane when the record is absent (same rules as `create`), refuses `lane_run_open` when the last run is not settled, then runs the same path as `kxm run --lane <unit> --brief <file>` and `kxm runs drive <runId> --lane <unit>`. `--wait` and `--timeout-ms` are passed through. The run id is stored on the record. Prints the run envelope and the drive result. That open-run check may start the Runtime supervisor; `--dry-run` only attaches to a supervisor that is already running. `kxm lane status` never starts the supervisor.
 
-`--brief` is required. `--workflow` defaults to the lane project's `defaultWorkflow`. `--base` applies only when the lane is created. A live agent step uses the step `timeoutMs` when it is set, otherwise the project `limits.agentStepTimeoutMs` (default 3,600,000). This repository's `implement-only`, `review-arch-only`, and `review-cli-only` workflows are the lane forms of the retired transport recipes.
+`--brief` is required. `--workflow` defaults to the lane project's `defaultWorkflow`. `--base` applies only when the lane is created. A live agent step uses the step `timeoutMs` when it is set, otherwise the project `limits.agentStepTimeoutMs` (default 3,600,000). This repository's `writer-only`, `reviewer-arch-only`, and `reviewer-cli-only` workflows are the lane forms of the retired transport recipes. `implement-only`, `review-arch-only`, and `review-cli-only` still resolve.
 
 Refusals (exit 1): `brief_unreadable`, `lane_unit_invalid`, `lane_exists`, `lane_base_unresolved`, `lane_run_open`, `lane_git_failed`, `lane_not_project`, `lanes_unreadable`.
 

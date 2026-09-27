@@ -11,7 +11,7 @@ import {
 } from "./restricted-yaml.mjs";
 import { pathToFileURL } from "node:url";
 import { validatePolicyDraft } from "./policy-draft.mjs";
-import { findYamlBasename, lintWorkforce, lookupById, noteDeprecatedId, STEP_RENAMES } from "../../../scripts/workforce-names.mjs";
+import { findYamlBasename, lintWorkforce, lookupById, noteDeprecatedId, STEP_RENAMES } from "./workforce-names.mjs";
 import { resolveKxmTemplateBaseline } from "./template.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS } from "./harness.ts";

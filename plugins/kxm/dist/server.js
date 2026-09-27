@@ -14958,6 +14958,7 @@ var MODES = Object.freeze(["headless", "interactive", "either"]);
 var MODEL_KEYS = Object.freeze([
   "schema",
   "id",
+  "aliases",
   "harness",
   "model",
   "vendor",
@@ -14996,8 +14997,51 @@ var FALLBACK_REVERT = Object.freeze(["next_run", "never"]);
 var ROSTER_ENTRY_KEYS = Object.freeze(["route", "effort", "mode"]);
 var CRITIC_PURPOSES = Object.freeze(["reviewer-arch", "reviewer-cli"]);
 
-// plugins/kxm/src/template.ts
+// plugins/kxm/src/workforce-names.mjs
 var import_yaml2 = __toESM(require_dist(), 1);
+var ROLE_IDS = Object.freeze([
+  "writer",
+  "planner",
+  "reviewer-arch",
+  "reviewer-cli",
+  "experiment"
+]);
+var ROUTE_RENAMES = Object.freeze([
+  ["grok-native", "grok-grok-4-7"],
+  ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
+  ["gemini-agy", "agy-gemini-3-8-flash-high"],
+  ["fable-claude", "claude-fable"],
+  ["sol-codex", "codex-gpt-5-6-sol"],
+  ["grok-default", "grok-grok-4-6"],
+  ["fable-default", "claude-fable"]
+]);
+var AGENT_RENAMES = Object.freeze([
+  ["coordinator", "planner"],
+  ["implementer", "writer"],
+  ["critic-arch", "reviewer-arch"],
+  ["critic-cli", "reviewer-cli"]
+]);
+var WORKFLOW_RENAMES = Object.freeze([
+  ["implement-only", "writer-only"],
+  ["review-arch-only", "reviewer-arch-only"],
+  ["review-cli-only", "reviewer-cli-only"]
+]);
+var STEP_RENAMES = Object.freeze([
+  ["implement", "writer"],
+  ["critic-arch", "reviewer-arch"],
+  ["review-arch", "reviewer-arch"],
+  ["critic-cli", "reviewer-cli"],
+  ["review-cli", "reviewer-cli"]
+]);
+var RENAMES = Object.freeze({
+  route: ROUTE_RENAMES,
+  agent: AGENT_RENAMES,
+  workflow: WORKFLOW_RENAMES,
+  step: STEP_RENAMES
+});
+
+// plugins/kxm/src/template.ts
+var import_yaml3 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/repo-root.ts
 import { existsSync } from "node:fs";
@@ -18253,7 +18297,7 @@ function explainContextItem(id, pool) {
 }
 
 // plugins/kxm/src/memory.ts
-var import_yaml3 = __toESM(require_dist(), 1);
+var import_yaml4 = __toESM(require_dist(), 1);
 import { existsSync as existsSync3, mkdirSync, readdirSync as readdirSync2, readFileSync as readFileSync2, writeFileSync } from "node:fs";
 import { extname as extname2, join as join3, resolve as resolve2 } from "node:path";
 var MEMORY_SCHEMA = "kxm.memory.v1";
@@ -18285,7 +18329,7 @@ function parseFrontmatter(content) {
 }
 function parseMemoryRecord(raw, filename = "memory.md") {
   const { frontmatter, body } = parseFrontmatter(raw);
-  const data = (0, import_yaml3.parse)(frontmatter);
+  const data = (0, import_yaml4.parse)(frontmatter);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error(`invalid YAML frontmatter in ${filename}`);
   }
@@ -18622,7 +18666,7 @@ function boundedRefs(value, field) {
 }
 
 // plugins/kxm/src/skills.ts
-var import_yaml4 = __toESM(require_dist(), 1);
+var import_yaml5 = __toESM(require_dist(), 1);
 import { createHash as createHash4 } from "node:crypto";
 import { existsSync as existsSync4, mkdirSync as mkdirSync2, readdirSync as readdirSync3, readFileSync as readFileSync3, renameSync, rmSync, statSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname4, join as join4 } from "node:path";
@@ -18666,7 +18710,7 @@ function parseSkillFrontmatter(content) {
     return { frontmatter: null, body: content };
   }
   try {
-    const parsed = (0, import_yaml4.parse)(rawFm);
+    const parsed = (0, import_yaml5.parse)(rawFm);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return { frontmatter: parsed, body: rawBody };
     }
