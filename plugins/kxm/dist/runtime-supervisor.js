@@ -16889,17 +16889,10 @@ function resolveDispatchStatus(entry, detected, authenticated, issues) {
   }
   return { status: "yes", supported: true };
 }
-function windowsCmdReportsMissing(result) {
-  if (result.ok) return false;
-  const text = `${result.stdout}
-${result.stderr}`;
-  return /not recognized as an internal or external command/i.test(text) || /the system cannot find the (?:file|path) specified/i.test(text);
-}
 function tryHarnessCommand(candidate, entry, runCommand, timeoutMs) {
   const result = runCommand(candidate, entry.versionArgs, timeoutMs);
   if (result.error === "ENOENT") return void 0;
   if (result.error && result.code === null && !result.stdout && !result.stderr) return void 0;
-  if (isWindowsHarnessShim(candidate) && windowsCmdReportsMissing(result)) return void 0;
   return {
     command: candidate,
     version: firstLine(result.stdout) ?? firstLine(result.stderr)
@@ -30790,19 +30783,13 @@ function stripOneClosingFence(trimmed) {
   if (lineBreak < 0) return "";
   return trimmed.slice(0, lineBreak).trimEnd();
 }
-function determineOutcome(text, allowedOutcomes) {
-  const trimmed = text.trim();
-  if (!trimmed) return "failed";
-  const body = stripOneClosingFence(trimmed);
-  if (!body) return "failed";
+var MAX_OUTCOME_CLOSERS = 32;
+function prefixIsBalanced(prefix) {
   let depth = 0;
   let inString = false;
   let escape2 = false;
-  let currentStart = -1;
-  let objectStart = -1;
-  let objectEnd = -1;
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i];
+  for (let i = 0; i < prefix.length; i++) {
+    const ch = prefix[i];
     if (inString) {
       if (escape2) {
         escape2 = false;
@@ -30820,30 +30807,43 @@ function determineOutcome(text, allowedOutcomes) {
       continue;
     }
     if (ch === "{") {
-      if (depth === 0) currentStart = i;
       depth++;
       continue;
     }
     if (ch === "}") {
       if (depth === 0) continue;
       depth--;
-      if (depth === 0) {
-        objectStart = currentStart;
-        objectEnd = i;
-      }
     }
   }
-  if (objectStart < 0 || objectEnd !== body.length - 1) return "failed";
-  let result;
-  try {
-    result = JSON.parse(body.slice(objectStart, objectEnd + 1));
-  } catch {
-    return "failed";
+  return depth === 0 && !inString;
+}
+function determineOutcome(text, allowedOutcomes) {
+  const trimmed = text.trim();
+  if (!trimmed) return "failed";
+  const body = stripOneClosingFence(trimmed);
+  if (!body) return "failed";
+  let seenClosers = 0;
+  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
+    if (body[closeAt] !== "}") continue;
+    seenClosers++;
+    const end = closeAt + 1;
+    if (end !== body.length) continue;
+    for (let openAt = closeAt - 1; openAt >= 0; openAt--) {
+      if (body[openAt] !== "{") continue;
+      let result;
+      try {
+        result = JSON.parse(body.slice(openAt, end));
+      } catch {
+        continue;
+      }
+      if (!result || typeof result !== "object" || Array.isArray(result)) break;
+      const outcome = result.outcome;
+      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) break;
+      if (!prefixIsBalanced(body.slice(0, openAt))) break;
+      return outcome;
+    }
   }
-  if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
-  const outcome = result.outcome;
-  if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
-  return outcome;
+  return "failed";
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();

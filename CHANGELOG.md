@@ -156,22 +156,6 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
-- **Windows pull-request unit lanes finish inside the job limit.** The light
-  lane on `windows-latest` was cancelled at 20 minutes on #361, #362, and
-  #363 after it stopped reporting tests. `package-install.test.ts` (171s on
-  that lane, 67s on Linux) now runs with the serial files. The other light
-  files are split into `light-1` and `light-2`. POSIX `#!/bin/sh` shims in
-  the land tests are skipped on Windows. A missing Windows `.cmd` is not
-  reported as an installed harness: `cmd.exe` answers for a command that is
-  not on `PATH`, and that answer was counted as detection. Unix `0600` mode
-  checks, 8.3-versus-long temp paths, and forward-slash path checks in the
-  unit tests match what Windows can report. A spawned MCP server is stopped
-  by closing stdin, which runs its unregister path, before its temp directory
-  is removed; a directory that is still locked is retried and then left
-  behind instead of failing the test. `CI / required` still fails when a lane
-  fails or is cancelled.
-  See [CI and release](docs/contributing/ci-and-release.md).
-
 - **Workforce ids use one convention, and old ids still resolve.**
   Role ids stay `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`.
   Agent ids and agent-step ids use those same names. Route ids are
@@ -510,9 +494,8 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 - **Pull-request CI runs the unit suite on Linux Node 24, and `CI / required` is the aggregate check.**
   Docs and plan markdown skip the code jobs. `engine.test.ts` is split by
-  test name. `permission.test.ts`, `runtime.test.ts`, and
-  `package-install.test.ts` run one file at a time, and every other unit file
-  runs in two light shards. Pushes to `main`
+  test name. `permission.test.ts` and `runtime.test.ts` run one file at a
+  time, and every other unit file runs in one light lane. Pushes to `main`
   still run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.
   A pull request that touches path, process, shell, spawn, package, lockfile,
   or workflow files also runs the unit lanes on Windows. Playwright stays on
@@ -571,7 +554,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
-- **A one-shot outcome is the JSON object that ends the reply.** One forward scan tracks strings, escapes, and brace depth. The newest top-level object, opened at depth 0, must close at the end of the trimmed text (one closing code fence and trailing whitespace allowed). `JSON.parse` runs once on that slice. The `outcome` must be a string in the step's declared values. Braces inside a string do not count as structure, so a summary may contain any number of `{` characters. A bare object, a fenced object, and prose followed by an object that ends the reply settle when the outcome is allowed. Prose after the object, a reply with no object, a disallowed outcome, a stray `"` in the prose, and an inner object at the end of a truncated outer object settle `failed`.
+- **A one-shot outcome is the JSON object that ends the reply.** The object may sit on the same line as the summary, or span several lines after the prose. Slices run from each `{` to a recent `}`, nearest last, and `JSON.parse` is what accepts a slice. The slice must end the trimmed text (one closing code fence and trailing whitespace allowed), its `outcome` must be one of the step's declared values, and the prose before its `{` must be balanced: no `{` still open outside strings, and an even quote count. A stray `"` in that prefix is ambiguous and settles `failed`. A bare object, a fenced object, and prose followed by an object that ends the reply settle when the outcome is allowed. Prose after the object, a reply with no object, a disallowed outcome, and an inner object at the end of a truncated outer object settle `failed`.
 
 - **A committed checkout counts as authored work.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`.
 
