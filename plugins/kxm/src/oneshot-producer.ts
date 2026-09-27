@@ -51,14 +51,61 @@ export interface KxmOneShotProducer extends KxmProducer {
   close(): Promise<void>;
 }
 
-function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
-  try {
-    const result: unknown = JSON.parse(text.trim());
-    if (result && typeof result === "object" && !Array.isArray(result)) {
-      const outcome = (result as Record<string, unknown>).outcome;
-      if (typeof outcome === "string" && allowedOutcomes.includes(outcome)) return outcome;
+// Last top-level `{...}` only. Counting from the end keeps an earlier `{` in
+// prose from swallowing the result, and quotes hide braces and escapes.
+function lastBalancedJsonObject(text: string): string | undefined {
+  for (let end = text.length - 1; end >= 0; end--) {
+    if (text[end] !== "}") continue;
+    const start = matchingObjectStart(text, end);
+    if (start !== undefined) return text.slice(start, end + 1);
+  }
+  return undefined;
+}
+
+function matchingObjectStart(text: string, end: number): number | undefined {
+  let depth = 0;
+  for (let i = end; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === '"') {
+      const opener = openingQuote(text, i);
+      if (opener < 0) return undefined;
+      i = opener;
+      continue;
     }
-  } catch { /* Prose, substring matches, and missing results cannot imply success. */ }
+    if (ch === "}") {
+      depth++;
+      continue;
+    }
+    if (ch === "{") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return undefined;
+}
+
+// `closer` is a closing quote. Return its opening quote so the caller steps past it.
+function openingQuote(text: string, closer: number): number {
+  for (let i = closer - 1; i >= 0; i--) {
+    if (text[i] !== '"') continue;
+    let slashes = 0;
+    for (let j = i - 1; j >= 0 && text[j] === "\\"; j--) slashes++;
+    if (slashes % 2 === 0) return i;
+  }
+  return -1;
+}
+
+function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
+  const slice = lastBalancedJsonObject(text);
+  if (slice !== undefined) {
+    try {
+      const result: unknown = JSON.parse(slice);
+      if (result && typeof result === "object" && !Array.isArray(result)) {
+        const outcome = (result as Record<string, unknown>).outcome;
+        if (typeof outcome === "string" && allowedOutcomes.includes(outcome)) return outcome;
+      }
+    } catch { /* Only the last balanced object can settle the step. Prose, an earlier fenced sample, substrings such as PASS, and a missing or invalid object stay failed. */ }
+  }
   return "failed";
 }
 

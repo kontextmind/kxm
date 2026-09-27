@@ -30639,14 +30639,55 @@ function recoverKxmRun(context, runId, request) {
 }
 
 // plugins/kxm/src/oneshot-producer.ts
-function determineOutcome(text, allowedOutcomes) {
-  try {
-    const result = JSON.parse(text.trim());
-    if (result && typeof result === "object" && !Array.isArray(result)) {
-      const outcome = result.outcome;
-      if (typeof outcome === "string" && allowedOutcomes.includes(outcome)) return outcome;
+function lastBalancedJsonObject(text) {
+  for (let end = text.length - 1; end >= 0; end--) {
+    if (text[end] !== "}") continue;
+    const start = matchingObjectStart(text, end);
+    if (start !== void 0) return text.slice(start, end + 1);
+  }
+  return void 0;
+}
+function matchingObjectStart(text, end) {
+  let depth = 0;
+  for (let i = end; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === '"') {
+      const opener = openingQuote(text, i);
+      if (opener < 0) return void 0;
+      i = opener;
+      continue;
     }
-  } catch {
+    if (ch === "}") {
+      depth++;
+      continue;
+    }
+    if (ch === "{") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return void 0;
+}
+function openingQuote(text, closer) {
+  for (let i = closer - 1; i >= 0; i--) {
+    if (text[i] !== '"') continue;
+    let slashes = 0;
+    for (let j = i - 1; j >= 0 && text[j] === "\\"; j--) slashes++;
+    if (slashes % 2 === 0) return i;
+  }
+  return -1;
+}
+function determineOutcome(text, allowedOutcomes) {
+  const slice = lastBalancedJsonObject(text);
+  if (slice !== void 0) {
+    try {
+      const result = JSON.parse(slice);
+      if (result && typeof result === "object" && !Array.isArray(result)) {
+        const outcome = result.outcome;
+        if (typeof outcome === "string" && allowedOutcomes.includes(outcome)) return outcome;
+      }
+    } catch {
+    }
   }
   return "failed";
 }
