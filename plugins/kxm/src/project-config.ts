@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 import { validatePolicyDraft } from "./policy-draft.mjs";
 import { resolveKxmTemplateBaseline } from "./template.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
-import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS, validateHarnessModelPair } from "./harness.ts";
+import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS } from "./harness.ts";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -522,6 +522,7 @@ function listNamedResources(
   logicalDirectory: string,
   kind: "agent" | "model" | "role" | "workflow",
   replacedId?: string,
+  collected?: KxmConfigIssue[],
 ): Map<string, KxmResource> {
   const resources = new Map<string, KxmResource>();
   if (!existsSync(directory)) return resources;
@@ -561,7 +562,10 @@ function listNamedResources(
       else throw error;
     }
   }
-  if (issues.length > 0) throw new KxmConfigError(issues);
+  if (issues.length > 0) {
+    if (collected) collected.push(...issues);
+    else throw new KxmConfigError(issues);
+  }
   return resources;
 }
 
@@ -925,6 +929,9 @@ function validateWorkflow(
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
+    if ((kind === "agent" || kind === "moa") && step.model !== undefined) {
+      issues.push(issue("semantic", "producer_route_unsupported", file, `${stepId} model is not honored; remove model from the step`));
+    }
     selectorCandidates(step.model, models, file, `${stepId}.model`, issues);
 
     const assignment = objectValue(step.assignments);
@@ -1128,7 +1135,7 @@ function validateBundle(
   options: KxmConfigOptions,
   gateRegistry?: KxmResource,
   projectRoot?: string,
-  writerRole?: string,
+  roles: ReadonlyMap<string, KxmResource> = new Map(),
 ): KxmConfigIssue[] {
   const issues: KxmConfigIssue[] = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate): candidate is JsonObject => Boolean(candidate));
@@ -1173,27 +1180,16 @@ function validateBundle(
   if (!harnesses.has(defaultHarness)) issues.push(issue("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
 
   for (const agent of agents.values()) {
+    if (agent.value.model !== undefined || agent.value.harness !== undefined) {
+      issues.push(issue("semantic", "retired_agent_routing_fields", agent.logicalPath, "routing resolves from role; remove model and harness"));
+    }
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
     if (executor && !executors.has(executor)) issues.push(issue("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
-    const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
-    }
-    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
-    const declaredHarness = stringValue(agent.value.harness);
-    if (declaredHarness && harnesses.has(declaredHarness)) {
-      for (const candidate of candidates) {
-        const candidateProvider = stringValue(candidate.value.provider);
-        const candidateModel = stringValue(candidate.value.model);
-        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
-        if (!validation.valid) {
-          issues.push(issue("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
-        }
-      }
     }
   }
   validateModelReferences(models, issues);
@@ -1202,62 +1198,73 @@ function validateBundle(
   if (!workflows.has(defaultWorkflow)) issues.push(issue("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
 
-  if (projectRoot) {
-    const writerRolePath = join(projectRoot, ".kxm", "roles", "writer.yaml");
-    const implementerAgent = agents.get("implementer") ?? agents.get("writer");
-    if ((writerRole !== undefined || existsSync(writerRolePath)) && implementerAgent) {
-      try {
-        const rawRole = parseRestrictedYaml(writerRole ?? readFileSync(writerRolePath, "utf8"));
-        const roleObj = objectValue(rawRole);
-        const rosterEntries = valuesOf(roleObj ?? {}, "roster")
-          .map((candidate) => objectValue(candidate))
-          .filter((entry): entry is JsonObject => Boolean(entry));
-        const enabledRosterModels = rosterEntries.flatMap((entry) => {
-          const direct = stringValue(entry.model);
-          const route = stringValue(entry.route);
-          const named: string[] = direct ? [direct] : [];
-          if (route) {
-            const modelFile = join(projectRoot, ".kxm", "models", `${route}.yaml`);
-            if (existsSync(modelFile)) {
-              try {
-                const modelDoc = objectValue(parseRestrictedYaml(readFileSync(modelFile, "utf8"), modelFile));
-                const model = modelDoc ? stringValue(modelDoc.model) : undefined;
-                const vendor = modelDoc ? stringValue(modelDoc.vendor) : undefined;
-                const harness = modelDoc ? stringValue(modelDoc.harness) : undefined;
-                if (model) named.push(model);
-                if (vendor && model) named.push(`${vendor}/${model}`);
-                if (harness && model) named.push(`${harness}/${model}`);
-              } catch { /* schema issues are reported by resource validation */ }
-            }
-          }
-          return named;
-        });
-
-        const agentModelObj = objectValue(implementerAgent.value.model);
-        const agentModelStr = stringValue(implementerAgent.value.model);
-        const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : undefined;
-        const agentModel = agentModelObj ? stringValue(agentModelObj.model) : agentModelStr;
-        const canonicalAgentModel = agentProvider && agentModel ? `${agentProvider}/${agentModel}` : agentModel;
-
-        if (enabledRosterModels.length > 0 && canonicalAgentModel) {
-          const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
-          if (!matches) {
-            issues.push(issue("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
-          }
-        }
-      } catch (error) {
-        if (error instanceof KxmConfigError) {
-          issues.push(...error.issues);
-        }
-      }
-    }
-  }
-
+  // Developer policy is the role files under .kxm/roles/ (with the model
+  // files they name). scripts/harness-run.mjs only supplies ceilings.
   if (projectRoot && existsSync(join(projectRoot, ".kxm", "roster.yaml"))) {
+    issues.push(issue("semantic", "retired_roster_file", ".kxm/roster.yaml", "create the role and model files and delete roster.yaml"));
+  }
+  if (projectRoot && existsSync(join(projectRoot, ".kxm", "roles"))) {
     issues.push(...developerRolePolicyIssues(projectRoot));
+  }
+  if (projectRoot) {
+    issues.push(...rosterModelIssues(projectRoot, roles));
+    issues.push(...originHashIssues(projectRoot, models));
   }
 
   return sortIssues(issues);
+}
+
+function rosterModelIssues(projectRoot: string, roles: ReadonlyMap<string, KxmResource>): KxmConfigIssue[] {
+  const issues: KxmConfigIssue[] = [];
+  for (const role of roles.values()) {
+    for (const entry of valuesOf(role.value, "roster")) {
+      const route = stringValue(objectValue(entry)?.route);
+      if (!route) continue;
+      const logical = `.kxm/models/${route}.yaml`;
+      const file = join(projectRoot, ".kxm", "models", `${route}.yaml`);
+      let harness: string | undefined;
+      try {
+        if (existsSync(file)) harness = stringValue(parseRestrictedYaml(readFileSync(file, "utf8"), logical).harness);
+      } catch {
+        harness = undefined;
+      }
+      if (!harness) {
+        issues.push(issue("semantic", "roster_model_unreadable", role.logicalPath, `roster route ${route} does not resolve to a readable ${logical} carrying harness`));
+      }
+    }
+  }
+  return issues;
+}
+
+function originHashIssues(projectRoot: string, models: ReadonlyMap<string, KxmResource>): KxmConfigIssue[] {
+  const issues: KxmConfigIssue[] = [];
+  for (const model of models.values()) {
+    const origin = objectValue(model.value.origin);
+    const source = origin ? stringValue(origin.source) : undefined;
+    const digest = origin ? stringValue(origin.sha256) : undefined;
+    if (!source || !digest) continue;
+    const file = resolve(projectRoot, source);
+    const escaped = relative(projectRoot, file);
+    if (isAbsolute(source) || escaped.startsWith("..") || isAbsolute(escaped)) {
+      issues.push(issue("semantic", "origin_evidence_missing", model.logicalPath, `missing evidence bytes for ${source}`));
+      continue;
+    }
+    let actual: string;
+    try {
+      actual = createHash("sha256").update(readFileSync(file, "utf8"), "utf8").digest("hex");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EACCES" || code === "EPERM" || code === "EISDIR") {
+        issues.push(issue("semantic", "origin_evidence_missing", model.logicalPath, `missing evidence bytes for ${source}`));
+        continue;
+      }
+      throw error;
+    }
+    if (actual !== digest) {
+      issues.push(issue("semantic", "origin_hash_mismatch", model.logicalPath, "origin evidence hash does not match supplied bytes"));
+    }
+  }
+  return issues;
 }
 
 function developerCeilings(): {
@@ -1294,6 +1301,10 @@ function developerCeilings(): {
 }
 
 function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
+  // Product checkouts also have .kxm/roles/ for dispatch. The ceiling check
+  // is this package's developer policy, so it runs when the loaded project
+  // is that package.
+  if (resolve(projectRoot) !== findKxmRepoRoot(import.meta.url)) return [];
   const rolesDir = join(projectRoot, ".kxm", "roles");
   const modelsDir = join(projectRoot, ".kxm", "models");
   const roles: Record<string, JsonObject> = {};
@@ -1314,6 +1325,7 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
           parseIssues.push(...error.issues);
           continue;
         }
+        throw error;
       }
     }
   };
@@ -1328,7 +1340,7 @@ function developerRolePolicyIssues(projectRoot: string): KxmConfigIssue[] {
   }
   const ceilings = developerCeilings();
   if (!ceilings.ok) {
-    return [...parseIssues, issue("semantic", "developer_ceilings_unavailable", ".kxm/roster.yaml", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+    return [...parseIssues, issue("semantic", "developer_ceilings_unavailable", ".kxm/models", `developer ceilings could not be loaded: ${ceilings.detail}`)];
   }
   const result = validatePolicyDraft({ models, roles, evidence }, {
     ceilings: ceilings.ROUTES,
@@ -1489,7 +1501,8 @@ function loadProjectBundle(
   if (earlyIssues.length > 0) throw new KxmConfigError(earlyIssues);
 
   const agents = listNamedResources(registry, root, join(root, ".kxm", "agents"), ".kxm/agents", "agent");
-  const models = listNamedResources(registry, root, join(root, ".kxm", "models"), ".kxm/models", "model");
+  const modelIssues: KxmConfigIssue[] = [];
+  const models = listNamedResources(registry, root, join(root, ".kxm", "models"), ".kxm/models", "model", undefined, modelIssues);
   const roles = listNamedResources(registry, root, join(root, ".kxm", "roles"), ".kxm/roles", "role", writerRole === undefined ? undefined : "writer");
   if (writerRole !== undefined) {
     const logicalPath = ".kxm/roles/writer.yaml";
@@ -1620,9 +1633,9 @@ function loadProjectBundle(
       }
     }
   }
-  if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
+  if (loadIssues.length > 0) throw new KxmConfigError([...loadIssues, ...modelIssues]);
 
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
+  const issues = [...modelIssues, ...validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, roles)];
   if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...roles.values(), ...workflows.values(), ...environments, ...(gateRegistry ? [gateRegistry] : [])]
     .sort((left, right) => compareCodeUnits(left.logicalPath, right.logicalPath));

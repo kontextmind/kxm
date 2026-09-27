@@ -1,5 +1,5 @@
 schema: kxm.workflow.v1
-description: One read-only CLI critic step. Replaces just review-cli.
+description: One read-only CLI critic step.
 coordinator: coordinator
 limits:
   maxTransitions: 2

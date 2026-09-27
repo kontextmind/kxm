@@ -1,7 +1,6 @@
 schema: kxm.agent.v1
 purpose: Independently review correctness, security, regression risk, and evidence.
-model:
-  tag: critic
+role: reviewer-cli
 tools:
   preset: read-only
 defaultRepositoryAccess: read

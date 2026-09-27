@@ -15663,21 +15663,9 @@ function coreTemplate(projectId, projectName, variant) {
   ]);
   if (variant === "v4-registry") {
     const coordinator = files.get(".kxm/agents/coordinator.yaml");
-    if (coordinator) {
-      files.set(".kxm/agents/coordinator.yaml", {
-        ...coordinator,
-        harness: "claude",
-        model: { provider: "anthropic", model: "fable" }
-      });
-    }
+    if (coordinator) files.set(".kxm/agents/coordinator.yaml", { ...coordinator, role: "planner" });
     const implementer = files.get(".kxm/agents/implementer.yaml");
-    if (implementer) {
-      files.set(".kxm/agents/implementer.yaml", {
-        ...implementer,
-        harness: "grok",
-        model: { provider: "xai", model: "grok-4.6" }
-      });
-    }
+    if (implementer) files.set(".kxm/agents/implementer.yaml", { ...implementer, role: "writer" });
     const workflow = files.get(".kxm/workflows/default.yaml");
     if (workflow) {
       const limits = { ...workflow.limits };
@@ -17316,7 +17304,7 @@ function readTemplateProvenance(registry, root) {
   }
   return value;
 }
-function listNamedResources(registry, root, directory, logicalDirectory, kind, replacedId) {
+function listNamedResources(registry, root, directory, logicalDirectory, kind, replacedId, collected) {
   const resources = /* @__PURE__ */ new Map();
   if (!existsSync3(directory)) return resources;
   const stat = lstatSync(directory);
@@ -17355,7 +17343,10 @@ function listNamedResources(registry, root, directory, logicalDirectory, kind, r
       else throw error;
     }
   }
-  if (issues.length > 0) throw new KxmConfigError(issues);
+  if (issues.length > 0) {
+    if (collected) collected.push(...issues);
+    else throw new KxmConfigError(issues);
+  }
   return resources;
 }
 function valuesOf(object, field) {
@@ -17619,6 +17610,9 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
     for (const repositoryId of Object.keys(objectValue(step.repositories) ?? {})) {
       if (!repositories.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", file, `${stepId} references unknown repository ${repositoryId}`));
     }
+    if ((kind === "agent" || kind === "moa") && step.model !== void 0) {
+      issues.push(issue3("semantic", "producer_route_unsupported", file, `${stepId} model is not honored; remove model from the step`));
+    }
     selectorCandidates(step.model, models, file, `${stepId}.model`, issues);
     const assignment = objectValue(step.assignments);
     const declaredAgents = assignment ? names(assignment.allowedAgents) : [];
@@ -17801,7 +17795,7 @@ function validateModelReferences(models, issues) {
   };
   for (const id of models.keys()) walk(id, []);
 }
-function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot, writerRole) {
+function validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, projectRoot, roles = /* @__PURE__ */ new Map()) {
   const issues = [];
   const entries = valuesOf(project.value, "repositories").map((candidate) => objectValue(candidate)).filter((candidate) => Boolean(candidate));
   const repositoryIds = /* @__PURE__ */ new Set();
@@ -17842,84 +17836,84 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
   const defaultHarness = stringValue(project.value.defaultHarness) ?? DEFAULT_HARNESS;
   if (!harnesses.has(defaultHarness)) issues.push(issue3("reference", "harness_unknown", project.logicalPath, `defaultHarness ${defaultHarness} is not registered`));
   for (const agent of agents.values()) {
+    if (agent.value.model !== void 0 || agent.value.harness !== void 0) {
+      issues.push(issue3("semantic", "retired_agent_routing_fields", agent.logicalPath, "routing resolves from role; remove model and harness"));
+    }
     validateToolPolicy(agent, objectValue(agent.value.tools), "tools", issues);
     const executor = stringValue(agent.value.executor);
     if (executor && !executors.has(executor)) issues.push(issue3("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
-    const harness = stringValue(agent.value.harness) ?? defaultHarness;
-    if (!harnesses.has(harness)) issues.push(issue3("reference", "harness_unknown", agent.logicalPath, `harness ${harness} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue3("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
-    }
-    const candidates = selectorCandidates(agent.value.model, models, agent.logicalPath, "model", issues);
-    const declaredHarness = stringValue(agent.value.harness);
-    if (declaredHarness && harnesses.has(declaredHarness)) {
-      for (const candidate of candidates) {
-        const candidateProvider = stringValue(candidate.value.provider);
-        const candidateModel = stringValue(candidate.value.model);
-        const validation = validateHarnessModelPair(declaredHarness, { provider: candidateProvider, model: candidateModel });
-        if (!validation.valid) {
-          issues.push(issue3("semantic", validation.issue ?? "harness_unhosted_model", agent.logicalPath, validation.message ?? `harness ${declaredHarness} cannot host model ${candidateModel ?? candidate.logicalPath}`));
-        }
-      }
     }
   }
   validateModelReferences(models, issues);
   const defaultWorkflow = stringValue(project.value.defaultWorkflow) ?? "default";
   if (!workflows.has(defaultWorkflow)) issues.push(issue3("reference", "default_workflow_unknown", project.logicalPath, `default workflow ${defaultWorkflow} does not exist`));
   for (const workflow of workflows.values()) validateWorkflow(workflow, agents, models, repositoryIds, gates, issues);
+  if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roster.yaml"))) {
+    issues.push(issue3("semantic", "retired_roster_file", ".kxm/roster.yaml", "create the role and model files and delete roster.yaml"));
+  }
+  if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roles"))) {
+    issues.push(...developerRolePolicyIssues(projectRoot));
+  }
   if (projectRoot) {
-    const writerRolePath = join2(projectRoot, ".kxm", "roles", "writer.yaml");
-    const implementerAgent = agents.get("implementer") ?? agents.get("writer");
-    if ((writerRole !== void 0 || existsSync3(writerRolePath)) && implementerAgent) {
+    issues.push(...rosterModelIssues(projectRoot, roles));
+    issues.push(...originHashIssues(projectRoot, models));
+  }
+  return sortIssues3(issues);
+}
+function rosterModelIssues(projectRoot, roles) {
+  const issues = [];
+  for (const role of roles.values()) {
+    for (const entry of valuesOf(role.value, "roster")) {
+      const route = stringValue(objectValue(entry)?.route);
+      if (!route) continue;
+      const logical = `.kxm/models/${route}.yaml`;
+      const file = join2(projectRoot, ".kxm", "models", `${route}.yaml`);
+      let harness;
       try {
-        const rawRole = parseRestrictedYaml2(writerRole ?? readFileSync(writerRolePath, "utf8"));
-        const roleObj = objectValue(rawRole);
-        const rosterEntries = valuesOf(roleObj ?? {}, "roster").map((candidate) => objectValue(candidate)).filter((entry) => Boolean(entry));
-        const enabledRosterModels = rosterEntries.flatMap((entry) => {
-          const direct = stringValue(entry.model);
-          const route = stringValue(entry.route);
-          const named = direct ? [direct] : [];
-          if (route) {
-            const modelFile = join2(projectRoot, ".kxm", "models", `${route}.yaml`);
-            if (existsSync3(modelFile)) {
-              try {
-                const modelDoc = objectValue(parseRestrictedYaml2(readFileSync(modelFile, "utf8"), modelFile));
-                const model = modelDoc ? stringValue(modelDoc.model) : void 0;
-                const vendor = modelDoc ? stringValue(modelDoc.vendor) : void 0;
-                const harness = modelDoc ? stringValue(modelDoc.harness) : void 0;
-                if (model) named.push(model);
-                if (vendor && model) named.push(`${vendor}/${model}`);
-                if (harness && model) named.push(`${harness}/${model}`);
-              } catch {
-              }
-            }
-          }
-          return named;
-        });
-        const agentModelObj = objectValue(implementerAgent.value.model);
-        const agentModelStr = stringValue(implementerAgent.value.model);
-        const agentProvider = agentModelObj ? stringValue(agentModelObj.provider) : void 0;
-        const agentModel = agentModelObj ? stringValue(agentModelObj.model) : agentModelStr;
-        const canonicalAgentModel = agentProvider && agentModel ? `${agentProvider}/${agentModel}` : agentModel;
-        if (enabledRosterModels.length > 0 && canonicalAgentModel) {
-          const matches = enabledRosterModels.some((rm) => rm === canonicalAgentModel || rm === agentModel || rm.endsWith(`/${agentModel}`));
-          if (!matches) {
-            issues.push(issue3("semantic", "role_roster_conflicts_with_agent", ".kxm/roles/writer.yaml", `role roster in .kxm/roles/writer.yaml does not include agent model ${canonicalAgentModel} from ${implementerAgent.logicalPath}`));
-          }
-        }
-      } catch (error) {
-        if (error instanceof KxmConfigError) {
-          issues.push(...error.issues);
-        }
+        if (existsSync3(file)) harness = stringValue(parseRestrictedYaml2(readFileSync(file, "utf8"), logical).harness);
+      } catch {
+        harness = void 0;
+      }
+      if (!harness) {
+        issues.push(issue3("semantic", "roster_model_unreadable", role.logicalPath, `roster route ${route} does not resolve to a readable ${logical} carrying harness`));
       }
     }
   }
-  if (projectRoot && existsSync3(join2(projectRoot, ".kxm", "roster.yaml"))) {
-    issues.push(...developerRolePolicyIssues(projectRoot));
+  return issues;
+}
+function originHashIssues(projectRoot, models) {
+  const issues = [];
+  for (const model of models.values()) {
+    const origin = objectValue(model.value.origin);
+    const source = origin ? stringValue(origin.source) : void 0;
+    const digest2 = origin ? stringValue(origin.sha256) : void 0;
+    if (!source || !digest2) continue;
+    const file = resolve(projectRoot, source);
+    const escaped = relative(projectRoot, file);
+    if (isAbsolute(source) || escaped.startsWith("..") || isAbsolute(escaped)) {
+      issues.push(issue3("semantic", "origin_evidence_missing", model.logicalPath, `missing evidence bytes for ${source}`));
+      continue;
+    }
+    let actual;
+    try {
+      actual = createHash3("sha256").update(readFileSync(file, "utf8"), "utf8").digest("hex");
+    } catch (error) {
+      const code = error.code;
+      if (code === "ENOENT" || code === "EACCES" || code === "EPERM" || code === "EISDIR") {
+        issues.push(issue3("semantic", "origin_evidence_missing", model.logicalPath, `missing evidence bytes for ${source}`));
+        continue;
+      }
+      throw error;
+    }
+    if (actual !== digest2) {
+      issues.push(issue3("semantic", "origin_hash_mismatch", model.logicalPath, "origin evidence hash does not match supplied bytes"));
+    }
   }
-  return sortIssues3(issues);
+  return issues;
 }
 function developerCeilings() {
   const script = join2(findKxmRepoRoot(import.meta.url), "scripts", "harness-run.mjs");
@@ -17948,6 +17942,7 @@ function developerCeilings() {
   }
 }
 function developerRolePolicyIssues(projectRoot) {
+  if (resolve(projectRoot) !== findKxmRepoRoot(import.meta.url)) return [];
   const rolesDir = join2(projectRoot, ".kxm", "roles");
   const modelsDir = join2(projectRoot, ".kxm", "models");
   const roles = {};
@@ -17968,6 +17963,7 @@ function developerRolePolicyIssues(projectRoot) {
           parseIssues.push(...error.issues);
           continue;
         }
+        throw error;
       }
     }
   };
@@ -17982,7 +17978,7 @@ function developerRolePolicyIssues(projectRoot) {
   }
   const ceilings = developerCeilings();
   if (!ceilings.ok) {
-    return [...parseIssues, issue3("semantic", "developer_ceilings_unavailable", ".kxm/roster.yaml", `developer ceilings could not be loaded: ${ceilings.detail}`)];
+    return [...parseIssues, issue3("semantic", "developer_ceilings_unavailable", ".kxm/models", `developer ceilings could not be loaded: ${ceilings.detail}`)];
   }
   const result = validatePolicyDraft({ models, roles, evidence }, {
     ceilings: ceilings.ROUTES,
@@ -18071,7 +18067,8 @@ function loadProjectBundle(projectRoot, options, candidate) {
   }
   if (earlyIssues.length > 0) throw new KxmConfigError(earlyIssues);
   const agents = listNamedResources(registry, root, join2(root, ".kxm", "agents"), ".kxm/agents", "agent");
-  const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model");
+  const modelIssues = [];
+  const models = listNamedResources(registry, root, join2(root, ".kxm", "models"), ".kxm/models", "model", void 0, modelIssues);
   const roles = listNamedResources(registry, root, join2(root, ".kxm", "roles"), ".kxm/roles", "role", writerRole === void 0 ? void 0 : "writer");
   if (writerRole !== void 0) {
     const logicalPath = ".kxm/roles/writer.yaml";
@@ -18198,8 +18195,8 @@ function loadProjectBundle(projectRoot, options, candidate) {
       }
     }
   }
-  if (loadIssues.length > 0) throw new KxmConfigError(loadIssues);
-  const issues = validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, writerRole);
+  if (loadIssues.length > 0) throw new KxmConfigError([...loadIssues, ...modelIssues]);
+  const issues = [...modelIssues, ...validateBundle(project, repositories, agents, models, workflows, environments, options, gateRegistry, root, roles)];
   if (issues.length > 0) throw new KxmConfigError(issues);
   const resources = [project, ...repositories.values(), ...agents.values(), ...models.values(), ...roles.values(), ...workflows.values(), ...environments, ...gateRegistry ? [gateRegistry] : []].sort((left, right) => compareCodeUnits4(left.logicalPath, right.logicalPath));
   return {
@@ -24479,14 +24476,14 @@ var import_yaml4 = __toESM(require_dist(), 1);
 
 // plugins/kxm/src/routes.ts
 var RETIRED_POLICY = ".kxm/producers.yaml";
-var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [], roles: {} });
+var empty = () => ({ schema: "kxm.routes.v2", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), admitted: [], disabled: [] });
 function loadRoutePolicy(root) {
   if (existsSync9(join10(root, RETIRED_POLICY))) throw new Error(`retired ${RETIRED_POLICY} present; use .kxm/routes.yaml (kxm.routes.v2)`);
   const path = join10(root, ".kxm", "routes.yaml");
   if (!existsSync9(path)) return empty();
   const value = (0, import_yaml6.parse)(readFileSync7(path, "utf8"));
   if (value?.schema !== "kxm.routes.v2" || !Array.isArray(value.admitted)) throw new Error("invalid .kxm/routes.yaml");
-  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [], roles: value.roles && typeof value.roles === "object" ? Object.fromEntries(Object.entries(value.roles).filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === "string")])) : {} };
+  return { schema: "kxm.routes.v2", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : (/* @__PURE__ */ new Date()).toISOString(), admitted: value.admitted.filter((x) => typeof x === "string"), disabled: Array.isArray(value.disabled) ? value.disabled.filter((x) => typeof x === "string") : [] };
 }
 function listRoleBindings(root) {
   const dir = join10(root, ".kxm", "roles");
@@ -24498,10 +24495,6 @@ function listRoleBindings(root) {
     result[role] = (value.roster ?? []).map((entry) => entry.route).filter((route) => typeof route === "string");
   }
   return result;
-}
-function isRouteAdmitted(root, modelId) {
-  const policy = loadRoutePolicy(root);
-  return policy.admitted.includes(modelId) && !policy.disabled.includes(modelId);
 }
 
 // plugins/kxm/src/worktree-witness.ts
@@ -28070,25 +28063,18 @@ function commitCommandUncertainty(context, prepared, token, reason, observation,
   }
 }
 var kxmPanelDispatchSeams = {};
-function selectorsNamedByRoutes(projectRoot, routeIds) {
-  const selectors = /* @__PURE__ */ new Set();
-  for (const routeId2 of routeIds) {
-    const file = join15(projectRoot, ".kxm", "models", `${routeId2}.yaml`);
-    if (!existsSync12(file)) continue;
-    let parsed;
-    try {
-      parsed = (0, import_yaml9.parse)(readFileSync10(file, "utf8"));
-    } catch {
-      continue;
-    }
-    const model = typeof parsed.model === "string" ? parsed.model : "";
-    const vendor = typeof parsed.vendor === "string" ? parsed.vendor : "";
-    const harness = typeof parsed.harness === "string" ? parsed.harness : "";
-    if (model) selectors.add(model);
-    if (vendor && model) selectors.add(`${vendor}/${model}`);
-    if (harness && model) selectors.add(`${harness}/${model}`);
+function readYamlFile(file) {
+  return readModelDocument(file);
+}
+function readModelDocument(file) {
+  if (!existsSync12(file)) return void 0;
+  try {
+    const parsed = (0, import_yaml9.parse)(readFileSync10(file, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+    return parsed;
+  } catch {
+    return void 0;
   }
-  return [...selectors];
 }
 function unreconciledPanelAttemptId(state) {
   const current = state.currentStep;
@@ -28105,82 +28091,118 @@ function unreconciledPanelAttemptId(state) {
   return void 0;
 }
 function resolveProducerRoute(projectRoot, step, agentId) {
-  let agentModel;
-  const agentFile = join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`);
-  if (existsSync12(agentFile)) {
-    try {
-      const parsed = (0, import_yaml9.parse)(readFileSync10(agentFile, "utf8"));
-      if (typeof parsed?.model === "string") {
-        agentModel = parsed.model;
-      } else if (parsed?.model && typeof parsed.model === "object" && !Array.isArray(parsed.model)) {
-        const declared = parsed.model;
-        const providerOk = typeof declared.provider === "string" && declared.provider.length > 0 && !declared.provider.includes("/");
-        const modelOk = typeof declared.model === "string" && declared.model.length > 0 && !declared.model.startsWith("/") && !declared.model.endsWith("/");
-        if (providerOk && modelOk) {
-          agentModel = `${declared.provider}/${declared.model}`;
-        } else {
-          return {
-            error: {
-              reason: "step_unsupported",
-              field: "model",
-              detail: "producer_route_unsupported: invalid model declaration"
-            }
-          };
+  if ((step.kind === "agent" || step.kind === "moa") && step.model !== void 0) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent step model is not honored"
+      }
+    };
+  }
+  const agent = readYamlFile(join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`));
+  const role = typeof agent?.role === "string" ? agent.role : "";
+  if (!role) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: "producer_route_unsupported: agent has no role"
+      }
+    };
+  }
+  const roleDoc = readYamlFile(join15(projectRoot, ".kxm", "roles", `${role}.yaml`));
+  const roster = Array.isArray(roleDoc?.roster) ? roleDoc.roster : void 0;
+  if (!roster) {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "model",
+        detail: `producer_route_unsupported: role '${role}' has no roster`
+      }
+    };
+  }
+  const policy = loadRoutePolicy(projectRoot);
+  for (const entry of roster) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record2 = entry;
+    if (typeof record2.route !== "string" || record2.route.length === 0) continue;
+    const modelPath = join15(projectRoot, ".kxm", "models", `${record2.route}.yaml`);
+    const doc = readModelDocument(modelPath);
+    if (!doc) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: model file '.kxm/models/${record2.route}.yaml' is missing or unreadable`
         }
-      }
-    } catch {
+      };
     }
-  }
-  let selector = typeof step.model === "string" ? step.model : agentModel;
-  if (!selector) {
-    if (agentId === "implementer") {
-      selector = "xai/grok-4.6";
+    if (doc.status !== "admitted") continue;
+    const modelName = typeof doc.model === "string" ? doc.model : "";
+    const vendor = typeof doc.vendor === "string" ? doc.vendor : "";
+    const harness = typeof doc.harness === "string" ? doc.harness : "";
+    if (!modelName || !vendor || !harness) continue;
+    const candidates = [modelName, `${vendor}/${modelName}`, `${harness}/${modelName}`];
+    const admittedSelector = candidates.find((candidate) => policy.admitted.includes(candidate));
+    const disabledSelector = candidates.find((candidate) => policy.disabled.includes(candidate));
+    if (!admittedSelector && disabledSelector) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: first admitted route '${record2.route}' for role '${role}' is disabled`
+        }
+      };
     }
-  }
-  if (!selector) {
+    const selector = admittedSelector ?? (modelName.includes("/") ? modelName : `${vendor}/${modelName}`);
+    if (policy.disabled.includes(selector)) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: first admitted route '${record2.route}' for role '${role}' is disabled`
+        }
+      };
+    }
+    if (!policy.admitted.includes(selector)) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: model '${selector}' is not admitted`
+        }
+      };
+    }
+    const slash = selector.indexOf("/");
+    if (slash <= 0 || slash === selector.length - 1) {
+      return {
+        error: {
+          reason: "step_unsupported",
+          field: "model",
+          detail: `producer_route_unsupported: invalid selector '${selector}'`
+        }
+      };
+    }
+    const permissions = Array.isArray(doc.permissions) ? doc.permissions.filter((item) => typeof item === "string") : [];
     return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: "producer_route_unsupported: agent or step has no model declared"
-      }
+      provider: selector.slice(0, slash),
+      model: selector.slice(slash + 1),
+      selector,
+      harness,
+      routeId: record2.route,
+      role,
+      permissions,
+      ...typeof record2.effort === "string" ? { effort: record2.effort } : {}
     };
   }
-  const slash = selector.indexOf("/");
-  if (slash <= 0 || slash === selector.length - 1) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: invalid selector '${selector}'`
-      }
-    };
-  }
-  if (!isRouteAdmitted(projectRoot, selector)) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: model '${selector}' is not admitted`
-      }
-    };
-  }
-  const role = agentId === "implementer" ? "writer" : agentId;
-  const roleBindings = listRoleBindings(projectRoot);
-  const roster = roleBindings[role];
-  const rosterSelectors = roster ? selectorsNamedByRoutes(projectRoot, roster) : void 0;
-  if (rosterSelectors && !rosterSelectors.includes(selector)) {
-    return {
-      error: {
-        reason: "step_unsupported",
-        field: "model",
-        detail: `producer_route_unsupported: model '${selector}' not in role '${role}' roster`
-      }
-    };
-  }
-  const provider = selector.slice(0, slash);
-  const model = selector.slice(slash + 1);
-  return { provider, model, selector };
+  return {
+    error: {
+      reason: "step_unsupported",
+      field: "model",
+      detail: `producer_route_unsupported: role '${role}' has no admitted route`
+    }
+  };
 }
 function projectAgentStepTimeoutMs(context, run) {
   return loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.agentStepTimeoutMs ?? KXM_DEFAULT_AGENT_STEP_TIMEOUT_MS;
@@ -28398,8 +28420,7 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
     const writeRefusal = unsupportedLiveWrite(
       context.projectRoot,
       step,
-      agentId,
-      resolvedRoute.selector,
+      resolvedRoute,
       loadKxmRunPlanEnvelope(context.eventStore, run).projectLimits.maxConcurrentRuns
     );
     if (writeRefusal) return { kind: "return", state, handoff: { ...writeRefusal, stepId } };
@@ -28428,7 +28449,7 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
   for (const event of events) context.eventStore.appendEvent(event);
   const entered = foldStoredKxmRun(context, run);
   persistKxmRunState(context, runId, entered, events[events.length - 1].sequence);
-  const first = birthMember(context, {
+  const firstBirth = birthMember(context, {
     run,
     plan,
     step,
@@ -28439,6 +28460,10 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
     resolvedRoute,
     dispatchSources
   });
+  if ("handoff" in firstBirth) {
+    return { kind: "return", state: entered, handoff: firstBirth.handoff };
+  }
+  const first = firstBirth;
   return {
     kind: "panel",
     panel: {
@@ -28501,9 +28526,10 @@ function birthMember(context, input) {
   let resolvedRoute = input.resolvedRoute;
   if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
     const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
-    if (!("error" in routeResult)) {
-      resolvedRoute = routeResult;
+    if ("error" in routeResult) {
+      return { handoff: { ...routeResult.error, stepId: input.stepId } };
     }
+    resolvedRoute = routeResult;
   }
   const dispatchContext = assembleDispatchContext(input.dispatchSources, {
     projectId: run.projectId,
@@ -28610,11 +28636,11 @@ function birthMember(context, input) {
       prompt: input.step.instructions ? `${input.step.instructions}
 
 ${generatedPrompt}` : generatedPrompt,
-      thinking: input.stepAttempt <= 1 ? "low" : "medium",
       permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
       ...(input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== void 0 ? { timeoutMs: input.step.timeoutMs } : {},
       contextPacket,
-      ...resolvedRoute ? { provider: resolvedRoute.provider, model: resolvedRoute.model } : {}
+      ...resolvedRoute?.effort !== void 0 ? { thinking: resolvedRoute.effort } : {},
+      ...resolvedRoute ? { harness: resolvedRoute.harness, provider: resolvedRoute.provider, model: resolvedRoute.model } : {}
     },
     controller,
     state: next
@@ -28759,13 +28785,14 @@ async function drivePanel(context, panel, producer) {
     })();
     pending.set(member.attemptId, work);
   };
+  let routeHandoff;
   const tryBirth = () => {
-    if (stopBirths) return void 0;
+    if (stopBirths || routeHandoff) return void 0;
     return context.eventStore.transaction(() => {
       const run = requireRun(context, runId);
       const state = foldStoredKxmRun(context, run);
       if (!birthAllowed(state, panel.step)) return void 0;
-      return birthMember(context, {
+      const born = birthMember(context, {
         run,
         plan: panel.plan,
         step: panel.step,
@@ -28774,6 +28801,11 @@ async function drivePanel(context, panel, producer) {
         producerId: producer.id,
         dispatchSources: panel.dispatchSources
       });
+      if ("handoff" in born) {
+        routeHandoff = born.handoff;
+        return void 0;
+      }
+      return born;
     });
   };
   const settleInvoked = (member, produced) => {
@@ -28817,6 +28849,10 @@ async function drivePanel(context, panel, producer) {
       while (!stopBirths && !settlementFailed) {
         try {
           const next = tryBirth();
+          if (routeHandoff) {
+            stopBirths = true;
+            break;
+          }
           if (!next) break;
           launch(next);
         } catch {
@@ -28826,6 +28862,13 @@ async function drivePanel(context, panel, producer) {
           const state = foldStoredKxmRun(context, requireRun(context, runId));
           return unreconciledHandoff(state, panel.stepId);
         }
+      }
+      if (routeHandoff) {
+        const handoff = routeHandoff;
+        abortOwned();
+        await drainPendingInvoked();
+        const state = foldStoredKxmRun(context, requireRun(context, runId));
+        return { state, handoff };
       }
       if (pending.size === 0) break;
       const finished = await Promise.race(pending.values());
@@ -29390,25 +29433,7 @@ function unsupportedStep(plan, step, producerId) {
   }
   return void 0;
 }
-function readYamlRecord(path) {
-  if (!existsSync12(path)) return void 0;
-  try {
-    const parsed = (0, import_yaml9.parse)(readFileSync10(path, "utf8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
-  } catch {
-    return void 0;
-  }
-  return void 0;
-}
-function agentHarness(projectRoot, agentId) {
-  const harness = readYamlRecord(join15(projectRoot, ".kxm", "agents", `${agentId}.yaml`))?.harness;
-  return typeof harness === "string" && harness.length > 0 ? harness : void 0;
-}
-function projectDefaultHarness(projectRoot) {
-  const harness = readYamlRecord(join15(projectRoot, ".kxm", "project.yaml"))?.defaultHarness;
-  return typeof harness === "string" && harness.length > 0 ? harness : "pi";
-}
-function unsupportedLiveWrite(projectRoot, step, agentId, selector, maxConcurrentRuns) {
+function unsupportedLiveWrite(projectRoot, step, route, maxConcurrentRuns) {
   if (!Object.values(step.repositories).some((access) => access === "write")) return void 0;
   if (step.assignments.maximum !== 1) {
     return {
@@ -29424,42 +29449,23 @@ function unsupportedLiveWrite(projectRoot, step, agentId, selector, maxConcurren
       detail: "live write steps require limits.maxConcurrentRuns of 1; concurrent runs share one checkout"
     };
   }
-  const harness = agentHarness(projectRoot, agentId) ?? projectDefaultHarness(projectRoot);
-  if (!oneShotWriterArgs(harness)) {
+  if (!oneShotWriterArgs(route.harness)) {
     return {
       reason: "step_unsupported",
       field: "repositories",
-      detail: `live write steps require an audited writer profile; ${harness} has none`
+      detail: `live write steps require an audited writer profile; ${route.harness} has none`
     };
   }
-  const rosterPath = join15(projectRoot, ".kxm", "roster.yaml");
-  if (!existsSync12(rosterPath)) return void 0;
-  const roster = readYamlRecord(rosterPath);
-  if (!roster || roster.schema !== "kxm.developer-roster.v1") {
-    return { reason: "step_unsupported", field: "model", detail: "live write steps require a readable kxm.developer-roster.v1" };
+  const writerIds = listRoleBindings(projectRoot).writer;
+  if (!Array.isArray(writerIds) || writerIds.length === 0) {
+    return { reason: "step_unsupported", field: "model", detail: "writer roster has no admitted edit route" };
   }
-  const routes = roster.routes;
-  const lineup = roster.lineup;
-  const writerIds = lineup && typeof lineup === "object" && !Array.isArray(lineup) ? lineup.writer : void 0;
-  if (!routes || typeof routes !== "object" || Array.isArray(routes) || !Array.isArray(writerIds)) {
-    return { reason: "step_unsupported", field: "model", detail: "developer roster has no writer lineup" };
-  }
-  const allowed = writerIds.some((id) => {
-    if (typeof id !== "string") return false;
-    const route = routes[id];
-    if (!route || typeof route !== "object" || Array.isArray(route)) return false;
-    const record2 = route;
-    if (record2.harness !== harness || record2.status !== "admitted") return false;
-    if (!Array.isArray(record2.permissions) || !record2.permissions.includes("edit")) return false;
-    const model = typeof record2.model === "string" ? record2.model : "";
-    const vendor = typeof record2.vendor === "string" ? record2.vendor : "";
-    return model === selector || vendor.length > 0 && `${vendor}/${model}` === selector;
-  });
-  if (!allowed) {
+  const named = writerIds.includes(route.routeId);
+  if (!named || !route.permissions.includes("edit")) {
     return {
       reason: "step_unsupported",
       field: "model",
-      detail: `live write route ${selector} on ${harness} is not on the developer roster writer lineup`
+      detail: `live write route ${route.selector} on ${route.harness} is not an admitted edit route on the writer roster`
     };
   }
   return void 0;
@@ -29896,20 +29902,11 @@ function determineOutcome(text, allowedOutcomes) {
   return "failed";
 }
 function createKxmOneShotProducer(options = {}) {
-  const defaultHarness = options.defaultHarness ?? "claude";
   const running = /* @__PURE__ */ new Map();
   let closed = false;
-  function resolveHarnessForRequest(request) {
+  function requireHarness(request) {
     if (request.harness) return request.harness;
-    if (options.resolveHarness) {
-      const resolved = options.resolveHarness(request.agentId, request.runId);
-      if (resolved) return resolved;
-    }
-    if (options.resolveModel) {
-      const resolved = options.resolveModel(request.agentId, request.runId);
-      if (resolved?.harness) return resolved.harness;
-    }
-    return defaultHarness;
+    throw new Error("producer_harness_required");
   }
   function parseModelString(spec, harness) {
     const trimmed = spec.trim();
@@ -29971,7 +29968,7 @@ function createKxmOneShotProducer(options = {}) {
   }
   async function executeRequest(request) {
     const startTime = Date.now();
-    const harness = resolveHarnessForRequest(request);
+    const harness = requireHarness(request);
     const resolved = resolveModelForRequest(request, harness);
     if (closed) throw new Error("oneshot_producer_closed");
     const cancelled = () => ({
@@ -31221,24 +31218,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
             const delayMs = typeof body.delayMs === "number" && body.delayMs > 0 ? body.delayMs : 0;
             const createProducer = () => body.mode === "live" ? createKxmOneShotProducer({
               projectRoot,
-              timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs,
-              defaultHarness: String(bundle.project.value.defaultHarness ?? "pi"),
-              resolveHarness: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                return typeof agent?.value.harness === "string" ? agent.value.harness : void 0;
-              },
-              resolveModel: (agentId) => {
-                const agent = bundle.agents.get(agentId);
-                const model = agent?.value.model;
-                if (!model || typeof model !== "object" || Array.isArray(model)) return void 0;
-                const value = model;
-                const provider = typeof value.provider === "string" ? value.provider : void 0;
-                const modelName = typeof value.model === "string" ? value.model : void 0;
-                if (!provider || !modelName || !isRouteAdmitted(projectRoot, `${provider}/${modelName}`)) {
-                  throw new Error("producer_route_not_admitted");
-                }
-                return { provider, model: modelName };
-              }
+              timeoutMs: kxmProjectAdmissionLimits(bundle).agentStepTimeoutMs
             }) : createKxmSimulatedProducer(async () => {
               if (delayMs > 0) {
                 await new Promise((r) => setTimeout(r, delayMs));

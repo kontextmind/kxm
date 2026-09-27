@@ -7,19 +7,19 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-23"
+updated: "2026-09-27"
 authority: "instruction"
 confidence: "verified"
-summary: "Reproduce a UI defect on Steel, collect evidence, write a Playwright regression, and prove RED then GREEN."
+summary: "Reproduce a UI defect on Obscura, collect evidence, write a Playwright regression, and prove RED then GREEN."
 tags: ["browser", "playwright", "repro", "prompt"]
-related: ["docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
+related: ["docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwright-to-obscura.md", "docs/kb/how-to-connect-playwright-to-steel.md"]
 ---
 
 # Task template: reproduce a UI bug and produce a Playwright regression test
 
 ## Purpose
 
-Use this prompt to execute the full UI defect lifecycle: reproducing reported symptoms on self-hosted Steel, collecting diagnostic evidence, writing a durable Playwright test, demonstrating failure before fix (RED), applying the code fix, and demonstrating success afterward (GREEN).
+Use this prompt to execute the full UI defect lifecycle: reproducing reported symptoms on Obscura, collecting diagnostic evidence, writing a durable Playwright test, demonstrating failure before fix (RED), applying the code fix, and demonstrating success afterward (GREEN). Use a Steel session only for human takeover, MFA, or the live session viewer (`KXM_BROWSER=steel`).
 
 ## Canonical skill references
 
@@ -42,7 +42,7 @@ Use this prompt to execute the full UI defect lifecycle: reproducing reported sy
 ## Instructions for the agent
 
 1. **Step 1: Reproduce**:
-   - Connect to a Steel browser session and manually or scriptedly walk the repro steps.
+   - Connect Playwright to Obscura with the worker-scoped `browser` fixture and walk the repro steps. Do not run `playwright install`.
    - Confirm that actual behavior matches `{{ACTUAL_BEHAVIOR}}`.
 
 2. **Step 2: Collect Diagnostic Evidence**:
@@ -53,13 +53,13 @@ Use this prompt to execute the full UI defect lifecycle: reproducing reported sy
    - Use semantic locators (`getByRole`, `getByText`, `getByLabel`) rather than brittle XPath or dynamic classes.
 
 4. **Step 4: Demonstrate Failure (RED)**:
-   - Run the test: `npx playwright test {{TEST_FILE_PATH}}`.
+   - Run the test: `node scripts/obscura.mjs --ensure && playwright test {{TEST_FILE_PATH}}`.
    - Verify the test fails cleanly with an assertion error that directly explains the defect.
 
 5. **Step 5: Implement Code Fix**:
    - Modify the source code to resolve the defect.
 
 6. **Step 6: Demonstrate Success (GREEN)**:
-   - Re-run the Playwright test: `npx playwright test {{TEST_FILE_PATH}}`.
+   - Re-run the Playwright test: `node scripts/obscura.mjs --ensure && playwright test {{TEST_FILE_PATH}}`.
    - Capture clean verification output and screenshot `{{ARTIFACT_DIR}}/after.png`.
-   - Release the Steel session upon completion.
+   - When the run used a Steel takeover session, release that session. An Obscura run has no Steel session to release.

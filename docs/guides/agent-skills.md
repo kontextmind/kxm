@@ -1,6 +1,6 @@
 # Agent skills
 
-KXM ships a suite of Agent Skills that teach a coding agent how to use the `kxm` CLI and the `kxm_*` tools safely: which command owns a task, which verbs exist, and which steps belong to a person. This page is for anyone running KXM from Claude Code, Pi or Codex, and for contributors who edit the skills. Skills document the CLI; they grant no permission, admit no writer and replace no trusted `.kxm/roster.yaml` policy.
+KXM ships a suite of Agent Skills that teach a coding agent how to use the `kxm` CLI and the `kxm_*` tools safely: which command owns a task, which verbs exist, and which steps belong to a person. This page is for anyone running KXM from Claude Code, Pi or Codex, and for contributors who edit the skills. Skills document the CLI; they grant no permission, admit no writer and replace no trusted policy in `.kxm/roles/*.yaml` and `.kxm/models/*.yaml`.
 
 Governed skills that your own runs produce are a separate lifecycle; see [Governed skills](governed-skills.md).
 
@@ -68,7 +68,7 @@ Tools map the same way: peer tools to `kxm-peer`, workflow tools to `kxm-workflo
 
 ## Browser automation skills
 
-These skills drive a remote Steel browser that you host. They own no `kxm` command. See [Browser automation](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
+Playwright testing and verification use Obscura ([ADR-0005](../adr/ADR-0005-obscura-default-playwright.md)). The Steel skills cover human takeover, MFA, and the live session viewer. Those hosts sit behind Authentik forward auth: send `Authorization: Basic` (`STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`) and keep the credential out of URLs. `kxm-browser-verify` owns `vision`. The other browser skills own no `kxm` command. See [Browser automation](browser-automation.md) and [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md).
 
 | Skill | Use it to |
 |---|---|
@@ -76,7 +76,7 @@ These skills drive a remote Steel browser that you host. They own no `kxm` comma
 | `kxm-browser-takeover` | Hand a session to a human for MFA, login, CAPTCHA or sensitive consent, then resume |
 | `kxm-browser-auth` | Use stored credentials and authenticated browser profiles safely |
 | `kxm-browser-explore` | Explore a site, inspect its DOM and map a user flow with `agent-browser` |
-| `kxm-browser-verify` | Reproduce a UI bug, gather evidence and write a durable Playwright test |
+| `kxm-browser-verify` | Reproduce a UI bug on Obscura, gather evidence, assert a screenshot with `kxm vision`, and write a durable Playwright test |
 | `kxm-browser-diagnostics` | Diagnose Steel connectivity, CDP errors and timeouts, and clean up orphaned sessions |
 | `kxm-browser-annotate` | Capture page sections, attach structured annotations and hand the changes to an agent |
 

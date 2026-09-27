@@ -1,5 +1,5 @@
 schema: kxm.workflow.v1
-description: One implementer step with a drive receipt. Replaces just impl.
+description: One implementer step with a drive receipt.
 coordinator: coordinator
 limits:
   maxTransitions: 2

@@ -152,7 +152,6 @@ test("Claude one-shot producer isolates stdin execution and separates reported e
   };
 
   const producer = createKxmOneShotProducer({
-    defaultHarness: "claude",
     defaultModel: "claude-3-7-sonnet",
     priceCatalog: catalog,
     probeHarness: fakeAuth as any,
@@ -163,6 +162,7 @@ test("Claude one-shot producer isolates stdin execution and separates reported e
     const controller = new AbortController();
     const result = await producer.produce({
       runId: "run_claude_1",
+      harness: "claude",
       stepId: "plan_step",
       stepAttempt: 1,
       assignmentId: "asg_c1",
@@ -247,7 +247,6 @@ test("Codex one-shot producer dispatches with JSONL output and unmetered subscri
   };
 
   const producer = createKxmOneShotProducer({
-    defaultHarness: "codex",
     defaultModel: "gpt-5.6-sol",
     priceCatalog: emptyCatalog as any,
     probeHarness: fakeAuth as any,
@@ -258,6 +257,7 @@ test("Codex one-shot producer dispatches with JSONL output and unmetered subscri
     const controller = new AbortController();
     const result = await producer.produce({
       runId: "run_codex_1",
+      harness: "codex",
       stepId: "review_step",
       stepAttempt: 1,
       assignmentId: "asg_cdx1",
@@ -305,13 +305,13 @@ test("One-shot producer fails closed when harness is unauthenticated or not dete
   // 1. Not detected
   const notDetectedProbe = () => ({ detected: false, authenticated: false as const, issues: ["binary not found"] });
   const p1 = createKxmOneShotProducer({
-    defaultHarness: "claude",
     defaultModel: "fable",
     probeHarness: notDetectedProbe as any,
   });
   await assert.rejects(
     p1.produce({
       runId: "run_fail_1",
+      harness: "claude",
       stepId: "s1",
       stepAttempt: 1,
       assignmentId: "asg_f1",
@@ -327,13 +327,13 @@ test("One-shot producer fails closed when harness is unauthenticated or not dete
   // 2. Not authenticated
   const loggedOutProbe = () => ({ detected: true, authenticated: false as const, issues: ["not_authenticated"] });
   const p2 = createKxmOneShotProducer({
-    defaultHarness: "codex",
     defaultModel: "gpt-5.6-sol",
     probeHarness: loggedOutProbe as any,
   });
   await assert.rejects(
     p2.produce({
       runId: "run_fail_2",
+      harness: "codex",
       stepId: "s1",
       stepAttempt: 1,
       assignmentId: "asg_f2",
@@ -352,7 +352,6 @@ test("One-shot producer fails closed when harness is unauthenticated or not dete
     harnesses: [{ id: "claude", label: "Claude", default: false, mode: "either" as const, detected: true, authenticated: false, canUpdate: { self: false, extensions: false, models: false }, issues: ["logged_out"] }],
   };
   const p3 = createKxmOneShotProducer({
-    defaultHarness: "claude",
     defaultModel: "fable",
     inventory: unauthInventory,
     probeHarness: (() => ({ detected: true, authenticated: true as const, issues: [] })) as any,
@@ -360,6 +359,7 @@ test("One-shot producer fails closed when harness is unauthenticated or not dete
   await assert.rejects(
     p3.produce({
       runId: "run_fail_3",
+      harness: "claude",
       stepId: "s1",
       stepAttempt: 1,
       assignmentId: "asg_f3",
@@ -378,7 +378,6 @@ test("One-shot producer handles pre-aborted signal and abort during execution", 
 
   // 1. Pre-aborted signal
   const producer = createKxmOneShotProducer({
-    defaultHarness: "claude",
     defaultModel: "fable",
     probeHarness: fakeAuth as any,
   });
@@ -388,6 +387,7 @@ test("One-shot producer handles pre-aborted signal and abort during execution", 
 
   const preResult = await producer.produce({
     runId: "run_abort_1",
+    harness: "claude",
     stepId: "s1",
     stepAttempt: 1,
     assignmentId: "asg_ab1",
@@ -401,7 +401,6 @@ test("One-shot producer handles pre-aborted signal and abort during execution", 
 
   // 2. Abort during execution
   const activeProducer = createKxmOneShotProducer({
-    defaultHarness: "claude",
     defaultModel: "fable",
     probeHarness: fakeAuth as any,
     spawnProcess: async (_cmd, _args, options) => {
@@ -418,6 +417,7 @@ test("One-shot producer handles pre-aborted signal and abort during execution", 
 
   const activeResult = await activeProducer.produce({
     runId: "run_abort_2",
+    harness: "claude",
     stepId: "s2",
     stepAttempt: 1,
     assignmentId: "asg_ab2",
@@ -441,8 +441,6 @@ test(`One-shot producer settles in engine with ${cacheReadTokens} cumulative cac
     const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
     const producer = createKxmOneShotProducer({
       projectRoot: root,
-      defaultHarness: "claude",
-      defaultModel: "claude-3-7-sonnet",
       probeHarness: fakeAuth as any,
       spawnProcess: async () => ({
         stdout: JSON.stringify({
@@ -462,13 +460,13 @@ test(`One-shot producer settles in engine with ${cacheReadTokens} cumulative cac
       const result = await driveKxmRun(context, accepted.run.runId, producer, { allowLimits: true });
       assert.equal(result.state.status, "completed");
 
-      // Verify routing records recorded harness: claude
+      // The route file names grok. The producer must not substitute another harness.
       const events = context.eventStore.events(accepted.run.runId, 0, 100);
       const routingEvents = events.filter((e) => e.eventType === "routing.attempt.recorded");
       assert.ok(routingEvents.length > 0);
       for (const ev of routingEvents) {
         const routing = (ev.payload as any).routing;
-        assert.equal(routing.harness, "claude");
+        assert.equal(routing.harness, "grok");
         assert.equal(routing.cacheReadTokens, cacheReadTokens > 1_000_000 ? null : cacheReadTokens);
         if (cacheReadTokens > 1_000_000) {
           assert.equal(routing.providerMetadata.rawCacheReadTokens, cacheReadTokens);
@@ -516,15 +514,14 @@ test("Codex artifacts: skills directory and AGENTS.md block are emitted and matc
   assert.ok(agentsContent.includes("kxm workflow checkpoint"));
 });
 
-test("One-shot producer handles resolveHarness, resolveModel, custom harness, explicit prompt, and defaultSpawn", async () => {
+test("One-shot producer uses the request harness, resolveModel, an explicit prompt, and defaultSpawn", async () => {
   const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
 
   let capturedInput: string | undefined;
   const producer = createKxmOneShotProducer({
-    resolveHarness: (agentId) => (agentId === "custom_agent" ? "grok" : undefined),
     resolveModel: (agentId) => {
       if (agentId === "custom_agent") {
-        return { harness: "grok", provider: "xai", model: "grok-4.6", thinking: "medium" };
+        return { provider: "xai", model: "grok-4.6", thinking: "medium" };
       }
       return undefined;
     },
@@ -542,6 +539,7 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
   try {
     const res = await producer.produce({
       runId: "run_custom_1",
+      harness: "grok",
       stepId: "step_custom",
       stepAttempt: 1,
       assignmentId: "asg_cust",
@@ -570,7 +568,6 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
     JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: '{"outcome":"completed"}' }], model: "qwen3.8-flash", usage: { input: 9, output: 4 } } }),
   ].join("\n");
   const argProducer = createKxmOneShotProducer({
-    defaultHarness: "pi",
     defaultModel: "qwen3-coder-plus",
     probeHarness: fakeAuth as any,
     spawnProcess: async (cmd, args) => {
@@ -580,6 +577,7 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
   });
   const piResult = await argProducer.produce({
     runId: "run_arg_1",
+    harness: "pi",
     stepId: "s1",
     stepAttempt: 1,
     assignmentId: "asg_arg",
@@ -595,13 +593,13 @@ test("One-shot producer handles resolveHarness, resolveModel, custom harness, ex
   await argProducer.close();
 
   const refusedProducer = createKxmOneShotProducer({
-    defaultHarness: "deepseek",
     defaultModel: "deepseek-v4",
     probeHarness: fakeAuth as any,
     spawnProcess: async () => { throw new Error("must not spawn"); },
   });
   await assert.rejects(refusedProducer.produce({
     runId: "run_arg_2",
+    harness: "deepseek",
     stepId: "s1",
     stepAttempt: 1,
     assignmentId: "asg_ref",
@@ -708,7 +706,6 @@ test("One-shot rejects unprofiled executables and preserves native option resolu
   ];
 
   const producer = createKxmOneShotProducer({
-    defaultHarness: "node_test",
     defaultModel: "eval",
     inventory: customInventory as any,
     catalog: customCatalog as any,
@@ -718,6 +715,7 @@ test("One-shot rejects unprofiled executables and preserves native option resolu
   try {
     await assert.rejects(producer.produce({
       runId: "run_default_spawn_1",
+      harness: "node_test",
       stepId: "step_ds",
       stepAttempt: 1,
       assignmentId: "asg_ds",
@@ -732,10 +730,10 @@ test("One-shot rejects unprofiled executables and preserves native option resolu
     await producer.close();
   }
 
-  // Test resolveModel returning harness when request.harness and resolveHarness are omitted
+  // The request names the harness. resolveModel supplies provider and model when the request omits them.
   let capturedModelOpts: any;
   const resolveModelProducer = createKxmOneShotProducer({
-    resolveModel: () => ({ harness: "claude", provider: "anthropic", model: "fable" }),
+    resolveModel: () => ({ provider: "anthropic", model: "fable" }),
     probeHarness: fakeAuth as any,
     spawnProcess: async (cmd, args) => {
       capturedModelOpts = args;
@@ -744,6 +742,7 @@ test("One-shot rejects unprofiled executables and preserves native option resolu
   });
   await resolveModelProducer.produce({
     runId: "run_res_1",
+    harness: "claude",
     stepId: "s1",
     stepAttempt: 1,
     assignmentId: "asg_res",
@@ -758,7 +757,6 @@ test("One-shot rejects unprofiled executables and preserves native option resolu
 
   // Test model spec with slash e.g. "openai/o3"
   const slashProducer = createKxmOneShotProducer({
-    defaultHarness: "codex",
     probeHarness: fakeAuth as any,
     spawnProcess: async () => {
       return { stdout: JSON.stringify({ result: "done" }), stderr: "", code: 0 };
@@ -766,6 +764,7 @@ test("One-shot rejects unprofiled executables and preserves native option resolu
   });
   const slashRes = await slashProducer.produce({
     runId: "run_slash_1",
+    harness: "codex",
     stepId: "s1",
     stepAttempt: 1,
     assignmentId: "asg_slash",
@@ -860,7 +859,6 @@ test("Kimi one-shot execution applies sandboxed --plan flag with authenticated p
 
   let capturedArgs: readonly string[] = [];
   const kimiProducer = createKxmOneShotProducer({
-    defaultHarness: "kimi",
     probeHarness: fakeAuth as any,
     spawnProcess: async (cmd, args) => {
       capturedArgs = args;
@@ -878,6 +876,7 @@ test("Kimi one-shot execution applies sandboxed --plan flag with authenticated p
   try {
     const res = await kimiProducer.produce({
       runId: "run_kimi_1",
+      harness: "kimi",
       stepId: "step_kimi",
       stepAttempt: 1,
       assignmentId: "asg_kimi",
@@ -901,7 +900,6 @@ test("AGY subscription auth executes one-shot with sandboxed flags", async () =>
 
   let capturedArgs: readonly string[] = [];
   const agyProducer = createKxmOneShotProducer({
-    defaultHarness: "agy",
     probeHarness: fakeAuth as any,
     spawnProcess: async (cmd, args) => {
       capturedArgs = args;
@@ -926,6 +924,7 @@ test("AGY subscription auth executes one-shot with sandboxed flags", async () =>
   try {
     const res = await agyProducer.produce({
       runId: "run_agy_1",
+      harness: "agy",
       stepId: "step_agy",
       stepAttempt: 1,
       assignmentId: "asg_agy",
@@ -952,7 +951,6 @@ test("Gemini CLI is non-dispatchable and fails closed with clear message", async
   const fakeAuth = () => ({ detected: true, authenticated: true as const, issues: [] });
 
   const geminiProducer = createKxmOneShotProducer({
-    defaultHarness: "legacy-gemini",
     defaultModel: "gemini-2.0-flash",
     probeHarness: fakeAuth as any,
     spawnProcess: async () => ({ stdout: "", stderr: "", code: 0 }),
@@ -962,6 +960,7 @@ test("Gemini CLI is non-dispatchable and fails closed with clear message", async
     async () => {
       await geminiProducer.produce({
         runId: "run_gemini_1",
+        harness: "legacy-gemini",
         stepId: "step_gemini",
         stepAttempt: 1,
         assignmentId: "asg_gem",
@@ -1038,7 +1037,6 @@ test("one-shot edit permission uses the audited writer argv and refuses a missin
     return { stdout: "{\"outcome\":\"passed\",\"summary\":\"edited\"}", stderr: "", code: 0 };
   };
   const grok = createKxmOneShotProducer({
-    defaultHarness: "grok",
     defaultModel: "grok-4.6",
     probeHarness: fakeAuth as never,
     spawnProcess: spawn,
@@ -1046,6 +1044,7 @@ test("one-shot edit permission uses the audited writer argv and refuses a missin
   try {
     await grok.produce({
       runId: "run_writer",
+      harness: "grok",
       stepId: "write",
       stepAttempt: 1,
       assignmentId: "asg_w",
@@ -1058,12 +1057,12 @@ test("one-shot edit permission uses the audited writer argv and refuses a missin
     });
     assert.ok(grokArgs.includes("--always-approve"));
     assert.equal(grokArgs.includes("--sandbox"), false);
+    assert.equal(grokArgs.includes("--reasoning-effort"), false);
   } finally {
     await grok.close();
   }
 
   const claude = createKxmOneShotProducer({
-    defaultHarness: "claude",
     defaultModel: "fable",
     probeHarness: fakeAuth as never,
     spawnProcess: spawn,
@@ -1071,6 +1070,7 @@ test("one-shot edit permission uses the audited writer argv and refuses a missin
   try {
     await assert.rejects(() => claude.produce({
       runId: "run_writer",
+      harness: "claude",
       stepId: "write",
       stepAttempt: 1,
       assignmentId: "asg_w",
@@ -1086,14 +1086,37 @@ test("one-shot edit permission uses the audited writer argv and refuses a missin
   }
 });
 
+test("a live one-shot request without harness is refused", async () => {
+  const producer = createKxmOneShotProducer({
+    defaultModel: "fable",
+    probeHarness: (() => ({ detected: true, authenticated: true as const, issues: [] })) as never,
+    spawnProcess: async () => { throw new Error("must not spawn"); },
+  });
+  try {
+    await assert.rejects(() => producer.produce({
+      runId: "run_noharness",
+      stepId: "plan",
+      stepAttempt: 1,
+      assignmentId: "asg_h",
+      attemptId: "att_h",
+      agentId: "planner",
+      capability: "secret",
+      allowedOutcomes: ["passed"],
+      signal: new AbortController().signal,
+    }), /producer_harness_required/);
+  } finally {
+    await producer.close();
+  }
+});
+
 test("one-shot refuses a missing model instead of a silent default", async () => {
   const producer = createKxmOneShotProducer({
-    defaultHarness: "claude",
     probeHarness: (() => ({ detected: true, authenticated: true as const, issues: [] })) as never,
   });
   try {
     await assert.rejects(() => producer.produce({
       runId: "run_nomodel",
+      harness: "claude",
       stepId: "plan",
       stepAttempt: 1,
       assignmentId: "asg_n",
@@ -1111,11 +1134,12 @@ test("one-shot refuses a missing model instead of a silent default", async () =>
 // Opt-in real test behind KXM_SMOKE
 const smokeTest = process.env.KXM_SMOKE ? test : test.skip;
 smokeTest("real Claude one-shot dispatch behind KXM_SMOKE", async () => {
-  const producer = createKxmOneShotProducer({ defaultHarness: "claude", defaultModel: "fable" });
+  const producer = createKxmOneShotProducer({ defaultModel: "fable" });
   try {
     const controller = new AbortController();
     const result = await producer.produce({
       runId: "smoke_oneshot_1",
+      harness: "claude",
       stepId: "smoke_step",
       stepAttempt: 1,
       assignmentId: "asg_smoke",
@@ -1132,11 +1156,12 @@ smokeTest("real Claude one-shot dispatch behind KXM_SMOKE", async () => {
 });
 
 test.skip("Kimi live one-shot deferred: permission profile unaudited", async () => {
-  const producer = createKxmOneShotProducer({ defaultHarness: "kimi" });
+  const producer = createKxmOneShotProducer({});
   try {
     const controller = new AbortController();
     const result = await producer.produce({
       runId: "smoke_kimi_1",
+      harness: "kimi",
       stepId: "smoke_step",
       stepAttempt: 1,
       assignmentId: "asg_smoke_kimi",
@@ -1154,11 +1179,12 @@ test.skip("Kimi live one-shot deferred: permission profile unaudited", async () 
 });
 
 test.skip("AGY live one-shot deferred: permission profile unaudited", async () => {
-  const producer = createKxmOneShotProducer({ defaultHarness: "agy" });
+  const producer = createKxmOneShotProducer({});
   try {
     const controller = new AbortController();
     const result = await producer.produce({
       runId: "smoke_agy_1",
+      harness: "agy",
       stepId: "smoke_step",
       stepAttempt: 1,
       assignmentId: "asg_smoke_agy",

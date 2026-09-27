@@ -3,7 +3,7 @@
 This page records how the KXM repository applies [harness routing](../reference/harness-routing.md) to its own work: the routes this checkout admits, its writer roster, its price catalog, and the developer roster policy that `just assign` and the dev helper enforce. It is maintainer material. The snapshots were captured on 2026-09-23 on one operator machine, from a source checkout where `node scripts/kxm.mjs` is the same program as `kxm`; they change whenever an admission changes.
 
 > [!IMPORTANT]
-> The files are the authority, not this page: `.kxm/routes.yaml`, `.kxm/roles/`, `.kxm/roster.yaml` and `.kxm/prices.yaml`. Product routing decisions are recorded under Tracking → Decided in `plans/implementation-plan.md`.
+> The files are the authority, not this page: `.kxm/routes.yaml`, `.kxm/roles/*.yaml`, `.kxm/models/*.yaml`, and `.kxm/prices.yaml`. Product routing decisions are recorded under Tracking → Decided in `plans/implementation-plan.md`.
 
 ## This checkout's routes and roster
 
@@ -59,9 +59,9 @@ On the capture machine, `kxm harness list` showed `claude` detected but logged o
 
 `.kxm/prices.yaml` is dated `2026-09-16`, so every current run records `providerMetadata.priceCatalogStale: true` and no list estimate. The list prices below come from `.kxm/models/inventory.yaml`, fetched `2026-09-16T14:54:53Z`, in USD per 1M tokens. The checkout has no routing records yet, so none of the examples has recorded latency; for latency, run a bounded side-by-side experiment and compare p50 and p95 in `kxm routing report`.
 
-## The developer roster (`.kxm/roster.yaml`)
+## The developer roster
 
-The issue-127 runner (`just assign`, see the [assignment runner](assignment-runner.md)) uses its own policy file, [`kxm.developer-roster.v1`](../reference/config-reference.md#kxmrosteryaml-kxmdeveloper-rosterv1). Routes there name the harness, the model and the vendor explicitly:
+The issue-127 runner (`kxm assign`, see the [assignment runner](assignment-runner.md)) reads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml` at `refs/remotes/origin/main`. See [Developer assignment policy](../reference/config-reference.md#developer-assignment-policy). Routes there name the harness, the model and the vendor explicitly:
 
 ```yaml
   grok-native:
@@ -100,7 +100,7 @@ The product brake, the dev helper and the roster policy now agree on the vendor 
 
 ## Worked examples on this checkout
 
-These extend the generic examples on the reference page with this checkout's admissions, developer-roster routes, readiness on the capture machine, and inventory prices.
+These extend the generic examples on the reference page with this checkout's admissions, developer policy routes, readiness on the capture machine, and inventory prices.
 
 ### Grok 4.6
 
@@ -174,19 +174,19 @@ The developer runner is stricter. Its only Pi writer is `openrouter/qwen/qwen3-c
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `pi brake: xai has a native harness; refusing Pi impersonation` | A dev-helper request routed a native vendor through Pi. | Use the native harness recipe instead: `just impl`, `just plan`, `just review-arch` or `just review-cli`. |
-| `Roster policy refused: native vendor cannot use Pi` | A `.kxm/roster.yaml` Pi route names a native vendor, as in `openrouter/x-ai/…` or `nous-portal/anthropic/…`. | Remove the route. Only a native harness route is valid for that vendor. |
+| `pi brake: xai has a native harness; refusing Pi impersonation` | A dev-helper request routed a native vendor through Pi. | Use the native harness through `kxm lane run <unit> --brief <file> --workflow review-arch-only`. |
+| `Roster policy refused: native vendor cannot use Pi` | A Pi route in `.kxm/models/*.yaml` names a native vendor, as in `openrouter/x-ai/…` or `nous-portal/anthropic/…`. | Remove the route. Only a native harness route is valid for that vendor. |
 | The dev helper refuses a codex route. | `codex` is logged in with an API key. | Run `codex login` with the ChatGPT flow. |
 
 For example, the native writer recipe:
 
 ```bash
-just impl brief.md
+kxm lane run <unit> --brief <file> --workflow implement-only
 ```
 
 ## Related
 
 - [Harness routing](../reference/harness-routing.md): the rules, the decision procedure and the generic examples
 - [Assignment runner](assignment-runner.md): the loop that enforces the developer roster
-- [Configuration file reference](../reference/config-reference.md#kxmrosteryaml-kxmdeveloper-rosterv1): the `kxm.developer-roster.v1` fields
+- [Configuration file reference](../reference/config-reference.md#developer-assignment-policy): the developer assignment policy fields
 - [Routing and cost telemetry contract](../contracts/routing.md): the routing record, cost basis and dev-helper telemetry

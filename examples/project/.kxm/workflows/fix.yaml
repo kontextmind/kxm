@@ -92,10 +92,6 @@ steps:
     agent: critic-1
     maxAttempts: 3
     description: Verify reporter-path coupling, failure causality, expected behavior, and absence of production edits.
-    model:
-      tag: critic
-      capabilities:
-        - structured-output
     repositories:
       control: read
       api: read
@@ -110,8 +106,6 @@ steps:
       maximum: 3
       maxParallel: 3
       maxAttemptsPerAssignment: 2
-      distinctBy:
-        - provider
     join:
       strategy: all-settled
       minimumPassed: 2
@@ -165,10 +159,6 @@ steps:
     agent: critic-1
     maxAttempts: 3
     description: Independently review the plan for correctness, scope, security, and regression risk.
-    model:
-      tag: critic
-      capabilities:
-        - structured-output
     repositories:
       control: read
       api: read
@@ -183,8 +173,6 @@ steps:
       maximum: 3
       maxParallel: 3
       maxAttemptsPerAssignment: 2
-      distinctBy:
-        - provider
     join:
       strategy: all-settled
       minimumPassed: 2

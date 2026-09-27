@@ -25,13 +25,12 @@ Related pages:
 | `.kxm/project.yaml` | `kxm.project.v1` | Project identity, repositories, defaults, run limits | You; `kxm init` creates it | Yes |
 | `.kxm/repo/repo.yaml` (in each repository) | `kxm.repository.v1` | Per-repository definition | You; `kxm init` creates the control one | Yes, in the repository it describes |
 | `.kxm/project/env.yaml`, `.kxm/repo/env.yaml` | `kxm.environment.v1` | Portable, non-secret environment | You | Yes |
-| `.kxm/agents/<id>.yaml` | `kxm.agent.v1` | Agent harness, model, and permission ceilings | You; `kxm init` creates two | Yes |
+| `.kxm/agents/<id>.yaml` | `kxm.agent.v1` | Agent role and permission ceilings | You; `kxm init` creates two | Yes |
 | `.kxm/models/<id>.yaml` | `kxm.model.v2` | One model route (harness, vendor, status, permissions) | You; `kxm init` | Yes |
 | `.kxm/workflows/<id>.yaml` | `kxm.workflow.v1` | Ordered steps and typed transitions | You; `kxm init` creates `default` | Yes |
 | `.kxm/gates.yaml` | `kxm.gate-registry.v1` | The executable gate registry | You; `kxm init` creates it | Yes |
 | `.kxm/roles/<role>.yaml` | `kxm.role.v2` | Model rosters per role | You, `kxm role`, `kxm models` | Yes |
 | `.kxm/routes.yaml` | `kxm.routes.v2` | Admitted and disabled model routes | You, `kxm routes`, `kxm models` | Yes |
-| `.kxm/roster.yaml` | `kxm.developer-roster.v1` | Developer assignment roster for the KXM source repository | Maintainers | Yes, and it must be committed |
 | `.kxm/prices.yaml` | `kxm.prices.v1` | Dated, hash-pinned list prices | You | Yes |
 | `.kxm/models/inventory.yaml` | `kxm.model-inventory.v1` | Discovered model catalog | `kxm models inventory-refresh` only | Your choice (generated) |
 | `.kxm/config.yaml`, `~/.config/kxm/config.yaml` | `kxm.config.v1` | Personalization and hub auto-start | `kxm config set` | Project file: yes, unless ignored |
@@ -43,6 +42,8 @@ Related pages:
 | Webhook definitions (JSON file or variable) | none (JSON array) | Signed webhook workflows for the hub | You | Yes if stored in the repository, never with secrets |
 | Claude Code plugin `userConfig` | Claude plugin manifest | Hub URL, token, agent identity for Claude Code | Claude Code, per user | No |
 | `<state root>/update.yaml` | `kxm.update.v1` | Updater settings | You | No (host-local) |
+
+The developer assignment runner reads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml` at `refs/remotes/origin/main`.
 
 `kxm init` does not write a `.gitignore`. See
 [Workspace layout](#workspace-layout-tracked-ignored-and-state) for the entries
@@ -57,17 +58,16 @@ to add.
 .kxm/workflows/<id>.yaml ── coordinator ──> .kxm/agents/coordinator.yaml
    │ steps[]
    ├─ kind agent | moa | approval | wait ──> .kxm/agents/<id>.yaml
-   │                                           ├─ harness ──> pi | claude | codex | grok | agy | kimi | deepseek
-   │                                           ├─ model ────> {provider, model} | {profile} | {tag}
-   │                                           │                                    └─> .kxm/models/<id>.yaml
+   │                                           ├─ role ──> .kxm/roles/<role>.yaml
+   │                                           │              └─ roster[].route ──> .kxm/models/<route>.yaml
+   │                                           │                                    (harness, model, vendor, permissions)
    │                                           └─ tools, repositories, network: permission ceilings
    └─ kind gate ──> .kxm/gates.yaml: command | artifacts-exist | reserved
 
 Live dispatch admission (checked by the Runtime for every attempt):
-   agent model "provider/model" ──> .kxm/routes.yaml: admitted and not disabled
-                                └─> .kxm/roles/<role>.yaml roster, if that file exists
-                                    (role = agent id; "writer" for agent "implementer")
-   developer assignments (scripts/assignment-run.mjs) ──> .kxm/roster.yaml routes + lineup
+   agent.role ──> .kxm/roles/<role>.yaml roster ──> .kxm/models/<route>.yaml
+   .kxm/routes.yaml holds only the admitted and disabled lists
+   developer assignments (scripts/assignment-run.mjs) ──> .kxm/roles/*.yaml and .kxm/models/*.yaml
 
 Cost accounting:
    producer token usage ──> .kxm/prices.yaml (dated today, hash verified) ──> list estimate
@@ -79,13 +79,14 @@ Cost accounting:
 | Check | Files it covers | Where it runs |
 |---|---|---|
 | Project bundle load: restricted YAML, JSON Schema, cross-file semantics | `project.yaml`, every `repo.yaml` and `env.yaml`, `agents/`, `models/`, `workflows/`, `gates.yaml`, `template-provenance.yaml`, plus the `roles/writer.yaml` cross-check | `kxm init` (validate mode), `kxm run` and `kxm run --dry-run`, `kxm trust`, every Runtime request |
+| Retired agent routing fields | `harness` or `model` on `.kxm/agents/<id>.yaml` | Loader refuses the file with `retired_agent_routing_fields` (`routing resolves from role; remove model and harness`) |
 | Workflow compile | `workflows/` | `kxm run` when it creates a run |
-| Runtime acceptance | Workflow steps, gate definitions, agent models, `routes.yaml`, `roles/` | `kxm runs drive` and live drives, per step |
+| Runtime acceptance | Workflow steps, gate definitions, the route selected from `agent.role`, `routes.yaml` (`admitted` and `disabled` only), `roles/` | `kxm runs drive` and live drives, per step |
 | Permission diff | The bundle only | `kxm trust diff`, `kxm trust check` |
 | Revisions pinned on every run | `configRevision` (the bundle), memory revision (`.kxm/memory` without `candidates/`, plus `.kxm/skills/promoted`), executor policy, tool policy (agent and step `tools` plus the gate registry) | `kxm run` |
 
 Nothing validates `routes.yaml`, `roles/` (other than `writer.yaml`),
-`roles`, `roster.yaml`, `prices.yaml`, `inventory.yaml`,
+`roles`, `the role files`, `prices.yaml`, `inventory.yaml`,
 `config.yaml`, `modes.yaml`, memory, tasks, goals, or webhook JSON during
 `kxm init`. Their own readers report problems when they run. None of them are
 part of `configRevision`, and `kxm trust check` does not see them: a change to
@@ -147,7 +148,7 @@ makes a directory a KXM project. Parser: `loadKxmProject` in
 | `description` | String, at most 2,000 characters | Optional | Display only |
 | `defaultWorkflow` | Identifier | Optional, `default` | Loader only: the named workflow must exist (`default_workflow_unknown`). `kxm run` always takes an explicit workflow. |
 | `defaultExecutor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the run's executor-policy revision |
-| `defaultHarness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, `pi` | Loader (`harness_unknown`); harness for agents without `harness`; fallback harness for live dispatch |
+| `defaultHarness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, `pi` | Loader (`harness_unknown`); project default harness. An agent file does not set `harness`; that field is `retired_agent_routing_fields`. |
 | `repositories` | Array of 1 to 64 entries | Required | Loader, Runtime |
 | `repositories[].id` | Identifier | Required | Must be unique after case folding (`repository_id_collision`) |
 | `repositories[].role` | `control` or `member` | Required | Exactly one `control` (`control_repository_count`) |
@@ -322,15 +323,21 @@ One file per agent; the filename is the agent ID that workflow steps
 reference. Schema: `schemas/agent.schema.json`; semantic checks in
 `validateBundle` in `plugins/kxm/src/project-config.ts`.
 
+An agent does not name a harness or a model. Routing starts at the agent's
+`role`, continues through `.kxm/roles/<role>.yaml`, and uses the selected
+`.kxm/models/<route>.yaml`. `harness` and `model` on an agent file fail load
+with `retired_agent_routing_fields`.
+
 | Field | Type and allowed values | Required, default | What reads it |
 |---|---|---|---|
 | `schema` | `kxm.agent.v1` | Required | Loader |
 | `purpose` | String, 1 to 2,000 characters | Required | Display; neutral in `kxm trust` |
+| `role` | Identifier | Optional | Loader: `.kxm/roles/<role>.yaml`, then the selected `.kxm/models/<route>.yaml` |
+| `effort` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Optional | Recorded on the agent. Dispatch effort comes from the attempt, not this field. |
+| `skills` | Unique identifiers, at most 64 | Optional | Skill names granted to the agent |
 | `instructions` | String, at most 16,000 characters | Optional | Not read by any code path yet. Step `instructions` are what reach the prompt. |
-| `harness` | `pi`, `claude`, `codex`, `grok`, `agy`, `kimi`, or `deepseek` | Optional, the project's `defaultHarness` | Loader (`harness_unknown`, harness and model pairing); live dispatch launches this harness |
-| `model` | One selector: `{provider, model}`, `{profile}`, or `{tag, capabilities}` | Optional | See [Model selectors](#model-selectors) |
 | `executor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the executor-policy revision; no dispatch path selects an executor from it yet |
-| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`); pinned in the tool-policy revision |
+| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`): the preset must be registered. An agent `tools.preset` may only narrow the role preset. Enforcement of that rule is pending (P3). |
 | `tools.allow`, `tools.deny` | Unique identifiers, at most 128 each | Optional | A tool in both lists is `tool_policy_contradiction`; steps may only narrow the ceiling |
 | `defaultRepositoryAccess` | `none`, `read`, or `write` | Optional; the ceiling is `none` when absent | Loader: access ceiling for repositories not listed in `repositories` |
 | `repositories` | Map of repository ID to `none`, `read`, or `write`; at most 64 | Optional | Loader: per-repository access ceiling; IDs must be declared (`repository_unknown`) |
@@ -343,80 +350,24 @@ reference. Schema: `schemas/agent.schema.json`; semantic checks in
 | `session.maxIdleMs` | Integer, 0 to 31,536,000,000 | Optional | Not read by any code path yet |
 
 Tool presets are names checked against a registered list. The live one-shot
-producer launches each harness with a fixed argument set and does not
-translate `tools` into harness flags. A read-only step uses the read-only set
-(`READ_ONLY_ONESHOT_ARGS` in `plugins/kxm/src/harness.ts`). A step with `write`
-access uses the audited writer set (`WRITER_ONESHOT_ARGS`), which exists only
-for `pi` (`-a` with extensions, skills, prompt templates and sessions off) and
-`grok` (`--always-approve` with subagents and web search off). Both approve
-every tool call, shell commands included, and neither confines the process to
-the checkout. A live write step on any other harness is handed off; see
+producer launches the harness named by the selected model file, with a fixed
+argument set, and does not translate `tools` into harness flags. A read-only
+step uses the read-only set (`READ_ONLY_ONESHOT_ARGS` in
+`plugins/kxm/src/harness.ts`). A step with `write` access uses the audited
+writer set (`WRITER_ONESHOT_ARGS`), which exists only for `pi` (`-a` with
+extensions, skills, prompt templates and sessions off) and `grok`
+(`--always-approve` with subagents and web search off). Both approve every
+tool call, shell commands included, and neither confines the process to the
+checkout. A live write step on any other harness is handed off; see
 [Steps the Runtime does not execute yet](#steps-the-runtime-does-not-execute-yet).
 
-### Model selectors
-
-A selector has exactly one of three shapes (`common.schema.json#/$defs/modelSelector`):
-
-| Shape | Fields | Resolves to |
-|---|---|---|
-| Direct | `provider` (identifier), `model` (1 to 200 characters) | That provider and model. The route string is `provider/model`, for example `openrouter/qwen/qwen3-coder-plus`. |
-| Profile | `profile` (identifier) | `.kxm/models/<profile>.yaml` (`model_profile_unknown` if missing) |
-| Tag | `tag` (identifier), optional `capabilities` (identifiers) | Every profile carrying the tag and all listed capabilities (`model_tag_unresolved` if none) |
-
-For live dispatch, only the direct shape works. The Runtime reads the agent's
-`model.provider` and `model.model` and joins them into the route string; a
-profile or tag selector validates at load time but live dispatch refuses the
-step with `producer_route_unsupported: invalid model declaration`. An agent
-with no model is refused too, except that an agent named `implementer`
-without a model falls back to `xai/grok-4.6`.
-
-### Harness and model pairing
-
-The loader checks that the agent's harness can host its model, using
-`validateHarnessModelPair` in `plugins/kxm/src/harness.ts`. It applies this
-check only to models reached through a profile or tag selector. A direct
-`{provider, model}` selector is not checked at load time; the live producer
-checks it when it probes the harness before dispatch.
-
-| Harness | Accepts |
-|---|---|
-| `claude` | Provider `anthropic`; rejects model IDs starting with `gpt-`, `o1-`, `o3-`, `grok-`, `gemini-`, `kimi-`, `moonshot-`, `deepseek-`, or `qwen-` |
-| `codex` | Provider `openai`; rejects `claude-`, `fable-`, `grok-`, `gemini-`, `kimi-`, `moonshot-`, `deepseek-`, and `qwen-` models |
-| `grok` | Provider `xai` and `grok-` models |
-| `agy` | Provider `google` and `gemini-` models |
-| `kimi` | Provider `moonshot` and `kimi`, `moonshot`, or `kimi-for-coding` models |
-| `deepseek` | Provider `deepseek` and `deepseek-` models |
-| `pi` | Refuses a native vendor's model named directly, through the vendor's Pi provider or behind an aggregator, except `antigravity/gemini-…` (`pi_native_impersonation_blocked`); see [the brake](harness-routing.md#what-the-brake-refuses) |
-
-A mismatch is reported as `harness_unhosted_model`. Which route to choose for a
-model that more than one harness can reach is covered in
-[Harness routing](harness-routing.md).
-
-### Live dispatch requirements
-
-Before a live attempt, the Runtime (`resolveProducerRoute` in
-`plugins/kxm/src/engine.ts`) requires all of the following. A failure hands the
-run off with `step_unsupported` and a `producer_route_unsupported` detail.
-
-1. The agent declares a direct `{provider, model}` selector (see above).
-2. `provider/model` is listed in `.kxm/routes.yaml` `admitted` and not in
-   `disabled`.
-3. If `.kxm/roles/<role>.yaml` exists, its roster contains exactly
-   `provider/model`. The role is the agent ID, except that agent
-   `implementer` maps to role `writer`.
-
-Example (validated with `kxm init --json`):
+Example (the shape `kxm init` writes for `implementer`):
 
 ```yaml
-# .kxm/agents/implementer.yaml — the filename is the agent id.
+# .kxm/agents/implementer.yaml. The filename is the agent id.
 schema: kxm.agent.v1
 purpose: Implement the approved change within the declared repository scope.
-instructions: Keep changes inside the files named by the approved plan.
-harness: grok                     # pi | claude | codex | grok | agy | kimi | deepseek
-model:                            # direct selector: provider + model
-  provider: xai
-  model: grok-4.6
-executor: local                   # local | ssh | exe-dev
+role: writer                      # .kxm/roles/writer.yaml -> .kxm/models/<route>.yaml
 tools:
   preset: workspace-writer        # coordinator | read-only | workspace-writer | tests-writer
   allow: [read, edit, write, bash]
@@ -424,47 +375,26 @@ tools:
 defaultRepositoryAccess: none     # ceiling for repositories not listed below
 repositories:
   control: write
-  api: write
 secrets:
   - ref: npm-token                # secret reference name
     as: NPM_TOKEN                 # environment variable name inside the attempt
     required: false
 network: provider-only            # none | provider-only | restricted | host
 resultSchema: kxm.assignment-result.v1
-session:
-  reuse: compatible-run-scope
-  maxIdleMs: 1800000
 ```
 
-A critic that uses a profile selector:
+`kxm init` creates `coordinator` (`role: planner`) and `implementer`
+(`role: writer`) without `harness` or `model`, and admits `anthropic/fable`
+and `xai/grok-4.6` in `.kxm/routes.yaml`. An interactive `kxm init` can add
+workflow-guide agents for reviewed pairs whose harness is authenticated, and
+admits their selectors too, but skips Google guide candidates because the
+Runtime cannot reach the `antigravity` Pi provider yet. `kxm run` and the
+Runtime read the agents. `kxm trust` diffs them.
 
-```yaml
-schema: kxm.agent.v1
-purpose: Architecture critic for the approved change.
-harness: claude
-model:
-  profile: critic-claude          # profile selector: .kxm/models/critic-claude.yaml
-tools:
-  preset: read-only
-defaultRepositoryAccess: read
-network: provider-only
-resultSchema: kxm.assignment-result.v1
-```
-
-Error codes: `executor_unknown`, `harness_unknown`, `tool_preset_unknown`,
-`tool_policy_contradiction`, `repository_unknown`, `model_profile_unknown`,
-`model_tag_unresolved`, `harness_unhosted_model`,
-`pi_native_impersonation_blocked`, the path codes under
-[Rules shared by the project bundle](#rules-shared-by-the-project-bundle), and
-`role_roster_conflicts_with_agent` (see [Roles](#kxmrolesroleyaml-kxmrolev2)).
-
-Commands: `kxm init` creates `coordinator` (`claude`, `anthropic/fable`) and
-`implementer` (`grok`, `xai/grok-4.6`) and admits both selectors in
-`.kxm/routes.yaml`; an interactive `kxm init` can add workflow-guide agents for
-reviewed harness/model pairs whose harness is authenticated, and admits their
-selectors too, but skips Google guide candidates because the Runtime cannot
-reach the `antigravity` Pi provider yet; `kxm run` and the Runtime read them;
-`kxm trust` diffs them.
+Error codes: `retired_agent_routing_fields`, `executor_unknown`,
+`tool_preset_unknown`, `tool_policy_contradiction`, `repository_unknown`, and
+the path codes under
+[Rules shared by the project bundle](#rules-shared-by-the-project-bundle).
 
 ## `.kxm/models/<id>.yaml` (`kxm.model.v2`)
 
@@ -503,11 +433,11 @@ status: admitted
 permissions:
   - edit
 origin:
-  source: .kxm/roster.yaml
-  sha256: b2bd628604e8fec5afdff2a1f2c104ed14ff785686bb1f38272bc972a310c806
+  source: docs/reference/harness-routing.md
+  sha256: 321c821ed6dbce7b2e98309fdc29387671577049619b6979c685a7ba60c63337
 ```
 
-Commands: `kxm init`, `kxm run`, and `kxm trust` load these files. `kxm role modify --add-route` refuses a route id that has no file here (exit 1). Dispatch membership for a role reads `harness`, `model`, and `vendor`. The developer assignment runner still reads `.kxm/roster.yaml` until P2.
+Commands: `kxm init`, `kxm run`, and `kxm trust` load these files. `kxm role modify --add-route` refuses a route id that has no file here (exit 1). Dispatch membership for a role reads `harness`, `model`, and `vendor`. The developer assignment runner reads `.kxm/roles/*.yaml` and `.kxm/models/*.yaml` at `refs/remotes/origin/main`.
 
 ## `.kxm/workflows/<id>.yaml` (`kxm.workflow.v1`)
 
@@ -695,9 +625,8 @@ these, the run is handed off (`step_unsupported`, `gate_unsupported`, or
 - A live (non-simulated) step with `write` access to any repository when its
   agent's harness has no audited writer profile (only `pi` and `grok` have
   one), when `assignments.maximum` is above 1, when the project's
-  `limits.maxConcurrentRuns` is above 1, or when `.kxm/roster.yaml` exists and
-  is not a `kxm.developer-roster.v1` whose writer lineup admits that harness
-  and model with `edit` permission. The checkout witness can attribute a
+  `limits.maxConcurrentRuns` is above 1, or when `.kxm/roles/writer.yaml` does not
+  admit that route with `edit` permission. The checkout witness can attribute a
   change only to one writer at a time.
 - Gate steps with `assignments.allowedAgents`, any assignment count or
   `maxAttemptsPerAssignment` other than 1, `distinctBy`,
@@ -965,12 +894,10 @@ not this registry.
 One role. The filename is the role id. `kxm config` validation checks the file
 against `schemas/role.schema.json`.
 
-`listRoleBindings` reads `roster[].route`. Dispatch treats `implementer` as
-`writer` and requires the agent selector to be one of the selectors named by
-those route files (`model`, `vendor/model`, or `harness/model`). The writer
-cross-check (`role_roster_conflicts_with_agent`) does the same comparison
-against the `implementer` agent's model, or the `writer` agent when there is
-no implementer. `kxm role` reads and writes these files. A file without
+`listRoleBindings` reads `roster[].route`. An agent binds `role`, and dispatch
+resolves harness, model, and effort from that role's roster and the matching
+`.kxm/models/<route-id>.yaml` (`model`, `vendor/model`, or `harness/model`).
+`kxm role` reads and writes these files. A file without
 `schema: kxm.role.v2` is skipped by `kxm role`. A local file overrides a
 global one with the same id.
 
@@ -992,9 +919,10 @@ global one with the same id.
 | `policy.vendorIndependenceRequired`, `policy.maxTransitions`, `policy.requiresGateVerification` | Boolean, or a positive integer for `maxTransitions` | Optional | Recorded on the role |
 
 Roster order is preference. `kxm role list` shows the first route as the
-primary. The Runtime checks membership. The model that runs still comes from
-the agent file. The developer assignment runner still reads `.kxm/roster.yaml`
-until P2.
+primary. The Runtime checks membership. Harness, model, and effort resolve
+from the agent's `role` roster and that route's `.kxm/models/<route-id>.yaml`,
+never from the agent file. The developer assignment runner reads
+`.kxm/roles/*.yaml` and `.kxm/models/*.yaml` at `refs/remotes/origin/main`.
 
 ```yaml
 schema: kxm.role.v2
@@ -1029,11 +957,10 @@ unknown keys are ignored).
 | `schema` | `kxm.routes.v2` | Required | Anything else fails with `invalid .kxm/routes.yaml` |
 | `admitted` | Array of route strings | Required | Runtime route check; `kxm routes list`, `kxm routes count`; `kxm models` |
 | `disabled` | Array of route strings | Optional, `[]` | Runtime: a disabled route is refused even if admitted |
-| `roles` | Map of name to route strings | Optional, `{}` | Not read by any code path yet; shown only by `kxm routes list --json`, and preserved on rewrite. Role rosters live in `.kxm/roles/` |
 | `updatedAt` | ISO timestamp string | Optional | Rewritten by every CLI change |
 
-A route string is exactly the agent's `model.provider`, a slash, and
-`model.model`: `xai/grok-4.6`, `anthropic/fable`,
+A route string is derived from the selected model file's `vendor` and
+`model`, joined by a slash: `xai/grok-4.6`, `anthropic/fable`,
 `openrouter/qwen/qwen3-coder-plus`. When the file is missing, nothing is
 admitted and every live attempt is refused (`producer_route_unsupported`, or
 `producer_route_not_admitted` from the live producer). A leftover
@@ -1057,31 +984,29 @@ admitted:
   - xai/grok-4.6
   - openrouter/qwen/qwen3-coder-plus
 disabled: []
-roles:
-  implementer:
-    - xai/grok-4.6
 ```
 
-Validated with `kxm routes list --json` and `kxm routes count --json`.
+Validated with `kxm routes list --json` and `kxm routes count --json`. `policy` has `admitted` and `disabled`. Membership comes from `.kxm/roles/*.yaml`, not from this file.
 
 Commands: `kxm routes list|count|admit|disable` (`--dry-run` supported for
 changes), `kxm models` (interactive), the Runtime, and the live producer.
 Route changes are not part of `configRevision` and `kxm trust check` does not
 report them; review them in the pull request diff.
 
-## `.kxm/roster.yaml` (`kxm.developer-roster.v1`)
+## Developer assignment policy
 
-The developer roster for `scripts/assignment-run.mjs` (the `just` assignment
-recipes; see [Assignment runner](../contributing/assignment-runner.md)). It applies to the KXM
-source repository itself: the loader in `scripts/roster-policy.mjs` reads the
-copy committed at `HEAD` of the repository that contains the script, and
-refuses unless the worktree is clean, `HEAD` is an ancestor of
-`origin/main`, and the working file is byte-identical to the committed one.
-It has no dispatch authority in the project Runtime.
+The developer roster for `scripts/assignment-run.mjs` (`kxm assign`; see
+[Assignment runner](../contributing/assignment-runner.md)). It applies to the KXM
+source repository itself: the loader in `scripts/roster-policy.mjs` reads
+`.kxm/roles/*.yaml` and `.kxm/models/*.yaml` committed at `HEAD` of the
+repository that contains the script, and refuses unless the worktree is clean,
+`HEAD` is an ancestor of `origin/main`, and each working file is byte-identical
+to the committed one. It has no dispatch authority in the project Runtime.
+The assembled object has `routes`, `lineup`, `required_critics`, and `model_origins`.
 
 | Field | Type and allowed values | Notes |
 |---|---|---|
-| `schema` | `kxm.developer-roster.v1` | The five top-level keys are all required and no others are allowed |
+| source files | `.kxm/roles/*.yaml` (`kxm.role.v2`), `.kxm/models/*.yaml` (`kxm.model.v2`) | The loader assembles the object below from these files |
 | `routes.<id>` | Route ID matching `^[a-z0-9]+(?:-[a-z0-9]+)*$` | At least one route |
 | `routes.<id>.harness` | `grok`, `agy`, `claude`, `codex`, or `pi` | Other harnesses are refused (`unsupported harness`) |
 | `routes.<id>.model` | Token without whitespace | Native harnesses: a bare model ID. Pi: `openrouter/<vendor>/<model>`, `nous-portal/<vendor>/<model>`, or `antigravity/gemini-<id>` |
@@ -1101,8 +1026,7 @@ only`, `Pi critic/planner cannot edit`, `writer and critics must have
 independent vendors`, and `retired .kxm/roster.json present`.
 
 ```yaml
-# .kxm/roster.yaml — developer roster policy for scripts/assignment-run.mjs.
-schema: kxm.developer-roster.v1
+# Assembled by scripts/roster-policy.mjs from .kxm/roles/*.yaml and .kxm/models/*.yaml.
 routes:
   grok-native:                  # route id: lowercase words joined by "-"
     harness: grok
@@ -1133,7 +1057,7 @@ routes:
     permissions: [read-only]
     status: admitted
 lineup:                         # routes admitted for each role
-  writer: [grok-native, qwen-openrouter-pi]
+  writer: [grok-native, qwen-openrouter-pi, gemini-agy]
   planner: [fable-claude]
   reviewer-arch: [fable-claude]
   reviewer-cli: [sol-codex]
@@ -1691,7 +1615,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | Path | Group | Written by |
 |---|---|---|
 | `project.yaml`, `repo/`, `project/env.yaml`, `agents/`, `models/*.yaml` (except `inventory.yaml`), `workflows/`, `gates.yaml`, `template-provenance.yaml` | Tracked configuration (the bundle) | You and `kxm init` |
-| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `roster.yaml` | Tracked configuration outside the bundle | You and their commands |
+| `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `the role files` | Tracked configuration outside the bundle | You and their commands |
 | `config.yaml` | Tracked if the project wants shared preferences; otherwise ignore it | `kxm config set` |
 | `memory/`, `skills/`, `candidates/`, `goals/` | Tracked durable records | Their commands |
 | `models/inventory.yaml` | Generated; track it if you want a reviewed snapshot | `kxm models inventory-refresh` |
@@ -1886,7 +1810,6 @@ updatedAt: '2026-09-23T00:00:00.000Z'
 admitted:
   - xai/grok-4.6
 disabled: []
-roles: {}
 ```
 
 Why each piece is there:
@@ -1902,8 +1825,8 @@ Why each piece is there:
   without a writable repository.
 - The workflow omits `limits.maxAgentTimeMs`; with it, the Runtime refuses to
   drive the run.
-- There is no `.kxm/roles/writer.yaml`. If you add one, it must list
-  `xai/grok-4.6`, or the loader reports `role_roster_conflicts_with_agent`.
+- `kxm init` writes `.kxm/roles/writer.yaml`. The role file is the writer
+  roster. An agent model is not checked against it.
 
 Validate and run it:
 

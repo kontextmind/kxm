@@ -1,9 +1,6 @@
 schema: kxm.agent.v1
 purpose: CLI and verification critic for the approved workflow change.
-harness: codex
-model:
-  provider: openai
-  model: gpt-5.6-sol
+role: reviewer-cli
 tools:
   preset: read-only
 defaultRepositoryAccess: read

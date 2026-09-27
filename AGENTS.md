@@ -77,7 +77,7 @@ attribute` and `just observe-cost` keep private history without editing
 list estimates, unmetered, unknown, partial data, all attempts, and explicit
 exclusions. Root bootstrap costs remain unknown and are recorded as
 cost-only. Public PR/CI ids are observations, not success proof. Low-level
-`just impl|plan|review-arch|review-cli` recipes are harness transport only;
+One-step workflows (`kxm lane run`) are harness transport only;
 they do not mint assignment, witness, or acceptance proof.
 
 Evidence-informed **effort defaults** (not a ranking, not a catalog): medium
@@ -151,7 +151,7 @@ Harness default is **Pi** (omit `harness:` in YAML). Other CLIs are opt-in on th
 Use a slim path: plan → implement → verify. Do **not** run the 13-stage `/fix`
 for setup or docs. Dual-critic `/fix` is Phase 7. For this repo's issue 127
 runner, that slim path is assignment → witness → (attribute/observe-cost as
-needed) → accept, not a scratch `just impl` call.
+needed) → accept, not a scratch lane transport call.
 
 The operator's standing instructions live in
 [`docs/contributing/operating-rules.md`](docs/contributing/operating-rules.md);

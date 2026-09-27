@@ -114,6 +114,7 @@ cmdBackup,
   cmdRouteChange,
   cmdModelsScreen,
   cmdRouteList,
+  cmdVisionAssert,
   cmdRouteCount,
   cmdModelInventoryRefresh,
   cmdKxmRuntime,
@@ -674,6 +675,16 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
   for (const status of ["admit", "disable"] as const) {
     addGlobalOptions(routesCmd.command(status).description(`${status === "admit" ? "Admit" : "Disable"} a model route from the inventory`)).option("--model <id>", "Exact model id; omit to choose interactively").action(async function routeChangeAction(this: Command, options: { model?: string }) { result.code = await cmdRouteChange(runtimeFrom(ctx, this), status === "admit" ? "admitted" : "disabled", options.model); });
   }
+
+  const visionCmd = addGlobalOptions(program.command("vision").description("Judge captured UI screenshots through the admitted vision gate"));
+  visionCmd.helpCommand("help", "Show vision help");
+  addGlobalOptions(visionCmd.command("assert").description("Assert a UI state on a screenshot (deterministic vision gate)"))
+    .requiredOption("--image <path>", "Path to the captured screenshot")
+    .requiredOption("--question <text>", "Yes/no assertion to verify on the screenshot")
+    .option("--route <id>", `Vision route (default ${"zai-coding-cn/glm-5.3-flash"})`)
+    .option("--timeout-ms <n>", "Transport timeout in milliseconds (5000-300000)")
+    .option("--expect <bool>", "Exit 0 only when the verdict matches true|false")
+    .action(async function visionAssertAction(this: Command, options: { image?: string; question?: string; route?: string; timeoutMs?: string; expect?: string }) { result.code = await cmdVisionAssert(runtimeFrom(ctx, this), options ?? {}); });
 
   const harnessCmd = addGlobalOptions(program.command("harness").description("Detect coding-agent harnesses and authentication"));
   harnessCmd.helpCommand("help", "Show harness help");

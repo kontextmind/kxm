@@ -1,7 +1,6 @@
 schema: kxm.agent.v1
 purpose: Coordinate the pinned workflow and emit only schema-validated commands.
-model:
-  profile: primary
+role: planner
 tools:
   preset: coordinator
 defaultRepositoryAccess: read

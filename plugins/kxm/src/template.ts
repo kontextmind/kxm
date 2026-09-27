@@ -175,21 +175,9 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
   ]);
   if (variant === "v4-registry") {
     const coordinator = files.get(".kxm/agents/coordinator.yaml");
-    if (coordinator) {
-      files.set(".kxm/agents/coordinator.yaml", {
-        ...coordinator,
-        harness: "claude",
-        model: { provider: "anthropic", model: "fable" },
-      });
-    }
+    if (coordinator) files.set(".kxm/agents/coordinator.yaml", { ...coordinator, role: "planner" });
     const implementer = files.get(".kxm/agents/implementer.yaml");
-    if (implementer) {
-      files.set(".kxm/agents/implementer.yaml", {
-        ...implementer,
-        harness: "grok",
-        model: { provider: "xai", model: "grok-4.6" },
-      });
-    }
+    if (implementer) files.set(".kxm/agents/implementer.yaml", { ...implementer, role: "writer" });
     const workflow = files.get(".kxm/workflows/default.yaml");
     if (workflow) {
       const limits = { ...(workflow.limits as JsonObject) };

@@ -321,8 +321,8 @@ test("fresh template names admitted harnesses; omitted harness still loads; unkn
     initializeKxmProject(root, { projectId: "prj_01JHARNESSTEST00000000000", projectName: "Harness", localStateRoot: stateRoot });
     const bundle = loadKxmProject(root);
     assert.equal(bundle.project.value.defaultHarness, "pi");
-    assert.equal(bundle.agents.get("implementer")?.value.harness, "grok");
-    assert.equal(bundle.agents.get("coordinator")?.value.harness, "claude");
+    assert.equal(bundle.agents.get("implementer")?.value.role, "writer");
+    assert.equal(bundle.agents.get("coordinator")?.value.role, "planner");
     writeFileSync(join(root, ".kxm", "agents", "coordinator.yaml"), [
       "schema: kxm.agent.v1",
       "purpose: Coordinate the pinned workflow and emit schema-validated commands.",
@@ -351,7 +351,7 @@ test("fresh template names admitted harnesses; omitted harness still loads; unkn
       "resultSchema: kxm.assignment-result.v1",
       "",
     ].join("\n"));
-    assert.throws(() => loadKxmProject(root), (error: unknown) => error instanceof KxmConfigError && error.issues.some((issue) => issue.code === "harness_unknown"));
+    assert.throws(() => loadKxmProject(root), (error: unknown) => error instanceof KxmConfigError && error.issues.some((issue) => issue.code === "retired_agent_routing_fields"));
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
@@ -761,8 +761,8 @@ test("config with a Grok model under harness claude is rejected at validation", 
     makeGitRoot(join(root, "repositories", "api"));
     makeGitRoot(join(root, "repositories", "web"));
     const agentFile = join(root, ".kxm", "agents", "critic-2.yaml");
-    writeFileSync(agentFile, `${readFileSync(agentFile, "utf8").trimEnd()}\nharness: claude\n`);
-    assert.throws(() => loadKxmProject(root), (error: unknown) => issueCodes(error).includes("harness_unhosted_model"));
+    writeFileSync(agentFile, `${readFileSync(agentFile, "utf8").trimEnd()}\nharness: claude\nmodel:\n  profile: critic-grok\n`);
+    assert.throws(() => loadKxmProject(root), (error: unknown) => issueCodes(error).includes("retired_agent_routing_fields"));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -7,7 +7,6 @@ export interface RosterRoute {
   readonly status: 'admitted' | 'retired';
 }
 export interface RosterPolicy {
-  readonly schema: 'kxm.developer-roster.v1';
   readonly routes: Readonly<Record<string, RosterRoute>>;
   readonly lineup: Readonly<Record<string, readonly string[]>>;
   readonly required_critics: Readonly<Record<'review-arch' | 'review-cli', string>>;
@@ -15,9 +14,11 @@ export interface RosterPolicy {
 }
 export interface PolicyIdentity { readonly commit: string; readonly blob: string; readonly sha256: string }
 export interface LoadedPolicy { readonly identity: PolicyIdentity; readonly policy: RosterPolicy }
+export function refuseRetiredRosterFile(root: string): void;
 export function loadTrustedRosterPolicy(): LoadedPolicy;
 export function resolveBoundPolicy(identity: PolicyIdentity): LoadedPolicy;
 export function canonicalVendor(value: string): string;
+export function assembleRosterPolicy(models: readonly Record<string, unknown>[], roles: readonly Record<string, unknown>[]): RosterPolicy;
 export function validateRosterDocument(
   policy: RosterPolicy,
   readBlob: (source: string) => string | Uint8Array | null | undefined,

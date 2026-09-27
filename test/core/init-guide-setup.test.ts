@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   planGuideSetup,
   mergeGuideRouteAdmission,
   renderGuideSetupFiles,
+  type GuideSetupPlan,
   resolveCandidate,
   writeGuideSetupFiles,
 } from "../../plugins/kxm/src/init-guide-setup.ts";
@@ -183,12 +184,14 @@ test("rendered files load as a valid KXM project bundle", () => {
     const report = writeGuideSetupFiles(files);
     assert.equal(report.existed.length, 0);
     assert.equal(report.written.length, files.length);
+    assert.equal(existsSync(join(root, "plans", "evidence", "route-guide-qwen-pi.md")), true);
 
     const bundle = loadKxmProject(root);
     assert.equal(bundle.agents.has("lead-systems-planner"), true);
-    const lead = bundle.agents.get("lead-systems-planner")?.value as { model?: { provider?: string; model?: string } };
-    assert.equal(lead.model?.provider, "anthropic");
-    assert.equal(lead.model?.model, "fable");
+    const lead = bundle.agents.get("lead-systems-planner")?.value as { role?: string; harness?: unknown; model?: unknown };
+    assert.equal(lead.role, "lead-systems-planner");
+    assert.equal(lead.harness, undefined);
+    assert.equal(lead.model, undefined);
 
     const workflow = bundle.workflows.get("build-feature");
     const workflowValue = workflow?.value as { steps?: unknown[] } | undefined;
@@ -225,37 +228,62 @@ test("writeGuideSetupFiles never overwrites existing files", () => {
   }
 });
 
-test("Pi guide models hash .kxm/project.yaml and omit origin when that file is absent", () => {
+test("guided init omits a Pi model file when the binding disagrees with the evidence note", () => {
+  const workflow = GUIDE_WORKFLOWS.find((entry) => entry.slug === "build-feature");
+  assert.ok(workflow);
+  const plan: GuideSetupPlan = {
+    agents: new Map([
+      ["scaffold-build-specialist", { harness: "pi", provider: "openrouter", model: "not-the-noted-model" }],
+    ]),
+    workflows: [workflow],
+    skipped: [],
+  };
+  const files = renderGuideSetupFiles(join("/tmp", "guide-mismatch"), plan);
+  assert.equal(files.some((file) => file.path.endsWith(join("models", "scaffold-build-specialist.yaml"))), false);
+  assert.equal(files.some((file) => file.path.endsWith("route-guide-qwen-pi.md")), false);
+  assert.equal(files.some((file) => file.content.includes("sha256:")), false);
+});
+
+test("Pi guide models pin origin to the immutable evidence note", () => {
   const plan = planGuideSetup({ inventory: inventory(["claude", "grok", "pi"]), selected: ["build-feature"] });
-  const piBindings = [...plan.agents.values()].filter((binding) => binding.harness === "pi");
-  assert.ok(piBindings.length > 0);
-  const piModels = (root: string) => renderGuideSetupFiles(root, plan).filter((file) => file.path.endsWith(".yaml") && file.path.includes(`${join("models", "")}`) && file.content.includes("harness: pi"));
+  const evidence = "plans/evidence/route-guide-qwen-pi.md";
+  const digest = createHash("sha256").update(readFileSync(evidence)).digest("hex");
+  const piModels = (root: string) => renderGuideSetupFiles(root, plan).filter((file) => file.path.includes(`${join("models", "")}`) && file.content.includes("harness: pi"));
+  const assertPinned = (root: string) => {
+    const files = piModels(root);
+    assert.ok(files.length > 0);
+    for (const file of files) {
+      assert.match(file.content, /source: plans\/evidence\/route-guide-qwen-pi\.md/);
+      assert.match(file.content, new RegExp(digest));
+      assert.equal(file.content.includes(".kxm/project.yaml"), false);
+    }
+  };
   const bare = mkdtempSync(join(tmpdir(), "kxm-guide-origin-bare-"));
   try {
-    const without = piModels(bare);
-    assert.ok(without.length > 0);
-    for (const file of without) assert.equal(file.content.includes("origin:"), false, file.path);
+    assertPinned(bare);
   } finally {
     rmSync(bare, { recursive: true, force: true });
   }
   const root = mkdtempSync(join(tmpdir(), "kxm-guide-origin-"));
   try {
-    const projectYaml = join(root, ".kxm", "project.yaml");
     mkdirSync(join(root, ".kxm"), { recursive: true });
-    writeFileSync(projectYaml, "schema: kxm.project.v1\nid: guide-origin\n");
-    const digest = createHash("sha256").update(readFileSync(projectYaml)).digest("hex");
-    const withOrigin = piModels(root);
-    assert.ok(withOrigin.length > 0);
-    for (const file of withOrigin) {
-      assert.match(file.content, /source: \.kxm\/project\.yaml/);
-      assert.match(file.content, new RegExp(digest));
-      for (const binding of piBindings) {
-        const invented = createHash("sha256").update(`${binding.provider}/${binding.model}`).digest("hex");
-        assert.equal(file.content.includes(invented), false);
-      }
-    }
+    writeFileSync(join(root, ".kxm", "project.yaml"), "schema: kxm.project.v1\nid: guide-origin\n");
+    assertPinned(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("generated init-guide agents carry role and no harness or model", () => {
+  const plan = planGuideSetup({ inventory: inventory(["claude", "grok", "pi"]), selected: ["build-feature"] });
+  const files = renderGuideSetupFiles(join("/tmp", "unused"), plan).filter((file) => file.path.includes(`${join("agents", "")}`));
+  assert.ok(files.length > 0);
+  for (const file of files) {
+    const doc = parse(file.content) as { role?: string; harness?: unknown; model?: unknown };
+    assert.equal(typeof doc.role, "string");
+    assert.ok(doc.role && doc.role.length > 0);
+    assert.equal(doc.harness, undefined);
+    assert.equal(doc.model, undefined);
   }
 });
 

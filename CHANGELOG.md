@@ -6,6 +6,8 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Playwright uses Obscura by default.** `resolveBrowserCdpEndpoint()` returns `OBSCURA_CDP_URL` or `http://127.0.0.1:${OBSCURA_PORT:-9222}`. `KXM_BROWSER=steel` still returns the Steel session CDP URL. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it with `--allow-private-network`. `npm run e2e` runs the Playwright smoke test in `test/e2e/` over CDP and does not run `playwright install`. Steel remains the path for human takeover, MFA, and the live session viewer. See [ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md) and [How do I connect Playwright to Obscura?](docs/kb/how-to-connect-playwright-to-obscura.md).
+
 - **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**
   The bound is the step `timeoutMs`, or the project `limits.agentStepTimeoutMs`
   when the step omits it (minimum 60 seconds, default one hour). A wider step
@@ -138,6 +140,28 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Steel clients authenticate to Authentik with `Authorization: Basic`.**
+  `STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, set that
+  header on Steel HTTP requests and on the CDP options from `formatCDPConnect()`.
+  `KXM_BROWSER=steel` passes those headers through `connectBrowserOverCdp()`
+  into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
+  headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
+  those variables are set. A 302 to the identity provider fails closed and does
+  not follow the login redirect. `STEEL_API_KEY` still sends the legacy
+  `x-steel-api-key` header and `apiKey` query parameter for the temporary proxy
+  shim, and warns once. See
+  [Browser automation](docs/guides/browser-automation.md).
+- **Dispatch reads role and model files, and agents bind a role.**
+  `scripts/roster-policy.mjs` builds the developer policy from
+  `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.
+  The engine resolves harness, model, and effort from the agent's `role`
+  and that role's roster. A step `model` does not override that route.
+  `kxm routes` prints `policy` (`admitted`, `disabled`) and `membership`
+  from the role files. `.kxm/routes.yaml` keeps admitted and disabled
+  selectors. `reviewer-arch` resolves to `fable-claude`. `opus-claude` is
+  admitted and named by no roster, so it is absent from `routes` and the
+  lineups. `gemini-agy` is in the writer lineup. An agent `tools.preset`
+  may only narrow its role preset; that rule is recorded and enforced in P3.
 - **Role and model files are live `kxm.role.v2` and `kxm.model.v2`.**
   `schemas/role.schema.json` and `schemas/model.schema.json` are the files
   `kxm config` validates. Each admitted roster route is a
@@ -153,7 +177,9 @@ All notable user-facing changes are documented here. The project follows [Semant
   in the developer ceilings or the harness inventory can dispatch them:
   `zai-coding-cn/glm-5.3-flash`, `qwen-token-plan/qwen3.8-flash`,
   `qwen-token-plan/qwen3.8-max`, and `zai-coding-cn/glm-5.3`.
-  Dispatch still reads `.kxm/roster.yaml` until P2.
+  Dispatch resolves harness, provider, model, and effort from the role roster.
+  A live request with no harness is refused. A roster entry with no effort
+  leaves thinking unset.
 
 - **Usage errors under `--json` print a `usage_error` envelope and exit 2.**
   A missing required option, unknown command, or other Commander usage error
@@ -418,6 +444,14 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Removed
 
+- **The developer roster file and the transport just recipes.**
+  The single roster document and the `impl`, `plan`, `review-arch`,
+  `review-cli`, `impl-bg`, and `dispatch` recipes are gone. One-step
+  workflows are the transport: `kxm lane run <unit> --brief <file> --workflow implement-only`,
+  and the same command with `review-arch-only` or `review-cli-only`.
+  Transfer policy from `.kxm/roster.yaml` to the role and model files and
+  delete the retired roster before running KXM. KXM refuses a leftover
+  `.kxm/roster.yaml`.
 - **`.kxm/template-provenance.yaml` was removed from this project, a repository
   change rather than a product change,** because the installed kxm no longer
   recognizes its recorded revision and a project without the file validates as
@@ -425,6 +459,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **`kxm vision` is owned by the browser-verify skill.** `plugins/kxm/skill-suite.json` lists `vision` on `kxm-browser-verify`, the skill that already teaches `kxm vision assert`.
 - **The test suite no longer passes `--test-timeout`.** Under `node --test` that flag bounds each file, so coverage on CI timed out `test/core/engine.test.ts` at three minutes. The wall clock in `scripts/run-bounded.mjs` still bounds each script.
 - **A git worktree lane registers under its project.** The Runtime registry
   keeps the home row and adds the lane as its own control root and event

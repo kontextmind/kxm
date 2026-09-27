@@ -938,7 +938,7 @@ test("task run refuses unavailable live work before mutation and honors an execu
       assert.equal(failure.error, "run_execution_unavailable");
       assert.equal(failure.defaultHarness, "claude");
       assert.equal(failure.execution.status, "not_started");
-      assert(failure.execution.prerequisites.some((item) => item.field === "harness" && item.detail.includes("claude") && item.detail.includes("edit")));
+      assert(failure.execution.prerequisites.some((item) => item.field === "gates.test.argv" && item.detail.includes(".kxm/gates.yaml")));
       assert(failure.execution.prerequisites.some((item) => item.field === "gates.test.argv" && item.detail.includes(".kxm/gates.yaml")));
       assert.equal(readFileSync(taskFilePath(cwd, task.id), "utf8"), taskBefore);
     }
@@ -953,10 +953,14 @@ test("task run refuses unavailable live work before mutation and honors an execu
         on: { passed: { target: "$terminal", terminalStatus: "completed" }, failed: { target: "$terminal", terminalStatus: "failed" } },
       }],
     }));
-    rmSync(join(cwd, ".kxm", "roles", "writer.yaml"), { force: true });
+    writeFileSync(join(cwd, ".kxm", "models", "inspect-route.yaml"), stringify({
+      schema: "kxm.model.v2", id: "inspect-route", harness: "claude", model: "claude-sonnet-4-6", vendor: "anthropic", status: "admitted", permissions: ["read-only"],
+    }));
+    writeFileSync(join(cwd, ".kxm", "roles", "writer.yaml"), stringify({
+      schema: "kxm.role.v2", id: "writer", purpose: "writer", permission: "edit", description: "Inspect route.", roster: [{ route: "inspect-route" }],
+    }));
     writeFileSync(join(cwd, ".kxm", "agents", "implementer.yaml"), stringify({
-      schema: "kxm.agent.v1", purpose: "Inspect the issue", repositories: { control: "write" },
-      model: { provider: "anthropic", model: "claude-sonnet-4-6" },
+      schema: "kxm.agent.v1", purpose: "Inspect the issue", role: "writer", repositories: { control: "write" },
     }));
     writeFileSync(join(cwd, ".kxm", "routes.yaml"), stringify({
       schema: "kxm.routes.v2", admitted: ["anthropic/claude-sonnet-4-6"], disabled: [], roles: {},

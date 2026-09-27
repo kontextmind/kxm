@@ -21,6 +21,7 @@ import {
   listInventoryModels,
   listRoleBindings,
   loadRoutePolicy,
+  rolesForInventoryModel,
 } from "../../plugins/kxm/src/routes.ts";
 import { removeTempDir } from "../helpers.ts";
 
@@ -101,6 +102,9 @@ test("runtime handle counts and producer inventory helpers stay fail-closed", ()
     writeFileSync(join(root, ".kxm", "models", "inventory.yaml"), "models:\n  - id: grok-4.6\n", "utf8");
     assert.deepEqual(listRoleBindings(root).writer, ["grok-native"]);
     assert.deepEqual(listInventoryModels(root), ["grok-4.6"]);
+    writeFileSync(join(root, ".kxm", "models", "grok-native.yaml"), "schema: kxm.model.v2\nid: grok-native\nvendor: xai\nmodel: grok-4.6\nharness: grok\n", "utf8");
+    assert.deepEqual(rolesForInventoryModel(root, "xai/grok-4.6"), ["writer"]);
+    assert.deepEqual(rolesForInventoryModel(root, "grok-4.6"), ["writer"]);
   } finally {
     removeTempDir(root);
   }

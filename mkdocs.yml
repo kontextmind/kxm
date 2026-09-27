@@ -85,7 +85,9 @@ nav:
       - Cross-host: roadmap/phases/06-cross-host.md
       - Workflow modes: roadmap/phases/07-workflow-modes.md
       - Usage and cost: roadmap/phases/08-usage-cost.md
-      - Still open: roadmap/phases/09-still-open.md
+      - Bare kxm first run: roadmap/phases/09-harness-first-run.md
+      - Studio screens for the shared hub: roadmap/phases/10-studio-cloud-host.md
+      - Still open: roadmap/phases/11-still-open.md
   - Architecture:
       - architecture/index.md
       - Platform: architecture/platform.md
@@ -158,6 +160,7 @@ nav:
           - Browser automation: adr/ADR-0002-browser-automation-steel-doks.md
           - SQLite only store: adr/ADR-0003-sqlite-only-store.md
           - Edge identity: adr/ADR-0004-edge-identity-authentik.md
+          - Obscura for Playwright: adr/ADR-0005-obscura-default-playwright.md
   - Contributing:
       - Assignment runner: contributing/assignment-runner.md
       - CI and release: contributing/ci-and-release.md

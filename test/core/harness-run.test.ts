@@ -1467,7 +1467,7 @@ function stripJustComment(line: string): string {
   return line;
 }
 
-const TRANSPORT_RECIPES = ["impl", "impl-bg", "plan", "review-arch", "review-cli", "dispatch"] as const;
+const TRANSPORT_RECIPES = [] as const;
 /** The only seven lines in the file permitted to invoke the runner. */
 const RUNNER_INVOCATIONS: readonly string[] = [
   'node scripts/assignment-run.mjs run --manifest "$1"',
@@ -1496,13 +1496,14 @@ const FORBIDDEN_TRANSPORT_TOKENS = [
  */
 const FORWARDING_PATTERN = /just(?:\s+[^\n]+)?\s+(assign|witness|accept|attribute|observe-cost|change-report|plan-current)\b/;
 
-test("just transport recipes use evidence-informed effort defaults and never mint assignment proof", () => {
+test("justfile no longer ships transport recipes and never mints assignment proof from them", () => {
   const just = readFileSync(resolve("justfile"), "utf8");
-  assert.match(just, /role:"writer",harness:"grok",model:"grok-4\.7",effort:"medium"/);
-  assert.match(just, /role:"planner",harness:"claude",model:"opus",effort:"medium"/);
-  assert.match(just, /role:"reviewer-arch",harness:"claude",model:"opus",effort:"medium"/);
-  assert.match(just, /role:"reviewer-cli",harness:"codex",model:"gpt-5\.6-sol",effort:"low"/);
-  assert.doesNotMatch(just, /effort:"high"/);
+  assert.doesNotMatch(just, /^impl /m);
+  assert.doesNotMatch(just, /^plan /m);
+  assert.doesNotMatch(just, /^review-arch /m);
+  assert.doesNotMatch(just, /^review-cli /m);
+  assert.doesNotMatch(just, /^impl-bg /m);
+  assert.doesNotMatch(just, /^dispatch /m);
   assert.doesNotMatch(just, /Normal assignment workflow/);
   assertDeclaredSurface(normalizeJustfile(just), just);
 });
@@ -1570,11 +1571,8 @@ function assertDeclaredSurface(text: string, rawText = text): void {
   const missingFromPin = EXPECTED_RECIPES.filter((name) => !unique.has(name));
   assert.deepEqual(missingFromPin, [], `pinned recipes no longer present: ${missingFromPin.join(", ")}`);
 
-  // Variable bindings: exactly one, and it is the harness helper.
   const runBindings = lines.filter((line) => /^run\s*:=/.test(line));
-  assert.equal(runBindings.length, 1, "`run` is bound more than once; only the last binding takes effect");
-  assert.equal(runBindings[0]?.trim(), 'run := "node scripts/harness-run.mjs"',
-    "the transport command variable was repointed");
+  assert.equal(runBindings.length, 0, "the retired transport binding is back");
 
   // Bodies. Token-level, because `just --highlight --no-highlight witness`,
   // `just --command sh -c 'just "witness"'` and `node scripts/assignment-""run.mjs`
@@ -1759,9 +1757,9 @@ test("real just does not preload a working-directory .env, and every control can
 
 /** The complete shipped recipe surface. Adding one is a deliberate act, not drift. */
 const EXPECTED_RECIPES = [
-  "accept", "assign", "attribute", "change-report", "check-generated", "default", "dispatch",
-  "docker-install-smoke", "harnesses", "impl", "impl-bg", "observe-cost", "plan", "plan-current",
-  "review-arch", "review-cli", "runs", "verify", "witness", "worktree", "worktree-drop",
+  "accept", "assign", "attribute", "change-report", "check-generated", "default",
+  "docker-install-smoke", "harnesses", "observe-cost", "plan-current",
+  "runs", "verify", "witness", "worktree", "worktree-drop",
 ].sort();
 
 const DOCUMENTED_RECIPE_SOURCES = [
@@ -1771,7 +1769,6 @@ const DOCUMENTED_RECIPE_SOURCES = [
   "docs/contracts/routing.md",
   "docs/operations/troubleshooting.md",
   "docs/reference/workflow-catalog.md",
-  "plans/implementation-plan.md",
   "CHANGELOG.md",
 ];
 
@@ -2208,76 +2205,9 @@ function assertPromptEnvelope(raw: string, promptFile: string, cwd: string): voi
   assert.equal(envelope.cwd, cwd);
 }
 
-test("just recipes transport user paths without interpolating them as shell or JSON source", () => {
-  const dir = tempDir();
-  const capturePath = join(dir, "capture.json");
-  const captureEnv = { ...process.env, KXM_CAPTURE: capturePath };
-  const brief = `a"b\\c $d.md`;
-  const cwd = "cwd; rm -rf / && echo `oops` | cat";
-  const winMeta = "a b%c^d&e.md";
-  const newlineBrief = "line1\nline2.md";
-  const dashBrief = "-n.md";
-  const requestPath = `req"uest.json`;
-  try {
-    const recipes = ["impl", "plan", "review-arch", "review-cli"] as const;
-    for (const recipe of recipes) {
-      const line = firstRecipeLine(recipe);
-      assert.match(line, /-- "\$1" "\$2" \| \{\{run\}\} -/);
-      const cases: Array<[string, string]> = [
-        [brief, cwd],
-        [winMeta, cwd],
-        [newlineBrief, "."],
-        [dashBrief, "."],
-      ];
-      for (const [promptFile, cwdArg] of cases) {
-        if (posixShell) {
-          const ran = spawnPosixRecipe(substituteRun(line), [promptFile, cwdArg], { env: captureEnv });
-          assert.equal(ran.status, 0, `${recipe}: ${ran.stderr}\n${ran.stdout}`);
-          const captured = readCapture(capturePath);
-          assert.deepEqual(captured.argv, ["-"]);
-          assertPromptEnvelope(captured.stdin, promptFile, cwdArg);
-          continue;
-        }
-        const evaled = spawnSync(process.execPath, ["-e", extractNodeEval(line), "--", promptFile, cwdArg], {
-          encoding: "utf8",
-        });
-        assert.equal(evaled.status, 0, `${recipe} node -e: ${evaled.stderr}`);
-        assertPromptEnvelope(evaled.stdout, promptFile, cwdArg);
-        const piped = spawnSync(process.execPath, [captureBin, "-"], {
-          encoding: "utf8",
-          input: evaled.stdout,
-          env: captureEnv,
-        });
-        assert.equal(piped.status, 0, piped.stderr);
-        const captured = readCapture(capturePath);
-        assert.deepEqual(captured.argv, ["-"]);
-        assertPromptEnvelope(captured.stdin, promptFile, cwdArg);
-      }
-    }
-
-    const dispatchLine = firstRecipeLine("dispatch");
-    assert.match(dispatchLine, /\{\{run\}\} -- "\$1"/);
-    if (posixShell) {
-      const dispatch = spawnPosixRecipe(substituteRun(dispatchLine), [requestPath], { env: captureEnv });
-      assert.equal(dispatch.status, 0, dispatch.stderr);
-    } else {
-      const dispatch = spawnSync(process.execPath, [captureBin, "--", requestPath], {
-        encoding: "utf8",
-        env: captureEnv,
-      });
-      assert.equal(dispatch.status, 0, dispatch.stderr);
-    }
-    assert.deepEqual(readCapture(capturePath).argv, ["--", requestPath]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("just impl-bg and worktree pass user args as positional argv, not interpolated source", (t) => {
-  const bg = recipeLines("impl-bg").join("\n");
+test("worktree recipes pass user args as positional argv, not interpolated source", (t) => {
   const wt = recipeLines("worktree").join("\n");
   const drop = recipeLines("worktree-drop").join("\n");
-  assert.match(bg, /just impl "\$1" "\$2"/);
   assert.match(wt, /kxm lane create "\$1"/);
   assert.match(drop, /kxm lane drop "\$1"/);
   if (!posixShell) {
@@ -2287,29 +2217,15 @@ test("just impl-bg and worktree pass user args as positional argv, not interpola
   const dir = tempDir();
   const bin = join(dir, "bin");
   mkdirSync(bin);
-  const justCapture = join(dir, "just-argv.txt");
   const kxmCapture = join(dir, "kxm-argv.txt");
-  writeFileSync(join(bin, "just"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$KXM_JUST_CAPTURE"\n`);
   writeFileSync(join(bin, "kxm"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$KXM_KXM_CAPTURE"\n`);
-  chmodSync(join(bin, "just"), 0o755);
   chmodSync(join(bin, "kxm"), 0o755);
   const unit = `a"b $c; rm -rf -- --dash`;
-  const brief = `brief"q.md`;
-  const cwdArg = `tree\\path`;
   const mockEnv = {
     ...process.env,
     PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
   };
   try {
-    const bgRan = spawnPosixRecipe(bg, [brief, cwdArg], {
-      env: { ...mockEnv, KXM_JUST_CAPTURE: justCapture },
-      cwd: dir,
-    });
-    assert.equal(bgRan.status, 0, bgRan.stderr);
-    waitForFile(justCapture);
-    const justArgv = readFileSync(justCapture, "utf8").trim().split("\n");
-    assert.deepEqual(justArgv, ["impl", brief, cwdArg]);
-
     const wtRan = spawnPosixRecipe(wt, [unit], {
       env: { ...mockEnv, KXM_KXM_CAPTURE: kxmCapture },
       cwd: dir,
@@ -3660,55 +3576,7 @@ test("just binary integration is optional when the binary is installed", (t) => 
     }
   }
   const dir = tempDir();
-  const capturePath = join(dir, "capture.json");
-  const wrapper = join(dir, "capture-run");
-  writeFileSync(wrapper, `#!/bin/sh\nexec ${shQuote(process.execPath)} ${shQuote(captureBin)} "$@"\n`);
-  chmodSync(wrapper, 0o755);
-  const brief = `a"b\\c $d.md`;
-  const cwd = "cwd; rm -rf / && echo `oops` | cat";
-  const dashBrief = "-n.md";
-  const newlineBrief = "line1\nline2.md";
   try {
-    const ran = spawnSync("just", ["--set", "run", wrapper, "impl", brief, cwd], {
-      encoding: "utf8",
-      env: { ...process.env, KXM_CAPTURE: capturePath },
-      cwd: process.cwd(),
-    });
-    assert.equal(ran.status, 0, `${ran.stderr}\n${ran.stdout}`);
-    const captured = readCapture(capturePath);
-    assert.deepEqual(captured.argv, ["-"]);
-    assertPromptEnvelope(captured.stdin, brief, cwd);
-
-    const dispatch = spawnSync("just", ["--set", "run", wrapper, "dispatch", `req"uest.json`], {
-      encoding: "utf8",
-      env: { ...process.env, KXM_CAPTURE: capturePath },
-      cwd: process.cwd(),
-    });
-    assert.equal(dispatch.status, 0, dispatch.stderr);
-    assert.deepEqual(readCapture(capturePath).argv, ["--", `req"uest.json`]);
-
-    const dash = spawnSync("just", ["--set", "run", wrapper, "--", "impl", dashBrief, "."], {
-      encoding: "utf8",
-      env: { ...process.env, KXM_CAPTURE: capturePath },
-      cwd: process.cwd(),
-    });
-    assert.equal(dash.status, 0, `${dash.stderr}\n${dash.stdout}`);
-    assert.equal(
-      (JSON.parse(readCapture(capturePath).stdin) as { prompt_file: string }).prompt_file,
-      dashBrief,
-    );
-
-    const nl = spawnSync("just", ["--set", "run", wrapper, "--", "impl", newlineBrief, "."], {
-      encoding: "utf8",
-      env: { ...process.env, KXM_CAPTURE: capturePath },
-      cwd: process.cwd(),
-    });
-    assert.equal(nl.status, 0, `${nl.stderr}\n${nl.stdout}`);
-    assert.equal(
-      (JSON.parse(readCapture(capturePath).stdin) as { prompt_file: string }).prompt_file,
-      newlineBrief,
-    );
-
     const logs = join(dir, ".kxm", "logs");
     mkdirSync(logs, { recursive: true });
     writeFileSync(join(logs, "billed.json"), `${JSON.stringify({

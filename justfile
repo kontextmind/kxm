@@ -21,51 +21,16 @@ set windows-shell := ["sh", "-c"]
 # `just --dotenv-path /abs/path/.env assign …` (`--dotenv` is not a separate
 # flag in the installed 1.58; the path option both selects and locates the file).
 
-run := "node scripts/harness-run.mjs"
 briefs := env_var_or_default("KXM_BRIEF_DIR", ".kxm/briefs")
 
 # list every recipe
 default:
     @just --list
 
-# ── dispatch ────────────────────────────────────────────────────────────────
-# Each recipe builds a kxm.harness-request.v1 envelope and prints a
-# kxm.harness-result.v2 envelope. BRIEF is a path to a Markdown brief; never an
-# inline prompt, which is how the shell-quoting bugs get in.
-# User paths are "$1"/"$2" (positional-arguments) and JSON.stringify in Node.
-# Recipe literals (role/harness/model) are not taken from user strings.
-
-# (`just --list` shows only the LAST comment line, so that one is the summary.)
-# These four recipes are low-level harness transport. They do not mint
-# assignment, witness, or acceptance proof. Prefer just assign for that.
-
-# implement a unit with the current writer: just impl brief.md [worktree]
-# Native grok only. There is no Pi writer fallback. Effort default: medium.
-impl BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"writer",harness:"grok",model:"grok-4.7",effort:"medium",permission:"edit",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
-
-# plan a unit, read-only, independent of the writer: just plan brief.md
-plan BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"planner",harness:"claude",model:"opus",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
-
-# review architecture and permissions, read-only: just review-arch brief.md
-review-arch BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-arch",harness:"claude",model:"opus",effort:"medium",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
-# review CLI surface and docs, read-only, different provider: just review-cli brief.md
-review-cli BRIEF CWD=".":
-    @node -e 'const [prompt_file, cwd] = process.argv.slice(-2); process.stdout.write(JSON.stringify({schema:"kxm.harness-request.v1",role:"reviewer-cli",harness:"codex",model:"gpt-5.6-sol",effort:"low",permission:"read-only",prompt_file,cwd}))' -- "$1" "$2" | {{run}} -
-
-# any harness by hand from a full envelope file: just dispatch request.json
-dispatch REQUEST:
-    @{{run}} -- "$1"
-
-# detached, survives Ctrl+C and dropped SSH: just impl-bg brief.md [worktree]
-impl-bg BRIEF CWD=".":
-    @mkdir -p .kxm/logs
-    @nohup just impl "$1" "$2" > ".kxm/logs/impl-$(date +%Y%m%d-%H%M%S).json" 2>&1 &
-    @echo "detached — follow with: just runs"
-
 # ── isolation ───────────────────────────────────────────────────────────────
+# One-step transport is `kxm lane run <unit> --workflow <id> --brief <file>`
+# for implement-only, review-arch-only, and review-cli-only.
+# scripts/harness-run.mjs still accepts a kxm.harness-request.v1 envelope.
 
 # create one worktree lane; kxm lane create prints the lane line
 worktree UNIT:

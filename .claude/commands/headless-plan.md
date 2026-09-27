@@ -22,11 +22,8 @@ Do this:
    with line estimates, deletions with every call site named, tests as concrete
    names plus the assertion each makes, and risks where the unit and the code
    genuinely disagree.
-4. **Launch in the background, read-only**, prompt on stdin. Prefer
-   `just plan <brief>`. Direct CLI:
-   `cat <brief> | claude -p --model fable --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json`
-   The prompt must go on stdin. Read the helper result's `answerPath` for the
-   plan text; do not expect raw model stdout in structured metadata.
+4. **Launch in the background, read-only.** Prefer the one-step workflow:
+   `kxm lane run <unit> --brief <file> --workflow review-arch-only`
 5. **Review the plan yourself** before handing it to a writer. Check the
    `file:line` anchors actually say what the plan claims. Flag anything that
    busts the unit's diff budget and needs splitting.

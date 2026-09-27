@@ -8,9 +8,11 @@ import YAML from 'yaml';
 import { NATIVE_PI_BRAKE_PROVIDERS, PI_ALLOWED_PROVIDERS, PI_ANTIGRAVITY_MODEL_ID, PI_NATIVE_VENDOR_PROVIDERS, ROUTES } from './harness-run.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const POLICY = '.kxm/roster.yaml';
-const RETIRED_POLICY = '.kxm/roster.json';
+const MODEL_DIR = '.kxm/models';
+const ROLE_DIR = '.kxm/roles';
+const RETIRED_ROSTER_FILES = ['.kxm/roster.json', '.kxm/roster.yaml'];
 const TRUSTED = 'refs/remotes/origin/main';
+const SKIP_MODELS = new Set(['inventory.yaml']);
 const ROLES = ['writer', 'planner', 'reviewer-arch', 'reviewer-cli', 'experiment'];
 const ALIASES = Object.freeze({ 'x-ai': 'xai', moonshotai: 'moonshot', 'google-ai': 'google', qwen: 'alibaba' });
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -55,14 +57,19 @@ function frozen(value) {
   if (value && typeof value === 'object') { for (const child of Object.values(value)) frozen(child); Object.freeze(value); }
   return value;
 }
+export function refuseRetiredRosterFile(root) {
+  for (const retired of RETIRED_ROSTER_FILES) {
+    if (existsSync(path.join(root, retired))) refuse(`retired_roster_file: retired ${retired} present; use ${MODEL_DIR} and ${ROLE_DIR}`);
+  }
+}
 function control() {
-  if (existsSync(path.join(ROOT, RETIRED_POLICY))) refuse(`retired ${RETIRED_POLICY} present; use ${POLICY}`);
+  refuseRetiredRosterFile(ROOT);
   if (realpathSync(gitText('rev-parse', '--show-toplevel')) !== realpathSync(ROOT)) refuse('module is outside its control repository');
   const head = gitText('rev-parse', '--verify', 'HEAD^{commit}');
   const trusted = gitText('rev-parse', '--verify', `${TRUSTED}^{commit}`);
   git('merge-base', '--is-ancestor', head, trusted);
   const flags = git('ls-files', '-v', '-z').toString('utf8').split('\0').filter(Boolean);
-  if (flags.some(entry => entry.slice(2) !== POLICY && (entry[0] === 'S' || entry[0] === entry[0].toLowerCase()))) refuse('hidden index flags on control source');
+  if (flags.some(entry => entry[0] === 'S' || entry[0] === entry[0].toLowerCase())) refuse('hidden index flags on control source');
   if (git('status', '--porcelain=v1', '--untracked-files=all').length) refuse('dirty or untracked control source');
   return { head, trusted };
 }
@@ -88,8 +95,7 @@ function workingBytes(source) {
   return readFileSync(current);
 }
 export function validateRosterDocument(policy, readBlob) {
-  keys(policy, ['schema', 'routes', 'lineup', 'required_critics', 'model_origins'], 'policy');
-  if (policy.schema !== 'kxm.developer-roster.v1') refuse('unsupported schema');
+  keys(policy, ['routes', 'lineup', 'required_critics', 'model_origins'], 'policy');
   record(policy.routes, 'routes'); record(policy.lineup, 'lineup'); record(policy.model_origins, 'model origins');
   if (!Object.keys(policy.routes).length) refuse('empty routes');
   if (typeof readBlob !== 'function') refuse('origin evidence reader required');
@@ -162,35 +168,126 @@ export function validateRosterDocument(policy, readBlob) {
   }
   return policy;
 }
-function validate(bytes, commit, trusted) {
-  let policy;
-  try { policy = YAML.parse(bytes.toString('utf8')); } catch { refuse('invalid policy YAML'); }
-  if (policy === undefined || policy === null || typeof policy !== 'object' || Array.isArray(policy)) refuse('invalid policy YAML');
+function parsePolicyYaml(bytes, label) {
+  let value;
+  try { value = YAML.parse(bytes.toString('utf8')); } catch { refuse(`invalid policy YAML (${label})`); }
+  if (value === undefined || value === null || typeof value !== 'object' || Array.isArray(value)) refuse(`invalid policy YAML (${label})`);
+  return value;
+}
+function listedPolicyFiles(commit) {
+  const raw = git('ls-tree', '-r', '-z', commit, '--', MODEL_DIR, ROLE_DIR).toString('utf8');
+  const files = [];
+  for (const entry of raw.split('\0').filter(Boolean)) {
+    const match = /^(100644|100755) blob ([a-f0-9]{40}(?:[a-f0-9]{24})?)\t(.+)$/u.exec(entry);
+    if (!match) refuse('source is missing or not a regular committed file');
+    const source = match[3];
+    if (!source.endsWith('.yaml')) continue;
+    const name = source.slice(source.lastIndexOf('/') + 1);
+    if (source.startsWith(`${MODEL_DIR}/`) && SKIP_MODELS.has(name)) continue;
+    if (source.startsWith(`${MODEL_DIR}/`) || source.startsWith(`${ROLE_DIR}/`)) files.push(source);
+  }
+  if (!files.some(source => source.startsWith(`${ROLE_DIR}/`)) || !files.some(source => source.startsWith(`${MODEL_DIR}/`))) {
+    refuse('source is missing or not a regular committed file');
+  }
+  return files.sort();
+}
+/** Build the runner policy object from parsed model and role documents. */
+export function assembleRosterPolicy(models, roles) {
+  if (!Array.isArray(models) || !Array.isArray(roles)) refuse('invalid policy YAML');
+  const lineup = {};
+  const rolesByRoute = {};
+  for (const role of [...roles].sort((left, right) => String(left?.id).localeCompare(String(right?.id)))) {
+    record(role, 'role');
+    text(role.id, 'role id');
+    if (!Array.isArray(role.roster)) refuse('lineup contains unsupported or duplicate values');
+    const ids = [];
+    for (const entry of role.roster) {
+      record(entry, 'roster entry');
+      text(entry.route, 'roster route');
+      ids.push(entry.route);
+      if (!rolesByRoute[entry.route]) rolesByRoute[entry.route] = [];
+      if (!rolesByRoute[entry.route].includes(role.id)) rolesByRoute[entry.route].push(role.id);
+    }
+    lineup[role.id] = ids;
+  }
+  const routes = {};
+  const model_origins = {};
+  for (const doc of models) {
+    record(doc, 'model');
+    text(doc.id, 'route id');
+    if (!rolesByRoute[doc.id]) continue;
+    routes[doc.id] = {
+      harness: doc.harness,
+      model: doc.model,
+      vendor: doc.vendor,
+      roles: rolesByRoute[doc.id],
+      permissions: doc.permissions,
+      status: doc.status,
+    };
+    if (doc.origin !== undefined) {
+      record(doc.origin, 'origin');
+      const evidence = { source: doc.origin.source, sha256: doc.origin.sha256 };
+      if (doc.origin.commit !== undefined) evidence.commit = doc.origin.commit;
+      model_origins[doc.model] = { vendor: doc.vendor, evidence };
+    }
+  }
+  return {
+    routes,
+    lineup,
+    required_critics: {
+      'review-arch': lineup['reviewer-arch']?.[0],
+      'review-cli': lineup['reviewer-cli']?.[0],
+    },
+    model_origins,
+  };
+}
+function readPolicySet(commit, checkWorking) {
+  const files = listedPolicyFiles(commit);
+  const models = [];
+  const roles = [];
+  const parts = [];
+  for (const source of files) {
+    const { bytes } = blobAt(commit, source);
+    if (checkWorking && !workingBytes(source).equals(bytes)) refuse('working policy differs from committed bytes');
+    const doc = parsePolicyYaml(bytes, source);
+    if (source.startsWith(`${MODEL_DIR}/`)) models.push(doc);
+    else roles.push(doc);
+    parts.push({ source, bytes });
+  }
+  return { models, roles, digest: compositeDigest(parts) };
+}
+function compositeDigest(parts) {
+  const hash = createHash('sha256');
+  for (const part of [...parts].sort((left, right) => left.source < right.source ? -1 : left.source > right.source ? 1 : 0)) {
+    hash.update(part.source);
+    hash.update('\0');
+    hash.update(part.bytes);
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+function policyAt(commit, trusted, checkWorking) {
+  const loaded = readPolicySet(commit, checkWorking);
   const readBlob = (source, pinnedCommit) => {
     if (pinnedCommit === undefined) return blobAt(commit, source).bytes;
-    // A pinned evidence commit decouples the digest from later edits to the
-    // evidence file; the pinned commit itself must be part of trusted history.
     git('merge-base', '--is-ancestor', pinnedCommit, trusted);
     return blobAt(pinnedCommit, source).bytes;
   };
-  return validateRosterDocument(policy, readBlob);
+  return { policy: validateRosterDocument(assembleRosterPolicy(loaded.models, loaded.roles), readBlob), digest: loaded.digest };
 }
 export function loadTrustedRosterPolicy() {
   const snapshot = control();
-  const { blob, bytes } = blobAt(snapshot.head, POLICY);
-  if (!workingBytes(POLICY).equals(bytes)) refuse('working policy differs from committed bytes');
-  const policy = validate(bytes, snapshot.head, snapshot.trusted);
+  const { policy, digest } = policyAt(snapshot.head, snapshot.trusted, true);
   unchanged(snapshot);
-  return frozen({ identity: { commit: snapshot.head, blob, sha256: sha256(bytes) }, policy });
+  return frozen({ identity: { commit: snapshot.head, blob: digest, sha256: digest }, policy });
 }
 export function resolveBoundPolicy(identity) {
   keys(identity, ['commit', 'blob', 'sha256'], 'identity');
-  objectId(identity.commit, 'commit'); objectId(identity.blob, 'blob'); digest(identity.sha256);
+  objectId(identity.commit, 'commit'); digest(identity.blob); digest(identity.sha256);
   const snapshot = control();
   git('merge-base', '--is-ancestor', identity.commit, snapshot.trusted);
-  const { blob, bytes } = blobAt(identity.commit, POLICY);
-  if (blob !== identity.blob || sha256(bytes) !== identity.sha256) refuse('bound identity mismatch');
-  const policy = validate(bytes, identity.commit, snapshot.trusted);
+  const loaded = policyAt(identity.commit, snapshot.trusted, false);
+  if (loaded.digest !== identity.blob || loaded.digest !== identity.sha256) refuse('bound identity mismatch');
   unchanged(snapshot);
-  return frozen({ identity: { ...identity }, policy });
+  return frozen({ identity: { ...identity }, policy: loaded.policy });
 }

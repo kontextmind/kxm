@@ -166,8 +166,8 @@ test("fix.yaml compiles all 13 declared steps and preserves full policy", () => 
 
   const review = stepOf(plan, "repro-review");
   assert.equal(review.kind, "moa");
-  assert.deepEqual([...review.assignments.distinctBy], ["provider"]);
-  assert.deepEqual(review.model, { tag: "critic", capabilities: ["structured-output"] });
+  assert.deepEqual([...review.assignments.distinctBy], []);
+  assert.equal(review.model, undefined);
   assert.equal(review.join.strategy, "all-settled");
   assert.equal(review.join.minimumPassed, 2);
   assert.equal(review.join.cancelRemaining, false);

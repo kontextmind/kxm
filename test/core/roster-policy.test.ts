@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { validateRosterDocument, type RosterPolicy } from "../../scripts/roster-policy.mjs";
+import { parse } from "yaml";
+import { assembleRosterPolicy, refuseRetiredRosterFile, validateRosterDocument, type RosterPolicy } from "../../scripts/roster-policy.mjs";
+
+test("roster-policy refuses .kxm/roster.yaml", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-retired-roster-yaml-"));
+  try {
+    mkdirSync(join(root, ".kxm"));
+    writeFileSync(join(root, ".kxm", "roster.yaml"), "schema: kxm.developer-roster.v1\nroutes: {}\n");
+    assert.throws(
+      () => refuseRetiredRosterFile(root),
+      /Roster policy refused: retired_roster_file: retired \.kxm\/roster\.yaml present; use \.kxm\/models and \.kxm\/roles/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 const qwenEvidence = "qwen origin fixture\n";
 const antigravityEvidence = "antigravity origin fixture\n";
@@ -35,7 +53,6 @@ function basePolicy(overrides: {
   model_origins?: Record<string, unknown>;
 } = {}): RosterPolicy {
   return {
-    schema: "kxm.developer-roster.v1",
     routes: {
       "grok-native": nativeRoute({}),
       "qwen-openrouter-pi": {
@@ -180,7 +197,7 @@ test("model origin evidence may pin a source commit and receives it from the rea
     seen.push({ source, commit });
     return qwenEvidence;
   });
-  assert.equal(result.schema, "kxm.developer-roster.v1");
+  assert.equal(result.required_critics["review-arch"], "fable-claude");
   assert.deepEqual(seen, [{ source: "docs/qwen.md", commit: pinnedCommit }]);
 });
 
@@ -195,3 +212,16 @@ test("model origin evidence refuses a malformed pinned commit", () => {
   });
   assert.throws(() => validateRosterDocument(policy, () => qwenEvidence), /invalid origin evidence commit/);
 });
+
+test("the checkout role and model files assemble a policy that validates", () => {
+  const load = (dir: string, skipInventory: boolean) => readdirSync(dir)
+    .filter((name) => name.endsWith(".yaml") && !(skipInventory && name === "inventory.yaml"))
+    .map((name) => parse(readFileSync(join(dir, name), "utf8")));
+  const policy = assembleRosterPolicy(load(".kxm/models", true), load(".kxm/roles", false));
+  const validated = validateRosterDocument(policy, (source: string) => source === "plans/evidence/route-qwen-openrouter-pi.md" ? readFileSync(source) : undefined);
+  assert.deepEqual(validated.lineup.writer, ["grok-native", "qwen-openrouter-pi", "gemini-agy"]);
+  assert.equal(validated.required_critics["review-arch"], "fable-claude");
+  assert.equal(validated.required_critics["review-cli"], "sol-codex");
+  assert.equal(validated.routes["qwen-openrouter-pi"]?.permissions[0], "edit");
+});
+

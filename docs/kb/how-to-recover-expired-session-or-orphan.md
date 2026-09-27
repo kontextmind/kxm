@@ -7,7 +7,7 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-23"
+updated: "2026-09-27"
 authority: "instruction"
 confidence: "verified"
 summary: "Find and release stale or orphaned browser sessions on Steel."
@@ -22,23 +22,23 @@ browser can keep running on your Steel deployment until its timeout.
 
 ## 1. List active sessions
 
-Load `STEEL_API_URL` and `STEEL_API_KEY` from your secret manager first. With
-`pass-cli`, for example:
+Load `STEEL_API_URL`, `STEEL_AUTH_USER`, and `STEEL_AUTH_TOKEN` from your secret
+manager first. With `pass-cli`, for example:
 
 ```bash
 export STEEL_API_URL="https://<steel-host>"
-STEEL_API_KEY=$(pass-cli item view --vault-name "<vault>" --item-title "<item>" --field STEEL_API_KEY)
-export STEEL_API_KEY
+export STEEL_AUTH_USER="svc-steel"
+export STEEL_AUTH_TOKEN="$(pass-cli item view --vault-name "<vault>" --item-title "<item>" --field password)"
+basic="$(printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n')"
 
-curl -s "$STEEL_API_URL/v1/sessions" \
-  -H "x-steel-api-key: $STEEL_API_KEY" | jq .
+printf 'Authorization: Basic %s\n' "$basic" | curl -sS -H @- "$STEEL_API_URL/v1/sessions" | jq .
 ```
 
 ## 2. Release an orphaned session
 
 ```bash
-curl -s -X POST "$STEEL_API_URL/v1/sessions/<session-id>/release" \
-  -H "x-steel-api-key: $STEEL_API_KEY"
+printf 'Authorization: Basic %s\n' "$basic" \
+  | curl -sS -X POST -H @- "$STEEL_API_URL/v1/sessions/<session-id>/release"
 ```
 
 ## 3. Sweep orphans with the KXM client
@@ -60,5 +60,6 @@ for (const sessionId of orphans) {
 }
 ```
 
-It returns an empty list when the Steel API request fails, so an empty result
-does not prove there are no orphans. Check with the `curl` call above.
+It returns an empty list when the Steel API responds with an error status, so
+an empty result does not prove there are no orphans. A 302 from Authentik
+throws instead of looking like an empty list. Check with the `curl` call above.

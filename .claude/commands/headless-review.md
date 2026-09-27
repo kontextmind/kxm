@@ -23,14 +23,10 @@ Do this:
    (or the exact command to produce it), what the change is supposed to do, and
    the invariants it must not weaken — authority, recovery, isolation,
    synchronization, and fail-closed identity checks.
-3. **Launch in the background, read-only.** Prefer `just review-arch` /
-   `just review-cli`. Direct CLI:
-   - architecture / permissions:
-     `cat <brief> | claude -p --model fable --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json`
-   - CLI / docs:
-     `codex exec -m gpt-5.6-sol -c 'model_reasoning_effort="low"' -C <worktree> --sandbox read-only --ignore-user-config -c 'approval_policy="never"' --json - < <brief>`
-   Run both concurrently when the answer is `both`. Read `answerPath` from the
-   helper result for the critique text.
+3. **Launch in the background, read-only.** Prefer the one-step workflows:
+   - architecture / permissions: `kxm lane run <unit> --brief <file> --workflow review-arch-only`
+   - CLI / docs: `kxm lane run <unit> --brief <file> --workflow review-cli-only`
+   Run both when the answer is `both`.
 4. **Triage the findings yourself.** Verify each one against the code before
    passing it on; a critic being confident is not evidence. Say plainly which
    findings you think are wrong and why.

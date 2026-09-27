@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-09-27"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Draft plan, decisions taken. KXM already carries a passive kxm.role.v2 and kxm.model.v2 draft (schemas/policy-draft, validatePolicyDraft) whose shape matches what omp does well: roles hold an ordered roster of route ids, routes hold harness, model, vendor, status, permissions, priority and fallbacks. This plan promotes that draft to the live authority, retires kxm.role.v1, routes.yaml roles, roster.yaml and the code defaults, gives agents a role: reference, then adds an opt-in in-flight fallback walk, role tool-policy enforcement, provenance, role aliases, and effort validation. No legacy read paths: old files are deleted and re-created per the single-operator rule. Execution tracking stays in implementation-plan.md."
@@ -16,7 +16,9 @@ related:
   - research-omp-config-schema.md
   - research-omp-config-examples.md
   - evidence/omp-config-settings-18.3.1.md
+  - plan-kxm-harness-first-run.md
   - plan-lane-cli.md
+  - backlog-shortcuts.md
   - implementation-plan.md
   - plan-usage-cost-quota-tracking.md
   - plan-workflow-modes-selective-loading.md
@@ -331,6 +333,9 @@ trust anchor and must keep the `origin/main` read; P3 and P4 change what runs.
 ## 8. Out of scope, recorded so it is not re-asked
 
 - omp rules, hooks, commands, prompts, MCP and plugin surfaces.
-- omp `workflowz` and `orchestrate` keyword contracts.
+- omp `workflowz` and `orchestrate` keyword contracts. Whether a request
+  should compose a `kxm.workflow.v1` file from a catalog is
+  [`plan-kxm-harness-first-run.md`](plan-kxm-harness-first-run.md). This
+  plan still does not replace the workflow file.
 - omp `secrets.enabled` redaction: belongs with the safety plan.
 - Widening the writer lineup or admitting any new route.

@@ -1,9 +1,6 @@
 schema: kxm.agent.v1
 purpose: Implement the approved change within the declared repository scope.
-harness: grok
-model:
-  provider: xai
-  model: grok-4.7
+role: writer
 tools:
   preset: workspace-writer
 defaultRepositoryAccess: none

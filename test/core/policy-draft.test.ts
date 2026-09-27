@@ -376,24 +376,6 @@ test("validatePolicyDraft refuses an unknown policy.fallback key", () => {
   assert.ok(codes(validatePolicyDraft(draft, options())).includes("schema_additionalProperties"));
 });
 
-test.todo("justfile plan and review-arch still say opus while the role files say fable");
-
-test("justfile impl and review-cli literals match the first roster entry", () => {
-  const justfile = readFileSync("justfile", "utf8");
-  const recipes: Record<string, string> = { impl: "writer", "review-cli": "reviewer-cli" };
-  for (const [recipe, roleId] of Object.entries(recipes)) {
-    const roleDoc = parse(readFileSync(join(".kxm/roles", `${roleId}.yaml`), "utf8")) as { permission: string; roster: Array<{ route: string; effort?: string }> };
-    const first = roleDoc.roster[0]!;
-    const modelDoc = parse(readFileSync(join(".kxm/models", `${first.route}.yaml`), "utf8")) as { harness: string; model: string };
-    const block = justfile.split(`\n${recipe} `)[1]?.split("\n\n")[0] ?? "";
-    assert.match(block, new RegExp(`role:"${roleId}"`));
-    assert.match(block, new RegExp(`harness:"${modelDoc.harness}"`));
-    assert.match(block, new RegExp(`model:"${modelDoc.model}"`));
-    assert.match(block, new RegExp(`effort:"${first.effort}"`));
-    assert.match(block, new RegExp(`permission:"${roleDoc.permission}"`));
-  }
-});
-
 function compilePassiveModel() {
   const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
   const modelSchema = JSON.parse(readFileSync("schemas/model.schema.json", "utf8"));

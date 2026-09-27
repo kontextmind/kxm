@@ -7,5 +7,5 @@ status: admitted
 permissions:
   - edit
 origin:
-  source: .kxm/roster.yaml
-  sha256: b2bd628604e8fec5afdff2a1f2c104ed14ff785686bb1f38272bc972a310c806
+  source: plans/evidence/route-qwen-openrouter-pi.md
+  sha256: b15f8a54adc398b33e75609e959076eee310bf4ff6623d0b8470ea3da95e6c54
