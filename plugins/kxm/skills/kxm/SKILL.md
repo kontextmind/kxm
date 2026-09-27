@@ -25,7 +25,8 @@ writers, or replace the trusted role and model policy.
 | Turn a repeated practice into a governed skill | `kxm-skill-lifecycle` | `skills` |
 | What KXM learned, repeated asks, recorded route spend | `kxm-routing-improve` | `routing`, `improve` |
 | Which workflow fits, goals and tasks | `kxm-tasks` | `suggest`, `goal`, `task` |
-| Remote browser sessions, human takeover, exploration, UI verification | `kxm-browser-session`, `kxm-browser-takeover`, `kxm-browser-auth`, `kxm-browser-explore`, `kxm-browser-verify`, `kxm-browser-diagnostics`, `kxm-browser-annotate` | none |
+| Remote browser sessions, human takeover, exploration | `kxm-browser-session`, `kxm-browser-takeover`, `kxm-browser-auth`, `kxm-browser-explore`, `kxm-browser-diagnostics`, `kxm-browser-annotate` | none |
+| Reproduce a UI bug and assert a captured screenshot | `kxm-browser-verify` | `vision` |
 | KontextMind, the separate knowledge plane with its own kontext CLI | `kxm-mind` | none |
 
 ## MCP tools
