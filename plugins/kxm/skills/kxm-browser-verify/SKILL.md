@@ -47,17 +47,22 @@ node scripts/obscura.mjs --ensure
 npm run e2e
 ```
 
-`npm run e2e` runs the launcher and then `playwright test`. The endpoint comes from `resolveObscuraCdpEndpoint()` (`OBSCURA_CDP_URL`, or `http://127.0.0.1:${OBSCURA_PORT:-9222}`).
+`npm run e2e` runs the launcher and then `playwright test`. `connectBrowserOverCdp()` uses Obscura (`OBSCURA_CDP_URL`, or `http://127.0.0.1:${OBSCURA_PORT:-9222}`) unless `KXM_BROWSER=steel`.
 
 Override the worker-scoped `browser` fixture:
 
 ```typescript
 import { test as base, chromium, type Browser } from "@playwright/test";
-import { resolveObscuraCdpEndpoint } from "@kontextmind/kxm/runtime";
+import { connectBrowserOverCdp } from "@kontextmind/kxm/runtime";
 
 export const test = base.extend<{}, { browser: Browser }>({
   browser: [async ({}, use) => {
-    const browser = await chromium.connectOverCDP(resolveObscuraCdpEndpoint());
+    const sessionId = process.env.STEEL_SESSION_ID?.trim();
+    const session = sessionId ? { id: sessionId, websocketUrl: "" } : undefined;
+    const browser = await connectBrowserOverCdp(
+      (url, options) => chromium.connectOverCDP(url, options),
+      session,
+    );
     await use(browser);
     await browser.close();
   }, { scope: "worker" }],
@@ -72,7 +77,17 @@ Local pages require the launcher flag `--allow-private-network` (the launcher al
 
 ## Steel, only for takeover
 
-When the case is human takeover, MFA, or the live session viewer, set `KXM_BROWSER=steel` and attach to the Steel session CDP URL from `resolveBrowserCdpEndpoint(session)`. That path is `formatCDPEndpoint()`. Closing the Playwright browser disconnects the client and does not release the Steel session.
+When the case is human takeover, MFA, or the live session viewer, set `KXM_BROWSER=steel` and a session id. `connectBrowserOverCdp()` passes `formatCDPConnect()` headers into `chromium.connectOverCDP`. Closing the Playwright browser disconnects the client and does not release the Steel session.
+
+```typescript
+import { chromium } from "playwright";
+import { connectBrowserOverCdp } from "@kontextmind/kxm/runtime";
+
+const browser = await connectBrowserOverCdp(
+  (url, options) => chromium.connectOverCDP(url, options),
+  { id: sessionId, websocketUrl: "" },
+);
+```
 
 ## Artifact Retention & Sanitization
 

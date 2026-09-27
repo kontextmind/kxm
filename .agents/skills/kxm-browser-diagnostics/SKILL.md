@@ -9,13 +9,14 @@ Use this skill to investigate and resolve connectivity failures, CDP attachment 
 
 ## Common Failure Modes & Resolutions
 
-### 1. Steel API Connectivity / 401 Unauthorized
+### 1. Steel API Connectivity / Authentik challenge
 
-- **Symptom**: `Failed to fetch Steel session (401)` or `Connection refused`.
+- **Symptom**: `Steel request was redirected (302)` to `id.kxmd.dev`, `Failed to fetch Steel session (401)`, or `Connection refused`.
 - **Diagnosis**:
-  - Verify Steel API endpoint is reachable: `curl -sI "$STEEL_API_URL/v1/health"`.
-  - Check that `STEEL_API_KEY` is set in the environment (`test -n "$STEEL_API_KEY" && echo set`); never print its value.
-- **Remedy**: Update expired or missing API key in your session environment.
+  - KontextMind Steel is behind Authentik forward auth. Unauthenticated requests redirect to `id.kxmd.dev`. Authentik accepts an app password only as `Authorization: Basic`. A Bearer token is refused.
+  - Check that `STEEL_AUTH_BASIC` is set, or that both `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN` are set (`test -n "$STEEL_AUTH_TOKEN" && echo set`); never print the value.
+  - A legacy `STEEL_API_KEY` still uses `x-steel-api-key` and `?apiKey=` through the temporary proxy shim. Prefer the Authentik variables so the credential stays out of URLs.
+- **Remedy**: Re-export the Authentik app password into the session environment. Do not log it.
 
 ### 2. CDP WebSocket Attachment Failure
 
@@ -42,7 +43,7 @@ Use this skill to investigate and resolve connectivity failures, CDP attachment 
 ### 5. Orphaned Browser Processes & Cleanup
 
 - **Symptom**: Node memory pressure or high active session counts.
-- **Diagnosis**: Query active sessions list: `printf 'x-steel-api-key: %s\n' "$STEEL_API_KEY" | curl -sS -H @- "$STEEL_API_URL/v1/sessions"`.
+- **Diagnosis**: Query active sessions list. Send the same Basic header as session create: `basic="$(printf '%s:%s' "$STEEL_AUTH_USER" "$STEEL_AUTH_TOKEN" | base64 | tr -d '\n')"; printf 'Authorization: Basic %s\n' "$basic" | curl -sS -H @- "$STEEL_API_URL/v1/sessions"`.
 - **Remedy**:
   - Iterate through inactive sessions and post `/release` for each stale ID.
   - Ensure all automation scripts wrap browser usage in `try...finally` to release sessions reliably.

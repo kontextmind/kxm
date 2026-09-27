@@ -23,8 +23,9 @@ Always retrieve credentials and API keys directly from `pass-cli`:
 # Retrieve target login password into an environment variable or piping mechanism
 pass-cli item view --vault-name "<vault>" --item-title "<title>" --field password
 
-# Retrieve Steel infrastructure API key
-pass-cli item view --vault-name "<vault>" --item-title "<steel-item>" --field STEEL_API_KEY
+# Retrieve the Authentik app password for Steel. The proxy accepts Authorization: Basic.
+# STEEL_AUTH_USER is the Authentik username (for example svc-steel).
+pass-cli item view --vault-name "<vault>" --item-title "<steel-item>" --field password
 ```
 
 ### 2. Secret Redaction Invariants

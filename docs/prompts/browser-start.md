@@ -7,7 +7,7 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-14"
-updated: "2026-09-23"
+updated: "2026-09-27"
 authority: "instruction"
 confidence: "verified"
 summary: "Initialize a remote Steel browser session for a project task, verifying credentials, connectivity, and attachment endpoints before automation."
@@ -42,7 +42,7 @@ Use this prompt to initialize a remote browser session on self-hosted Steel for 
 ## Instructions for the agent
 
 1. **Verify Credential Reference**:
-   - Resolve the target credentials and `STEEL_API_KEY` from the secret manager, for example with `pass-cli`, without logging raw values.
+   - Resolve the target credentials and the Steel Authentik app password (`STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, or `STEEL_AUTH_BASIC`) from the secret manager, for example with `pass-cli`, without logging raw values. A Bearer token is not accepted. Keep the credential in a header, not a URL.
    - Do not print credentials to the chat or save them to tracked files.
 
 2. **Launch Remote Steel Session**:
@@ -50,7 +50,7 @@ Use this prompt to initialize a remote browser session on self-hosted Steel for 
    - Capture `sessionId`, `websocketUrl`, and `sessionViewerUrl`.
 
 3. **Verify Target Endpoint Connectivity**:
-   - Connect `agent-browser` or `Playwright` via CDP.
+   - Connect Playwright via CDP with the headers from `formatCDPConnect()` (`Authorization: Basic`). Do not put the credential in the URL. `agent-browser --cdp` cannot send that header.
    - Navigate to `{{TARGET_BASE_URL}}` within `{{PERMISSION_LEVEL}}` constraints.
    - If `PERMISSION_LEVEL` is `INSPECT_ONLY`, do not click submit buttons or mutate forms.
 
