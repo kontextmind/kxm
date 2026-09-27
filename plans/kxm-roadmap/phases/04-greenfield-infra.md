@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/plan-greenfield-infra.md`.
 
-Updated: 2026-09-26.
+Updated: 2026-09-27.
 
 Record only what the tracker says about the greenfield first move. The plan file itself is not in this checkout.
 

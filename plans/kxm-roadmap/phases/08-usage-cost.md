@@ -4,7 +4,7 @@ Status: later. Horizon: later.
 
 Source: `plans/plan-usage-cost-quota-tracking.md`.
 
-Updated: 2026-09-26.
+Updated: 2026-09-27.
 
 Quota observations on top of existing usage records. The plan says it is not an active backlog.
 
