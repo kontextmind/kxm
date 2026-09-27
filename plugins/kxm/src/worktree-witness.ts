@@ -3,8 +3,10 @@ import type { KxmProducerResult } from "./engine.ts";
 
 /**
  * Fingerprint of a checkout taken around a live producer spawn.
- * Porcelain alone misses a content edit that keeps the same status line, so the
- * witness also includes unstaged and staged diffs.
+ * The fingerprint covers HEAD plus the working tree. Porcelain alone misses a
+ * content edit that keeps the same status line, and a commit leaves porcelain
+ * and both diffs empty, so the witness is `head`, porcelain, unstaged diff,
+ * and staged diff.
  */
 export interface WorktreeWitness {
   readonly unwitnessed: boolean;
@@ -22,13 +24,16 @@ function gitText(cwd: string, args: readonly string[]): string | undefined {
 }
 
 export function captureWorktreeWitness(cwd: string): WorktreeWitness {
+  // A repository with no commits has no HEAD. That is an empty head term, not
+  // an unwitnessed checkout: the other three commands still describe the tree.
+  const head = gitText(cwd, ["rev-parse", "HEAD"]) ?? "";
   const porcelain = gitText(cwd, ["status", "--porcelain=v1", "-uall"]);
   const diff = gitText(cwd, ["diff", "--no-ext-diff"]);
   const staged = gitText(cwd, ["diff", "--cached", "--no-ext-diff"]);
   if (porcelain === undefined || diff === undefined || staged === undefined) {
     return { unwitnessed: true, fingerprint: "" };
   }
-  return { unwitnessed: false, fingerprint: `${porcelain}\0${diff}\0${staged}` };
+  return { unwitnessed: false, fingerprint: `${head}\0${porcelain}\0${diff}\0${staged}` };
 }
 
 export function worktreeChanged(before: WorktreeWitness, after: WorktreeWitness): boolean {

@@ -24509,13 +24509,14 @@ function gitText(cwd, args) {
   return result.stdout ?? "";
 }
 function captureWorktreeWitness(cwd) {
+  const head = gitText(cwd, ["rev-parse", "HEAD"]) ?? "";
   const porcelain = gitText(cwd, ["status", "--porcelain=v1", "-uall"]);
   const diff = gitText(cwd, ["diff", "--no-ext-diff"]);
   const staged = gitText(cwd, ["diff", "--cached", "--no-ext-diff"]);
   if (porcelain === void 0 || diff === void 0 || staged === void 0) {
     return { unwitnessed: true, fingerprint: "" };
   }
-  return { unwitnessed: false, fingerprint: `${porcelain}\0${diff}\0${staged}` };
+  return { unwitnessed: false, fingerprint: `${head}\0${porcelain}\0${diff}\0${staged}` };
 }
 function worktreeChanged(before, after) {
   if (before.unwitnessed || after.unwitnessed) return false;
