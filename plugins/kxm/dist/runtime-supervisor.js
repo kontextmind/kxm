@@ -29900,42 +29900,46 @@ function recoverKxmRun(context, runId, request) {
 
 // plugins/kxm/src/oneshot-producer.ts
 function lastBalancedJsonObject(text) {
-  for (let end = text.length - 1; end >= 0; end--) {
-    if (text[end] !== "}") continue;
-    const start = matchingObjectStart(text, end);
-    if (start !== void 0) return text.slice(start, end + 1);
-  }
-  return void 0;
-}
-function matchingObjectStart(text, end) {
   let depth = 0;
-  for (let i = end; i >= 0; i--) {
+  let inString = false;
+  let escape2 = false;
+  let start = -1;
+  let lastStart = -1;
+  let lastEnd = -1;
+  for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (ch === '"') {
-      const opener = openingQuote(text, i);
-      if (opener < 0) return void 0;
-      i = opener;
+    if (inString) {
+      if (escape2) {
+        escape2 = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape2 = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
       continue;
     }
-    if (ch === "}") {
-      depth++;
+    if (ch === '"') {
+      inString = true;
       continue;
     }
     if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+    if (ch === "}") {
+      if (depth === 0) continue;
       depth--;
-      if (depth === 0) return i;
+      if (depth === 0) {
+        lastStart = start;
+        lastEnd = i;
+      }
     }
   }
-  return void 0;
-}
-function openingQuote(text, closer) {
-  for (let i = closer - 1; i >= 0; i--) {
-    if (text[i] !== '"') continue;
-    let slashes = 0;
-    for (let j = i - 1; j >= 0 && text[j] === "\\"; j--) slashes++;
-    if (slashes % 2 === 0) return i;
-  }
-  return -1;
+  if (lastStart < 0) return void 0;
+  return text.slice(lastStart, lastEnd + 1);
 }
 function standaloneObjectText(text) {
   const trimmed = text.trim();

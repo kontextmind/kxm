@@ -1217,6 +1217,12 @@ test("a truncated reply does not settle from an inner object", async () => {
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
+test("a megabyte of unclosed braces still settles the final outcome line", async () => {
+  const prefix = `{${"{".repeat(1024).repeat(1024)}`;
+  const text = `${prefix}\n{"outcome":"failed"}`;
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
 test("a final fenced standalone object settles as the allowed outcome", async () => {
   const text = [
     "Review notes stay above the result.",

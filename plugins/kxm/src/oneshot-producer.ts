@@ -51,49 +51,53 @@ export interface KxmOneShotProducer extends KxmProducer {
   close(): Promise<void>;
 }
 
-// The balanced `{...}` that ends at the last `}`. Quotes hide braces and
-// escapes. Callers accept the span only when it is the entire trimmed reply
-// or the entire final line; an inner object is not an outcome.
+// The last complete top-level `{...}`. One forward pass tracks strings,
+// escapes, and brace depth. A `{` that lifts depth from 0 to 1 opens a
+// candidate; the matching `}` that returns depth from 1 to 0 closes it.
+// The last such span wins. Callers accept the span only when it is the
+// entire trimmed reply or the entire final line; an inner object is not
+// an outcome.
 function lastBalancedJsonObject(text: string): string | undefined {
-  for (let end = text.length - 1; end >= 0; end--) {
-    if (text[end] !== "}") continue;
-    const start = matchingObjectStart(text, end);
-    if (start !== undefined) return text.slice(start, end + 1);
-  }
-  return undefined;
-}
-
-function matchingObjectStart(text: string, end: number): number | undefined {
   let depth = 0;
-  for (let i = end; i >= 0; i--) {
+  let inString = false;
+  let escape = false;
+  let start = -1;
+  let lastStart = -1;
+  let lastEnd = -1;
+  for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (ch === '"') {
-      const opener = openingQuote(text, i);
-      if (opener < 0) return undefined;
-      i = opener;
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
       continue;
     }
-    if (ch === "}") {
-      depth++;
+    if (ch === '"') {
+      inString = true;
       continue;
     }
     if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+    if (ch === "}") {
+      if (depth === 0) continue;
       depth--;
-      if (depth === 0) return i;
+      if (depth === 0) {
+        lastStart = start;
+        lastEnd = i;
+      }
     }
   }
-  return undefined;
-}
-
-// `closer` is a closing quote. Return its opening quote so the caller steps past it.
-function openingQuote(text: string, closer: number): number {
-  for (let i = closer - 1; i >= 0; i--) {
-    if (text[i] !== '"') continue;
-    let slashes = 0;
-    for (let j = i - 1; j >= 0 && text[j] === "\\"; j--) slashes++;
-    if (slashes % 2 === 0) return i;
-  }
-  return -1;
+  if (lastStart < 0) return undefined;
+  return text.slice(lastStart, lastEnd + 1);
 }
 
 // A standalone object is one balanced `{...}` covering the entire trimmed text.
