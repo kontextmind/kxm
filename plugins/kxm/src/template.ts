@@ -245,7 +245,7 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
       purpose: "writer",
       permission: "edit",
       description: "Primary implementation agent.",
-      roster: [{ route: "grok-grok-4-6" }],
+      roster: [{ route: "grok-grok-4-6", effort: "medium" }],
     });
     files.set(".kxm/roles/planner.yaml", {
       schema: "kxm.role.v2",
@@ -253,7 +253,7 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
       purpose: "planner",
       permission: "read-only",
       description: "Plans the change before implementation.",
-      roster: [{ route: "claude-fable" }],
+      roster: [{ route: "claude-fable", effort: "medium" }],
     });
     files.set(".kxm/gates.yaml", {
       schema: "kxm.gate-registry.v1",

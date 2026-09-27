@@ -149,10 +149,14 @@ All notable user-facing changes are documented here. The project follows [Semant
   and `writer.yaml`; `coordinator` and `implementer` remain aliases.
   `opus-claude` is removed because `opus` is not an admitted selector.
   `qwen-token-plan/*` and `zai-coding-cn/*` left `.kxm/routes.yaml` because
-  those harnesses are not allowlisted. `node scripts/workforce-lint.mjs`
+  those harnesses are not allowlisted.   `node scripts/workforce-lint.mjs`
   fails `npm run check` and `npm run validate:pr` when a route, a roster
-  entry, or an id breaks the convention. An admitted selector with no route
-  is a warning.
+  entry, or an id breaks the convention, and when a roster entry omits
+  `effort` or names one outside `off`, `minimal`, `low`, `medium`, `high`,
+  `xhigh`, and `max`. An admitted selector with no route is a warning.
+  The Claude helper accepts `fable` only. #343's architecture critic ran on
+  `opus` because `just review-arch` hardcoded it while `reviewer-arch` listed
+  only `fable-claude`. That recipe is gone; a request for `opus` fails closed.
 - **Dispatch reads role and model files, and agents bind a role.**
   `scripts/roster-policy.mjs` builds the developer policy from
   `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.

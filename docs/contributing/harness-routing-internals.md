@@ -9,7 +9,7 @@ This page records how the KXM repository applies [harness routing](../reference/
 
 The command transcripts below are the 2026-09-23 capture. The files now use one id shape per kind. A route id is `<harness>-<model-slug>[-<provider>]`, with `.` written as `-`. An agent id equals its role. A workflow id is `default`, `land`, or `<role>-only`. An agent step id equals that role.
 
-This checkout's routes are `grok-grok-4-7`, `pi-qwen3-coder-plus-openrouter`, `agy-gemini-3-8-flash-high`, `agy-gemini-3-8-flash-medium`, `claude-fable`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Old ids resolve as aliases.
+This checkout's routes are `grok-grok-4-7`, `pi-qwen3-coder-plus-openrouter`, `agy-gemini-3-8-flash-high`, `agy-gemini-3-8-flash-medium`, `claude-fable`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Old ids resolve as aliases. Every roster entry names an effort. `reviewer-arch` dispatches `claude-fable`. #343's architecture critic ran on opus because `just review-arch` hardcoded that model; the role file on that commit listed only `fable-claude`. The helper now refuses `opus`.
 
 ## This checkout's routes and roster
 

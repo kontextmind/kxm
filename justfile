@@ -29,7 +29,8 @@ default:
 
 # ── isolation ───────────────────────────────────────────────────────────────
 # One-step transport is `kxm lane run <unit> --workflow <id> --brief <file>`
-# for implement-only, review-arch-only, and review-cli-only.
+# for writer-only, reviewer-arch-only, and reviewer-cli-only
+# (implement-only, review-arch-only, and review-cli-only still resolve).
 # scripts/harness-run.mjs still accepts a kxm.harness-request.v1 envelope.
 
 # create one worktree lane; kxm lane create prints the lane line
@@ -74,8 +75,8 @@ check-generated:
 
 # ── assignment runner ───────────────────────────────────────────────────────
 # The normal dev entry: a closed kxm.assignment.v1 manifest plus the current
-# plan. These recipes mint assignment, witness and acceptance proof; the
-# impl/plan/review-* recipes above are transport only and never do. Every path
+# plan. These recipes mint assignment, witness and acceptance proof. Lane
+# workflows are transport only and never do. Every path
 # is absolute because the runner refuses a relative one; that is a validation
 # rule, not what makes the quoting safe — `set positional-arguments` plus `"$1"`
 # is what keeps a user path out of shell source.

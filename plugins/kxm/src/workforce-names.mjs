@@ -19,6 +19,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 
+export const ROSTER_EFFORTS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
 export const ROLE_IDS = Object.freeze([
   "writer",
   "planner",
@@ -221,7 +223,16 @@ export function lintWorkforce(root) {
     }
     const roster = Array.isArray(role.doc.roster) ? role.doc.roster : [];
     for (const item of roster) {
-      const route = item && typeof item === "object" ? item.route : undefined;
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const route = item.route;
+      const effort = item.effort;
+      const routeLabel = typeof route === "string" && route ? route : "(missing route)";
+      if (typeof effort !== "string" || !ROSTER_EFFORTS.has(effort)) {
+        const detail = typeof effort === "string"
+          ? `effort '${effort}' is not one of off, minimal, low, medium, high, xhigh, max`
+          : "has no effort";
+        push(errors, "error", "roster_effort_required", `.kxm/roles/${role.id}.yaml`, `roster route '${routeLabel}' ${detail}`);
+      }
       if (typeof route !== "string" || !route) continue;
       const found = lookupById(modelRecords, route, "route");
       if (!found) {

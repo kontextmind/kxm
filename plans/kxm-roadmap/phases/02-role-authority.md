@@ -26,13 +26,17 @@ Evidence: `test/core/policy-draft.test.ts`.
 
 ### P2 cut the loader and engine over to the v2 files
 
-`omp-p2`. Status: open. Detail: scoped.
+`omp-p2`. Status: done. Detail: ready.
 
-Template: `feature`.
+Template: [feature](../../templates/feature.md).
 
 Done criterion: roster-policy.mjs and engine.ts read roles and routes from the v2 files at origin/main; roster.yaml and the justfile literals are gone.
 
 Evidence needed: test/core/roster-policy.test.ts rewritten, one engine test per refusal path.
+
+Plan section: plans/plan-omp-config-alignment.md#5-phases.
+
+Evidence: `test/core/roster-policy.test.ts`.
 
 ### P3 tool policy enforcement
 
@@ -70,7 +74,6 @@ None.
 
 ## Questions
 
-- Section 7 of the plan lists the open questions; they stay open until P2 is dispatched.
-- P2 waits on the lane registry slice (backlog S24) so the writer can run through kxm lane run.
+- P2 landed in #343. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files, and whether P4 needs an error classifier before the fallback walk.
 
 [Dashboard](../dashboard.md)

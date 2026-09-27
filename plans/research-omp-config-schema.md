@@ -559,35 +559,42 @@ no omp counterpart, and nothing in omp should replace it. The one idea worth
 noting is the token budget with advisory versus hard semantics, which maps onto
 `plan-usage-cost-quota-tracking.md`.
 
-## 10. KXM state observed on 2026-09-25
+## 10. KXM state observed on 2026-09-27
 
-These are the facts the migration plan relies on.
+P1 (#337) and P2 (#343) landed. The 2026-09-25 notes above them described the
+pre-cutover tree. This is the tree those phases left, plus the workforce-id
+pass on this branch.
 
-- **Five places pin a role to a model**: `.kxm/roles/*.yaml`,
-  `.kxm/routes.yaml` `roles:`, `.kxm/roster.yaml` `routes[].roles` and
-  `lineup`, `.kxm/agents/*.yaml` `harness` plus `model`, and
-  `DEFAULT_ROLE_SEATS` in `plugins/kxm/src/role.ts` line 412 (plus the optional
-  `role-hosts.yaml`). They use two vocabularies: `writer/planner/reviewer-*` and
-  `implementer/critic-*`, bridged by a hardcoded alias in `engine.ts` line 1426.
-- **Dispatch order**: the agent's pinned model is the selector; it must be in
-  `routes.yaml` `admitted`; it must appear in the role roster; a live write step
-  must also be a `roster.yaml` `lineup.writer` route with `status: admitted` and
-  an `edit` permission; the harness must have an audited one-shot profile for the
-  permission. No fallback is attempted at any stage.
-- **Role schema drift, three shapes**: `schemas/role.schema.json` requires
-  `roster[].harness` and models as `{provider, model}` objects with
-  `additionalProperties: false`; the TypeScript `KxmRosterEntry` requires
-  `harness` as a string and has no `enabled`; the on-disk files use
-  `model: provider/model` strings, no `harness`, and `enabled: true`. The JSON
-  schema is referenced only by `test/core/policy-draft.test.ts`. The
-  `role modify --add-model` path writes `{harness, model}` and defaults the
-  harness to `pi` when the argument has no colon.
-- **Role `tools`, `skills`, `produces`, `consumes`, `policy` are never
-  consumed** outside the list output (`role.ts` lines 245 and 262). Agent
-  `tools.preset` is enforced.
-- **Effort**: roster entries allow `low` to `xhigh`; inventory records no
-  accepted levels; the writer's Gemini entry has no effort at all.
-- **omp on this machine**: `modelRoles.default` is grok-4.7 at `high` through
-  omp's `xai-oauth` provider and `plan` is Opus 5.5. KXM's writer runs grok-4.7
-  at `medium` through the native grok harness and its planner is Fable. The two
-  configs are not derived from each other.
+- **One authority.** `.kxm/roles/*.yaml` (`kxm.role.v2`) and
+  `.kxm/models/*.yaml` (`kxm.model.v2`) are the role and route files.
+  `.kxm/routes.yaml` keeps `admitted` and `disabled` only. `.kxm/roster.yaml`
+  is deleted and a leftover is refused. Agent files bind `role:` and do not
+  carry `harness` or `model`. `DEFAULT_ROLES` and `DEFAULT_ROLE_SEATS` are
+  gone. `scripts/roster-policy.mjs` and `engine.ts` read the v2 files.
+  `just impl`, `just plan`, and `just review-arch` are gone; `kxm lane run`
+  is transport and does not mint assignment proof.
+- **Ids.** Role, agent, and agent-step ids share one vocabulary:
+  `planner`, `writer`, `reviewer-arch`, `reviewer-cli`. Route ids are
+  `<harness>-<model-slug>[-<provider>]`. Old ids resolve as aliases.
+  `opus-claude` does not: `opus` is not admitted.
+- **Dispatch.** `resolveProducerRoute` walks the agent's role roster and
+  takes the first admitted route. `resolveRequiredCritics` uses that same
+  first entry for `reviewer-arch` and `reviewer-cli`, which is `claude-fable`
+  and `codex-gpt-5-6-sol`. There is still no automatic fallback walk (P4).
+  #343's architecture critic ran on opus anyway: the parent `just review-arch`
+  recipe hardcoded `claude` / `opus` / `medium` and never opened the role
+  file, which listed only `fable-claude`. The helper model list is now
+  `fable` only, so a request for `opus` fails closed. Acceptance already
+  required `claude` / `fable`.
+- **Role shape.** A roster entry is `{route, effort, mode?}`. `effort` is
+  required by `workforce-lint` and must be one of `off`, `minimal`, `low`,
+  `medium`, `high`, `xhigh`, `max`. Every entry in this checkout sets one.
+  The engine still leaves thinking unset when a user project omits it.
+- **Still unread at dispatch.** Role `tools`, `skills`, `produces`,
+  `consumes`, and `policy` are schema-checked and counted in `kxm role list`.
+  Agent `tools.preset` is what the step enforces. P3 and P6 are still open:
+  this lint is not the effort catalog or the tool-policy gate.
+- **omp on this machine, unchanged.** `modelRoles.default` is grok-4.7 at
+  `high` through omp's `xai-oauth` provider and `plan` is Opus 5.5. KXM's
+  writer runs grok-4.7 at `medium` through the native grok harness and its
+  planner is Fable. The two configs are not derived from each other.

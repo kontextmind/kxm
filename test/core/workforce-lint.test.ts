@@ -33,6 +33,7 @@ test("workforce lint reports admission, roster, unused route, and id failures", 
     assert.ok(codes.includes("agent_id_convention"), codes.join(","));
     assert.ok(codes.includes("workflow_id_convention"), codes.join(","));
     assert.ok(codes.includes("step_id_convention"), codes.join(","));
+    assert.ok(codes.includes("roster_effort_required"), codes.join(","));
     assert.ok(report.warnings.some((item) => item.code === "admitted_unrouted" && item.message.includes("anthropic/fable")));
   } finally {
     rmSync(root, { recursive: true, force: true });

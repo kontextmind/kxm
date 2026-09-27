@@ -10,4 +10,6 @@ roster:
   - route: pi-qwen3-coder-plus-openrouter
     effort: medium
   - route: agy-gemini-3-8-flash-high
+    effort: medium
   - route: agy-gemini-3-8-flash-medium
+    effort: medium
