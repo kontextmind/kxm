@@ -6,6 +6,8 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Playwright uses Obscura by default.** `resolveBrowserCdpEndpoint()` returns `OBSCURA_CDP_URL` or `http://127.0.0.1:${OBSCURA_PORT:-9222}`. `KXM_BROWSER=steel` still returns the Steel session CDP URL. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it with `--allow-private-network`. `npm run e2e` runs the Playwright smoke test in `test/e2e/` over CDP and does not run `playwright install`. Steel remains the path for human takeover, MFA, and the live session viewer. See [ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md) and [How do I connect Playwright to Obscura?](docs/kb/how-to-connect-playwright-to-obscura.md).
+
 - **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**
   The bound is the step `timeoutMs`, or the project `limits.agentStepTimeoutMs`
   when the step omits it (minimum 60 seconds, default one hour). A wider step

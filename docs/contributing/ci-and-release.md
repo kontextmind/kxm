@@ -42,6 +42,7 @@ together.
 | Merged pull request | `auto-release.yml` | Tags the merge commit and dispatches `release.yml` |
 | Tag push or dispatch | `release.yml` | Verifies, packs and publishes (see [Release flow](#release-flow)) |
 | Manual only | `smoke.yml` | Real Pi smoke, currently disabled (see [Smoke tests](#smoke-tests)) |
+| Pull request, or manual | `e2e.yml` | `npm run e2e` on `ubuntu-latest`: Obscura v0.2.3 plus the Playwright smoke test. This workflow does not enable CI, Nightly, or Real Pi smoke |
 
 The npm scripts behind those rows:
 

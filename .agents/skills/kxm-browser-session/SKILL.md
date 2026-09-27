@@ -1,11 +1,13 @@
 ---
 name: kxm-browser-session
-description: Start, attach to, inspect, and release self-hosted Steel browser sessions with lifecycle safety and timeout controls.
+description: Start, attach to, inspect, and release self-hosted Steel browser sessions with lifecycle safety and timeout controls. Playwright testing uses Obscura unless KXM_BROWSER=steel.
 ---
 
 # KXM Browser Session Management
 
 Use this skill to create, inspect, attach automation tools to, and release isolated browser sessions running on your self-hosted Steel deployment. Set `STEEL_API_URL` (and optionally `STEEL_UI_URL`) to your deployment; KXM does not provide one.
+
+Playwright testing and verification use Obscura by default (`resolveBrowserCdpEndpoint()`, or `npm run e2e`). Use this skill's Steel session for human takeover, MFA, and the live session viewer. Attach Playwright to that session only when `KXM_BROWSER=steel`.
 
 ## Purpose & Scope
 
@@ -64,7 +66,7 @@ printf 'x-steel-api-key: %s\n' "$STEEL_API_KEY" | curl -sS -X POST "$STEEL_API_U
 
 ### 2. Attaching Automation Clients
 
-- **Playwright**: Connect via `chromium.connectOverCDP(cdpUrl)`.
+- **Playwright**: For tests, connect to Obscura with `chromium.connectOverCDP()` through the worker-scoped `browser` fixture. For a Steel takeover session, set `KXM_BROWSER=steel` and connect to the URL from `resolveBrowserCdpEndpoint(session)`.
 - **agent-browser**: Connect using `agent-browser --cdp "<cdpUrl>"`.
 
 ### 3. Inspecting Session State

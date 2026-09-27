@@ -27,6 +27,14 @@ nul
 
 # Built docs site (mkdocs). Never published.
 site/
+
+# Obscura binaries downloaded by scripts/obscura.mjs
+.kxm/bin/
+
+# Playwright output (connectOverCDP; browsers are not installed)
+test-results/
+playwright-report/
+blob-report/
 .venv-docs/
 __pycache__/
 *.pyc

@@ -1,8 +1,10 @@
 /**
  * KXM Browser Automation & Steel Session Client
  *
- * Lightweight, harness-agnostic client for self-hosted Steel on DOKS.
- * Manages remote browser sessions, CDP endpoints, human takeover handoffs,
+ * Playwright testing and verification use Obscura by default
+ * (`resolveBrowserCdpEndpoint()`). Steel remains the client for human
+ * takeover, MFA, and the live session viewer (`KXM_BROWSER=steel`).
+ * Manages remote Steel sessions, CDP endpoints, human takeover handoffs,
  * pass-cli credential references, and automated cleanup without leaking secrets.
  */
 
@@ -216,6 +218,55 @@ export function formatCDPEndpoint(session: Pick<SteelSession, "id" | "websocketU
   }
 
   return `${wsProtocol}//${host}/v1/devtools?${searchParams.toString()}`;
+}
+
+export const DEFAULT_OBSCURA_CDP_URL = "http://127.0.0.1:9222";
+const DEFAULT_OBSCURA_PORT = 9222;
+
+function obscuraListenPort(): number {
+  const raw = process.env.OBSCURA_PORT?.trim() ?? "";
+  if (raw === "") return DEFAULT_OBSCURA_PORT;
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new Error(`OBSCURA_PORT must be an integer from 1 to 65535 (received ${JSON.stringify(process.env.OBSCURA_PORT)})`);
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`OBSCURA_PORT must be an integer from 1 to 65535 (received ${JSON.stringify(process.env.OBSCURA_PORT)})`);
+  }
+  return port;
+}
+
+/**
+ * CDP URL for a local Obscura browser.
+ * `OBSCURA_CDP_URL` wins. Otherwise `http://127.0.0.1:${OBSCURA_PORT:-9222}`.
+ */
+export function resolveObscuraCdpEndpoint(): string {
+  const explicit = process.env.OBSCURA_CDP_URL?.trim() ?? "";
+  if (explicit !== "") return explicit;
+  const port = obscuraListenPort();
+  if (port === DEFAULT_OBSCURA_PORT) return DEFAULT_OBSCURA_CDP_URL;
+  return `http://127.0.0.1:${port}`;
+}
+
+/**
+ * Playwright CDP endpoint.
+ * Obscura by default. `KXM_BROWSER=steel` uses {@link formatCDPEndpoint} for `session`.
+ */
+export function resolveBrowserCdpEndpoint(
+  session?: Pick<SteelSession, "id" | "websocketUrl">,
+  config?: SteelConfig,
+): string {
+  const browser = (process.env.KXM_BROWSER ?? "").trim().toLowerCase();
+  if (browser === "" || browser === "obscura") {
+    return resolveObscuraCdpEndpoint();
+  }
+  if (browser === "steel") {
+    if (!session?.id) {
+      throw new Error("KXM_BROWSER=steel requires a Steel session id");
+    }
+    return formatCDPEndpoint(session, config ?? resolveSteelConfig());
+  }
+  throw new Error(`Unsupported KXM_BROWSER value ${JSON.stringify(process.env.KXM_BROWSER)}; expected "obscura" or "steel"`);
 }
 
 /**

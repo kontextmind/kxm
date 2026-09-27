@@ -285,6 +285,30 @@ test("nightly workflow runs complete test coverage with 93/80/93 floors", () => 
   assert.match(nightlyText, /npm pack --dry-run/);
 });
 
+test("playwright e2e stays outside node --test and outside the paused CI workflow", () => {
+  const e2eText = readFileSync(".github/workflows/e2e.yml", "utf8");
+  const doc = parse(e2eText) as {
+    on?: Record<string, unknown>;
+    env?: Record<string, unknown>;
+    jobs?: WorkflowJobs;
+  };
+  assert.deepEqual(Object.keys(doc.on ?? {}), ["pull_request", "workflow_dispatch"]);
+  assert.equal(doc.jobs?.obscura?.["runs-on"], "ubuntu-latest");
+  assert.equal(doc.jobs?.obscura?.["timeout-minutes"], 20);
+  assert.equal(doc.env?.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD, "1");
+  const steps = JSON.stringify(doc.jobs?.obscura?.steps ?? []);
+  assert.match(steps, /npm ci/);
+  assert.match(steps, /npm run e2e/);
+  assert.match(steps, /\.kxm\/bin/);
+  assert.match(e2eText, /obscura-v0\.2\.3/);
+  assert.doesNotMatch(e2eText, /playwright install/);
+  assert.doesNotMatch(ciText, /npm run e2e/);
+  assert.doesNotMatch(ciText, /ubuntu-latest/);
+  assert.doesNotMatch(pkg.scripts?.test ?? "", /test\/e2e/);
+  assert.equal(pkg.scripts?.e2e, "node scripts/obscura.mjs --ensure && playwright test");
+  assert.doesNotMatch(JSON.stringify(pkg.scripts), /playwright install/);
+});
+
 test("smoke workflow is manual, equality-gated, keeps model inputs", () => {
   const doc = parse(smokeText) as WorkflowDoc;
   assert.deepEqual(Object.keys(doc.on ?? {}), ["workflow_dispatch"]);

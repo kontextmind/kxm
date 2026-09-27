@@ -1,11 +1,12 @@
 # Browser automation
 
-Give agents a real browser without giving them your desktop: KXM's browser skills drive a remote [Steel](https://github.com/steel-dev/steel-browser) browser that you host, explore pages with `agent-browser`, verify fixes with Playwright, and hand control to a person for login, MFA or consent. This page is for developers and operators. The `browser` mode names this page as its context file (`kxm explain --mode browser` counts it), so it stays short and procedure-first.
+Give agents a real browser without giving them your desktop. Playwright testing and verification use [Obscura](https://github.com/h4ckf0r0day/obscura) by default. Steel remains for human takeover, MFA, and the live session viewer. Explore pages with `agent-browser`, and hand a Steel session to a person for login, MFA, or consent. This page is for developers and operators. The `browser` mode names this page as its context file (`kxm explain --mode browser` counts it), so it stays short and procedure-first.
 
 ## Before you begin
 
-- A Steel deployment you operate, reachable over HTTPS, and its API key. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
-- `curl` and `jq`. Optionally `agent-browser` for exploration and Playwright for tests.
+- For Playwright: Node, and `node scripts/obscura.mjs` (it downloads pinned Obscura v0.2.3). [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md) records that default.
+- For takeover: a Steel deployment you operate, reachable over HTTPS, and its API key. [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md) describes the reference deployment on Kubernetes.
+- `curl` and `jq`. Optionally `agent-browser` for exploration. Playwright tests use Obscura; do not run `playwright install`.
 - A secret manager for the API key. The bundled skills use `pass-cli`.
 - The `kxm-browser-*` skills from the plugin or Pi package. See [Agent skills](agent-skills.md#browser-automation-skills).
 
@@ -13,11 +14,23 @@ Give agents a real browser without giving them your desktop: KXM's browser skill
 
 | Component | Role |
 |---|---|
-| Steel | Runs isolated Chromium sessions and exposes a REST API, a CDP WebSocket and a session viewer |
+| Obscura | Default headless browser for Playwright (`chromium.connectOverCDP`) |
+| Steel | Isolated Chromium sessions, a REST API, a CDP WebSocket, and a session viewer for takeover |
 | `agent-browser` | Fast, token-efficient exploration: accessibility snapshots, navigation, DOM inspection |
 | Playwright | Assertions, bug reproductions, visual proof and permanent regression tests |
 | Secret manager | The only place the Steel API key and site credentials live |
-| Human operator | Completes MFA, CAPTCHA, SSO or consent in the session viewer |
+| Human operator | Completes MFA, CAPTCHA, SSO or consent in the Steel session viewer |
+
+## Run Playwright on Obscura
+
+`resolveBrowserCdpEndpoint()` returns the Obscura URL unless `KXM_BROWSER=steel`. The launcher and the settings are in [How do I connect Playwright to Obscura?](../kb/how-to-connect-playwright-to-obscura.md) and [Browser settings](../reference/configuration.md#browser-automation).
+
+```bash
+node scripts/obscura.mjs --ensure
+npm run e2e
+```
+
+Set `video: "off"` in Playwright. Obscura does not record video. Connect with the worker-scoped `browser` fixture and `chromium.connectOverCDP()`. `chromium.connect` and `use.connectOptions` are not supported.
 
 ## Configure the Steel endpoint
 
@@ -70,7 +83,7 @@ The CDP URL carries the API key in its query string. Treat it as a secret: never
    echo "Session: $SESSION_ID"
    ```
 
-3. Attach one automation client over CDP: `chromium.connectOverCDP(<cdp-url>)` in Playwright, or `agent-browser --cdp "<cdp-url>"`. Check the session's state with `steel GET "/v1/sessions/$SESSION_ID"`.
+3. For exploration, attach `agent-browser --cdp "<cdp-url>"`. Playwright tests use Obscura. Set `KXM_BROWSER=steel` and `chromium.connectOverCDP(<cdp-url>)` only when the test must drive this takeover session. Check the session's state with `steel GET "/v1/sessions/$SESSION_ID"`.
 4. For a quick fetch that needs no session, scrape instead:
 
    ```bash
@@ -128,7 +141,8 @@ The KXM browser library tracks these states in the process that owns the session
 |---|---|---|
 | `401` or `403` from Steel | Missing or wrong API key | Re-export `STEEL_API_KEY` from your secret manager |
 | Requests go to an unexpected host | `STEEL_API_URL` is unset | Export it before starting the agent |
-| Playwright opens a local browser | The client did not attach over CDP | Use `connectOverCDP` with the session's CDP URL |
+| Playwright opens a local browser | The client called `chromium.launch()` or `chromium.connect()` | Use the worker-scoped fixture and `connectOverCDP` against Obscura |
+| `Access to private/internal IP address` | Obscura was started without `--allow-private-network` | Run `node scripts/obscura.mjs`, which passes that flag |
 | Signed-in state is gone | The session expired or was released | Create a new session and repeat the takeover |
 | The viewer shows the page but clicks do nothing | The viewer is a screencast, and some capture modes do not forward clicks | Use the DevTools inspector at `$STEEL_API_URL/v1/devtools/inspector.html`, with the agent paused |
 
@@ -136,6 +150,7 @@ The KXM browser library tracks these states in the process that owns the session
 
 - [How are credentials retrieved without exposing them to the model?](../kb/how-credentials-retrieved-safely.md)
 - [How do I capture a UI section and annotate changes for an agent?](../kb/how-to-capture-and-annotate-section.md)
+- [How do I connect Playwright to Obscura?](../kb/how-to-connect-playwright-to-obscura.md)
 - [How do I connect Playwright to the existing Steel session?](../kb/how-to-connect-playwright-to-steel.md)
 - [How do I recover an expired session or remove an orphaned browser?](../kb/how-to-recover-expired-session-or-orphan.md)
 - [How does an agent resume after MFA?](../kb/how-to-resume-after-mfa.md)
@@ -156,5 +171,6 @@ The KXM browser library tracks these states in the process that owns the session
 ## Next steps
 
 - The seven browser skills: [Agent skills](agent-skills.md#browser-automation-skills)
+- Why Obscura is the Playwright default: [ADR-0005](../adr/ADR-0005-obscura-default-playwright.md)
 - Why Steel, and the reference deployment: [ADR-0002](../adr/ADR-0002-browser-automation-steel-doks.md)
 - Estimate the `browser` mode's prompt footprint: [`kxm explain`](../reference/cli-reference.md#kxm-explain)

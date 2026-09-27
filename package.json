@@ -38,6 +38,7 @@
     "test:simulations": "npm run build && node scripts/run-bounded.mjs 1200000 node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-force-exit --test-concurrency=4 test/simulations/*.test.ts",
     "test:complete": "npm run build && node scripts/run-bounded.mjs 2400000 node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-force-exit --test-concurrency=4 test/core/*.test.ts test/simulations/*.test.ts",
     "test": "npm run build && node scripts/run-bounded.mjs 1200000 node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-force-exit --test-concurrency=4 test/core/*.test.ts packages/core/*/tests/unit/*.test.ts",
+    "e2e": "node scripts/obscura.mjs --ensure && playwright test",
     "test:coverage:core": "npm run build && node scripts/run-bounded.mjs 2400000 node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-force-exit --test-concurrency=4 --experimental-test-coverage --test-coverage-lines=91 --test-coverage-branches=80 --test-coverage-functions=92 --test-coverage-include=plugins/kxm/src/**/*.ts --test-coverage-exclude=plugins/kxm/src/server.ts --test-coverage-exclude=plugins/kxm/src/mcp-server.ts --test-coverage-exclude=plugins/kxm/src/runtime-supervisor.ts --test-coverage-include=packages/core/*/src/**/*.ts test/core/*.test.ts packages/core/*/tests/unit/*.test.ts",
     "test:coverage:complete": "npm run build && node scripts/run-bounded.mjs 2400000 node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-force-exit --test-concurrency=4 --experimental-test-coverage --test-coverage-lines=93 --test-coverage-branches=80 --test-coverage-functions=93 --test-coverage-include=plugins/kxm/src/**/*.ts --test-coverage-exclude=plugins/kxm/src/server.ts --test-coverage-exclude=plugins/kxm/src/mcp-server.ts --test-coverage-exclude=plugins/kxm/src/runtime-supervisor.ts --test-coverage-include=packages/core/*/src/**/*.ts test/core/*.test.ts test/simulations/*.test.ts packages/core/*/tests/unit/*.test.ts",
     "test:coverage": "npm run test:coverage:core",
@@ -95,6 +96,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.86.1",
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@playwright/test": "1.63.0",
     "@types/node": "26.6.2",
     "ajv": "8.20.0",
     "commander": "15.0.0",
