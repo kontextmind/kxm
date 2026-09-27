@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { runCli } from "../../plugins/kxm/src/cli.ts";
 import {
   parseVisionVerdict,
   runVisionGate,
@@ -114,6 +115,35 @@ test("runVisionGate validates the timeout bound", async () => {
       assert.equal(result.verdict, null);
       assert.equal(result.divergence, "timeout_out_of_bounds");
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test("vision assert CLI: fail-closed on unreadable images, validates --expect", async () => {
+  const { root, image } = projectWithRoutes([VISION_GATE_DEFAULT_ROUTE]);
+  try {
+    let stdout = "";
+    let stderr = "";
+    const code = await runCli(
+      ["vision", "assert", "--json", "--image", "missing.png", "--question", "error banner?"],
+      { KXM_STATE_HOME: join(root, ".kxm", "state") },
+      { stdout: (line: string) => { stdout += `${line}\n`; }, stderr: (line: string) => { stderr += `${line}\n`; } },
+      root,
+    );
+    assert.equal(code, 1);
+    assert.match(stderr, /"divergence":"image unreadable"/);
+
+    stdout = ""; stderr = "";
+    const badExpect = await runCli(
+      ["vision", "assert", "--json", "--image", image, "--question", "q", "--expect", "maybe"],
+      { KXM_STATE_HOME: join(root, ".kxm", "state") },
+      { stdout: (line: string) => { stdout += `${line}\n`; }, stderr: (line: string) => { stderr += `${line}\n`; } },
+      root,
+    );
+    assert.equal(badExpect, 2);
+    assert.match(stderr, /"error":"expect_invalid"/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

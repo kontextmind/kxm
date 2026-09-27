@@ -7,6 +7,7 @@ import { applyRestorePlan, createBackup, databaseError, planBackup, planRestore,
 import { readLiveHubClaim } from "../hub-autostart.ts";
 import { refreshModelInventory } from "../model-inventory.ts";
 import { listInventoryModels, listRoleBindings, loadRoutePolicy, rolesForInventoryModel, setRouteState, updateRouteState } from "../routes.ts";
+import { runVisionGate } from "../vision-gate.ts";
 import {
   KxmConfigError,
   discoverKxmProjectRoot,
@@ -919,6 +920,58 @@ export async function cmdRouteCount(runtime: Runtime): Promise<number> {
   const summary = `${policy.admitted.length} admitted / ${policy.disabled.length} disabled`;
   print(runtime.io, runtime.json, { ok: true, command: "routes count", admitted: policy.admitted.length, disabled: policy.disabled.length, summary }, summary);
   return 0;
+}
+
+export interface VisionAssertOptions {
+  image?: string | undefined;
+  question?: string | undefined;
+  route?: string | undefined;
+  timeoutMs?: string | undefined;
+  expect?: string | undefined;
+}
+
+/** Judge a captured UI screenshot through the admitted vision gate. Exit 0
+ * when the verdict resolves and matches --expect (or when no expectation was
+ * given and the verdict resolved); fail-closed divergences exit 1. */
+export async function cmdVisionAssert(runtime: Runtime, options: VisionAssertOptions): Promise<number> {
+  const image = options.image?.trim();
+  const question = options.question?.trim();
+  if (!image || !question) {
+    print(runtime.io, runtime.json, { ok: false, command: "vision assert", error: "image_and_question_required" }, "both --image and --question are required");
+    return 2;
+  }
+  let expect: boolean | undefined;
+  if (options.expect !== undefined) {
+    if (options.expect !== "true" && options.expect !== "false") {
+      print(runtime.io, runtime.json, { ok: false, command: "vision assert", error: "expect_invalid" }, "--expect must be true or false");
+      return 2;
+    }
+    expect = options.expect === "true";
+  }
+  let timeoutMs: number | undefined;
+  if (options.timeoutMs !== undefined) {
+    const parsed = Number(options.timeoutMs);
+    if (!Number.isInteger(parsed)) {
+      print(runtime.io, runtime.json, { ok: false, command: "vision assert", error: "timeout_invalid" }, "--timeout-ms must be an integer");
+      return 2;
+    }
+    timeoutMs = parsed;
+  }
+  const result = await runVisionGate({
+    projectRoot: runtime.dirs.workdir,
+    imagePath: resolve(runtime.cwd, image),
+    question,
+    ...(options.route !== undefined ? { route: options.route } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  });
+  const pass = result.verdict !== null && (expect === undefined || result.verdict === expect);
+  print(
+    runtime.io,
+    runtime.json,
+    { ok: pass, command: "vision assert", ...(expect !== undefined ? { expect } : {}), ...result },
+    result.verdict === null ? `vision gate fail-closed: ${result.divergence}` : `verdict ${result.verdict}${expect !== undefined ? ` (expected ${expect})` : ""}`,
+  );
+  return pass ? 0 : 1;
 }
 
 export async function cmdModelInventoryRefresh(runtime: Runtime): Promise<number> {

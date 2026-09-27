@@ -94,3 +94,17 @@ const browser = await connectBrowserOverCdp(
 - Save test traces to `.kxm/artifacts/browser/trace-<runId>.zip`.
 - Sanitize recorded traces and screenshots: mask password fields, authorization headers, and personal data.
 - Keep permanent regression tests under `test/e2e/`. Scratch reproduction scripts stay out of that directory.
+
+## Vision Gate (screenshot assertion)
+
+After capturing a screenshot, a deterministic vision gate can assert UI state through an admitted vision route — bounded prompt, strict `{"verdict": true|false}` verdict, fail-closed (no free-form chat):
+
+```bash
+kxm vision assert --image .kxm/artifacts/browser/shot.png \
+  --question "Does the page show the error banner?" \
+  --expect false
+```
+
+- Exit 0 only when the verdict resolves and matches `--expect`; fail-closed divergences (`route_not_admitted`, `image unreadable`, `verdict unreadable`) exit 1.
+- The route must be admitted in `.kxm/routes.yaml` (default: `zai-coding-cn/glm-5.3-flash`, the 12/12-accuracy verified vision route).
+- The gate is a supplement to deterministic Playwright assertions, never a replacement.
