@@ -86,7 +86,8 @@ nav:
       - Workflow modes: roadmap/phases/07-workflow-modes.md
       - Usage and cost: roadmap/phases/08-usage-cost.md
       - Harness first run: roadmap/phases/09-harness-first-run.md
-      - Still open: roadmap/phases/10-still-open.md
+      - Studio cloud host: roadmap/phases/10-studio-cloud-host.md
+      - Still open: roadmap/phases/11-still-open.md
   - Architecture:
       - architecture/index.md
       - Platform: architecture/platform.md

@@ -232,6 +232,29 @@ On a TTY, bare kxm opens the existing dashboard and a first-run panel that probe
 - The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.
 - Option B, a validated workflow file composed from a catalog, waits for an operator decision. The plan recommends it and does not schedule it.
 
+## Studio screens for the shared hub
+
+Status: later. Horizon: later.
+
+Source: `plans/plan-studio-cloud-host.md`.
+
+Studio shows the seven dash panels, a first-run wizard, and live workflow state for the shared hub. Humans sign in at the edge. Policy edits become pull requests. The browser does not hold a hub token.
+
+### Tasks
+
+- `studio-s0` S0 shared sequence gate with the first-run plan.
+- `studio-s1` S1 read-only dash routes and S2 hub SSE fan-out.
+- `studio-s3` S3 through S6 setup, policy PRs, bind, motion, and breakpoints.
+
+### Blockers
+
+- Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.
+- Setup and doctor screens also wait on first-run P1 through P5.
+
+### Questions
+
+- Whether the hosted page stays kxm studio serve, or the portal keeps calling the CLI over guest exec.
+
 ## Still open
 
 Status: open. Horizon: soon.
@@ -272,3 +295,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
+- 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.

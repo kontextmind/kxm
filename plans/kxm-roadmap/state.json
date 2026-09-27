@@ -38,6 +38,10 @@
     {
       "date": "2026-09-27",
       "line": "Draft plan for bare kxm first-run, sequenced after role-authority P3-P7."
+    },
+    {
+      "date": "2026-09-27",
+      "line": "Companion draft for Studio hub screens, sharing the first-run sequence gate."
     }
   ],
   "architecture": {
@@ -638,6 +642,56 @@
           "planSection": "plans/plan-kxm-harness-first-run.md#53-recommendation",
           "doneCriterion": "A composed file is a normal kxm.workflow.v1 document. A code intent that drops a critic is refused. Release selects land.yaml.",
           "evidenceNeeded": "Catalog tests and a receipt that names the workflow hash.",
+          "template": "none",
+          "detail": "brief"
+        }
+      ]
+    },
+    {
+      "id": "studio",
+      "slug": "studio-cloud-host",
+      "title": "Studio screens for the shared hub",
+      "goal": "Studio shows the seven dash panels, a first-run wizard, and live workflow state for the shared hub. Humans sign in at the edge. Policy edits become pull requests. The browser does not hold a hub token.",
+      "source": "plans/plan-studio-cloud-host.md",
+      "priority": "later",
+      "blockers": [
+        "Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.",
+        "Setup and doctor screens also wait on first-run P1 through P5."
+      ],
+      "questions": [
+        "Whether the hosted page stays kxm studio serve, or the portal keeps calling the CLI over guest exec."
+      ],
+      "tasks": [
+        {
+          "id": "studio-s0",
+          "title": "S0 shared sequence gate with the first-run plan",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-studio-cloud-host.md#9-sequence",
+          "doneCriterion": "The cloud-bind flag, the naming validator, and omp P3 through P7 are on main.",
+          "evidenceNeeded": "The same commit or PR links recorded on the first-run plan.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "studio-s1",
+          "title": "S1 read-only dash routes and S2 hub SSE fan-out",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-studio-cloud-host.md#10-phases",
+          "doneCriterion": "Seven routes render from a snapshot. The browser stream is same-origin SSE. A dropped hub stream sets transport to snapshot. Responses contain no admin token.",
+          "evidenceNeeded": "studio-layout tests plus one Obscura test for the workflows route.",
+          "template": "none",
+          "detail": "brief"
+        },
+        {
+          "id": "studio-s3",
+          "title": "S3 through S6 setup, policy PRs, bind, motion, and breakpoints",
+          "status": "open",
+          "evidence": "",
+          "planSection": "plans/plan-studio-cloud-host.md#7-design-motion-and-accessibility",
+          "doneCriterion": "Wizard and doctor call the first-run CLI. Policy edits open a pull request. Bind never renders a token. Phone, tablet, and desktop widths pass Obscura checks, and reduced motion disables the dash animation.",
+          "evidenceNeeded": "test/e2e cases at 390, 800, and 1280, and a secret-absence assertion.",
           "template": "none",
           "detail": "brief"
         }

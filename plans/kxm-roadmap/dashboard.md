@@ -192,7 +192,7 @@ Goal: Tracker items that are not already tasks on the phases above.
 
 - Tracking says delivery order is Still open, the one queue. This roadmap orders phases as the brief requires, so the Python proposal is Next while S5 login is still open on the hosting phase.
 
-[Phase page](phases/10-still-open.md)
+[Phase page](phases/11-still-open.md)
 
 ## Later
 
@@ -270,6 +270,31 @@ Goal: On a TTY, bare kxm opens the existing dashboard and a first-run panel that
 
 [Phase page](phases/09-harness-first-run.md)
 
+### Studio screens for the shared hub
+
+Status: later. Horizon: later.
+
+Source: `plans/plan-studio-cloud-host.md`.
+
+Goal: Studio shows the seven dash panels, a first-run wizard, and live workflow state for the shared hub. Humans sign in at the edge. Policy edits become pull requests. The browser does not hold a hub token.
+
+#### Open tasks
+
+- `studio-s0` S0 shared sequence gate with the first-run plan.
+- `studio-s1` S1 read-only dash routes and S2 hub SSE fan-out.
+- `studio-s3` S3 through S6 setup, policy PRs, bind, motion, and breakpoints.
+
+#### Blockers
+
+- Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.
+- Setup and doctor screens also wait on first-run P1 through P5.
+
+#### Questions
+
+- Whether the hosted page stays kxm studio serve, or the portal keeps calling the CLI over guest exec.
+
+[Phase page](phases/10-studio-cloud-host.md)
+
 ## Phase index
 
 | Phase | Status | Horizon | Page |
@@ -283,7 +308,8 @@ Goal: On a TTY, bare kxm opens the existing dashboard and a first-run panel that
 | Workflow modes | later | later | [page](phases/07-workflow-modes.md) |
 | Usage and cost | later | later | [page](phases/08-usage-cost.md) |
 | Bare kxm first run | later | later | [page](phases/09-harness-first-run.md) |
-| Still open | open | soon | [page](phases/10-still-open.md) |
+| Studio screens for the shared hub | later | later | [page](phases/10-studio-cloud-host.md) |
+| Still open | open | soon | [page](phases/11-still-open.md) |
 
 ## Goal
 
@@ -325,3 +351,4 @@ No confirmed contacts.
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
+- 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.

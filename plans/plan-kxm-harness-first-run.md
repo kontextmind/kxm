@@ -18,6 +18,7 @@ related:
   - research-omp-config-schema.md
   - research-omp-config-examples.md
   - evidence/omp-config-settings-18.3.1.md
+  - plan-studio-cloud-host.md
   - plan-1password-vaults.md
   - implementation-plan.md
 depends_on:
@@ -496,6 +497,8 @@ Implementation of this plan waits until all three are on main:
    already on main as `#337` and `#343`.
 
 P0 below is the gate that checks this list. It is not a product change.
+[`plan-studio-cloud-host.md`](plan-studio-cloud-host.md) shares this gate.
+Studio work does not start ahead of it.
 
 ## 7. Phases
 
@@ -599,9 +602,11 @@ The writer of a phase is not a critic of that phase.
 - Creating 1Password vaults. Names stay in the vault plan.
 - Editing `kxm.workflow.v1` so a model can add a step kind.
 - Turning this draft into a tracker row. The operator does that.
+- Studio screens for the shared hub. Those are the companion plan.
 
 ## 13. Change log
 
 | Date | Note |
 |---|---|
 | 2026-09-27 | Draft opened from the operator request and the evidence file. |
+| 2026-09-27 | Cross-linked the Studio cloud-host companion. The sequence gate is shared. |
