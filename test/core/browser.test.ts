@@ -907,6 +907,24 @@ describe("resolveBrowserCdpEndpoint", () => {
     assert.ok(fromEnv.includes("apiKey=steel_envkey123"));
   });
 
+  type CdpCall = { url: string; options?: { headers?: Record<string, string> } };
+
+  function recordCdpCall(
+    calls: CdpCall[],
+    url: string,
+    options?: { headers?: Record<string, string> },
+  ): void {
+    if (options === undefined) calls.push({ url });
+    else calls.push({ url, options });
+  }
+
+  function onlyCdpCall(calls: CdpCall[]): CdpCall {
+    assert.strictEqual(calls.length, 1);
+    const call = calls[0];
+    assert.ok(call);
+    return call;
+  }
+
   function captureStderr(fn: () => void): string {
     const chunks: string[] = [];
     const original = process.stderr.write;
@@ -932,7 +950,7 @@ describe("resolveBrowserCdpEndpoint", () => {
     process.env.STEEL_AUTH_TOKEN = "app-password";
     const session = { id: "sess_auth", websocketUrl: "" };
     const expected = Buffer.from("svc-steel:app-password", "utf8").toString("base64");
-    const calls: Array<{ url: string; options?: { headers?: Record<string, string> } }> = [];
+    const calls: CdpCall[] = [];
 
     const stderr = captureStderr(() => {
       const connect = resolveBrowserCdpConnect(session);
@@ -946,15 +964,15 @@ describe("resolveBrowserCdpEndpoint", () => {
     assert.strictEqual(stderr, "");
 
     const browser = await connectBrowserOverCdp(async (url, options) => {
-      calls.push({ url, options });
+      recordCdpCall(calls, url, options);
       return { connected: true };
     }, session);
     assert.deepStrictEqual(browser, { connected: true });
-    assert.strictEqual(calls.length, 1);
-    assert.ok(calls[0].url.includes("sessionId=sess_auth"));
-    assert.ok(!calls[0].url.includes("apiKey"));
-    assert.deepStrictEqual(calls[0].options?.headers, { Authorization: `Basic ${expected}` });
-    assert.ok(!JSON.stringify(calls[0].options).includes("x-steel-api-key"));
+    const call = onlyCdpCall(calls);
+    assert.ok(call.url.includes("sessionId=sess_auth"));
+    assert.ok(!call.url.includes("apiKey"));
+    assert.deepStrictEqual(call.options?.headers, { Authorization: `Basic ${expected}` });
+    assert.ok(!JSON.stringify(call.options).includes("x-steel-api-key"));
   });
 
   it("keeps the legacy Steel API key on the KXM_BROWSER=steel handshake and warns once", async () => {
@@ -965,18 +983,18 @@ describe("resolveBrowserCdpEndpoint", () => {
     const legacyKey = "steel_legacykey123";
     process.env.STEEL_API_KEY = legacyKey;
     const session = { id: "sess_legacy", websocketUrl: "" };
-    const calls: Array<{ url: string; options?: { headers?: Record<string, string> } }> = [];
+    const calls: CdpCall[] = [];
 
     const first = captureStderr(() => {
       void connectBrowserOverCdp(async (url, options) => {
-        calls.push({ url, options });
+        recordCdpCall(calls, url, options);
         return "ok";
       }, session);
     });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.strictEqual(calls.length, 1);
-    assert.match(calls[0].url, /apiKey=steel_legacykey123/);
-    assert.deepStrictEqual(calls[0].options?.headers, { "x-steel-api-key": legacyKey });
+    const call = onlyCdpCall(calls);
+    assert.match(call.url, /apiKey=steel_legacykey123/);
+    assert.deepStrictEqual(call.options?.headers, { "x-steel-api-key": legacyKey });
     assert.match(first, /STEEL_API_KEY is deprecated/);
     assert.ok(!first.includes(legacyKey));
 
@@ -990,18 +1008,18 @@ describe("resolveBrowserCdpEndpoint", () => {
     process.env.STEEL_AUTH_USER = "svc-steel";
     process.env.STEEL_AUTH_TOKEN = "app-password";
     process.env.STEEL_API_KEY = "steel_secret";
-    const calls: Array<{ url: string; options?: { headers?: Record<string, string> } }> = [];
+    const calls: CdpCall[] = [];
     const browser = await connectBrowserOverCdp(
       async (url, options) => {
-        calls.push({ url, options });
+        recordCdpCall(calls, url, options);
         return "browser";
       },
       { id: "sess_ignored", websocketUrl: "" },
     );
     assert.strictEqual(browser, "browser");
-    assert.strictEqual(calls.length, 1);
-    assert.strictEqual(calls[0].url, DEFAULT_OBSCURA_CDP_URL);
-    assert.strictEqual(calls[0].options, undefined);
+    const call = onlyCdpCall(calls);
+    assert.strictEqual(call.url, DEFAULT_OBSCURA_CDP_URL);
+    assert.strictEqual(call.options, undefined);
     assert.deepStrictEqual(resolveBrowserCdpConnect().headers, {});
   });
 });
