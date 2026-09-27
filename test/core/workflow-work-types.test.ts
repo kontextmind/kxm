@@ -156,13 +156,18 @@ function yamlQuote(value: string): string {
 }
 
 function writeProject(cwd: string, projectId: string, gateLog: string): void {
-  for (const name of WORKFLOWS) {
+  // Canonical files on main. implement-only, review-arch-only, and
+  // review-cli-only remain aliases of writer-only, reviewer-arch-only, and
+  // reviewer-cli-only, which is what WORKFLOWS drives.
+  for (const name of ["default", "writer-only", "reviewer-arch-only", "reviewer-cli-only", "land"]) {
     const source = join(REPO, ".kxm", "workflows", `${name}.yaml`);
     writeFileSync(join(cwd, ".kxm", "workflows", `${name}.yaml`), readFileSync(source));
   }
-  for (const name of ["coordinator", "implementer", "critic-arch", "critic-cli"]) {
-    const source = join(REPO, ".kxm", "agents", `${name}.yaml`);
-    writeFileSync(join(cwd, ".kxm", "agents", `${name}.yaml`), readFileSync(source));
+  for (const name of ["planner", "writer", "reviewer-arch", "reviewer-cli"]) {
+    writeFileSync(
+      join(cwd, ".kxm", "agents", `${name}.yaml`),
+      readFileSync(join(REPO, ".kxm", "agents", `${name}.yaml`)),
+    );
   }
   mkdirSync(join(cwd, "scripts"), { recursive: true });
   writeFileSync(join(cwd, "scripts", "work-type-gate.mjs"), STUB, { mode: 0o700 });
