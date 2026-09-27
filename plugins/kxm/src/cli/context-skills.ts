@@ -10,6 +10,8 @@ import {
 } from "../memory.ts";
 import { SkillLifecycle, type SkillEvaluationKind, type SkillState } from "../skills.ts";
 import { writeCompiledWiki } from "../wiki.ts";
+import { CloudTokenError } from "../hub-binding.ts";
+import { resolveControlPlaneAuthToken } from "../hub-env.ts";
 import { print, printPlan, type Runtime } from "./types.ts";
 
 /** Authenticated hub POST for context operations. The CLI operates as the
@@ -19,13 +21,33 @@ export async function hubContextPost(input: {
   path: string;
   body: Record<string, unknown>;
   authToken?: string | undefined;
+  /** When set, a cloud binding's token source replaces the explicit env token. */
+  env?: NodeJS.ProcessEnv | undefined;
+  command?: string | undefined;
+  io?: Runtime["io"] | undefined;
+  json?: boolean | undefined;
   fetchImpl: typeof fetch;
-}): Promise<{ ok: boolean; status: number; body: unknown }> {
+}): Promise<{ ok: boolean; status: number; body: unknown; exitCode?: number }> {
+  let authToken = input.authToken;
+  if (input.env) {
+    try {
+      authToken = resolveControlPlaneAuthToken(input.env);
+    } catch (error) {
+      if (error instanceof CloudTokenError) {
+        const command = input.command ?? "context";
+        if (input.io) {
+          print(input.io, Boolean(input.json), { ok: false, command, error: error.code, detail: error.message }, error.message);
+        }
+        return { ok: false, status: 0, body: { error: error.code, detail: error.message }, exitCode: 2 };
+      }
+      throw error;
+    }
+  }
   const response = await input.fetchImpl(`${input.serverUrl.replace(/\/$/, "")}${input.path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(input.authToken ? { authorization: `Bearer ${input.authToken}` } : {}),
+      ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
     },
     body: JSON.stringify(input.body),
   });
@@ -64,9 +86,13 @@ export async function cmdContextGet(runtime: Runtime, project: string, options: 
     serverUrl: runtime.serverUrl,
     path: "/v1/context/get",
     body,
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   print(runtime.io, runtime.json, { ok: response.ok, command: "context get", status: response.status, ...(response.body as object) }, `context get ${response.ok ? "assembled" : `failed (${response.status})`}`);
   return response.ok ? 0 : 1;
 }
@@ -81,9 +107,13 @@ export async function cmdContextRecall(runtime: Runtime, project: string, option
     serverUrl: runtime.serverUrl,
     path: "/v1/context/recall",
     body,
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   print(runtime.io, runtime.json, { ok: response.ok, command: "context recall", status: response.status, ...(response.body as object) }, `context recall ${response.ok ? "complete" : `failed (${response.status})`}`);
   return response.ok ? 0 : 1;
 }
@@ -95,9 +125,13 @@ export async function cmdContextState(runtime: Runtime, project: string, key: st
     serverUrl: runtime.serverUrl,
     path: "/v1/context/state",
     body,
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   print(runtime.io, runtime.json, { ok: response.ok, command: "context state", status: response.status, ...(response.body as object) }, `context state ${response.ok ? "resolved" : `failed (${response.status})`}`);
   return response.ok ? 0 : 1;
 }
@@ -109,9 +143,13 @@ export async function cmdContextEpisode(runtime: Runtime, project: string, optio
     serverUrl: runtime.serverUrl,
     path: "/v1/context/episode",
     body,
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   print(runtime.io, runtime.json, { ok: response.ok, command: "context episode", status: response.status, ...(response.body as object) }, `context episode ${response.ok ? "complete" : `failed (${response.status})`}`);
   return response.ok ? 0 : 1;
 }
@@ -135,9 +173,13 @@ export async function cmdContextPromote(runtime: Runtime, project: string, propo
     serverUrl: runtime.serverUrl,
     path: "/v1/context/state/promote",
     body: { project, proposalId, evidence },
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   print(runtime.io, runtime.json, { ok: response.ok, command: "context promote", status: response.status, ...(response.body as object) }, `context promote ${response.ok ? "recorded" : `failed (${response.status})`}`);
   return response.ok ? 0 : 1;
 }
@@ -147,9 +189,13 @@ export async function cmdContextExplain(runtime: Runtime, project: string, itemI
     serverUrl: runtime.serverUrl,
     path: "/v1/context/explain",
     body: { project, id: itemId },
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   print(runtime.io, runtime.json, { ok: response.ok, command: "context explain", status: response.status, ...(response.body as object) }, `context explain ${response.ok ? "complete" : `failed (${response.status})`}`);
   return response.ok ? 0 : 1;
 }
@@ -159,9 +205,13 @@ export async function cmdContextWikiCompile(runtime: Runtime, project: string, o
     serverUrl: runtime.serverUrl,
     path: "/v1/context/wiki/compile",
     body: { project },
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   if (!response.ok) {
     print(runtime.io, runtime.json, { ok: false, command: "context wiki-compile", status: response.status, body: response.body }, `wiki compile failed (${response.status})`);
     return 1;
@@ -191,9 +241,13 @@ export async function cmdContextWikiLint(runtime: Runtime, project: string): Pro
     serverUrl: runtime.serverUrl,
     path: "/v1/context/wiki/compile",
     body: { project },
-    ...(runtime.env.KXM_AUTH_TOKEN?.trim() ? { authToken: runtime.env.KXM_AUTH_TOKEN.trim() } : {}),
+    env: runtime.env,
+    command: "context",
+    io: runtime.io,
+    json: runtime.json,
     fetchImpl: runtime.fetchImpl,
   });
+  if (response.exitCode) return response.exitCode;
   if (!response.ok) {
     print(runtime.io, runtime.json, { ok: false, command: "context wiki-lint", status: response.status, body: response.body }, `wiki lint failed (${response.status})`);
     return 1;

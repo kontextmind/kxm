@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  CloudTokenError,
   HubBindingError,
+  effectiveHubBindingScope,
   hubBindingFile,
   probeHubHealth,
   readHubBinding,
   removeHubBinding,
+  resolveCloudHubToken,
   validateHubUrl,
   writeHubBinding,
 } from "../../plugins/kxm/src/hub-binding.ts";
@@ -35,6 +38,26 @@ test("hub binding validates, persists, and probes health", async () => {
     writeFileSync(join(root, "hub-binding.json"), JSON.stringify({ ...record, extra: true }));
     assert.throws(() => readHubBinding(env), HubBindingError);
     writeFileSync(join(root, "hub-binding.json"), JSON.stringify({ ...record, boundAt: "garbage" }));
+    assert.throws(() => readHubBinding(env), HubBindingError);
+    const cloud = {
+      schema: "kxm.hub-binding.v1" as const,
+      url: "http://127.0.0.1:17331",
+      boundAt: "2026-09-04T12:00:00.000Z",
+      cloud: true as const,
+      tokenEnv: "KXMD_HUB_TOKEN",
+    };
+    writeHubBinding(cloud, env);
+    assert.deepEqual(readHubBinding(env), cloud);
+    assert.equal(effectiveHubBindingScope("http://127.0.0.1:17331", env), "remote");
+    assert.equal(effectiveHubBindingScope("http://127.0.0.1:7331", env), "loopback");
+    assert.equal(resolveCloudHubToken(cloud, { KXMD_HUB_TOKEN: " remote-token " }), "remote-token");
+    assert.throws(() => resolveCloudHubToken(cloud, {}), (error: unknown) => {
+      assert.ok(error instanceof CloudTokenError);
+      assert.equal(error.code, "cloud_token_missing");
+      assert.match(error.message, /local hub-env token was not used/);
+      return true;
+    });
+    writeFileSync(join(root, "hub-binding.json"), JSON.stringify({ ...cloud, authToken: "must-not-store" }));
     assert.throws(() => readHubBinding(env), HubBindingError);
     assert.equal(removeHubBinding(env), true);
     assert.equal(readHubBinding(env), undefined);

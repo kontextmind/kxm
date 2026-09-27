@@ -133,6 +133,9 @@ export async function ensureHubRunning(options: EnsureHubOptions): Promise<Ensur
   if (binding) {
     const { health } = await probeHubHealth(binding.url, fetchImpl);
     if (health === "on") return { status: "bound-healthy", url: binding.url };
+    // A cloud binding names a remote hub. A dead forward must not start a local hub
+    // that would then authenticate with this machine's hub-env token.
+    if (binding.cloud) return { status: "failed", reason: "cloud_hub_unreachable", logPath: "" };
   }
 
   // 2. A live local claim means a hub (started any way) already owns this

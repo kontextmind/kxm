@@ -8,6 +8,7 @@ import { gateWorker, workerResult, type Worker, type WorkerOutcome } from "../en
 import { canonicalWorkflowEvidenceKey, type WorkflowEvidenceInput } from "../workflow.ts";
 import {
   HubBindingError,
+  effectiveHubBindingScope,
   hubBindingFile,
   readHubBinding,
 } from "../hub-binding.ts";
@@ -165,6 +166,11 @@ export function printWorker(
 }
 
 export function hostMode(runtime: Runtime): "local" | "hub" {
+  try {
+    if (effectiveHubBindingScope(runtime.serverUrl, runtime.env) === "remote") return "hub";
+  } catch {
+    // A malformed binding is classified from the URL below.
+  }
   try {
     const hostname = new URL(runtime.serverUrl).hostname;
     if (hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1") return "local";

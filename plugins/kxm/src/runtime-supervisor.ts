@@ -31,7 +31,7 @@ import { createKxmOneShotProducer } from "./oneshot-producer.ts";
 import { KxmRunScheduler, createKxmSimulatedProducer, recordDriveReceipt, recoverKxmRun, kxmDrivePollProjection } from "./engine.ts";
 import { kxmDriveSession, kxmOpenDriveSessions } from "./runtime-owner.ts";
 import { RuntimeHubClient, HubHttpError, type SyncPushResponse } from "./client.ts";
-import { readHubBinding } from "./hub-binding.ts";
+import { CloudTokenError, readHubBinding } from "./hub-binding.ts";
 import { resolveClientHubAuthToken } from "./hub-env.ts";
 import { createLogger } from "./logger.ts";
 import type { KxmOutboxRow, KxmOutboxStatus } from "./runtime-store.ts";
@@ -709,8 +709,14 @@ async function startKxmRuntimeSupervisorInner(
     // BEFORE any event can be appended — so the very first outbox row is
     // already scrubbed. Registering on the sync tick leaves a window where
     // appended events retain credentials.
-    const hubToken = resolveClientHubAuthToken(env, context.projectId);
-    if (hubToken) context.eventStore.syncRedactor.register(hubToken);
+    try {
+      const hubToken = resolveClientHubAuthToken(env, context.projectId);
+      if (hubToken) context.eventStore.syncRedactor.register(hubToken);
+    } catch (error) {
+      // A missing cloud token must not stop the local Runtime from opening.
+      // The sync tick records the same failure as blocked.
+      if (!(error instanceof CloudTokenError)) throw error;
+    }
     for (const key of Object.keys(env)) {
       if ((key.startsWith("KXM_") && (key.endsWith("_TOKEN") || key.endsWith("_KEY"))) || key.endsWith("_API_KEY") || key.endsWith("_SECRET")) {
         const value = env[key]?.trim();

@@ -58,7 +58,7 @@ Claude Code asks for these options when you install the plugin. Change them late
 | `auth_token` | `KXM_AUTH_TOKEN` | Blank | This project's token from the hub's `KXM_PROJECT_TOKENS`. Leave it blank on the machine that runs the hub. Never the hub admin token. Marked sensitive. |
 | `agent_name` | `KXM_AGENT_NAME` | `claude` | Name other agents see. The first active session in a project keeps it; a later concurrent session registers as `<name>-<pid>`. |
 | `agent_purpose` | `KXM_AGENT_PURPOSE` | `Claude Code implementation and review agent` | One line that peers use to decide what to send this agent. |
-| `project` | `KXM_PROJECT` | Blank | Hub project key; must match a key in the hub's `KXM_PROJECT_TOKENS`. Blank uses `name` from the project's `package.json`, then the directory name. |
+| `project` | `KXM_PROJECT` | Blank | Hub project key; must match a key in the hub's `KXM_PROJECT_TOKENS`. Blank uses the `id` in `.kxm/project.yaml`, then `name` from `package.json`, then the directory name. |
 
 The MCP server also receives `KXM_PROJECT_DIR`, set to the directory Claude Code was started in (`CLAUDE_PROJECT_DIR`). It decides the default project key and whether this is a KXM project (one with a `.kxm/` directory).
 
@@ -67,7 +67,7 @@ The MCP server also receives `KXM_PROJECT_DIR`, set to the directory Claude Code
 The plugin acts as an agent of one hub project and authenticates with that project's token. It never uses the hub admin token.
 
 - On the machine that runs the hub, leave `auth_token` blank. The MCP server then uses the project token the hub saved for this project in `hub-env.json` under the user state root (`KXM_STATE_HOME`, or the platform default listed in [State outside the project](../../docs/reference/config-reference.md#state-outside-the-project)). It uses only that entry, never the admin token saved beside it.
-- On any other machine, enter this project's token at `/plugin configure kxm@kxm`. Get it from whoever runs the hub, through your password manager.
+- On any other machine, enter this project's token at `/plugin configure kxm@kxm`. Get it from whoever runs the hub, through your password manager. When the machine is bound with `kxm hub bind --cloud`, leave `auth_token` blank: the MCP server reads the binding's token source and does not store the token. The recipe is [Cross-box peer attach](../../docs/operations.md#cross-box-peer-attach).
 - Never enter the hub admin token. It is the operator's credential. The hub accepts it for any project that has no token of its own, so an agent holding it could act in projects it was never given.
 - Without a project token, every `kxm_*` tool fails with `KXM has no project token for project <p> on this machine`, and the MCP server does not contact the hub.
 

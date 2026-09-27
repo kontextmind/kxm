@@ -569,16 +569,17 @@ kxm hub stop --wait-ms 8000 --json
 ### `kxm hub bind`
 
 ```text
-kxm hub bind <url>
+kxm hub bind <url> [--cloud] [--token-env <name>] [--token-command <command>]
 ```
 
 Binds this machine to a running hub by writing `hub-binding.json` under the user state root, then probes the hub's health for up to 300 ms. Every hub client uses the binding when `KXM_SERVER_URL` is unset.
 
 - Arguments: `<url>`, Hub base URL (http or https).
 - A URL with credentials, a query, a fragment, or a scheme other than http or https fails with `hub_url_invalid` (exit 2).
-- A remote (non-loopback) URL is refused with `hub_bind_unauthenticated` (exit 2, `nextAction: "export_kxm_auth_token"`) unless a credential for the current project resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`. A malformed record fails with `hub_credential_unreadable` (exit 2).
+- A remote (non-loopback) URL is refused with `hub_bind_unauthenticated` (exit 2, `nextAction: "export_kxm_auth_token"`) unless a credential for the current project resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`. A malformed record fails with `hub_credential_unreadable` (exit 2). A loopback URL without `--cloud` still binds with no credential.
+- `--cloud` marks the binding remote even when the URL is a loopback forward. It requires `--token-env`, `--token-command`, or both. The token is not written. A non-empty variable wins; otherwise the command runs. Source flags without `--cloud` fail with `cloud_flag_required`. A missing source later fails with `cloud_token_missing` and does not fall back to hub-env. See [Cross-box peer attach](../operations.md#cross-box-peer-attach).
 - Mutates the binding file. `--dry-run` validates and prints the plan without writing.
-- JSON keys: `url`, `scope`, `file`, `health` (`on`, `off`, or `unknown`), `probeMs`.
+- JSON keys: `url`, `scope`, `file`, `health` (`on`, `off`, or `unknown`), `probeMs`. A cloud bind also returns `cloud`, and `tokenEnv` or `tokenCommand` when set.
 
 ```bash
 kxm hub bind http://127.0.0.1:7331 --dry-run

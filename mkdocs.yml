@@ -149,6 +149,7 @@ nav:
           - Test plan: templates/test-plan.md
           - Test report: templates/test-report.md
   - Operations:
+      - Operate a hub: operations.md
       - Backup and restore: operations/backup-and-restore.md
       - Deploy: operations/deploy.md
       - Monitoring: operations/monitoring.md

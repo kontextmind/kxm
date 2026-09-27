@@ -7,6 +7,7 @@ import { HubClient, HubHttpError } from "./client.ts";
 import { loadKxmConfig } from "./config.ts";
 import { ensureHubRunning, hubAutoStartMode } from "./hub-autostart.ts";
 import { AgentProjectTokenMissingError, resolveAgentHubAuthToken } from "./hub-env.ts";
+import { CloudTokenError, resolveHubServerUrl } from "./hub-binding.ts";
 import { defaultProjectName } from "./project-name.ts";
 import { nousFactoryWork, type NousRegistrationReport } from "./nous-pi.ts";
 import {
@@ -346,7 +347,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
   }
 
   async function showKxmHub(ctx: { ui: { notify: (message: string, type: "info" | "warning" | "error") => void } }): Promise<void> {
-    const url = (process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331").replace(/\/$/, "");
+    const url = resolveHubServerUrl(process.env);
     let health = "unreachable";
     try {
       const response = await fetch(`${url}/health`);
@@ -676,7 +677,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
       return;
     }
     currentPiSessionId = ctx.sessionManager?.getSessionId();
-    const serverUrl = process.env.KXM_SERVER_URL ?? "http://127.0.0.1:7331";
+    const serverUrl = resolveHubServerUrl(process.env);
     const project = defaultProjectName(ctx.cwd, process.env);
     const name = process.env.KXM_AGENT_NAME ?? pi.getSessionName() ?? `pi-${process.pid}`;
     agentName = name;
@@ -710,7 +711,10 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     try {
       hubAuthToken = resolveAgentHubAuthToken(process.env, project);
     } catch (error) {
-      ctx.ui.notify(`kxm could not read persisted hub credentials: ${error instanceof Error ? error.message : String(error)}`, "error");
+      const detail = error instanceof CloudTokenError
+        ? error.message
+        : `kxm could not read persisted hub credentials: ${error instanceof Error ? error.message : String(error)}`;
+      ctx.ui.notify(detail, "error");
       await applySessionChrome(ctx, event, true);
       return;
     }

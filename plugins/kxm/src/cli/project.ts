@@ -29,6 +29,8 @@ import {
 import { kxmRuntimePaths, runtimeError } from "../runtime-store.ts";
 import { assembleTenantStatus, formatTenantStatus } from "../tenant-status.ts";
 import { resolveClientAdminAuthToken } from "../hub-env.ts";
+import { defaultProjectName } from "../project-name.ts";
+import { effectiveHubBindingScope } from "../hub-binding.ts";
 import {
   formatHarnessInventory,
   probeHarnessesAsync,
@@ -779,7 +781,7 @@ export async function cmdKxmRunList(runtime: Runtime): Promise<number> {
   }
 }
 
-export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
+export async function cmdTenantStatus(runtime: Runtime, options: { project?: string | undefined } = {}): Promise<number> {
   let projectRoot: string | undefined;
   let projectId: string;
   try {
@@ -789,7 +791,8 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
       return 1;
     }
     const bundle = loadKxmProject(projectRoot, {});
-    projectId = String(bundle.project.value.id);
+    const yamlProjectId = String(bundle.project.value.id);
+    projectId = defaultProjectName(runtime.cwd, runtime.env, options.project);
     const root = projectRoot;
 
     const payload = await assembleTenantStatus({
@@ -799,6 +802,7 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
       // and resolve it inside the hub source so a malformed persisted record degrades that
       // one source instead of aborting the Runtime read with it.
       resolveAdminToken: () => resolveClientAdminAuthToken(runtime.env),
+      bindingScope: effectiveHubBindingScope(runtime.serverUrl, runtime.env),
       fetchImpl: runtime.fetchImpl,
       runtime: {
         listRuns: async () => {
@@ -808,7 +812,7 @@ export async function cmdTenantStatus(runtime: Runtime): Promise<number> {
           if (!handle) {
             throw runtimeError("runtime_supervisor_not_running", "runtime", "no live runtime supervisor on this box");
           }
-          const result = await kxmRuntimeRequest(handle, "GET", `/v1/projects/${encodeURIComponent(projectId)}/runs?projectRoot=${encodeURIComponent(root)}`);
+          const result = await kxmRuntimeRequest(handle, "GET", `/v1/projects/${encodeURIComponent(yamlProjectId)}/runs?projectRoot=${encodeURIComponent(root)}`);
           const runs = (result.runs ?? []) as Array<Record<string, unknown>>;
           return runs.map((run) => ({
             runId: String(run.runId ?? ""),

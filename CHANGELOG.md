@@ -6,6 +6,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **`kxm hub bind --cloud` attaches a client to a remote hub reached through a loopback forward.**
+  The binding records `--token-env` and/or `--token-command` and never the token.
+  Later commands, including the environment for a Pi worker, use that source and
+  do not fall back to this machine's hub-env token. Peer commands and
+  `kxm tenant status` resolve one project id: flag or `KXM_PROJECT`, then
+  `.kxm/project.yaml`, then `package.json`, then the directory name. The
+  SSH-forward recipe is in
+  [Operate a KXM hub](docs/operations.md#cross-box-peer-attach).
+
 - **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**
   The bound is the step `timeoutMs`, or the project `limits.agentStepTimeoutMs`
   when the step omits it (minimum 60 seconds, default one hour). A wider step

@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { HubClient, HubHttpError } from "./client.ts";
 import { resolveAgentHubAuthToken } from "./hub-env.ts";
+import { resolveHubServerUrl } from "./hub-binding.ts";
 import { defaultProjectName } from "./project-name.ts";
 import { AGENT_COMMANDS_MAP, enforceToolPolicy, getMcpTools, reconcileInbox } from "./commands.ts";
 import { deliverInboxNotification } from "./inbox.ts";
@@ -51,7 +52,7 @@ function sessionIdentity(): { projectDir: string; project: string; serverUrl: st
   return {
     projectDir,
     project: defaultProjectName(projectDir, process.env),
-    serverUrl: process.env.KXM_SERVER_URL?.trim() || "http://127.0.0.1:7331",
+    serverUrl: resolveHubServerUrl(process.env),
   };
 }
 

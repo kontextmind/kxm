@@ -96,6 +96,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 
 | Page | For | What you get |
 |---|---|---|
+| [Operate a KXM hub](operations.md) | Hub operators | Index of the operations guides, and cross-box attach over an SSH forward |
 | [Deploy KXM](operations/deploy.md) | Hub operators | Deployment classes, supervision, and hosted per-tenant hubs behind a proxy |
 | [Monitor KXM](operations/monitoring.md) | Hub operators | `kxm dash`, health and readiness, metrics, logs and alerts |
 | [Back up and restore KXM](operations/backup-and-restore.md) | Hub operators | `kxm backup` and `kxm restore`, the state roots, and a stopped-hub recipe |
