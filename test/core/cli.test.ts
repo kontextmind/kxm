@@ -2259,10 +2259,11 @@ test("lane create records the resolved base sha and a project worktree", async (
     assert.equal(payload.lane.baseSha, expectedSha);
     assert.equal(payload.lane.baseRef, "origin/main");
     assert.equal(payload.lane.branch, unit);
-    assert.equal(realpathSync(payload.lane.path), realpathSync(resolve(dirname(root), `${basename(root)}-${unit}`)));
+    // realpathSync keeps the 8.3 temp prefix on one side and the long name on the other.
+    assert.equal(realpathSync.native(payload.lane.path), realpathSync.native(resolve(dirname(root), `${basename(root)}-${unit}`)));
     assert.equal(existsSync(join(payload.lane.path, ".kxm", "project.yaml")), true);
     const recordPath = join(root, ".kxm", "state", "lanes.json");
-    assert.equal(statSync(recordPath).mode & 0o777, 0o600);
+    if (process.platform !== "win32") assert.equal(statSync(recordPath).mode & 0o777, 0o600);
     const record = JSON.parse(readFileSync(recordPath, "utf8")) as { schema: string; lanes: Record<string, { baseSha: string }> };
     assert.equal(record.schema, "kxm.lanes.v1");
     assert.equal(record.lanes[unit]?.baseSha, expectedSha);

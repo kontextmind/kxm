@@ -941,6 +941,13 @@ export function resolveDispatchStatus(
   return { status: "yes", supported: true };
 }
 
+function windowsCmdReportsMissing(result: HarnessCommandResult): boolean {
+  if (result.ok) return false;
+  const text = `${result.stdout}\n${result.stderr}`;
+  return /not recognized as an internal or external command/i.test(text)
+    || /the system cannot find the (?:file|path) specified/i.test(text);
+}
+
 function tryHarnessCommand(
   candidate: string,
   entry: HarnessCatalogEntry,
@@ -950,6 +957,9 @@ function tryHarnessCommand(
   const result = runCommand(candidate, entry.versionArgs, timeoutMs);
   if (result.error === "ENOENT") return undefined;
   if (result.error && result.code === null && !result.stdout && !result.stderr) return undefined;
+  // spawn with shell runs cmd.exe, which exists even when the shim does not.
+  // Its "not recognized" answer is a miss, not a detected harness.
+  if (isWindowsHarnessShim(candidate) && windowsCmdReportsMissing(result)) return undefined;
   return {
     command: candidate,
     version: firstLine(result.stdout) ?? firstLine(result.stderr),

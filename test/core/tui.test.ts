@@ -484,8 +484,8 @@ test("spawnDegradeWorktree creates isolated worktree branch and copies path (Dec
 
     assert.equal(res.ok, true);
     assert.equal(res.branchName, "kxm/run-test123-fix-failing-tests");
-    assert.match(res.worktreePath, /\.kxm\/worktrees\/run-test123-fix-failing-tests/);
-    assert.match(res.jumpCommand, /cd ".*\.kxm\/worktrees\/run-test123-fix-failing-tests"/);
+    assert.match(res.worktreePath, /\.kxm[/\\]worktrees[/\\]run-test123-fix-failing-tests/);
+    assert.match(res.jumpCommand, /cd ".*\.kxm[/\\]worktrees[/\\]run-test123-fix-failing-tests"/);
     assert.equal(res.copiedToClipboard, true);
     assert.equal(copiedText, res.worktreePath);
 
