@@ -19,6 +19,7 @@ import { readInstalledKxmVersion } from "./kxm-update.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { HubClient } from "./client.ts";
 import { AgentProjectTokenMissingError, resolveAgentHubAuthToken } from "./hub-env.ts";
+import { CloudTokenError } from "./hub-binding.ts";
 import { defaultProjectName } from "./project-name.ts";
 import {
   AGENT_COMMANDS_MAP,
@@ -310,6 +311,9 @@ async function dispatchAgentCliCommand(
     return 2;
   }
 
+  const explicitProject = typeof rawArgs.project === "string" ? rawArgs.project.trim() : "";
+  if (explicitProject) runtime = { ...runtime, env: { ...runtime.env, KXM_PROJECT: explicitProject } };
+
   let args: Record<string, unknown> = {};
   if (typeof rawArgs.payload === "string" && rawArgs.payload.trim()) {
     try {
@@ -324,7 +328,7 @@ async function dispatchAgentCliCommand(
   }
 
   for (const [key, val] of Object.entries(rawArgs)) {
-    if (val !== undefined && key !== "payload") {
+    if (val !== undefined && key !== "payload" && key !== "project") {
       if (key === "timeoutMs" || key === "ttlMs" || key === "attempt") {
         args[key] = Number(val);
       } else if (key === "targets" && typeof val === "string") {
@@ -384,6 +388,15 @@ async function dispatchAgentCliCommand(
         runtime.io,
         runtime.json,
         { ok: false, error: error.code, project: error.project, nextAction: "export_kxm_auth_token", detail: message },
+        message,
+      );
+      return 2;
+    }
+    if (error instanceof CloudTokenError) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, error: error.code, detail: message },
         message,
       );
       return 2;
@@ -649,8 +662,9 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
   const tenantCmd = addGlobalOptions(program.command("tenant").description("Composed tenant reads for machine clients (portal)"));
   tenantCmd.helpCommand("help", "Show tenant help");
   addGlobalOptions(tenantCmd.command("status").description("Read hub metadata and authoritative Runtime run state as one labeled view"))
-    .action(async function tenantStatusAction(this: Command) {
-      result.code = await cmdTenantStatus(runtimeFrom(ctx, this));
+    .option("--project <id>", "Hub project; overrides KXM_PROJECT for this command")
+    .action(async function tenantStatusAction(this: Command, options: { project?: string }) {
+      result.code = await cmdTenantStatus(runtimeFrom(ctx, this), options);
     });
 
   const pricesCmd = addGlobalOptions(program.command("prices").description("Stamp the local list-price catalog. Estimates stay unknown until today's stamp"));
@@ -816,6 +830,7 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
   peer.helpCommand("help", "Show peer help");
 
   addGlobalOptions(peer.command("list").description("List peer agents in this project's hub pool with host and presence"))
+    .option("--project <id>", "Hub project; overrides KXM_PROJECT for this command")
     .option("--include-offline", "Also list registered peers whose hub lease has expired")
     .option("--payload <json>", "JSON payload")
     .action(async function peerListAction(this: Command, opts?: Record<string, unknown>) {
@@ -1326,8 +1341,11 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
       result.code = await cmdStop(runtimeFrom(ctx, this), options.waitMs);
     });
   addGlobalOptions(hub.command("bind").description("Bind this machine to a running hub").argument("<url>", "Hub base URL (http or https)"))
-    .action(async function hubBindAction(this: Command, url: string) {
-      result.code = await cmdHubBind(runtimeFrom(ctx, this), url);
+    .option("--cloud", "Mark the hub remote even when the URL is a loopback forward")
+    .option("--token-env <name>", "Environment variable that holds the hub token; the token is not stored")
+    .option("--token-command <command>", "Program that prints the hub token; the token is not stored")
+    .action(async function hubBindAction(this: Command, url: string, options: { cloud?: boolean; tokenEnv?: string; tokenCommand?: string }) {
+      result.code = await cmdHubBind(runtimeFrom(ctx, this), url, options);
     });
   addGlobalOptions(hub.command("unbind").description("Remove this machine's hub binding")).action(bind(cmdHubUnbind));
   addGlobalOptions(program.command("dash").description("Live screens for headless agents, tasks, workflows, and plans")

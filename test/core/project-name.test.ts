@@ -19,6 +19,36 @@ test("KXM_PROJECT env wins over package.json and directory name", () => {
   }
 });
 
+test("project.yaml id wins over package.json and is found by walking upward", () => {
+  const dir = fixture();
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@kontextmind/kxm" }));
+    mkdirSync(join(dir, ".kxm"));
+    writeFileSync(join(dir, ".kxm", "project.yaml"), "schema: kxm.project.v1\nid: prj_unifiedcheckout01\n");
+    const sub = join(dir, "packages", "cli");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "package.json"), JSON.stringify({ name: "nested-pkg" }));
+    assert.equal(defaultProjectName(dir, {}), "prj_unifiedcheckout01");
+    assert.equal(defaultProjectName(sub, {}), "prj_unifiedcheckout01");
+    assert.equal(defaultProjectName(sub, {}, "  flag-id  "), "flag-id");
+    assert.equal(defaultProjectName(sub, { KXM_PROJECT: "env-id" }), "env-id");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a malformed project.yaml falls through to package.json", () => {
+  const dir = fixture();
+  try {
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "pkg-name" }));
+    mkdirSync(join(dir, ".kxm"));
+    writeFileSync(join(dir, ".kxm", "project.yaml"), "id: [");
+    assert.equal(defaultProjectName(dir, {}), "pkg-name");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("package.json name is used when env is unset and never walks upward", () => {
   const dir = fixture();
   try {

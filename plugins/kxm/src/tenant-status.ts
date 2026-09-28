@@ -1,4 +1,4 @@
-import { hubBindingScope } from "./hub-binding.ts";
+import { CloudTokenError, hubBindingScope, type HubBindingScope } from "./hub-binding.ts";
 
 export const TENANT_STATUS_SCHEMA = "kxm.tenant-status.v1" as const;
 
@@ -163,6 +163,8 @@ export async function assembleTenantStatus(input: {
   /** Resolves the admin credential. May throw on a malformed persisted record; that
    * failure belongs to the hub source alone and never aborts the Runtime read. */
   resolveAdminToken: () => string | undefined;
+  /** When set, this is the scope already classified for `hubUrl` (cloud forwards included). */
+  bindingScope?: HubBindingScope | undefined;
   fetchImpl: typeof fetch;
   runtime: TenantStatusRuntimeReader;
   hubTimeoutMs?: number | undefined;
@@ -180,6 +182,11 @@ export async function assembleTenantStatus(input: {
     } catch (error) {
       // A malformed hub-env record is a configuration failure with a specific repair.
       // It belongs to this source; the Runtime read proceeds regardless.
+      // A cloud binding that cannot produce a token is not that failure: the local
+      // hub-env token was not consulted.
+      if (error instanceof CloudTokenError) {
+        return { state: "unavailable", observedAt: attemptedAt, reason: error.code };
+      }
       void error;
       return { state: "unavailable", observedAt: attemptedAt, reason: "hub_credential_unreadable" };
     }
@@ -331,7 +338,7 @@ export async function assembleTenantStatus(input: {
     project: input.project,
     generatedAt: at(),
     hubUrl: input.hubUrl,
-    bindingScope: hubBindingScope(input.hubUrl),
+    bindingScope: input.bindingScope ?? hubBindingScope(input.hubUrl),
     hub,
     runtime,
     runComparison,

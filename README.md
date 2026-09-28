@@ -105,6 +105,8 @@ You need Node.js 22.19 or newer on the 22.x line, or Node.js 24 or newer, plus G
    kxm hub view
    ```
 
+   A hub on another machine, reached through an SSH forward to loopback, uses `kxm hub bind --cloud` so this machine's hub-env token is not sent. The recipe is in [Operate a KXM hub](docs/operations.md#cross-box-peer-attach).
+
    Expected output:
 
    ```text

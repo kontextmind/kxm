@@ -132,7 +132,7 @@ S0 through S5 from the tracker queue. The hosting plan file keeps no schedule of
 ### Questions
 
 - plans/plan-per-tenant-hosting.md says status draft and blocked_by []. It says delivery is not scheduled in that file. The tracker records S0 through S4 delivered and S5 open. The tracker wins.
-- The tracker names docs/operations.md for the S1 recipe. This checkout has docs/operations/backup-and-restore.md and no docs/operations.md.
+- docs/operations.md indexes the operations guides, including the six state roots in docs/operations/backup-and-restore.md, and Cross-box peer attach. The S1 recipe body stays in docs/operations/deploy.md.
 - The tracker names an S3 test title that is not in this checkout. The observed test is prose and empty replies cannot mint a passing outcome in test/core/pi-producer.test.ts.
 
 ## Cross-host
@@ -297,3 +297,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.
 - 2026-09-27: P2 role authority landed (#343): the loader and engine read the v2 role and model files.
 - 2026-09-27: P4 opt-in fallback walk records routing.route_switched and continues the attempt.
+- 2026-09-27: docs/operations.md indexes the six state roots and the cross-box peer attach recipe.

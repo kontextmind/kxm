@@ -87,6 +87,9 @@ If a malformed claim remains, read the exact `.pid` JSON in the state directory 
 | `hub_url_invalid` | Use an `http` or `https` URL without user info, query or fragment |
 | `hub_bind_unauthenticated` | The URL is remote and this machine has no token for the project; export it and bind again |
 | `hub_credential_unreadable` | Repair or remove `hub-env.json` under the user state root |
+| `cloud_token_missing` | A `--cloud` binding's variable is empty and it has no working command. Export the variable or fix `--token-command`. This machine's hub-env token is not sent |
+| `cloud_flag_required` | `--token-env` or `--token-command` was passed without `--cloud` |
+| 401 after binding a loopback forward | The bind was not `--cloud`, so the client sent the local hub-env token. See [Cross-box peer attach](../operations.md#cross-box-peer-attach) |
 
 ## Claude Code plugin and MCP
 

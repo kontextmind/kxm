@@ -46,7 +46,7 @@ the hub admin token or a project token.
 |---|---|---|
 | `kxm hub start` | Start the hub in the foreground | `--json` |
 | `kxm hub stop` | Request managed hub and worker shutdown | `--wait-ms <ms>` |
-| `kxm hub bind <url>` | Bind this machine to a running hub | http or https URL |
+| `kxm hub bind <url>` | Bind this machine to a running hub | http or https URL. `--cloud` with `--token-env` or `--token-command` for an SSH forward to loopback. The token is not stored |
 | `kxm hub unbind` | Remove this machine's hub binding | `--json` |
 | `kxm restore <manifest>` | Replace this project's live stores from a verified backup manifest | `--all-projects`, `--json` |
 
@@ -69,6 +69,10 @@ kxm restore .kxm/backups/pre-upgrade/manifest.json
 - `kxm hub bind` to a remote (non-loopback) URL fails closed with
   `hub_bind_unauthenticated` unless a credential for the current project
   resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`.
+- `kxm hub bind --cloud` is the bind for a loopback SSH forward of a remote
+  hub. It never falls back to this machine's hub-env token. Pass
+  `--token-env KXMD_HUB_TOKEN` or `--token-command "op read op://..."`.
+  See docs/operations.md, section "Cross-box peer attach".
 - Hub PID claims record the wrapper and server child PID. A dead wrapper's
   claim is reclaimed automatically, an orphaned server is terminated first,
   and `kxm hub stop` recovers such orphans directly.

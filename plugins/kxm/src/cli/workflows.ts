@@ -37,6 +37,8 @@ import {
   type Runtime,
 } from "./types.ts";
 import { resolvePickItem, type PickCandidate } from "./roles.ts";
+import { CloudTokenError } from "../hub-binding.ts";
+import { resolveControlPlaneAuthToken } from "../hub-env.ts";
 
 const CLI_NAME = "kxm";
 
@@ -480,7 +482,16 @@ export async function cmdWorkflowStart(runtime: Runtime, definitionIdArg: string
 export async function cmdWorkflowDegrade(runtime: Runtime, runId: string, stageId: string, options: { requirement?: string | undefined; reason?: string | undefined }): Promise<number> {
   const requirementKey = options.requirement?.trim() ?? "";
   const reason = options.reason?.trim() ?? "";
-  const adminToken = runtime.env.KXM_AUTH_TOKEN?.trim();
+  let adminToken: string | undefined;
+  try {
+    adminToken = resolveControlPlaneAuthToken(runtime.env);
+  } catch (error) {
+    if (error instanceof CloudTokenError) {
+      runtime.io.stderr(`${error.message}\n`);
+      return 2;
+    }
+    throw error;
+  }
   if (!runId || !stageId || !requirementKey || !reason || !adminToken) {
     runtime.io.stderr("workflow degrade requires <runId> <stageId>, --requirement, --reason, and KXM_AUTH_TOKEN\n");
     return 2;

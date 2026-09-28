@@ -568,6 +568,47 @@ function validateHubUrl(raw) {
   }
   return parsed.href.replace(/\/$/, "");
 }
+function splitTokenCommand(raw) {
+  if (/[|&;<>$`\n\r]/.test(raw)) {
+    throw new CloudTokenError(
+      "cloud_token_command_invalid",
+      "token command must be a program and arguments, not a shell pipeline"
+    );
+  }
+  const args = [];
+  let current = "";
+  let quote;
+  for (const ch of raw) {
+    if (quote) {
+      if (ch === quote) quote = void 0;
+      else current += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === " " || ch === "	") {
+      if (current.length > 0) {
+        args.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (quote) {
+    throw new CloudTokenError("cloud_token_command_invalid", "token command has an unclosed quote");
+  }
+  if (current.length > 0) args.push(current);
+  if (args.length === 0) {
+    throw new CloudTokenError("cloud_token_command_invalid", "token command is empty");
+  }
+  return args;
+}
+function isCloudTokenEnvName(value) {
+  return TOKEN_ENV_NAME.test(value);
+}
 function isIsoTimestamp(value) {
   if (Number.isNaN(Date.parse(value))) return false;
   return value === new Date(value).toISOString();
@@ -591,7 +632,9 @@ function readHubBinding(env = process.env) {
   }
   const row = parsed;
   const keys = Object.keys(row);
-  if (keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
+  const allowed = /* @__PURE__ */ new Set(["schema", "url", "boundAt", "cloud", "tokenEnv", "tokenCommand"]);
+  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
+  if (keys.some((key) => !allowed.has(key)) || !cloudish && keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
   let url;
@@ -600,7 +643,34 @@ function readHubBinding(env = process.env) {
   } catch {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
-  return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
+  if (!cloudish) return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
+  if (row.cloud !== true) throw new HubBindingError(`malformed hub binding at ${file}`);
+  let tokenEnv;
+  let tokenCommand;
+  if (row.tokenEnv !== void 0) {
+    if (typeof row.tokenEnv !== "string" || !isCloudTokenEnvName(row.tokenEnv)) {
+      throw new HubBindingError(`malformed hub binding at ${file}`);
+    }
+    tokenEnv = row.tokenEnv;
+  }
+  if (row.tokenCommand !== void 0) {
+    if (typeof row.tokenCommand !== "string") throw new HubBindingError(`malformed hub binding at ${file}`);
+    try {
+      splitTokenCommand(row.tokenCommand);
+    } catch {
+      throw new HubBindingError(`malformed hub binding at ${file}`);
+    }
+    tokenCommand = row.tokenCommand;
+  }
+  if (!tokenEnv && !tokenCommand) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return {
+    schema: HUB_BINDING_SCHEMA,
+    url,
+    boundAt: row.boundAt,
+    cloud: true,
+    ...tokenEnv ? { tokenEnv } : {},
+    ...tokenCommand ? { tokenCommand } : {}
+  };
 }
 async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
   const started = Date.now();
@@ -625,12 +695,21 @@ async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
     clearTimeout(timer);
   }
 }
-var HUB_BINDING_SCHEMA, HUB_HEALTH_PROBE_MS, HubBindingError;
+var HUB_BINDING_SCHEMA, HUB_HEALTH_PROBE_MS, CloudTokenError, TOKEN_ENV_NAME, HubBindingError;
 var init_hub_binding = __esm({
   "plugins/kxm/src/hub-binding.ts"() {
     "use strict";
     HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
     HUB_HEALTH_PROBE_MS = 300;
+    CloudTokenError = class extends Error {
+      code;
+      constructor(code, message) {
+        super(message);
+        this.name = "CloudTokenError";
+        this.code = code;
+      }
+    };
+    TOKEN_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
     HubBindingError = class extends Error {
       constructor(message) {
         super(message);
@@ -8770,11 +8849,15 @@ var project_name_exports = {};
 __export(project_name_exports, {
   defaultProjectName: () => defaultProjectName
 });
-import { readFileSync as readFileSync7 } from "node:fs";
-import { basename as basename2, join as join6 } from "node:path";
-function defaultProjectName(cwd, env = process.env) {
+import { existsSync as existsSync7, readFileSync as readFileSync7 } from "node:fs";
+import { basename as basename2, dirname as dirname3, join as join6, resolve as resolve5 } from "node:path";
+function defaultProjectName(cwd, env = process.env, explicit) {
+  const fromExplicit = explicit?.trim();
+  if (fromExplicit) return fromExplicit;
   const fromEnv = env.KXM_PROJECT?.trim();
   if (fromEnv) return fromEnv;
+  const fromProject = readProjectYamlId(cwd);
+  if (fromProject) return fromProject;
   try {
     const pkg = JSON.parse(readFileSync7(join6(cwd, "package.json"), "utf8"));
     if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
@@ -8782,9 +8865,30 @@ function defaultProjectName(cwd, env = process.env) {
   }
   return basename2(cwd);
 }
+function readProjectYamlId(start) {
+  let dir = resolve5(start);
+  for (; ; ) {
+    const file = join6(dir, ".kxm", "project.yaml");
+    if (existsSync7(file)) {
+      try {
+        const doc = (0, import_yaml2.parse)(readFileSync7(file, "utf8"));
+        if (doc && typeof doc === "object" && !Array.isArray(doc) && typeof doc.id === "string" && doc.id.trim()) {
+          return doc.id.trim();
+        }
+      } catch {
+      }
+      return void 0;
+    }
+    const parent = dirname3(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+var import_yaml2;
 var init_project_name = __esm({
   "plugins/kxm/src/project-name.ts"() {
     "use strict";
+    import_yaml2 = __toESM(require_dist(), 1);
   }
 });
 
@@ -8930,9 +9034,9 @@ __export(commands_exports, {
   timingSafeStringCompare: () => timingSafeStringCompare
 });
 import { createHash, randomUUID as randomUUID3, timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync8, unlinkSync, writeFileSync as writeFileSync5 } from "node:fs";
+import { chmodSync, existsSync as existsSync8, mkdirSync as mkdirSync6, readFileSync as readFileSync8, unlinkSync, writeFileSync as writeFileSync5 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname3, join as join7, resolve as resolve5 } from "node:path";
+import { dirname as dirname4, join as join7, resolve as resolve6 } from "node:path";
 function forwardedHops(handling) {
   if (!handling?.length) return void 0;
   return {
@@ -9114,15 +9218,15 @@ function parseSessionToken(token) {
   return void 0;
 }
 function resolveUserConfigDirectory(overrideDir) {
-  if (overrideDir) return resolve5(overrideDir);
-  return resolve5(process.env.KXM_USER_CONFIG_DIR?.trim() || join7(homedir3(), ".config", "kxm"));
+  if (overrideDir) return resolve6(overrideDir);
+  return resolve6(process.env.KXM_USER_CONFIG_DIR?.trim() || join7(homedir3(), ".config", "kxm"));
 }
 function sessionTokenPath(userConfigDir) {
   return join7(resolveUserConfigDirectory(userConfigDir), "session.token");
 }
 function persistSessionTokenToDisk(token, options) {
   const filePath = sessionTokenPath(options?.userConfigDir);
-  const dir = dirname3(filePath);
+  const dir = dirname4(filePath);
   mkdirSync6(dir, { recursive: true, mode: 448 });
   const mode = options?.mode ?? 384;
   writeFileSync5(filePath, `${token.trim()}
@@ -9135,7 +9239,7 @@ function persistSessionTokenToDisk(token, options) {
 }
 function readSessionTokenFromDisk(options) {
   const filePath = sessionTokenPath(options?.userConfigDir);
-  if (!existsSync7(filePath)) return void 0;
+  if (!existsSync8(filePath)) return void 0;
   try {
     const token = readFileSync8(filePath, "utf8").trim();
     if (!token) return void 0;
@@ -9148,7 +9252,7 @@ function readSessionTokenFromDisk(options) {
 }
 function clearSessionTokenFromDisk(options) {
   const filePath = sessionTokenPath(options?.userConfigDir);
-  if (!existsSync7(filePath)) return false;
+  if (!existsSync8(filePath)) return false;
   try {
     unlinkSync(filePath);
     return true;
@@ -9247,7 +9351,7 @@ function enforceToolPolicy(commandName, env = process.env, options) {
     return { allowed: true };
   }
   const tokenFile = sessionTokenPath(env.KXM_USER_CONFIG_DIR);
-  if (existsSync7(tokenFile)) {
+  if (existsSync8(tokenFile)) {
     let tokenRaw;
     try {
       tokenRaw = readFileSync8(tokenFile, "utf8").trim();
@@ -9937,7 +10041,7 @@ var init_commands = __esm({
 
 // plugins/kxm/src/claude-hook.ts
 import { readFileSync as readFileSync9, statSync } from "node:fs";
-import { join as join8, resolve as resolve6 } from "node:path";
+import { join as join8, resolve as resolve7 } from "node:path";
 
 // plugins/kxm/src/session-token-hint.ts
 var ENV_TEXT = "KXM_SESSION_TOKEN in the environment Claude Code was launched from is malformed or expired, so every kxm_* tool fails with tool_policy_denied. Ask the user to unset or replace KXM_SESSION_TOKEN in the environment Claude Code was launched from, then restart Claude Code.";
@@ -10010,7 +10114,7 @@ function truncate2(text, max) {
 }
 async function sessionStartContext(input, env) {
   const inputCwd = typeof input.cwd === "string" ? input.cwd.trim() : "";
-  const root = resolve6(env.CLAUDE_PROJECT_DIR?.trim() || inputCwd || process.cwd());
+  const root = resolve7(env.CLAUDE_PROJECT_DIR?.trim() || inputCwd || process.cwd());
   if (!isDirectory(join8(root, ".kxm"))) return void 0;
   const [
     { resolveSessionHubStatus: resolveSessionHubStatus2 },

@@ -38,7 +38,7 @@ The service that authenticates [agents](#agent), stores [messages](#message) and
 
 ### Hub binding
 
-The record that `kxm hub bind <url>` writes to `hub-binding.json` in the [user state root](#user-state-root), naming the hub this machine uses. `kxm hub view` checks it, and the Runtime syncs to it. Binding a remote hub requires a credential.
+The record that `kxm hub bind <url>` writes to `hub-binding.json` in the [user state root](#user-state-root), naming the hub this machine uses. `kxm hub view` checks it, and the Runtime syncs to it. Binding a remote hub requires a credential. `kxm hub bind --cloud` marks a loopback forward as remote and records a token variable or command, never the token.
 
 ### KontextMind
 
@@ -104,11 +104,11 @@ Another [agent](#agent) in the same [project](#project). `kxm_list` and `kxm pee
 
 ### Project
 
-The authentication and discovery namespace on the hub. An agent names it with `KXM_PROJECT` (otherwise the `package.json` name, then the directory name), and its key in the hub's `KXM_PROJECT_TOKENS` holds its token. Agents see only peers in the same project. Compare [project ID](#project-id).
+The authentication and discovery namespace on the hub. Every command resolves it the same way: `--project` or `KXM_PROJECT`, then the [project ID](#project-id) in `.kxm/project.yaml`, then the `package.json` name, then the directory name. Its key in the hub's `KXM_PROJECT_TOKENS` holds its token. Agents see only peers in the same project.
 
 ### Project ID
 
-The stable `prj_` identifier in `.kxm/project.yaml`. The [Runtime](#runtime) and hub sync use it. It is not the hub [project](#project) name, even though both describe the same body of work.
+The stable `prj_` identifier in `.kxm/project.yaml`. It is the hub [project](#project) name unless `--project` or `KXM_PROJECT` overrides it. The [Runtime](#runtime) store keeps this id as the local key.
 
 ### Project token
 

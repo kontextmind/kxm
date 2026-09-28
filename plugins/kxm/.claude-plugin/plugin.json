@@ -65,7 +65,7 @@
     "project": {
       "type": "string",
       "title": "Project",
-      "description": "Hub project key; must match a key in the hub KXM_PROJECT_TOKENS. Blank uses the package.json name, then the directory name",
+      "description": "Hub project key; must match a key in the hub KXM_PROJECT_TOKENS. Blank uses the .kxm/project.yaml id, then the package.json name, then the directory name",
       "required": false
     }
   }

@@ -47,9 +47,14 @@ for (const bundlePath of [
   "plugins/kxm/dist/server.js",
   "plugins/kxm/dist/runtime-supervisor.js",
   "plugins/kxm/dist/claude-hook.js",
+  // The MCP bundle is produced by build:mcp, then this script runs. It now
+  // imports the project-id resolver, which pulls in the YAML package. That
+  // package's dynamic require needs the same createRequire shim.
+  "plugins/kxm/dist/mcp-server.js",
 ]) {
   const bundled = readFileSync(bundlePath, "utf8");
   if (!bundled.startsWith(shebang)) throw new Error(`runtime bundle is missing its executable shebang: ${bundlePath}`);
+  if (bundled.includes("__kxmCreateRequire")) continue;
   writeFileSync(bundlePath, `${shebang}${createRequire}${bundled.slice(shebang.length)}`);
 }
 

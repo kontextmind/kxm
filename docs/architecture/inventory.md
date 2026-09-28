@@ -32,9 +32,10 @@ On macOS the user state root is `Library/Application Support/KXM` under the
 home directory (`kxmUserStateRoot` in `plugins/kxm/src/bindings.ts`). Windows
 uses `AppData/Local/KXM`. Other platforms use `$XDG_STATE_HOME/kxm` or
 `.local/state/kxm`. `KXM_STATE_HOME` overrides that root when it is absolute.
-The tracker mentions `docs/operations.md` for the six backup roots. That file
-is not in this checkout. The six roots are described in
-[Backup and restore](../operations/backup-and-restore.md).
+The tracker mentions `docs/operations.md` for the six backup roots. That page
+indexes the operations guides and links the six roots to
+[Backup and restore](../operations/backup-and-restore.md). It also holds
+[Cross-box peer attach](../operations.md#cross-box-peer-attach).
 
 ## Related
 

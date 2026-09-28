@@ -2,6 +2,15 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  CloudTokenError,
+  HubBindingError,
+  hubBindingFile,
+  readHubBinding,
+  resolveCloudHubToken,
+  type HubBindingRecord,
+} from "./hub-binding.ts";
+import { defaultProjectName } from "./project-name.ts";
 
 export const HUB_ENV_SCHEMA = "kxm.hub-env.v1" as const;
 
@@ -210,6 +219,58 @@ export function resolveHubCredentials(options: ResolveHubCredentialsOptions = {}
  * only another project's token cannot authorise this one, and a guard that counts it as a
  * credential stores a binding that will fail exactly like the one it prevented.
  */
+/** A cloud binding, when this machine has one. A malformed binding fails closed. */
+function activeCloudBinding(env: NodeJS.ProcessEnv): HubBindingRecord | undefined {
+  try {
+    const binding = readHubBinding(env);
+    return binding?.cloud ? binding : undefined;
+  } catch (error) {
+    if (error instanceof HubBindingError) {
+      throw new HubEnvError(
+        `${error.message}; refusing to guess a credential — repair or remove ${hubBindingFile(env)}`,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Credential for control-plane posts that are not agent sessions (context, degrade).
+ * Non-cloud keeps the historical rule: only the explicit `KXM_AUTH_TOKEN`, never hub-env.
+ * A cloud binding uses its named source and nothing else.
+ */
+export function resolveControlPlaneAuthToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const cloud = activeCloudBinding(env);
+  if (cloud) return resolveCloudHubToken(cloud, env);
+  return env.KXM_AUTH_TOKEN?.trim() || undefined;
+}
+
+/**
+ * Environment a pi or Claude session started through kxm should inherit.
+ * The project id comes from the shared resolver. A cloud binding adds
+ * `KXM_AUTH_TOKEN` in this object only — it is never written to the binding.
+ */
+export function agentSessionEnv(
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  explicitProject?: string,
+): NodeJS.ProcessEnv {
+  const project = defaultProjectName(cwd, env, explicitProject);
+  const cloud = activeCloudBinding(env);
+  let serverUrl = env.KXM_SERVER_URL?.trim();
+  if (!serverUrl) {
+    try {
+      serverUrl = readHubBinding(env)?.url;
+    } catch (error) {
+      if (!(error instanceof HubBindingError)) throw error;
+    }
+  }
+  const session: NodeJS.ProcessEnv = { KXM_PROJECT: project };
+  if (serverUrl) session.KXM_SERVER_URL = serverUrl.replace(/\/$/, "");
+  if (cloud) session.KXM_AUTH_TOKEN = resolveCloudHubToken(cloud, env);
+  return session;
+}
+
 export function hasClientHubCredential(env: NodeJS.ProcessEnv = process.env, project?: string): boolean {
   if (env.KXM_AUTH_TOKEN?.trim()) return true;
   let record: HubEnvRecord | undefined;
@@ -229,6 +290,8 @@ export function hasClientHubCredential(env: NodeJS.ProcessEnv = process.env, pro
 }
 
 export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: string): string | undefined {
+  const cloud = activeCloudBinding(env);
+  if (cloud) return resolveCloudHubToken(cloud, env);
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
   const record = readHubEnvRecord(env);
@@ -245,6 +308,10 @@ export function resolveClientHubAuthToken(env: NodeJS.ProcessEnv, project: strin
  * malformed persisted record, same as `resolveClientHubAuthToken`.
  */
 export function resolveAgentHubAuthToken(env: NodeJS.ProcessEnv, project: string): string | undefined {
+  const cloud = activeCloudBinding(env);
+  // A cloud binding's token is the remote hub's credential. It is not this
+  // machine's hub-env admin token, which an agent must still never use.
+  if (cloud) return resolveCloudHubToken(cloud, env);
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
   const tokens = readHubEnvRecord(env)?.projectTokens;
@@ -277,7 +344,11 @@ export class AgentProjectTokenMissingError extends Error {
  * Throws on a malformed persisted record, same as `resolveClientHubAuthToken`.
  */
 export function resolveClientAdminAuthToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const cloud = activeCloudBinding(env);
+  if (cloud) return resolveCloudHubToken(cloud, env);
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
   return readHubEnvRecord(env)?.authToken?.trim() || undefined;
 }
+
+export { CloudTokenError };
