@@ -31535,6 +31535,36 @@ var MAX_OUTCOME_CLOSERS = 32;
 var MAX_OUTCOME_OPENERS = 32;
 var MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
 var MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
+function outcomePrefixIsAnchored(prefix) {
+  let objectDepth = 0;
+  let arrayDepth = 0;
+  let inString = false;
+  let escape2 = false;
+  for (let i = 0; i < prefix.length; i++) {
+    const ch = prefix[i];
+    if (inString) {
+      if (escape2) {
+        escape2 = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape2 = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") objectDepth += 1;
+    else if (ch === "}" && objectDepth > 0) objectDepth -= 1;
+    else if (ch === "[") arrayDepth += 1;
+    else if (ch === "]" && arrayDepth > 0) arrayDepth -= 1;
+  }
+  return objectDepth === 0 && arrayDepth === 0 && !inString && !escape2;
+}
 function determineOutcome(text, allowedOutcomes) {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
@@ -31565,8 +31595,7 @@ function determineOutcome(text, allowedOutcomes) {
       const outcome = result.outcome;
       if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
       const prefix = body.slice(0, openAt).trimEnd();
-      const signature = prefix.charAt(prefix.length - 1);
-      if (signature === "{" || signature === ":" || signature === ",") continue;
+      if (!outcomePrefixIsAnchored(prefix)) continue;
       return outcome;
     }
   }
