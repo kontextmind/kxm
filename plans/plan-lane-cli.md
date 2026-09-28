@@ -177,3 +177,15 @@ timer when `timeout_ms` is unset.
 - Auto-fetch, auto-rebase, auto-push, PR creation, branch deletion.
 - Lanes on remote hosts. `kxm ssh` is a separate surface.
 - Any change to `kxm.workflow.v1`, admission, the roster, or agents.
+
+## 6. Persistent supervisor state
+
+`kxm supervise` stores the roadmap supervisor's memory in
+`.kxm/state/supervisor.json` (`kxm.supervisor.v1`), beside `lanes.json`.
+The record is in-flight lanes, the last-seen pull request number and merge
+state, the last-seen CI status and conclusion, and backoff timers. `tick`
+clears a backoff whose deadline has passed and appends
+`.kxm/logs/supervisor.log`. A new process loads the same file. An unknown
+schema is refused and left on disk; this file is not a hub database table,
+so the hub schema version does not change. A Herdr session and a launchd
+heartbeat are not this command.

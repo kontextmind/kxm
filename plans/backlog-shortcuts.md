@@ -270,7 +270,11 @@ a governance or proof gap, **medium** means a defect users will hit,
   keep the self-renewing in-session schedule, and add the LaunchAgent
   heartbeat by hand before the verb exists.
 - **Planned where:** a lane-cli follow-up slice; design in
-  `plans/plan-lane-cli.md` section 5 when it is written.
+  `plans/plan-lane-cli.md` section 6.
+- **Landed:** `kxm supervise` persists in-flight lanes, last-seen pull
+  request and CI state, and backoff timers in `.kxm/state/supervisor.json`
+  and resumes them from a new process. A Herdr session and a launchd
+  heartbeat are not this command.
 
 ### S21. `repo-work-delivery` skill has no YAML frontmatter (low)
 

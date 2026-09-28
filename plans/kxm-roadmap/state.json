@@ -13,10 +13,6 @@
   "history": [
     {
       "date": "2026-09-26",
-      "line": "Portal mark applied."
-    },
-    {
-      "date": "2026-09-26",
       "line": "Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335)."
     },
     {
@@ -58,6 +54,10 @@
     {
       "date": "2026-09-28",
       "line": "Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves."
+    },
+    {
+      "date": "2026-09-28",
+      "line": "kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart."
     }
   ],
   "architecture": {
@@ -167,13 +167,14 @@
         },
         {
           "id": "loop-supervise",
-          "title": "kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20)",
-          "status": "open",
-          "evidence": "",
-          "doneCriterion": "The thirty-minute tick survives a closed terminal and a Claude restart, and resumes the same chat.",
-          "evidenceNeeded": "A tick logged in .kxm/logs/supervisor.log after the window that started it was closed.",
+          "title": "kxm supervise persists in-flight lanes, pull request and CI state, and backoff timers (S20)",
+          "status": "done",
+          "evidence": "test/core/supervise.test.ts",
+          "planSection": "plans/plan-lane-cli.md#6-persistent-supervisor-state",
+          "doneCriterion": "A new process loads the same in-flight lanes, last-seen pull request and CI states, and backoff timers, and a tick after the backoff resumes that lane.",
+          "evidenceNeeded": "A restart-resume test that writes the state, exits, and reads it back from another process.",
           "template": "feature",
-          "detail": "brief"
+          "detail": "scoped"
         }
       ]
     },

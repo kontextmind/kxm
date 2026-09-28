@@ -98,11 +98,19 @@ Evidence needed: test/core/pr-land.test.ts cases for both, and one landing that 
 
 Evidence: `test/core/pr-land.test.ts`.
 
-### kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20)
+### kxm supervise persists in-flight lanes, pull request and CI state, and backoff timers (S20)
 
-Done criterion: The thirty-minute tick survives a closed terminal and a Claude restart, and resumes the same chat.
+`loop-supervise`. Status: done. Detail: scoped.
 
-Evidence needed: A tick logged in .kxm/logs/supervisor.log after the window that started it was closed.
+Template: `feature`.
+
+Done criterion: A new process loads the same in-flight lanes, last-seen pull request and CI states, and backoff timers, and a tick after the backoff resumes that lane.
+
+Evidence needed: A restart-resume test that writes the state, exits, and reads it back from another process.
+
+Plan section: plans/plan-lane-cli.md#6-persistent-supervisor-state.
+
+Evidence: `test/core/supervise.test.ts`.
 
 ## Blockers
 
