@@ -31531,60 +31531,46 @@ function stripOneClosingFence(trimmed) {
   if (lineBreak < 0) return "";
   return trimmed.slice(0, lineBreak).trimEnd();
 }
+var MAX_OUTCOME_CLOSERS = 32;
+var MAX_OUTCOME_OPENERS = 32;
+var MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
+var MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
 function determineOutcome(text, allowedOutcomes) {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
   const body = stripOneClosingFence(trimmed);
   if (!body) return "failed";
-  let depth = 0;
-  let inString = false;
-  let escape2 = false;
-  let currentStart = -1;
-  let objectStart = -1;
-  let objectEnd = -1;
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i];
-    if (inString) {
-      if (escape2) {
-        escape2 = false;
+  let seenClosers = 0;
+  let parseBytes = 0;
+  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
+    if (body[closeAt] !== "}") continue;
+    seenClosers++;
+    const end = closeAt + 1;
+    if (end !== body.length) continue;
+    let seenOpeners = 0;
+    for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
+      if (body[openAt] !== "{") continue;
+      seenOpeners++;
+      const sliceLen = end - openAt;
+      if (sliceLen > MAX_OUTCOME_SLICE_BYTES) break;
+      if (parseBytes + sliceLen > MAX_OUTCOME_PARSE_BYTES) return "failed";
+      parseBytes += sliceLen;
+      let result;
+      try {
+        result = JSON.parse(body.slice(openAt, end));
+      } catch {
         continue;
       }
-      if (ch === "\\") {
-        escape2 = true;
-        continue;
-      }
-      if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      if (depth === 0) currentStart = i;
-      depth++;
-      continue;
-    }
-    if (ch === "}") {
-      if (depth === 0) continue;
-      depth--;
-      if (depth === 0) {
-        objectStart = currentStart;
-        objectEnd = i;
-      }
+      if (!result || typeof result !== "object" || Array.isArray(result)) continue;
+      const outcome = result.outcome;
+      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
+      const prefix = body.slice(0, openAt).trimEnd();
+      const signature = prefix.charAt(prefix.length - 1);
+      if (signature === "{" || signature === ":" || signature === ",") continue;
+      return outcome;
     }
   }
-  if (objectStart < 0 || objectEnd !== body.length - 1) return "failed";
-  let result;
-  try {
-    result = JSON.parse(body.slice(objectStart, objectEnd + 1));
-  } catch {
-    return "failed";
-  }
-  if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
-  const outcome = result.outcome;
-  if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
-  return outcome;
+  return "failed";
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();

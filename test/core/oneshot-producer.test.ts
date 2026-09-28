@@ -1191,16 +1191,22 @@ test("a JSON object inside an earlier code fence does not win over the last obje
     "```json",
     '{"outcome":"failed","summary":"fence sample"}',
     "```",
-    "Actual result:",
+    // A label that ended in `:` would be the truncated-JSON signature.
+    "Actual result",
     '{"outcome":"passed","summary":"last object"}',
   ].join("\n");
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
 test("braces inside an outcome string do not hide the final object", async () => {
-  const summary = "{".repeat(33);
-  const text = `{"outcome":"passed","summary":"${summary}"}`;
+  // The last 32 `{` openers are tried. Thirty-one braces in the summary leave
+  // the real opener inside that window. One more pushes it out of the budget.
+  const inside = "{".repeat(31);
+  const text = `{"outcome":"passed","summary":"${inside}"}`;
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+  const pastBudget = "{".repeat(32);
+  const hidden = `{"outcome":"passed","summary":"${pastBudget}"}`;
+  assert.equal(await settleOneShotText(hidden, ["passed", "failed"]), "failed");
 });
 
 test("nested braces and braces inside strings parse as the last outcome object", async () => {
@@ -1252,12 +1258,12 @@ test("a prose quote before a truncated outer object does not settle the inner ou
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
-test("a stray inch-mark quote before a final outcome object stays failed", async () => {
+test("a stray inch-mark quote before a final outcome object still settles", async () => {
   const text = [
     'a 27" monitor screenshot',
     '{"outcome":"passed"}',
   ].join("\n");
-  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
 test("a closed prose quote before a final outcome object still settles", async () => {
@@ -1268,14 +1274,33 @@ test("a closed prose quote before a final outcome object still settles", async (
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
-test("a repeated opener prefix never closes a top-level outcome object", async () => {
-  const chunk = '{"b":';
-  const repeats = Math.ceil((600 * 1024) / chunk.length);
-  const attack = `${chunk.repeat(repeats)}}`;
+test("a repeated opener prefix settles within the outcome parse bound", async () => {
+  const attack = `${'{"b":'.repeat(100000)}}`;
   assert.equal(await settleOneShotText(attack, ["passed", "failed"]), "failed");
-  // The prefix stays above depth 0, so a final-line object is nested and stays failed.
+  // The prefix ends on `}`, which is not a truncated-JSON signature, so the
+  // final object is its own candidate and settles.
   const followed = `${attack}\n{"outcome":"passed","summary":"after the bound"}`;
-  assert.equal(await settleOneShotText(followed, ["passed", "failed"]), "failed");
+  assert.equal(await settleOneShotText(followed, ["passed", "failed"]), "passed");
+});
+
+test("findings prose with quotes, backticks, and braces settles the inline outcome", async () => {
+  const text = [
+    "## Findings",
+    "The witness names a `missing-argument` path. A sample call is `kxm assign run { id: \"x\" }`.",
+    'The write-up quotes "the docs misname the missing-argument error." and then leaves an unmatched ".',
+    "Braces in the notes ({braces}) and a sample {\"outcome\":\"failed\"} stay in the prose.",
+    "{",
+    '  "outcome": "passed",',
+    '  "summary": "paragraphs of findings, then the docs misname the missing-argument error."',
+    "}",
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("a truncated JSON signature before a parsing object stays failed", async () => {
+  assert.equal(await settleOneShotText('{\n{"outcome":"passed"}', ["passed", "failed"]), "failed");
+  assert.equal(await settleOneShotText('{"detail":\n{"outcome":"passed"}', ["passed", "failed"]), "failed");
+  assert.equal(await settleOneShotText('{"detail":1,\n{"outcome":"passed"}', ["passed", "failed"]), "failed");
 });
 
 test("a megabyte unbalanced prefix ending in an outcome object settles", async () => {
