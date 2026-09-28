@@ -31531,15 +31531,19 @@ function stripOneClosingFence(trimmed) {
   if (lineBreak < 0) return "";
   return trimmed.slice(0, lineBreak).trimEnd();
 }
-var MAX_OUTCOME_CLOSERS = 32;
-var MAX_OUTCOME_OPENERS = 32;
-var MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
-function prefixIsBalanced(prefix) {
+function determineOutcome(text, allowedOutcomes) {
+  const trimmed = text.trim();
+  if (!trimmed) return "failed";
+  const body = stripOneClosingFence(trimmed);
+  if (!body) return "failed";
   let depth = 0;
   let inString = false;
   let escape2 = false;
-  for (let i = 0; i < prefix.length; i++) {
-    const ch = prefix[i];
+  let currentStart = -1;
+  let objectStart = -1;
+  let objectEnd = -1;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
     if (inString) {
       if (escape2) {
         escape2 = false;
@@ -31557,49 +31561,30 @@ function prefixIsBalanced(prefix) {
       continue;
     }
     if (ch === "{") {
+      if (depth === 0) currentStart = i;
       depth++;
       continue;
     }
     if (ch === "}") {
       if (depth === 0) continue;
       depth--;
-    }
-  }
-  return depth === 0 && !inString;
-}
-function determineOutcome(text, allowedOutcomes) {
-  const trimmed = text.trim();
-  if (!trimmed) return "failed";
-  const body = stripOneClosingFence(trimmed);
-  if (!body) return "failed";
-  let seenClosers = 0;
-  let parseBytes = 0;
-  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
-    if (body[closeAt] !== "}") continue;
-    seenClosers++;
-    const end = closeAt + 1;
-    if (end !== body.length) continue;
-    let seenOpeners = 0;
-    for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
-      if (body[openAt] !== "{") continue;
-      seenOpeners++;
-      const sliceLen = end - openAt;
-      if (sliceLen > MAX_OUTCOME_PARSE_BYTES - parseBytes) break;
-      parseBytes += sliceLen;
-      let result;
-      try {
-        result = JSON.parse(body.slice(openAt, end));
-      } catch {
-        continue;
+      if (depth === 0) {
+        objectStart = currentStart;
+        objectEnd = i;
       }
-      if (!result || typeof result !== "object" || Array.isArray(result)) break;
-      const outcome = result.outcome;
-      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) break;
-      if (!prefixIsBalanced(body.slice(0, openAt))) break;
-      return outcome;
     }
   }
-  return "failed";
+  if (objectStart < 0 || objectEnd !== body.length - 1) return "failed";
+  let result;
+  try {
+    result = JSON.parse(body.slice(objectStart, objectEnd + 1));
+  } catch {
+    return "failed";
+  }
+  if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
+  const outcome = result.outcome;
+  if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
+  return outcome;
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();
