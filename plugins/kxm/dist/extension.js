@@ -16349,6 +16349,9 @@ function resolveUserStateRoot(env) {
 function hubBindingFile(env = process.env) {
   return join3(resolveUserStateRoot(env), "hub-binding.json");
 }
+function hubBindingCloudFile(env = process.env) {
+  return join3(resolveUserStateRoot(env), "hub-binding.cloud.json");
+}
 function validateHubUrl(raw) {
   let parsed;
   try {
@@ -16463,33 +16466,37 @@ function isAbortError(error2) {
     error2 && typeof error2 === "object" && ("name" in error2 && error2.name === "AbortError" || "code" in error2 && error2.code === "ABORT_ERR")
   );
 }
-function readHubBinding(env = process.env) {
-  const file = hubBindingFile(env);
-  if (!existsSync3(file)) return void 0;
+var LEGACY_BINDING_KEYS = ["schema", "url", "boundAt"];
+var BINDING_KEYS = /* @__PURE__ */ new Set([...LEGACY_BINDING_KEYS, "cloud", "tokenEnv", "tokenCommand"]);
+function bindingFallbackWarning(file, reason) {
+  return `hub binding at ${file} ${reason}; falling back to the local hub. Restart the Runtime supervisor, the hub, and workers after upgrading and before a cloud bind.`;
+}
+function writeBindingJson(file, value) {
+  mkdirSync3(dirname3(file), { recursive: true, mode: 448 });
+  const temporary = join3(dirname3(file), `.${file.endsWith("cloud.json") ? "hub-binding-cloud" : "hub-binding"}-${process.pid}.tmp`);
+  try {
+    writeFileSync3(temporary, `${JSON.stringify(value, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+    renameSync(temporary, file);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+function parseBindingObject(file) {
+  if (!existsSync3(file)) return new HubBindingError(`missing hub binding at ${file}`);
   let parsed;
   try {
     parsed = JSON.parse(readFileSync3(file, "utf8"));
   } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
-  const row = parsed;
-  const keys = Object.keys(row);
-  const allowed = /* @__PURE__ */ new Set(["schema", "url", "boundAt", "cloud", "tokenEnv", "tokenCommand"]);
-  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
-  if (keys.some((key) => !allowed.has(key)) || !cloudish && keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  let url;
-  try {
-    url = validateHubUrl(row.url);
-  } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  if (!cloudish) return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
-  if (row.cloud !== true) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return parsed;
+}
+function cloudRecordFromRow(file, row, url, boundAt) {
+  if (row.cloud !== true) return void 0;
   let tokenEnv;
   let tokenCommand;
   if (row.tokenEnv !== void 0) {
@@ -16511,31 +16518,158 @@ function readHubBinding(env = process.env) {
   return {
     schema: HUB_BINDING_SCHEMA,
     url,
-    boundAt: row.boundAt,
+    boundAt,
     cloud: true,
     ...tokenEnv ? { tokenEnv } : {},
     ...tokenCommand ? { tokenCommand } : {}
   };
+}
+function interpretBindingFile(file) {
+  if (!existsSync3(file)) return {};
+  const parsed = parseBindingObject(file);
+  if (parsed instanceof HubBindingError) throw parsed;
+  const keys = Object.keys(parsed);
+  const unknown2 = keys.filter((key) => !BINDING_KEYS.has(key));
+  if (parsed.schema !== HUB_BINDING_SCHEMA || unknown2.length > 0) {
+    return { warning: bindingFallbackWarning(file, `is newer than this build understands (${String(parsed.schema)})`) };
+  }
+  if (typeof parsed.url !== "string" || typeof parsed.boundAt !== "string" || !isIsoTimestamp(parsed.boundAt)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  let url;
+  try {
+    url = validateHubUrl(parsed.url);
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
+  if (!cloudish) {
+    if (keys.length !== 3) throw new HubBindingError(`malformed hub binding at ${file}`);
+    return { record: { schema: HUB_BINDING_SCHEMA, url, boundAt: parsed.boundAt } };
+  }
+  const record2 = cloudRecordFromRow(file, parsed, url, parsed.boundAt);
+  if (!record2) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return { record: record2, legacyCloud: true };
+}
+function loadHubBinding(env = process.env) {
+  const cloudFile = hubBindingCloudFile(env);
+  const cloud = interpretBindingFile(cloudFile);
+  if (cloud.warning && !cloud.record) {
+    const local = existsSync3(hubBindingFile(env)) ? interpretBindingFile(hubBindingFile(env)) : {};
+    if (local.record && !local.record.cloud) return { record: local.record, warning: cloud.warning };
+    return { warning: cloud.warning };
+  }
+  if (cloud.record?.cloud) return { record: cloud.record, ...cloud.warning ? { warning: cloud.warning } : {} };
+  const main = interpretBindingFile(hubBindingFile(env));
+  if (main.legacyCloud && main.record) {
+    writeBindingJson(cloudFile, main.record);
+    rmSync(hubBindingFile(env), { force: true });
+    return {
+      record: main.record,
+      warning: bindingFallbackWarning(
+        hubBindingFile(env),
+        "stored a cloud bind in the pre-0.7.160 file"
+      )
+    };
+  }
+  return { ...main.record ? { record: main.record } : {}, ...main.warning ? { warning: main.warning } : {} };
+}
+function readHubBinding(env = process.env) {
+  return loadHubBinding(env).record;
+}
+function contentTypeBase(header) {
+  return (header ?? "").split(";")[0].trim().toLowerCase();
+}
+function looksLikeHtml(contentType, body) {
+  if (contentType === "text/html" || contentType === "application/xhtml+xml") return true;
+  const sample = body.slice(0, 800).trim().toLowerCase();
+  return sample.startsWith("<!doctype html") || sample.startsWith("<html") || sample.includes("<form") && (sample.includes("login") || sample.includes("authentik") || sample.includes("password"));
+}
+function jsonObject(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+    return parsed;
+  } catch {
+    return void 0;
+  }
+}
+function hubEndpointShape(role, body) {
+  if (role === "health") return body.ok === true && typeof body.agents === "number";
+  return body.ok === true && (body.storage === "sqlite" || body.storage === "memory");
+}
+function classifyHubResponse(input) {
+  const contentType = contentTypeBase(input.contentType);
+  if (input.status >= 300 && input.status < 400) {
+    return {
+      ok: false,
+      status: input.status,
+      kind: "redirect",
+      detail: `HTTP ${input.status} redirect; this looks like an auth proxy or a redirect, not a kxm hub`,
+      body: { error: "auth_proxy", detail: `HTTP ${input.status} redirect` }
+    };
+  }
+  if (looksLikeHtml(contentType, input.bodyText)) {
+    return {
+      ok: false,
+      status: input.status,
+      kind: "auth_proxy",
+      detail: `HTTP ${input.status} returned an HTML login page${contentType ? ` (${contentType})` : ""}; this looks like an auth proxy, not a kxm hub`,
+      body: { error: "auth_proxy", detail: "HTML login page" }
+    };
+  }
+  const jsonType = contentType === "application/json" || contentType === "text/plain" || contentType === "";
+  const body = jsonType ? jsonObject(input.bodyText) : void 0;
+  if (body && hubEndpointShape(input.role, body) && input.status >= 200 && input.status < 300) {
+    if (contentType !== "" && contentType !== "application/json" && contentType !== "text/plain") {
+      return {
+        ok: false,
+        status: input.status,
+        kind: "not_hub",
+        detail: `HTTP ${input.status} content-type ${contentType} is not application/json`,
+        body: { error: "not_hub", detail: contentType }
+      };
+    }
+    return { ok: true, status: input.status, kind: "hub", detail: "kxm hub", body };
+  }
+  const typeNote = contentType && contentType !== "application/json" ? ` content-type ${contentType}` : "";
+  return {
+    ok: false,
+    status: input.status,
+    kind: "not_hub",
+    detail: `HTTP ${input.status}${typeNote} is not a kxm hub ${input.role} response`,
+    body: { error: "not_hub", detail: `HTTP ${input.status}${typeNote}` }
+  };
+}
+async function readHubEndpoint(url, role, fetchImpl, init = {}) {
+  try {
+    const response = await fetchImpl(`${url}/${role}`, {
+      ...init.headers ? { headers: init.headers } : {},
+      ...init.signal ? { signal: init.signal } : {},
+      redirect: "manual"
+    });
+    const bodyText = await response.text();
+    return classifyHubResponse({
+      role,
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      bodyText
+    });
+  } catch (error2) {
+    if (isAbortError(error2)) {
+      return { ok: false, status: 0, kind: "timeout", detail: "no reply within the probe budget", body: { error: "hub_unreachable" } };
+    }
+    return { ok: false, status: 0, kind: "unreachable", detail: "nothing answered", body: { error: "hub_unreachable" } };
+  }
 }
 async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
   const started = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(`${url}/health`, { signal: controller.signal });
-    if (!response.ok) return { health: "unknown", probeMs: Date.now() - started };
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      return { health: "unknown", probeMs: Date.now() - started };
-    }
-    if (body && typeof body === "object" && body.ok === true) {
-      return { health: "on", probeMs: Date.now() - started };
-    }
-    return { health: "unknown", probeMs: Date.now() - started };
-  } catch (error2) {
-    return { health: isAbortError(error2) ? "unknown" : "off", probeMs: Date.now() - started };
+    const verdict = await readHubEndpoint(url, "health", fetchImpl, { signal: controller.signal });
+    const health = verdict.kind === "hub" ? "on" : verdict.kind === "unreachable" ? "off" : "unknown";
+    return { health, probeMs: Date.now() - started, kind: verdict.kind, detail: verdict.detail, status: verdict.status };
   } finally {
     clearTimeout(timer);
   }
@@ -16610,15 +16744,6 @@ function resolveProjectIdentity(cwd, env = process.env, explicit) {
   if (fromPackage) return { project: fromPackage, source: "package.json", sourceLabel: "package.json name" };
   return { project: basename(cwd), source: "directory", sourceLabel: "directory name" };
 }
-function opReferenceFromTokenCommand(command) {
-  try {
-    const args = splitTokenCommand(command);
-    if (args[0] === "op" && args[1] === "read" && args[2] && isHubOpReference(args[2])) return args[2];
-  } catch {
-    return void 0;
-  }
-  return void 0;
-}
 function defaultOpRead(reference, env) {
   if (!isHubOpReference(reference)) {
     throw new CloudTokenError("cloud_token_command_invalid", `refusing to resolve ${reference}; an op:// reference is required`);
@@ -16663,18 +16788,24 @@ function resolveKeyReference(ref, env, opRead = defaultOpRead) {
 }
 function keySourceFor(input) {
   const ref = input.endpoint?.key;
-  if (input.mode === "local" && input.env.KXM_AUTH_TOKEN?.trim()) return "env:KXM_AUTH_TOKEN";
-  if (ref?.env && input.env[ref.env]?.trim()) return `env:${ref.env}`;
-  if (ref?.op) return `op:${ref.op}`;
-  if (ref?.env) return `env:${ref.env}`;
+  const envName = (name) => {
+    if (!name) return void 0;
+    return input.env[name]?.trim() ? `env:${name}` : void 0;
+  };
   if (input.mode === "cloud") {
-    if (input.binding?.tokenEnv) return `env:${input.binding.tokenEnv}`;
-    if (input.binding?.tokenCommand) {
-      const op = opReferenceFromTokenCommand(input.binding.tokenCommand);
-      return op ? `op:${op}` : "command";
-    }
+    const fromEnv2 = envName(ref?.env);
+    if (fromEnv2) return fromEnv2;
+    if (ref?.op) return `op:${ref.op}`;
+    const fromBindingEnv = envName(input.binding?.tokenEnv);
+    if (fromBindingEnv) return fromBindingEnv;
+    if (input.binding?.tokenCommand) return "token-command";
     return "missing";
   }
+  const fromAuth = envName("KXM_AUTH_TOKEN");
+  if (fromAuth) return fromAuth;
+  const fromEnv = envName(ref?.env);
+  if (fromEnv) return fromEnv;
+  if (ref?.op) return `op:${ref.op}`;
   if (input.hasSavedProjectToken?.(input.project)) return "hub-env";
   return "missing";
 }

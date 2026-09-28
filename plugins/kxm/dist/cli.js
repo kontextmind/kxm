@@ -9409,7 +9409,7 @@ var init_config = __esm({
 });
 
 // plugins/kxm/src/hub-binding.ts
-import { spawnSync } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname3, isAbsolute, join as join4, resolve as resolve2 } from "node:path";
@@ -9431,6 +9431,9 @@ function resolveUserStateRoot(env) {
 }
 function hubBindingFile(env = process.env) {
   return join4(resolveUserStateRoot(env), "hub-binding.json");
+}
+function hubBindingCloudFile(env = process.env) {
+  return join4(resolveUserStateRoot(env), "hub-binding.cloud.json");
 }
 function validateHubUrl(raw) {
   let parsed;
@@ -9517,7 +9520,7 @@ function resolveCloudHubToken(binding, env = process.env) {
 function runTokenCommand(command, env) {
   const argv = splitTokenCommand(command);
   const [program2, ...args] = argv;
-  const result = spawnSync(program2, args, {
+  const result = spawnSync2(program2, args, {
     encoding: "utf8",
     shell: false,
     timeout: TOKEN_COMMAND_TIMEOUT_MS,
@@ -9560,33 +9563,35 @@ function isAbortError(error) {
     error && typeof error === "object" && ("name" in error && error.name === "AbortError" || "code" in error && error.code === "ABORT_ERR")
   );
 }
-function readHubBinding(env = process.env) {
-  const file = hubBindingFile(env);
-  if (!existsSync4(file)) return void 0;
+function bindingFallbackWarning(file, reason) {
+  return `hub binding at ${file} ${reason}; falling back to the local hub. Restart the Runtime supervisor, the hub, and workers after upgrading and before a cloud bind.`;
+}
+function writeBindingJson(file, value) {
+  mkdirSync3(dirname3(file), { recursive: true, mode: 448 });
+  const temporary = join4(dirname3(file), `.${file.endsWith("cloud.json") ? "hub-binding-cloud" : "hub-binding"}-${process.pid}.tmp`);
+  try {
+    writeFileSync3(temporary, `${JSON.stringify(value, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+    renameSync(temporary, file);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+function parseBindingObject(file) {
+  if (!existsSync4(file)) return new HubBindingError(`missing hub binding at ${file}`);
   let parsed;
   try {
     parsed = JSON.parse(readFileSync3(file, "utf8"));
   } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
-  const row = parsed;
-  const keys = Object.keys(row);
-  const allowed = /* @__PURE__ */ new Set(["schema", "url", "boundAt", "cloud", "tokenEnv", "tokenCommand"]);
-  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
-  if (keys.some((key) => !allowed.has(key)) || !cloudish && keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  let url;
-  try {
-    url = validateHubUrl(row.url);
-  } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  if (!cloudish) return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
-  if (row.cloud !== true) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return parsed;
+}
+function cloudRecordFromRow(file, row, url, boundAt) {
+  if (row.cloud !== true) return void 0;
   let tokenEnv;
   let tokenCommand;
   if (row.tokenEnv !== void 0) {
@@ -9608,33 +9613,203 @@ function readHubBinding(env = process.env) {
   return {
     schema: HUB_BINDING_SCHEMA,
     url,
-    boundAt: row.boundAt,
+    boundAt,
     cloud: true,
     ...tokenEnv ? { tokenEnv } : {},
     ...tokenCommand ? { tokenCommand } : {}
   };
 }
-function writeHubBinding(record, env = process.env) {
+function readLegacyV1HubBinding(env = process.env) {
   const file = hubBindingFile(env);
-  mkdirSync3(dirname3(file), { recursive: true, mode: 448 });
-  const temporary = join4(dirname3(file), `.hub-binding-${process.pid}.tmp`);
-  try {
-    writeFileSync3(temporary, `${JSON.stringify(record, null, 2)}
-`, { encoding: "utf8", mode: 384 });
-    renameSync(temporary, file);
-  } finally {
-    rmSync(temporary, { force: true });
+  if (!existsSync4(file)) return void 0;
+  const parsed = parseBindingObject(file);
+  if (parsed instanceof HubBindingError) throw parsed;
+  const keys = Object.keys(parsed);
+  if (keys.length !== 3 || keys.some((key) => !LEGACY_BINDING_KEYS.includes(key)) || parsed.schema !== HUB_BINDING_SCHEMA || typeof parsed.url !== "string" || typeof parsed.boundAt !== "string" || !isIsoTimestamp(parsed.boundAt)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
   }
+  let url;
+  try {
+    url = validateHubUrl(parsed.url);
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  return { schema: HUB_BINDING_SCHEMA, url, boundAt: parsed.boundAt };
+}
+function interpretBindingFile(file) {
+  if (!existsSync4(file)) return {};
+  const parsed = parseBindingObject(file);
+  if (parsed instanceof HubBindingError) throw parsed;
+  const keys = Object.keys(parsed);
+  const unknown = keys.filter((key) => !BINDING_KEYS.has(key));
+  if (parsed.schema !== HUB_BINDING_SCHEMA || unknown.length > 0) {
+    return { warning: bindingFallbackWarning(file, `is newer than this build understands (${String(parsed.schema)})`) };
+  }
+  if (typeof parsed.url !== "string" || typeof parsed.boundAt !== "string" || !isIsoTimestamp(parsed.boundAt)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  let url;
+  try {
+    url = validateHubUrl(parsed.url);
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
+  if (!cloudish) {
+    if (keys.length !== 3) throw new HubBindingError(`malformed hub binding at ${file}`);
+    return { record: { schema: HUB_BINDING_SCHEMA, url, boundAt: parsed.boundAt } };
+  }
+  const record = cloudRecordFromRow(file, parsed, url, parsed.boundAt);
+  if (!record) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return { record, legacyCloud: true };
+}
+function loadHubBinding(env = process.env) {
+  const cloudFile = hubBindingCloudFile(env);
+  const cloud = interpretBindingFile(cloudFile);
+  if (cloud.warning && !cloud.record) {
+    const local = existsSync4(hubBindingFile(env)) ? interpretBindingFile(hubBindingFile(env)) : {};
+    if (local.record && !local.record.cloud) return { record: local.record, warning: cloud.warning };
+    return { warning: cloud.warning };
+  }
+  if (cloud.record?.cloud) return { record: cloud.record, ...cloud.warning ? { warning: cloud.warning } : {} };
+  const main = interpretBindingFile(hubBindingFile(env));
+  if (main.legacyCloud && main.record) {
+    writeBindingJson(cloudFile, main.record);
+    rmSync(hubBindingFile(env), { force: true });
+    return {
+      record: main.record,
+      warning: bindingFallbackWarning(
+        hubBindingFile(env),
+        "stored a cloud bind in the pre-0.7.160 file"
+      )
+    };
+  }
+  return { ...main.record ? { record: main.record } : {}, ...main.warning ? { warning: main.warning } : {} };
+}
+function readHubBinding(env = process.env) {
+  return loadHubBinding(env).record;
+}
+function writeHubBinding(record, env = process.env) {
+  if (record.cloud) {
+    const file2 = hubBindingCloudFile(env);
+    writeBindingJson(file2, record);
+    const main = hubBindingFile(env);
+    if (existsSync4(main)) {
+      try {
+        const legacy = readLegacyV1HubBinding(env);
+        if (!legacy || legacy.url === record.url) rmSync(main, { force: true });
+      } catch (error) {
+        if (!(error instanceof HubBindingError)) throw error;
+        rmSync(main, { force: true });
+      }
+    }
+    return file2;
+  }
+  rmSync(hubBindingCloudFile(env), { force: true });
+  const file = hubBindingFile(env);
+  writeBindingJson(file, {
+    schema: HUB_BINDING_SCHEMA,
+    url: record.url,
+    boundAt: record.boundAt
+  });
   return file;
 }
 function removeHubBinding(env = process.env) {
-  const file = hubBindingFile(env);
+  const files = [hubBindingFile(env), hubBindingCloudFile(env)];
+  let removed = false;
+  for (const file of files) {
+    try {
+      rmSync(file);
+      removed = true;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  return removed;
+}
+function contentTypeBase(header) {
+  return (header ?? "").split(";")[0].trim().toLowerCase();
+}
+function looksLikeHtml(contentType, body) {
+  if (contentType === "text/html" || contentType === "application/xhtml+xml") return true;
+  const sample = body.slice(0, 800).trim().toLowerCase();
+  return sample.startsWith("<!doctype html") || sample.startsWith("<html") || sample.includes("<form") && (sample.includes("login") || sample.includes("authentik") || sample.includes("password"));
+}
+function jsonObject(text) {
   try {
-    rmSync(file);
-    return true;
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+    return parsed;
+  } catch {
+    return void 0;
+  }
+}
+function hubEndpointShape(role, body) {
+  if (role === "health") return body.ok === true && typeof body.agents === "number";
+  return body.ok === true && (body.storage === "sqlite" || body.storage === "memory");
+}
+function classifyHubResponse(input) {
+  const contentType = contentTypeBase(input.contentType);
+  if (input.status >= 300 && input.status < 400) {
+    return {
+      ok: false,
+      status: input.status,
+      kind: "redirect",
+      detail: `HTTP ${input.status} redirect; this looks like an auth proxy or a redirect, not a kxm hub`,
+      body: { error: "auth_proxy", detail: `HTTP ${input.status} redirect` }
+    };
+  }
+  if (looksLikeHtml(contentType, input.bodyText)) {
+    return {
+      ok: false,
+      status: input.status,
+      kind: "auth_proxy",
+      detail: `HTTP ${input.status} returned an HTML login page${contentType ? ` (${contentType})` : ""}; this looks like an auth proxy, not a kxm hub`,
+      body: { error: "auth_proxy", detail: "HTML login page" }
+    };
+  }
+  const jsonType = contentType === "application/json" || contentType === "text/plain" || contentType === "";
+  const body = jsonType ? jsonObject(input.bodyText) : void 0;
+  if (body && hubEndpointShape(input.role, body) && input.status >= 200 && input.status < 300) {
+    if (contentType !== "" && contentType !== "application/json" && contentType !== "text/plain") {
+      return {
+        ok: false,
+        status: input.status,
+        kind: "not_hub",
+        detail: `HTTP ${input.status} content-type ${contentType} is not application/json`,
+        body: { error: "not_hub", detail: contentType }
+      };
+    }
+    return { ok: true, status: input.status, kind: "hub", detail: "kxm hub", body };
+  }
+  const typeNote = contentType && contentType !== "application/json" ? ` content-type ${contentType}` : "";
+  return {
+    ok: false,
+    status: input.status,
+    kind: "not_hub",
+    detail: `HTTP ${input.status}${typeNote} is not a kxm hub ${input.role} response`,
+    body: { error: "not_hub", detail: `HTTP ${input.status}${typeNote}` }
+  };
+}
+async function readHubEndpoint(url, role, fetchImpl, init = {}) {
+  try {
+    const response = await fetchImpl(`${url}/${role}`, {
+      ...init.headers ? { headers: init.headers } : {},
+      ...init.signal ? { signal: init.signal } : {},
+      redirect: "manual"
+    });
+    const bodyText = await response.text();
+    return classifyHubResponse({
+      role,
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      bodyText
+    });
   } catch (error) {
-    if (error.code === "ENOENT") return false;
-    throw error;
+    if (isAbortError(error)) {
+      return { ok: false, status: 0, kind: "timeout", detail: "no reply within the probe budget", body: { error: "hub_unreachable" } };
+    }
+    return { ok: false, status: 0, kind: "unreachable", detail: "nothing answered", body: { error: "hub_unreachable" } };
   }
 }
 async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
@@ -9642,25 +9817,14 @@ async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(`${url}/health`, { signal: controller.signal });
-    if (!response.ok) return { health: "unknown", probeMs: Date.now() - started };
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      return { health: "unknown", probeMs: Date.now() - started };
-    }
-    if (body && typeof body === "object" && body.ok === true) {
-      return { health: "on", probeMs: Date.now() - started };
-    }
-    return { health: "unknown", probeMs: Date.now() - started };
-  } catch (error) {
-    return { health: isAbortError(error) ? "unknown" : "off", probeMs: Date.now() - started };
+    const verdict = await readHubEndpoint(url, "health", fetchImpl, { signal: controller.signal });
+    const health = verdict.kind === "hub" ? "on" : verdict.kind === "unreachable" ? "off" : "unknown";
+    return { health, probeMs: Date.now() - started, kind: verdict.kind, detail: verdict.detail, status: verdict.status };
   } finally {
     clearTimeout(timer);
   }
 }
-var HUB_BINDING_SCHEMA, HUB_HEALTH_PROBE_MS, CloudTokenError, TOKEN_ENV_NAME, TOKEN_COMMAND_TIMEOUT_MS, TOKEN_COMMAND_MAX_BUFFER, HubBindingError;
+var HUB_BINDING_SCHEMA, HUB_HEALTH_PROBE_MS, CloudTokenError, TOKEN_ENV_NAME, TOKEN_COMMAND_TIMEOUT_MS, TOKEN_COMMAND_MAX_BUFFER, HubBindingError, LEGACY_BINDING_KEYS, BINDING_KEYS;
 var init_hub_binding = __esm({
   "plugins/kxm/src/hub-binding.ts"() {
     "use strict";
@@ -9683,11 +9847,13 @@ var init_hub_binding = __esm({
         this.name = "HubBindingError";
       }
     };
+    LEGACY_BINDING_KEYS = ["schema", "url", "boundAt"];
+    BINDING_KEYS = /* @__PURE__ */ new Set([...LEGACY_BINDING_KEYS, "cloud", "tokenEnv", "tokenCommand"]);
   }
 });
 
 // plugins/kxm/src/hub-identity.ts
-import { spawnSync as spawnSync2 } from "node:child_process";
+import { spawnSync as spawnSync3 } from "node:child_process";
 import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
 import { basename, dirname as dirname4, join as join5, resolve as resolve3 } from "node:path";
 function normalizeUrl(raw) {
@@ -9768,7 +9934,7 @@ function defaultOpRead(reference, env) {
   if (!isHubOpReference(reference)) {
     throw new CloudTokenError("cloud_token_command_invalid", `refusing to resolve ${reference}; an op:// reference is required`);
   }
-  const result = spawnSync2("op", ["read", reference], {
+  const result = spawnSync3("op", ["read", reference], {
     encoding: "utf8",
     shell: false,
     timeout: OP_TIMEOUT_MS,
@@ -9808,18 +9974,24 @@ function resolveKeyReference(ref, env, opRead = defaultOpRead) {
 }
 function keySourceFor(input) {
   const ref = input.endpoint?.key;
-  if (input.mode === "local" && input.env.KXM_AUTH_TOKEN?.trim()) return "env:KXM_AUTH_TOKEN";
-  if (ref?.env && input.env[ref.env]?.trim()) return `env:${ref.env}`;
-  if (ref?.op) return `op:${ref.op}`;
-  if (ref?.env) return `env:${ref.env}`;
+  const envName = (name) => {
+    if (!name) return void 0;
+    return input.env[name]?.trim() ? `env:${name}` : void 0;
+  };
   if (input.mode === "cloud") {
-    if (input.binding?.tokenEnv) return `env:${input.binding.tokenEnv}`;
-    if (input.binding?.tokenCommand) {
-      const op = opReferenceFromTokenCommand(input.binding.tokenCommand);
-      return op ? `op:${op}` : "command";
-    }
+    const fromEnv2 = envName(ref?.env);
+    if (fromEnv2) return fromEnv2;
+    if (ref?.op) return `op:${ref.op}`;
+    const fromBindingEnv = envName(input.binding?.tokenEnv);
+    if (fromBindingEnv) return fromBindingEnv;
+    if (input.binding?.tokenCommand) return "token-command";
     return "missing";
   }
+  const fromAuth = envName("KXM_AUTH_TOKEN");
+  if (fromAuth) return fromAuth;
+  const fromEnv = envName(ref?.env);
+  if (fromEnv) return fromEnv;
+  if (ref?.op) return `op:${ref.op}`;
   if (input.hasSavedProjectToken?.(input.project)) return "hub-env";
   return "missing";
 }
@@ -18919,7 +19091,7 @@ var init_oneshot_process = __esm({
 });
 
 // plugins/kxm/src/harness.ts
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 import { existsSync as existsSync9 } from "node:fs";
 import { win32 as win32Path } from "node:path";
 function reportedModelId(value) {
@@ -19208,7 +19380,7 @@ function findWinNpmInnerExe(cliId, options = {}) {
 function defaultRunner(env) {
   return (command, args, timeoutMs) => {
     try {
-      const result = spawnSync3(command, [...args], {
+      const result = spawnSync4(command, [...args], {
         encoding: "utf8",
         timeout: timeoutMs,
         windowsHide: true,
@@ -19942,7 +20114,7 @@ var init_harness = __esm({
 });
 
 // plugins/kxm/src/project-config.ts
-import { spawnSync as spawnSync4 } from "node:child_process";
+import { spawnSync as spawnSync5 } from "node:child_process";
 import { createHash as createHash7 } from "node:crypto";
 import { existsSync as existsSync10, lstatSync, readFileSync as readFileSync8, readdirSync as readdirSync2, realpathSync } from "node:fs";
 import { basename as basename2, dirname as dirname7, extname, isAbsolute as isAbsolute3, join as join9, relative, resolve as resolve6, sep } from "node:path";
@@ -20821,7 +20993,7 @@ function developerCeilings() {
   const script = join9(findKxmRepoRoot(import.meta.url), "scripts", "harness-run.mjs");
   let loaded;
   try {
-    loaded = spawnSync4(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
+    loaded = spawnSync5(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(script).href)}); process.stdout.write(JSON.stringify({ROUTES:m.ROUTES,NATIVE_PI_BRAKE_PROVIDERS:m.NATIVE_PI_BRAKE_PROVIDERS,PI_ALLOWED_PROVIDERS:m.PI_ALLOWED_PROVIDERS,PI_NATIVE_VENDOR_PROVIDERS:m.PI_NATIVE_VENDOR_PROVIDERS}))`], {
       encoding: "utf8",
       timeout: 15e3
     });
@@ -20917,7 +21089,7 @@ function gitEnvironment() {
 function discoverGitRoot(start = process.cwd()) {
   let current = resolve6(start);
   if (existsSync10(current) && !lstatSync(current).isDirectory()) current = dirname7(current);
-  const result = spawnSync4("git", ["-C", current, "rev-parse", "--show-toplevel"], {
+  const result = spawnSync5("git", ["-C", current, "rev-parse", "--show-toplevel"], {
     encoding: "utf8",
     env: gitEnvironment(),
     timeout: 5e3,
@@ -21437,7 +21609,7 @@ var init_sqlite = __esm({
 });
 
 // plugins/kxm/src/bindings.ts
-import { spawnSync as spawnSync5 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 import { createHash as createHash8, randomUUID as randomUUID3 } from "node:crypto";
 import {
   chmodSync as chmodSync2,
@@ -21639,7 +21811,7 @@ function projectOperationLockFile(projectRoot) {
   for (const key of Object.keys(env)) {
     if (key.toLocaleUpperCase("en-US").startsWith("GIT_")) delete env[key];
   }
-  const result = spawnSync5("git", ["-C", projectRoot, "rev-parse", "--absolute-git-dir"], {
+  const result = spawnSync6("git", ["-C", projectRoot, "rev-parse", "--absolute-git-dir"], {
     encoding: "utf8",
     env,
     timeout: 5e3,
@@ -22816,7 +22988,7 @@ var init_database = __esm({
 });
 
 // plugins/kxm/src/runtime-store.ts
-import { spawnSync as spawnSync6 } from "node:child_process";
+import { spawnSync as spawnSync7 } from "node:child_process";
 import { createHash as createHash12, randomUUID as randomUUID4 } from "node:crypto";
 import { existsSync as existsSync14, lstatSync as lstatSync4, mkdirSync as mkdirSync8, readFileSync as readFileSync11, realpathSync as realpathSync4, statSync, writeFileSync as writeFileSync8 } from "node:fs";
 import { dirname as dirname10, isAbsolute as isAbsolute6, resolve as resolve11 } from "node:path";
@@ -22856,7 +23028,7 @@ function gitEnv() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function gitCommonDirectory(projectRoot) {
-  const result = spawnSync6("git", ["-C", projectRoot, "rev-parse", "--git-common-dir"], {
+  const result = spawnSync7("git", ["-C", projectRoot, "rev-parse", "--git-common-dir"], {
     encoding: "utf8",
     env: gitEnv(),
     timeout: 3e4,
@@ -28369,10 +28541,13 @@ function runtimeFrom(ctx, command) {
   const envServerUrl = ctx.env.KXM_SERVER_URL?.trim();
   let boundHubUrl;
   try {
-    boundHubUrl = readHubBinding(ctx.env)?.url;
+    const loaded = loadHubBinding(ctx.env);
+    if (loaded.warning) ctx.io.stderr(`kxm: ${loaded.warning}
+`);
+    boundHubUrl = loaded.record?.url;
   } catch (error) {
     if (error instanceof HubBindingError) {
-      ctx.io.stderr(`kxm: ignoring malformed hub binding at ${hubBindingFile(ctx.env)}; run kxm hub bind <url> again
+      ctx.io.stderr(`kxm: ignoring malformed hub binding at ${hubBindingFile(ctx.env)}; falling back to the local hub. Run kxm hub bind <url> again
 `);
     } else {
       throw error;
@@ -28621,7 +28796,7 @@ var init_vision_gate = __esm({
 });
 
 // plugins/kxm/src/permission.ts
-import { spawnSync as spawnSync7 } from "node:child_process";
+import { spawnSync as spawnSync8 } from "node:child_process";
 import { createHash as createHash17 } from "node:crypto";
 import { existsSync as existsSync27, mkdtempSync, mkdirSync as mkdirSync20, readFileSync as readFileSync25, rmSync as rmSync8, writeFileSync as writeFileSync19 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
@@ -29095,7 +29270,7 @@ function gitEnvironment2() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function git(root, args) {
-  const result = spawnSync7("git", ["-C", root, ...args], {
+  const result = spawnSync8("git", ["-C", root, ...args], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 15e3,
@@ -29113,7 +29288,7 @@ function git(root, args) {
   return result.stdout;
 }
 function gitBuffer(root, args) {
-  const result = spawnSync7("git", ["-C", root, ...args], {
+  const result = spawnSync8("git", ["-C", root, ...args], {
     env: gitEnvironment2(),
     timeout: 15e3,
     windowsHide: true,
@@ -29311,7 +29486,7 @@ function loadBaseProjectDeclarations(projectFile) {
   return members;
 }
 function initShadowGitRoot(directory) {
-  const result = spawnSync7("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
+  const result = spawnSync8("git", ["-c", "init.defaultBranch=main", "init", "--quiet", directory], {
     encoding: "utf8",
     env: gitEnvironment2(),
     timeout: 1e4,
@@ -35174,6 +35349,7 @@ function useColor() {
 var program = new Command();
 
 // plugins/kxm/src/kxm-update.ts
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -35191,6 +35367,18 @@ var KxmUpdateConfigError = class extends Error {
 };
 function kxmReleaseAssetName(version) {
   return `kxm-${version}.tgz`;
+}
+function kxmReleaseDownloadUrl(version, name = kxmReleaseAssetName(version)) {
+  return `https://github.com/kontextmind/kxm/releases/download/v${version}/${name}`;
+}
+function ghReleaseDownloadAvailable(env = process.env) {
+  const result = spawnSync("gh", ["--version"], {
+    encoding: "utf8",
+    env,
+    windowsHide: true,
+    timeout: 15e3
+  });
+  return !result.error && result.status === 0;
 }
 function readInstalledKxmVersion(root) {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -35340,13 +35528,17 @@ function verifyReleaseAssetDigest(path4, sha256) {
     return false;
   }
 }
-function planKxmPackageUpdate(source, latest, releaseDir, asset) {
+function planKxmPackageUpdate(source, latest, releaseDir, asset, downloader = "gh") {
   if (source === "npm") {
     return [{ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", `@kontextmind/kxm@${latest}`] }];
   }
   const name = asset?.name ?? kxmReleaseAssetName(latest);
   const steps = [
-    {
+    downloader === "curl" ? {
+      kind: "download",
+      command: "curl",
+      args: ["--fail", "--silent", "--show-error", "--location", "--output", join(releaseDir, name), kxmReleaseDownloadUrl(latest, name)]
+    } : {
       kind: "download",
       command: "gh",
       args: ["release", "download", `v${latest}`, "--repo", "kontextmind/kxm", "--pattern", name, "--dir", releaseDir, "--clobber"]
@@ -40076,7 +40268,7 @@ init_project();
 init_repo_root();
 init_harness();
 init_types();
-import { spawnSync as spawnSync8 } from "node:child_process";
+import { spawnSync as spawnSync9 } from "node:child_process";
 var PLUGIN_SUPPORTED_HARNESSES = Object.freeze(["pi", "omp", "claude"]);
 async function cmdPluginInstall(runtime, options) {
   const repoRoot = findKxmRepoRoot(import.meta.url);
@@ -40115,7 +40307,7 @@ async function cmdPluginInstall(runtime, options) {
           detail: `would install kxm plugin into pi: ${command} ${args.join(" ")}`
         });
       } else {
-        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync8(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync9(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
         if (run.error || run.status !== 0 && run.status !== null) {
           results.push({
             harness: "pi",
@@ -40146,7 +40338,7 @@ async function cmdPluginInstall(runtime, options) {
           detail: `would install kxm plugin into omp: ${command} ${args.join(" ")}`
         });
       } else {
-        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync8(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, args) : spawnSync9(command, args, { encoding: "utf8", windowsHide: true, env: runtime.env });
         if (run.error || run.status !== 0 && run.status !== null) {
           results.push({
             harness: "omp",
@@ -40181,9 +40373,9 @@ async function cmdPluginInstall(runtime, options) {
         if (runtime.io.spawnSync) {
           runtime.io.spawnSync(command, marketplaceArgs);
         } else {
-          spawnSync8(command, marketplaceArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
+          spawnSync9(command, marketplaceArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
         }
-        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, installArgs) : spawnSync8(command, installArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
+        const run = runtime.io.spawnSync ? runtime.io.spawnSync(command, installArgs) : spawnSync9(command, installArgs, { encoding: "utf8", windowsHide: true, env: runtime.env });
         if (run.error || run.status !== 0 && run.status !== null) {
           results.push({
             harness: "claude",
@@ -40307,7 +40499,7 @@ init_project_config();
 init_runtime_store();
 init_runtime_supervisor();
 init_types();
-import { spawnSync as spawnSync9 } from "node:child_process";
+import { spawnSync as spawnSync10 } from "node:child_process";
 import { chmodSync as chmodSync6, existsSync as existsSync33, mkdirSync as mkdirSync24, readFileSync as readFileSync30, writeFileSync as writeFileSync22 } from "node:fs";
 import { basename as basename8, dirname as dirname18, join as join37, resolve as resolve25 } from "node:path";
 var LANE_SCHEMA = "kxm.lanes.v1";
@@ -40322,7 +40514,7 @@ function gitEnv2() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith("GIT_")));
 }
 function git2(cwd, args) {
-  const result = spawnSync9("git", ["-C", cwd, ...args], {
+  const result = spawnSync10("git", ["-C", cwd, ...args], {
     encoding: "utf8",
     env: gitEnv2(),
     timeout: 3e4,
@@ -40897,7 +41089,7 @@ function cmdLand(runtime, options = {}) {
 // plugins/kxm/src/cli/assign.ts
 init_project_config();
 init_types();
-import { spawnSync as spawnSync10 } from "node:child_process";
+import { spawnSync as spawnSync11 } from "node:child_process";
 import { existsSync as existsSync34 } from "node:fs";
 import { join as join39 } from "node:path";
 var kxmAssignCliSeams = {};
@@ -40983,7 +41175,7 @@ async function cmdAssign(runtime, subcommand, args) {
     return 0;
   }
   const spawn6 = kxmAssignCliSeams.spawn ?? ((commandName, commandArgs, options) => {
-    const result2 = spawnSync10(commandName, commandArgs, {
+    const result2 = spawnSync11(commandName, commandArgs, {
       cwd: options.cwd,
       stdio: options.stdio,
       env: options.env,
@@ -49448,7 +49640,7 @@ var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 // plugins/kxm/src/tui.ts
 import { mkdirSync as mkdirSync25 } from "node:fs";
 import { join as join44, resolve as resolve27, dirname as dirname20 } from "node:path";
-import { spawnSync as spawnSync11 } from "node:child_process";
+import { spawnSync as spawnSync12 } from "node:child_process";
 
 // packages/core/tui/src/types/surface.ts
 var KXM_TUI_LIMITS = Object.freeze({
@@ -50005,16 +50197,16 @@ function applyMeshTuiKey(view, key, itemCount = 0) {
 function copyToClipboard(text) {
   try {
     if (process.platform === "darwin") {
-      const proc = spawnSync11("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync12("pbcopy", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
     if (process.platform === "win32") {
-      const proc = spawnSync11("clip", { input: text, encoding: "utf8", windowsHide: true });
+      const proc = spawnSync12("clip", { input: text, encoding: "utf8", windowsHide: true });
       return proc.status === 0;
     }
-    const wl = spawnSync11("wl-copy", [text], { encoding: "utf8", windowsHide: true });
+    const wl = spawnSync12("wl-copy", [text], { encoding: "utf8", windowsHide: true });
     if (wl.status === 0) return true;
-    const xclip = spawnSync11("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
+    const xclip = spawnSync12("xclip", ["-selection", "clipboard"], { input: text, encoding: "utf8", windowsHide: true });
     return xclip.status === 0;
   } catch {
     return false;
@@ -50022,7 +50214,7 @@ function copyToClipboard(text) {
 }
 function spawnDegradeWorktree(repoRoot, runId, options) {
   const runner = options?.execFn ?? ((cmd, args) => {
-    const res = spawnSync11(cmd, args, {
+    const res = spawnSync12(cmd, args, {
       cwd: repoRoot,
       encoding: "utf8",
       windowsHide: true,
@@ -50806,7 +50998,7 @@ async function runMeshTui(input) {
 }
 
 // plugins/kxm/src/session-work.ts
-import { spawnSync as spawnSync12 } from "node:child_process";
+import { spawnSync as spawnSync13 } from "node:child_process";
 import { randomUUID as randomUUID13 } from "node:crypto";
 import { existsSync as existsSync36, mkdirSync as mkdirSync26, readFileSync as readFileSync32, renameSync as renameSync8, writeFileSync as writeFileSync23 } from "node:fs";
 import { join as join45 } from "node:path";
@@ -50867,10 +51059,10 @@ function formatShipLine(ship) {
 }
 function readGitShip(cwd) {
   try {
-    const dirty = spawnSync12("git", ["--no-optional-locks", "-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    const dirty = spawnSync13("git", ["--no-optional-locks", "-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return void 0;
     const isDirty = dirty.stdout.trim().length > 0;
-    const upstream = spawnSync12("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
+    const upstream = spawnSync13("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
     if (upstream.status === 0) {
       return {
         dirty: isDirty,
@@ -50878,9 +51070,9 @@ function readGitShip(cwd) {
       };
     }
     for (const baseRef of ["origin/HEAD", "main", "origin/main", "master", "origin/master"]) {
-      const mb = spawnSync12("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
+      const mb = spawnSync13("git", ["-C", cwd, "merge-base", baseRef, "HEAD"], { encoding: "utf8", windowsHide: true });
       if (mb.status === 0 && mb.stdout.trim()) {
-        const count = spawnSync12("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
+        const count = spawnSync13("git", ["-C", cwd, "rev-list", "--count", `${mb.stdout.trim()}..HEAD`], { encoding: "utf8", windowsHide: true });
         if (count.status === 0) {
           return {
             dirty: isDirty,
@@ -51424,20 +51616,6 @@ init_repo_root();
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { dirname as dirname22 } from "node:path";
 import { homedir as homedir7 } from "node:os";
-async function hubGet(url, fetchImpl, headers) {
-  try {
-    const response = await fetchImpl(url, headers ? { headers } : void 0);
-    const text = redactSecrets((await response.text()).slice(0, 8e3));
-    let body = text;
-    try {
-      body = JSON.parse(text);
-    } catch {
-    }
-    return { ok: response.ok, status: response.status, body };
-  } catch {
-    return { ok: false, status: 0, body: { error: "hub_unreachable" } };
-  }
-}
 function installProbeFrom(runtime) {
   const partial = runtime.io.installProbe ?? {};
   const moduleDir = partial.moduleDir ?? dirname22(fileURLToPath3(import.meta.url));
@@ -51512,8 +51690,11 @@ async function cmdStatus(runtime) {
     }
     if (!(error instanceof HubBindingError)) throw error;
   }
-  const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl, headers);
-  const ready = await hubGet(`${runtime.serverUrl}/ready`, runtime.fetchImpl, headers);
+  const health = await readHubEndpoint(runtime.serverUrl, "health", runtime.fetchImpl, headers ? { headers } : {});
+  const ready = await readHubEndpoint(runtime.serverUrl, "ready", runtime.fetchImpl, headers ? { headers } : {});
+  const proxyKind = [health.kind, ready.kind].find((kind) => kind === "redirect" || kind === "auth_proxy");
+  const notHub = !proxyKind && (health.kind === "not_hub" || ready.kind === "not_hub");
+  const probeNote = proxyKind === "redirect" ? " \xB7 auth proxy or redirect" : proxyKind === "auth_proxy" ? " \xB7 auth proxy (HTML login page)" : notHub ? " \xB7 not a kxm hub" : "";
   const effectiveScope = connection.scope;
   const overridden = connection.urlSource === "env";
   const identity = {
@@ -51537,7 +51718,7 @@ async function cmdStatus(runtime) {
     runtime.io,
     runtime.json,
     payload,
-    `hub health=${health.ok} ready=${ready.ok} \xB7 ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} \xB7 mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}`
+    `hub health=${health.ok} ready=${ready.ok} \xB7 ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} \xB7 mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}${probeNote}`
   );
   return payload.ok ? 0 : 1;
 }
@@ -51748,7 +51929,7 @@ async function cmdHubBind(runtime, rawUrl, options = {}) {
       return 2;
     }
   }
-  const file = hubBindingFile(runtime.env);
+  const file = cloud ? hubBindingCloudFile(runtime.env) : hubBindingFile(runtime.env);
   const bindingCommand = tokenCommand ?? (cloud && keyOp ? `op read ${keyOp}` : void 0);
   const cloudFields = cloud ? { cloud: true, ...tokenEnv ? { tokenEnv } : {}, ...bindingCommand ? { tokenCommand: bindingCommand } : {} } : {};
   const record = {
@@ -51773,6 +51954,27 @@ async function cmdHubBind(runtime, rawUrl, options = {}) {
     );
     return 0;
   }
+  const probe = await probeHubHealth(url, runtime.fetchImpl);
+  const acceptable = probe.kind === "hub" || probe.kind === "timeout" || probe.kind === "unreachable";
+  if (!acceptable && options.force !== true) {
+    print(
+      runtime.io,
+      runtime.json,
+      {
+        ok: false,
+        command: "hub bind",
+        error: "hub_not_kxm",
+        url,
+        scope,
+        kind: probe.kind,
+        status: probe.status,
+        detail: probe.detail,
+        nextAction: "bind_a_kxm_hub_or_pass_force"
+      },
+      `refusing to bind ${url}: ${probe.detail}; no binding was written. Pass --force to bind anyway`
+    );
+    return 2;
+  }
   try {
     writeHubEndpoint(runtime.dirs.workdir, {
       mode: cloud ? "cloud" : "local",
@@ -51793,12 +51995,12 @@ async function cmdHubBind(runtime, rawUrl, options = {}) {
     throw error;
   }
   writeHubBinding({ ...record, boundAt: (/* @__PURE__ */ new Date()).toISOString() }, runtime.env);
-  const { health, probeMs } = await probeHubHealth(url, runtime.fetchImpl);
+  const healthText = acceptable ? formatHubBindHealth(probe.health) : `${probe.detail} (--force)`;
   print(
     runtime.io,
     runtime.json,
-    { ok: true, command: "hub bind", url, scope, file, configFile, project: identity.project, health, probeMs, ...cloudFields },
-    `bound hub ${url} \xB7 ${scope} \xB7 ${formatHubBindHealth(health)}${cloud ? cloudNote : scope === "remote" ? " \xB7 token leaves this machine" : ""}`
+    { ok: true, command: "hub bind", url, scope, file, configFile, project: identity.project, health: probe.health, probeMs: probe.probeMs, kind: probe.kind, ...cloudFields },
+    `bound hub ${url} \xB7 ${scope} \xB7 ${healthText}${cloud ? cloudNote : scope === "remote" ? " \xB7 token leaves this machine" : ""}`
   );
   return 0;
 }
@@ -52231,7 +52433,7 @@ init_redact();
 init_telemetry();
 init_routing();
 init_prices();
-import { spawnSync as spawnSync14 } from "node:child_process";
+import { spawnSync as spawnSync15 } from "node:child_process";
 import { createHash as createHash19 } from "node:crypto";
 import { existsSync as existsSync47, mkdtempSync as mkdtempSync3, readFileSync as readFileSync41, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
@@ -53110,7 +53312,7 @@ ${divider}
 
 // plugins/kxm/src/ssh-remote.ts
 init_safety_integrity();
-import { spawnSync as spawnSync13 } from "node:child_process";
+import { spawnSync as spawnSync14 } from "node:child_process";
 import { existsSync as existsSync44, mkdirSync as mkdirSync30, readFileSync as readFileSync39, readdirSync as readdirSync14, rmSync as rmSync12, statSync as statSync7 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
 import { join as join52, resolve as resolve31 } from "node:path";
@@ -53186,7 +53388,7 @@ function parseSshConfig(configPath) {
     return [];
   }
 }
-function resolveSshHostG(host, execFn = spawnSync13) {
+function resolveSshHostG(host, execFn = spawnSync14) {
   try {
     const result = execFn("ssh", ["-G", host], { encoding: "utf-8" });
     if (result.status !== 0 || !result.stdout) {
@@ -53252,7 +53454,7 @@ function buildSshArgs(options) {
   args.push(options.host);
   return args;
 }
-function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync13) {
+function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync14) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join52(resolvedDir, "%C");
   try {
@@ -53264,7 +53466,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
     return false;
   }
 }
-function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync13) {
+function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync14) {
   const resolvedDir = ensureSocketDir(socketDir);
   const controlPath = join52(resolvedDir, "%C");
   try {
@@ -53278,7 +53480,7 @@ function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function executeSshRun(params) {
   const startTime = Date.now();
-  const execSyncFn = params.execFn ?? spawnSync13;
+  const execSyncFn = params.execFn ?? spawnSync14;
   if (params.action === "info") {
     if (params.host) {
       const hostInfo = resolveSshHostG(params.host, execSyncFn);
@@ -54423,7 +54625,7 @@ init_types();
 init_repo_root();
 function cliSpawn(runtime, command, args, extra) {
   if (runtime.io.spawnSync) return runtime.io.spawnSync(command, args);
-  const result = spawnSync14(command, [...args], {
+  const result = spawnSync15(command, [...args], {
     encoding: "utf8",
     windowsHide: true,
     shell: process.platform === "win32",
@@ -54463,7 +54665,8 @@ function applyKxmPackageUpdate(runtime, notice) {
   }
   const releaseDir = mkdtempSync3(join55(tmpdir3(), "kxm-pkg-update-"));
   try {
-    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset);
+    const downloader = notice.source === "github" && !ghReleaseDownloadAvailable(runtime.env) ? "curl" : "gh";
+    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset, downloader);
     if (runtime.dryRun) {
       return { ok: true, detail: planned.map(formatPackageUpdateStep).join(" && ") };
     }
@@ -56042,7 +56245,7 @@ function createProgram(ctx, result, argv) {
   addGlobalOptions(hub.command("stop").description("Request managed hub and worker shutdown")).option("--wait-ms <ms>", "How long to wait for PID files to clear").action(async function hubStopAction(options) {
     result.code = await cmdStop(runtimeFrom(ctx, this), options.waitMs);
   });
-  addGlobalOptions(hub.command("bind").description("Bind this machine to a running hub").argument("<url>", "Hub base URL (http or https)")).option("--cloud", "Mark the hub remote even when the URL is a loopback forward").option("--token-env <name>", "Environment variable that holds the hub token; the token is not stored").option("--token-command <command>", "Program that prints the hub token; the token is not stored").option("--key-op <ref>", "op:// reference for the hub token; resolved with op read, never stored").action(async function hubBindAction(url, options) {
+  addGlobalOptions(hub.command("bind").description("Bind this machine to a running hub").argument("<url>", "Hub base URL (http or https)")).option("--cloud", "Mark the hub remote even when the URL is a loopback forward").option("--token-env <name>", "Environment variable that holds the hub token; the token is not stored").option("--token-command <command>", "Program that prints the hub token; the token is not stored").option("--key-op <ref>", "op:// reference for the hub token; resolved with op read, never stored").option("--force", "Bind even when the URL is not a kxm hub").action(async function hubBindAction(url, options) {
     result.code = await cmdHubBind(runtimeFrom(ctx, this), url, options);
   });
   addGlobalOptions(hub.command("unbind").description("Remove this machine's hub binding")).action(bind(cmdHubUnbind));

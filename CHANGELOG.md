@@ -605,6 +605,24 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **`kxm hub view` and `kxm hub bind` require a kxm hub body.** HTTP 200 HTML
+  (an Authentik login page) and 30x redirects are not healthy. The JSON
+  `health` field is `{ "error": "auth_proxy" }`, not the page. Bind refuses
+  with `hub_not_kxm` unless `--force` is set. A timeout or a dead host still
+  binds. `kxm hub view` names the key source that would supply the token
+  (`env:<NAME>` only when that variable is set, `op:<ref>`, `token-command`,
+  `hub-env`, or `missing`).
+- **A cloud bind no longer breaks a 0.7.159 Runtime supervisor.** Cloud fields
+  live in `hub-binding.cloud.json`. `hub-binding.json` stays a three-key local
+  record or is omitted, so the old reader falls back to the local hub instead
+  of throwing `malformed hub binding` and stopping sync. A newer schema is a
+  warning and `no_hub`, not a stalled tick. Restart the supervisor, hub, and
+  workers after upgrading and before `kxm hub bind --cloud`.
+- **`kxm update --kxm` downloads with curl when `gh` is missing**, and still
+  verifies the release sha256.
+- **The npm publish job waits until `npm view` shows the version** (bounded)
+  before it reports success. GitHub release log lines no longer say "published"
+  in a way that means the package is on npm.
 - **A one-shot outcome is the last top-level JSON object that ends the reply.** It is accepted only when the prefix before it leaves every string, object, and array closed (a naive state machine plus a container lexer over the last container openers). Anything ambiguous, truncated, or followed by prose fails closed. The authoring witness counts `HEAD`, so a writer that commits is credited.
 
 - **The test suite no longer passes `--test-timeout`.** Under `node --test` that flag bounds each file, so coverage on CI timed out `test/core/engine.test.ts` at three minutes. The wall clock in `scripts/run-bounded.mjs` still bounds each script.

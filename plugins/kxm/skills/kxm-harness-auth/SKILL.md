@@ -39,8 +39,10 @@ still blocks the tools.
 | `kxm update [harness] --extensions` | Update only extensions and plugins (Pi packages, the Claude kxm plugin) |
 | `kxm update [harness] --models` | Refresh model catalogs where the harness supports it |
 
-- `kxm update --kxm` downloads the GitHub release tarball by default, so it
-  needs an authenticated `gh`.
+- `kxm update --kxm` downloads the GitHub release tarball by default. It uses
+  `gh` when that CLI answers `gh --version`, and otherwise curl with the same
+  sha256 check. A host with neither can follow the curl commands in
+  docs/operations/upgrade.md.
 - `kxm update claude --extensions` updates only a user-scope plugin install;
   its dry run prints `claude extensions: would claude plugin update kxm -y`.
   A project-scope install is the operator's `claude plugin update kxm@kxm --scope project`.

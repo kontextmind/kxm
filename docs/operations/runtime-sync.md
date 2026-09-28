@@ -94,8 +94,9 @@ sync prj_a17d607765e144cd95b93a8715d360b6: blocked (pending 0, acked 1, refused 
 | State | Meaning | Action |
 |---|---|---|
 | `ok` | Rows are being acknowledged | None |
-| `no_hub` | No hub is bound or set; rows are kept locally by design | Bind a hub if you want hub-side views |
+| `no_hub` | No hub is bound or set, or this build ignored a binding it does not understand; rows are kept locally by design | Bind a hub if you want hub-side views. A warning that names `hub-binding.json` means restart the supervisor after upgrading, then bind again |
 | `blocked` | Transport or credential failure; rows stay pending and the tick backs off, up to 5 minutes | Fix the cause; the next attempt resumes on its own |
+| `sync: the supervisor is running but did not answer /v1/sync/status` | The process is up, and `kxm runtime status` could not read `GET /v1/sync/status`. A hung supervisor, a token mismatch, or a supervisor started before an upgrade | `kxm runtime stop`, then `kxm runtime start`. Restart the hub and workers too after an upgrade and before a cloud bind |
 | `refusing` | The hub durably refused rows, or answered without a result for some | Fix the hub side, then run `kxm runtime sync-retry` |
 
 A project whose run store this release cannot open shows `blocked (its store is not readable by this build)` with the reason; see [Upgrade KXM](upgrade.md#understand-schema-changes). Right after the supervisor starts, the status can read `no project registered with this Runtime yet` until the first tick.

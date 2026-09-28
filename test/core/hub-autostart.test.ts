@@ -87,7 +87,10 @@ test("a healthy bound hub is reused without spawning", async () => {
       config: { hub: { autoStart: "background" } },
       cwd: workdir,
       env: workspaceEnv(home, workdir),
-      fetchImpl: (async () => new Response(JSON.stringify({ ok: true }), { status: 200 })) as typeof fetch,
+      fetchImpl: (async () => new Response(JSON.stringify({ ok: true, agents: 0 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch,
       spawner: () => {
         spawns += 1;
         throw new Error("must not spawn");
@@ -112,7 +115,10 @@ test("an unbound but healthy hub on the configured URL is reused without spawnin
       env: workspaceEnv(home, workdir),
       fetchImpl: (async (input: RequestInfo | URL) => {
         assert.equal(String(input), "http://127.0.0.1:7331/health", "the configured default URL is probed");
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        return new Response(JSON.stringify({ ok: true, agents: 0 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       }) as typeof fetch,
       spawner: () => {
         spawns += 1;

@@ -31,7 +31,7 @@ import { createKxmOneShotProducer } from "./oneshot-producer.ts";
 import { KxmRunScheduler, createKxmSimulatedProducer, recordDriveReceipt, recoverKxmRun, kxmDrivePollProjection } from "./engine.ts";
 import { kxmDriveSession, kxmOpenDriveSessions } from "./runtime-owner.ts";
 import { RuntimeHubClient, HubHttpError, type SyncPushResponse } from "./client.ts";
-import { CloudTokenError, readHubBinding } from "./hub-binding.ts";
+import { CloudTokenError, HubBindingError, loadHubBinding } from "./hub-binding.ts";
 import { resolveClientHubAuthToken } from "./hub-env.ts";
 import { createLogger } from "./logger.ts";
 import type { KxmOutboxRow, KxmOutboxStatus } from "./runtime-store.ts";
@@ -572,8 +572,21 @@ export async function syncKxmOutbox(
 }
 
 /** Where this Runtime reports one project, or nothing when no hub is bound. */
-function runtimeHubClientFor(context: KxmRuntimeContext, env: NodeJS.ProcessEnv): RuntimeHubClient | undefined {
-  const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
+function runtimeHubClientFor(
+  context: KxmRuntimeContext,
+  env: NodeJS.ProcessEnv,
+  onBindingWarning?: (message: string) => void,
+): RuntimeHubClient | undefined {
+  let recordUrl: string | undefined;
+  try {
+    const loaded = loadHubBinding(env);
+    if (loaded.warning) onBindingWarning?.(loaded.warning);
+    recordUrl = loaded.record?.url;
+  } catch (error) {
+    if (!(error instanceof HubBindingError)) throw error;
+    onBindingWarning?.(`${error.message}; falling back to the local hub so sync can continue`);
+  }
+  const serverUrl = env.KXM_SERVER_URL?.trim() || recordUrl;
   if (!serverUrl) return undefined;
   // Use the context's actual projectId — the same identity sync events carry — so the
   // ops snapshot can join runs to their home Runtime. The npm package name (what an
@@ -1271,6 +1284,7 @@ async function startKxmRuntimeSupervisorInner(
   };
 
   let syncing = false;
+  let bindingWarning: string | undefined;
   const syncTimer = setInterval(() => {
     if (syncing || stopping) return;
     syncing = true;
@@ -1292,7 +1306,11 @@ async function startKxmRuntimeSupervisorInner(
           consecutiveFailures: 0,
         };
         try {
-          const client = runtimeHubClientFor(context, env);
+          const client = runtimeHubClientFor(context, env, (message) => {
+            if (bindingWarning === message) return;
+            bindingWarning = message;
+            logger.warn({ event: "hub_binding_fallback", message });
+          });
           if (!client) {
             // Not a failure: a box with no bound hub simply keeps its rows.
             recordSyncStatus(context, { ...base, state: "no_hub" });

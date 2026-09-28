@@ -13,8 +13,10 @@ import {
   HUB_BINDING_SCHEMA,
   CloudTokenError,
   HubBindingError,
+  hubBindingCloudFile,
   hubBindingFile,
   probeHubHealth,
+  readHubEndpoint,
   hubBindingScope,
   effectiveHubBindingScope,
   isCloudTokenEnvName,
@@ -181,8 +183,17 @@ export async function cmdStatus(runtime: Runtime): Promise<number> {
     }
     if (!(error instanceof HubBindingError)) throw error;
   }
-  const health = await hubGet(`${runtime.serverUrl}/health`, runtime.fetchImpl, headers);
-  const ready = await hubGet(`${runtime.serverUrl}/ready`, runtime.fetchImpl, headers);
+  const health = await readHubEndpoint(runtime.serverUrl, "health", runtime.fetchImpl, headers ? { headers } : {});
+  const ready = await readHubEndpoint(runtime.serverUrl, "ready", runtime.fetchImpl, headers ? { headers } : {});
+  const proxyKind = [health.kind, ready.kind].find((kind) => kind === "redirect" || kind === "auth_proxy");
+  const notHub = !proxyKind && (health.kind === "not_hub" || ready.kind === "not_hub");
+  const probeNote = proxyKind === "redirect"
+    ? " · auth proxy or redirect"
+    : proxyKind === "auth_proxy"
+      ? " · auth proxy (HTML login page)"
+      : notHub
+        ? " · not a kxm hub"
+        : "";
   // Scope on the status line deliberately: "attached across a network" and "attached on
   // this box" are otherwise indistinguishable, and only one of them ships a token.
   // Scope is a property of the URL actually contacted, not of whichever file the
@@ -210,7 +221,7 @@ export async function cmdStatus(runtime: Runtime): Promise<number> {
     ready: ready.body,
   };
   print(runtime.io, runtime.json, payload,
-    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} · mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}`);
+    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} · mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}${probeNote}`);
   return payload.ok ? 0 : 1;
 }
 
@@ -314,6 +325,7 @@ export interface HubBindOptions {
   tokenEnv?: string | undefined;
   tokenCommand?: string | undefined;
   keyOp?: string | undefined;
+  force?: boolean | undefined;
 }
 
 export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubBindOptions = {}): Promise<number> {
@@ -444,7 +456,7 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubB
       return 2;
     }
   }
-  const file = hubBindingFile(runtime.env);
+  const file = cloud ? hubBindingCloudFile(runtime.env) : hubBindingFile(runtime.env);
   const bindingCommand = tokenCommand ?? (cloud && keyOp ? `op read ${keyOp}` : undefined);
   const cloudFields = cloud
     ? { cloud: true as const, ...(tokenEnv ? { tokenEnv } : {}), ...(bindingCommand ? { tokenCommand: bindingCommand } : {}) }
@@ -471,6 +483,27 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubB
     );
     return 0;
   }
+  const probe = await probeHubHealth(url, runtime.fetchImpl);
+  const acceptable = probe.kind === "hub" || probe.kind === "timeout" || probe.kind === "unreachable";
+  if (!acceptable && options.force !== true) {
+    print(
+      runtime.io,
+      runtime.json,
+      {
+        ok: false,
+        command: "hub bind",
+        error: "hub_not_kxm",
+        url,
+        scope,
+        kind: probe.kind,
+        status: probe.status,
+        detail: probe.detail,
+        nextAction: "bind_a_kxm_hub_or_pass_force",
+      },
+      `refusing to bind ${url}: ${probe.detail}; no binding was written. Pass --force to bind anyway`,
+    );
+    return 2;
+  }
   try {
     writeHubEndpoint(runtime.dirs.workdir, {
       mode: cloud ? "cloud" : "local",
@@ -491,9 +524,11 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubB
     throw error;
   }
   writeHubBinding({ ...record, boundAt: new Date().toISOString() }, runtime.env);
-  const { health, probeMs } = await probeHubHealth(url, runtime.fetchImpl);
-  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, scope, file, configFile, project: identity.project, health, probeMs, ...cloudFields },
-    `bound hub ${url} · ${scope} · ${formatHubBindHealth(health)}${cloud ? cloudNote : scope === "remote" ? " · token leaves this machine" : ""}`);
+  const healthText = acceptable
+    ? formatHubBindHealth(probe.health)
+    : `${probe.detail} (--force)`;
+  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, scope, file, configFile, project: identity.project, health: probe.health, probeMs: probe.probeMs, kind: probe.kind, ...cloudFields },
+    `bound hub ${url} · ${scope} · ${healthText}${cloud ? cloudNote : scope === "remote" ? " · token leaves this machine" : ""}`);
   return 0;
 }
 

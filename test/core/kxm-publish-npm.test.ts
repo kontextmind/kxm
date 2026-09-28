@@ -12,6 +12,7 @@ import {
   main,
   normalizeSha256Digest,
   runKxmNpmPublish,
+  waitForNpmVersion,
   // @ts-expect-error The helper is a workflow script with no declaration artifact.
 } from "../../scripts/kxm-publish-npm.mjs";
 
@@ -320,4 +321,25 @@ test("main() fails closed with exit code 1 when required env vars are missing", 
   );
   assert.equal(code3, 1);
   assert.match(stderr, /npm_auth_missing/);
+});
+
+test("waitForNpmVersion reports the version only after npm view shows it", async () => {
+  let calls = 0;
+  const seen = await waitForNpmVersion("0.7.166", {
+    waitMs: 5_000,
+    intervalMs: 250,
+    npmView: async (version: string) => {
+      calls += 1;
+      return calls < 2 ? "" : version;
+    },
+  });
+  assert.equal(seen.visible, true);
+  assert.equal(seen.version, "0.7.166");
+  assert.equal(calls, 2);
+
+  const missing = await waitForNpmVersion("0.7.166", {
+    waitMs: 0,
+    npmView: async () => "",
+  });
+  assert.equal(missing.visible, false);
 });

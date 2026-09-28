@@ -1311,6 +1311,8 @@ no recorded cost is never ready.
 ```yaml
 # .kxm/config.yaml (project scope) or ~/.config/kxm/config.yaml (user scope).
 # The project file wins. Key fields are references, never tokens.
+# --token-command is not a config field. It lives only in the machine-wide
+# hub-binding.cloud.json written by `kxm hub bind --cloud`.
 hub:
   autoStart: background        # background | off
   mode: local                  # local | cloud
@@ -1321,7 +1323,8 @@ hub:
       op: op://Private/kxm/local-project-token
       env: KXM_LOCAL_PROJECT_TOKEN
   cloud:
-    url: https://hub.kxmd.dev
+    # Clients use an SSH forward. https://hub.kxmd.dev is an Authentik login page.
+    url: http://127.0.0.1:17331
     project: prj_example
     key:
       op: op://Private/kxmd/project-token

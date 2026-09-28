@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -41,6 +42,21 @@ export class KxmUpdateConfigError extends Error {
 
 export function kxmReleaseAssetName(version: string): string {
   return `kxm-${version}.tgz`;
+}
+
+export function kxmReleaseDownloadUrl(version: string, name = kxmReleaseAssetName(version)): string {
+  return `https://github.com/kontextmind/kxm/releases/download/v${version}/${name}`;
+}
+
+/** `gh` is optional. Hosts without it download the same asset with curl and still verify the digest. */
+export function ghReleaseDownloadAvailable(env: NodeJS.ProcessEnv = process.env): boolean {
+  const result = spawnSync("gh", ["--version"], {
+    encoding: "utf8",
+    env,
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  return !result.error && result.status === 0;
 }
 
 export function readInstalledKxmVersion(root: string): string {
@@ -213,7 +229,7 @@ export async function fetchLatestKxmVersion(
 }
 
 export type KxmPackageUpdateStep =
-  | { kind: "download"; command: "gh"; args: string[] }
+  | { kind: "download"; command: "gh" | "curl"; args: string[] }
   | { kind: "verify"; path: string; sha256: string }
   | { kind: "install"; command: "npm"; args: string[] };
 
@@ -233,17 +249,24 @@ export function planKxmPackageUpdate(
   latest: string,
   releaseDir: string,
   asset?: KxmReleaseAsset,
+  downloader: "gh" | "curl" = "gh",
 ): KxmPackageUpdateStep[] {
   if (source === "npm") {
     return [{ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", `@kontextmind/kxm@${latest}`] }];
   }
   const name = asset?.name ?? kxmReleaseAssetName(latest);
   const steps: KxmPackageUpdateStep[] = [
-    {
-      kind: "download",
-      command: "gh",
-      args: ["release", "download", `v${latest}`, "--repo", "kontextmind/kxm", "--pattern", name, "--dir", releaseDir, "--clobber"],
-    },
+    downloader === "curl"
+      ? {
+        kind: "download",
+        command: "curl",
+        args: ["--fail", "--silent", "--show-error", "--location", "--output", join(releaseDir, name), kxmReleaseDownloadUrl(latest, name)],
+      }
+      : {
+        kind: "download",
+        command: "gh",
+        args: ["release", "download", `v${latest}`, "--repo", "kontextmind/kxm", "--pattern", name, "--dir", releaseDir, "--clobber"],
+      },
   ];
   if (asset?.sha256) {
     steps.push({ kind: "verify", path: join(releaseDir, name), sha256: asset.sha256 });

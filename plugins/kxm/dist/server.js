@@ -23491,6 +23491,8 @@ var CloudTokenError = class extends Error {
     this.code = code;
   }
 };
+var LEGACY_BINDING_KEYS = ["schema", "url", "boundAt"];
+var BINDING_KEYS = /* @__PURE__ */ new Set([...LEGACY_BINDING_KEYS, "cloud", "tokenEnv", "tokenCommand"]);
 
 // plugins/kxm/src/hub-identity.ts
 var OP_TIMEOUT_MS = 15e3;

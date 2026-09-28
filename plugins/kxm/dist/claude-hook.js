@@ -556,6 +556,9 @@ function resolveUserStateRoot(env) {
 function hubBindingFile(env = process.env) {
   return join3(resolveUserStateRoot(env), "hub-binding.json");
 }
+function hubBindingCloudFile(env = process.env) {
+  return join3(resolveUserStateRoot(env), "hub-binding.cloud.json");
+}
 function validateHubUrl(raw) {
   let parsed;
   try {
@@ -618,33 +621,35 @@ function isAbortError(error) {
     error && typeof error === "object" && ("name" in error && error.name === "AbortError" || "code" in error && error.code === "ABORT_ERR")
   );
 }
-function readHubBinding(env = process.env) {
-  const file = hubBindingFile(env);
-  if (!existsSync4(file)) return void 0;
+function bindingFallbackWarning(file, reason) {
+  return `hub binding at ${file} ${reason}; falling back to the local hub. Restart the Runtime supervisor, the hub, and workers after upgrading and before a cloud bind.`;
+}
+function writeBindingJson(file, value) {
+  mkdirSync3(dirname(file), { recursive: true, mode: 448 });
+  const temporary = join3(dirname(file), `.${file.endsWith("cloud.json") ? "hub-binding-cloud" : "hub-binding"}-${process.pid}.tmp`);
+  try {
+    writeFileSync2(temporary, `${JSON.stringify(value, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+    renameSync(temporary, file);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+function parseBindingObject(file) {
+  if (!existsSync4(file)) return new HubBindingError(`missing hub binding at ${file}`);
   let parsed;
   try {
     parsed = JSON.parse(readFileSync4(file, "utf8"));
   } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
-  const row = parsed;
-  const keys = Object.keys(row);
-  const allowed = /* @__PURE__ */ new Set(["schema", "url", "boundAt", "cloud", "tokenEnv", "tokenCommand"]);
-  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
-  if (keys.some((key) => !allowed.has(key)) || !cloudish && keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  let url;
-  try {
-    url = validateHubUrl(row.url);
-  } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  if (!cloudish) return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
-  if (row.cloud !== true) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return parsed;
+}
+function cloudRecordFromRow(file, row, url, boundAt) {
+  if (row.cloud !== true) return void 0;
   let tokenEnv;
   let tokenCommand;
   if (row.tokenEnv !== void 0) {
@@ -666,36 +671,163 @@ function readHubBinding(env = process.env) {
   return {
     schema: HUB_BINDING_SCHEMA,
     url,
-    boundAt: row.boundAt,
+    boundAt,
     cloud: true,
     ...tokenEnv ? { tokenEnv } : {},
     ...tokenCommand ? { tokenCommand } : {}
   };
+}
+function interpretBindingFile(file) {
+  if (!existsSync4(file)) return {};
+  const parsed = parseBindingObject(file);
+  if (parsed instanceof HubBindingError) throw parsed;
+  const keys = Object.keys(parsed);
+  const unknown = keys.filter((key) => !BINDING_KEYS.has(key));
+  if (parsed.schema !== HUB_BINDING_SCHEMA || unknown.length > 0) {
+    return { warning: bindingFallbackWarning(file, `is newer than this build understands (${String(parsed.schema)})`) };
+  }
+  if (typeof parsed.url !== "string" || typeof parsed.boundAt !== "string" || !isIsoTimestamp(parsed.boundAt)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  let url;
+  try {
+    url = validateHubUrl(parsed.url);
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
+  if (!cloudish) {
+    if (keys.length !== 3) throw new HubBindingError(`malformed hub binding at ${file}`);
+    return { record: { schema: HUB_BINDING_SCHEMA, url, boundAt: parsed.boundAt } };
+  }
+  const record = cloudRecordFromRow(file, parsed, url, parsed.boundAt);
+  if (!record) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return { record, legacyCloud: true };
+}
+function loadHubBinding(env = process.env) {
+  const cloudFile = hubBindingCloudFile(env);
+  const cloud = interpretBindingFile(cloudFile);
+  if (cloud.warning && !cloud.record) {
+    const local = existsSync4(hubBindingFile(env)) ? interpretBindingFile(hubBindingFile(env)) : {};
+    if (local.record && !local.record.cloud) return { record: local.record, warning: cloud.warning };
+    return { warning: cloud.warning };
+  }
+  if (cloud.record?.cloud) return { record: cloud.record, ...cloud.warning ? { warning: cloud.warning } : {} };
+  const main2 = interpretBindingFile(hubBindingFile(env));
+  if (main2.legacyCloud && main2.record) {
+    writeBindingJson(cloudFile, main2.record);
+    rmSync(hubBindingFile(env), { force: true });
+    return {
+      record: main2.record,
+      warning: bindingFallbackWarning(
+        hubBindingFile(env),
+        "stored a cloud bind in the pre-0.7.160 file"
+      )
+    };
+  }
+  return { ...main2.record ? { record: main2.record } : {}, ...main2.warning ? { warning: main2.warning } : {} };
+}
+function readHubBinding(env = process.env) {
+  return loadHubBinding(env).record;
+}
+function contentTypeBase(header) {
+  return (header ?? "").split(";")[0].trim().toLowerCase();
+}
+function looksLikeHtml(contentType, body) {
+  if (contentType === "text/html" || contentType === "application/xhtml+xml") return true;
+  const sample = body.slice(0, 800).trim().toLowerCase();
+  return sample.startsWith("<!doctype html") || sample.startsWith("<html") || sample.includes("<form") && (sample.includes("login") || sample.includes("authentik") || sample.includes("password"));
+}
+function jsonObject(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+    return parsed;
+  } catch {
+    return void 0;
+  }
+}
+function hubEndpointShape(role, body) {
+  if (role === "health") return body.ok === true && typeof body.agents === "number";
+  return body.ok === true && (body.storage === "sqlite" || body.storage === "memory");
+}
+function classifyHubResponse(input) {
+  const contentType = contentTypeBase(input.contentType);
+  if (input.status >= 300 && input.status < 400) {
+    return {
+      ok: false,
+      status: input.status,
+      kind: "redirect",
+      detail: `HTTP ${input.status} redirect; this looks like an auth proxy or a redirect, not a kxm hub`,
+      body: { error: "auth_proxy", detail: `HTTP ${input.status} redirect` }
+    };
+  }
+  if (looksLikeHtml(contentType, input.bodyText)) {
+    return {
+      ok: false,
+      status: input.status,
+      kind: "auth_proxy",
+      detail: `HTTP ${input.status} returned an HTML login page${contentType ? ` (${contentType})` : ""}; this looks like an auth proxy, not a kxm hub`,
+      body: { error: "auth_proxy", detail: "HTML login page" }
+    };
+  }
+  const jsonType = contentType === "application/json" || contentType === "text/plain" || contentType === "";
+  const body = jsonType ? jsonObject(input.bodyText) : void 0;
+  if (body && hubEndpointShape(input.role, body) && input.status >= 200 && input.status < 300) {
+    if (contentType !== "" && contentType !== "application/json" && contentType !== "text/plain") {
+      return {
+        ok: false,
+        status: input.status,
+        kind: "not_hub",
+        detail: `HTTP ${input.status} content-type ${contentType} is not application/json`,
+        body: { error: "not_hub", detail: contentType }
+      };
+    }
+    return { ok: true, status: input.status, kind: "hub", detail: "kxm hub", body };
+  }
+  const typeNote = contentType && contentType !== "application/json" ? ` content-type ${contentType}` : "";
+  return {
+    ok: false,
+    status: input.status,
+    kind: "not_hub",
+    detail: `HTTP ${input.status}${typeNote} is not a kxm hub ${input.role} response`,
+    body: { error: "not_hub", detail: `HTTP ${input.status}${typeNote}` }
+  };
+}
+async function readHubEndpoint(url, role, fetchImpl, init = {}) {
+  try {
+    const response = await fetchImpl(`${url}/${role}`, {
+      ...init.headers ? { headers: init.headers } : {},
+      ...init.signal ? { signal: init.signal } : {},
+      redirect: "manual"
+    });
+    const bodyText = await response.text();
+    return classifyHubResponse({
+      role,
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      bodyText
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      return { ok: false, status: 0, kind: "timeout", detail: "no reply within the probe budget", body: { error: "hub_unreachable" } };
+    }
+    return { ok: false, status: 0, kind: "unreachable", detail: "nothing answered", body: { error: "hub_unreachable" } };
+  }
 }
 async function probeHubHealth(url, fetchImpl, timeoutMs = HUB_HEALTH_PROBE_MS) {
   const started = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(`${url}/health`, { signal: controller.signal });
-    if (!response.ok) return { health: "unknown", probeMs: Date.now() - started };
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      return { health: "unknown", probeMs: Date.now() - started };
-    }
-    if (body && typeof body === "object" && body.ok === true) {
-      return { health: "on", probeMs: Date.now() - started };
-    }
-    return { health: "unknown", probeMs: Date.now() - started };
-  } catch (error) {
-    return { health: isAbortError(error) ? "unknown" : "off", probeMs: Date.now() - started };
+    const verdict = await readHubEndpoint(url, "health", fetchImpl, { signal: controller.signal });
+    const health = verdict.kind === "hub" ? "on" : verdict.kind === "unreachable" ? "off" : "unknown";
+    return { health, probeMs: Date.now() - started, kind: verdict.kind, detail: verdict.detail, status: verdict.status };
   } finally {
     clearTimeout(timer);
   }
 }
-var HUB_BINDING_SCHEMA, HUB_HEALTH_PROBE_MS, CloudTokenError, TOKEN_ENV_NAME, HubBindingError;
+var HUB_BINDING_SCHEMA, HUB_HEALTH_PROBE_MS, CloudTokenError, TOKEN_ENV_NAME, HubBindingError, LEGACY_BINDING_KEYS, BINDING_KEYS;
 var init_hub_binding = __esm({
   "plugins/kxm/src/hub-binding.ts"() {
     "use strict";
@@ -716,6 +848,8 @@ var init_hub_binding = __esm({
         this.name = "HubBindingError";
       }
     };
+    LEGACY_BINDING_KEYS = ["schema", "url", "boundAt"];
+    BINDING_KEYS = /* @__PURE__ */ new Set([...LEGACY_BINDING_KEYS, "cloud", "tokenEnv", "tokenCommand"]);
   }
 });
 

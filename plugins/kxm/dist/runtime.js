@@ -32416,6 +32416,9 @@ function resolveUserStateRoot(env) {
 function hubBindingFile(env = process.env) {
   return join19(resolveUserStateRoot(env), "hub-binding.json");
 }
+function hubBindingCloudFile(env = process.env) {
+  return join19(resolveUserStateRoot(env), "hub-binding.cloud.json");
+}
 function validateHubUrl(raw) {
   let parsed;
   try {
@@ -32525,33 +32528,37 @@ function isIsoTimestamp(value) {
   if (Number.isNaN(Date.parse(value))) return false;
   return value === new Date(value).toISOString();
 }
-function readHubBinding(env = process.env) {
-  const file = hubBindingFile(env);
-  if (!existsSync16(file)) return void 0;
+var LEGACY_BINDING_KEYS = ["schema", "url", "boundAt"];
+var BINDING_KEYS = /* @__PURE__ */ new Set([...LEGACY_BINDING_KEYS, "cloud", "tokenEnv", "tokenCommand"]);
+function bindingFallbackWarning(file, reason) {
+  return `hub binding at ${file} ${reason}; falling back to the local hub. Restart the Runtime supervisor, the hub, and workers after upgrading and before a cloud bind.`;
+}
+function writeBindingJson(file, value) {
+  mkdirSync7(dirname9(file), { recursive: true, mode: 448 });
+  const temporary = join19(dirname9(file), `.${file.endsWith("cloud.json") ? "hub-binding-cloud" : "hub-binding"}-${process.pid}.tmp`);
+  try {
+    writeFileSync8(temporary, `${JSON.stringify(value, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+    renameSync2(temporary, file);
+  } finally {
+    rmSync2(temporary, { force: true });
+  }
+}
+function parseBindingObject(file) {
+  if (!existsSync16(file)) return new HubBindingError(`missing hub binding at ${file}`);
   let parsed;
   try {
     parsed = JSON.parse(readFileSync14(file, "utf8"));
   } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
+    return new HubBindingError(`malformed hub binding at ${file}`);
   }
-  const row = parsed;
-  const keys = Object.keys(row);
-  const allowed = /* @__PURE__ */ new Set(["schema", "url", "boundAt", "cloud", "tokenEnv", "tokenCommand"]);
-  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
-  if (keys.some((key) => !allowed.has(key)) || !cloudish && keys.length !== 3 || row.schema !== HUB_BINDING_SCHEMA || typeof row.url !== "string" || typeof row.boundAt !== "string" || !isIsoTimestamp(row.boundAt)) {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  let url;
-  try {
-    url = validateHubUrl(row.url);
-  } catch {
-    throw new HubBindingError(`malformed hub binding at ${file}`);
-  }
-  if (!cloudish) return { schema: HUB_BINDING_SCHEMA, url, boundAt: row.boundAt };
-  if (row.cloud !== true) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return parsed;
+}
+function cloudRecordFromRow(file, row, url, boundAt) {
+  if (row.cloud !== true) return void 0;
   let tokenEnv;
   let tokenCommand;
   if (row.tokenEnv !== void 0) {
@@ -32573,11 +32580,64 @@ function readHubBinding(env = process.env) {
   return {
     schema: HUB_BINDING_SCHEMA,
     url,
-    boundAt: row.boundAt,
+    boundAt,
     cloud: true,
     ...tokenEnv ? { tokenEnv } : {},
     ...tokenCommand ? { tokenCommand } : {}
   };
+}
+function interpretBindingFile(file) {
+  if (!existsSync16(file)) return {};
+  const parsed = parseBindingObject(file);
+  if (parsed instanceof HubBindingError) throw parsed;
+  const keys = Object.keys(parsed);
+  const unknown = keys.filter((key) => !BINDING_KEYS.has(key));
+  if (parsed.schema !== HUB_BINDING_SCHEMA || unknown.length > 0) {
+    return { warning: bindingFallbackWarning(file, `is newer than this build understands (${String(parsed.schema)})`) };
+  }
+  if (typeof parsed.url !== "string" || typeof parsed.boundAt !== "string" || !isIsoTimestamp(parsed.boundAt)) {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  let url;
+  try {
+    url = validateHubUrl(parsed.url);
+  } catch {
+    throw new HubBindingError(`malformed hub binding at ${file}`);
+  }
+  const cloudish = keys.some((key) => key === "cloud" || key === "tokenEnv" || key === "tokenCommand");
+  if (!cloudish) {
+    if (keys.length !== 3) throw new HubBindingError(`malformed hub binding at ${file}`);
+    return { record: { schema: HUB_BINDING_SCHEMA, url, boundAt: parsed.boundAt } };
+  }
+  const record2 = cloudRecordFromRow(file, parsed, url, parsed.boundAt);
+  if (!record2) throw new HubBindingError(`malformed hub binding at ${file}`);
+  return { record: record2, legacyCloud: true };
+}
+function loadHubBinding(env = process.env) {
+  const cloudFile = hubBindingCloudFile(env);
+  const cloud = interpretBindingFile(cloudFile);
+  if (cloud.warning && !cloud.record) {
+    const local = existsSync16(hubBindingFile(env)) ? interpretBindingFile(hubBindingFile(env)) : {};
+    if (local.record && !local.record.cloud) return { record: local.record, warning: cloud.warning };
+    return { warning: cloud.warning };
+  }
+  if (cloud.record?.cloud) return { record: cloud.record, ...cloud.warning ? { warning: cloud.warning } : {} };
+  const main = interpretBindingFile(hubBindingFile(env));
+  if (main.legacyCloud && main.record) {
+    writeBindingJson(cloudFile, main.record);
+    rmSync2(hubBindingFile(env), { force: true });
+    return {
+      record: main.record,
+      warning: bindingFallbackWarning(
+        hubBindingFile(env),
+        "stored a cloud bind in the pre-0.7.160 file"
+      )
+    };
+  }
+  return { ...main.record ? { record: main.record } : {}, ...main.warning ? { warning: main.warning } : {} };
+}
+function readHubBinding(env = process.env) {
+  return loadHubBinding(env).record;
 }
 
 // plugins/kxm/src/hub-env.ts
@@ -32654,15 +32714,6 @@ function resolveProjectIdentity(cwd, env = process.env, explicit) {
   if (fromPackage) return { project: fromPackage, source: "package.json", sourceLabel: "package.json name" };
   return { project: basename4(cwd), source: "directory", sourceLabel: "directory name" };
 }
-function opReferenceFromTokenCommand(command) {
-  try {
-    const args = splitTokenCommand(command);
-    if (args[0] === "op" && args[1] === "read" && args[2] && isHubOpReference(args[2])) return args[2];
-  } catch {
-    return void 0;
-  }
-  return void 0;
-}
 function defaultOpRead(reference, env) {
   if (!isHubOpReference(reference)) {
     throw new CloudTokenError("cloud_token_command_invalid", `refusing to resolve ${reference}; an op:// reference is required`);
@@ -32707,18 +32758,24 @@ function resolveKeyReference(ref, env, opRead = defaultOpRead) {
 }
 function keySourceFor(input) {
   const ref = input.endpoint?.key;
-  if (input.mode === "local" && input.env.KXM_AUTH_TOKEN?.trim()) return "env:KXM_AUTH_TOKEN";
-  if (ref?.env && input.env[ref.env]?.trim()) return `env:${ref.env}`;
-  if (ref?.op) return `op:${ref.op}`;
-  if (ref?.env) return `env:${ref.env}`;
+  const envName = (name) => {
+    if (!name) return void 0;
+    return input.env[name]?.trim() ? `env:${name}` : void 0;
+  };
   if (input.mode === "cloud") {
-    if (input.binding?.tokenEnv) return `env:${input.binding.tokenEnv}`;
-    if (input.binding?.tokenCommand) {
-      const op = opReferenceFromTokenCommand(input.binding.tokenCommand);
-      return op ? `op:${op}` : "command";
-    }
+    const fromEnv2 = envName(ref?.env);
+    if (fromEnv2) return fromEnv2;
+    if (ref?.op) return `op:${ref.op}`;
+    const fromBindingEnv = envName(input.binding?.tokenEnv);
+    if (fromBindingEnv) return fromBindingEnv;
+    if (input.binding?.tokenCommand) return "token-command";
     return "missing";
   }
+  const fromAuth = envName("KXM_AUTH_TOKEN");
+  if (fromAuth) return fromAuth;
+  const fromEnv = envName(ref?.env);
+  if (fromEnv) return fromEnv;
+  if (ref?.op) return `op:${ref.op}`;
   if (input.hasSavedProjectToken?.(input.project)) return "hub-env";
   return "missing";
 }
@@ -33379,8 +33436,17 @@ async function syncKxmOutbox(eventStore, client, options = {}) {
     }
   }
 }
-function runtimeHubClientFor(context, env) {
-  const serverUrl = env.KXM_SERVER_URL?.trim() || readHubBinding(env)?.url;
+function runtimeHubClientFor(context, env, onBindingWarning) {
+  let recordUrl;
+  try {
+    const loaded = loadHubBinding(env);
+    if (loaded.warning) onBindingWarning?.(loaded.warning);
+    recordUrl = loaded.record?.url;
+  } catch (error) {
+    if (!(error instanceof HubBindingError)) throw error;
+    onBindingWarning?.(`${error.message}; falling back to the local hub so sync can continue`);
+  }
+  const serverUrl = env.KXM_SERVER_URL?.trim() || recordUrl;
   if (!serverUrl) return void 0;
   const project = context.projectId;
   const authToken = resolveClientHubAuthToken(env, project);
@@ -33908,6 +33974,7 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
     else logger.info(entry);
   };
   let syncing = false;
+  let bindingWarning;
   const syncTimer = setInterval(() => {
     if (syncing || stopping) return;
     syncing = true;
@@ -33925,7 +33992,11 @@ async function startKxmRuntimeSupervisorInner(paths, requestedPortOption, now, e
           consecutiveFailures: 0
         };
         try {
-          const client = runtimeHubClientFor(context, env);
+          const client = runtimeHubClientFor(context, env, (message) => {
+            if (bindingWarning === message) return;
+            bindingWarning = message;
+            logger.warn({ event: "hub_binding_fallback", message });
+          });
           if (!client) {
             recordSyncStatus(context, { ...base, state: "no_hub" });
             continue;

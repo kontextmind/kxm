@@ -477,12 +477,12 @@ Starts, inspects, and stops the local KXM hub, and binds this machine to a hub. 
 kxm hub view
 ```
 
-Calls `GET /health` and `GET /ready` on the target hub and reports whether the URL is loopback or remote, plus the mode, project id, and key source in effect. The key source is an environment variable name or an `op://` reference. The token is not printed.
+Calls `GET /health` and `GET /ready` on the target hub and reports whether the URL is loopback or remote, plus the mode, project id, and key source in effect. A probe counts only when the response is JSON (`application/json`, or `text/plain` with a JSON object) of the hub shape: `/health` is `{ "ok": true, "agents": <number> }` and `/ready` is `{ "ok": true, "storage": "sqlite"|"memory" }`. An HTTP 200 HTML login page, or a 30x redirect, is not healthy. The JSON `health` and `ready` fields then hold `{ "error": "auth_proxy" }` and never the HTML. The key source is the one that would supply the token: `env:<NAME>` only when that variable is non-empty, `op:<ref>`, `token-command`, `hub-env`, or `missing`. The token is not printed.
 
 No command-specific options.
 
 - Needs a hub to succeed. Reads only.
-- JSON keys: `target` (`url`, `scope`, and `source: "env"` when `KXM_SERVER_URL` overrides a binding), `identity` (`mode`, `modeSource`, `url`, `urlSource`, `project`, `projectSource`, `keySource`), `health`, `ready`. An unreachable hub reports `{"error":"hub_unreachable"}` for both probes.
+- JSON keys: `target` (`url`, `scope`, and `source: "env"` when `KXM_SERVER_URL` overrides a binding), `identity` (`mode`, `modeSource`, `url`, `urlSource`, `project`, `projectSource`, `keySource`), `health`, `ready`. An unreachable hub reports `{"error":"hub_unreachable"}` for both probes. An auth proxy or redirect reports `{"error":"auth_proxy"}`.
 - Exit 0 when both probes succeed, 1 otherwise. A cloud mode with no resolvable key exits 2 with `cloud_token_missing`.
 
 ```bash
@@ -569,15 +569,16 @@ kxm hub stop --wait-ms 8000 --json
 ### `kxm hub bind`
 
 ```text
-kxm hub bind <url> [--cloud] [--token-env <name>] [--token-command <command>] [--key-op <op://vault/item/field>]
+kxm hub bind <url> [--cloud] [--token-env <name>] [--token-command <command>] [--key-op <op://vault/item/field>] [--force]
 ```
 
-Binds this machine to a running hub by writing `hub-binding.json` under the user state root and the non-secret endpoint (mode, URL, project id, key reference) into `.kxm/config.yaml`, then probes the hub's health for up to 300 ms. Every hub client uses that endpoint when `KXM_SERVER_URL` is unset. The token is never written.
+Binds this machine to a running hub by writing the binding under the user state root and the non-secret endpoint (mode, URL, project id, key reference) into `.kxm/config.yaml`, then probes the hub's health for up to 300 ms. A local bind writes `hub-binding.json` (`schema`, `url`, `boundAt` only). A `--cloud` bind writes `hub-binding.cloud.json` and leaves a three-key local file in place, or omits `hub-binding.json`, so a 0.7.159 reader does not throw `malformed hub binding` and stop sync. `--token-command` is stored only in that cloud file, not in `.kxm/config.yaml`. Every hub client uses that endpoint when `KXM_SERVER_URL` is unset. The token is never written.
 
 - Arguments: `<url>`, Hub base URL (http or https).
 - A URL with credentials, a query, a fragment, or a scheme other than http or https fails with `hub_url_invalid` (exit 2).
 - A remote (non-loopback) URL is refused with `hub_bind_unauthenticated` (exit 2, `nextAction: "export_kxm_auth_token"`) unless a credential for the current project resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`. A malformed record fails with `hub_credential_unreadable` (exit 2). A loopback URL without `--cloud` still binds with no credential.
 - `--cloud` marks the binding remote even when the URL is a loopback forward. It requires `--token-env`, `--token-command`, `--key-op`, or a combination. The token is not written. A non-empty variable wins; otherwise an `op://` reference is read with `op read`, or the command runs. `--token-command` without `--cloud` fails with `cloud_flag_required`. `--token-env` and `--key-op` are also valid on a local bind and are stored only as references in config. A missing cloud source later fails with `cloud_token_missing` and does not fall back to hub-env. See [Cross-box peer attach](../operations.md#cross-box-peer-attach).
+- The probe accepts a kxm `/health` body. A timeout (`health=unknown`) or a connection failure (`health=off`) still writes the binding. An HTML login page or a 30x redirect is `hub_not_kxm` (exit 2, `kind` `auth_proxy` or `redirect`) and writes nothing. The error names an auth proxy or a redirect. `--force` writes anyway. `https://hub.kxmd.dev` is an Authentik login page; clients use the SSH forward at `http://127.0.0.1:17331`.
 - Mutates the binding file and `.kxm/config.yaml`. `--dry-run` validates and prints the plan without writing.
 - JSON keys: `url`, `scope`, `file`, `configFile`, `project`, `health` (`on`, `off`, or `unknown`), `probeMs`. A cloud bind also returns `cloud`, and `tokenEnv` or `tokenCommand` when set.
 
@@ -984,7 +985,20 @@ Checks for or applies a KXM operator package update, and runs the native updater
 
 - Arguments: `[harness]`, Harness id (default: every detected harness).
 - `--check` cannot be combined with any other update flag or a harness (exit 2, `scope_conflict`), and at most one of `--self`, `--extensions`, `--models` is allowed (exit 2).
-- From a source checkout, `--check` reports the running version without network access, and `--kxm` is refused (exit 2, `install_kind_source`) with an instruction to `git pull`. Only npm-global installs can apply `--kxm`; other install kinds exit 2 with `install_kind_<kind>`. A GitHub release must publish a sha256 digest for `kxm-<version>.tgz` or the install fails closed (`release_digest_missing`, `release_digest_mismatch`).
+- From a source checkout, `--check` reports the running version without network access, and `--kxm` is refused (exit 2, `install_kind_source`) with an instruction to `git pull`. Only npm-global installs can apply `--kxm`; other install kinds exit 2 with `install_kind_<kind>`. A GitHub release must publish a sha256 digest for `kxm-<version>.tgz` or the install fails closed (`release_digest_missing`, `release_digest_mismatch`). When `gh` is missing, the github source downloads that same asset with `curl --fail --silent --show-error --location` and still verifies the digest before `npm install -g`.
+
+On a host with neither `gh` nor a working `kxm`, download and check it yourself:
+
+```bash
+version=0.7.166
+curl --fail --silent --show-error --location \
+  --output "kxm-${version}.tgz" \
+  "https://github.com/kontextmind/kxm/releases/download/v${version}/kxm-${version}.tgz"
+# Compare with the sha256 digest published on the GitHub release asset.
+sha256sum "kxm-${version}.tgz"
+npm install --global --omit=peer "./kxm-${version}.tgz"
+```
+
 - Settings come only from `update.yaml` under the user state root (`auto: true` enables auto-apply); a project `.kxm/update.yaml` is ignored with a warning.
 - Without `--check` or a lone `--kxm`, KXM probes harnesses (as `harness list` does) and runs each updater for the selected scope. An unknown harness id exits 2 (`unknown_harness` step); a failed step exits 1.
 - Honors `--dry-run`: steps are planned, not run, and the cached update notice is not refreshed.
@@ -1612,7 +1626,7 @@ Create a KXM run without executing steps. The run pins the project's `homeRuntim
 - Refuses `--workspace` (exit 2, `workspace_option_unsupported`).
 - Needs a KXM project. Starts and uses the Runtime; no hub needed. Honors `--dry-run`, which validates the project and prints the plan without starting the supervisor.
 - JSON keys: `idempotent`, `run` (`runId`, `homeRuntimeId`, `status`, `configRevision`), `supervisor` (`runtimeId`, `port`, `started`), and `execution` (`status: not_started`, `mode: live`, `defaultHarness`, `authentication: not_checked`, `prerequisites`, `nextSteps`). Dry run: `projectRoot`, `workflowId`, `configRevision`, `defaultHarness`, `prerequisites`. The obsolete `phase: pre-3a` field is no longer returned.
-- Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `brief_and_prompt`, `brief_unreadable`, `lane_missing`, `lane_run_open`, `run_failed` with `issues` (any invalid file in the project fails the load, for example `gate_outcome_impossible`), `run_io_failed` (exit 1).
+- Errors: `workflow_required` (exit 2), `project_required`, `run_workflow_unknown`, `brief_and_prompt`, `brief_unreadable`, `lane_missing`, `lane_run_open`, `run_failed` with `issues` (any invalid file in the project fails the load, for example `gate_outcome_impossible`), `run_io_failed` (exit 1). `project_home_conflict` means this checkout is not the registered home for that project id: a different repository already owns it, the home runtime is immutable, or the primary checkout is already the home row. Use the original checkout, or a worktree of that repository. Do not copy the project id into an unrelated clone, and do not delete the database. `runtime_schema_newer` means the store was written by a newer release than this build. Upgrade KXM. Do not delete the database.
 - The `default` workflow that `kxm init` writes does not set `limits.maxAgentTimeMs`, so it can be driven. A workflow that sets that limit is created, but `kxm runs drive` refuses it with `run_handoff_required` (`limit_unsupported`); projects from older `kxm init` templates carry it on `default`.
 
 ```bash
@@ -1826,6 +1840,7 @@ No command-specific options.
 - Reads only. Never starts the supervisor.
 - JSON keys: `running`, `runtimeId`, `pid`, `port`, `state`, `heartbeatAt`, `startedAt`, `sync`.
 - Exit 0 when running, 1 when not (the JSON still says `ok: true`).
+- When the supervisor process is up but `GET /v1/sync/status` fails, the text line is `sync: the supervisor is running but did not answer /v1/sync/status`. The usual causes are a hung supervisor, a token the status command does not hold, or a supervisor started before an upgrade. `kxm runtime stop` and `kxm runtime start` replace it. A binding this build cannot read is a warning and `no_hub`, not a stalled sync; restart after upgrading and before a cloud bind. See [Check sync status](../operations/runtime-sync.md#check-sync-status).
 
 ```bash
 kxm runtime status

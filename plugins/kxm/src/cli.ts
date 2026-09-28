@@ -1374,7 +1374,8 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
     .option("--token-env <name>", "Environment variable that holds the hub token; the token is not stored")
     .option("--token-command <command>", "Program that prints the hub token; the token is not stored")
     .option("--key-op <ref>", "op:// reference for the hub token; resolved with op read, never stored")
-    .action(async function hubBindAction(this: Command, url: string, options: { cloud?: boolean; tokenEnv?: string; tokenCommand?: string; keyOp?: string }) {
+    .option("--force", "Bind even when the URL is not a kxm hub")
+    .action(async function hubBindAction(this: Command, url: string, options: { cloud?: boolean; tokenEnv?: string; tokenCommand?: string; keyOp?: string; force?: boolean }) {
       result.code = await cmdHubBind(runtimeFrom(ctx, this), url, options);
     });
   addGlobalOptions(hub.command("unbind").description("Remove this machine's hub binding")).action(bind(cmdHubUnbind));
