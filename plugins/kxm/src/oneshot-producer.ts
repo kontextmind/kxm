@@ -82,8 +82,12 @@ const MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
 const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
 
 // How many `{` / `[` openers at the end of the prefix are re-lexed. A `"`
-// is not an opener. Each scan walks the body once, so the opener cap and
-// the slice budgets bound the work.
+// is not an opener. Each re-lex walks the body from that opener to the end,
+// so the lexer work is linear in the body per opener checked, per candidate.
+// This cap only limits how many openers are re-lexed. It does not bound the
+// lexer. The slice budgets bound JSON.parse bytes, not these scans. If the
+// walk reaches the cap and another container opener is still earlier in the
+// prefix, the prefix is ambiguous and the candidate is rejected.
 const MAX_PREFIX_CONTAINER_OPENERS = 16;
 
 // Naive prefix scan. Quote handling toggles on every unescaped `"`. Braces
@@ -125,6 +129,8 @@ function outcomePrefixIsAnchored(prefix: string): boolean {
 // `{` or `[`. A closer that does not match an opener this scan pushed is
 // invalid. An invalid scan is not truncation. Truncation is a valid scan
 // that reaches the end of the body still inside a container or a string.
+// One call walks from `start` through the rest of the body. The walk is
+// linear in that span. No byte budget stops it.
 function containerLexIsTruncated(body: string, start: number): boolean {
   const stack: string[] = [];
   let inString = false;
@@ -162,13 +168,16 @@ function containerLexIsTruncated(body: string, start: number): boolean {
 }
 
 // True when one of the last container openers in the prefix lexes as a
-// value that is still open at the end of the body. Quote positions are
-// left to the naive machine.
+// value that is still open at the end of the body, or when more container
+// openers sit further back than the re-lex cap. Those further openers are
+// not scanned. The prefix is ambiguous, so the candidate fails closed.
+// Quote positions are left to the naive machine.
 function prefixHidesTruncatedContainer(body: string, openAt: number): boolean {
   let seen = 0;
-  for (let i = openAt - 1; i >= 0 && seen < MAX_PREFIX_CONTAINER_OPENERS; i--) {
+  for (let i = openAt - 1; i >= 0; i--) {
     const ch = body[i];
     if (ch !== "{" && ch !== "[") continue;
+    if (seen >= MAX_PREFIX_CONTAINER_OPENERS) return true;
     seen++;
     if (containerLexIsTruncated(body, i)) return true;
   }
@@ -189,11 +198,13 @@ function prefixHidesTruncatedContainer(body: string, openAt: number): boolean {
 // at depth 0 for both braces and arrays, outside a string, with no dangling
 // escape. Any other end state is truncated or ambiguous, so the candidate
 // is rejected and the next one is tried. The naive machine plus the
-// container-lexer guard reject truncation. Prose with an odd quote count
-// fails closed. An accepted candidate ends the lookup. Nothing left is
-// failed: prose after the object, no object, a disallowed outcome, an inner
-// object at the end of a truncated outer object or array, an object inside
-// an unclosed string, or a budget exhausted before a candidate.
+// container-lexer guard reject truncation. A prefix with more container
+// openers than the re-lex cap is ambiguous and fails closed. Prose with an
+// odd quote count fails closed. An accepted candidate ends the lookup.
+// Nothing left is failed: prose after the object, no object, a disallowed
+// outcome, an inner object at the end of a truncated outer object or array,
+// an object inside an unclosed string, an ambiguous prefix past the re-lex
+// cap, or a budget exhausted before a candidate.
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
   const trimmed = text.trim();
   if (!trimmed) return "failed";

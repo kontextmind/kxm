@@ -31610,9 +31610,10 @@ function containerLexIsTruncated(body, start) {
 }
 function prefixHidesTruncatedContainer(body, openAt) {
   let seen = 0;
-  for (let i = openAt - 1; i >= 0 && seen < MAX_PREFIX_CONTAINER_OPENERS; i--) {
+  for (let i = openAt - 1; i >= 0; i--) {
     const ch = body[i];
     if (ch !== "{" && ch !== "[") continue;
+    if (seen >= MAX_PREFIX_CONTAINER_OPENERS) return true;
     seen++;
     if (containerLexIsTruncated(body, i)) return true;
   }

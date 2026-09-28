@@ -1379,6 +1379,18 @@ test("even quotes before a truncated outer object do not settle the inner outcom
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
+test("sixteen balanced containers before a truncated outer do not settle the inner outcome", async () => {
+  // The `{}` pairs balance, and the last 16 openers each balance through
+  // the end. The outer `{` is the 17th opener. Even quotes leave the naive
+  // scan closed. The unchecked opener makes the prefix ambiguous.
+  const pairs = "{}".repeat(16);
+  const text = [
+    'a 27" monitor',
+    `{"outcome":"failed","note":"see ${pairs} {"outcome":"passed"}`,
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
 test("an honest inch mark with no prefix container opener settles", async () => {
   // The prefix has no `{` or `[`, so the container lexer does not run.
   // Two inch marks keep an even quote count. The trailing object is
