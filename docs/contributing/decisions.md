@@ -8,13 +8,12 @@ updated: "2026-09-28"
 # Decisions
 
 Automated work records here every decision of medium significance or
-higher: the options it evaluated, the weight each option scored against
-the criteria that mattered, and why the selected option won. Weights are
-the session's own 0-to-1 scores, not measurements. A decision that was
-made directly by the operator is recorded only when executing it required
-a choice.
+higher. Each entry carries: Context, Options with the weight each scored
+and against what, and the Selected option with why it won; entries cite
+the evidence that backs them where one exists. Weights are the session's
+own 0-to-1 scores, not measurements. A decision that was made directly by
+the operator is recorded only when executing it required a choice.
 
-Each entry has Context, Options (with weights), Selected, and Evidence.
 Evidence names the file, command, or run that backs the decision. Those
 are the same fields the archive keeps.
 

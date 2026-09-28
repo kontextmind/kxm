@@ -56,7 +56,7 @@ None.
 
 ### Questions
 
-- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven on 0.7.159 (#363, #368): the authoring witness counts committed work and the outcome parser reads real reviewer shapes — an engine-driven critic settled a truthful BLOCK on the vision lane. P3 dispatch is the first full engine unit and completes loop-dispatch.
+- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven: test/core/worktree-witness.test.ts counts committed work in the authoring witness, test/core/oneshot-producer.test.ts settles real reviewer shapes through the outcome parser, and an engine-driven critic on the vision lane settled a truthful BLOCK (backlog S33). P3 dispatch is the first full engine unit and completes loop-dispatch.
 
 ## Python migration
 
@@ -224,7 +224,7 @@ On a TTY, bare kxm opens the existing dashboard and a first-run panel that probe
 ### Blockers
 
 - omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
-- kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
+- The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself.
 
 ### Questions
 
@@ -247,7 +247,7 @@ Studio shows the seven dash panels, a first-run wizard, and live workflow state 
 
 ### Blockers
 
-- Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.
+- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.
 - Setup and doctor screens also wait on first-run P1 through P5.
 
 ### Questions

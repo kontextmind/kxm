@@ -26,6 +26,7 @@ Read from `plugins/kxm/src/cli.ts`, `scripts/kxm-hub.mjs`, `plugins/kxm/src/hub.
 | Workspace state | `workspaceDirs` | `.kxm/state`, or `KXM_STATE_DIR` | `kxm.db` when the hub uses this directory | `plugins/kxm/src/cli/types.ts` |
 | Lane registry | `kxm lane create` | no listener | `lanes.json` under the workspace state dir | `plugins/kxm/src/cli/lanes.ts` |
 | Landing | `kxm land` via `scripts/pr-land.mjs` | no listener | `land-release-context.json` and `land-phases-before.json` under `.kxm/logs` | `scripts/pr-land.mjs` |
+| Workforce lint | `npm run check` and `validate:pr` via `scripts/workforce-lint.mjs` | no listener | none; fails on workforce-id drift | `scripts/workforce-lint.mjs` |
 | Assignment runner entry | `kxm assign <verb>` | no listener | none; the runner writes task records | `plugins/kxm/src/cli/assign.ts` |
 | Docs site | `kxm docs serve` via `ops/docs-site/serve.py` | the tailnet IPv4 from `tailscale ip -4` and one port; refuses any other address | none; serves the built `site/` | `ops/docs-site/serve.py` |
 
