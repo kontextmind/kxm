@@ -220,10 +220,10 @@ function listMcpTools(): Promise<string[]> {
       }
     });
     send({ id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "hook-test", version: "1.0.0" } } });
-  }).finally(() => {
+  }).finally(async () => {
     lines.close();
-    child.kill();
-    isolated.cleanup();
+    isolated.track(child);
+    await isolated.cleanup();
   });
 }
 
