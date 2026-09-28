@@ -36,7 +36,7 @@ export function listUnitFiles(root) {
   return [
     ...globSync("test/core/*.test.ts", { cwd: root }),
     ...globSync("packages/core/*/tests/unit/*.test.ts", { cwd: root }),
-  ].sort();
+  ].map((file) => file.replaceAll("\\", "/")).sort();
 }
 
 export function extractTestPatterns(source) {

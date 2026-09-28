@@ -343,7 +343,10 @@ test("unit shards cover every unit file and every engine test name once", () => 
   for (const file of serial) assert.equal(light.includes(file), false, file);
   const covered = new Set([ENGINE_FILE, ...serial, ...light]);
   assert.equal(covered.size, files.length);
-  for (const file of files) assert.equal(covered.has(file), true, file);
+  for (const file of files) {
+    assert.equal(covered.has(file), true, file);
+    assert.equal(file.includes("\\"), false, file);
+  }
   const patterns = extractTestPatterns(readFileSync(ENGINE_FILE, "utf8"));
   assert.ok(patterns.length > 20);
   for (const pattern of patterns) {
