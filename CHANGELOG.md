@@ -142,6 +142,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Pull-request CI runs the unit suite on Linux Node 24, and `CI / required` is the aggregate check.**
+  Docs and plan markdown skip the code jobs. `engine.test.ts` is split by
+  test name. `permission.test.ts` and `runtime.test.ts` run one file at a
+  time, and every other unit file runs in one light lane. Pushes to `main`
+  still run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.
+  A pull request that touches path, process, shell, spawn, package, lockfile,
+  or workflow files also runs the unit lanes on Windows. Playwright stays on
+  Obscura. See [CI and release](docs/contributing/ci-and-release.md).
+
 - **Docs match the 2026-09-27 Steel and machine-account infrastructure.**
   Steel (`steel.kontextmind.com`, alias `steel.theneuro.me`) is reached only
   through Caddy on `kxmd-proxy` (VM 230) and Authentik forward auth. Direct
@@ -180,6 +189,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   `opus` because the justfile recipe review-arch hardcoded that model while
   `reviewer-arch` listed only `fable-claude`. That recipe is gone; a request
   for `opus` fails closed.
+
 - **Dispatch reads role and model files, and agents bind a role.**
   `scripts/roster-policy.mjs` builds the developer policy from
   `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.
@@ -517,6 +527,8 @@ All notable user-facing changes are documented here. The project follows [Semant
   ready.
 
 ### Fixed
+
+- **Dry-run ship status no longer rewrites `.git/index`.** `git status` refreshes the index under an optional lock. The ship-status read passes `--no-optional-locks`, so a dry run leaves the checkout untouched.
 
 - **A committed checkout counts as authored work, and a one-shot outcome must be a standalone JSON object.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`. A one-shot outcome is accepted when the whole reply is one JSON object, or when that object stands alone on the final line. A closing code fence around the final object is allowed. An object followed by prose, a truncated reply, and an ambiguous tail settle `failed`.
 

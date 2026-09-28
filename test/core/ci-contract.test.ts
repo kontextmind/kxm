@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { parse } from "yaml";
 import { kxmReleaseAssetName } from "../../plugins/kxm/src/kxm-update.ts";
+// @ts-expect-error Workflow scripts ship without a declaration file.
+import { classifyPaths, isDocsPath, isPlatformPath, unboundedClassification } from "../../scripts/ci-classify.mjs";
+// @ts-expect-error Workflow scripts ship without a declaration file.
+import { ENGINE_FILE, SERIAL_FILES, SHARD_TOTAL, coverageOfShards, extractTestPatterns, planEngineShard } from "../../scripts/ci-unit-shard.mjs";
 
 const releaseText = readFileSync(".github/workflows/release.yml", "utf8");
 const autoReleaseText = readFileSync(".github/workflows/auto-release.yml", "utf8");
@@ -103,49 +107,67 @@ type CiJobs = Record<
     "timeout-minutes"?: unknown;
     steps?: Array<{ name?: string; if?: unknown; run?: string }>;
     strategy?: {
+      "fail-fast"?: boolean;
       matrix?: {
         node?: unknown[];
+        shard?: number[];
+        lane?: string[];
         runner?: Array<{ name?: string; labels?: unknown; timeout?: unknown }>;
       };
     };
   }
 >;
 
-function assertApprovedCiJobDefinitions(jobs: CiJobs | undefined) {
-  assert.ok(jobs);
-  assert.deepEqual(Object.keys(jobs), ["changes", "docs", "validate", "plugin"]);
-  for (const id of ["changes", "docs", "validate", "plugin"] as const) {
-    assert.equal(jobs[id]?.if, undefined);
-  }
-  assert.equal(jobs.changes?.name, "Classify changes");
-  assert.equal(jobs.docs?.name, "Docs lint");
-}
-
-test("CI required jobs stay named while expensive steps are skipped for docs-only changes", () => {
+test("CI lanes keep one aggregate required check and the main validate matrix", () => {
   const doc = parse(ciText) as {
     concurrency?: { "cancel-in-progress"?: string };
-    jobs?: CiJobs;
+    jobs?: CiJobs & {
+      unit?: CiJobs[string] & { strategy?: { "fail-fast"?: boolean; matrix?: { shard?: number[] } } };
+      "unit-windows"?: CiJobs[string] & { strategy?: { "fail-fast"?: boolean; matrix?: { shard?: number[] } } };
+      required?: CiJobs[string];
+    };
   };
-  assertApprovedCiJobDefinitions(doc.jobs);
+  assert.deepEqual(Object.keys(doc.jobs ?? {}), [
+    "changes", "docs", "engine", "unit", "unit-windows", "validate", "plugin", "required",
+  ]);
   assert.equal(doc.jobs?.generated, undefined);
-  const skippedDocs = structuredClone(doc.jobs) as CiJobs;
-  assert.ok(skippedDocs.docs);
-  skippedDocs.docs.if = "${{ needs.changes.outputs.code == 'true' }}";
-  assert.throws(() => assertApprovedCiJobDefinitions(skippedDocs));
-  const extraPlatform = structuredClone(doc.jobs) as CiJobs;
-  extraPlatform.macos = { name: "Validate (macos, Node 24)" };
-  assert.throws(() => assertApprovedCiJobDefinitions(extraPlatform));
-  assert.equal(doc.jobs?.validate?.if, undefined);
-  assert.equal(doc.jobs?.plugin?.if, undefined);
+  assert.equal(doc.jobs?.changes?.if, undefined);
+  assert.equal(doc.jobs?.docs?.if, undefined);
+  assert.equal(doc.jobs?.changes?.name, "Classify changes");
+  assert.equal(doc.jobs?.docs?.name, "Docs lint");
+  assert.equal(doc.jobs?.required?.name, "required");
+  assert.equal(doc.jobs?.required?.if, "${{ always() }}");
+  assert.equal(doc.jobs?.changes?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.docs?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.plugin?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.required?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.engine?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.engine?.if, "${{ needs.changes.outputs.code == 'true' }}");
+  assert.equal(doc.jobs?.engine?.strategy?.["fail-fast"], true);
+  assert.deepEqual(doc.jobs?.engine?.strategy?.matrix?.shard, [1, 2]);
+  assert.equal(doc.jobs?.unit?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.unit?.["timeout-minutes"], 10);
+  assert.equal(doc.jobs?.unit?.if, "${{ needs.changes.outputs.code == 'true' }}");
+  assert.equal(doc.jobs?.unit?.name, "Unit (linux, Node 24, ${{ matrix.lane }})");
+  assert.equal(doc.jobs?.unit?.strategy?.["fail-fast"], true);
+  assert.deepEqual(doc.jobs?.unit?.strategy?.matrix?.lane, ["serial", "light"]);
+  assert.equal(doc.jobs?.["unit-windows"]?.["runs-on"], "windows-latest");
+  assert.equal(doc.jobs?.["unit-windows"]?.["timeout-minutes"], 20);
+  assert.equal(doc.jobs?.["unit-windows"]?.strategy?.["fail-fast"], true);
+  assert.match(String(doc.jobs?.["unit-windows"]?.if), /pull_request/);
+  assert.match(String(doc.jobs?.["unit-windows"]?.if), /needs\.changes\.outputs\.platform == 'true'/);
+  assert.deepEqual(doc.jobs?.["unit-windows"]?.strategy?.matrix?.lane, ["engine-1", "engine-2", "serial", "light"]);
+  assert.equal(doc.jobs?.plugin?.if, "${{ needs.changes.outputs.code == 'true' }}");
+  assert.match(String(doc.jobs?.validate?.if), /github\.event_name != 'pull_request'/);
+  assert.match(String(doc.jobs?.validate?.if), /needs\.changes\.outputs\.code == 'true'/);
+  assert.equal(doc.jobs?.validate?.strategy?.["fail-fast"], true);
+
   const nameTemplate = doc.jobs?.validate?.name ?? "";
   assert.equal(nameTemplate, "Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})");
   const nodes = doc.jobs?.validate?.strategy?.matrix?.node ?? [];
   const runners = doc.jobs?.validate?.strategy?.matrix?.runner ?? [];
-  assert.equal(doc.jobs?.changes?.["runs-on"], ARC_RUNNER);
-  assert.equal(doc.jobs?.docs?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.validate?.["runs-on"], "${{ matrix.runner.labels }}");
   assert.equal(doc.jobs?.validate?.["timeout-minutes"], "${{ matrix.runner.timeout }}");
-  assert.equal(doc.jobs?.plugin?.["runs-on"], ARC_RUNNER);
   assert.deepEqual(nodes.map(String), ["22.19.0", "24"]);
   assert.deepEqual(runners, [
     { name: "linux", labels: ARC_RUNNER, timeout: 3 },
@@ -165,39 +187,32 @@ test("CI required jobs stay named while expensive steps are skipped for docs-onl
     "Validate (windows, Node 24)",
   ]));
   assert.equal(expanded.length, 4);
-  assert.equal(1 + 1 + expanded.length + 1, 7);
   assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
 
   const validateSteps = doc.jobs?.validate?.steps ?? [];
-  assert.equal(validateSteps[0]?.name, "Skip code validation for documentation-only changes");
-  assert.equal(validateSteps[0]?.if, "needs.changes.outputs.code != 'true'");
-  for (const step of validateSteps.slice(1)) {
-    assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
-  }
-  assert.equal(
-    validateSteps.some((step) => step.name === "Verify generated runtime bundles are current"),
-    false,
-  );
   assert.equal(validateSteps.some((step) => step.name === "Inspect package (main only)"), false);
-
-  const pluginSteps = doc.jobs?.plugin?.steps ?? [];
-  assert.equal(pluginSteps[0]?.name, "Skip plugin validation for documentation-only changes");
-  assert.equal(pluginSteps[0]?.if, "needs.changes.outputs.code != 'true'");
-  for (const step of pluginSteps.slice(1)) {
-    assert.match(String(step.if), /needs\.changes\.outputs\.code == 'true'/);
-  }
+  const unitSteps = doc.jobs?.unit?.steps ?? [];
+  assert.equal(unitSteps.some((step) => step.name === "Typecheck"), true);
+  assert.equal(unitSteps.some((step) => step.name === "Verify generated runtime bundles are current"), true);
+  const unitRuns = unitSteps.map((step) => step.run).join("\n");
+  const engineRuns = (doc.jobs?.engine?.steps ?? []).map((step) => step.run).join("\n");
+  assert.match(unitRuns, /npm run test:ci-shard -- \$\{\{ matrix\.lane \}\}/);
+  assert.match(unitRuns, /npm run typecheck/);
+  assert.match(engineRuns, /npm run test:ci-shard -- engine \$\{\{ matrix\.shard \}\} 2/);
+  assert.equal(SHARD_TOTAL, 2);
 
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
-  const validateRuns = (doc.jobs?.validate?.steps ?? []).map((step) => step.run).join("\n");
+  const validateRuns = validateSteps.map((step) => step.run).join("\n");
   assert.match(validateRuns, /npm run validate:pr/);
   assert.doesNotMatch(validateRuns, /npm run validate:ci/);
-  assert.equal(doc.jobs?.validate?.["timeout-minutes"], "${{ matrix.runner.timeout }}");
   assert.match(ciText, /@anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /npm install --no-save --ignore-scripts @anthropic-ai\/claude-code@2\.1\.261/);
   assert.match(ciText, /node node_modules\/@anthropic-ai\/claude-code\/install\.cjs/);
   assert.match(ciText, /claude plugin validate/);
-  assert.match(ciText, /\.github\/pull_request_template\.md/);
-  assert.doesNotMatch(ciText, /\.github\/PULL_REQUEST_TEMPLATE\.md/);
+  const classifyText = readFileSync("scripts/ci-classify.mjs", "utf8");
+  assert.match(classifyText, /\.github\/pull_request_template\.md/);
+  assert.doesNotMatch(classifyText, /\.github\/PULL_REQUEST_TEMPLATE\.md/);
+  assert.match(ciText, /name: required/);
 });
 
 test("the bounded merge gate stays focused while nightly owns exhaustive coverage", () => {
@@ -255,7 +270,9 @@ test("Linux workflow selectors are the ARC scale set and old labels fail closed"
   assert.equal(ci.jobs?.validate?.["runs-on"], "${{ matrix.runner.labels }}");
   const linuxCi = structuredClone(ci);
   assert.ok(linuxCi.jobs?.validate);
+  assert.ok(linuxCi.jobs?.["unit-windows"]);
   delete linuxCi.jobs.validate;
+  delete linuxCi.jobs["unit-windows"];
   assertArcScaleSetSelectors([linuxCi, release, smoke, nightly]);
   assertSmokeEqualityGate(smoke);
   for (const text of [ciText, releaseText, smokeText, nightlyText]) {
@@ -285,7 +302,61 @@ test("nightly workflow runs complete test coverage with 93/80/93 floors", () => 
   assert.match(nightlyText, /npm pack --dry-run/);
 });
 
-test("playwright e2e stays outside node --test and outside the paused CI workflow", () => {
+test("pull request classification skips docs and plans, and flags platform paths", () => {
+  assert.equal(isDocsPath("README.md"), true);
+  assert.equal(isDocsPath("plans/implementation-plan.md"), true);
+  assert.equal(isDocsPath("docs/contributing/ci-and-release.md"), true);
+  assert.equal(isDocsPath("plans/kxm-roadmap/update-dashboard.mjs"), false);
+  assert.equal(classifyPaths(["README.md", "plans/implementation-plan.md"], "pull_request").code, false);
+  assert.equal(classifyPaths(["plugins/kxm/src/store.ts"], "pull_request").code, true);
+  assert.equal(classifyPaths(["plugins/kxm/src/store.ts"], "pull_request").platform, false);
+  assert.equal(classifyPaths(["plugins/kxm/src/store.ts"], "pull_request").runValidate, false);
+  assert.equal(classifyPaths(["plugins/kxm/src/store.ts"], "push").runValidate, true);
+  assert.equal(classifyPaths(["README.md"], "push").runValidate, false);
+  for (const file of [
+    "package.json",
+    "package-lock.json",
+    "packages/core/tui/package.json",
+    ".github/workflows/ci.yml",
+    "scripts/kxm-worker.mjs",
+    "plugins/kxm/src/oneshot-process.ts",
+    "plugins/kxm/src/runtime-paths.ts",
+    "plugins/kxm/src/runtime-supervisor.ts",
+    "plugins/kxm/src/repo-root.ts",
+    "test/core/worker.test.ts",
+    "test/helpers/mcp-spawn.ts",
+  ]) {
+    assert.equal(isPlatformPath(file), true, file);
+  }
+  assert.equal(isPlatformPath("plugins/kxm/src/store.ts"), false);
+  assert.deepEqual(unboundedClassification(), { code: true, platform: false, runValidate: true });
+  assert.match(ciText, /node scripts\/ci-classify\.mjs/);
+});
+
+test("unit shards cover every unit file and every engine test name once", () => {
+  const { files, serial, light, heavy } = coverageOfShards(process.cwd(), SHARD_TOTAL);
+  assert.deepEqual(serial, [...SERIAL_FILES]);
+  assert.equal(files.includes(ENGINE_FILE), true);
+  assert.equal(light.includes(ENGINE_FILE), false);
+  for (const file of serial) assert.equal(light.includes(file), false, file);
+  const covered = new Set([ENGINE_FILE, ...serial, ...light]);
+  assert.equal(covered.size, files.length);
+  for (const file of files) assert.equal(covered.has(file), true, file);
+  const patterns = extractTestPatterns(readFileSync(ENGINE_FILE, "utf8"));
+  assert.ok(patterns.length > 20);
+  for (const pattern of patterns) {
+    assert.equal(heavy.get(pattern.source), 1, pattern.source);
+  }
+  const first = planEngineShard(process.cwd(), 1, SHARD_TOTAL);
+  const second = planEngineShard(process.cwd(), 2, SHARD_TOTAL);
+  assert.equal(first.file, ENGINE_FILE);
+  assert.equal(second.file, ENGINE_FILE);
+  assert.ok(first.patterns.length > 0);
+  assert.ok(second.patterns.length > 0);
+  assert.equal(pkg.scripts?.["test:ci-shard"], "node scripts/ci-unit-shard.mjs");
+});
+
+test("playwright e2e stays on Obscura outside node --test and outside ci.yml", () => {
   const e2eText = readFileSync(".github/workflows/e2e.yml", "utf8");
   const doc = parse(e2eText) as {
     on?: Record<string, unknown>;
