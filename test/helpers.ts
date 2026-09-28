@@ -68,6 +68,22 @@ export async function responseJson(response: Response): Promise<Record<string, u
   return await response.json() as Record<string, unknown>;
 }
 
+/** Node's `rmSync` waits `retryDelay * attempt` between tries (linear backoff).
+ * Twenty attempts at 250ms is about 52 seconds, and the directory was still
+ * left behind. Twelve of those waits made the Windows light lane take 13
+ * minutes; one remaining wait was 58 seconds in the offline-chrome extension
+ * test. A few seconds catches a lock that clears immediately. */
+export const REMOVE_TEMP_DIR_MAX_RETRIES = 5;
+export const REMOVE_TEMP_DIR_RETRY_DELAY_MS = 200;
+
+/** Upper bound of that linear backoff, in milliseconds. */
+export function removeTempDirRetryBudgetMs(
+  maxRetries = REMOVE_TEMP_DIR_MAX_RETRIES,
+  retryDelayMs = REMOVE_TEMP_DIR_RETRY_DELAY_MS,
+): number {
+  return retryDelayMs * (maxRetries * (maxRetries + 1)) / 2;
+}
+
 /** Remove a test temp directory. On Windows a SIGKILLed or SIGTERMed child
  * (or its own child) can hold the directory open for a while, so retry for a
  * few seconds and then tolerate a lingering lock: leaking an OS temp dir is
@@ -75,7 +91,12 @@ export async function responseJson(response: Response): Promise<Record<string, u
 export function removeTempDir(...paths: string[]): void {
   for (const path of paths) {
     try {
-      rmSync(path, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+      rmSync(path, {
+        recursive: true,
+        force: true,
+        maxRetries: REMOVE_TEMP_DIR_MAX_RETRIES,
+        retryDelay: REMOVE_TEMP_DIR_RETRY_DELAY_MS,
+      });
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
