@@ -259,7 +259,7 @@ a governance or proof gap, **medium** means a defect users will hit,
 
 ### S20. The roadmap supervisor lives in one chat session's memory (medium)
 
-- **Shortcut:** the five-minute supervisor is a session-only schedule
+- **Shortcut:** the thirty-minute supervisor is a session-only schedule
   inside the planner's Claude Code session. It renews itself from
   `plans/kxm-roadmap/supervisor-prompt.md`, but it dies with the process:
   a closed terminal window or a reboot stops the roadmap loop until an
@@ -268,7 +268,7 @@ a governance or proof gap, **medium** means a defect users will hit,
   local worktrees, the Grok writer, and `npm run verify`, so a cloud
   schedule cannot run it.
 - **Proper fix:** a `kxm supervise` verb backed by a macOS LaunchAgent
-  that keeps a Herdr persistent session up and, every five minutes,
+  that keeps a Herdr persistent session up and, every thirty minutes,
   submits the checked-in tick prompt to the resumed planner chat with
   `herdr agent prompt`. The chat survives closed windows through Herdr,
   and the heartbeat survives Claude restarts through launchd; the
@@ -318,25 +318,6 @@ a governance or proof gap, **medium** means a defect users will hit,
   for generated pages too. Evidence: 2026-09-26 deep review.
 - **Planned where:** next docs-site slice, with the mkdocs nav warnings.
 
-### S24. Worktree lanes collide with the Runtime project registry (high)
-
-- **Shortcut:** every lane shares the project id in `.kxm/project.yaml`, and
-  the registry binds a project id to one control root with an immutable home
-  runtime. The second lane that posts a run is refused with
-  `project_home_conflict`. On 2026-09-26 the stale row still pointed at a
-  removed lane, so the interim was to stop the runtime, delete that row from
-  `registry.db`, and redispatch. That works once per lane and loses nothing
-  only because the removed root had no store left.
-- **Why:** `registerProject` in `plugins/kxm/src/runtime-store.ts` keys on
-  project id and control root and never learned about worktrees.
-- **Proper fix:** register a control root that is a git worktree of an
-  already-registered project under that project's common git dir, as a lane
-  of it: same project id, its own root and event store, home runtime shared.
-  `kxm lane drop` unregisters the lane root. One test per path: second lane
-  admitted, foreign clone with the same id still refused, drop unregisters.
-- **Planned where:** the next engine slice, before P2 of the role-authority
-  phase; it blocks `loop-dispatch` on the roadmap.
-
 ### S25. The engine's one-shot effort comes from the model inventory, not the role roster (medium)
 
 - **Shortcut:** the first engine-dispatched writer (omp-align-p1, 2026-09-26)
@@ -370,6 +351,15 @@ a governance or proof gap, **medium** means a defect users will hit,
   put a hard timeout on the `test` script.
 - **Planned where:** the next engine slice with S24; it costs a verify slot
   for up to an hour each time it hits.
+- **Interim landed (2026-09-26, lane-registry branch):** `--test-force-exit`
+  on the `test` script; two runs without the flag exited cleanly and no
+  file left a handle, so the leak was not reproduced and no test was
+  changed. The entry stays open until the handle is found or a month of
+  green runs passes without a hang.
+- **Correction (2026-09-26, Release run for #339):** the per-test timeout
+  added with the interim bounds whole files under `node --test` and failed
+  the coverage job; it is removed again and the wall-clock guard is the
+  only bound.
 
 ### S27. The harness runner exports both `FORCE_COLOR` and `NO_COLOR` (low)
 
@@ -383,6 +373,102 @@ a governance or proof gap, **medium** means a defect users will hit,
   child environment and sets neither; a test asserts the child env.
 - **Planned where:** with S18 when the transport recipes retire.
 
+### S28. A fresh lane has no dependencies, so its first verify fails (medium)
+
+- **Shortcut:** `kxm lane create` makes the worktree and nothing else. The
+  first `npm run verify` in it (the writer's own, or `kxm land`'s verify
+  stage) fails at the build with `Could not resolve` until someone runs
+  `npm ci`. On 2026-09-26 the #338 landing failed this way in 38 seconds
+  and was rerun by hand after the install.
+- **Why:** the lane plan left dependency install to the writer.
+- **Proper fix:** `kxm lane create` runs the project's install command
+  (`npm ci`, from a `lane.install` setting or the lockfile it finds) unless
+  `--no-install`, and `kxm land`'s verify stage refuses early with
+  `land_dependencies_missing` naming the command when `node_modules` is
+  absent. One test each.
+- **Planned where:** the lane-cli follow-up with S20.
+
+### S29. Bounded runner and registry promotion leave two edges (low)
+
+- **Shortcut:** in `scripts/run-bounded.mjs` the SIGKILL follow-up timer
+  is unreferenced and the parent exits 124 as soon as the group leader
+  dies, so a grandchild that ignores SIGTERM can outlive the run; SIGHUP
+  is not forwarded. In the registry, promoting a primary checkout over a
+  lane recorded as home does not reparent dead rows, so a dead old home
+  can still sort first in `project()`. Both accepted by the third
+  architecture pass as non-blocking (2026-09-26).
+- **Why:** the round fixed the reported cases and stopped there.
+- **Proper fix:** keep the SIGKILL timer referenced until the group is
+  gone (poll `process.kill(-pgid, 0)`), forward SIGHUP, and reparent or
+  delete dead rows during promotion; one test each.
+- **Planned where:** the next engine slice after P2, or sooner if a hang
+  recurs.
+
+### S30. Improvement reports read only the control root's own store (medium)
+
+- **Shortcut:** `kxm improve report` and `kxm routing report` read the
+  run-events store derived from the checkout they run in
+  (`improve-sources.ts` calls `kxmProjectRunEventsPath(projectRoot)`), so
+  attempts that a registered lane settles are invisible from the parent.
+  On 2026-09-26 the control-root report read 0 records while the
+  omp-align-p2 lane store held its settled attempt; S24 registered the
+  lane for the runtime but did not extend the report sources.
+- **Why:** the P2 unit's writer and critic attempts ran through the
+  harness transport and in-lane engine drives while the schema gap held,
+  so the roadmap proof (loop-dispatch) still lacks a parent-visible
+  attempt row.
+- **Proper fix:** read the project's home store and every lane store for
+  the same project id (the registry carries `lane_of`), with the same
+  read-only single query and duplicate drop as today. One test: an
+  attempt recorded in a lane appears in a report run from the primary
+  checkout.
+- **Planned where:** the next engine or improve slice.
+
+### S31. Drive-time routing re-reads role and model files unpinned (medium)
+
+- **Shortcut:** the engine resolves a step's route from the working tree
+  at dispatch time and does not bind it to the run's `configRevision`, so
+  a role or model file edited (or a leftover `roster.yaml` added) after
+  the run was created changes routing mid-run. Accepted as deferred by
+  the P2 architecture passes (2026-09-26, finding repeated in pass 2).
+- **Why:** pinning needs the resolved route (or revision) in the run
+  envelope and a mismatch refusal on the drive path, which is an envelope
+  schema change.
+- **Proper fix:** pin the resolved route hash or `configRevision` in the
+  run envelope at creation, refuse with a named code on drive-time
+  mismatch, and test the drift case.
+- **Planned where:** the P5 provenance slice or the next envelope change.
+
+### S32. `kxm runs` lane options are uneven (low)
+
+- **Shortcut:** `kxm runs list` has no `--lane`, and `kxm runs status
+  --lane <unit>` answered `lane_missing` for a lane that `kxm lane status`
+  resolves, after the lane's run had ended (omp-align-p2, 2026-09-26). The
+  supervisor fell back to `kxm lane status` and the git tree.
+- **Why:** `--lane` was added to `status`, `drive`, `receipt`, and
+  `cancel` in the lane-cli slice; `list` was left out, and the status
+  path resolves the lane through a different lookup than `lane status`.
+- **Proper fix:** one lane resolver shared by every `runs` verb, `--lane`
+  on `runs list`, and one test that every `runs` verb accepts `--lane`
+  for a registered lane whose last run has ended.
+- **Planned where:** the lane-cli follow-up with S20 and S28.
+
+### S33. `kxm vision assert --route` is admission-checked but ignored (medium)
+
+- **Shortcut:** the ported `kxm vision assert` command admission-checks
+  and reports `--route`, but the gate's transport hard-codes
+  `pi zai-coding-cn/glm-5.3-flash`, so requesting a non-default admitted
+  route silently runs the default and the verdict is misattributed.
+- **Found by:** the first truthful engine-driven critic verdict on
+  0.7.159 (2026-09-28) — the outcome parser settled the BLOCK honestly.
+- **Proper fix:** thread the resolved route through the vision gate's
+  transport selection, refuse a non-admitted route at parse time, and
+  test that a non-default route changes the dispatched model.
+- **Planned where:** the vision slice after P3, or with the next
+  browser-verify gate work.
+
 ## Closed
 
-None yet.
+### S24. Worktree lanes collide with the Runtime project registry (closed 2026-09-26, #339)
+
+- Lanes register under their project with a `lane_of` row (registry schema 2), dead rows are replaced, a primary checkout is promoted over a lane recorded as home, and `kxm lane drop` unregisters. Remaining edges are S29.

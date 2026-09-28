@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 Active blockers: 5. Active questions: 11. Later phases are excluded from both counts.
 
@@ -26,8 +26,8 @@ None.
 
 #### Questions
 
-- The proof model behind kxm assign (backlog S11) is still an operator decision.
 - The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
+- The proof model behind kxm assign (backlog S11) is still an operator decision.
 
 [Phase page](phases/01-planner-loop.md)
 
@@ -54,7 +54,7 @@ None.
 
 #### Questions
 
-- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files.
+- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven on 0.7.159 (#363, #368): the authoring witness counts committed work and the outcome parser reads real reviewer shapes — an engine-driven critic settled a truthful BLOCK on the vision lane. P3 dispatch is the first full engine unit and completes loop-dispatch.
 
 [Phase page](phases/02-role-authority.md)
 
@@ -82,7 +82,7 @@ None.
 
 #### Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The evidence JSON paths and the python tree named there are not in this checkout.
+- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and an untracked python/ tree (kxm-control, pyproject, uv lock) are now in this checkout; neither is committed to main yet.
 
 [Phase page](phases/03-python-migration.md)
 
@@ -92,7 +92,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/plan-greenfield-infra.md`.
 
-Goal: Record only what the tracker says about the greenfield first move. The plan file itself is not in this checkout.
+Goal: Record only what the tracker says about the greenfield first move. The plan file is observed in this checkout as a kxm.doc.v1 stub; canonical facts live in the implementation-plan greenfield bullets.
 
 #### Open tasks
 
@@ -104,7 +104,7 @@ None.
 
 #### Questions
 
-- plans/plan-greenfield-infra.md is not observed from this checkout, so its status and blocked_by are not observed. Tasks below cite the tracker bullet that names the missing file.
+- plans/plan-greenfield-infra.md is observed in this checkout as a kxm.doc.v1 stub (status draft, authority instruction, created and updated 2026-09-28): the long-form proposal was never committed, canonical facts live in the implementation-plan greenfield bullets, and the phase stays open with the backlog task. An older long-form draft survives untracked in the operator's tree (backup at /tmp/colliders/plans/plan-greenfield-infra.md).
 
 [Phase page](phases/04-greenfield-infra.md)
 
@@ -318,13 +318,10 @@ None recorded.
 
 ## Architecture drift
 
-Verified: 2026-09-26.
+Verified: 2026-09-28.
 
 | Claim | Page | Status |
 | --- | --- | --- |
-| plans/plan-greenfield-infra.md is in this checkout | `docs/architecture/hosted-direction.md` | missing |
-| plans/evidence/python-migration-mg0.json is in this checkout | `docs/roadmap/phases/03-python-migration.md` | missing |
-| a python/ tree is in this checkout | `docs/roadmap/phases/03-python-migration.md` | missing |
 | the S3 test title in the tracker matches a test title in this checkout | `docs/roadmap/phases/05-per-tenant-hosting.md` | mismatch |
 
 ## Constraints
@@ -340,14 +337,15 @@ No confirmed contacts.
 
 ## History
 
-- 2026-09-26: Tailnet docs site created.
 - 2026-09-26: Roadmap seeded from state.json.
 - 2026-09-26: Portal mark applied.
 - 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
+- 2026-09-26: Lanes register under their project and the test suite is bounded (#339).
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
 - 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.
-- 2026-09-27: P2 role authority landed (#343): the loader and engine read the v2 role and model files.
+- 2026-09-27: P2 role authority landed (#343, published 0.7.131): the v2 files are the only dispatch source, roster.yaml and the transport recipes are gone.
 - 2026-09-27: P4 opt-in fallback walk records routing.route_switched and continues the attempt.
 - 2026-09-27: docs/operations.md indexes the six state roots and the cross-box peer attach recipe.
+- 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the checkout; hub cloud binding inventoried.
