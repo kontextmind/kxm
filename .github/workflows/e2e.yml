@@ -1,7 +1,7 @@
 name: Playwright e2e
 
-# Separate from ci.yml. CI, Nightly, and Real Pi smoke stay disabled in the
-# Actions settings; this workflow does not enable them.
+# Separate from ci.yml. Playwright stays on Obscura. This workflow does not
+# enable Nightly or Real Pi smoke.
 on:
   pull_request:
   workflow_dispatch:

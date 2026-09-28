@@ -127,7 +127,9 @@ export function formatShipLine(ship?: SessionShipStatus): string {
 
 export function readGitShip(cwd: string): SessionShipStatus | undefined {
   try {
-    const dirty = spawnSync("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    // --no-optional-locks keeps a ship-status read from rewriting .git/index.
+    // git status refreshes the index under an optional lock; a dry run must not.
+    const dirty = spawnSync("git", ["--no-optional-locks", "-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return undefined;
     const isDirty = dirty.stdout.trim().length > 0;
 

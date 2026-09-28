@@ -156,6 +156,37 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Pull-request CI runs the unit suite on Linux Node 24, and `CI / required` is the aggregate check.**
+  Docs and plan markdown skip the code jobs. `engine.test.ts` is split by
+  test name. `permission.test.ts` and `runtime.test.ts` run one file at a
+  time, and every other unit file runs in one light lane. Pushes to `main`
+  still run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.
+  A pull request that touches path, process, shell, spawn, package, lockfile,
+  or workflow files also runs the unit lanes on Windows. Playwright stays on
+  Obscura. See [CI and release](docs/contributing/ci-and-release.md).
+
+- **Docs match the 2026-09-27 Steel and machine-account infrastructure.**
+  Steel (`steel.kontextmind.com`, alias `steel.theneuro.me`) is reached only
+  through Caddy on `kxmd-proxy` (VM 230) and Authentik forward auth. Direct
+  LAN, tailnet, and host-forward access is blocked. Sessions return
+  `websocketUrl` `wss://steel.kontextmind.com/` (previously
+  `ws://steel-browser/`). The CDP path is `/v1/devtools` with an
+  `Authorization` header. Allowed groups are `steel-users`, `kxmd-users`,
+  `kxmd-admins`, and `kxmd-owners`. `STEEL_API_URL` defaults to
+  `https://steel.kontextmind.com`. `STEEL_API_KEY` is deprecated and is not
+  enforced by Steel or Caddy. Migrate to `STEEL_AUTH_HEADER`, then
+  `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`; those
+  override the key. The `svc-steel` credential is 1Password vault
+  `kontextmind`, item `Steel (svc-steel)`, field `basic_auth`, read with
+  `op read` and never written to disk. Steel requires `kxm` 0.7.135 or
+  newer. Playwright stays on Obscura ([ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md)).
+  The Proxmox boot order and VM names are in
+  [Deploy KXM](docs/operations/deploy.md#boot-the-kxmd-proxmox-host).
+  Machine accounts follow
+  [ADR-0006](docs/adr/ADR-0006-machine-account-names.md). The DOKS deployment
+  record is superseded by
+  [ADR-0007](docs/adr/ADR-0007-steel-caddy-authentik.md).
+
 - **Workforce ids use one convention, and old ids still resolve.**
   Role ids stay `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`.
   Agent ids and agent-step ids use those same names. Route ids are
@@ -172,6 +203,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   `opus` because the justfile recipe review-arch hardcoded that model while
   `reviewer-arch` listed only `fable-claude`. That recipe is gone; a request
   for `opus` fails closed.
+
 - **Dispatch reads role and model files, and agents bind a role.**
   `scripts/roster-policy.mjs` builds the developer policy from
   `.kxm/models/*.yaml` and `.kxm/roles/*.yaml` at `refs/remotes/origin/main`.
@@ -486,9 +518,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
   headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
   those variables are set. A 302 to the identity provider fails closed and does
-  not follow the login redirect. `STEEL_API_KEY` still sends the legacy
-  `x-steel-api-key` header and `apiKey` query parameter for the temporary proxy
-  shim, and warns once. See
+  not follow the login redirect. `STEEL_API_KEY` is deprecated. Steel and
+  Caddy do not enforce it. `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then
+  `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN` override it. A client that still
+  has only the legacy key warns once and is not authenticated. See
   [Browser automation](docs/guides/browser-automation.md).
 
 ### Removed
@@ -508,6 +541,8 @@ All notable user-facing changes are documented here. The project follows [Semant
   ready.
 
 ### Fixed
+
+- **Dry-run ship status no longer rewrites `.git/index`.** `git status` refreshes the index under an optional lock. The ship-status read passes `--no-optional-locks`, so a dry run leaves the checkout untouched.
 
 - **A committed checkout counts as authored work, and a one-shot outcome must be a standalone JSON object.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`. A one-shot outcome is accepted when the whole reply is one JSON object, or when that object stands alone on the final line. A closing code fence around the final object is allowed. An object followed by prose, a truncated reply, and an ambiguous tail settle `failed`.
 

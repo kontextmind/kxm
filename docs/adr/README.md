@@ -7,10 +7,12 @@ An architecture decision record (ADR) captures one significant decision about KX
 | ADR | Decision | Status | Date |
 |---|---|---|---|
 | [ADR-001](../contracts/architecture.md) | Local Runtime, project authority, and aggregate hub | Accepted target | — |
-| [ADR-0002](ADR-0002-browser-automation-steel-doks.md) | Self-hosted Steel for reusable browser automation and human takeover | Accepted | 2026-09-14 |
+| [ADR-0002](ADR-0002-browser-automation-steel-doks.md) | Self-hosted Steel on DOKS (deployment superseded) | Superseded by ADR-0007 | 2026-09-14 |
 | [ADR-0003](ADR-0003-sqlite-only-store.md) | SQLite as the only store | Accepted | 2026-09-17 |
 | [ADR-0004](ADR-0004-edge-identity-authentik.md) | Edge identity with Authentik; the hub owns no browser identity | Accepted | 2026-09-20 |
 | [ADR-0005](ADR-0005-obscura-default-playwright.md) | Obscura is the default browser for Playwright; Steel stays for takeover | Accepted | 2026-09-27 |
+| [ADR-0006](ADR-0006-machine-account-names.md) | Machine account names (`svc-` shapes, `test-` prefix, Authentik exemptions) | Accepted | 2026-09-27 |
+| [ADR-0007](ADR-0007-steel-caddy-authentik.md) | Steel is reached only through Caddy and Authentik | Accepted | 2026-09-27 |
 
 ADR-001 is the original decision record for the local Runtime. It lives with the contracts in [`docs/contracts/architecture.md`](../contracts/architecture.md) because it is the root of those contracts, and it keeps its original three-digit number. Records in this directory continue the sequence from 0002. There is no ADR-0001.
 

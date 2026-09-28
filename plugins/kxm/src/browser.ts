@@ -5,11 +5,12 @@
  * (`resolveBrowserCdpEndpoint()`). Steel remains the client for human
  * takeover, MFA, and the live session viewer (`KXM_BROWSER=steel`).
  * Manages remote Steel sessions, CDP endpoints, human takeover handoffs,
- * pass-cli credential references, and automated cleanup without leaking secrets.
+ * and automated cleanup without leaking secrets.
  *
- * Hosts behind Authentik forward auth (the KontextMind Steel proxies) accept
- * an app password only as `Authorization: Basic`. A Bearer token is refused.
- * `STEEL_API_KEY` remains a legacy shim: `x-steel-api-key` and `?apiKey=`.
+ * steel.kontextmind.com is reached only through Caddy and Authentik forward
+ * auth. Clients send `Authorization: Basic` for the svc-steel credential.
+ * A Bearer token is refused. `STEEL_API_KEY` is deprecated and is not
+ * enforced by Steel or Caddy. Do not put a credential in the URL.
  */
 
 import { execSync } from "node:child_process";
@@ -188,9 +189,9 @@ export class SteelAuthRedirectError extends Error {
 }
 
 const LEGACY_STEEL_AUTH_WARNING =
-  "kxm: STEEL_API_KEY is deprecated for Steel. Authentik forward auth accepts app passwords only as Authorization: Basic. " +
-  "Set STEEL_AUTH_BASIC, or STEEL_AUTH_USER and STEEL_AUTH_TOKEN. " +
-  "The legacy x-steel-api-key header and apiKey query parameter remain for the temporary proxy shim.\n";
+  "kxm: STEEL_API_KEY is deprecated for Steel. Steel and Caddy do not enforce it. " +
+  "Set STEEL_AUTH_HEADER, or STEEL_AUTH_BASIC, or STEEL_AUTH_USER and STEEL_AUTH_TOKEN. " +
+  "Those override STEEL_API_KEY. Send Authorization on the request, not in the URL.\n";
 
 let legacySteelAuthWarned = false;
 
@@ -310,6 +311,7 @@ export function resolvePassCliApiKey(
     }
   }
   try {
+    // Deprecated lookup. The hosted server does not enforce STEEL_API_KEY.
     const output = execFn(
       'pass-cli item view --vault-name "AI Provider Keys" --item-title "Steel Browser (KontextMind DOKS)" --output json',
     );
@@ -325,8 +327,9 @@ export function resolvePassCliApiKey(
 }
 
 /**
- * Resolve Steel configuration from environment or pass-cli.
+ * Resolve Steel configuration from the environment.
  * Does not write secrets to disk or logs.
+ * Authentik Basic auth overrides `STEEL_API_KEY`. Steel and Caddy do not enforce that key.
  *
  * Authentik Basic auth (`STEEL_AUTH_HEADER`, `STEEL_AUTH_BASIC`, or
  * `STEEL_AUTH_USER` + `STEEL_AUTH_TOKEN`) wins over `STEEL_API_KEY`.
@@ -610,7 +613,7 @@ export class SteelClient {
   }
 
   /**
-   * Launch a new Steel browser session on DOKS.
+   * Launch a new Steel browser session.
    */
   async createSession(options?: CreateSessionOptions): Promise<SteelSession> {
     const timeoutMs = options?.timeoutMs ?? this.config.timeoutMs ?? 300000;

@@ -76,7 +76,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 | [Architecture](concepts/architecture.md) | Integrators, maintainers | The components, message and workflow lifecycles, and KXM's limits |
 | [Trust model](concepts/trust-model.md) | Operators, security reviewers | Who holds which credential, project boundaries, and what provenance proves |
 | [Data and storage](concepts/data-and-storage.md) | Operators, security reviewers | What each store holds, where it lives and how long it is kept |
-| [Architecture decision records](adr/README.md) | Maintainers | The decision records: [browser automation](adr/ADR-0002-browser-automation-steel-doks.md), [Obscura for Playwright](adr/ADR-0005-obscura-default-playwright.md), [SQLite-only store](adr/ADR-0003-sqlite-only-store.md), [edge identity](adr/ADR-0004-edge-identity-authentik.md) |
+| [Architecture decision records](adr/README.md) | Maintainers | The decision records: [browser automation](adr/ADR-0002-browser-automation-steel-doks.md), [Steel through Caddy](adr/ADR-0007-steel-caddy-authentik.md), [Obscura for Playwright](adr/ADR-0005-obscura-default-playwright.md), [machine account names](adr/ADR-0006-machine-account-names.md), [SQLite-only store](adr/ADR-0003-sqlite-only-store.md), [edge identity](adr/ADR-0004-edge-identity-authentik.md) |
 | [KXM contract package](contracts/README.md) | Maintainers, reviewers | The normative specifications for the local-first architecture, listed below |
 
 ### Contracts

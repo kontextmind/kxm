@@ -34307,7 +34307,7 @@ var SteelAuthRedirectError = class extends Error {
     this.host = host;
   }
 };
-var LEGACY_STEEL_AUTH_WARNING = "kxm: STEEL_API_KEY is deprecated for Steel. Authentik forward auth accepts app passwords only as Authorization: Basic. Set STEEL_AUTH_BASIC, or STEEL_AUTH_USER and STEEL_AUTH_TOKEN. The legacy x-steel-api-key header and apiKey query parameter remain for the temporary proxy shim.\n";
+var LEGACY_STEEL_AUTH_WARNING = "kxm: STEEL_API_KEY is deprecated for Steel. Steel and Caddy do not enforce it. Set STEEL_AUTH_HEADER, or STEEL_AUTH_BASIC, or STEEL_AUTH_USER and STEEL_AUTH_TOKEN. Those override STEEL_API_KEY. Send Authorization on the request, not in the URL.\n";
 var legacySteelAuthWarned = false;
 function resetLegacySteelAuthWarningForTests() {
   legacySteelAuthWarned = false;
@@ -34613,7 +34613,7 @@ var SteelClient = class {
     return res;
   }
   /**
-   * Launch a new Steel browser session on DOKS.
+   * Launch a new Steel browser session.
    */
   async createSession(options) {
     const timeoutMs = options?.timeoutMs ?? this.config.timeoutMs ?? 3e5;
@@ -34896,7 +34896,7 @@ var DEFAULT_MODES_CONFIG = Object.freeze({
     browser: {
       description: "Remote Steel browser sessions and visual testing",
       tools: ["steel_session", "steel_scrape", "steel_screenshot"],
-      promptSnippet: "Use Steel on DOKS for browser automation; invoke takeover on MFA."
+      promptSnippet: "Playwright tests use Obscura. Steel is remote browsing and takeover through Caddy and Authentik; send Authorization, never a credential in the URL."
     }
   }
 });

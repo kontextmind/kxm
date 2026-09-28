@@ -279,6 +279,35 @@ server {
 }
 ```
 
+## Boot the kxmd Proxmox host
+
+The Proxmox host starts these guests in the order below. The VMID is the Proxmox guest id. `up` is the delay, in seconds, after that guest starts.
+
+| Order | Guest | VMID | Role | up |
+|---|---|---|---|---|
+| 1 | firewall | 200 | Firewall | |
+| 2 | gateway | 201 | Gateway | |
+| 3 | kxmd-pg | 220 | Postgres | 30 |
+| 4 | kxmd-temporal | 221 | Temporal | 40 |
+| 5 | kxmd-services | 300 | `kxm-control` | 30 |
+| 6 | kxmd-studio | 241 | Hub | 20 |
+
+VM 300 is named `kxmd-services`. VM 230 is named `kxmd-proxy` and runs Caddy. Steel is LXC 240 and uses Proxmox startup order 40.
+
+Steel's public name is `steel.kontextmind.com`. `steel.theneuro.me` is an alias of that same server. Clients reach it only through Caddy and Authentik forward auth. Direct LAN, tailnet, and host-forward access is blocked. See [ADR-0007](../adr/ADR-0007-steel-caddy-authentik.md) and [Browser automation](../guides/browser-automation.md).
+
+## Name machine accounts
+
+New Authentik machine accounts follow [ADR-0006](../adr/ADR-0006-machine-account-names.md):
+
+| Scope | Name |
+|---|---|
+| Platform-wide | `svc-<system>-<purpose>` |
+| Tenant-scoped | `svc-<tenant>-<system>-<purpose>` |
+| Test, witness, or proof | The same shapes with a `test-` prefix |
+
+`<tenant>` is the tenant slug. A `test-` account is never in a production group. Outposts and `ak-*` accounts are Authentik-managed and are exempt. Names already in use, including `kxm-agent`, `kxm-witness-*`, `witness9`, and `kxmdproof`, wait for an approved inventory. Do not invent a new name for one of them. The live Steel account remains `svc-steel`.
+
 ## Plan for scale
 
 Measure concurrent agents, request rate, event-loop delay, database size, disk latency and reconnect frequency for your workload. Terminal messages are purged after `KXM_MESSAGE_RETENTION_MS` (7 days by default), and finished workflow runs and their journals after 7 days. Keep free disk space ahead of the database's growth, and include workflow data in privacy reviews: verified evidence snapshots stay in a run after its source messages are purged.
@@ -304,4 +333,6 @@ See [Troubleshoot KXM](troubleshooting.md) for more.
 - Move to a new release: [Upgrade KXM](upgrade.md)
 - Keep run facts flowing to the hub: [Operate Runtime sync and leases](runtime-sync.md)
 - Understand who can do what: [Trust model](../concepts/trust-model.md)
+- Name machine accounts: [ADR-0006](../adr/ADR-0006-machine-account-names.md)
+- Reach Steel: [ADR-0007](../adr/ADR-0007-steel-caddy-authentik.md)
 - Every hub route: [Hub HTTP API reference](../reference/http-api.md)

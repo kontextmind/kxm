@@ -50163,7 +50163,7 @@ function formatShipLine(ship) {
 }
 function readGitShip(cwd) {
   try {
-    const dirty = spawnSync10("git", ["-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
+    const dirty = spawnSync10("git", ["--no-optional-locks", "-C", cwd, "status", "--porcelain"], { encoding: "utf8", windowsHide: true });
     if (dirty.status !== 0) return void 0;
     const isDirty = dirty.stdout.trim().length > 0;
     const upstream = spawnSync10("git", ["-C", cwd, "rev-list", "--count", "@{u}..HEAD"], { encoding: "utf8", windowsHide: true });
@@ -52019,7 +52019,7 @@ var DEFAULT_MODES_CONFIG = Object.freeze({
     browser: {
       description: "Remote Steel browser sessions and visual testing",
       tools: ["steel_session", "steel_scrape", "steel_screenshot"],
-      promptSnippet: "Use Steel on DOKS for browser automation; invoke takeover on MFA."
+      promptSnippet: "Playwright tests use Obscura. Steel is remote browsing and takeover through Caddy and Authentik; send Authorization, never a credential in the URL."
     }
   }
 });

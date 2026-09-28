@@ -42,7 +42,7 @@ Use this prompt to initialize a remote browser session on self-hosted Steel for 
 ## Instructions for the agent
 
 1. **Verify Credential Reference**:
-   - Resolve the target credentials and the Steel Authentik app password (`STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, or `STEEL_AUTH_BASIC`) from the secret manager, for example with `pass-cli`, without logging raw values. A Bearer token is not accepted. Keep the credential in a header, not a URL.
+   - Resolve the `svc-steel` credential with `op read 'op://kontextmind/Steel (svc-steel)/basic_auth'` into `STEEL_AUTH_BASIC` (or set `STEEL_AUTH_HEADER`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`). Do not log the value or write it to disk. A Bearer token is not accepted. `STEEL_API_KEY` is deprecated and is not enforced. Keep the credential in a header, not a URL. `STEEL_API_URL` defaults to `https://steel.kontextmind.com`. `kxm` 0.7.135 or newer is required.
    - Do not print credentials to the chat or save them to tracked files.
 
 2. **Launch Remote Steel Session**:

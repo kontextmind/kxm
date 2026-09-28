@@ -12,7 +12,7 @@ authority: "decision"
 confidence: "verified"
 summary: "Playwright testing and verification connect to pinned Obscura v0.2.3 over CDP. Steel stays the browser for human takeover, MFA, and the live session viewer."
 tags: ["architecture", "decision", "browser", "obscura", "playwright", "cdp"]
-related: ["docs/adr/ADR-0002-browser-automation-steel-doks.md", "docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwright-to-obscura.md"]
+related: ["docs/adr/ADR-0002-browser-automation-steel-doks.md", "docs/adr/ADR-0007-steel-caddy-authentik.md", "docs/guides/browser-automation.md", "docs/kb/how-to-connect-playwright-to-obscura.md"]
 details:
   decision_drivers:
     - "Playwright tests must run without a Steel cluster or a Playwright-managed browser download"
@@ -26,7 +26,7 @@ details:
 
 ## Status
 
-Accepted on 2026-09-27. This record does not supersede [ADR-0002](ADR-0002-browser-automation-steel-doks.md). Steel remains the browser for human takeover, MFA, and the live session viewer.
+Accepted on 2026-09-27. This record does not supersede [ADR-0002](ADR-0002-browser-automation-steel-doks.md). [ADR-0007](ADR-0007-steel-caddy-authentik.md) is the current Steel deployment. Steel remains the browser for remote and hosted sessions, human takeover, MFA, and the live session viewer.
 
 ## Context
 
@@ -79,7 +79,8 @@ Obscura v0.2.3 is a headless Chromium build that speaks the Chrome DevTools Prot
 
 ## Related
 
-- [ADR-0002: Self-hosted Steel on DOKS](ADR-0002-browser-automation-steel-doks.md)
+- [ADR-0002: Self-hosted Steel on DOKS (superseded deployment)](ADR-0002-browser-automation-steel-doks.md)
+- [ADR-0007: Steel through Caddy and Authentik](ADR-0007-steel-caddy-authentik.md)
 - [Browser automation](../guides/browser-automation.md)
 - [How do I connect Playwright to Obscura?](../kb/how-to-connect-playwright-to-obscura.md)
 - [Environment variables and limits](../reference/configuration.md#browser-automation)

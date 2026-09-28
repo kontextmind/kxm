@@ -15,9 +15,14 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Linux jobs run on the ARC scale set kontextmind-doks (1..4 ephemeral pods).
-# Validate also runs Windows on GitHub-hosted windows-latest; those legs are
-# not required by protect-main.
+# Pull requests run lint, typecheck, and the unit suite on Linux Node 24.
+# engine.test.ts is split by test name. permission and runtime run serially
+# in their own job. The other unit files run together. Pushes to main and
+# workflow_dispatch also run validate:pr on Linux and Windows for Node
+# 22.19.0 and Node 24. A pull request that touches path, process, shell,
+# spawn, package, or workflow files also runs the unit lanes on Windows.
+# `required` is the status check to mark required: it fails when a lane
+# fails and succeeds when a lane was skipped on purpose.
 jobs:
   changes:
     name: Classify changes
@@ -25,11 +30,18 @@ jobs:
     timeout-minutes: 5
     outputs:
       code: ${{ steps.classify.outputs.code }}
+      platform: ${{ steps.classify.outputs.platform }}
+      run_validate: ${{ steps.classify.outputs.run_validate }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       - name: Classify changed paths
         id: classify
@@ -45,23 +57,12 @@ jobs:
           elif [ "$EVENT" = "push" ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
             base="$BEFORE_SHA"
           else
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "no comparable base; treating as code change"
+            node scripts/ci-classify.mjs unbounded | tee -a "$GITHUB_OUTPUT"
             exit 0
           fi
           files=$(git diff --name-only "$base...HEAD" || git diff --name-only "$base" HEAD)
-          echo "$files"
-          # Documentation-only paths. Anything else is code.
-          code=false
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            case "$f" in
-              *.md|docs/*|.kxm/assets/*|LICENSE|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md|.github/dependabot.yml) ;;
-              *) code=true ;;
-            esac
-          done <<< "$files"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "code=$code"
+          printf '%s\n' "$files"
+          printf '%s\n' "$files" | node scripts/ci-classify.mjs "$EVENT" | tee -a "$GITHUB_OUTPUT"
 
   docs:
     name: Docs lint
@@ -83,24 +84,123 @@ jobs:
       - name: Lint documentation and version surfaces
         run: npm run lint:docs && npm run check:versions
 
+  engine:
+    name: Unit engine (linux, Node 24, shard ${{ matrix.shard }}/2)
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: kontextmind-doks
+    timeout-minutes: 8
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Engine unit shard
+        run: npm run test:ci-shard -- engine ${{ matrix.shard }} 2
+
+  unit:
+    name: Unit (linux, Node 24, ${{ matrix.lane }})
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: kontextmind-doks
+    timeout-minutes: 10
+    strategy:
+      fail-fast: true
+      matrix:
+        lane: [serial, light]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck
+        if: matrix.lane == 'light'
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:ci-shard -- ${{ matrix.lane }}
+
+      - name: Verify generated runtime bundles are current
+        if: matrix.lane == 'light'
+        run: node scripts/check-generated.mjs
+
+  unit-windows:
+    name: Unit (windows, Node 24, ${{ matrix.lane }})
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.code == 'true' && needs.changes.outputs.platform == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: true
+      matrix:
+        lane: [engine-1, engine-2, serial, light]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
+
+      - name: Install locked dependencies
+        if: steps.modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          case "${{ matrix.lane }}" in
+            engine-1) npm run test:ci-shard -- engine 1 2 ;;
+            engine-2) npm run test:ci-shard -- engine 2 2 ;;
+            serial) npm run test:ci-shard -- serial ;;
+            light) npm run test:ci-shard -- light ;;
+          esac
+
   validate:
     name: Validate (${{ matrix.runner.name }}, Node ${{ matrix.node }})
     needs: changes
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.code == 'true' }}
     runs-on: ${{ matrix.runner.labels }}
-    # Linux merge-safety stays on a three-minute budget. Windows hosted images
-    # need longer for npm ci; they are not protect-main required checks.
-    # The complete suite and coverage floors run in nightly.yml (Linux only).
     timeout-minutes: ${{ matrix.runner.timeout }}
     defaults:
       run:
         shell: bash
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         node: [22.19.0, 24]
-        # Linux: ARC scale set kontextmind-doks. Windows: GitHub-hosted
-        # windows-latest (not the homelab VM, not a repository runner).
-        # protect-main required names stay Validate (linux, Node 22.19.0|24).
         runner:
           - name: linux
             labels: kontextmind-doks
@@ -108,25 +208,17 @@ jobs:
           - name: windows
             labels: windows-latest
             timeout: 15
-
     steps:
-      - name: Skip code validation for documentation-only changes
-        if: needs.changes.outputs.code != 'true'
-        run: echo "Documentation-only change; code validation is not required."
-
       - name: Check out repository
-        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@v7
 
       - name: Use Node.js ${{ matrix.node }}
-        if: needs.changes.outputs.code == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Restore node_modules
-        if: needs.changes.outputs.code == 'true'
         id: modules
         uses: actions/cache@v6
         with:
@@ -134,55 +226,103 @@ jobs:
           key: modules-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install locked dependencies
-        if: needs.changes.outputs.code == 'true' && steps.modules.outputs.cache-hit != 'true'
+        if: steps.modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Both PRs and main run the bounded merge-safety gate on every matrix
-      # cell. The exhaustive suite, coverage instrumentation, docs lint, and
-      # package dry-run live in nightly.yml (Linux).
       - name: Run the three-minute validation gate
-        if: needs.changes.outputs.code == 'true'
         run: npm run validate:pr
 
   plugin:
     name: Plugin validation
     needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: kontextmind-doks
     timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - name: Skip plugin validation for documentation-only changes
-        if: needs.changes.outputs.code != 'true'
-        run: echo "Documentation-only change; plugin validation is not required."
-
       - name: Check out repository
-        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@v7
 
       - name: Use Node.js 24
-        if: needs.changes.outputs.code == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
 
       - name: Install locked dependencies
-        if: needs.changes.outputs.code == 'true'
         run: npm ci --ignore-scripts
 
       - name: Install pinned Claude Code CLI
-        if: needs.changes.outputs.code == 'true'
         run: |
           set -euo pipefail
           npm install --no-save --ignore-scripts @anthropic-ai/claude-code@2.1.261
           node node_modules/@anthropic-ai/claude-code/install.cjs
 
       - name: Validate marketplace and plugin manifests
-        if: needs.changes.outputs.code == 'true'
         env:
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         run: |
           set -euo pipefail
           ./node_modules/.bin/claude plugin validate . --strict
           ./node_modules/.bin/claude plugin validate plugins/kxm --strict
+
+  required:
+    name: required
+    needs: [changes, docs, engine, unit, unit-windows, validate, plugin]
+    if: ${{ always() }}
+    runs-on: kontextmind-doks
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate lane results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          event = os.environ.get("EVENT", "")
+          failed = []
+          for name, job in needs.items():
+              result = job.get("result")
+              if result not in ("success", "skipped"):
+                  failed.append(f"{name}={result}")
+          changes = needs["changes"]
+          docs = needs["docs"]
+          if changes.get("result") != "success":
+              failed.append("changes did not succeed")
+          if docs.get("result") != "success":
+              failed.append("docs did not succeed")
+          outputs = changes.get("outputs") or {}
+          code = outputs.get("code") == "true"
+          platform = outputs.get("platform") == "true"
+          run_validate = outputs.get("run_validate") == "true"
+          if code:
+              if needs["engine"]["result"] != "success":
+                  failed.append(f"engine={needs['engine']['result']}")
+              if needs["unit"]["result"] != "success":
+                  failed.append(f"unit={needs['unit']['result']}")
+              if needs["plugin"]["result"] != "success":
+                  failed.append(f"plugin={needs['plugin']['result']}")
+          else:
+              for name in ("engine", "unit", "unit-windows", "validate", "plugin"):
+                  if needs[name]["result"] != "skipped":
+                      failed.append(f"{name} should be skipped, got {needs[name]['result']}")
+          if event == "pull_request" and code and platform:
+              if needs["unit-windows"]["result"] != "success":
+                  failed.append(f"unit-windows={needs['unit-windows']['result']}")
+          if run_validate:
+              if needs["validate"]["result"] != "success":
+                  failed.append(f"validate={needs['validate']['result']}")
+          if failed:
+              print("required check failed:")
+              for line in failed:
+                  print(f"  {line}")
+              sys.exit(1)
+          print("required check passed")
+          for name, job in needs.items():
+              print(f"  {name}={job.get('result')}")
+          PY
