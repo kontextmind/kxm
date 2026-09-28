@@ -21,7 +21,7 @@ The kxm verbs that let the planner dispatch a writer into a worktree lane and la
 - `loop-timeouts` Configurable one-shot step timeout, cancel recovery, and the three one-step workflows. Evidence: `test/core/engine.test.ts`.
 - `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
 - `loop-land-followup` kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22). Evidence: `test/core/pr-land.test.ts`.
-- `loop-supervise` kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20).
+- `loop-supervise` kxm supervise persists in-flight lanes, pull request and CI state, and backoff timers (S20). Evidence: `test/core/supervise.test.ts`.
 
 ### Blockers
 
@@ -297,3 +297,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the operator's primary worktree; hub cloud binding inventoried.
 - 2026-09-28: P3 tool policy landed (#378, v0.7.169). Cross-host P0 bind unblocked (#348, #375, #376). MG1 is off-repo. CI pause text retired.
 - 2026-09-28: Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves.
+- 2026-09-28: kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart.

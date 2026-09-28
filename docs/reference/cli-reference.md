@@ -160,6 +160,7 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 | Create and drive a run | [`kxm run`](#kxm-run), [`kxm runs drive`](#kxm-runs-drive), [`kxm runtime status`](#kxm-runtime-status) |
 | Work in an isolated checkout | [`kxm lane`](#kxm-lane), [`kxm run --lane`](#kxm-run) |
 | Land the current branch | [`kxm land`](#kxm-land) |
+| Resume the roadmap supervisor | [`kxm supervise`](#kxm-supervise) |
 | Delegate and accept a developer assignment | [`kxm assign`](#kxm-assign) |
 | Inspect runs | [`kxm runs list`](#kxm-runs-list), [`kxm runs status`](#kxm-runs-status), [`kxm runs receipt`](#kxm-runs-receipt), [`kxm tenant status`](#kxm-tenant-status), [`kxm workflow list`](#kxm-workflow-list) |
 | Message peers | [`kxm peer list`](#kxm-peer-list), [`kxm peer send`](#kxm-peer-send), [`kxm peer await`](#kxm-peer-await), [`kxm peer fanout`](#kxm-peer-fanout) |
@@ -1473,6 +1474,22 @@ Refusals (exit 1): `project_required`, `land_dirty_tree`, `land_verify_failed`, 
 `land_merge_state_unknown`: `mergeStateStatus` stayed `UNKNOWN` until the wait bound. The stage does not pass and does not merge.
 
 `land_merge_not_ready`: GitHub reported a known merge state that is not `CLEAN` or `HAS_HOOKS`, and the rebase stage is not going to rebase it (`BLOCKED`, and on the merge stage also `BEHIND` or `DIRTY`). The detail names the status.
+
+## `kxm supervise`
+
+Persist the roadmap supervisor's memory in `.kxm/state/supervisor.json` (`kxm.supervisor.v1`, mode `0600`). The file holds in-flight lanes, the last-seen pull request number and merge state, the last-seen CI status and conclusion, and backoff timers. A missing file is empty. A malformed file or any other schema is refused and left unchanged. A later process reads the same file and continues.
+
+```text
+kxm supervise status
+kxm supervise record --lane <unit> [--pr <n> --merge-state <status>] [--ci-status <status> --ci-conclusion <conclusion>] [--backoff-ms <n>] [--settled]
+kxm supervise tick
+```
+
+`record` updates one lane and keeps fields that this call does not set. `--settled` marks the lane not in flight. `--backoff-ms 0` clears the timer. `tick` clears backoff timers whose deadline has passed, leaves the lane in flight with its last-seen pull request and CI state, and appends one line to `.kxm/logs/supervisor.log`. A timer still in the future is unchanged. `--dry-run` prints the writes and does not change the file or the log. `KXM_SUPERVISE_NOW` overrides the clock with an ISO-8601 UTC timestamp.
+
+Outside a KXM project the command refuses `project_required` (exit 1).
+
+Refusals (exit 1): `project_required`, `supervisor_unreadable`, `supervisor_schema_unsupported`, `supervisor_clock_invalid`, `lane_unit_invalid`, `supervisor_pr_invalid`, `supervisor_ci_invalid`, `supervisor_backoff_invalid`.
 
 ## `kxm assign`
 

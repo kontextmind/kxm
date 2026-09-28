@@ -32,6 +32,9 @@ serve` serves that site with `python3 ops/docs-site/serve.py` and passes
 | `kxm lane drop <unit>` | Remove the worktree and the record. The branch is not deleted | `--force`, `--json` |
 | `kxm lane run <unit>` | Create the lane if needed, start a run from a brief, and drive it | `--brief <file>` (required), `--workflow <id>`, `--base <ref>`, `--wait`, `--timeout-ms <n>`, `--json` |
 | `kxm land` | Verify, regenerate docs, push, open or reuse a pull request, rebase, unblock, squash-merge, watch the release, and note a milestone | `--pr <n>`, `--stage <name>`, `--body-file <path>`, `--json`, `--dry-run` |
+| `kxm supervise status` | Show persisted in-flight lanes, pull request and CI state, and backoff timers | `--json` |
+| `kxm supervise record --lane <unit>` | Record one lane observation in `.kxm/state/supervisor.json` | `--pr`, `--merge-state`, `--ci-status`, `--ci-conclusion`, `--backoff-ms`, `--settled` |
+| `kxm supervise tick` | Clear elapsed backoff timers and append `.kxm/logs/supervisor.log` | `--json`, `--dry-run` |
 | `kxm assign run` | Dispatch one assignment manifest. The runner performs every check | `--manifest <path>` |
 | `kxm assign witness` | Run the fixed witness for an existing record | `--record-dir <path>` |
 | `kxm assign plan-current` | Stamp or advance the current-plan pointer | `--task-dir <path>`, `--plan <path>`, `--sha256 <hex>`, `--base-commit <sha>`, `--expected-generation <n>` |
@@ -93,6 +96,9 @@ CHANGELOG Unreleased union, and the tracker "Landed in this tree" union.
 proceed, `BEHIND` and `DIRTY` rebase, and any other known state blocks. A
 failed `verify` names the exit code, the failing step, and a short excerpt,
 and writes the full log under `.kxm/logs/`.
+`kxm supervise` stores in-flight lanes, last-seen pull request and CI state,
+and backoff timers in `.kxm/state/supervisor.json`. A later process loads
+that file. `tick` clears a backoff whose deadline has passed.
 `unblock` reruns one failed check and reports a required review. `merge`
 squash-merges. `release` waits for the tag and the npm publish. `milestone`
 reports `deep_review_required` when a phase flips to done or the body contains

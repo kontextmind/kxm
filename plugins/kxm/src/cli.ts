@@ -136,6 +136,7 @@ import {
 } from "./cli/lanes.ts";
 
 import { cmdLand } from "./cli/land.ts";
+import { cmdSuperviseRecord, cmdSuperviseStatus, cmdSuperviseTick } from "./cli/supervise.ts";
 import { cmdAssign } from "./cli/assign.ts";
 
 import {
@@ -232,6 +233,7 @@ const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "task create", "task list", "task get", "task run", "task sync",
   "studio layout", "studio serve",
   "docs build", "docs serve",
+  "supervise status", "supervise tick", "supervise record",
 ]);
 
 class DryRunRefused extends Error {
@@ -537,6 +539,36 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
         ...(options.base !== undefined ? { base: options.base } : {}),
         wait: options.wait === true,
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      });
+    });
+
+  const superviseCmd = addGlobalOptions(program.command("supervise").description("Persist roadmap supervisor state across restarts"));
+  superviseCmd.helpCommand("help", "Show supervise help");
+  addGlobalOptions(superviseCmd.command("status").description("Show persisted in-flight lanes, pull request and CI state, and backoff timers"))
+    .action(async function superviseStatusAction(this: Command) {
+      result.code = cmdSuperviseStatus(runtimeFrom(ctx, this));
+    });
+  addGlobalOptions(superviseCmd.command("tick").description("Resume lanes whose backoff has elapsed and append a supervisor log line"))
+    .action(async function superviseTickAction(this: Command) {
+      result.code = cmdSuperviseTick(runtimeFrom(ctx, this));
+    });
+  addGlobalOptions(superviseCmd.command("record").description("Record one lane observation in the supervisor state"))
+    .requiredOption("--lane <unit>", "Lane unit")
+    .option("--pr <n>", "Last-seen pull request number")
+    .option("--merge-state <status>", "Last-seen mergeStateStatus")
+    .option("--ci-status <status>", "Last-seen CI status")
+    .option("--ci-conclusion <conclusion>", "Last-seen CI conclusion")
+    .option("--backoff-ms <n>", "Backoff from now, in milliseconds; 0 clears it")
+    .option("--settled", "Mark the lane not in flight")
+    .action(async function superviseRecordAction(this: Command, options: { lane: string; pr?: string; mergeState?: string; ciStatus?: string; ciConclusion?: string; backoffMs?: string; settled?: boolean }) {
+      result.code = cmdSuperviseRecord(runtimeFrom(ctx, this), {
+        lane: options.lane,
+        ...(options.pr !== undefined ? { pr: options.pr } : {}),
+        ...(options.mergeState !== undefined ? { mergeState: options.mergeState } : {}),
+        ...(options.ciStatus !== undefined ? { ciStatus: options.ciStatus } : {}),
+        ...(options.ciConclusion !== undefined ? { ciConclusion: options.ciConclusion } : {}),
+        ...(options.backoffMs !== undefined ? { backoffMs: options.backoffMs } : {}),
+        settled: options.settled === true,
       });
     });
 

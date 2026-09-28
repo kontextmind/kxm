@@ -17,7 +17,6 @@ Goal: The kxm verbs that let the planner dispatch a writer into a worktree lane 
 #### Open tasks
 
 - `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
-- `loop-supervise` kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20).
 
 #### Blockers
 
@@ -347,3 +346,4 @@ No confirmed contacts.
 - 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the operator's primary worktree; hub cloud binding inventoried.
 - 2026-09-28: P3 tool policy landed (#378, v0.7.169). Cross-host P0 bind unblocked (#348, #375, #376). MG1 is off-repo. CI pause text retired.
 - 2026-09-28: Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves.
+- 2026-09-28: kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart.
