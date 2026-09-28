@@ -4,7 +4,7 @@ Status: later. Horizon: later.
 
 Source: `plans/plan-kxm-harness-first-run.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 On a TTY, bare kxm opens the existing dashboard and a first-run panel that probes harnesses, hands auth to each harness or an op:// reference, and writes user defaults. Static workflow files stay the trust anchor. A hybrid composer is proposed and not selected.
 
@@ -37,7 +37,7 @@ Evidence needed: Catalog tests and a receipt that names the workflow hash.
 ## Blockers
 
 - omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
-- kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
+- The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself.
 
 ## Questions
 

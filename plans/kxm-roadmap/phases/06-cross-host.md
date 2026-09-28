@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/plan-cross-host-phase.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 P0 through P6 from plans/plan-cross-host-phase.md, with delivered rows taken from the tracker.
 

@@ -175,5 +175,6 @@ nav:
       - TUI components: contributing/tui-components.md
       - Writing docs: contributing/writing-docs.md
       - Operating rules: contributing/operating-rules.md
+      - Decisions: contributing/decisions.md
       - Learnings: contributing/learnings.md
       - Glossary: glossary.md

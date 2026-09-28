@@ -4,7 +4,7 @@ Status: later. Horizon: later.
 
 Source: `plans/plan-studio-cloud-host.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 Studio shows the seven dash panels, a first-run wizard, and live workflow state for the shared hub. Humans sign in at the edge. Policy edits become pull requests. The browser does not hold a hub token.
 
@@ -30,7 +30,7 @@ Evidence needed: test/e2e cases at 390, 800, and 1280, and a secret-absence asse
 
 ## Blockers
 
-- Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.
+- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.
 - Setup and doctor screens also wait on first-run P1 through P5.
 
 ## Questions

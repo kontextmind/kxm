@@ -4,7 +4,7 @@ Status: later. Horizon: later.
 
 Source: `plans/plan-workflow-modes-selective-loading.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 Declarative modes and selective loading. The plan says it is not an active backlog.
 
