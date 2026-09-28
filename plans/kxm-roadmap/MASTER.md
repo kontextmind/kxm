@@ -285,7 +285,6 @@ Tracker items that are not already tasks on the phases above.
 
 ## History
 
-- 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-26: Lanes register under their project and the test suite is bounded (#339).

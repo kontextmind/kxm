@@ -13,10 +13,6 @@
   "history": [
     {
       "date": "2026-09-26",
-      "line": "Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335)."
-    },
-    {
-      "date": "2026-09-26",
       "line": "First deep review: planner loop and role-authority phases added ahead of the Python proposal."
     },
     {
