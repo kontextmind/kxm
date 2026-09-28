@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { DatabaseSync } from "./sqlite.ts";
 import { discoverKxmProjectRoot } from "./project-config.ts";
 import { kxmProjectRunEventsPath } from "./runtime-store.ts";
+import { parseRouteSwitchRecord, type RouteSwitchRecord } from "./route-switch.ts";
 import { parseRoutingRecordV2, ROUTING_RECORD_V2_SCHEMA, type RoutingRecord, type RoutingRecordV2 } from "./routing.ts";
 import { readRoutingRecords, telemetryPath } from "./telemetry.ts";
 
@@ -30,16 +31,18 @@ export interface RoutingSourceSummary {
 export interface EngineRoutingRead {
   records: RoutingRecordV2[];
   source: RoutingSourceSummary;
+  routeSwitches: RouteSwitchRecord[];
 }
 
 export interface LoadedRoutingSources {
   projectRoot?: string;
   records: Array<RoutingRecord | RoutingRecordV2>;
   sources: RoutingSourceSummary[];
+  routeSwitches: RouteSwitchRecord[];
 }
 
 const ENGINE_EVENTS_SQL = "SELECT run_id, sequence, event_type, payload FROM events"
-  + " WHERE event_type IN ('routing.attempt.recorded','step.entered','run.status_changed')"
+  + " WHERE event_type IN ('routing.attempt.recorded','routing.route_switched','step.entered','run.status_changed')"
   + " ORDER BY run_id, sequence";
 
 /** The simulated producer's harness label; its attempts measure nothing. */
@@ -81,7 +84,7 @@ export function readEngineRoutingRecords(path: string): EngineRoutingRead {
     undecided: 0,
     duplicatesDropped: 0,
   };
-  if (!existsSync(path)) return { records: [], source };
+  if (!existsSync(path)) return { records: [], source, routeSwitches: [] };
   source.exists = true;
 
   let rows: Array<Record<string, unknown>>;
@@ -102,6 +105,7 @@ export function readEngineRoutingRecords(path: string): EngineRoutingRead {
   }
 
   const runs = new Map<string, RunLog>();
+  const routeSwitches: RouteSwitchRecord[] = [];
   for (const row of rows) {
     const runId = String(row.run_id);
     const sequence = Number(row.sequence);
@@ -114,6 +118,14 @@ export function readEngineRoutingRecords(path: string): EngineRoutingRead {
     }
     if (eventType === "routing.attempt.recorded") {
       run.routing.push({ sequence, payload });
+    } else if (eventType === "routing.route_switched") {
+      const parsed = parsePayload(payload);
+      const record = parseRouteSwitchRecord(parsed, {
+        attemptId: typeof parsed?.attemptId === "string" ? parsed.attemptId : undefined,
+        stepId: typeof parsed?.stepId === "string" ? parsed.stepId : undefined,
+        runId,
+      });
+      if (record) routeSwitches.push(record);
     } else if (eventType === "step.entered") {
       const stepId = parsePayload(payload)?.stepId;
       if (typeof stepId === "string") run.lastEntered.set(stepId, sequence);
@@ -158,6 +170,7 @@ export function readEngineRoutingRecords(path: string): EngineRoutingRead {
   }
   return {
     records,
+    routeSwitches,
     source: { ...source, records: records.length, skippedInvalid, excludedSimulated, undecided },
   };
 }
@@ -189,7 +202,7 @@ export function loadRoutingSources(options: {
   file?: string | undefined;
 }): LoadedRoutingSources {
   const projectRoot = discoverKxmProjectRoot(options.cwd);
-  const reads: Array<{ records: Array<RoutingRecord | RoutingRecordV2>; source: RoutingSourceSummary }> = [];
+  const reads: Array<{ records: Array<RoutingRecord | RoutingRecordV2>; source: RoutingSourceSummary; routeSwitches?: RouteSwitchRecord[] }> = [];
   if (options.file !== undefined) {
     reads.push(readJsonlSource("file", resolve(options.cwd, options.file)));
   } else {
@@ -219,5 +232,6 @@ export function loadRoutingSources(options: {
     ...(projectRoot !== undefined ? { projectRoot } : {}),
     records,
     sources: reads.map((read) => read.source),
+    routeSwitches: reads.flatMap((read) => read.routeSwitches ?? []),
   };
 }

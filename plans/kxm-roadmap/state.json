@@ -46,6 +46,10 @@
     {
       "date": "2026-09-27",
       "line": "P2 role authority landed (#343): the loader and engine read the v2 role and model files."
+    },
+    {
+      "date": "2026-09-27",
+      "line": "P4 opt-in fallback walk records routing.route_switched and continues the attempt."
     }
   ],
   "architecture": {
@@ -184,7 +188,7 @@
       "source": "plans/plan-omp-config-alignment.md",
       "blockers": [],
       "questions": [
-        "P2 landed in #343. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files, and whether P4 needs an error classifier before the fallback walk."
+        "P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files."
       ],
       "tasks": [
         {
@@ -222,12 +226,13 @@
         {
           "id": "omp-p4",
           "title": "P4 opt-in fallback walk with route_switch events",
-          "status": "open",
-          "evidence": "",
+          "status": "done",
+          "evidence": "test/core/route-fallback.test.ts",
+          "planSection": "plans/plan-omp-config-alignment.md#5-phases",
           "doneCriterion": "An attempt continues on the next admitted route when the role opts in, and the reports show the switch.",
           "evidenceNeeded": "Simulated 429 and transport fixtures.",
-          "template": "none",
-          "detail": "brief"
+          "template": "feature",
+          "detail": "ready"
         },
         {
           "id": "omp-p5",
@@ -597,7 +602,7 @@
       "source": "plans/plan-kxm-harness-first-run.md",
       "priority": "later",
       "blockers": [
-        "omp-alignment P3 through P7 are still open, and P4 fallback is a precondition.",
+        "omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.",
         "kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0."
       ],
       "questions": [

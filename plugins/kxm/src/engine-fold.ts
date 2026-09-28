@@ -555,6 +555,7 @@ export function foldKxmRunState(
         foldEffectUncertain(state, plan!, event);
         break;
       case "routing.attempt.recorded":
+      case "routing.route_switched":
         break;
       default:
         throw runtimeError("run_events_illegal", run.runId, `event type ${event.eventType} is not legal in this engine slice`);

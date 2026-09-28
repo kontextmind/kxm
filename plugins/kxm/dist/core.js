@@ -573,12 +573,14 @@ function evaluateCircuitBreaker(records, route, config, now = Date.now()) {
 }
 function generateRoutingReport(records, options = {}) {
   const generatedAt = options.now ? options.now() : (/* @__PURE__ */ new Date()).toISOString();
+  const routeSwitches = options.routeSwitches?.filter((item) => item.from && item.to) ?? [];
   if (records.length === 0) {
     return {
       schema: ROUTING_REPORT_SCHEMA,
       generatedAt,
       totalAttempts: 0,
-      rows: []
+      rows: [],
+      ...routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}
     };
   }
   const groups = /* @__PURE__ */ new Map();
@@ -742,12 +744,21 @@ function generateRoutingReport(records, options = {}) {
     schema: ROUTING_REPORT_SCHEMA,
     generatedAt,
     totalAttempts: records.length,
-    rows
+    rows,
+    ...routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}
   };
 }
 function formatRoutingReport(report, options = {}) {
-  if (report.rows.length === 0) {
+  if (report.rows.length === 0 && (!report.routeSwitches || report.routeSwitches.length === 0)) {
     return "no routing records to report";
+  }
+  if (report.rows.length === 0) {
+    const lines2 = ["no routing records to report", "", `Route switches (${report.routeSwitches.length})`];
+    for (const item of report.routeSwitches) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines2.push(`  ${item.from} -> ${item.to} (${item.reason}${effort}) step ${item.stepId}`);
+    }
+    return lines2.join("\n");
   }
   const showListCost = Boolean(options.equivalentListCost);
   const headers = [
@@ -803,6 +814,14 @@ function formatRoutingReport(report, options = {}) {
   }
   if (report.rows.some((r) => r.flagged)) {
     lines.push("* = unknown-cost attempts present (never ranked cheapest)");
+  }
+  if (report.routeSwitches && report.routeSwitches.length > 0) {
+    lines.push("");
+    lines.push(`Route switches (${report.routeSwitches.length})`);
+    for (const item of report.routeSwitches) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines.push(`  ${item.from} -> ${item.to} (${item.reason}${effort}) step ${item.stepId}`);
+    }
   }
   return lines.join("\n");
 }

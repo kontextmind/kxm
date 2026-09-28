@@ -44,7 +44,6 @@ Goal: Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role 
 #### Open tasks
 
 - `omp-p3` P3 tool policy enforcement.
-- `omp-p4` P4 opt-in fallback walk with route_switch events.
 - `omp-p5` P5 provenance and extends.
 - `omp-p6` P6 effort catalog.
 - `omp-p7` P7 quota-aware walk (optional).
@@ -55,7 +54,7 @@ None.
 
 #### Questions
 
-- P2 landed in #343. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files, and whether P4 needs an error classifier before the fallback walk.
+- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files.
 
 [Phase page](phases/02-role-authority.md)
 
@@ -258,7 +257,7 @@ Goal: On a TTY, bare kxm opens the existing dashboard and a first-run panel that
 
 #### Blockers
 
-- omp-alignment P3 through P7 are still open, and P4 fallback is a precondition.
+- omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
 - kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
 
 #### Questions
@@ -351,3 +350,4 @@ No confirmed contacts.
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
 - 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.
 - 2026-09-27: P2 role authority landed (#343): the loader and engine read the v2 role and model files.
+- 2026-09-27: P4 opt-in fallback walk records routing.route_switched and continues the attempt.

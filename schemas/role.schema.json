@@ -92,7 +92,7 @@
           "properties": {
             "onError": {
               "type": "array",
-              "items": { "enum": ["rate_limit", "transport", "provider_unavailable"] },
+              "items": { "enum": ["rate_limit", "transport", "provider_unavailable", "context_overflow"] },
               "uniqueItems": true,
               "default": []
             },

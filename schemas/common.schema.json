@@ -197,7 +197,8 @@
         "lease.lost",
         "delivery.status_changed",
         "candidate.created",
-        "routing.attempt.recorded"
+        "routing.attempt.recorded",
+        "routing.route_switched"
       ]
     },
     "effectClass": {
