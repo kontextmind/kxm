@@ -1369,6 +1369,28 @@ test("an outcome object inside an unclosed string settles failed", async () => {
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
+test("even quotes before a truncated outer object do not settle the inner outcome", async () => {
+  // Eight quotes in the prefix leave the naive scan outside a string, and
+  // the stray quote hides the outer `{`. The container lexer still sees it.
+  const text = [
+    'a 27" monitor',
+    '{"outcome":"failed","note":"see {"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("an honest inch mark with no prefix container opener settles", async () => {
+  // The prefix has no `{` or `[`, so the container lexer does not run.
+  // Two inch marks keep an even quote count. The trailing object is
+  // complete and top-level-anchored. A lone inch mark is an odd quote
+  // count and still fails closed.
+  const text = [
+    'Use a 27" monitor, not a 32" one.',
+    '{"outcome":"passed","summary":"width recorded"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
 test("findings prose then an inline outcome whose summary holds braces and quotes settles", async () => {
   const text = [
     "## Findings",
