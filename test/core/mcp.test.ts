@@ -439,6 +439,10 @@ test("MCP inbox keeps an acknowledged, unanswered request across a restart under
   // The first process acknowledged it, which moved the agent's consumer cursor past it.
   assert.equal((await peer.getMessage(inbound.id)).status, "delivered");
   await first.stop();
+  await waitFor(() => {
+    const agent = [...mesh.hub.state.agents.values()].find((entry) => entry.name === "claude-durable");
+    return agent === undefined || agent.online === false;
+  });
 
   const second = await startMcp();
   assert.match(JSON.stringify(second.value(await second.tool("kxm_inbox"))), new RegExp(inbound.id));

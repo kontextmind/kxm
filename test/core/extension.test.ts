@@ -11,7 +11,7 @@ import { recoveryEnvelopePath, workerStateKey } from "../../plugins/kxm/src/reco
 import { SESSION_BRIEF_SKIP_LABEL } from "../../plugins/kxm/src/session-work.ts";
 import { HUB_ENV_SCHEMA, writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
 import { workflowWebhookHeaders } from "../../plugins/kxm/src/workflow.ts";
-import { createTestMesh, waitFor } from "../helpers.ts";
+import { createTestMesh, removeTempDir, waitFor } from "../helpers.ts";
 import { isolateSessionEnvironment } from "../helpers/session-env.ts";
 
 let restoreSessionEnvironment: () => void;
@@ -1540,7 +1540,7 @@ test("Pi extension session readiness reports offline chrome and reapplies /kxm",
   const fake = fakePi();
   context.after(async () => {
     await shutdownExtension(fake);
-    rmSync(cwd, { recursive: true, force: true });
+    removeTempDir(cwd);
   });
   swapSessionEnv(context, {
     KXM_SERVER_URL: `http://127.0.0.1:${port}`,
