@@ -16891,10 +16891,17 @@ function resolveDispatchStatus(entry, detected, authenticated, issues) {
   }
   return { status: "yes", supported: true };
 }
+function windowsCmdReportsMissing(result) {
+  if (result.ok) return false;
+  const text = `${result.stdout}
+${result.stderr}`;
+  return /not recognized as an internal or external command/i.test(text) || /the system cannot find the (?:file|path) specified/i.test(text);
+}
 function tryHarnessCommand(candidate, entry, runCommand, timeoutMs) {
   const result = runCommand(candidate, entry.versionArgs, timeoutMs);
   if (result.error === "ENOENT") return void 0;
   if (result.error && result.code === null && !result.stdout && !result.stderr) return void 0;
+  if (isWindowsHarnessShim(candidate) && windowsCmdReportsMissing(result)) return void 0;
   return {
     command: candidate,
     version: firstLine(result.stdout) ?? firstLine(result.stderr)
@@ -31603,9 +31610,10 @@ function containerLexIsTruncated(body, start) {
 }
 function prefixHidesTruncatedContainer(body, openAt) {
   let seen = 0;
-  for (let i = openAt - 1; i >= 0 && seen < MAX_PREFIX_CONTAINER_OPENERS; i--) {
+  for (let i = openAt - 1; i >= 0; i--) {
     const ch = body[i];
     if (ch !== "{" && ch !== "[") continue;
+    if (seen >= MAX_PREFIX_CONTAINER_OPENERS) return true;
     seen++;
     if (containerLexIsTruncated(body, i)) return true;
   }
