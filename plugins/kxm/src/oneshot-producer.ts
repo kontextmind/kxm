@@ -69,6 +69,13 @@ function stripOneClosingFence(trimmed: string): string {
 // as the end of an outcome object.
 const MAX_OUTCOME_CLOSERS = 32;
 
+// How many `{` openers before that end we will consider, nearest last.
+const MAX_OUTCOME_OPENERS = 32;
+
+// Total bytes of candidate slices JSON.parse may see in one lookup.
+// A slice longer than the budget still left is not attempted.
+const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
+
 // Naive quote-and-brace scan of the prose before a candidate object.
 // Strings and escapes hide braces. A `"` toggles string state, and `\`
 // escapes only inside a string. Balanced means no `{` is still open outside
@@ -110,27 +117,36 @@ function prefixIsBalanced(prefix: string): boolean {
 
 // The outcome object is a JSON object that ends the trimmed reply. One
 // closing code fence may follow it. Candidates are slices from a `{` to a
-// recent `}`, nearest last. JSON.parse decides whether the slice is a plain
-// object; the quote scan above never decides string state inside the slice.
-// The slice must end the reply, its outcome must be allowed, and the prefix
-// before its `{` must be balanced. An ambiguous prefix is rejected and the
-// next older candidate is tried. Nothing left means failed: prose after the
-// object, no object, a disallowed outcome, an inner object at the end of a
-// truncated outer object, or a stray quote in the prose.
+// recent `}`, nearest last. Only the last 32 `{` openers before that end
+// are considered, and the slices actually parsed share a 1 MiB budget.
+// JSON.parse decides whether the slice is a plain object; the quote scan
+// above never decides string state inside the slice. The slice must end
+// the reply, its outcome must be allowed, and the prefix before its `{`
+// must be balanced. An ambiguous prefix is rejected and the next older
+// candidate is tried. Nothing left means failed: prose after the object,
+// no object, a disallowed outcome, an inner object at the end of a
+// truncated outer object, a stray quote in the prose, or either scan
+// bound exhausted before an accepted candidate.
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
   const body = stripOneClosingFence(trimmed);
   if (!body) return "failed";
   let seenClosers = 0;
+  let parseBytes = 0;
   for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
     if (body[closeAt] !== "}") continue;
     seenClosers++;
     const end = closeAt + 1;
     // A candidate has to end the reply. One closer can sit at that position.
     if (end !== body.length) continue;
-    for (let openAt = closeAt - 1; openAt >= 0; openAt--) {
+    let seenOpeners = 0;
+    for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
       if (body[openAt] !== "{") continue;
+      seenOpeners++;
+      const sliceLen = end - openAt;
+      if (sliceLen > MAX_OUTCOME_PARSE_BYTES - parseBytes) break;
+      parseBytes += sliceLen;
       let result: unknown;
       try {
         result = JSON.parse(body.slice(openAt, end));

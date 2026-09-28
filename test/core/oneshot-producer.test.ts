@@ -1262,6 +1262,16 @@ test("a closed prose quote before a final outcome object still settles", async (
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
+test("a repeated opener prefix settles within the outcome scan bound", async () => {
+  const chunk = '{"b":';
+  const repeats = Math.ceil((600 * 1024) / chunk.length);
+  const attack = `${chunk.repeat(repeats)}}`;
+  assert.equal(await settleOneShotText(attack, ["passed", "failed"]), "failed");
+  // The same prefix is still unbalanced, so a final-line outcome stays failed.
+  const followed = `${attack}\n{"outcome":"passed","summary":"after the bound"}`;
+  assert.equal(await settleOneShotText(followed, ["passed", "failed"]), "failed");
+});
+
 test("a megabyte unbalanced prefix ending in an outcome object settles", async () => {
   const closers = "}".repeat(1024 * 1024);
   assert.equal(
