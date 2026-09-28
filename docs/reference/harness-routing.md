@@ -131,11 +131,11 @@ This is the same vendor through Pi and OpenRouter, which the brake refuses:
 
 ```yaml
 harness: pi
-model: openrouter/x-ai/grok-4.6
+model: openrouter/x-ai/grok-4.7
 vendor: xai
 ```
 
-The selector is `openrouter/x-ai/grok-4.6` and the harness is `pi`. The Pi brake refuses it before Pi starts, because the vendor segment `x-ai` is xAI, which has a native harness. A vendor with no native harness runs in the same shape: with `model: openrouter/qwen/qwen3-coder-plus`, Pi is spawned with `--model openrouter/qwen/qwen3-coder-plus`, its read-only flags (section 3) and `-p --mode json`. Write `model` exactly as the provider names it. For OpenRouter that is the vendor slug, so `x-ai`, not `xai`.
+The selector is `openrouter/x-ai/grok-4.7` and the harness is `pi`. The Pi brake refuses it before Pi starts, because the vendor segment `x-ai` is xAI, which has a native harness. A vendor with no native harness runs in the same shape: with `model: openrouter/qwen/qwen3-coder-plus`, Pi is spawned with `--model openrouter/qwen/qwen3-coder-plus`, its read-only flags (section 3) and `-p --mode json`. Write `model` exactly as the provider names it. For OpenRouter that is the vendor slug, so `x-ai`, not `xai`.
 
 The harness and the selector have to agree. Pi refuses `provider: xai` and `openrouter/x-ai/…`. `grok` refuses `provider: openrouter`. [What the brake refuses](#what-the-brake-refuses) has the exact messages.
 
@@ -156,7 +156,9 @@ roster:
   - route: pi-qwen3-coder-plus-openrouter
     effort: medium
   - route: agy-gemini-3-8-flash-high
+    effort: medium
   - route: agy-gemini-3-8-flash-medium
+    effort: medium
 ```
 
 `grok-grok-4-7` resolves to `.kxm/models/grok-grok-4-7.yaml`: harness `grok`, model `grok-4.7`, vendor `xai`, status `admitted`, permission `edit`. `pi-qwen3-coder-plus-openrouter` is harness `pi`, model `openrouter/qwen/qwen3-coder-plus`, vendor `alibaba`. `agy-gemini-3-8-flash-high` is harness `agy`, model `gemini-3.8-flash-high`, vendor `google`. `kxm role list` prints the first route id as the primary, for example `(grok-grok-4-7)`. The previous ids (`grok-native`, `qwen-openrouter-pi`, `gemini-agy`) are aliases.
@@ -171,8 +173,8 @@ Role files are what `kxm role` and the Runtime membership check use.
 
 ```text
 admitted openrouter/qwen/qwen3-coder-plus
-admitted xai/grok-4.6
-disabled openrouter/x-ai/grok-4.6
+admitted xai/grok-4.7
+disabled openrouter/x-ai/grok-4.7
 ```
 
 The first segment of an id is the provider, and the rest is the model id. A route id does not name a harness. The first segment tells you which harness can run it. For an aggregator, the next segment names the vendor, and the Pi brake reads that too:
@@ -205,11 +207,11 @@ select a model from the refreshed inventory
 It exits with code 2. A bare OpenRouter slug is accepted, but it is not a dispatchable selector:
 
 ```bash
-kxm routes admit --model x-ai/grok-4.6 --dry-run
+kxm routes admit --model x-ai/grok-4.7 --dry-run
 ```
 
 ```text
-would admit x-ai/grok-4.6
+would admit x-ai/grok-4.7
 ```
 
 If that id were admitted, an agent would need `provider: x-ai`. Pi has no provider called `x-ai`, so the Pi auth probe would fail closed. When a route needs a provider prefix that the inventory does not carry, admit it by a Git-reviewed edit of `.kxm/routes.yaml`, after the admission decision is reviewed.
@@ -218,13 +220,13 @@ If that id were admitted, an agent would need `provider: x-ai`. Pi has no provid
 
 The same model shows up under different ids depending on the file:
 
-| Where | Id for Grok 4.6 | What that id means |
+| Where | Id for Grok 4.7 | What that id means |
 |---|---|---|
-| `.kxm/routes.yaml`, agent selector | `xai/grok-4.6` | Provider `xai`. Needs `harness: grok`. |
-| `.kxm/routes.yaml`, agent selector | `openrouter/x-ai/grok-4.6` | OpenRouter through Pi. The brake refuses it. |
-| `.kxm/models/inventory.yaml`, source `pi` | `xai/grok-4.6` | Pi's own `xai` provider. The brake refuses it. |
-| `.kxm/models/inventory.yaml`, source `openrouter` | `x-ai/grok-4.6` | The OpenRouter catalog slug. The inventory stores OpenRouter ids without an `openrouter/` prefix. |
-| `.kxm/prices.yaml` | `id: xai/grok-4.6`, `provider: xai`, alias `x-ai/grok-4.6` | A list price that applies only to provider `xai`, because price lookup filters by provider. |
+| `.kxm/routes.yaml`, agent selector | `xai/grok-4.7` | Provider `xai`. Needs `harness: grok`. |
+| `.kxm/routes.yaml`, agent selector | `openrouter/x-ai/grok-4.7` | OpenRouter through Pi. The brake refuses it. |
+| `.kxm/models/inventory.yaml`, source `pi` | `xai/grok-4.6` | Pi's own `xai` provider from the last `pi --list-models` capture. The brake refuses it. This refresh did not re-run Pi, and that capture has no `xai/grok-4.7` row. |
+| `.kxm/models/inventory.yaml`, source `openrouter` | `x-ai/grok-4.7` | The OpenRouter catalog slug. The inventory stores OpenRouter ids without an `openrouter/` prefix. |
+| `.kxm/prices.yaml` | `id: xai/grok-4.7`, `provider: xai`, alias `x-ai/grok-4.7` | A list price that applies only to provider `xai`, because price lookup filters by provider. `xai/grok-4.6` remains a separate row. |
 
 An inventory id can also mean something else in `.kxm/routes.yaml`. For example, the inventory can list `openai/gpt-5.6-sol` from the OpenRouter feed with OpenRouter prices, while in `.kxm/routes.yaml` the same string means provider `openai` through native `codex`.
 
@@ -341,12 +343,12 @@ The live one-shot producer runs every harness read-only, with a 120-second proce
 
 The Runtime does not run a step live when it has `write` access to a repository; it hands the run off with `step_unsupported`. Only Pi runs as a long-lived worker.
 
-### Grok 4.6
+### Grok 4.7
 
 | | Native `grok` | Pi + OpenRouter |
 |---|---|---|
-| Model file | `harness: grok`, `model: grok-4.6`, `vendor: xai` | `harness: pi`, `model: openrouter/x-ai/grok-4.6`, `vendor: xai` |
-| Selector | `xai/grok-4.6` | `openrouter/x-ai/grok-4.6` |
+| Model file | `harness: grok`, `model: grok-4.7`, `vendor: xai` | `harness: pi`, `model: openrouter/x-ai/grok-4.7`, `vendor: xai` |
+| Selector | `xai/grok-4.7` | `openrouter/x-ai/grok-4.7` |
 | Billing | grok.com subscription (OAuth) | OpenRouter credit |
 | Recorded `costBasis` | `unknown` | None: the brake refuses it before dispatch |
 | Mode | One-shot `grok --single`. Not a worker. | Refused as a one-shot and as a worker model |
