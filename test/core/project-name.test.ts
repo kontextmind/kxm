@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 import { defaultProjectName } from "../../plugins/kxm/src/project-name.ts";
 
@@ -57,7 +57,7 @@ test("falls back to the directory name for missing, malformed, or name-less pack
     const dir = fixture();
     try {
       if (content !== undefined) writeFileSync(join(dir, "package.json"), content);
-      assert.equal(defaultProjectName(dir, {}), join(dir).split("/").pop());
+      assert.equal(defaultProjectName(dir, {}), basename(dir));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

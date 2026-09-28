@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { removeTempDir } from "../helpers.ts";
 
 export interface IsolatedMcpEnvOptions {
   /** Hub the spawned server talks to; defaults to a port nothing listens on. */
@@ -12,20 +13,6 @@ export interface IsolatedMcpEnvOptions {
   /** Create `.kxm` in the throwaway project dir, which makes the server register at startup. */
   withKxmDir?: boolean;
   extra?: Record<string, string>;
-}
-
-function removeSpawnTree(root: string): void {
-  let last: unknown;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    try {
-      rmSync(root, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      last = error;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
-    }
-  }
-  throw last;
 }
 
 /** Launch environment for a spawned dist/mcp-server.js that never touches the developer's
@@ -67,6 +54,6 @@ export function isolatedMcpEnv(options: IsolatedMcpEnvOptions = {}): {
   return {
     env,
     cwd: projectDir,
-    cleanup: () => removeSpawnTree(root),
+    cleanup: () => removeTempDir(root),
   };
 }

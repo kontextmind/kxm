@@ -479,7 +479,7 @@ test("S3 legitimate settled gate history is excluded from recovery without false
 gates:
   test:
     kind: command
-    argv: ${JSON.stringify([process.execPath, "-e", "process.exit(0)"])}
+    argv: ${JSON.stringify([process.platform === "win32" ? "node" : process.execPath, "-e", "process.exit(0)"])}
     timeoutMs: 3600000
   artifacts:
     kind: artifacts-exist

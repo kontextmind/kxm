@@ -201,7 +201,13 @@ process.exit(count === 0 ? 1 : 0);
   }
 });
 
-test("Phase 3 Driver: default.yaml command gate uncertainty and recovery via retry to completion", async () => {
+test("Phase 3 Driver: default.yaml command gate uncertainty and recovery via retry to completion", async (t) => {
+  // A self-SIGKILL is an ordinary exit code on Windows: child_process does not
+  // report a signal, so the gate settles instead of staying uncertain.
+  if (process.platform === "win32") {
+    t.skip("process signals are not reported for Windows children; this uncertainty contract runs on Linux");
+    return;
+  }
   const env = setupDriverEnv("kxm-driver-default-uncertain-retry-");
   try {
     env.setGateKill();
@@ -253,7 +259,11 @@ test("Phase 3 Driver: default.yaml command gate uncertainty and recovery via ret
   }
 });
 
-test("Phase 3 Driver: default.yaml command gate uncertainty and terminal recovery (fail and cancel)", async () => {
+test("Phase 3 Driver: default.yaml command gate uncertainty and terminal recovery (fail and cancel)", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("process signals are not reported for Windows children; this uncertainty contract runs on Linux");
+    return;
+  }
   const env = setupDriverEnv("kxm-driver-default-terminal-recovery-");
   try {
     env.setGateKill();

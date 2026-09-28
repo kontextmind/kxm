@@ -635,7 +635,7 @@ test("workflow add writes only what the project loader accepts, at the project r
     // From a subdirectory the scaffold still lands where the loader reads it.
     const added = await kxm(["workflow", "add", "demo"], join(project, "sub"));
     assert.equal(added.code, 0, added.err);
-    assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, join(workflows, "demo.yaml"));
+    assert.equal(realpathSync.native((JSON.parse(added.out) as { filePath: string }).filePath), realpathSync.native(join(workflows, "demo.yaml")));
     assert.equal(existsSync(join(project, "sub", ".kxm")), false);
     assert.ok(loadKxmProject(project).workflows.has("demo"));
 
@@ -806,7 +806,7 @@ test("role add --pick <global-id> copies that global role into the project, with
     assert.equal(kept.code, 0, kept.err);
     const picked = await kxm(["role", "add", "--pick", "qa-lead"]);
     assert.equal(picked.code, 0, picked.err);
-    assert.equal((JSON.parse(picked.out) as { filePath: string }).filePath, join(roles, "qa-lead.yaml"));
+    assert.equal(realpathSync.native((JSON.parse(picked.out) as { filePath: string }).filePath), realpathSync.native(join(roles, "qa-lead.yaml")));
     assert.deepEqual(parseRoleFile(join(roles, "qa-lead.yaml")), parseRoleFile(join(globalRoles, "qa-lead.yaml")));
 
     // A `.yml` global, which a lookup by `<id>.yaml` misses, takes the overrides and keeps the rest.
@@ -881,7 +881,7 @@ test("role add writes a local role only at the project root, and only if the pro
     writeFileSync(join(project, ".kxm", "models", "fable-agent.yaml"), "schema: kxm.model.v2\nid: fable-agent\nharness: claude\nmodel: claude-fable-5-1\nvendor: anthropic\nstatus: admitted\npermissions:\n  - edit\n");
     const added = await kxm(["role", "add", "--pick", "writer", "--route", "fable-agent"], join(project, "sub"));
     assert.equal(added.code, 0, added.err);
-    assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, join(roles, "writer.yaml"));
+    assert.equal(realpathSync.native((JSON.parse(added.out) as { filePath: string }).filePath), realpathSync.native(join(roles, "writer.yaml")));
     assert.equal(existsSync(join(project, "sub", ".kxm")), false);
     assert.ok(loadKxmProject(project));
 
