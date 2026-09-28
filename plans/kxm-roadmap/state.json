@@ -13,14 +13,6 @@
   "history": [
     {
       "date": "2026-09-26",
-      "line": "Portal mark applied."
-    },
-    {
-      "date": "2026-09-26",
-      "line": "Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335)."
-    },
-    {
-      "date": "2026-09-26",
       "line": "First deep review: planner loop and role-authority phases added ahead of the Python proposal."
     },
     {
@@ -58,6 +50,14 @@
     {
       "date": "2026-09-28",
       "line": "P3 tool policy landed (#378, v0.7.169). Cross-host P0 bind unblocked (#348, #375, #376). MG1 is off-repo. CI pause text retired."
+    },
+    {
+      "date": "2026-09-28",
+      "line": "Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves."
+    },
+    {
+      "date": "2026-09-28",
+      "line": "kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart."
     }
   ],
   "architecture": {
@@ -99,7 +99,6 @@
       "source": "plans/plan-lane-cli.md",
       "blockers": [],
       "questions": [
-        "The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.",
         "The proof model behind kxm assign (backlog S11) is still an operator decision."
       ],
       "tasks": [
@@ -159,8 +158,8 @@
         {
           "id": "loop-land-followup",
           "title": "kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)",
-          "status": "open",
-          "evidence": "",
+          "status": "done",
+          "evidence": "test/core/pr-land.test.ts",
           "doneCriterion": "A failing verify names the failing lines and a log path; the rebase stage polls UNKNOWN to a known state and rebases when BEHIND.",
           "evidenceNeeded": "test/core/pr-land.test.ts cases for both, and one landing that hit each path.",
           "template": "bug-fix",
@@ -168,13 +167,14 @@
         },
         {
           "id": "loop-supervise",
-          "title": "kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20)",
-          "status": "open",
-          "evidence": "",
-          "doneCriterion": "The thirty-minute tick survives a closed terminal and a Claude restart, and resumes the same chat.",
-          "evidenceNeeded": "A tick logged in .kxm/logs/supervisor.log after the window that started it was closed.",
+          "title": "kxm supervise persists in-flight lanes, pull request and CI state, and backoff timers (S20)",
+          "status": "done",
+          "evidence": "test/core/supervise.test.ts",
+          "planSection": "plans/plan-lane-cli.md#6-persistent-supervisor-state",
+          "doneCriterion": "A new process loads the same in-flight lanes, last-seen pull request and CI states, and backoff timers, and a tick after the backoff resumes that lane.",
+          "evidenceNeeded": "A restart-resume test that writes the state, exits, and reads it back from another process.",
           "template": "feature",
-          "detail": "brief"
+          "detail": "scoped"
         }
       ]
     },

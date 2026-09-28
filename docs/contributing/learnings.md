@@ -99,8 +99,12 @@ entry whose fix has landed is deleted, not archived.
   mutation answers "clean status" and the REST squash merge is the path.
   `CI` is on and `CI / required` is a required check in `protect-main`, so
   a pull request is not clean until that check passes.
-- **A verify failure inside `kxm land` shows only the child's last output
-  line.** Re-run verify by hand to see the cause until backlog S19 lands.
+- **A verify failure inside `kxm land` names the exit code, the failing
+  step, and a short excerpt, and keeps the full output in
+  `.kxm/logs/land-verify-<tree>.log`.** The receipt
+  `.kxm/logs/land-verify-<tree>.json` records the same fields with
+  `ok: false`. `mergeStateStatus: UNKNOWN` is polled and refused at the
+  bound; it is not treated as ready to merge.
 
 ## Reviews
 

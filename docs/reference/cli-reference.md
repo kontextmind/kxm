@@ -160,6 +160,7 @@ Exit 2 covers an unknown command or option, a missing argument or required optio
 | Create and drive a run | [`kxm run`](#kxm-run), [`kxm runs drive`](#kxm-runs-drive), [`kxm runtime status`](#kxm-runtime-status) |
 | Work in an isolated checkout | [`kxm lane`](#kxm-lane), [`kxm run --lane`](#kxm-run) |
 | Land the current branch | [`kxm land`](#kxm-land) |
+| Resume the roadmap supervisor | [`kxm supervise`](#kxm-supervise) |
 | Delegate and accept a developer assignment | [`kxm assign`](#kxm-assign) |
 | Inspect runs | [`kxm runs list`](#kxm-runs-list), [`kxm runs status`](#kxm-runs-status), [`kxm runs receipt`](#kxm-runs-receipt), [`kxm tenant status`](#kxm-tenant-status), [`kxm workflow list`](#kxm-workflow-list) |
 | Message peers | [`kxm peer list`](#kxm-peer-list), [`kxm peer send`](#kxm-peer-send), [`kxm peer await`](#kxm-peer-await), [`kxm peer fanout`](#kxm-peer-fanout) |
@@ -1454,19 +1455,41 @@ Outside a KXM project the command refuses `project_required` (exit 1). Unknown a
 
 | Stage | What it does |
 |---|---|
-| `verify` | Refuses `land_dirty_tree` unless `git status --porcelain` is empty. Skips when `.kxm/logs/land-verify-<tree>.json` for `HEAD^{tree}` is younger than 30 minutes. Otherwise runs `npm run verify` and writes that receipt. |
+| `verify` | Refuses `land_dirty_tree` unless `git status --porcelain` is empty. Skips when `.kxm/logs/land-verify-<tree>.json` for `HEAD^{tree}` is younger than 30 minutes and records `ok: true`. Otherwise runs `npm run verify` and writes that receipt. A failure writes the full output to `.kxm/logs/land-verify-<tree>.log` and a receipt with `ok: false`, the exit code, the failing step, and a short excerpt. The stage line names that exit code, the failing lines, and the log path. |
 | `docs` | Runs `plans/kxm-roadmap/update-dashboard.mjs` when that file exists. Commits changes under `docs/roadmap/`, `plans/kxm-roadmap/`, or `docs/architecture/` as `docs(roadmap): regenerate after verify`. Any other path, including `state.json`, is `land_docs_failed`. When the generator is absent the stage passes with `docs: skipped (generator absent)`. |
 | `push` | `git push -u origin <branch>`. After a rebase in this run, the push uses `--force-with-lease`. |
 | `pr` | Reuses the branch's open pull request, or creates one with `gh pr create --body-file`. The title is `--title` when that option is set; otherwise it is the subject of the first commit (`git log --reverse --format=%s origin/main..HEAD`). `--dry-run` prints that title. |
-| `rebase` | When `mergeStateStatus` is `BEHIND` or `DIRTY`: fetch, rebase onto `origin/main`, and resolve only three conflicts (take `plugins/kxm/dist` from main and rebuild; union CHANGELOG Unreleased bullets, ours first; union the tracker "Landed in this tree" list, newest first). Runs `docs` again when the tree changed, re-verifies unless `git merge-tree --write-tree origin/main HEAD` was clean, and pushes with the lease. Five rounds, then `land_conflict_manual`. |
+| `rebase` | Polls `mergeStateStatus` while it is `UNKNOWN`, with bounded backoff (`KXM_LAND_MERGE_STATE_POLL_MS`, default 1 second, doubling up to 30 seconds, for at most `KXM_LAND_MERGE_STATE_WAIT_MS`, default 2 minutes). `UNKNOWN` at that bound is `land_merge_state_unknown` and is never treated as ready. `CLEAN` and `HAS_HOOKS` proceed. `BEHIND` and `DIRTY` fetch and rebase onto `origin/main`, resolving only three conflicts (take `plugins/kxm/dist` from main and rebuild; union CHANGELOG Unreleased bullets, ours first; union the tracker "Landed in this tree" list, newest first). Any other known state, including `BLOCKED`, is `land_merge_not_ready`. Runs `docs` again when the tree changed, re-verifies unless `git merge-tree --write-tree origin/main HEAD` was clean, and pushes with the lease. Five rounds, then `land_conflict_manual`. |
 | `unblock` | Reads `statusCheckRollup` and `reviewDecision`. Reruns one failed check with `gh run rerun --failed`. A second failure or `REVIEW_REQUIRED` is `land_blocked`. |
-| `merge` | Enables auto-merge with `enablePullRequestAutoMerge` and `mergeMethod: SQUASH`. When the response contains "clean status", squash-merges with `PUT /repos/{owner}/{repo}/pulls/{n}/merge` and commit title `<title> (#n)`. Polls `gh pr view --json state` every 30 seconds for up to 20 minutes. |
+| `merge` | Refuses `land_merge_state_unknown` when `mergeStateStatus` stays `UNKNOWN`, and `land_merge_not_ready` for any known state other than `CLEAN` or `HAS_HOOKS`. Otherwise enables auto-merge with `enablePullRequestAutoMerge` and `mergeMethod: SQUASH`. When the response contains "clean status", squash-merges with `PUT /repos/{owner}/{repo}/pulls/{n}/merge` and commit title `<title> (#n)`. Polls `gh pr view --json state` every 30 seconds for up to 20 minutes. |
 | `release` | Records the newest `v*` tag before the merge, waits for the Auto-Release run whose title contains the pull request title, requires a newer tag from `git ls-remote --tags origin`, then waits for the first `release.yml` run whose `createdAt` is after that Auto-Release run, with no title filter. Both run ids are written to `.kxm/logs/land-release-context.json` and printed in the stage detail (`PUBLISHED <version> auto-release <id> release <id>`). Each wait prints one JSON line every 2 minutes (`waiting auto-release.yml 4m`). The npm poll is `npm view @kontextmind/kxm@<version> version` every 30 seconds for 10 minutes. |
 | `milestone` | Compares `plans/kxm-roadmap/state.json` from before and after `docs`. When a phase goes from an open task to all tasks `done`, or the pull request body contains a `Milestone:` line, prints `deep_review_required: true` and exits 0. The review is the `/reanalyze-roadmap` skill, not this command. An absent state file passes with skipped. |
 
-Refusals (exit 1): `project_required`, `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`, `land_push_rejected`, `land_pr_body_missing`, `land_pr_title_missing`, `land_conflict_manual`, `land_blocked`, `land_merge_failed`, `land_release_failed`, `land_publish_timeout`, `land_milestone_failed`.
+Refusals (exit 1): `project_required`, `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`, `land_push_rejected`, `land_pr_body_missing`, `land_pr_title_missing`, `land_conflict_manual`, `land_merge_state_unknown`, `land_merge_not_ready`, `land_blocked`, `land_merge_failed`, `land_release_failed`, `land_publish_timeout`, `land_milestone_failed`.
 
 `land_pr_title_missing`: the `pr` stage was not given `--title`, and the first commit subject on `origin/main..HEAD` is empty.
+
+`land_verify_failed`: `npm run verify` exited non-zero. The stage line and `.kxm/logs/land-verify-<tree>.json` include `exitCode`, the failing step when the output names one, a short excerpt of the failing lines, and `log` (the full output).
+
+`land_merge_state_unknown`: `mergeStateStatus` stayed `UNKNOWN` until the wait bound. The stage does not pass and does not merge.
+
+`land_merge_not_ready`: GitHub reported a known merge state that is not `CLEAN` or `HAS_HOOKS`, and the rebase stage is not going to rebase it (`BLOCKED`, and on the merge stage also `BEHIND` or `DIRTY`). The detail names the status.
+
+## `kxm supervise`
+
+Persist the roadmap supervisor's memory in `.kxm/state/supervisor.json` (`kxm.supervisor.v1`, mode `0600`). The file holds in-flight lanes, the last-seen pull request number and merge state, the last-seen CI status and conclusion, and backoff timers. A missing file is empty. A malformed file or any other schema is refused and left unchanged. A later process reads the same file and continues.
+
+```text
+kxm supervise status
+kxm supervise record --lane <unit> [--pr <n> --merge-state <status>] [--ci-status <status> --ci-conclusion <conclusion>] [--backoff-ms <n>] [--settled]
+kxm supervise tick
+```
+
+`record` updates one lane and keeps fields that this call does not set. `--settled` marks the lane not in flight. `--backoff-ms 0` clears the timer. `tick` clears backoff timers whose deadline has passed, leaves the lane in flight with its last-seen pull request and CI state, and appends one line to `.kxm/logs/supervisor.log`. A timer still in the future is unchanged. `--dry-run` prints the writes and does not change the file or the log. `KXM_SUPERVISE_NOW` overrides the clock with an ISO-8601 UTC timestamp.
+
+Outside a KXM project the command refuses `project_required` (exit 1).
+
+Refusals (exit 1): `project_required`, `supervisor_unreadable`, `supervisor_schema_unsupported`, `supervisor_clock_invalid`, `lane_unit_invalid`, `supervisor_pr_invalid`, `supervisor_ci_invalid`, `supervisor_backoff_invalid`.
 
 ## `kxm assign`
 

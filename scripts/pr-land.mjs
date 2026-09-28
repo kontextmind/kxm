@@ -26,6 +26,12 @@ const STAGES = Object.freeze([
 const VERIFY_FRESH_MS = 30 * 60 * 1000;
 const REBASE_ROUNDS = 5;
 const POLL_MS = positiveInt(process.env.KXM_LAND_POLL_MS, 30_000);
+const MERGE_STATE_WAIT_MS = positiveInt(process.env.KXM_LAND_MERGE_STATE_WAIT_MS, 120_000);
+const MERGE_STATE_POLL_MS = positiveInt(process.env.KXM_LAND_MERGE_STATE_POLL_MS, 1_000);
+const MERGE_STATE_POLL_CAP_MS = 30_000;
+const MERGE_READY = new Set(["CLEAN", "HAS_HOOKS", "ABSENT", ""]);
+const MERGE_REBASE = new Set(["BEHIND", "DIRTY"]);
+const VERIFY_FAIL_LINE = /✖|not ok\b|error TS\d*|error MD\d*|out of date|npm ERR!|ELIFECYCLE|AssertionError|# fail\b/i;
 const MERGE_WAIT_MS = 20 * 60 * 1000;
 const RELEASE_WAIT_MS = 20 * 60 * 1000;
 const RELEASE_PROGRESS_MS = 2 * 60 * 1000;
@@ -76,11 +82,15 @@ function run(command, args, timeout = 120_000) {
   };
 }
 
-function safeDetail(text) {
+function redact(text) {
   return String(text ?? "")
     .replace(/ghp_[A-Za-z0-9]+/g, "[redacted]")
     .replace(/github_pat_[A-Za-z0-9_]+/g, "[redacted]")
-    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
+}
+
+function safeDetail(text) {
+  return redact(text)
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 500);
@@ -95,8 +105,8 @@ function pass(stage, extra = {}) {
   return 0;
 }
 
-function refuse(stage, code, detail) {
-  const payload = { stage, ok: false, code };
+function refuse(stage, code, detail, extra = {}) {
+  const payload = { stage, ok: false, code, ...extra };
   if (detail) payload.detail = safeDetail(detail);
   emit(payload);
   return 1;
@@ -184,6 +194,30 @@ function writeLog(name, value) {
   return path;
 }
 
+function writeTextLog(name, text) {
+  const path = join(logsDir(), name);
+  const body = text.endsWith("\n") ? text : `${text}\n`;
+  writeFileSync(path, body, { encoding: "utf8", mode: 0o600 });
+  return path;
+}
+
+function verifyFailureReport(stdout, stderr) {
+  const lines = `${stdout}\n${stderr}`.split(/\r?\n/);
+  const failing = [];
+  let step = "";
+  for (const line of lines) {
+    const text = line.trim();
+    if (!text) continue;
+    if (/^>\s+\S/.test(text) && !/^npm ERR!/i.test(text)) step = text.slice(0, 180);
+    if (VERIFY_FAIL_LINE.test(text)) failing.push(text.slice(0, 180));
+  }
+  const picked = (failing.length > 0 ? failing : lines.map((line) => line.trim()).filter(Boolean).slice(-4)).slice(-8);
+  return {
+    step,
+    excerpt: redact(picked.join(" | ")).replace(/\s+/g, " ").trim().slice(0, 700),
+  };
+}
+
 function parseArgs(argv) {
   const options = { json: false, dryRun: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -262,7 +296,34 @@ function verifyStage() {
   }
   const verified = run("npm", ["run", "verify"], 3_600_000);
   if (verified.status !== 0) {
-    return refuse("verify", "land_verify_failed", verified.stderr || verified.stdout);
+    const logName = `land-verify-${tree}.log`;
+    const logRel = `.kxm/logs/${logName}`;
+    const report = verifyFailureReport(verified.stdout, verified.stderr);
+    const excerpt = report.excerpt || "(no output)";
+    writeTextLog(logName, redact(`exit ${verified.status}\n--- stdout ---\n${verified.stdout}\n--- stderr ---\n${verified.stderr}\n`));
+    const receipt = {
+      stage: "verify",
+      ok: false,
+      tree,
+      exitCode: verified.status,
+      excerpt,
+      log: logRel,
+      finishedAt: new Date().toISOString(),
+    };
+    if (report.step) receipt.step = report.step;
+    writeLog(receiptName, receipt);
+    const step = report.step ? `; step ${report.step}` : "";
+    return refuse(
+      "verify",
+      "land_verify_failed",
+      `exit ${verified.status}; log ${logRel}${step}; ${excerpt}`,
+      {
+        exitCode: verified.status,
+        log: logRel,
+        excerpt,
+        ...(report.step ? { step: report.step } : {}),
+      },
+    );
   }
   writeLog(receiptName, { stage: "verify", ok: true, tree, finishedAt: new Date().toISOString() });
   return pass("verify", { detail: "verify: passed", tree });
@@ -572,7 +633,42 @@ function mergeState() {
   prNumber = String(found.pr.number);
   const viewed = ghJson(["pr", "view", prNumber, "--json", "mergeStateStatus,title,number"]);
   if (!viewed.ok) return { ok: false, detail: viewed.result.stderr || viewed.result.stdout };
-  return { ok: true, status: String(viewed.value.mergeStateStatus ?? ""), title: viewed.value.title };
+  return { ok: true, status: String(viewed.value.mergeStateStatus ?? "").trim().toUpperCase(), title: viewed.value.title };
+}
+
+function classifyMergeStatus(status) {
+  if (MERGE_READY.has(status)) return "ready";
+  if (MERGE_REBASE.has(status)) return "rebase";
+  return "block";
+}
+
+/** UNKNOWN is not mergeable. Poll with bounded backoff until GitHub names a state. */
+function awaitKnownMergeState(stage, failureCode) {
+  const deadline = Date.now() + MERGE_STATE_WAIT_MS;
+  let delay = Math.min(Math.max(MERGE_STATE_POLL_MS, 1), MERGE_STATE_POLL_CAP_MS);
+  let state = mergeState();
+  while (state.ok && state.status === "UNKNOWN") {
+    if (Date.now() >= deadline) {
+      return { ok: false, code: "land_merge_state_unknown", detail: "mergeStateStatus stayed UNKNOWN" };
+    }
+    emit({ stage, ok: true, detail: "mergeStateStatus UNKNOWN; polling" });
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return { ok: false, code: "land_merge_state_unknown", detail: "mergeStateStatus stayed UNKNOWN" };
+    }
+    sleep(Math.min(delay, remaining));
+    delay = Math.min(delay * 2, MERGE_STATE_POLL_CAP_MS);
+    state = mergeState();
+  }
+  if (!state.ok) return { ok: false, code: failureCode, detail: state.detail || "merge state unavailable" };
+  return { ok: true, state };
+}
+
+function readMergeStatus(stage, failureCode) {
+  const resolved = awaitKnownMergeState(stage, failureCode);
+  if (!resolved.ok) return resolved;
+  const status = resolved.state.status;
+  return { ok: true, status, action: classifyMergeStatus(status) };
 }
 
 function rebaseStage() {
@@ -583,17 +679,16 @@ function rebaseStage() {
       "git rebase origin/main",
       "git merge-tree --write-tree origin/main HEAD",
       "git push --force-with-lease -u origin <branch>",
-    ], `at most ${REBASE_ROUNDS} rounds`);
+    ], `at most ${REBASE_ROUNDS} rounds; UNKNOWN is polled and never passed`);
   }
   const branch = branchName();
   if (branch === "main") return refuse("rebase", "land_conflict_manual", "refusing to rebase branch main");
   const manual = [];
   for (let round = 1; round <= REBASE_ROUNDS; round += 1) {
-    const state = mergeState();
-    if (!state.ok) return refuse("rebase", "land_conflict_manual", state.detail);
-    if (state.status !== "BEHIND" && state.status !== "DIRTY") {
-      return pass("rebase", { detail: `mergeStateStatus ${state.status || "absent"}` });
-    }
+    const read = readMergeStatus("rebase", "land_conflict_manual");
+    if (!read.ok) return refuse("rebase", read.code, read.detail);
+    if (read.action === "block") return refuse("rebase", "land_merge_not_ready", `mergeStateStatus ${read.status}`);
+    if (read.action === "ready") return pass("rebase", { detail: `mergeStateStatus ${read.status || "absent"}` });
     const before = treeHash();
     const clean = run("git", ["merge-tree", "--write-tree", "origin/main", "HEAD"]).status === 0;
     const fetched = run("git", ["fetch", "origin"]);
@@ -623,12 +718,12 @@ function rebaseStage() {
     const pushCode = pushStage();
     if (pushCode !== 0) return pushCode;
   }
-  const state = mergeState();
-  if (state.ok && state.status !== "BEHIND" && state.status !== "DIRTY") {
-    return pass("rebase", { detail: `mergeStateStatus ${state.status}` });
-  }
+  const read = readMergeStatus("rebase", "land_conflict_manual");
+  if (!read.ok) return refuse("rebase", read.code, read.detail);
+  if (read.action === "ready") return pass("rebase", { detail: `mergeStateStatus ${read.status || "absent"}` });
+  if (read.action === "block") return refuse("rebase", "land_merge_not_ready", `mergeStateStatus ${read.status}`);
   const paths = [...new Set(manual)];
-  const detail = paths.length > 0 ? paths.join(", ") : "still BEHIND or DIRTY after 5 rounds";
+  const detail = paths.length > 0 ? paths.join(", ") : `still ${read.status} after ${REBASE_ROUNDS} rounds`;
   return refuse("rebase", "land_conflict_manual", detail);
 }
 
@@ -764,6 +859,9 @@ function mergeStage() {
   const found = ensurePr();
   if (!found.ok || !found.pr?.number) return refuse("merge", "land_merge_failed", found.detail || "no open pull request");
   prNumber = String(found.pr.number);
+  const read = readMergeStatus("merge", "land_merge_failed");
+  if (!read.ok) return refuse("merge", read.code, read.detail);
+  if (read.action !== "ready") return refuse("merge", "land_merge_not_ready", `mergeStateStatus ${read.status}`);
   const title = String(found.pr.title ?? branchName());
   const nodeId = String(found.pr.id ?? "");
   const tags = newestTag();

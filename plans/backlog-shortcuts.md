@@ -246,8 +246,8 @@ a governance or proof gap, **medium** means a defect users will hit,
   `.kxm/logs/land-verify-<treehash>.log`, set the detail to the failing
   lines (`✖`, `not ok`, `error TS`, `error MD`, `out of date`, `npm ERR`)
   plus the log path, and say so in the reference doc.
-- **Planned where:** add to the next `kxm land` follow-up; not in the
-  current one.
+- **Landed:** the stage line and the receipt name the exit code, the failing
+  step, and a short excerpt, and the full output is in that log.
 
 ### S20. The roadmap supervisor lives in one chat session's memory (medium)
 
@@ -270,7 +270,11 @@ a governance or proof gap, **medium** means a defect users will hit,
   keep the self-renewing in-session schedule, and add the LaunchAgent
   heartbeat by hand before the verb exists.
 - **Planned where:** a lane-cli follow-up slice; design in
-  `plans/plan-lane-cli.md` section 5 when it is written.
+  `plans/plan-lane-cli.md` section 6.
+- **Landed:** `kxm supervise` persists in-flight lanes, last-seen pull
+  request and CI state, and backoff timers in `.kxm/state/supervisor.json`
+  and resumes them from a new process. A Herdr session and a launchd
+  heartbeat are not this command.
 
 ### S21. `repo-work-delivery` skill has no YAML frontmatter (low)
 
@@ -296,7 +300,9 @@ a governance or proof gap, **medium** means a defect users will hit,
 - **Proper fix:** poll `mergeStateStatus` until it leaves `UNKNOWN` (bounded,
   with a progress line), then rebase when `BEHIND`, and refuse
   `land_merge_state_unknown` at the bound. Evidence: #334 on 2026-09-26.
-- **Planned where:** next `kxm land` follow-up, with S19.
+- **Landed:** `UNKNOWN` is polled with bounded backoff and refused at the
+  bound. `CLEAN` and `HAS_HOOKS` proceed. `BEHIND` and `DIRTY` still rebase.
+  Any other known state is `land_merge_not_ready`. Merge uses the same gate.
 
 ### S23. The roadmap generator leaves stale phase pages behind (low)
 

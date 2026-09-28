@@ -88,7 +88,7 @@ Evidence needed: The run-events store for this project with the attempt rows for
 
 ### kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)
 
-`loop-land-followup`. Status: open. Detail: scoped.
+`loop-land-followup`. Status: done. Detail: scoped.
 
 Template: `bug-fix`.
 
@@ -96,11 +96,21 @@ Done criterion: A failing verify names the failing lines and a log path; the reb
 
 Evidence needed: test/core/pr-land.test.ts cases for both, and one landing that hit each path.
 
-### kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20)
+Evidence: `test/core/pr-land.test.ts`.
 
-Done criterion: The thirty-minute tick survives a closed terminal and a Claude restart, and resumes the same chat.
+### kxm supervise persists in-flight lanes, pull request and CI state, and backoff timers (S20)
 
-Evidence needed: A tick logged in .kxm/logs/supervisor.log after the window that started it was closed.
+`loop-supervise`. Status: done. Detail: scoped.
+
+Template: `feature`.
+
+Done criterion: A new process loads the same in-flight lanes, last-seen pull request and CI states, and backoff timers, and a tick after the backoff resumes that lane.
+
+Evidence needed: A restart-resume test that writes the state, exits, and reads it back from another process.
+
+Plan section: plans/plan-lane-cli.md#6-persistent-supervisor-state.
+
+Evidence: `test/core/supervise.test.ts`.
 
 ## Blockers
 
@@ -108,7 +118,6 @@ None.
 
 ## Questions
 
-- The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
 - The proof model behind kxm assign (backlog S11) is still an operator decision.
 
 [Dashboard](../dashboard.md)

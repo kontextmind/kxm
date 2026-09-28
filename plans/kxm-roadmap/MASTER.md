@@ -20,8 +20,8 @@ The kxm verbs that let the planner dispatch a writer into a worktree lane and la
 - `loop-docs` Tailnet docs site, roadmap generator, and kxm docs build and serve. Evidence: `plans/kxm-roadmap/update-dashboard.mjs`.
 - `loop-timeouts` Configurable one-shot step timeout, cancel recovery, and the three one-step workflows. Evidence: `test/core/engine.test.ts`.
 - `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
-- `loop-land-followup` kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22).
-- `loop-supervise` kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20).
+- `loop-land-followup` kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22). Evidence: `test/core/pr-land.test.ts`.
+- `loop-supervise` kxm supervise persists in-flight lanes, pull request and CI state, and backoff timers (S20). Evidence: `test/core/supervise.test.ts`.
 
 ### Blockers
 
@@ -29,7 +29,6 @@ None.
 
 ### Questions
 
-- The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
 - The proof model behind kxm assign (backlog S11) is still an operator decision.
 
 ## Role authority from the v2 policy draft
@@ -286,8 +285,6 @@ Tracker items that are not already tasks on the phases above.
 
 ## History
 
-- 2026-09-26: Portal mark applied.
-- 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-26: Lanes register under their project and the test suite is bounded (#339).
@@ -298,3 +295,5 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-27: docs/operations.md indexes the six state roots and the cross-box peer attach recipe.
 - 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the operator's primary worktree; hub cloud binding inventoried.
 - 2026-09-28: P3 tool policy landed (#378, v0.7.169). Cross-host P0 bind unblocked (#348, #375, #376). MG1 is off-repo. CI pause text retired.
+- 2026-09-28: Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves.
+- 2026-09-28: kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart.
