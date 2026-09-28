@@ -7,24 +7,33 @@
 // sequentially, and running them in one process pool stretched the rest of
 // the suite to 268s. engine.test.ts is split by test name across two jobs.
 // permission and runtime run one file at a time in a serial job so they do
-// not steal cores from each other. Every other unit file runs in a light
-// job at concurrency 4.
+// not steal cores from each other.
+//
+// package-install.test.ts is serial as well. On the Windows light lane for
+// PRs #361, #362, and #363 it took 171s (67s on Linux) and was the file that
+// finished immediately before that lane stopped reporting tests. The job
+// then sat until the 20-minute cancel. npm pack/install stays off the light
+// pool. The other light files are round-robin split into two shards so a
+// Windows job is not one 120-file process.
 //
 // Dynamic `test(\`...\${...}\`)` names stay together as one pattern so a
 // loop is not dropped. Run via `npm run test:ci-shard` so npm_execpath is
-// set for the packed-install test: `engine <index> <total>`, `serial`, or
-// `light`.
+// set for the packed-install test: `engine <index> <total>`, `serial`,
+// `light`, or `light-<index>` (two shards).
 
 import { spawn, spawnSync } from "node:child_process";
 import { globSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const SHARD_TOTAL = 2;
+export const LIGHT_SHARD_TOTAL = 2;
 export const ENGINE_FILE = "test/core/engine.test.ts";
-// Solo Node 24 timings: permission 74s, runtime 53s. One file at a time.
+// Solo Node 24 timings: permission 74s, runtime 53s. package-install is 171s
+// on Windows CI and 67s on Linux. One file at a time.
 export const SERIAL_FILES = [
   "test/core/permission.test.ts",
   "test/core/runtime.test.ts",
+  "test/core/package-install.test.ts",
 ];
 const LIGHT_CONCURRENCY = 4;
 
@@ -125,6 +134,15 @@ export function planLight(root) {
   return light;
 }
 
+export function planLightShard(root, index, total = LIGHT_SHARD_TOTAL) {
+  if (!Number.isInteger(index) || !Number.isInteger(total) || index < 1 || index > total) {
+    throw new Error(`light shard ${index}/${total} is outside 1..${total}`);
+  }
+  const shard = planLight(root).filter((_, fileIndex) => fileIndex % total === index - 1);
+  if (shard.length === 0) throw new Error(`light shard ${index}/${total} assigned no unit files`);
+  return shard;
+}
+
 export function coverageOfShards(root, total = SHARD_TOTAL) {
   const heavy = new Map();
   for (let index = 1; index <= total; index += 1) {
@@ -138,7 +156,15 @@ export function coverageOfShards(root, total = SHARD_TOTAL) {
 
 function runNode(args, label, children) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, args, { env: process.env });
+    const child = spawn(process.execPath, args, {
+      env: {
+        ...process.env,
+        // Git Credential Manager on windows-latest can wait on a prompt
+        // until the job is cancelled. Refuse that wait for every lane.
+        GIT_TERMINAL_PROMPT: process.env.GIT_TERMINAL_PROMPT || "0",
+        GCM_INTERACTIVE: process.env.GCM_INTERACTIVE || "Never",
+      },
+    });
     children.add(child);
     let stdout = "";
     let stderr = "";
@@ -220,10 +246,14 @@ async function main() {
       (children) => runNode(testArgs(1, files), "serial", children),
     ], 1));
   }
-  if (mode === "light") {
-    const files = planLight(root);
+  const lightShard = /^light-(\d+)$/.exec(mode);
+  if (mode === "light" || lightShard) {
+    const files = lightShard
+      ? planLightShard(root, Number(lightShard[1]), LIGHT_SHARD_TOTAL)
+      : planLight(root);
+    const label = lightShard ? mode : "light";
     process.exit(await runPool([
-      (children) => runNode(testArgs(LIGHT_CONCURRENCY, files), "light", children),
+      (children) => runNode(testArgs(LIGHT_CONCURRENCY, files), label, children),
     ], 1));
   }
   if (mode === "engine") {
@@ -234,7 +264,7 @@ async function main() {
       (children) => runNode(testArgs(1, [plan.file], plan.patterns), "engine", children),
     ], 1));
   }
-  process.stderr.write("usage: ci-unit-shard.mjs <serial|light|engine> [index total]\n");
+  process.stderr.write("usage: ci-unit-shard.mjs <serial|light|light-<index>|engine> [index total]\n");
   process.exit(2);
 }
 
