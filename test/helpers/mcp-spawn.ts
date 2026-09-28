@@ -95,6 +95,9 @@ export function isolatedMcpEnv(options: IsolatedMcpEnvOptions = {}): {
       // before the test's own stop hook. Stop tracked children here so the
       // directory is not removed while a live process still uses it as cwd.
       await Promise.all(children.splice(0).map((child) => stopMcpChild(child)));
+      // A lock that outlasts the child is abandoned after about three seconds.
+      // The old 20-by-250ms backoff still ended in EPERM and cost about a
+      // minute per directory on windows-latest.
       removeTempDir(root);
     },
   };
