@@ -6,20 +6,6 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
-- **An opted-in role continues a failed attempt on the next admitted route.**
-  `policy.fallback.onError` lists `rate_limit`, `transport`,
-  `provider_unavailable`, and `context_overflow`. An empty or absent list is
-  unchanged: the attempt fails on the first route. The walk is bounded by
-  `maxSwitches` (default 1), skips a critic-vendor collision when the role
-  requires vendor independence, and records `routing.route_switched` plus a
-  `route_switch` log line. A bounded redacted transcript is appended to the
-  next prompt. `revert: never` keeps the successful route for later steps in
-  the same run. `kxm routing report` and `kxm improve report` show the switch.
-  Cancellation, policy refusal, authentication, an unhosted model, a gate
-  failure, tool policy, and admission errors do not walk. See
-  [role fallback](docs/reference/config-reference.md#kxmrolesroleyaml-kxmrolev2)
-  and [mid-attempt fallback](docs/reference/harness-routing.md#mid-attempt-fallback).
-
 - **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**
   The bound is the step `timeoutMs`, or the project `limits.agentStepTimeoutMs`
   when the step omits it (minimum 60 seconds, default one hour). A wider step
@@ -154,38 +140,21 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 - **Playwright uses Obscura by default.** `resolveBrowserCdpEndpoint()` returns `OBSCURA_CDP_URL` or `http://127.0.0.1:${OBSCURA_PORT:-9222}`. `KXM_BROWSER=steel` still returns the Steel session CDP URL. `node scripts/obscura.mjs` downloads pinned Obscura v0.2.3 and serves it with `--allow-private-network`. `npm run e2e` runs the Playwright smoke test in `test/e2e/` over CDP and does not run `playwright install`. Steel remains the path for human takeover, MFA, and the live session viewer. See [ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md) and [How do I connect Playwright to Obscura?](docs/kb/how-to-connect-playwright-to-obscura.md).
 
+- **An opted-in role continues a failed attempt on the next admitted route.**
+  `policy.fallback.onError` lists `rate_limit`, `transport`,
+  `provider_unavailable`, and `context_overflow`. An empty or absent list is
+  unchanged: the attempt fails on the first route. The walk is bounded by
+  `maxSwitches` (default 1), skips a critic-vendor collision when the role
+  requires vendor independence, and records `routing.route_switched` plus a
+  `route_switch` log line. A bounded redacted transcript is appended to the
+  next prompt. `revert: never` keeps the successful route for later steps in
+  the same run. `kxm routing report` and `kxm improve report` show the switch.
+  Cancellation, policy refusal, authentication, an unhosted model, a gate
+  failure, tool policy, and admission errors do not walk. See
+  [role fallback](docs/reference/config-reference.md#kxmrolesroleyaml-kxmrolev2)
+  and [mid-attempt fallback](docs/reference/harness-routing.md#mid-attempt-fallback).
+
 ### Changed
-
-- **Pull-request CI runs the unit suite on Linux Node 24, and `CI / required` is the aggregate check.**
-  Docs and plan markdown skip the code jobs. `engine.test.ts` is split by
-  test name. `permission.test.ts` and `runtime.test.ts` run one file at a
-  time, and every other unit file runs in one light lane. Pushes to `main`
-  still run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.
-  A pull request that touches path, process, shell, spawn, package, lockfile,
-  or workflow files also runs the unit lanes on Windows. Playwright stays on
-  Obscura. See [CI and release](docs/contributing/ci-and-release.md).
-
-- **Docs match the 2026-09-27 Steel and machine-account infrastructure.**
-  Steel (`steel.kontextmind.com`, alias `steel.theneuro.me`) is reached only
-  through Caddy on `kxmd-proxy` (VM 230) and Authentik forward auth. Direct
-  LAN, tailnet, and host-forward access is blocked. Sessions return
-  `websocketUrl` `wss://steel.kontextmind.com/` (previously
-  `ws://steel-browser/`). The CDP path is `/v1/devtools` with an
-  `Authorization` header. Allowed groups are `steel-users`, `kxmd-users`,
-  `kxmd-admins`, and `kxmd-owners`. `STEEL_API_URL` defaults to
-  `https://steel.kontextmind.com`. `STEEL_API_KEY` is deprecated and is not
-  enforced by Steel or Caddy. Migrate to `STEEL_AUTH_HEADER`, then
-  `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`; those
-  override the key. The `svc-steel` credential is 1Password vault
-  `kontextmind`, item `Steel (svc-steel)`, field `basic_auth`, read with
-  `op read` and never written to disk. Steel requires `kxm` 0.7.135 or
-  newer. Playwright stays on Obscura ([ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md)).
-  The Proxmox boot order and VM names are in
-  [Deploy KXM](docs/operations/deploy.md#boot-the-kxmd-proxmox-host).
-  Machine accounts follow
-  [ADR-0006](docs/adr/ADR-0006-machine-account-names.md). The DOKS deployment
-  record is superseded by
-  [ADR-0007](docs/adr/ADR-0007-steel-caddy-authentik.md).
 
 - **Workforce ids use one convention, and old ids still resolve.**
   Role ids stay `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`.
@@ -518,6 +487,49 @@ All notable user-facing changes are documented here. The project follows [Semant
   into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
   headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
   those variables are set. A 302 to the identity provider fails closed and does
+  not follow the login redirect. `STEEL_API_KEY` still sends the legacy
+  `x-steel-api-key` header and `apiKey` query parameter for the temporary proxy
+  shim, and warns once. See
+  [Browser automation](docs/guides/browser-automation.md).
+
+- **Pull-request CI runs the unit suite on Linux Node 24, and `CI / required` is the aggregate check.**
+  Docs and plan markdown skip the code jobs. `engine.test.ts` is split by
+  test name. `permission.test.ts` and `runtime.test.ts` run one file at a
+  time, and every other unit file runs in one light lane. Pushes to `main`
+  still run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.
+  A pull request that touches path, process, shell, spawn, package, lockfile,
+  or workflow files also runs the unit lanes on Windows. Playwright stays on
+  Obscura. See [CI and release](docs/contributing/ci-and-release.md).
+
+- **Docs match the 2026-09-27 Steel and machine-account infrastructure.**
+  Steel (`steel.kontextmind.com`, alias `steel.theneuro.me`) is reached only
+  through Caddy on `kxmd-proxy` (VM 230) and Authentik forward auth. Direct
+  LAN, tailnet, and host-forward access is blocked. Sessions return
+  `websocketUrl` `wss://steel.kontextmind.com/` (previously
+  `ws://steel-browser/`). The CDP path is `/v1/devtools` with an
+  `Authorization` header. Allowed groups are `steel-users`, `kxmd-users`,
+  `kxmd-admins`, and `kxmd-owners`. `STEEL_API_URL` defaults to
+  `https://steel.kontextmind.com`. `STEEL_API_KEY` is deprecated and is not
+  enforced by Steel or Caddy. Migrate to `STEEL_AUTH_HEADER`, then
+  `STEEL_AUTH_BASIC`, then `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`; those
+  override the key. The `svc-steel` credential is 1Password vault
+  `kontextmind`, item `Steel (svc-steel)`, field `basic_auth`, read with
+  `op read` and never written to disk. Steel requires `kxm` 0.7.135 or
+  newer. Playwright stays on Obscura ([ADR-0005](docs/adr/ADR-0005-obscura-default-playwright.md)).
+  The Proxmox boot order and VM names are in
+  [Deploy KXM](docs/operations/deploy.md#boot-the-kxmd-proxmox-host).
+  Machine accounts follow
+  [ADR-0006](docs/adr/ADR-0006-machine-account-names.md). The DOKS deployment
+  record is superseded by
+  [ADR-0007](docs/adr/ADR-0007-steel-caddy-authentik.md).
+
+- **Steel clients authenticate to Authentik with `Authorization: Basic`.**
+  `STEEL_AUTH_BASIC`, or `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN`, set that
+  header on Steel HTTP requests and on the CDP options from `formatCDPConnect()`.
+  `KXM_BROWSER=steel` passes those headers through `connectBrowserOverCdp()`
+  into `chromium.connectOverCDP`. Obscura stays the default and sends no Steel
+  headers. `STEEL_AUTH_HEADER` overrides the value. The CDP URL omits the credential when
+  those variables are set. A 302 to the identity provider fails closed and does
   not follow the login redirect. `STEEL_API_KEY` is deprecated. Steel and
   Caddy do not enforce it. `STEEL_AUTH_HEADER`, then `STEEL_AUTH_BASIC`, then
   `STEEL_AUTH_USER` and `STEEL_AUTH_TOKEN` override it. A client that still
@@ -542,9 +554,9 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
-- **Dry-run ship status no longer rewrites `.git/index`.** `git status` refreshes the index under an optional lock. The ship-status read passes `--no-optional-locks`, so a dry run leaves the checkout untouched.
+- **A one-shot outcome is the JSON object that ends the reply.** One forward scan tracks strings, escapes, and brace depth. The newest top-level object, opened at depth 0, must close at the end of the trimmed text (one closing code fence and trailing whitespace allowed). `JSON.parse` runs once on that slice. The `outcome` must be a string in the step's declared values. Braces inside a string do not count as structure, so a summary may contain any number of `{` characters. A bare object, a fenced object, and prose followed by an object that ends the reply settle when the outcome is allowed. Prose after the object, a reply with no object, a disallowed outcome, a stray `"` in the prose, and an inner object at the end of a truncated outer object settle `failed`.
 
-- **A committed checkout counts as authored work, and a one-shot outcome must be a standalone JSON object.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`. A one-shot outcome is accepted when the whole reply is one JSON object, or when that object stands alone on the final line. A closing code fence around the final object is allowed. An object followed by prose, a truncated reply, and an ambiguous tail settle `failed`.
+- **A committed checkout counts as authored work.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`.
 
 - **The test suite no longer passes `--test-timeout`.** Under `node --test` that flag bounds each file, so coverage on CI timed out `test/core/engine.test.ts` at three minutes. The wall clock in `scripts/run-bounded.mjs` still bounds each script.
 
@@ -859,6 +871,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   connection to the same database.
 
 - **`kxm vision` is owned by the browser-verify skill.** `plugins/kxm/skill-suite.json` lists `vision` on `kxm-browser-verify`, the skill that already teaches `kxm vision assert`.
+
+- **Dry-run ship status no longer rewrites `.git/index`.** `git status` refreshes the index under an optional lock. The ship-status read passes `--no-optional-locks`, so a dry run leaves the checkout untouched.
+
+- **A committed checkout counts as authored work, and a one-shot outcome must be a standalone JSON object.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`. A one-shot outcome is accepted when the whole reply is one JSON object, or when that object stands alone on the final line. A closing code fence around the final object is allowed. An object followed by prose, a truncated reply, and an ambiguous tail settle `failed`.
 
 ## 0.7.0 - 2026-09-11
 

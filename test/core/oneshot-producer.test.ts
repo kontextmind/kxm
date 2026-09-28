@@ -1197,10 +1197,32 @@ test("a JSON object inside an earlier code fence does not win over the last obje
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
+test("braces inside an outcome string do not hide the final object", async () => {
+  const summary = "{".repeat(33);
+  const text = `{"outcome":"passed","summary":"${summary}"}`;
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
 test("nested braces and braces inside strings parse as the last outcome object", async () => {
   const text = [
     'Notes before the result mention {braces} and a sample {"outcome":"failed"}.',
     '{"outcome":"passed","summary":"he said \\"}\\" and {still}","nested":{"note":"inner } brace","ok":true}}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("prose and an outcome object on the same final line settle", async () => {
+  const text = 'The transport is clean and the tests were not run. {"outcome":"passed","summary":"The transport is clean and the tests were not run."}';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("a multi-line outcome object after prose settles when it ends the reply", async () => {
+  const text = [
+    "Review notes stay above the result.",
+    "{",
+    '  "outcome": "passed",',
+    '  "summary": "spans lines"',
+    "}",
   ].join("\n");
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
@@ -1217,20 +1239,68 @@ test("a truncated reply does not settle from an inner object", async () => {
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
-test("a megabyte of unclosed braces still settles the final outcome line", async () => {
-  const prefix = `{${"{".repeat(1024).repeat(1024)}`;
-  const text = `${prefix}\n{"outcome":"failed"}`;
+test("an inner object at the end of a truncated outer settles failed", async () => {
+  const text = '{"summary":"cut off before the close","detail":{"outcome":"passed","summary":"inner"}';
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
-test("a final fenced standalone object settles as the allowed outcome", async () => {
+test("a prose quote before a truncated outer object does not settle the inner outcome", async () => {
   const text = [
+    'Note the "fix.',
+    '{"outcome":"failed","detail":{"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a stray inch-mark quote before a final outcome object stays failed", async () => {
+  const text = [
+    'a 27" monitor screenshot',
+    '{"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a closed prose quote before a final outcome object still settles", async () => {
+  const text = [
+    'He said "done".',
+    '{"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("a repeated opener prefix never closes a top-level outcome object", async () => {
+  const chunk = '{"b":';
+  const repeats = Math.ceil((600 * 1024) / chunk.length);
+  const attack = `${chunk.repeat(repeats)}}`;
+  assert.equal(await settleOneShotText(attack, ["passed", "failed"]), "failed");
+  // The prefix stays above depth 0, so a final-line object is nested and stays failed.
+  const followed = `${attack}\n{"outcome":"passed","summary":"after the bound"}`;
+  assert.equal(await settleOneShotText(followed, ["passed", "failed"]), "failed");
+});
+
+test("a megabyte unbalanced prefix ending in an outcome object settles", async () => {
+  const closers = "}".repeat(1024 * 1024);
+  assert.equal(
+    await settleOneShotText(`${closers}\n{"outcome":"passed","summary":"tail"}`, ["passed", "failed"]),
+    "passed",
+  );
+  const opens = "{".repeat(1024 * 1024);
+  assert.equal(
+    await settleOneShotText(`${opens}\n{"outcome":"passed","summary":"inside an open outer"}`, ["passed", "failed"]),
+    "failed",
+  );
+});
+
+test("a final fenced object settles as the allowed outcome", async () => {
+  const withNotes = [
     "Review notes stay above the result.",
     "```json",
     '{"outcome":"passed","summary":"fenced"}',
     "```",
   ].join("\n");
-  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+  assert.equal(await settleOneShotText(withNotes, ["passed", "failed"]), "passed");
+  const wholeReply = ["```json", '{"outcome":"passed","summary":"whole fence"}', "```"].join("\n");
+  assert.equal(await settleOneShotText(wholeReply, ["passed", "failed"]), "passed");
 });
 
 // Opt-in real test behind KXM_SMOKE

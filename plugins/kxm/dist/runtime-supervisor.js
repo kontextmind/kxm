@@ -30773,15 +30773,29 @@ function recoverKxmRun(context, runId, request) {
 }
 
 // plugins/kxm/src/oneshot-producer.ts
-function lastBalancedJsonObject(text) {
+function isClosingFence(line) {
+  return /^(`{3,}|~{3,})\s*$/.test(line.trim());
+}
+function stripOneClosingFence(trimmed) {
+  const lineBreak = Math.max(trimmed.lastIndexOf("\n"), trimmed.lastIndexOf("\r"));
+  const lastLine = lineBreak < 0 ? trimmed : trimmed.slice(lineBreak + 1);
+  if (!isClosingFence(lastLine)) return trimmed;
+  if (lineBreak < 0) return "";
+  return trimmed.slice(0, lineBreak).trimEnd();
+}
+function determineOutcome(text, allowedOutcomes) {
+  const trimmed = text.trim();
+  if (!trimmed) return "failed";
+  const body = stripOneClosingFence(trimmed);
+  if (!body) return "failed";
   let depth = 0;
   let inString = false;
   let escape2 = false;
-  let start = -1;
-  let lastStart = -1;
-  let lastEnd = -1;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+  let currentStart = -1;
+  let objectStart = -1;
+  let objectEnd = -1;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
     if (inString) {
       if (escape2) {
         escape2 = false;
@@ -30799,7 +30813,7 @@ function lastBalancedJsonObject(text) {
       continue;
     }
     if (ch === "{") {
-      if (depth === 0) start = i;
+      if (depth === 0) currentStart = i;
       depth++;
       continue;
     }
@@ -30807,50 +30821,22 @@ function lastBalancedJsonObject(text) {
       if (depth === 0) continue;
       depth--;
       if (depth === 0) {
-        lastStart = start;
-        lastEnd = i;
+        objectStart = currentStart;
+        objectEnd = i;
       }
     }
   }
-  if (lastStart < 0) return void 0;
-  return text.slice(lastStart, lastEnd + 1);
-}
-function standaloneObjectText(text) {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return void 0;
-  const slice = lastBalancedJsonObject(trimmed);
-  return slice === trimmed ? slice : void 0;
-}
-function outcomeOfObjectText(text) {
-  const slice = standaloneObjectText(text);
-  if (slice === void 0) return void 0;
+  if (objectStart < 0 || objectEnd !== body.length - 1) return "failed";
+  let result;
   try {
-    const result = JSON.parse(slice);
-    if (!result || typeof result !== "object" || Array.isArray(result)) return void 0;
-    const outcome = result.outcome;
-    return typeof outcome === "string" ? outcome : void 0;
+    result = JSON.parse(body.slice(objectStart, objectEnd + 1));
   } catch {
-    return void 0;
+    return "failed";
   }
-}
-function isClosingFence(line) {
-  return /^(`{3,}|~{3,})\s*$/.test(line.trim());
-}
-function determineOutcome(text, allowedOutcomes) {
-  const trimmed = text.trim();
-  if (!trimmed) return "failed";
-  const whole = outcomeOfObjectText(trimmed);
-  if (whole !== void 0) return allowedOutcomes.includes(whole) ? whole : "failed";
-  const lines = trimmed.split(/\r?\n/);
-  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
-  if (lines.length > 0 && isClosingFence(lines[lines.length - 1])) {
-    lines.pop();
-    while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
-  }
-  if (lines.length === 0) return "failed";
-  const declared = outcomeOfObjectText(lines[lines.length - 1]);
-  if (declared === void 0 || !allowedOutcomes.includes(declared)) return "failed";
-  return declared;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
+  const outcome = result.outcome;
+  if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
+  return outcome;
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();

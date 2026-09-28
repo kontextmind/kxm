@@ -105,10 +105,18 @@ created → accepted → dispatched → executing → result_recorded → termin
 | `blocked_uncertain` | A dependent effect cannot be reconciled safely |
 | `terminal` | The logical assignment outcome is final and immutable: passed, failed, or cancelled |
 
-A producer reply becomes a terminal outcome **only** through a declared result: the whole
-reply is one JSON object, or the object stands alone on the final line. A closing code fence
-around that final object is allowed. If the tail is ambiguous, or prose follows the object,
-the outcome is `failed`.
+A producer reply becomes a terminal outcome **only** through a declared result. A one-shot
+reply declares that result when one forward scan finds a JSON object that closes at the
+end of the trimmed text. The scan tracks strings, escapes, and brace depth together. A
+`{` outside a string at depth 0 opens a top-level object, and the newest object that
+returns to depth 0 is the candidate. One closing code fence may follow the object, with
+whitespace. The object may be the whole reply, a fenced reply, or the end of surrounding
+prose, on one line or several. `JSON.parse` runs once on that slice. The value must be a
+plain object whose `outcome` string is one of the step's declared values. Braces inside
+strings do not change depth. A stray `"` leaves the scan inside a string, so a following
+object is not top-level and settles `failed`. Prose after the object, a reply with no
+such object, a disallowed outcome, and an inner object at the end of a truncated outer
+object settle `failed`.
 
 Naming an outcome *word* anywhere in a reply is not a result. `"the gate did not pass, so I
 would not call this passed"` must not advance a step, and an empty or unstructured reply is
