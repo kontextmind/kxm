@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-09-26"
+updated: "2026-09-28"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -41,6 +41,8 @@ related:
   - plan-lane-cli.md
   - plan-landing-gates.md
   - plan-omp-config-alignment.md
+  - plan-kxm-harness-first-run.md
+  - plan-studio-cloud-host.md
 depends_on: []
 blocked_by: []
 details:
