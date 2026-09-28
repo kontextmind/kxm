@@ -11,7 +11,7 @@ import { mintSessionToken, persistSessionTokenToDisk } from "../../plugins/kxm/s
 import { workflowWebhookHeaders } from "../../plugins/kxm/src/workflow.ts";
 import { HUB_ENV_SCHEMA, writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
 import { createTestMesh, waitFor } from "../helpers.ts";
-import { isolatedMcpEnv, type IsolatedMcpEnvOptions } from "../helpers/mcp-spawn.ts";
+import { isolatedMcpEnv, stopMcpChild, type IsolatedMcpEnvOptions } from "../helpers/mcp-spawn.ts";
 
 type RpcResponse = {
   id?: number;
@@ -30,7 +30,7 @@ function spawnEnvFor(context: TestContext, options: IsolatedMcpEnvOptions = {}) 
  * handshake. Every spawn in this file goes through here. */
 async function startMcpServer(
   context: TestContext,
-  spawnEnv: { env: NodeJS.ProcessEnv; cwd: string },
+  spawnEnv: { env: NodeJS.ProcessEnv; cwd: string; track?: (child: ReturnType<typeof spawn>) => void },
   clientName = "kxm-mcp-test",
 ) {
   const child = spawn(process.execPath, [resolve("plugins/kxm/dist/mcp-server.js")], {
@@ -38,6 +38,7 @@ async function startMcpServer(
     env: spawnEnv.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
+  spawnEnv.track?.(child);
   const lines = createInterface({ input: child.stdout });
   const notifications: Array<Record<string, unknown>> = [];
   const pending = new Map<number, { resolve(value: RpcResponse): void; reject(error: Error): void }>();
@@ -68,11 +69,11 @@ async function startMcpServer(
   async function stop(): Promise<void> {
     if (stopped) return;
     stopped = true;
+    // Close stdin before the readline so the server can unregister. A Windows
+    // kill skips that handler and the next session with the same name misses
+    // the durable inbox.
+    await stopMcpChild(child);
     lines.close();
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
-    child.kill();
-    await exited;
   }
   context.after(stop);
 
@@ -104,6 +105,26 @@ async function startMcpServer(
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
   return { child, initialized, notifications, request, tool, text, value, stop, stderr: () => stderr };
 }
+
+test("stopMcpChild closes stdin so the child can exit before a kill", async () => {
+  // Windows child.kill() is TerminateProcess and never delivers SIGTERM. The
+  // server's shutdown runs on stdin end; this pins that order.
+  const child = spawn(process.execPath, ["-e", [
+    "process.stdin.resume();",
+    "process.stdin.on('end', () => { process.stdout.write('stdin-end\\n'); process.exit(0); });",
+    "setInterval(() => {}, 1000);",
+  ].join("")], { stdio: ["pipe", "pipe", "ignore"] });
+  const output = new Promise<string>((resolve) => {
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+    child.stdout.on("end", () => resolve(stdout));
+  });
+  const started = Date.now();
+  await stopMcpChild(child);
+  assert.match(await output, /stdin-end/);
+  assert.ok(Date.now() - started < 4_000, "stdin shutdown should finish before the kill fallback");
+});
 
 test("bundled MCP server initializes and publishes the mesh tool catalog", async (context) => {
   const server = await startMcpServer(context, spawnEnvFor(context), "pi-mesh-test");

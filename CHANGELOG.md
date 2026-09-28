@@ -163,11 +163,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   files are split into `light-1` and `light-2`. POSIX `#!/bin/sh` shims in
   the land tests are skipped on Windows. A missing Windows `.cmd` is not
   reported as an installed harness: `cmd.exe` answers for a command that is
-  not on `PATH`, and that answer was counted as detection.   Unix `0600` mode
+  not on `PATH`, and that answer was counted as detection. Unix `0600` mode
   checks, 8.3-versus-long temp paths, and forward-slash path checks in the
-  unit tests match what Windows can report. A temp directory a finished
-  child still has open is retried and then left behind instead of failing
-  the test. `CI / required` still fails when a lane fails or is cancelled.
+  unit tests match what Windows can report. A spawned MCP server is stopped
+  by closing stdin, which runs its unregister path, before its temp directory
+  is removed; a directory that is still locked is retried and then left
+  behind instead of failing the test. `CI / required` still fails when a lane
+  fails or is cancelled.
   See [CI and release](docs/contributing/ci-and-release.md).
 
 - **Workforce ids use one convention, and old ids still resolve.**
