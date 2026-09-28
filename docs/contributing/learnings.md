@@ -98,8 +98,12 @@ entry whose fix has landed is deleted, not archived.
 - **Auto-merge cannot be enabled on a PR that is already `CLEAN`**; the
   mutation answers "clean status" and the REST squash merge is the path.
   While CI is paused every PR is clean, so this is the normal path.
-- **A verify failure inside `kxm land` shows only the child's last output
-  line.** Re-run verify by hand to see the cause until backlog S19 lands.
+- **A verify failure inside `kxm land` names the exit code, the failing
+  step, and a short excerpt, and keeps the full output in
+  `.kxm/logs/land-verify-<tree>.log`.** The receipt
+  `.kxm/logs/land-verify-<tree>.json` records the same fields with
+  `ok: false`. `mergeStateStatus: UNKNOWN` is polled and refused at the
+  bound; it is not treated as ready to merge.
 
 ## Reviews
 

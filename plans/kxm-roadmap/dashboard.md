@@ -2,7 +2,7 @@
 
 Updated: 2026-09-28.
 
-Active blockers: 5. Active questions: 11. Later phases are excluded from both counts.
+Active blockers: 5. Active questions: 10. Later phases are excluded from both counts.
 
 ## Next
 
@@ -17,7 +17,6 @@ Goal: The kxm verbs that let the planner dispatch a writer into a worktree lane 
 #### Open tasks
 
 - `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
-- `loop-land-followup` kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22).
 - `loop-supervise` kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20).
 
 #### Blockers
@@ -26,7 +25,6 @@ None.
 
 #### Questions
 
-- The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
 - The proof model behind kxm assign (backlog S11) is still an operator decision.
 
 [Phase page](phases/01-planner-loop.md)
@@ -339,7 +337,6 @@ No confirmed contacts.
 
 ## History
 
-- 2026-09-26: Roadmap seeded from state.json.
 - 2026-09-26: Portal mark applied.
 - 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
@@ -351,3 +348,4 @@ No confirmed contacts.
 - 2026-09-27: P4 opt-in fallback walk records routing.route_switched and continues the attempt.
 - 2026-09-27: docs/operations.md indexes the six state roots and the cross-box peer attach recipe.
 - 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the operator's primary worktree; hub cloud binding inventoried.
+- 2026-09-28: Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves.

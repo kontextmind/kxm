@@ -402,20 +402,21 @@ regenerates documentation (`docs`), then runs the GitHub stages: `push`,
 
 | Stage | Role |
 |---|---|
-| `verify` | Clean tree, then `npm run verify`, skipped when a receipt for this tree is younger than 30 minutes |
+| `verify` | Clean tree, then `npm run verify`, skipped when an `ok: true` receipt for this tree is younger than 30 minutes. A failure names the exit code, the failing step, and a short excerpt, and writes the full log |
 | `docs` | Regenerate the roadmap after verify and before the merge. Absent generator: pass, skipped |
 | `push` | `git push -u origin <branch>`, with `--force-with-lease` after a rebase in this run |
 | `pr` | Reuse the open pull request, or create one from `--body-file` |
-| `rebase` | Up to five rounds onto `origin/main`. Only the dist rebuild, the CHANGELOG Unreleased union, and the tracker "Landed in this tree" union are resolved automatically |
+| `rebase` | Polls `UNKNOWN` until it resolves. `CLEAN` and `HAS_HOOKS` proceed. `BEHIND` and `DIRTY` rebase, up to five rounds onto `origin/main`. Only the dist rebuild, the CHANGELOG Unreleased union, and the tracker "Landed in this tree" union are resolved automatically. Any other known state blocks |
 | `unblock` | Rerun one failed check. A required review is reported |
-| `merge` | Squash only. Poll until `MERGED`, up to 20 minutes |
+| `merge` | Squash only after `CLEAN` or `HAS_HOOKS`. Poll until `MERGED`, up to 20 minutes. `UNKNOWN` does not merge |
 | `release` | Auto-release tag, Release workflow, then npm for 10 minutes. Prints `PUBLISHED <version>` |
 | `milestone` | Report `deep_review_required` when a phase completes or the body has a `Milestone:` line. Does not run the review |
 
 Refusals (exit 1): `land_dirty_tree`, `land_verify_failed`, `land_docs_failed`,
 `land_push_rejected`, `land_pr_body_missing`, `land_conflict_manual`,
-`land_blocked`, `land_merge_failed`, `land_release_failed`,
-`land_publish_timeout`, `land_milestone_failed`. Usage errors exit 2.
+`land_merge_state_unknown`, `land_merge_not_ready`, `land_blocked`,
+`land_merge_failed`, `land_release_failed`, `land_publish_timeout`,
+`land_milestone_failed`. Usage errors exit 2.
 `--stage <name>` runs one stage. `--dry-run` prints the plan and does not mutate.
 
 The same stages are command gates in `.kxm/gates.yaml` (`land-verify`,
