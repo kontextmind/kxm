@@ -54,7 +54,7 @@ export function ghReleaseDownloadAvailable(env: NodeJS.ProcessEnv = process.env)
     encoding: "utf8",
     env,
     windowsHide: true,
-    timeout: 5_000,
+    timeout: 15_000,
   });
   return !result.error && result.status === 0;
 }

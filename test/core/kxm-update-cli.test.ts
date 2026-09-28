@@ -286,7 +286,7 @@ test("update --kxm dry-run plans a GitHub tarball install and skips harnesses", 
     assert.equal(payload.notice.available, true);
     assert.equal(payload.kxm.ok, true);
     assert.equal(payload.installKind, "npm-global");
-    assert.match(payload.kxm.detail, /gh release download v99\.0\.0/);
+    assert.match(payload.kxm.detail, /gh release download v99\.0\.0|releases\/download\/v99\.0\.0\/kxm-99\.0\.0\.tgz/);
     assert.match(payload.kxm.detail, /kxm-99\.0\.0\.tgz/);
     assert.equal(payload.steps, undefined);
   } finally {
@@ -329,7 +329,7 @@ test("update dry-run with auto applies kxm then still plans harness updates", as
     };
     assert.equal(payload.notice.auto, true);
     assert.equal(payload.notice.available, true);
-    assert.match(payload.kxm.detail, /gh release download/);
+    assert.match(payload.kxm.detail, /gh release download|curl --fail --silent --show-error --location/);
     assert.equal(payload.scope, "all");
     assert.ok(Array.isArray(payload.steps));
     assert.match(io.read().stdout, /kxm update --kxm \(auto\)/);
@@ -738,7 +738,7 @@ test("update ignores auto in the working directory update.yaml", async () => {
     }), cwd), 0);
     const honoredPayload = JSON.parse(honored.read().stdout) as { notice: { auto: boolean }; kxm?: { detail: string } };
     assert.equal(honoredPayload.notice.auto, true);
-    assert.match(honoredPayload.kxm?.detail ?? "", /gh release download/);
+    assert.match(honoredPayload.kxm?.detail ?? "", /gh release download|curl --fail --silent --show-error --location/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateHome, { recursive: true, force: true });

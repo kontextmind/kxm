@@ -289,7 +289,7 @@ test("claude session-start hook probes the plugin server_url option", async () =
   const server = createServer((request, response) => {
     if (request.url === "/health") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ ok: true }));
+      response.end(JSON.stringify({ ok: true, agents: 0 }));
       return;
     }
     response.writeHead(404).end();

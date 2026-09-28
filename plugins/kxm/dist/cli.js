@@ -35376,7 +35376,7 @@ function ghReleaseDownloadAvailable(env = process.env) {
     encoding: "utf8",
     env,
     windowsHide: true,
-    timeout: 5e3
+    timeout: 15e3
   });
   return !result.error && result.status === 0;
 }
