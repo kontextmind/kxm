@@ -6,6 +6,20 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **An opted-in role continues a failed attempt on the next admitted route.**
+  `policy.fallback.onError` lists `rate_limit`, `transport`,
+  `provider_unavailable`, and `context_overflow`. An empty or absent list is
+  unchanged: the attempt fails on the first route. The walk is bounded by
+  `maxSwitches` (default 1), skips a critic-vendor collision when the role
+  requires vendor independence, and records `routing.route_switched` plus a
+  `route_switch` log line. A bounded redacted transcript is appended to the
+  next prompt. `revert: never` keeps the successful route for later steps in
+  the same run. `kxm routing report` and `kxm improve report` show the switch.
+  Cancellation, policy refusal, authentication, an unhosted model, a gate
+  failure, tool policy, and admission errors do not walk. See
+  [role fallback](docs/reference/config-reference.md#kxmrolesroleyaml-kxmrolev2)
+  and [mid-attempt fallback](docs/reference/harness-routing.md#mid-attempt-fallback).
+
 - **A live agent step uses a configurable one-shot timeout, and a cancelling run recovers when its child has already exited.**
   The bound is the step `timeoutMs`, or the project `limits.agentStepTimeoutMs`
   when the step omits it (minimum 60 seconds, default one hour). A wider step

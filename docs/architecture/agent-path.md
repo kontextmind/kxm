@@ -14,6 +14,11 @@ a checkout fingerprint, invokes the producer, then fingerprints again
 does not change the tree cannot stay `passed`. A read-only step that changes
 the tree cannot stay `passed`.
 
+When the step's role lists the failure on `policy.fallback.onError`, a
+walkable producer error is redispatched on the next admitted route before the
+attempt settles. The engine records `routing.route_switched` and logs
+`route_switch`. An empty or absent list does not take this path.
+
 ```mermaid
 sequenceDiagram
   participant CLI as kxm CLI

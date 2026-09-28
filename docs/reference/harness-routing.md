@@ -296,7 +296,13 @@ No product producer writes `metered` today. Subscription runs are `unmetered` be
 
 `kxm routing report` groups records by harness, model, effort and role. It ranks routes by quality first (Pass%, then Rwk%), then by cost per accepted attempt. Among routes of equal quality, a route with any unknown-cost attempt ranks after every route without one, because its cost is unknown. Its `$/Acc` prints `-` instead of a partial sum, and the `*` in the `Unk` column marks it. Read `Unm` and `Unk` before you trust `$/Acc`.
 
-The `Quota` column counts attempts whose metadata looks quota-exhausted. Nothing fails over on it. The report has no provider column, so the `Harness` column is what tells you native from Pi.
+The `Quota` column counts attempts whose metadata looks quota-exhausted. The column does not choose a route, and quota is not an `onError` class. The report has no provider column, so the `Harness` column is what tells you native from Pi.
+
+### Mid-attempt fallback
+
+A role opts in by listing classes on `policy.fallback.onError`: `rate_limit`, `transport`, `provider_unavailable`, and `context_overflow`. An empty or absent list fails the attempt on the first route. On a listed class the engine appends `routing.route_switched` (`from`, `to`, `reason`, and `effort` when the next entry or the failing attempt has one), logs `route_switch`, and invokes the producer again on the next admitted chain entry, at most `maxSwitches` times (default 1; explicit `0` walks nothing). The chain is roster order, then `extends`, then one level of each route's `fallbacks` selectors. A bounded redacted transcript is appended to the next prompt and is not written to the event log.
+
+Cancellation, policy refusal, authentication, an unhosted model, a gate failure, tool policy, and admission errors never walk. `revert: next_run` (the default) starts the next run on the first entry. `revert: never` keeps the route that succeeded for later steps in the same run. `kxm routing report` and `kxm improve report` print a Route switches section when the event store has any. See [`.kxm/roles`](config-reference.md#kxmrolesroleyaml-kxmrolev2).
 
 ```bash
 kxm routing report

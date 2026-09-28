@@ -597,6 +597,7 @@ export async function cmdImprove(runtime: Runtime, options: { file?: string | un
     promotionPolicy: config.improvement.promotionPolicy,
     autoThreshold: config.improvement.autoThreshold,
     halfLifeDays: config.improvement.telemetryHalfLifeDays,
+    routeSwitches: loaded.routeSwitches,
   });
 
   const reportDir = join(runtime.dirs.assets, "improvements");
@@ -923,6 +924,7 @@ export async function cmdRoutingReport(
   let file: string;
   let records: Array<RoutingRecord | RoutingRecordV2>;
   let sources: RoutingSourceSummary[] | undefined;
+  let routeSwitches: LoadedRoutingSources["routeSwitches"] = [];
   if (options.file !== undefined) {
     file = options.file;
     records = readRoutingRecords(file).map((entry) => entry.routing);
@@ -933,6 +935,7 @@ export async function cmdRoutingReport(
     file = telemetryPath(runtime.dirs.logs);
     records = loaded.records;
     sources = loaded.sources;
+    routeSwitches = loaded.routeSwitches;
   }
   const includeEquivalentListCost = Boolean(options.equivalentListCost || options.listPrices);
 
@@ -946,7 +949,7 @@ export async function cmdRoutingReport(
     }
   }
 
-  const report = generateRoutingReport(records, { catalog, includeEquivalentListCost });
+  const report = generateRoutingReport(records, { catalog, includeEquivalentListCost, routeSwitches });
 
   if (records.length === 0) {
     print(runtime.io, runtime.json, { ok: true, command: "routing report", file, ...(sources ? { sources } : {}), configurations: [], report }, "no routing records in telemetry");

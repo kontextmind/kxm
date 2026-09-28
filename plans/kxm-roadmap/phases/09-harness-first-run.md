@@ -36,7 +36,7 @@ Evidence needed: Catalog tests and a receipt that names the workflow hash.
 
 ## Blockers
 
-- omp-alignment P3 through P7 are still open, and P4 fallback is a precondition.
+- omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
 - kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
 
 ## Questions

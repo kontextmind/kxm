@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import type { RouteSwitchRecord } from "./route-switch.ts";
 import { computeDecayedWeight, type RoutingRecord, type RoutingRecordV2 } from "./routing.ts";
 import { nowIso } from "./protocol.ts";
 import { compareCodeUnitIds } from "./relevance.ts";
@@ -79,6 +80,7 @@ export interface ImprovementReport {
   candidates: ImprovementCandidate[];
   promotionPolicy: string;
   promotion: ImprovementPromotionEntry[];
+  routeSwitches?: RouteSwitchRecord[] | undefined;
 }
 
 export function classifyCandidateKind(stepId: string, agentRole: string): CandidateKind {
@@ -426,6 +428,7 @@ export interface BuildImprovementReportOptions extends GroupRoutingOptions {
   /** improvement.promotionPolicy; reported as readiness only. */
   promotionPolicy?: string | undefined;
   autoThreshold?: PromotionAutoThreshold | undefined;
+  routeSwitches?: readonly RouteSwitchRecord[] | undefined;
 }
 
 export function buildImprovementReport(
@@ -498,6 +501,7 @@ export function buildImprovementReport(
     });
   }
 
+  const routeSwitches = options.routeSwitches?.filter((item) => item.from && item.to) ?? [];
   return {
     schema: IMPROVEMENT_REPORT_SCHEMA,
     createdAt: nowIso(),
@@ -507,6 +511,7 @@ export function buildImprovementReport(
     candidates,
     promotionPolicy,
     promotion,
+    ...(routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}),
   };
 }
 
@@ -545,6 +550,15 @@ export function formatImprovementReport(report: ImprovementReport): string {
       ? `yes (${g.candidateKind})`
       : g.excludedReason !== undefined ? `no (${g.excludedReason})` : "no";
     lines.push(`${wf} ${step} ${role} ${prompt} ${rec} ${runs} ${asks} ${weighted} ${cost} ${lat} ${accepted} ${rework}  ${cand}`);
+  }
+
+  if (report.routeSwitches && report.routeSwitches.length > 0) {
+    lines.push("");
+    lines.push(`Route switches (${report.routeSwitches.length}):`);
+    for (const item of report.routeSwitches) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines.push(`  - ${item.from} -> ${item.to} (${item.reason}${effort}) on ${item.stepId}`);
+    }
   }
 
   if (report.candidates.length > 0) {

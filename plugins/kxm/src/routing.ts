@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { calculateModelCost, type PriceCatalog } from "./price-calc.ts";
+import type { RouteSwitchRecord } from "./route-switch.ts";
 
 /**
  * Model/harness routing telemetry (v0.5, issue #40).
@@ -531,6 +532,8 @@ export interface RoutingReport {
   generatedAt: string;
   totalAttempts: number;
   rows: RoutingReportRow[];
+  /** Present when the caller supplied at least one route switch. */
+  routeSwitches?: RouteSwitchRecord[] | undefined;
 }
 
 export interface GenerateRoutingReportOptions {
@@ -538,6 +541,7 @@ export interface GenerateRoutingReportOptions {
   includeEquivalentListCost?: boolean | undefined;
   halfLifeDays?: number | undefined;
   now?: () => string;
+  routeSwitches?: readonly RouteSwitchRecord[] | undefined;
 }
 
 /**
@@ -641,12 +645,14 @@ export function generateRoutingReport(
   options: GenerateRoutingReportOptions = {},
 ): RoutingReport {
   const generatedAt = options.now ? options.now() : new Date().toISOString();
+  const routeSwitches = options.routeSwitches?.filter((item) => item.from && item.to) ?? [];
   if (records.length === 0) {
     return {
       schema: ROUTING_REPORT_SCHEMA,
       generatedAt,
       totalAttempts: 0,
       rows: [],
+      ...(routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}),
     };
   }
 
@@ -860,6 +866,7 @@ export function generateRoutingReport(
     generatedAt,
     totalAttempts: records.length,
     rows,
+    ...(routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}),
   };
 }
 
@@ -867,8 +874,16 @@ export function formatRoutingReport(
   report: RoutingReport,
   options: { equivalentListCost?: boolean } = {},
 ): string {
-  if (report.rows.length === 0) {
+  if (report.rows.length === 0 && (!report.routeSwitches || report.routeSwitches.length === 0)) {
     return "no routing records to report";
+  }
+  if (report.rows.length === 0) {
+    const lines = ["no routing records to report", "", `Route switches (${report.routeSwitches!.length})`];
+    for (const item of report.routeSwitches!) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines.push(`  ${item.from} -> ${item.to} (${item.reason}${effort}) step ${item.stepId}`);
+    }
+    return lines.join("\n");
   }
 
   const showListCost = Boolean(options.equivalentListCost);
@@ -929,6 +944,14 @@ export function formatRoutingReport(
 
   if (report.rows.some((r) => r.flagged)) {
     lines.push("* = unknown-cost attempts present (never ranked cheapest)");
+  }
+  if (report.routeSwitches && report.routeSwitches.length > 0) {
+    lines.push("");
+    lines.push(`Route switches (${report.routeSwitches.length})`);
+    for (const item of report.routeSwitches) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines.push(`  ${item.from} -> ${item.to} (${item.reason}${effort}) step ${item.stepId}`);
+    }
   }
 
   return lines.join("\n");

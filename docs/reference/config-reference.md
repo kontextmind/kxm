@@ -422,7 +422,7 @@ bytes.
 | `thinking` | String, 1 to 64 characters | Optional | Recorded on the route |
 | `tags`, `capabilities` | Unique identifiers, at most 32 | Optional | Selector tags |
 | `priority` | Integer, -10,000 to 10,000 | Optional | Recorded on the route |
-| `fallbacks` | Up to 8 `profile`, `tag`, or `provider`+`model` objects | Optional | Reference check |
+| `fallbacks` | Up to 8 `profile`, `tag` (optional `capabilities`), or `provider`+`model` objects | Optional | The opt-in walk expands each roster entry one level |
 | `limits.contextTokens`, `limits.outputTokens` | Integer, at least 1 | Optional | Recorded on the route |
 | `limits.timeoutMs` | Integer, 0 to 31,536,000,000 | Optional | Recorded on the route |
 
@@ -917,9 +917,9 @@ global one with the same id.
 | `extends` | Identifier of another role in the same project | Optional | Refused when the chain cycles |
 | `roster[].effort` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` | Optional | Must be inside the harness ceiling when set |
 | `roster[].mode` | `headless`, `interactive`, or `either` | Optional | Recorded on the entry |
-| `policy.fallback.onError` | Unique `rate_limit`, `transport`, `provider_unavailable` | Optional | Recorded on the role |
-| `policy.fallback.maxSwitches` | Integer, at least 0 | Optional | Recorded on the role |
-| `policy.fallback.revert` | `next_run` or `never` | Optional | Recorded on the role |
+| `policy.fallback.onError` | Unique `rate_limit`, `transport`, `provider_unavailable`, `context_overflow` | Optional; empty or absent means no walk | The attempt runner, only for a listed class |
+| `policy.fallback.maxSwitches` | Integer, at least 0 | Optional; 1 when `onError` is non-empty and this field is omitted | The attempt runner. `0` allows no switch |
+| `policy.fallback.revert` | `next_run` or `never` | Optional; `next_run` | `next_run` starts the next run on the first entry. `never` keeps the route that succeeded for later steps in the same run |
 | `skills`, `tools`, `produces`, `consumes` | See `schemas/role.schema.json` | Optional | `kxm role` |
 | `policy.vendorIndependenceRequired`, `policy.maxTransitions`, `policy.requiresGateVerification` | Boolean, or a positive integer for `maxTransitions` | Optional | Recorded on the role |
 
@@ -928,6 +928,19 @@ primary. The Runtime checks membership. Harness, model, and effort resolve
 from the agent's `role` roster and that route's `.kxm/models/<route-id>.yaml`,
 never from the agent file. The developer assignment runner reads
 `.kxm/roles/*.yaml` and `.kxm/models/*.yaml` at `refs/remotes/origin/main`.
+
+When `policy.fallback.onError` lists a failure class, a failed attempt of that
+class continues on the next admitted route before it settles. The chain is the
+role roster (own entries, then `extends`), then one level of each route's
+`fallbacks` selectors. Retired, disabled, and unhosted routes are skipped. A
+live write step also requires `edit`, an audited writer profile, and a writer
+roster binding. When `policy.vendorIndependenceRequired` is true, a later
+route whose vendor matches `reviewer-arch` or `reviewer-cli` is skipped. The
+engine appends `routing.route_switched` and logs `route_switch`. A bounded
+redacted transcript from the failed attempt is appended to the next prompt and
+is not stored on the event. Cancellation, policy refusal, authentication, an
+unhosted model, a gate failure, tool policy, and admission errors never walk.
+A role with an empty or absent `onError` list fails on the first route.
 
 ```yaml
 schema: kxm.role.v2

@@ -207,6 +207,7 @@ A gate step declares an outcome its `expect` value never produces. The message n
 | `runtime_supervisor_unreachable` | A live supervisor process does not answer its token probe | Check the PID from `kxm runtime status`, stop a hung process with your OS tools, then `kxm runtime start` |
 | `project_required` | The command ran outside a KXM project | Run it from the checkout, or run `kxm init` |
 | `producer_route_not_admitted` | A live drive uses a model route that is not admitted | `kxm routes admit --model <provider/model>`, or drive with `--simulated` |
+| A 429, timeout, or provider error fails the attempt on the first route | The role's `policy.fallback.onError` is empty, omits that class, or `maxSwitches` is already spent. Cancellation, policy refusal, and authentication do not walk | List the class on the role, admit the next route, and read `routing.route_switched` in the run events. `kxm routing report` prints Route switches |
 | `pi_not_authenticated: pi harness not detected (pi_native_impersonation_blocked)` | A Pi agent's model belongs to a vendor with its own harness | Set the agent's native `harness:`, or choose an admitted Pi route whose vendor has none |
 | `run_busy` (HTTP 409) | The run is already admitted or queued for a drive | Wait, and check `kxm runs status <run-id>` |
 | A run store is refused with `runtime_schema_outdated` | The store predates this release | See [Upgrade KXM](upgrade.md#understand-schema-changes) |

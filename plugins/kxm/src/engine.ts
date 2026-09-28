@@ -3,6 +3,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { listRoleBindings, loadRoutePolicy } from "./routes.ts";
+import {
+  carryForwardPrompt,
+  classifyRouteFailure,
+  decideRouteSwitch,
+  loadAgentFallback,
+  mergeSessionCarry,
+  parseSessionCarry,
+  type FallbackCandidate,
+  type FallbackPolicy,
+  type RouteSessionCarry,
+} from "./route-fallback.ts";
 import { findYamlBasename } from "./workforce-names.mjs";
 import { applyAuthoringWitness, captureWorktreeWitness } from "./worktree-witness.ts";
 import {
@@ -878,10 +889,58 @@ export function verifyKxmAttemptCapability(
   };
 }
 
+interface ProducerFailureObservation {
+  classified: ReturnType<typeof classifyRouteFailure>;
+  sessionCarry?: RouteSessionCarry;
+}
+
+interface AttemptFallbackState {
+  policy: FallbackPolicy;
+  chain: FallbackCandidate[];
+  index: number;
+  switches: number;
+  basePrompt: string;
+  stickyRouteId?: string;
+}
+
+const attemptFallback = new Map<string, AttemptFallbackState>();
+const runStickyRoute = new Map<string, string>();
+
+function observeProducerFailure(error: unknown, capability: string | undefined): { code: string; failure: ProducerFailureObservation } {
+  // Never throw while classifying a throw: a producer can reject with anything
+  // (Object.create(null) defeats String(), an Error whose message is not a string
+  // defeats split()), and a throwing classifier would reroute a producer_rejected
+  // settle into the execution-error path.
+  try {
+    const raw = error instanceof Error ? error.message : error;
+    const message = typeof raw === "string" ? raw : "";
+    let text = message;
+    if (capability) text = text.split(capability).join("[redacted]");
+    text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
+    const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
+    const extracted = match?.[0] ?? "";
+    const code = extracted.length > 0 && extracted.length <= 64 ? extracted : "producer_error";
+    const record = error && typeof error === "object" ? error as Record<string, unknown> : undefined;
+    const statusValue = record?.statusCode ?? record?.status ?? record?.httpStatus;
+    const httpStatus = typeof statusValue === "number" && Number.isInteger(statusValue) ? statusValue : undefined;
+    const name = error instanceof Error ? error.name : undefined;
+    const sessionCarry = parseSessionCarry(record?.sessionCarry);
+    return {
+      code,
+      failure: {
+        classified: classifyRouteFailure({ code, text: text.slice(0, 500), httpStatus, name }),
+        ...(sessionCarry ? { sessionCarry } : {}),
+      },
+    };
+  } catch {
+    return { code: "producer_error", failure: { classified: classifyRouteFailure({ code: "producer_error" }) } };
+  }
+}
+
 function invokeProducer(
   producer: KxmProducer,
   request: KxmProducerRequest,
-): Promise<{ result?: KxmProducerResult; error: boolean; errorCode?: string }> {
+): Promise<{ result?: KxmProducerResult; error: boolean; errorCode?: string; failure?: ProducerFailureObservation }> {
   // The reason a producer refused is the single most useful fact about a failed attempt,
   // and it used to be discarded here: a live drive that could not authenticate read in the
   // event log exactly like a simulation that ran fine. But the message is producer-
@@ -890,34 +949,182 @@ function invokeProducer(
   // So: redact the attempt capability and anything capability-shaped, then keep only a
   // leading machine-code identifier (lowercase segments joined by underscores). Anything
   // else — prose, free text, a redacted-to-empty message — records as producer_error.
-  const reason = (error: unknown): string => {
-    // Never throw while classifying a throw: a producer can reject with anything
-    // (Object.create(null) defeats String(), an Error whose message is not a string
-    // defeats split()), and a throwing classifier would reroute a producer_rejected
-    // settle into the execution-error path — the exact invisibility this exists to fix.
-    try {
-      const raw = error instanceof Error ? error.message : error;
-      const message = typeof raw === "string" ? raw : "";
-      let text = message;
-      if (request.capability) text = text.split(request.capability).join("[redacted]");
-      text = text.replace(/kxmcap_[A-Za-z0-9_-]+/g, "[redacted]");
-      const match = /^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,3}/.exec(text);
-      const code = match?.[0] ?? "";
-      return code.length > 0 && code.length <= 64 ? code : "producer_error";
-    } catch {
-      return "producer_error";
-    }
-  };
   let pending: Promise<KxmProducerResult>;
   try {
     pending = Promise.resolve(producer.produce(request));
   } catch (error) {
-    return Promise.resolve({ error: true, errorCode: reason(error) });
+    const observed = observeProducerFailure(error, request.capability);
+    return Promise.resolve({ error: true, errorCode: observed.code, failure: observed.failure });
   }
   return pending.then(
     (result) => ({ result, error: false }),
-    (error) => ({ error: true, errorCode: reason(error) }),
+    (error) => {
+      const observed = observeProducerFailure(error, request.capability);
+      return { error: true, errorCode: observed.code, failure: observed.failure };
+    },
   );
+}
+
+function stickyRouteFromEvents(context: KxmRuntimeContext, runId: string): string | undefined {
+  const remembered = runStickyRoute.get(runId);
+  if (remembered) return remembered;
+  let found: string | undefined;
+  for (const event of context.eventStore.events(runId, 0, 100000)) {
+    if (event.eventType !== "routing.attempt.recorded") continue;
+    const routing = (event.payload as { routing?: { providerMetadata?: { fallbackRoute?: unknown } } }).routing;
+    const route = routing?.providerMetadata?.fallbackRoute;
+    if (typeof route === "string" && route.length > 0) found = route;
+  }
+  return found;
+}
+
+function stickyWalkRoute(
+  context: KxmRuntimeContext,
+  step: KxmCompiledStep,
+  agentId: string,
+  runId: string,
+  liveWrite: boolean,
+): ResolvedProducerRoute | undefined {
+  const loaded = loadAgentFallback(context.projectRoot, agentId, { liveWrite });
+  if (!loaded || loaded.policy.revert !== "never") return undefined;
+  const sticky = stickyRouteFromEvents(context, runId);
+  if (!sticky) return undefined;
+  const candidate = loaded.chain.find((item) => item.routeId === sticky);
+  if (!candidate) return undefined;
+  return candidateToRoute(candidate, loaded.roleId);
+}
+
+function candidateToRoute(candidate: FallbackCandidate, role: string): ResolvedProducerRoute {
+  return {
+    provider: candidate.provider,
+    model: candidate.model,
+    selector: candidate.selector,
+    harness: candidate.harness,
+    routeId: candidate.routeId,
+    role,
+    permissions: [...candidate.permissions],
+    ...(candidate.effort ? { effort: candidate.effort } : {}),
+  };
+}
+
+function rememberAttemptFallback(
+  attemptId: string,
+  loaded: { policy: FallbackPolicy; chain: FallbackCandidate[] },
+  index: number,
+  basePrompt: string,
+): void {
+  if (loaded.chain.length < 2 || loaded.policy.onError.length === 0 || loaded.policy.maxSwitches <= 0) return;
+  if (index < 0 || index >= loaded.chain.length) return;
+  attemptFallback.set(attemptId, {
+    policy: loaded.policy,
+    chain: loaded.chain,
+    index,
+    switches: 0,
+    basePrompt,
+  });
+}
+
+function appendRouteSwitch(
+  context: KxmRuntimeContext,
+  member: PreparedDispatch,
+  routeSwitch: { from: string; to: string; reason: string; effort?: string },
+): void {
+  const run = requireRun(context, member.run.runId);
+  const now = new Date().toISOString();
+  const sequence = context.eventStore.nextSequence(run.runId);
+  const event: KxmRunEvent = {
+    ...kxmEventBase(context, run, now, kxmMonotonicNs()),
+    eventId: newKxmEventId(),
+    eventType: "routing.route_switched",
+    sequence,
+    payload: {
+      attemptId: member.attemptId,
+      stepId: member.stepId,
+      routeSwitch: {
+        from: routeSwitch.from,
+        to: routeSwitch.to,
+        reason: routeSwitch.reason,
+        ...(routeSwitch.effort ? { effort: routeSwitch.effort } : {}),
+      },
+    },
+  };
+  context.eventStore.appendEvent(event);
+  const next = foldStoredKxmRun(context, run);
+  persistKxmRunState(context, run.runId, next, sequence);
+  try {
+    context.logger?.({
+      event: "route_switch",
+      runId: run.runId,
+      attemptId: member.attemptId,
+      stepId: member.stepId,
+      from: routeSwitch.from,
+      to: routeSwitch.to,
+      reason: routeSwitch.reason,
+      ...(routeSwitch.effort ? { effort: routeSwitch.effort } : {}),
+    });
+  } catch {
+    // Logging is best effort and never fails a switch.
+  }
+}
+
+async function produceWithRouteFallback(
+  context: KxmRuntimeContext,
+  member: PreparedDispatch,
+  producer: KxmProducer,
+): Promise<{ result?: KxmProducerResult; error: boolean; errorCode?: string }> {
+  const session = attemptFallback.get(member.attemptId);
+  let request = member.request;
+  let produced = await invokeProducer(producer, request);
+  if (!session) return producerOutcome(produced);
+  let carry: RouteSessionCarry | undefined;
+  while (produced.error) {
+    const current = session.chain[session.index];
+    if (!current) break;
+    const failure = produced.failure?.classified ?? classifyRouteFailure({ code: produced.errorCode, text: produced.errorCode });
+    const decision = decideRouteSwitch({
+      policy: session.policy,
+      chain: session.chain,
+      currentRouteId: current.routeId,
+      switchesUsed: session.switches,
+      failure,
+      ...(current.effort || member.request.thinking ? { currentEffort: current.effort ?? member.request.thinking } : {}),
+    });
+    if (decision.action !== "switch") break;
+    appendRouteSwitch(context, member, {
+      from: current.routeId,
+      to: decision.to.routeId,
+      reason: decision.reason,
+      ...(decision.effort ? { effort: decision.effort } : {}),
+    });
+    session.switches += 1;
+    session.index = session.chain.findIndex((candidate) => candidate.routeId === decision.to.routeId);
+    carry = mergeSessionCarry(carry, produced.failure?.sessionCarry);
+    request = {
+      ...member.request,
+      prompt: carryForwardPrompt(session.basePrompt, carry),
+      model: decision.to.model,
+      provider: decision.to.provider,
+      harness: decision.to.harness,
+      ...(decision.effort ? { thinking: decision.effort } : {}),
+    };
+    produced = await invokeProducer(producer, request);
+  }
+  if (!produced.error && session.switches > 0 && session.policy.revert === "never") {
+    const route = session.chain[session.index];
+    if (route) {
+      session.stickyRouteId = route.routeId;
+      runStickyRoute.set(member.run.runId, route.routeId);
+    }
+  }
+  return producerOutcome(produced);
+}
+
+function producerOutcome(produced: { result?: KxmProducerResult; error: boolean; errorCode?: string }): { result?: KxmProducerResult; error: boolean; errorCode?: string } {
+  return {
+    error: produced.error,
+    ...(produced.result !== undefined ? { result: produced.result } : {}),
+    ...(produced.errorCode !== undefined ? { errorCode: produced.errorCode } : {}),
+  };
 }
 
 export interface KxmPreparedGateDispatch {
@@ -1748,6 +1955,14 @@ function prepareDispatch(
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
     }
     resolvedRoute = routeResult;
+    const stickyRoute = stickyWalkRoute(
+      context,
+      step,
+      agentId,
+      run.runId,
+      Object.values(step.repositories).some((access) => access === "write"),
+    );
+    if (stickyRoute && stickyRoute.routeId !== resolvedRoute.routeId) resolvedRoute = stickyRoute;
     const writeRefusal = unsupportedLiveWrite(
       context.projectRoot,
       step,
@@ -1884,6 +2099,27 @@ function birthMember(
       return { handoff: { ...routeResult.error, stepId: input.stepId } };
     }
     resolvedRoute = routeResult;
+  }
+  const liveProducer = Boolean(input.producerId && input.producerId !== "driver-simulated");
+  const liveWrite = liveProducer && Object.values(input.step.repositories).some((access) => access === "write");
+  const loadedFallback = loadAgentFallback(context.projectRoot, agentId, { liveWrite });
+  let fallbackIndex = -1;
+  if (loadedFallback && loadedFallback.chain.length > 1 && loadedFallback.policy.maxSwitches > 0) {
+    const sticky = loadedFallback.policy.revert === "never" ? stickyRouteFromEvents(context, run.runId) : undefined;
+    const stickyIndex = sticky ? loadedFallback.chain.findIndex((candidate) => candidate.routeId === sticky) : -1;
+    if (!resolvedRoute) {
+      fallbackIndex = stickyIndex > 0 ? stickyIndex : 0;
+      const start = loadedFallback.chain[fallbackIndex];
+      if (start) resolvedRoute = candidateToRoute(start, loadedFallback.roleId);
+    } else if (stickyIndex > 0 && resolvedRoute.routeId !== loadedFallback.chain[stickyIndex]?.routeId) {
+      const start = loadedFallback.chain[stickyIndex];
+      if (start) {
+        resolvedRoute = candidateToRoute(start, loadedFallback.roleId);
+        fallbackIndex = stickyIndex;
+      }
+    } else {
+      fallbackIndex = loadedFallback.chain.findIndex((candidate) => candidate.routeId === resolvedRoute?.routeId);
+    }
   }
   const dispatchContext = assembleDispatchContext(input.dispatchSources, {
     projectId: run.projectId,
@@ -2023,6 +2259,9 @@ function birthMember(
     } catch {
       // Logging is best effort and never fails a birth.
     }
+  }
+  if (loadedFallback && fallbackIndex >= 0) {
+    rememberAttemptFallback(attemptId, loadedFallback, fallbackIndex, member.request.prompt ?? "");
   }
   kxmPanelDispatchSeams.afterBirth?.(member);
   return member;
@@ -2172,7 +2411,7 @@ async function drivePanel(
         const live = member.producerId !== "driver-simulated";
         const writes = Object.values(member.step.repositories).some((access) => access === "write");
         const before = live ? captureWorktreeWitness(context.projectRoot) : undefined;
-        const produced = await invokeProducer(producer, member.request);
+        const produced = await produceWithRouteFallback(context, member, producer);
         if (live && produced.result && before) {
           const after = captureWorktreeWitness(context.projectRoot);
           return {
@@ -2384,6 +2623,8 @@ function engineRoutingMetadata(
   // Already `sha256:<hex>` from acceptance; the prompt text is never read here.
   metadata.objectiveSha256 = dispatch.run.promptSha256;
   metadata.stepWrites = Object.values(dispatch.step.repositories).some((access) => access === "write");
+  const stickyRouteId = attemptFallback.get(dispatch.attemptId)?.stickyRouteId;
+  if (stickyRouteId && Object.keys(metadata).length < MAX_PROVIDER_METADATA_FIELDS) metadata.fallbackRoute = stickyRouteId;
   return metadata;
 }
 
@@ -2555,6 +2796,7 @@ function settleMember(
     }
   }
   context.eventStore.settleCapability(dispatch.attemptId, "settled");
+  attemptFallback.delete(dispatch.attemptId);
   for (const event of events) context.eventStore.appendEvent(event);
   const next = foldStoredKxmRun(context, run);
   persistKxmRunState(context, run.runId, next, events[events.length - 1]!.sequence);

@@ -32,7 +32,7 @@ export interface KxmTemplateContract {
 }
 
 export interface KxmRoleFallback {
-  onError?: Array<"rate_limit" | "transport" | "provider_unavailable"> | undefined;
+  onError?: Array<"rate_limit" | "transport" | "provider_unavailable" | "context_overflow"> | undefined;
   maxSwitches?: number | undefined;
   revert?: "next_run" | "never" | undefined;
 }

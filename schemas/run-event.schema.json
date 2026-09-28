@@ -298,6 +298,14 @@
       }
     },
     {
+      "if": { "properties": { "eventType": { "const": "routing.route_switched" } }, "required": ["eventType"] },
+      "then": {
+        "properties": {
+          "payload": { "type": "object", "required": ["routeSwitch", "attemptId", "stepId"] }
+        }
+      }
+    },
+    {
       "if": { "properties": { "eventType": { "const": "run.drive_opened" } }, "required": ["eventType"] },
       "then": {
         "properties": {
@@ -441,7 +449,18 @@
           "additionalProperties": { "type": "integer", "minimum": 0 },
           "maxProperties": 32
         },
-        "routing": { "$ref": "#/$defs/routingRecordV2" }
+        "routing": { "$ref": "#/$defs/routingRecordV2" },
+        "routeSwitch": {
+          "type": "object",
+          "required": ["from", "to", "reason"],
+          "additionalProperties": false,
+          "properties": {
+            "from": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "minLength": 1, "maxLength": 64 },
+            "to": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "minLength": 1, "maxLength": 64 },
+            "reason": { "enum": ["rate_limit", "transport", "provider_unavailable", "context_overflow"] },
+            "effort": { "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"] }
+          }
+        }
       },
       "additionalProperties": false
     },

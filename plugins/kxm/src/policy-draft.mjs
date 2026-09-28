@@ -33,7 +33,7 @@ const TOOL_KEYS = Object.freeze(["preset", "allow", "deny"]);
 const TEMPLATE_KEYS = Object.freeze(["template", "schema"]);
 const POLICY_KEYS = Object.freeze(["vendorIndependenceRequired", "maxTransitions", "requiresGateVerification", "fallback"]);
 const FALLBACK_KEYS = Object.freeze(["onError", "maxSwitches", "revert"]);
-const FALLBACK_ERRORS = Object.freeze(["rate_limit", "transport", "provider_unavailable"]);
+const FALLBACK_ERRORS = Object.freeze(["rate_limit", "transport", "provider_unavailable", "context_overflow"]);
 const FALLBACK_REVERT = Object.freeze(["next_run", "never"]);
 const ROSTER_ENTRY_KEYS = Object.freeze(["route", "effort", "mode"]);
 const CRITIC_PURPOSES = Object.freeze(["reviewer-arch", "reviewer-cli"]);
@@ -398,7 +398,7 @@ function validateRoleShape(document, id, label, issues) {
       if (fallback.onError !== undefined) {
         if (!Array.isArray(fallback.onError) || new Set(fallback.onError).size !== fallback.onError.length
           || fallback.onError.some((item) => !FALLBACK_ERRORS.includes(item))) {
-          issues.push(issue("schema", "schema_enum", path, "onError must be unique rate_limit, transport, or provider_unavailable values"));
+          issues.push(issue("schema", "schema_enum", path, "onError must be unique rate_limit, transport, provider_unavailable, or context_overflow values"));
         }
       }
       if (fallback.maxSwitches !== undefined && (!Number.isInteger(fallback.maxSwitches) || fallback.maxSwitches < 0)) {

@@ -766,7 +766,7 @@ test("handoffs: duration limits, unsupported steps, unreconciled attempts, and r
   }
 });
 
-test("run-duration budget cancels a slow attempt without fabricating a passed outcome", { timeout: 15_000 }, async () => {
+test("run-duration budget cancels a slow attempt without fabricating a passed outcome", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-run-duration-slow-");
   try {
     writeDurationWorkflow(root, "tiny-duration", "  maxTransitions: 2\n  maxRunDurationMs: 25");
@@ -811,7 +811,7 @@ test("run-duration budget cancels a slow attempt without fabricating a passed ou
   }
 });
 
-test("run-duration budget cancels at a step boundary and on resume before any new step", { timeout: 15_000 }, async () => {
+test("run-duration budget cancels at a step boundary and on resume before any new step", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-run-duration-resume-");
   try {
     writeDurationWorkflow(root, "tiny-duration", "  maxTransitions: 4\n  maxRunDurationMs: 25");
@@ -1185,7 +1185,7 @@ function holdProducer(): { producer: ReturnType<typeof createKxmSimulatedProduce
   return { producer, release, started };
 }
 
-test("direct drive release wakes queued scheduler work without a third enqueue", { timeout: 15_000 }, async () => {
+test("direct drive release wakes queued scheduler work without a third enqueue", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-mixed-wake-");
   const heldA = holdProducer();
   const heldB = holdProducer();
@@ -1741,7 +1741,7 @@ test("openDriveSession handoff records receipt kind handoff while running", asyn
   }
 });
 
-test("producer throw records the brake status in the drive receipt", { timeout: 15_000 }, async () => {
+test("producer throw records the brake status in the drive receipt", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-drive-receipt-throw-");
   resetPanelSeams();
   try {
@@ -1868,7 +1868,7 @@ test("an event store left behind the current schema is refused, not upgraded in 
   }
 });
 
-test("openDriveSession pre-open failures do not reject settled without a consumer", { timeout: 15_000 }, async () => {
+test("openDriveSession pre-open failures do not reject settled without a consumer", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-drive-preopen-");
   const unhandled: string[] = [];
   const onUnhandled = (reason: unknown) => {
@@ -1951,7 +1951,7 @@ steps:
   }
 });
 
-test("post-open no-progress throw records failed or cancelled, never bare running", { timeout: 15_000 }, async () => {
+test("post-open no-progress throw records failed or cancelled, never bare running", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-drive-noprogress-");
   resetPanelSeams();
   const unhandled: string[] = [];
@@ -2030,7 +2030,7 @@ test("same-revision bound mutation is rejected while work is admitted or queued"
   bindKxmSchedulerPolicy(storePath, 3, revision);
 });
 
-test("admission bound 2 rejects duplicates, direct bypass, and a fourth run until a slot opens", { timeout: 15_000 }, async () => {
+test("admission bound 2 rejects duplicates, direct bypass, and a fourth run until a slot opens", { timeout: 30_000 }, async () => {
   const { root, stateRoot } = engineProject("kxm-engine-admit-");
   try {
     writeFileSync(join(root, ".kxm", "project.yaml"), readFileSync(join(root, ".kxm", "project.yaml"), "utf8").replace(

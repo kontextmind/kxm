@@ -46,9 +46,17 @@ Evidence needed: A fixture per preset pair.
 
 ### P4 opt-in fallback walk with route_switch events
 
+`omp-p4`. Status: done. Detail: ready.
+
+Template: [feature](../../templates/feature.md).
+
 Done criterion: An attempt continues on the next admitted route when the role opts in, and the reports show the switch.
 
 Evidence needed: Simulated 429 and transport fixtures.
+
+Plan section: plans/plan-omp-config-alignment.md#5-phases.
+
+Evidence: `test/core/route-fallback.test.ts`.
 
 ### P5 provenance and extends
 
@@ -74,6 +82,6 @@ None.
 
 ## Questions
 
-- P2 landed in #343. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files, and whether P4 needs an error classifier before the fallback walk.
+- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files.
 
 [Dashboard](../dashboard.md)

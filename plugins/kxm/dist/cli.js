@@ -5567,7 +5567,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse11(serialize(uri, options), options);
+        parse12(serialize(uri, options), options);
       }
       return uri;
     }
@@ -5607,8 +5607,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative8, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse11(serialize(base, options), options);
-        relative8 = parse11(serialize(relative8, options), options);
+        base = parse12(serialize(base, options), options);
+        relative8 = parse12(serialize(relative8, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative8.scheme) {
@@ -5900,7 +5900,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse11(uri, opts) {
+    function parse12(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -5937,7 +5937,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse11
+      parse: parse12
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -16410,7 +16410,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse11(src, reviver, options) {
+    function parse12(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -16451,7 +16451,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse11;
+    exports.parse = parse12;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument3;
     exports.stringify = stringify12;
@@ -16968,7 +16968,7 @@ function validateRoleShape(document, id, label, issues) {
       if (!closedObject(fallback, FALLBACK_KEYS, path4, issues)) return;
       if (fallback.onError !== void 0) {
         if (!Array.isArray(fallback.onError) || new Set(fallback.onError).size !== fallback.onError.length || fallback.onError.some((item) => !FALLBACK_ERRORS.includes(item))) {
-          issues.push(issue2("schema", "schema_enum", path4, "onError must be unique rate_limit, transport, or provider_unavailable values"));
+          issues.push(issue2("schema", "schema_enum", path4, "onError must be unique rate_limit, transport, provider_unavailable, or context_overflow values"));
         }
       }
       if (fallback.maxSwitches !== void 0 && (!Number.isInteger(fallback.maxSwitches) || fallback.maxSwitches < 0)) {
@@ -17226,7 +17226,7 @@ var init_policy_draft = __esm({
     TEMPLATE_KEYS = Object.freeze(["template", "schema"]);
     POLICY_KEYS = Object.freeze(["vendorIndependenceRequired", "maxTransitions", "requiresGateVerification", "fallback"]);
     FALLBACK_KEYS = Object.freeze(["onError", "maxSwitches", "revert"]);
-    FALLBACK_ERRORS = Object.freeze(["rate_limit", "transport", "provider_unavailable"]);
+    FALLBACK_ERRORS = Object.freeze(["rate_limit", "transport", "provider_unavailable", "context_overflow"]);
     FALLBACK_REVERT = Object.freeze(["next_run", "never"]);
     ROSTER_ENTRY_KEYS = Object.freeze(["route", "effort", "mode"]);
     CRITIC_PURPOSES = Object.freeze(["reviewer-arch", "reviewer-cli"]);
@@ -25145,6 +25145,54 @@ var init_routes = __esm({
   }
 });
 
+// plugins/kxm/src/route-switch.ts
+function parseRouteSwitchRecord(payload, identity = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return void 0;
+  const routeSwitch = payload.routeSwitch;
+  if (!routeSwitch || typeof routeSwitch !== "object" || Array.isArray(routeSwitch)) return void 0;
+  const record = routeSwitch;
+  const from = record.from;
+  const to = record.to;
+  const reason = record.reason;
+  if (typeof from !== "string" || typeof to !== "string" || typeof reason !== "string") return void 0;
+  if (!WALKABLE_CLASSES.includes(reason)) return void 0;
+  const attemptId = typeof identity.attemptId === "string" ? identity.attemptId : typeof payload.attemptId === "string" ? payload.attemptId : "";
+  const stepId = typeof identity.stepId === "string" ? identity.stepId : typeof payload.stepId === "string" ? payload.stepId : "";
+  if (!attemptId || !stepId) return void 0;
+  const effort = typeof record.effort === "string" && EFFORTS2.has(record.effort) ? record.effort : void 0;
+  return {
+    from,
+    to,
+    reason,
+    attemptId,
+    stepId,
+    ...effort ? { effort } : {},
+    ...identity.runId ? { runId: identity.runId } : {}
+  };
+}
+var WALKABLE_CLASSES, EFFORTS2;
+var init_route_switch = __esm({
+  "plugins/kxm/src/route-switch.ts"() {
+    "use strict";
+    WALKABLE_CLASSES = ["rate_limit", "transport", "provider_unavailable", "context_overflow"];
+    EFFORTS2 = /* @__PURE__ */ new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  }
+});
+
+// plugins/kxm/src/route-fallback.ts
+var import_yaml8;
+var init_route_fallback = __esm({
+  "plugins/kxm/src/route-fallback.ts"() {
+    "use strict";
+    import_yaml8 = __toESM(require_dist(), 1);
+    init_harness();
+    init_routes();
+    init_route_switch();
+    init_workforce_names();
+    init_route_switch();
+  }
+});
+
 // plugins/kxm/src/worktree-witness.ts
 var init_worktree_witness = __esm({
   "plugins/kxm/src/worktree-witness.ts"() {
@@ -25191,7 +25239,7 @@ function parseFrontmatter(content) {
 }
 function parseMemoryRecord(raw, filename = "memory.md") {
   const { frontmatter, body } = parseFrontmatter(raw);
-  const data = (0, import_yaml8.parse)(frontmatter);
+  const data = (0, import_yaml9.parse)(frontmatter);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error(`invalid YAML frontmatter in ${filename}`);
   }
@@ -25271,7 +25319,7 @@ function formatMemoryRecord(record) {
     lifecycle: record.lifecycle,
     evidenceRefs: record.evidenceRefs
   };
-  const yamlText = (0, import_yaml8.stringify)(frontmatter).trim();
+  const yamlText = (0, import_yaml9.stringify)(frontmatter).trim();
   const bodyText = record.body?.trim() ?? "";
   return bodyText ? `---
 ${yamlText}
@@ -25428,11 +25476,11 @@ function syncHarnessMemory(repoRoot, options = {}) {
   }
   return { updated, unchanged, missing };
 }
-var import_yaml8, MEMORY_SCHEMA, MEMORY_BRIEF_SCHEMA, MEMORY_MARKER_START, MEMORY_MARKER_END, VALID_SCOPES, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_LIFECYCLES, BANNED_CONTROL_PLANE_FIELDS, HARNESS_INSTRUCTION_FILES;
+var import_yaml9, MEMORY_SCHEMA, MEMORY_BRIEF_SCHEMA, MEMORY_MARKER_START, MEMORY_MARKER_END, VALID_SCOPES, VALID_AUTHORITIES, VALID_CONFIDENCES, VALID_LIFECYCLES, BANNED_CONTROL_PLANE_FIELDS, HARNESS_INSTRUCTION_FILES;
 var init_memory = __esm({
   "plugins/kxm/src/memory.ts"() {
     "use strict";
-    import_yaml8 = __toESM(require_dist(), 1);
+    import_yaml9 = __toESM(require_dist(), 1);
     init_redact();
     MEMORY_SCHEMA = "kxm.memory.v1";
     MEMORY_BRIEF_SCHEMA = "kxm.memory-brief.v1";
@@ -25484,7 +25532,7 @@ function parseSkillFrontmatter(content) {
     return { frontmatter: null, body: content };
   }
   try {
-    const parsed = (0, import_yaml9.parse)(rawFm);
+    const parsed = (0, import_yaml10.parse)(rawFm);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return { frontmatter: parsed, body: rawBody };
     }
@@ -25541,11 +25589,11 @@ function boundedList(value, field) {
 function readdirSorted(dir) {
   return readdirSync7(dir).filter((entry) => statSync3(join17(dir, entry)).isDirectory()).sort();
 }
-var import_yaml9, SKILL_CANDIDATE_SCHEMA, SKILL_EVALUATION_SCHEMA, SKILL_DECISION_SCHEMA, MAX_SKILL_NAME_CHARS, MAX_SKILL_CONTENT_CHARS, MAX_SKILL_EVIDENCE_REFS, MAX_SKILL_MODELS, PROMOTION_REQUIRED_EVALUATIONS, SkillLifecycleError, SkillLifecycle;
+var import_yaml10, SKILL_CANDIDATE_SCHEMA, SKILL_EVALUATION_SCHEMA, SKILL_DECISION_SCHEMA, MAX_SKILL_NAME_CHARS, MAX_SKILL_CONTENT_CHARS, MAX_SKILL_EVIDENCE_REFS, MAX_SKILL_MODELS, PROMOTION_REQUIRED_EVALUATIONS, SkillLifecycleError, SkillLifecycle;
 var init_skills = __esm({
   "plugins/kxm/src/skills.ts"() {
     "use strict";
-    import_yaml9 = __toESM(require_dist(), 1);
+    import_yaml10 = __toESM(require_dist(), 1);
     init_redact();
     SKILL_CANDIDATE_SCHEMA = "kxm.skill-candidate.v1";
     SKILL_EVALUATION_SCHEMA = "kxm.skill-evaluation.v1";
@@ -26318,12 +26366,14 @@ function computeDecayedWeight(recordedAt, halfLifeDays = 14, now = Date.now()) {
 }
 function generateRoutingReport(records, options = {}) {
   const generatedAt = options.now ? options.now() : (/* @__PURE__ */ new Date()).toISOString();
+  const routeSwitches = options.routeSwitches?.filter((item) => item.from && item.to) ?? [];
   if (records.length === 0) {
     return {
       schema: ROUTING_REPORT_SCHEMA,
       generatedAt,
       totalAttempts: 0,
-      rows: []
+      rows: [],
+      ...routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}
     };
   }
   const groups = /* @__PURE__ */ new Map();
@@ -26487,12 +26537,21 @@ function generateRoutingReport(records, options = {}) {
     schema: ROUTING_REPORT_SCHEMA,
     generatedAt,
     totalAttempts: records.length,
-    rows
+    rows,
+    ...routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}
   };
 }
 function formatRoutingReport(report2, options = {}) {
-  if (report2.rows.length === 0) {
+  if (report2.rows.length === 0 && (!report2.routeSwitches || report2.routeSwitches.length === 0)) {
     return "no routing records to report";
+  }
+  if (report2.rows.length === 0) {
+    const lines2 = ["no routing records to report", "", `Route switches (${report2.routeSwitches.length})`];
+    for (const item of report2.routeSwitches) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines2.push(`  ${item.from} -> ${item.to} (${item.reason}${effort}) step ${item.stepId}`);
+    }
+    return lines2.join("\n");
   }
   const showListCost = Boolean(options.equivalentListCost);
   const headers = [
@@ -26549,6 +26608,14 @@ function formatRoutingReport(report2, options = {}) {
   if (report2.rows.some((r) => r.flagged)) {
     lines.push("* = unknown-cost attempts present (never ranked cheapest)");
   }
+  if (report2.routeSwitches && report2.routeSwitches.length > 0) {
+    lines.push("");
+    lines.push(`Route switches (${report2.routeSwitches.length})`);
+    for (const item of report2.routeSwitches) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines.push(`  ${item.from} -> ${item.to} (${item.reason}${effort}) step ${item.stepId}`);
+    }
+  }
   return lines.join("\n");
 }
 var ROUTING_RECORD_SCHEMA, ROUTING_RECORD_V2_SCHEMA, BEHAVIORAL_HASH_VERSION, MAX_CONTEXT_ITEM_IDS, MAX_SKILL_REFS, MAX_PROVIDER_METADATA_FIELDS, ROUTING_REPORT_SCHEMA;
@@ -26575,7 +26642,7 @@ function readYamlFile(file) {
 function readModelDocument(file) {
   if (!existsSync18(file)) return void 0;
   try {
-    const parsed = (0, import_yaml10.parse)(readFileSync16(file, "utf8"));
+    const parsed = (0, import_yaml11.parse)(readFileSync16(file, "utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
     return parsed;
   } catch {
@@ -26999,12 +27066,13 @@ function pinnedGatesForCompiledPlan(plan, bundle, projectRoot) {
     controlRoot: { repositoryId: "control", projectKey: projectRuntimeKey(projectRoot) }
   };
 }
-var import_yaml10, ENGINE_ROUTING_METADATA_KEYS, MAX_PRODUCER_ROUTING_METADATA_FIELDS;
+var import_yaml11, ENGINE_ROUTING_METADATA_KEYS, MAX_PRODUCER_ROUTING_METADATA_FIELDS;
 var init_engine = __esm({
   "plugins/kxm/src/engine.ts"() {
     "use strict";
-    import_yaml10 = __toESM(require_dist(), 1);
+    import_yaml11 = __toESM(require_dist(), 1);
     init_routes();
+    init_route_fallback();
     init_workforce_names();
     init_worktree_witness();
     init_context_packet();
@@ -27839,14 +27907,14 @@ async function refreshModelInventory(options) {
   for (const item of nous.data) add(item, "nous", "discount");
   const inventory = { schema: "kxm.model-inventory.v1", fetchedAt, currency: "USD", sources, models: [...byId.values()].sort((a, b2) => a.id.localeCompare(b2.id)) };
   mkdirSync19(join28(options.outputRoot, ".kxm", "models"), { recursive: true });
-  writeFileSync18(join28(options.outputRoot, ".kxm", "models", "inventory.yaml"), (0, import_yaml15.stringify)(inventory), "utf8");
+  writeFileSync18(join28(options.outputRoot, ".kxm", "models", "inventory.yaml"), (0, import_yaml16.stringify)(inventory), "utf8");
   return inventory;
 }
-var import_yaml15, OR_URL, NOUS_URL;
+var import_yaml16, OR_URL, NOUS_URL;
 var init_model_inventory = __esm({
   "plugins/kxm/src/model-inventory.ts"() {
     "use strict";
-    import_yaml15 = __toESM(require_dist(), 1);
+    import_yaml16 = __toESM(require_dist(), 1);
     init_oneshot_process();
     OR_URL = "https://openrouter.ai/api/v1/models";
     NOUS_URL = "https://inference-api.nousresearch.com/v1/models";
@@ -35606,7 +35674,7 @@ init_runtime_store();
 init_types();
 
 // plugins/kxm/src/cli/roles.ts
-var import_yaml11 = __toESM(require_dist(), 1);
+var import_yaml12 = __toESM(require_dist(), 1);
 init_sqlite();
 init_role();
 init_project_config();
@@ -35707,7 +35775,7 @@ async function cmdRoleGet(runtime, roleId, options) {
     runtime.io,
     runtime.json,
     { ok: true, command: "role get", roleId, scope: result.scope, filePath: result.filePath, role: result.role },
-    (0, import_yaml11.stringify)(result.role)
+    (0, import_yaml12.stringify)(result.role)
   );
   return 0;
 }
@@ -35756,7 +35824,7 @@ async function cmdRoleAdd(runtime, roleId, options) {
   if (options.file) {
     const filePath = resolve14(runtime.cwd, options.file);
     const content = readFileSync20(filePath, "utf8");
-    roleDef = (0, import_yaml11.parse)(content);
+    roleDef = (0, import_yaml12.parse)(content);
     roleDef.id = roleId;
     roleDef.schema = "kxm.role.v2";
     roleDef.purpose ??= rolePurposeForId(roleDef.id);
@@ -35795,7 +35863,7 @@ async function cmdRoleAdd(runtime, roleId, options) {
       );
       return 2;
     }
-    const issues = kxmRoleWriteIssues(projectRoot2, roleDef.id, (0, import_yaml11.stringify)(roleDef));
+    const issues = kxmRoleWriteIssues(projectRoot2, roleDef.id, (0, import_yaml12.stringify)(roleDef));
     if (issues.length > 0) {
       print(
         runtime.io,
@@ -36091,7 +36159,7 @@ async function cmdRoleResume(runtime, runId, ruling) {
 }
 
 // plugins/kxm/src/cli/workflows.ts
-var import_yaml13 = __toESM(require_dist(), 1);
+var import_yaml14 = __toESM(require_dist(), 1);
 init_sqlite();
 import { randomUUID as randomUUID8 } from "node:crypto";
 import { existsSync as existsSync23, readFileSync as readFileSync22 } from "node:fs";
@@ -36528,7 +36596,7 @@ async function watchGithubChecks(input) {
 }
 
 // plugins/kxm/src/workflow-manager.ts
-var import_yaml12 = __toESM(require_dist(), 1);
+var import_yaml13 = __toESM(require_dist(), 1);
 init_config();
 init_engine_compile();
 init_project_config();
@@ -36541,7 +36609,7 @@ function assertWorkflowId(workflowId) {
 }
 var workflowSchemaRegistry;
 function workflowPayload(workflowId, content, filePath) {
-  const payload = typeof content === "string" ? content : (0, import_yaml12.stringify)(content);
+  const payload = typeof content === "string" ? content : (0, import_yaml13.stringify)(content);
   const value = parseRestrictedYaml2(payload, filePath);
   const issues = (workflowSchemaRegistry ??= new KxmSchemaRegistry()).validate("workflow", value, filePath);
   if (issues.length > 0) throw new KxmConfigError(issues);
@@ -37036,7 +37104,7 @@ async function cmdWorkflowAdd(runtime, workflowId, options) {
     } else if (!content) {
       content = scaffoldWorkflowDefinition(options.description || `Workflow ${workflowId}`);
     }
-    const document = typeof content === "string" ? content : (0, import_yaml13.stringify)(content);
+    const document = typeof content === "string" ? content : (0, import_yaml14.stringify)(content);
     let repoRoot = runtime.cwd;
     if (scope === "local") {
       const projectRoot = discoverKxmProjectRoot(runtime.cwd);
@@ -37480,7 +37548,7 @@ async function cmdRetrospectiveExport(runtime, runId, options) {
 }
 
 // plugins/kxm/src/cli/tasks.ts
-var import_yaml16 = __toESM(require_dist(), 1);
+var import_yaml17 = __toESM(require_dist(), 1);
 init_harness();
 import { existsSync as existsSync30, readFileSync as readFileSync28, readdirSync as readdirSync11 } from "node:fs";
 import { basename as basename7, join as join33, resolve as resolve22 } from "node:path";
@@ -37634,7 +37702,7 @@ function suggestWorkflowAndRoles(prompt, options = {}) {
 }
 
 // plugins/kxm/src/task-manager.ts
-var import_yaml14 = __toESM(require_dist(), 1);
+var import_yaml15 = __toESM(require_dist(), 1);
 import { randomUUID as randomUUID9 } from "node:crypto";
 import { existsSync as existsSync24, mkdirSync as mkdirSync17, readFileSync as readFileSync23, readdirSync as readdirSync9, writeFileSync as writeFileSync17 } from "node:fs";
 import { join as join26, resolve as resolve17 } from "node:path";
@@ -37668,7 +37736,7 @@ function createGoal(repoRoot, input, options = {}) {
   };
   if (options.dryRun) return record;
   mkdirSync17(goalsDirectory(repoRoot), { recursive: true });
-  writeFileSync17(goalFilePath(repoRoot, id), (0, import_yaml14.stringify)(record).trim() + "\n", "utf8");
+  writeFileSync17(goalFilePath(repoRoot, id), (0, import_yaml15.stringify)(record).trim() + "\n", "utf8");
   return record;
 }
 function listGoals(repoRoot) {
@@ -37680,7 +37748,7 @@ function listGoals(repoRoot) {
     if (entry.isFile() && (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))) {
       try {
         const text = readFileSync23(join26(dir, entry.name), "utf8");
-        const doc = (0, import_yaml14.parse)(text);
+        const doc = (0, import_yaml15.parse)(text);
         if (doc && doc.schema === GOAL_SCHEMA) goals.push(doc);
       } catch {
       }
@@ -37712,7 +37780,7 @@ function createTask(repoRoot, input, options = {}) {
   };
   if (options.dryRun) return record;
   mkdirSync17(tasksDirectory(repoRoot), { recursive: true });
-  writeFileSync17(taskFilePath(repoRoot, id), (0, import_yaml14.stringify)(record).trim() + "\n", "utf8");
+  writeFileSync17(taskFilePath(repoRoot, id), (0, import_yaml15.stringify)(record).trim() + "\n", "utf8");
   return record;
 }
 function listTasks(repoRoot, options = {}) {
@@ -37724,7 +37792,7 @@ function listTasks(repoRoot, options = {}) {
     if (entry.isFile() && (entry.name.endsWith(".yaml") || entry.name.endsWith(".yml"))) {
       try {
         const text = readFileSync23(join26(dir, entry.name), "utf8");
-        const doc = (0, import_yaml14.parse)(text);
+        const doc = (0, import_yaml15.parse)(text);
         if (doc && doc.schema === TASK_SCHEMA) {
           if (options.goalId && doc.goalId !== options.goalId) continue;
           if (options.status && doc.status !== options.status) continue;
@@ -37742,7 +37810,7 @@ function getTask(repoRoot, taskId) {
   if (!existsSync24(filePath)) return void 0;
   try {
     const text = readFileSync23(filePath, "utf8");
-    const doc = (0, import_yaml14.parse)(text);
+    const doc = (0, import_yaml15.parse)(text);
     return doc && doc.schema === TASK_SCHEMA ? doc : void 0;
   } catch {
     return void 0;
@@ -37760,7 +37828,7 @@ function syncTaskWithTracker(repoRoot, taskId, options = {}) {
   task.trackerSync.syncStatus = "synced";
   task.trackerSync.lastSyncedAt = now;
   task.updatedAt = now;
-  if (!options.dryRun) writeFileSync17(taskFilePath(repoRoot, taskId), (0, import_yaml14.stringify)(task).trim() + "\n", "utf8");
+  if (!options.dryRun) writeFileSync17(taskFilePath(repoRoot, taskId), (0, import_yaml15.stringify)(task).trim() + "\n", "utf8");
   return task;
 }
 
@@ -38803,7 +38871,7 @@ steps:
         maxTransitions: 2
 `;
     }
-    const parsedYaml = (0, import_yaml16.parse)(yamlContent);
+    const parsedYaml = (0, import_yaml17.parse)(yamlContent);
     const plan = compileKxmWorkflow({ id: workflowId, value: parsedYaml });
     const layout = generateStudioLayout(plan);
     print(runtime.io, runtime.json, { ok: true, command: "studio layout", layout }, JSON.stringify(layout, null, 2));
@@ -38845,7 +38913,7 @@ async function cmdStudioServe(runtime, options) {
           }
           if (targetPath && existsSync30(targetPath)) {
             const raw = readFileSync28(targetPath, "utf8");
-            const parsed = (0, import_yaml16.parse)(raw);
+            const parsed = (0, import_yaml17.parse)(raw);
             const wfId = basename7(targetPath).replace(/\.(yaml|yml)$/, "");
             return compileKxmWorkflow({ id: wfId, value: parsed });
           }
@@ -50478,7 +50546,7 @@ function resolveInstallKind(probe, npmGlobalRoot) {
 init_bindings();
 
 // plugins/kxm/src/kxm-update-config.ts
-var import_yaml17 = __toESM(require_dist(), 1);
+var import_yaml18 = __toESM(require_dist(), 1);
 import { existsSync as existsSync37, readFileSync as readFileSync34 } from "node:fs";
 import { join as join47 } from "node:path";
 init_bindings();
@@ -50487,7 +50555,7 @@ function loadKxmUpdateConfig(env = process.env) {
   if (!existsSync37(path4)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
   let parsed;
   try {
-    parsed = (0, import_yaml17.parse)(readFileSync34(path4, "utf8"));
+    parsed = (0, import_yaml18.parse)(readFileSync34(path4, "utf8"));
   } catch {
     throw new KxmUpdateConfigError("update.yaml is not valid YAML");
   }
@@ -51635,6 +51703,7 @@ function buildImprovementReport(records, options = {}) {
       })
     });
   }
+  const routeSwitches = options.routeSwitches?.filter((item) => item.from && item.to) ?? [];
   return {
     schema: IMPROVEMENT_REPORT_SCHEMA,
     createdAt: nowIso(),
@@ -51643,7 +51712,8 @@ function buildImprovementReport(records, options = {}) {
     groups,
     candidates,
     promotionPolicy,
-    promotion
+    promotion,
+    ...routeSwitches.length > 0 ? { routeSwitches: [...routeSwitches] } : {}
   };
 }
 function writeImprovementReport(improvementsDir, report2, dryRun = false) {
@@ -51678,6 +51748,14 @@ function formatImprovementReport(report2) {
     const rework = String(g.rework).padStart(7);
     const cand = g.isCandidate ? `yes (${g.candidateKind})` : g.excludedReason !== void 0 ? `no (${g.excludedReason})` : "no";
     lines.push(`${wf} ${step} ${role} ${prompt} ${rec} ${runs} ${asks} ${weighted} ${cost} ${lat} ${accepted} ${rework}  ${cand}`);
+  }
+  if (report2.routeSwitches && report2.routeSwitches.length > 0) {
+    lines.push("");
+    lines.push(`Route switches (${report2.routeSwitches.length}):`);
+    for (const item of report2.routeSwitches) {
+      const effort = item.effort ? ` effort ${item.effort}` : "";
+      lines.push(`  - ${item.from} -> ${item.to} (${item.reason}${effort}) on ${item.stepId}`);
+    }
   }
   if (report2.candidates.length > 0) {
     const readiness = new Map(report2.promotion.map((entry) => [entry.candidateId, entry]));
@@ -51730,11 +51808,12 @@ function evaluatePromotionPolicy(candidate, policy = "manual_pr", options = {}) 
 init_sqlite();
 init_project_config();
 init_runtime_store();
+init_route_switch();
 init_routing();
 init_telemetry();
 import { existsSync as existsSync41 } from "node:fs";
 import { resolve as resolve29 } from "node:path";
-var ENGINE_EVENTS_SQL = "SELECT run_id, sequence, event_type, payload FROM events WHERE event_type IN ('routing.attempt.recorded','step.entered','run.status_changed') ORDER BY run_id, sequence";
+var ENGINE_EVENTS_SQL = "SELECT run_id, sequence, event_type, payload FROM events WHERE event_type IN ('routing.attempt.recorded','routing.route_switched','step.entered','run.status_changed') ORDER BY run_id, sequence";
 var SIMULATED_HARNESS = "driver-simulated";
 function parsePayload(text) {
   try {
@@ -51755,7 +51834,7 @@ function readEngineRoutingRecords(path4) {
     undecided: 0,
     duplicatesDropped: 0
   };
-  if (!existsSync41(path4)) return { records: [], source };
+  if (!existsSync41(path4)) return { records: [], source, routeSwitches: [] };
   source.exists = true;
   let rows;
   let database;
@@ -51773,6 +51852,7 @@ function readEngineRoutingRecords(path4) {
     }
   }
   const runs = /* @__PURE__ */ new Map();
+  const routeSwitches = [];
   for (const row of rows) {
     const runId = String(row.run_id);
     const sequence = Number(row.sequence);
@@ -51785,6 +51865,14 @@ function readEngineRoutingRecords(path4) {
     }
     if (eventType === "routing.attempt.recorded") {
       run.routing.push({ sequence, payload });
+    } else if (eventType === "routing.route_switched") {
+      const parsed = parsePayload(payload);
+      const record = parseRouteSwitchRecord(parsed, {
+        attemptId: typeof parsed?.attemptId === "string" ? parsed.attemptId : void 0,
+        stepId: typeof parsed?.stepId === "string" ? parsed.stepId : void 0,
+        runId
+      });
+      if (record) routeSwitches.push(record);
     } else if (eventType === "step.entered") {
       const stepId = parsePayload(payload)?.stepId;
       if (typeof stepId === "string") run.lastEntered.set(stepId, sequence);
@@ -51827,6 +51915,7 @@ function readEngineRoutingRecords(path4) {
   }
   return {
     records,
+    routeSwitches,
     source: { ...source, records: records.length, skippedInvalid, excludedSimulated, undecided }
   };
 }
@@ -51869,12 +51958,13 @@ function loadRoutingSources(options) {
   return {
     ...projectRoot !== void 0 ? { projectRoot } : {},
     records,
-    sources: reads.map((read) => read.source)
+    sources: reads.map((read) => read.source),
+    routeSwitches: reads.flatMap((read) => read.routeSwitches ?? [])
   };
 }
 
 // plugins/kxm/src/modes.ts
-var import_yaml18 = __toESM(require_dist(), 1);
+var import_yaml19 = __toESM(require_dist(), 1);
 init_prices();
 import { existsSync as existsSync42, readFileSync as readFileSync38 } from "node:fs";
 import { join as join51 } from "node:path";
@@ -51946,7 +52036,7 @@ function loadModesConfig(projectRoot) {
   }
   try {
     const raw = readFileSync38(modesPath, "utf8");
-    const parsed = (0, import_yaml18.parse)(raw);
+    const parsed = (0, import_yaml19.parse)(raw);
     if (parsed && parsed.schema === "kxm.modes.v1" && parsed.majorModes) {
       return {
         schema: "kxm.modes.v1",
@@ -52941,7 +53031,7 @@ ${line}
 }
 
 // plugins/kxm/src/init-guide-setup.ts
-var import_yaml19 = __toESM(require_dist(), 1);
+var import_yaml20 = __toESM(require_dist(), 1);
 init_routes();
 import { existsSync as existsSync45, mkdirSync as mkdirSync32, writeFileSync as writeFileSync28 } from "node:fs";
 import { dirname as dirname24, join as join54 } from "node:path";
@@ -53376,7 +53466,7 @@ function renderGuideSetupFiles(projectRoot, plan) {
     if (binding.harness === "pi" && !piMatch) {
       files.push({
         path: join54(projectRoot, ".kxm", "agents", `${role}.yaml`),
-        content: (0, import_yaml19.stringify)(agentDocument(role, stage))
+        content: (0, import_yaml20.stringify)(agentDocument(role, stage))
       });
       continue;
     }
@@ -53401,15 +53491,15 @@ function renderGuideSetupFiles(projectRoot, plan) {
     }
     files.push({
       path: join54(projectRoot, ".kxm", "agents", `${role}.yaml`),
-      content: (0, import_yaml19.stringify)(agentDocument(role, stage))
+      content: (0, import_yaml20.stringify)(agentDocument(role, stage))
     });
     files.push({
       path: join54(projectRoot, ".kxm", "models", `${routeId2}.yaml`),
-      content: (0, import_yaml19.stringify)(modelDocument)
+      content: (0, import_yaml20.stringify)(modelDocument)
     });
     files.push({
       path: join54(projectRoot, ".kxm", "roles", `${role}.yaml`),
-      content: (0, import_yaml19.stringify)({
+      content: (0, import_yaml20.stringify)({
         schema: "kxm.role.v2",
         id: role,
         purpose: writer ? "writer" : "experiment",
@@ -53422,7 +53512,7 @@ function renderGuideSetupFiles(projectRoot, plan) {
   for (const workflow of plan.workflows) {
     files.push({
       path: join54(projectRoot, ".kxm", "workflows", `${workflow.slug}.yaml`),
-      content: (0, import_yaml19.stringify)(workflowDocument(workflow))
+      content: (0, import_yaml20.stringify)(workflowDocument(workflow))
     });
   }
   return files;
@@ -53440,7 +53530,7 @@ function mergeGuideRouteAdmission(projectRoot, plan) {
   policy.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   const path4 = join54(projectRoot, ".kxm", "routes.yaml");
   mkdirSync32(dirname24(path4), { recursive: true });
-  writeFileSync28(path4, (0, import_yaml19.stringify)(policy), "utf8");
+  writeFileSync28(path4, (0, import_yaml20.stringify)(policy), "utf8");
   return added;
 }
 function writeGuideSetupFiles(files) {
@@ -53912,7 +54002,8 @@ async function cmdImprove(runtime, options = {}) {
     dryRun: runtime.dryRun,
     promotionPolicy: config.improvement.promotionPolicy,
     autoThreshold: config.improvement.autoThreshold,
-    halfLifeDays: config.improvement.telemetryHalfLifeDays
+    halfLifeDays: config.improvement.telemetryHalfLifeDays,
+    routeSwitches: loaded.routeSwitches
   });
   const reportDir = join55(runtime.dirs.assets, "improvements");
   const reportPath = writeImprovementReport(reportDir, report2, runtime.dryRun);
@@ -54209,6 +54300,7 @@ async function cmdRoutingReport(runtime, options) {
   let file;
   let records;
   let sources;
+  let routeSwitches = [];
   if (options.file !== void 0) {
     file = options.file;
     records = readRoutingRecords(file).map((entry) => entry.routing);
@@ -54218,6 +54310,7 @@ async function cmdRoutingReport(runtime, options) {
     file = telemetryPath(runtime.dirs.logs);
     records = loaded.records;
     sources = loaded.sources;
+    routeSwitches = loaded.routeSwitches;
   }
   const includeEquivalentListCost = Boolean(options.equivalentListCost || options.listPrices);
   let catalog;
@@ -54228,7 +54321,7 @@ async function cmdRoutingReport(runtime, options) {
     } catch {
     }
   }
-  const report2 = generateRoutingReport(records, { catalog, includeEquivalentListCost });
+  const report2 = generateRoutingReport(records, { catalog, includeEquivalentListCost, routeSwitches });
   if (records.length === 0) {
     print(runtime.io, runtime.json, { ok: true, command: "routing report", file, ...sources ? { sources } : {}, configurations: [], report: report2 }, "no routing records in telemetry");
     return 0;
