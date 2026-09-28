@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
-date: "2026-09-16"
-sha256: 44fa88b13d8640d2aec6be0263972e359258d97e813f29d6da7f08fbe8d28e5b
+date: "2026-09-28"
+sha256: 59a1fc4181cd90197fe56648fd013c25b32ad3cd6ddf483feb38b5cb0f287d4c
 currency: USD
 models:
   - id: anthropic/fable
@@ -32,6 +32,16 @@ models:
         outputPerMillion: 6
         cacheReadPerMillion: 0.5
         cacheWritePerMillion: null
+  - id: xai/grok-4.7
+    provider: xai
+    model: grok-4.7
+    aliases:
+      - x-ai/grok-4.7
+    tiers:
+      - inputPerMillion: 1.6
+        outputPerMillion: 4.8
+        cacheReadPerMillion: 0.4
+        cacheWritePerMillion: null
   - id: openrouter/qwen/qwen3-coder-plus
     provider: openrouter
     model: qwen/qwen3-coder-plus
@@ -54,9 +64,9 @@ models:
     model: z-ai/glm-5.3-flash
     tiers:
       - &a1
-        inputPerMillion: 0.09
-        outputPerMillion: 0.3
-        cacheReadPerMillion: 0.018
+        inputPerMillion: 0.15
+        outputPerMillion: 0.5
+        cacheReadPerMillion: 0.03
         cacheWritePerMillion: null
   - id: zai-coding-cn/glm-5.3
     provider: zai-coding-cn
@@ -110,7 +120,7 @@ models:
     aliases:
       - deepseek/deepseek-v4.1-flash
     tiers:
-      - inputPerMillion: 0.15
-        outputPerMillion: 0.6
-        cacheReadPerMillion: 0.003
+      - inputPerMillion: 0.014
+        outputPerMillion: 0.4
+        cacheReadPerMillion: 0.004
         cacheWritePerMillion: null
