@@ -6,7 +6,7 @@ import { kxmReleaseAssetName } from "../../plugins/kxm/src/kxm-update.ts";
 // @ts-expect-error Workflow scripts ship without a declaration file.
 import { classifyPaths, isDocsPath, isPlatformPath, unboundedClassification } from "../../scripts/ci-classify.mjs";
 // @ts-expect-error Workflow scripts ship without a declaration file.
-import { ENGINE_FILE, SERIAL_FILES, SHARD_TOTAL, coverageOfShards, extractTestPatterns, planEngineShard, planUnitFiles } from "../../scripts/ci-unit-shard.mjs";
+import { ENGINE_FILE, LIGHT_SHARD_TOTAL, SERIAL_FILES, SHARD_TOTAL, coverageOfShards, extractTestPatterns, planEngineShard, planLightShard, planUnitFiles } from "../../scripts/ci-unit-shard.mjs";
 
 const releaseText = readFileSync(".github/workflows/release.yml", "utf8");
 const autoReleaseText = readFileSync(".github/workflows/auto-release.yml", "utf8");
@@ -150,13 +150,13 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.equal(doc.jobs?.unit?.if, "${{ needs.changes.outputs.code == 'true' }}");
   assert.equal(doc.jobs?.unit?.name, "Unit (linux, Node 24, ${{ matrix.lane }})");
   assert.equal(doc.jobs?.unit?.strategy?.["fail-fast"], true);
-  assert.deepEqual(doc.jobs?.unit?.strategy?.matrix?.lane, ["serial", "light"]);
+  assert.deepEqual(doc.jobs?.unit?.strategy?.matrix?.lane, ["serial", "light-1", "light-2"]);
   assert.equal(doc.jobs?.["unit-windows"]?.["runs-on"], "windows-latest");
   assert.equal(doc.jobs?.["unit-windows"]?.["timeout-minutes"], 20);
   assert.equal(doc.jobs?.["unit-windows"]?.strategy?.["fail-fast"], true);
   assert.match(String(doc.jobs?.["unit-windows"]?.if), /pull_request/);
   assert.match(String(doc.jobs?.["unit-windows"]?.if), /needs\.changes\.outputs\.platform == 'true'/);
-  assert.deepEqual(doc.jobs?.["unit-windows"]?.strategy?.matrix?.lane, ["engine-1", "engine-2", "serial", "light"]);
+  assert.deepEqual(doc.jobs?.["unit-windows"]?.strategy?.matrix?.lane, ["engine-1", "engine-2", "serial", "light-1", "light-2"]);
   assert.equal(doc.jobs?.plugin?.if, "${{ needs.changes.outputs.code == 'true' }}");
   assert.match(String(doc.jobs?.validate?.if), /github\.event_name != 'pull_request'/);
   assert.match(String(doc.jobs?.validate?.if), /needs\.changes\.outputs\.code == 'true'/);
@@ -200,6 +200,7 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.match(unitRuns, /npm run typecheck/);
   assert.match(engineRuns, /npm run test:ci-shard -- engine \$\{\{ matrix\.shard \}\} 2/);
   assert.equal(SHARD_TOTAL, 2);
+  assert.equal(LIGHT_SHARD_TOTAL, 2);
 
   assert.equal(doc.concurrency?.["cancel-in-progress"], "${{ github.event_name == 'pull_request' }}");
   const validateRuns = validateSteps.map((step) => step.run).join("\n");
@@ -347,6 +348,18 @@ test("unit shards cover every unit file and every engine test name once", () => 
     assert.equal(covered.has(file), true, file);
     assert.equal(file.includes("\\"), false, file);
   }
+  const seenLight = new Set();
+  for (let index = 1; index <= LIGHT_SHARD_TOTAL; index += 1) {
+    const shard = planLightShard(process.cwd(), index, LIGHT_SHARD_TOTAL);
+    assert.ok(shard.length > 0, `light shard ${index} is empty`);
+    for (const file of shard) {
+      assert.equal(seenLight.has(file), false, file);
+      assert.equal(file.includes("\\"), false, file);
+      seenLight.add(file);
+    }
+  }
+  assert.deepEqual([...seenLight].sort(), [...light].sort());
+  assert.equal(seenLight.has("test/core/package-install.test.ts"), false);
   const patterns = extractTestPatterns(readFileSync(ENGINE_FILE, "utf8"));
   assert.ok(patterns.length > 20);
   for (const pattern of patterns) {
@@ -368,12 +381,14 @@ test("unit shard plans compare windows separators as posix paths", () => {
     "test\\core\\engine.test.ts",
     "test\\core/permission.test.ts",
     "test/core/already-posix.test.ts",
+    "test\\core\\package-install.test.ts",
   ];
   const lanes = planUnitFiles(windows);
   assert.deepEqual(lanes.files, [
     "packages/core/example/tests/unit/sample.test.ts",
     "test/core/already-posix.test.ts",
     "test/core/engine.test.ts",
+    "test/core/package-install.test.ts",
     "test/core/permission.test.ts",
     "test/core/runtime.test.ts",
   ]);

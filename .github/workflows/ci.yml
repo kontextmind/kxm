@@ -16,13 +16,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Pull requests run lint, typecheck, and the unit suite on Linux Node 24.
-# engine.test.ts is split by test name. permission and runtime run serially
-# in their own job. The other unit files run together. Pushes to main and
-# workflow_dispatch also run validate:pr on Linux and Windows for Node
-# 22.19.0 and Node 24. A pull request that touches path, process, shell,
-# spawn, package, or workflow files also runs the unit lanes on Windows.
+# engine.test.ts is split by test name. permission, runtime, and
+# package-install run serially in their own job. The other unit files are
+# split across two light shards. Pushes to main and workflow_dispatch also
+# run validate:pr on Linux and Windows for Node 22.19.0 and Node 24. A pull
+# request that touches path, process, shell, spawn, package, or workflow
+# files also runs the unit lanes on Windows.
 # `required` is the status check to mark required: it fails when a lane
-# fails and succeeds when a lane was skipped on purpose.
+# fails or is cancelled, and succeeds when a lane was skipped on purpose.
 jobs:
   changes:
     name: Classify changes
@@ -119,7 +120,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        lane: [serial, light]
+        lane: [serial, light-1, light-2]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -134,14 +135,14 @@ jobs:
         run: npm ci
 
       - name: Typecheck
-        if: matrix.lane == 'light'
+        if: matrix.lane == 'light-1'
         run: npm run typecheck
 
       - name: Unit tests
         run: npm run test:ci-shard -- ${{ matrix.lane }}
 
       - name: Verify generated runtime bundles are current
-        if: matrix.lane == 'light'
+        if: matrix.lane == 'light-1'
         run: node scripts/check-generated.mjs
 
   unit-windows:
@@ -156,7 +157,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        lane: [engine-1, engine-2, serial, light]
+        lane: [engine-1, engine-2, serial, light-1, light-2]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -185,7 +186,8 @@ jobs:
             engine-1) npm run test:ci-shard -- engine 1 2 ;;
             engine-2) npm run test:ci-shard -- engine 2 2 ;;
             serial) npm run test:ci-shard -- serial ;;
-            light) npm run test:ci-shard -- light ;;
+            light-1) npm run test:ci-shard -- light-1 ;;
+            light-2) npm run test:ci-shard -- light-2 ;;
           esac
 
   validate:

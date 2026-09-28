@@ -229,8 +229,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 - **CI lanes (2026-09-27).** The `CI` workflow is active again. Pull requests
   run docs lint, typecheck, and the unit suite on Linux Node 24: two
-  `engine.test.ts` shards, a serial lane for `permission.test.ts` and
-  `runtime.test.ts`, and a light lane for every other unit file.
+  `engine.test.ts` shards, a serial lane for `permission.test.ts`,
+  `runtime.test.ts`, and `package-install.test.ts`, and two light shards for
+  every other unit file.
   `CI / required` is the aggregate status check to mark required; this change
   does not edit branch protection. Pushes to `main` and `workflow_dispatch`
   also run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24.

@@ -8,6 +8,23 @@ import { unionChangelogUnreleased, unionLandedTracker } from "../../scripts/pr-l
 
 const script = join(process.cwd(), "scripts", "pr-land.mjs");
 
+// The stage tests put `#!/bin/sh` git/gh/npm shims on PATH. Windows does not
+// execute those files, and spawnSync on the real git/npm instead can wait
+// until the job is cancelled. The pure union tests still run on Windows.
+function testPosix(name: string, body: () => void): void;
+function testPosix(name: string, options: { timeout: number }, body: () => void): void;
+function testPosix(name: string, optionsOrBody: { timeout: number } | (() => void), maybeBody?: () => void): void {
+  const options = typeof optionsOrBody === "function" ? {} : optionsOrBody;
+  const body = typeof optionsOrBody === "function" ? optionsOrBody : maybeBody!;
+  test(name, options, (t) => {
+    if (process.platform === "win32") {
+      t.skip("POSIX #!/bin/sh PATH shims are not Windows executables; this shell contract runs on Linux");
+      return;
+    }
+    body();
+  });
+}
+
 function writeShim(bin: string, name: string, body: string): void {
   const path = join(bin, name);
   writeFileSync(path, body);
@@ -120,7 +137,7 @@ other tail
   assert.match(merged, /### Next heading/);
 });
 
-test("verify refuses land_dirty_tree", () => {
+testPosix("verify refuses land_dirty_tree", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-verify-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -152,7 +169,7 @@ exit 0
   }
 });
 
-test("docs passes with skipped when the generator is absent", () => {
+testPosix("docs passes with skipped when the generator is absent", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-docs-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -170,7 +187,7 @@ test("docs passes with skipped when the generator is absent", () => {
   }
 });
 
-test("unblock refuses land_blocked on REVIEW_REQUIRED", () => {
+testPosix("unblock refuses land_blocked on REVIEW_REQUIRED", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-unblock-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -200,7 +217,7 @@ exit 0
   }
 });
 
-test("merge falls back to the REST squash when auto-merge reports clean status", () => {
+testPosix("merge falls back to the REST squash when auto-merge reports clean status", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-merge-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -249,7 +266,7 @@ exit 0
   }
 });
 
-test("rebase stops with land_conflict_manual after five rounds while status stays BEHIND", () => {
+testPosix("rebase stops with land_conflict_manual after five rounds while status stays BEHIND", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-rebase-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -291,7 +308,7 @@ exit 0
   }
 });
 
-test("milestone reports deep_review_required when a phase flips to all done", () => {
+testPosix("milestone reports deep_review_required when a phase flips to all done", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-milestone-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -367,7 +384,7 @@ exit 0
 `;
 }
 
-test("pr uses the first commit subject as the title and honors --title", () => {
+testPosix("pr uses the first commit subject as the title and honors --title", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-pr-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -402,7 +419,7 @@ test("pr uses the first commit subject as the title and honors --title", () => {
   }
 });
 
-test("pr refuses land_pr_title_missing when the branch has no commit subject", () => {
+testPosix("pr refuses land_pr_title_missing when the branch has no commit subject", () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-pr-title-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -431,7 +448,7 @@ exit 0
   }
 });
 
-test("release matches the Release run by time when its title is Release", { timeout: 20_000 }, () => {
+testPosix("release matches the Release run by time when its title is Release", { timeout: 20_000 }, () => {
   const dir = mkdtempSync(join(tmpdir(), "kxm-land-release-"));
   const bin = join(dir, "bin");
   mkdirSync(join(dir, ".kxm", "logs"), { recursive: true });
