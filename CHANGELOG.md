@@ -6,6 +6,22 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **Hub project identity and its access key live in `.kxm/config.yaml`.**
+  `hub.local` and `hub.cloud` hold the URL, the project id to present, and a
+  key reference (`key.op` is an `op://` reference, `key.env` is an environment
+  variable name). A literal token is refused. `op read` runs at use time and
+  the resolved value is not saved. The same order is used everywhere: flag,
+  `KXM_PROJECT`, the active mode's config project, `.kxm/project.yaml`, the
+  package name, then the directory name. `kxm hub bind` and
+  `kxm hub bind --cloud` write the non-secret fields, and `kxm hub view`
+  prints the mode, URL, project id, and key source. The hub's
+  `hub.projects` map uses the same references. `KXM_PROJECT_TOKENS` still
+  replaces that map. Setups whose hub map is keyed by the package name should
+  set `hub.local.project` or `hub.cloud.project` to that name, or keep passing
+  `KXM_PROJECT`: a checkout with `.kxm/project.yaml` otherwise sends that id
+  and gets `project_token_missing`. See
+  [Operate a KXM hub](docs/operations.md#hub-identity-in-config).
+
 - **`kxm hub bind --cloud` attaches a client to a remote hub reached through a loopback forward.**
   The binding records `--token-env` and/or `--token-command` and never the token.
   Later commands, including the environment for a Pi worker, use that source and

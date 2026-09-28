@@ -477,20 +477,20 @@ Starts, inspects, and stops the local KXM hub, and binds this machine to a hub. 
 kxm hub view
 ```
 
-Calls `GET /health` and `GET /ready` on the target hub and reports whether the URL is loopback or remote.
+Calls `GET /health` and `GET /ready` on the target hub and reports whether the URL is loopback or remote, plus the mode, project id, and key source in effect. The key source is an environment variable name or an `op://` reference. The token is not printed.
 
 No command-specific options.
 
 - Needs a hub to succeed. Reads only.
-- JSON keys: `target` (`url`, `scope`, and `source: "env"` when `KXM_SERVER_URL` overrides a binding), `health`, `ready`. An unreachable hub reports `{"error":"hub_unreachable"}` for both probes.
-- Exit 0 when both probes succeed, 1 otherwise.
+- JSON keys: `target` (`url`, `scope`, and `source: "env"` when `KXM_SERVER_URL` overrides a binding), `identity` (`mode`, `modeSource`, `url`, `urlSource`, `project`, `projectSource`, `keySource`), `health`, `ready`. An unreachable hub reports `{"error":"hub_unreachable"}` for both probes.
+- Exit 0 when both probes succeed, 1 otherwise. A cloud mode with no resolvable key exits 2 with `cloud_token_missing`.
 
 ```bash
 kxm hub view
 ```
 
 ```text
-hub health=true ready=true · loopback hub
+hub health=true ready=true · loopback hub · mode=local project=prj_example (.kxm/project.yaml id) key=hub-env
 ```
 
 ```bash
@@ -569,17 +569,17 @@ kxm hub stop --wait-ms 8000 --json
 ### `kxm hub bind`
 
 ```text
-kxm hub bind <url> [--cloud] [--token-env <name>] [--token-command <command>]
+kxm hub bind <url> [--cloud] [--token-env <name>] [--token-command <command>] [--key-op <op://vault/item/field>]
 ```
 
-Binds this machine to a running hub by writing `hub-binding.json` under the user state root, then probes the hub's health for up to 300 ms. Every hub client uses the binding when `KXM_SERVER_URL` is unset.
+Binds this machine to a running hub by writing `hub-binding.json` under the user state root and the non-secret endpoint (mode, URL, project id, key reference) into `.kxm/config.yaml`, then probes the hub's health for up to 300 ms. Every hub client uses that endpoint when `KXM_SERVER_URL` is unset. The token is never written.
 
 - Arguments: `<url>`, Hub base URL (http or https).
 - A URL with credentials, a query, a fragment, or a scheme other than http or https fails with `hub_url_invalid` (exit 2).
 - A remote (non-loopback) URL is refused with `hub_bind_unauthenticated` (exit 2, `nextAction: "export_kxm_auth_token"`) unless a credential for the current project resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`. A malformed record fails with `hub_credential_unreadable` (exit 2). A loopback URL without `--cloud` still binds with no credential.
-- `--cloud` marks the binding remote even when the URL is a loopback forward. It requires `--token-env`, `--token-command`, or both. The token is not written. A non-empty variable wins; otherwise the command runs. Source flags without `--cloud` fail with `cloud_flag_required`. A missing source later fails with `cloud_token_missing` and does not fall back to hub-env. See [Cross-box peer attach](../operations.md#cross-box-peer-attach).
-- Mutates the binding file. `--dry-run` validates and prints the plan without writing.
-- JSON keys: `url`, `scope`, `file`, `health` (`on`, `off`, or `unknown`), `probeMs`. A cloud bind also returns `cloud`, and `tokenEnv` or `tokenCommand` when set.
+- `--cloud` marks the binding remote even when the URL is a loopback forward. It requires `--token-env`, `--token-command`, `--key-op`, or a combination. The token is not written. A non-empty variable wins; otherwise an `op://` reference is read with `op read`, or the command runs. `--token-command` without `--cloud` fails with `cloud_flag_required`. `--token-env` and `--key-op` are also valid on a local bind and are stored only as references in config. A missing cloud source later fails with `cloud_token_missing` and does not fall back to hub-env. See [Cross-box peer attach](../operations.md#cross-box-peer-attach).
+- Mutates the binding file and `.kxm/config.yaml`. `--dry-run` validates and prints the plan without writing.
+- JSON keys: `url`, `scope`, `file`, `configFile`, `project`, `health` (`on`, `off`, or `unknown`), `probeMs`. A cloud bind also returns `cloud`, and `tokenEnv` or `tokenCommand` when set.
 
 ```bash
 kxm hub bind http://127.0.0.1:7331 --dry-run
@@ -603,7 +603,7 @@ kxm hub bind https://hub.example.com --dry-run --json
 kxm hub unbind
 ```
 
-Removes this machine's hub binding, including a malformed binding record.
+Removes this machine's hub binding, including a malformed binding record, and clears `hub.mode` in `.kxm/config.yaml`. The `hub.local` and `hub.cloud` blocks stay.
 
 No command-specific options.
 
@@ -2469,7 +2469,7 @@ Captured without a GitHub token. With `GITHUB_TOKEN` set, the same command polls
 
 ## `kxm peer`
 
-Peer agent messaging through the hub. Each invocation connects to the hub as a short-lived agent named `KXM_AGENT_NAME` (default `cli-<pid>`) in project `KXM_PROJECT` (default: the `package.json` name, else the directory name), using `KXM_AUTH_TOKEN`, else this project's saved project token from `hub-env.json`. It never uses the persisted admin token: with neither, the command exits 2 with `project_token_missing` (`nextAction: "export_kxm_auth_token"`) before contacting the hub. The `kxm workflow` agent verbs (`checkpoint`, `record`, `wait`, `get`, `list`) connect the same way. That agent appears in `peer list` and the dashboard. Every subcommand accepts `--payload <json>` with the tool's fields as one object; explicit flags override it. Tool policy from `KXM_ATTEMPT_TOKEN`, `KXM_SESSION_TOKEN`, or the on-disk session token is enforced first (`tool_policy_denied`, `session_token_invalid`, `attempt_token_invalid`).
+Peer agent messaging through the hub. Each invocation connects to the hub as a short-lived agent named `KXM_AGENT_NAME` (default `cli-<pid>`). The project id is `--project`, then `KXM_PROJECT`, then the active mode's `project` in `.kxm/config.yaml`, then the `id` in `.kxm/project.yaml`, then the `package.json` name, then the directory name. The token is `KXM_AUTH_TOKEN`, else the active mode's key reference, else this project's saved project token from `hub-env.json`. It never uses the persisted admin token: with none of those, the command exits 2 with `project_token_missing` (`nextAction: "configure_hub_project"`) and names the project id and where it came from, before contacting the hub. The `kxm workflow` agent verbs (`checkpoint`, `record`, `wait`, `get`, `list`) connect the same way. That agent appears in `peer list` and the dashboard. Every subcommand accepts `--payload <json>` with the tool's fields as one object; explicit flags override it. Tool policy from `KXM_ATTEMPT_TOKEN`, `KXM_SESSION_TOKEN`, or the on-disk session token is enforced first (`tool_policy_denied`, `session_token_invalid`, `attempt_token_invalid`).
 
 All subcommands need a hub, honor `--dry-run` (printing the parsed `args` without connecting), print the hub's result object on success, and print `{"ok":false,"error":"command_failed","detail":"..."}` with exit 1 on failure. Malformed `--payload` exits 2 with `invalid_payload`.
 

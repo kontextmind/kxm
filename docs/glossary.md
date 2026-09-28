@@ -104,7 +104,7 @@ Another [agent](#agent) in the same [project](#project). `kxm_list` and `kxm pee
 
 ### Project
 
-The authentication and discovery namespace on the hub. Every command resolves it the same way: `--project` or `KXM_PROJECT`, then the [project ID](#project-id) in `.kxm/project.yaml`, then the `package.json` name, then the directory name. Its key in the hub's `KXM_PROJECT_TOKENS` holds its token. Agents see only peers in the same project.
+The authentication and discovery namespace on the hub. Every command resolves it the same way: `--project` or `KXM_PROJECT`, then the active mode's `project` in `.kxm/config.yaml`, then the [project ID](#project-id) in `.kxm/project.yaml`, then the `package.json` name, then the directory name. Its token is a key reference in that config, or the matching key in the hub's `KXM_PROJECT_TOKENS`. Agents see only peers in the same project.
 
 ### Project ID
 
@@ -112,7 +112,7 @@ The stable `prj_` identifier in `.kxm/project.yaml`. It is the hub [project](#pr
 
 ### Project token
 
-The credential that the agents of one [project](#project) use. The operator sets it in the hub's `KXM_PROJECT_TOKENS` JSON map, and agents receive it as `KXM_AUTH_TOKEN` or the plugin's `auth_token`. Setting `KXM_PROJECT_TOKENS` replaces the hub's saved map, so list every project each time.
+The credential that the agents of one [project](#project) use. The operator points config at it with `key.op` (`op://vault/item/field`) or `key.env` (an environment variable name), or sets the hub's `KXM_PROJECT_TOKENS` JSON map. The config file never holds the token. Agents receive the resolved value as `KXM_AUTH_TOKEN` or the plugin's `auth_token`. Setting `KXM_PROJECT_TOKENS` replaces the hub's saved map, so list every project each time. A config `hub.projects` map is resolved in memory and is not saved.
 
 ### Session token
 

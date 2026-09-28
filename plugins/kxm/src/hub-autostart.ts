@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { probeHubHealth, readHubBinding } from "./hub-binding.ts";
+import { describeHubConnection } from "./hub-identity.ts";
 import { resolveHubCredentials } from "./hub-env.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
 import { redactSecrets } from "./redact.ts";
@@ -136,6 +137,25 @@ export async function ensureHubRunning(options: EnsureHubOptions): Promise<Ensur
     // A cloud binding names a remote hub. A dead forward must not start a local hub
     // that would then authenticate with this machine's hub-env token.
     if (binding.cloud) return { status: "failed", reason: "cloud_hub_unreachable", logPath: "" };
+  }
+
+  // A cloud endpoint in config is the same rule when no cloud binding is on disk:
+  // a dead forward must not start a local hub.
+  if (!binding?.cloud) {
+    try {
+      const connection = describeHubConnection(options.cwd, env);
+      if (connection.mode === "cloud") {
+        const { health } = await probeHubHealth(connection.url, fetchImpl);
+        if (health === "on") return { status: "bound-healthy", url: connection.url };
+        return { status: "failed", reason: "cloud_hub_unreachable", logPath: "" };
+      }
+    } catch (error) {
+      return {
+        status: "failed",
+        reason: error instanceof Error ? error.message : "hub_config_invalid",
+        logPath: "",
+      };
+    }
   }
 
   // 2. A live local claim means a hub (started any way) already owns this

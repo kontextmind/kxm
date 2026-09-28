@@ -2635,7 +2635,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify2(item, ctx, onComment, onChompKeep) {
+    function stringify3(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -2664,7 +2664,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -2674,7 +2674,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -2696,7 +2696,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify2.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify3.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -2748,7 +2748,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify2.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify3.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -2889,7 +2889,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge = require_merge();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -2925,7 +2925,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify2.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify3.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -2992,12 +2992,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify3 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify3(collection, ctx, options);
+      const stringify4 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify4(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -3022,7 +3022,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify2.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify3.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -3089,7 +3089,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify2.stringify(item, itemCtx, () => comment = null);
+        let str = stringify3.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -4450,7 +4450,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify2 = require_stringify();
+    var stringify3 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -4465,7 +4465,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify2.createStringifyContext(doc, options);
+      const ctx = stringify3.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -4487,7 +4487,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify2.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify3.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -4495,7 +4495,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify2.stringify(doc.contents, ctx));
+        lines.push(stringify3.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -6631,7 +6631,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify3 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -6684,7 +6684,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -8395,7 +8395,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse2(src, reviver, options) {
+    function parse3(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -8414,7 +8414,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify2(value, replacer, options) {
+    function stringify3(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -8436,10 +8436,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse2;
+    exports.parse = parse3;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument;
-    exports.stringify = stringify2;
+    exports.stringify = stringify3;
   }
 });
 
@@ -8844,34 +8844,331 @@ var init_memory = __esm({
   }
 });
 
-// plugins/kxm/src/project-name.ts
-var project_name_exports = {};
-__export(project_name_exports, {
-  defaultProjectName: () => defaultProjectName
-});
-import { existsSync as existsSync7, readFileSync as readFileSync7 } from "node:fs";
-import { basename as basename2, dirname as dirname3, join as join6, resolve as resolve5 } from "node:path";
-function defaultProjectName(cwd, env = process.env, explicit) {
-  const fromExplicit = explicit?.trim();
-  if (fromExplicit) return fromExplicit;
-  const fromEnv = env.KXM_PROJECT?.trim();
-  if (fromEnv) return fromEnv;
-  const fromProject = readProjectYamlId(cwd);
-  if (fromProject) return fromProject;
-  try {
-    const pkg = JSON.parse(readFileSync7(join6(cwd, "package.json"), "utf8"));
-    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
-  } catch {
-  }
-  return basename2(cwd);
+// plugins/kxm/src/config.ts
+import { existsSync as existsSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync7, writeFileSync as writeFileSync5 } from "node:fs";
+import { tmpdir, homedir as homedir3 } from "node:os";
+import { dirname as dirname3, join as join6, resolve as resolve5 } from "node:path";
+function isHubKeyEnvName(value) {
+  return HUB_ENV_NAME.test(value);
 }
-function readProjectYamlId(start) {
+function isHubOpReference(value) {
+  return HUB_OP_REF.test(value);
+}
+function userConfigDirectory(overrideDir) {
+  if (overrideDir) return resolve5(overrideDir);
+  return resolve5(process.env.KXM_USER_CONFIG_DIR?.trim() || join6(homedir3(), ".config", "kxm"));
+}
+function repoConfigDirectory(repoRoot) {
+  return resolve5(repoRoot, ".kxm");
+}
+function deepMerge(target, source) {
+  const result = { ...target };
+  for (const [key, val] of Object.entries(source)) {
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const existing = result[key] && typeof result[key] === "object" && !Array.isArray(result[key]) ? result[key] : {};
+      result[key] = deepMerge(existing, val);
+    } else if (val !== void 0) {
+      result[key] = val;
+    }
+  }
+  return result;
+}
+function literalSecretMessage(path) {
+  return `refusing literal hub token at ${path}: store an op:// reference (key.op) or an environment variable name (key.env), never the token`;
+}
+function rejectLiteralHubSecrets(value, path) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => rejectLiteralHubSecrets(item, `${path}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${path}.${key}`;
+    if (typeof child === "string" && (key === "key" || LITERAL_SECRET_KEY.test(key))) {
+      throw new KxmHubConfigError(literalSecretMessage(childPath));
+    }
+    if (child && typeof child === "object") rejectLiteralHubSecrets(child, childPath);
+  }
+}
+function parseKeyRef(raw, path) {
+  if (raw === void 0) return void 0;
+  if (typeof raw === "string") throw new KxmHubConfigError(literalSecretMessage(path));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError(`${path} must be a key reference with op and/or env, never a token`);
+  }
+  const row = raw;
+  for (const key of Object.keys(row)) {
+    if (key !== "op" && key !== "env") {
+      throw new KxmHubConfigError(literalSecretMessage(`${path}.${key}`));
+    }
+  }
+  const ref = {};
+  if (row.op !== void 0) {
+    if (typeof row.op !== "string" || !isHubOpReference(row.op)) {
+      throw new KxmHubConfigError(`${path}.op must be an op://vault/item/field reference, not a token`);
+    }
+    ref.op = row.op;
+  }
+  if (row.env !== void 0) {
+    if (typeof row.env !== "string" || !isHubKeyEnvName(row.env)) {
+      throw new KxmHubConfigError(`${path}.env must be an environment variable name, not a token`);
+    }
+    ref.env = row.env;
+  }
+  if (!ref.op && !ref.env) throw new KxmHubConfigError(`${path} needs key.op, key.env, or both`);
+  return ref;
+}
+function parseEndpoint(raw, path) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError(`${path} must be an object with url, project, and key`);
+  }
+  const row = raw;
+  const endpoint = {};
+  if (row.url !== void 0) {
+    if (typeof row.url !== "string" || !isHubUrl(row.url)) {
+      throw new KxmHubConfigError(`${path}.url must be an http or https URL without credentials, query, or fragment`);
+    }
+    endpoint.url = row.url.replace(/\/$/, "");
+  }
+  if (row.project !== void 0) {
+    if (typeof row.project !== "string" || !isHubProjectId(row.project)) {
+      throw new KxmHubConfigError(`${path}.project must be a single-line project id, not a token`);
+    }
+    endpoint.project = row.project.trim();
+  }
+  const key = parseKeyRef(row.key, `${path}.key`);
+  if (key) endpoint.key = key;
+  for (const name of Object.keys(row)) {
+    if (name !== "url" && name !== "project" && name !== "key") {
+      if (typeof row[name] === "string") throw new KxmHubConfigError(literalSecretMessage(`${path}.${name}`));
+      throw new KxmHubConfigError(`${path}.${name} is not a hub endpoint field`);
+    }
+  }
+  return endpoint;
+}
+function isHubUrl(raw) {
+  try {
+    const parsed = new URL(raw);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.username === "" && parsed.password === "" && parsed.search === "" && parsed.hash === "" && !raw.includes("?") && !raw.includes("#");
+  } catch {
+    return false;
+  }
+}
+function isHubProjectId(raw) {
+  const value = raw.trim();
+  return value.length > 0 && value.length <= 200 && !/[\s\r\n]/.test(value);
+}
+function parseProjectMap(raw) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError("hub.projects must be a map of project id to key reference, never a token");
+  }
+  const projects = {};
+  for (const [project, value] of Object.entries(raw)) {
+    if (!isHubProjectId(project)) {
+      throw new KxmHubConfigError(`hub.projects key ${JSON.stringify(project)} must be a project id, not a token`);
+    }
+    const ref = parseKeyRef(value, `hub.projects.${project}`);
+    if (!ref) throw new KxmHubConfigError(`hub.projects.${project} needs an op:// reference or an environment variable name`);
+    projects[project.trim()] = ref;
+  }
+  return projects;
+}
+function normalizeHubConfig(raw) {
+  const autoStart = raw?.autoStart;
+  const hub = {
+    autoStart: autoStart === "off" || autoStart === "background" ? autoStart : DEFAULT_KXM_CONFIG.hub.autoStart
+  };
+  if (raw === void 0) return hub;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError("hub must be an object");
+  }
+  rejectLiteralHubSecrets(raw, "hub");
+  const row = raw;
+  if (row.mode !== void 0) {
+    if (row.mode !== "local" && row.mode !== "cloud") {
+      throw new KxmHubConfigError("hub.mode must be local or cloud");
+    }
+    hub.mode = row.mode;
+  }
+  const local = parseEndpoint(row.local, "hub.local");
+  const cloud = parseEndpoint(row.cloud, "hub.cloud");
+  const projects = parseProjectMap(row.projects);
+  if (local) hub.local = local;
+  if (cloud) hub.cloud = cloud;
+  if (projects && Object.keys(projects).length > 0) hub.projects = projects;
+  return hub;
+}
+function findConfigRoot(start) {
   let dir = resolve5(start);
   for (; ; ) {
-    const file = join6(dir, ".kxm", "project.yaml");
-    if (existsSync7(file)) {
+    if (existsSync7(join6(dir, ".kxm", "project.yaml")) || existsSync7(join6(dir, ".kxm", "config.yaml"))) return dir;
+    const parent = dirname3(dir);
+    if (parent === dir) return resolve5(start);
+    dir = parent;
+  }
+}
+function userConfigDirForEnv(env) {
+  const explicit = env.KXM_USER_CONFIG_DIR?.trim();
+  if (explicit) return explicit;
+  if (env === process.env) return void 0;
+  return join6(tmpdir(), "kxm-no-user-config");
+}
+function loadHubSettings(start, env = process.env) {
+  const userConfigDir = userConfigDirForEnv(env);
+  return loadKxmConfig(findConfigRoot(start), userConfigDir === void 0 ? {} : { userConfigDir }).hub;
+}
+function recordOf(raw) {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
+function normalizeImprovementConfig(raw) {
+  const value = recordOf(raw);
+  const threshold = recordOf(value.autoThreshold);
+  const policy = value.promotionPolicy;
+  const halfLife = finiteNumber(value.telemetryHalfLifeDays);
+  const minRuns = finiteNumber(threshold.minRuns);
+  const minPassRate = finiteNumber(threshold.minPassRate);
+  const minCostSavings = finiteNumber(threshold.minCostSavings);
+  return {
+    promotionPolicy: IMPROVEMENT_PROMOTION_POLICIES.includes(policy) ? policy : "manual_pr",
+    telemetryHalfLifeDays: halfLife !== void 0 && halfLife > 0 && halfLife <= 3650 ? halfLife : 14,
+    autoThreshold: {
+      minRuns: minRuns !== void 0 && Number.isInteger(minRuns) && minRuns >= 1 && minRuns <= 1e6 ? minRuns : 10,
+      minPassRate: minPassRate !== void 0 && minPassRate >= 0 && minPassRate <= 1 ? minPassRate : 0.95,
+      minCostSavings: minCostSavings !== void 0 && minCostSavings >= 0 ? minCostSavings : 0.5
+    }
+  };
+}
+function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
+  const userDir = userConfigDirectory(options.userConfigDir);
+  const userConfigFile = join6(userDir, "config.yaml");
+  const repoDir = repoConfigDirectory(repoRoot);
+  const repoConfigFile = join6(repoDir, "config.yaml");
+  let userRaw = {};
+  let userLoadedPath;
+  if (existsSync7(userConfigFile)) {
+    try {
+      const text = readFileSync7(userConfigFile, "utf8");
+      userRaw = (0, import_yaml2.parse)(text) ?? {};
+      userLoadedPath = userConfigFile;
+    } catch (error) {
+      throw new Error(`invalid user config YAML at ${userConfigFile}`, { cause: error });
+    }
+  }
+  let repoRaw = {};
+  let repoLoadedPath;
+  if (existsSync7(repoConfigFile)) {
+    try {
+      const text = readFileSync7(repoConfigFile, "utf8");
+      repoRaw = (0, import_yaml2.parse)(text) ?? {};
+      repoLoadedPath = repoConfigFile;
+    } catch (error) {
+      throw new Error(`invalid project config YAML at ${repoConfigFile}`, { cause: error });
+    }
+  }
+  const baseCopy = JSON.parse(JSON.stringify(DEFAULT_KXM_CONFIG));
+  const mergedUser = deepMerge(baseCopy, userRaw);
+  const mergedAll = deepMerge(mergedUser, repoRaw);
+  return {
+    schema: KXM_CONFIG_SCHEMA,
+    user: mergedAll.user ?? {},
+    defaults: mergedAll.defaults ?? {},
+    dash: mergedAll.dash ?? {},
+    sync: mergedAll.sync ?? {},
+    hub: normalizeHubConfig(mergedAll.hub),
+    improvement: normalizeImprovementConfig(mergedAll.improvement),
+    routing: mergedAll.routing ?? DEFAULT_KXM_CONFIG.routing,
+    telemetry: mergedAll.telemetry ?? DEFAULT_KXM_CONFIG.telemetry,
+    loadedFrom: {
+      userConfigPath: userLoadedPath,
+      repoConfigPath: repoLoadedPath
+    }
+  };
+}
+var import_yaml2, KXM_CONFIG_SCHEMA, KxmHubConfigError, HUB_ENV_NAME, HUB_OP_REF, LITERAL_SECRET_KEY, IMPROVEMENT_PROMOTION_POLICIES, DEFAULT_KXM_CONFIG;
+var init_config = __esm({
+  "plugins/kxm/src/config.ts"() {
+    "use strict";
+    import_yaml2 = __toESM(require_dist(), 1);
+    KXM_CONFIG_SCHEMA = "kxm.config.v1";
+    KxmHubConfigError = class extends Error {
+      code = "hub_config_invalid";
+      constructor(message) {
+        super(message);
+        this.name = "KxmHubConfigError";
+      }
+    };
+    HUB_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+    HUB_OP_REF = /^op:\/\/\S+\/\S+\/\S+$/;
+    LITERAL_SECRET_KEY = /^(token|secret|password|authToken|auth_token|apiKey|api_key|api_token|bearer|credential|access_token)$/i;
+    IMPROVEMENT_PROMOTION_POLICIES = ["manual_pr", "critic_quorum", "auto_threshold"];
+    DEFAULT_KXM_CONFIG = {
+      schema: KXM_CONFIG_SCHEMA,
+      user: {
+        theme: "dark",
+        preferredCritics: ["reviewer-arch", "reviewer-cli"],
+        tokenBudget: 16e3
+      },
+      defaults: {
+        workflow: "software-engineering/feature-implementation",
+        harness: "pi"
+      },
+      dash: {
+        defaultScreen: "agents",
+        refreshIntervalMs: 1e3,
+        autoOpen: false
+      },
+      sync: {
+        defaultTracker: "none"
+      },
+      hub: {
+        autoStart: "background"
+      },
+      improvement: {
+        promotionPolicy: "manual_pr",
+        telemetryHalfLifeDays: 14,
+        autoThreshold: {
+          minRuns: 10,
+          minPassRate: 0.95,
+          minCostSavings: 0.5
+        }
+      },
+      routing: {
+        shadowExecution: {
+          enabled: false,
+          sampleRate: 0.05,
+          candidateModels: []
+        },
+        circuitBreaker: {
+          mode: "soft_demotion",
+          failureThreshold: 3,
+          windowSeconds: 3600,
+          cooldownSeconds: 1800,
+          penaltyMultiplier: 5
+        }
+      },
+      telemetry: {
+        federated: true,
+        anonymize: true
+      }
+    };
+  }
+});
+
+// plugins/kxm/src/hub-identity.ts
+import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
+import { basename as basename2, dirname as dirname4, join as join7, resolve as resolve6 } from "node:path";
+function projectYamlId(start) {
+  let dir = resolve6(start);
+  for (; ; ) {
+    const file = join7(dir, ".kxm", "project.yaml");
+    if (existsSync8(file)) {
       try {
-        const doc = (0, import_yaml2.parse)(readFileSync7(file, "utf8"));
+        const doc = (0, import_yaml3.parse)(readFileSync8(file, "utf8"));
         if (doc && typeof doc === "object" && !Array.isArray(doc) && typeof doc.id === "string" && doc.id.trim()) {
           return doc.id.trim();
         }
@@ -8879,16 +9176,70 @@ function readProjectYamlId(start) {
       }
       return void 0;
     }
-    const parent = dirname3(dir);
+    const parent = dirname4(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
-var import_yaml2;
+function packageName(cwd) {
+  try {
+    const pkg = JSON.parse(readFileSync8(join7(cwd, "package.json"), "utf8"));
+    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
+  } catch {
+  }
+  return void 0;
+}
+function activeBinding(env) {
+  try {
+    return readHubBinding(env);
+  } catch (error) {
+    if (error instanceof HubBindingError) return void 0;
+    throw error;
+  }
+}
+function endpointFor(mode, settings) {
+  return mode === "cloud" ? settings.cloud : settings.local;
+}
+function resolveProjectIdentity(cwd, env = process.env, explicit) {
+  const fromExplicit = explicit?.trim();
+  if (fromExplicit) return { project: fromExplicit, source: "flag", sourceLabel: "--project" };
+  const fromEnv = env.KXM_PROJECT?.trim();
+  if (fromEnv) return { project: fromEnv, source: "env", sourceLabel: "KXM_PROJECT" };
+  const settings = loadHubSettings(cwd, env);
+  const mode = settings.mode ?? (activeBinding(env)?.cloud ? "cloud" : "local");
+  const fromConfig = endpointFor(mode, settings)?.project?.trim();
+  if (fromConfig) {
+    return { project: fromConfig, source: "config", sourceLabel: `.kxm/config.yaml hub.${mode}.project` };
+  }
+  const fromProject = projectYamlId(cwd);
+  if (fromProject) return { project: fromProject, source: "project.yaml", sourceLabel: ".kxm/project.yaml id" };
+  const fromPackage = packageName(cwd);
+  if (fromPackage) return { project: fromPackage, source: "package.json", sourceLabel: "package.json name" };
+  return { project: basename2(cwd), source: "directory", sourceLabel: "directory name" };
+}
+function defaultProjectName(cwd, env = process.env, explicit) {
+  return resolveProjectIdentity(cwd, env, explicit).project;
+}
+var import_yaml3;
+var init_hub_identity = __esm({
+  "plugins/kxm/src/hub-identity.ts"() {
+    "use strict";
+    import_yaml3 = __toESM(require_dist(), 1);
+    init_config();
+    init_hub_binding();
+  }
+});
+
+// plugins/kxm/src/project-name.ts
+var project_name_exports = {};
+__export(project_name_exports, {
+  defaultProjectName: () => defaultProjectName,
+  resolveProjectIdentity: () => resolveProjectIdentity
+});
 var init_project_name = __esm({
   "plugins/kxm/src/project-name.ts"() {
     "use strict";
-    import_yaml2 = __toESM(require_dist(), 1);
+    init_hub_identity();
   }
 });
 
@@ -9034,9 +9385,9 @@ __export(commands_exports, {
   timingSafeStringCompare: () => timingSafeStringCompare
 });
 import { createHash, randomUUID as randomUUID3, timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync as existsSync8, mkdirSync as mkdirSync6, readFileSync as readFileSync8, unlinkSync, writeFileSync as writeFileSync5 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { dirname as dirname4, join as join7, resolve as resolve6 } from "node:path";
+import { chmodSync, existsSync as existsSync9, mkdirSync as mkdirSync7, readFileSync as readFileSync9, unlinkSync, writeFileSync as writeFileSync6 } from "node:fs";
+import { homedir as homedir4 } from "node:os";
+import { dirname as dirname5, join as join8, resolve as resolve7 } from "node:path";
 function forwardedHops(handling) {
   if (!handling?.length) return void 0;
   return {
@@ -9218,18 +9569,18 @@ function parseSessionToken(token) {
   return void 0;
 }
 function resolveUserConfigDirectory(overrideDir) {
-  if (overrideDir) return resolve6(overrideDir);
-  return resolve6(process.env.KXM_USER_CONFIG_DIR?.trim() || join7(homedir3(), ".config", "kxm"));
+  if (overrideDir) return resolve7(overrideDir);
+  return resolve7(process.env.KXM_USER_CONFIG_DIR?.trim() || join8(homedir4(), ".config", "kxm"));
 }
 function sessionTokenPath(userConfigDir) {
-  return join7(resolveUserConfigDirectory(userConfigDir), "session.token");
+  return join8(resolveUserConfigDirectory(userConfigDir), "session.token");
 }
 function persistSessionTokenToDisk(token, options) {
   const filePath = sessionTokenPath(options?.userConfigDir);
-  const dir = dirname4(filePath);
-  mkdirSync6(dir, { recursive: true, mode: 448 });
+  const dir = dirname5(filePath);
+  mkdirSync7(dir, { recursive: true, mode: 448 });
   const mode = options?.mode ?? 384;
-  writeFileSync5(filePath, `${token.trim()}
+  writeFileSync6(filePath, `${token.trim()}
 `, { encoding: "utf8", mode });
   try {
     chmodSync(filePath, mode);
@@ -9239,9 +9590,9 @@ function persistSessionTokenToDisk(token, options) {
 }
 function readSessionTokenFromDisk(options) {
   const filePath = sessionTokenPath(options?.userConfigDir);
-  if (!existsSync8(filePath)) return void 0;
+  if (!existsSync9(filePath)) return void 0;
   try {
-    const token = readFileSync8(filePath, "utf8").trim();
+    const token = readFileSync9(filePath, "utf8").trim();
     if (!token) return void 0;
     const payload = parseSessionToken(token);
     if (!payload) return void 0;
@@ -9252,7 +9603,7 @@ function readSessionTokenFromDisk(options) {
 }
 function clearSessionTokenFromDisk(options) {
   const filePath = sessionTokenPath(options?.userConfigDir);
-  if (!existsSync8(filePath)) return false;
+  if (!existsSync9(filePath)) return false;
   try {
     unlinkSync(filePath);
     return true;
@@ -9351,10 +9702,10 @@ function enforceToolPolicy(commandName, env = process.env, options) {
     return { allowed: true };
   }
   const tokenFile = sessionTokenPath(env.KXM_USER_CONFIG_DIR);
-  if (existsSync8(tokenFile)) {
+  if (existsSync9(tokenFile)) {
     let tokenRaw;
     try {
-      tokenRaw = readFileSync8(tokenFile, "utf8").trim();
+      tokenRaw = readFileSync9(tokenFile, "utf8").trim();
     } catch {
       return { allowed: false, error: "session_token_invalid", detail: "Session token file on disk could not be read" };
     }
@@ -10040,8 +10391,8 @@ var init_commands = __esm({
 });
 
 // plugins/kxm/src/claude-hook.ts
-import { readFileSync as readFileSync9, statSync } from "node:fs";
-import { join as join8, resolve as resolve7 } from "node:path";
+import { readFileSync as readFileSync10, statSync } from "node:fs";
+import { join as join9, resolve as resolve8 } from "node:path";
 
 // plugins/kxm/src/session-token-hint.ts
 var ENV_TEXT = "KXM_SESSION_TOKEN in the environment Claude Code was launched from is malformed or expired, so every kxm_* tool fails with tool_policy_denied. Ask the user to unset or replace KXM_SESSION_TOKEN in the environment Claude Code was launched from, then restart Claude Code.";
@@ -10114,15 +10465,15 @@ function truncate2(text, max) {
 }
 async function sessionStartContext(input, env) {
   const inputCwd = typeof input.cwd === "string" ? input.cwd.trim() : "";
-  const root = resolve7(env.CLAUDE_PROJECT_DIR?.trim() || inputCwd || process.cwd());
-  if (!isDirectory(join8(root, ".kxm"))) return void 0;
+  const root = resolve8(env.CLAUDE_PROJECT_DIR?.trim() || inputCwd || process.cwd());
+  if (!isDirectory(join9(root, ".kxm"))) return void 0;
   const [
     { resolveSessionHubStatus: resolveSessionHubStatus2 },
     { loadLocalMeshSnapshot: loadLocalMeshSnapshot2, resolveKxmSnapshotPaths: resolveKxmSnapshotPaths2 },
     { formatMemoryBriefText: formatMemoryBriefText2, generateMemoryBrief: generateMemoryBrief2 },
     { defaultProjectName: defaultProjectName2 },
     { enforceToolPolicy: enforceToolPolicy2 },
-    { parse: parse2 }
+    { parse: parse3 }
   ] = await Promise.all([
     Promise.resolve().then(() => (init_session_work(), session_work_exports)),
     Promise.resolve().then(() => (init_local_snapshot(), local_snapshot_exports)),
@@ -10136,7 +10487,7 @@ async function sessionStartContext(input, env) {
   const url = (env.CLAUDE_PLUGIN_OPTION_SERVER_URL?.trim() || DEFAULT_SERVER_URL).replace(/\/$/, "");
   let runtimeProjectId;
   try {
-    const project = parse2(readFileSync9(join8(root, ".kxm", "project.yaml"), "utf8"));
+    const project = parse3(readFileSync10(join9(root, ".kxm", "project.yaml"), "utf8"));
     if (typeof project?.id === "string" && project.id.trim()) runtimeProjectId = project.id.trim();
   } catch {
   }

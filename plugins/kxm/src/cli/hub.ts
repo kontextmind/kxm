@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join, resolve } from "node:path";
 import { redactSecrets } from "../redact.ts";
 import { defaultProjectName } from "../project-name.ts";
-import { agentSessionEnv, hasClientHubCredential, HubEnvError, resolveClientHubAuthToken } from "../hub-env.ts";
+import { agentSessionEnv, hasClientHubCredential, HubEnvError, readHubEnvRecord, resolveClientHubAuthToken } from "../hub-env.ts";
+import { deleteKxmConfigValue, findConfigRoot, isHubOpReference, KxmHubConfigError, writeHubEndpoint } from "../config.ts";
+import { describeHubConnection, opReferenceFromTokenCommand, resolveProjectIdentity } from "../hub-identity.ts";
 import { agentWorker, type Worker } from "../envelope.ts";
 import { MESH_TUI_PANELS, runMeshTui, type MeshTuiPanel } from "../tui.ts";
 import { formatSessionBriefText, loadSessionBriefAsync, readCachedSessionBrief, type SessionHubStatus } from "../session-work.ts";
@@ -21,7 +23,6 @@ import {
   splitTokenCommand,
   validateHubUrl,
   writeHubBinding,
-  resolveCloudHubToken,
   type HubBindingRecord,
   type HubHealth,
 } from "../hub-binding.ts";
@@ -157,11 +158,21 @@ export async function refreshKxmUpdateNotice(
 }
 
 export async function cmdStatus(runtime: Runtime): Promise<number> {
+  const connection = describeHubConnection(runtime.dirs.workdir, runtime.env, {
+    hasSavedProjectToken: (project) => {
+      try {
+        const token = readHubEnvRecord(runtime.env)?.projectTokens?.[project];
+        return typeof token === "string" && token.trim().length > 0;
+      } catch {
+        return false;
+      }
+    },
+  });
   let headers: Record<string, string> | undefined;
   try {
-    const binding = readHubBinding(runtime.env);
-    if (binding?.cloud) {
-      headers = { authorization: `Bearer ${resolveCloudHubToken(binding, runtime.env)}` };
+    if (connection.mode === "cloud") {
+      const token = resolveClientHubAuthToken(runtime.env, connection.project, runtime.dirs.workdir);
+      if (token) headers = { authorization: `Bearer ${token}` };
     }
   } catch (error) {
     if (error instanceof CloudTokenError) {
@@ -177,19 +188,29 @@ export async function cmdStatus(runtime: Runtime): Promise<number> {
   // Scope is a property of the URL actually contacted, not of whichever file the
   // binding came from: KXM_SERVER_URL overrides the binding, and labelling the binding
   // while probing an override would report "loopback" about a remote request.
-  // A cloud binding is remote when the contacted URL is that binding, including a
+  // A cloud mode is remote when the contacted URL is that endpoint, including a
   // loopback SSH forward.
-  const effectiveScope = effectiveHubBindingScope(runtime.serverUrl, runtime.env);
-  const overridden = Boolean(runtime.boundHubUrl && runtime.boundHubUrl !== runtime.serverUrl);
+  const effectiveScope = connection.scope;
+  const overridden = connection.urlSource === "env";
+  const identity = {
+    mode: connection.mode,
+    modeSource: connection.modeSource,
+    url: connection.url,
+    urlSource: connection.urlSource,
+    project: connection.project,
+    projectSource: connection.source,
+    keySource: connection.keySource,
+  };
   const payload = {
     ok: health.ok && ready.ok,
     command: "hub view",
     target: { url: runtime.serverUrl, scope: effectiveScope, ...(overridden ? { source: "env" } : {}) },
+    identity,
     health: health.body,
     ready: ready.body,
   };
   print(runtime.io, runtime.json, payload,
-    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""}`);
+    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} · mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}`);
   return payload.ok ? 0 : 1;
 }
 
@@ -216,10 +237,10 @@ export async function cmdDash(runtime: Runtime, options: { screen?: string | und
     runtime.io.stderr("kxm dash does not support --json; use kxm hub view\n");
     return 2;
   }
-  const project = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
+  const project = resolveProjectIdentity(runtime.dirs.workdir, runtime.env).project || "project";
   let authToken: string | undefined;
   try {
-    authToken = resolveClientHubAuthToken(runtime.env, project);
+    authToken = resolveClientHubAuthToken(runtime.env, project, runtime.dirs.workdir);
   } catch (error) {
     if (error instanceof CloudTokenError) {
       print(runtime.io, runtime.json, { ok: false, command: "dash", error: error.code, detail: error.message }, error.message);
@@ -292,6 +313,7 @@ export interface HubBindOptions {
   cloud?: boolean | undefined;
   tokenEnv?: string | undefined;
   tokenCommand?: string | undefined;
+  keyOp?: string | undefined;
 }
 
 export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubBindOptions = {}): Promise<number> {
@@ -313,25 +335,35 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubB
   const cloud = options.cloud === true;
   const tokenEnv = options.tokenEnv?.trim() || undefined;
   const tokenCommand = options.tokenCommand?.trim() || undefined;
-  if ((tokenEnv || tokenCommand) && !cloud) {
+  const keyOp = options.keyOp?.trim() || opReferenceFromTokenCommand(tokenCommand ?? "") || undefined;
+  if (options.keyOp?.trim() && !isHubOpReference(options.keyOp.trim())) {
+    print(
+      runtime.io,
+      runtime.json,
+      { ok: false, command: "hub bind", error: "hub_config_invalid", url },
+      "--key-op must be an op://vault/item/field reference, not a token; no binding was written",
+    );
+    return 2;
+  }
+  if (tokenCommand && !cloud) {
     print(
       runtime.io,
       runtime.json,
       { ok: false, command: "hub bind", error: "cloud_flag_required", url },
-      "--token-env and --token-command require --cloud; no binding was written",
+      "--token-command requires --cloud; no binding was written",
     );
     return 2;
   }
-  if (cloud && !tokenEnv && !tokenCommand) {
+  if (cloud && !tokenEnv && !tokenCommand && !keyOp) {
     print(
       runtime.io,
       runtime.json,
       { ok: false, command: "hub bind", error: "cloud_token_source_required", url },
-      "--cloud needs --token-env, --token-command, or both; the token is not stored in the binding",
+      "--cloud needs --token-env, --token-command, --key-op, or a combination; the token is not stored",
     );
     return 2;
   }
-  if (cloud && tokenEnv && !isCloudTokenEnvName(tokenEnv)) {
+  if (tokenEnv && !isCloudTokenEnvName(tokenEnv)) {
     print(
       runtime.io,
       runtime.json,
@@ -367,10 +399,10 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubB
   if (!cloud && scope === "remote") {
     // The project that will actually authenticate: a record holding only another
     // project's token cannot authorise this one.
-    const bindProject = defaultProjectName(runtime.dirs.workdir, runtime.env) || "project";
+    const bindProject = resolveProjectIdentity(runtime.dirs.workdir, runtime.env).project || "project";
     let credentialReady = false;
     try {
-      credentialReady = hasClientHubCredential(runtime.env, bindProject);
+      credentialReady = hasClientHubCredential(runtime.env, bindProject, runtime.dirs.workdir);
     } catch (error) {
       // A malformed record is a readable configuration failure, not an uncaught throw
       // past a user-facing entry point.
@@ -413,8 +445,9 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubB
     }
   }
   const file = hubBindingFile(runtime.env);
+  const bindingCommand = tokenCommand ?? (cloud && keyOp ? `op read ${keyOp}` : undefined);
   const cloudFields = cloud
-    ? { cloud: true as const, ...(tokenEnv ? { tokenEnv } : {}), ...(tokenCommand ? { tokenCommand } : {}) }
+    ? { cloud: true as const, ...(tokenEnv ? { tokenEnv } : {}), ...(bindingCommand ? { tokenCommand: bindingCommand } : {}) }
     : {};
   const record: HubBindingRecord = {
     schema: HUB_BINDING_SCHEMA,
@@ -422,19 +455,44 @@ export async function cmdHubBind(runtime: Runtime, rawUrl: string, options: HubB
     boundAt: new Date().toISOString(),
     ...cloudFields,
   };
+  const identity = resolveProjectIdentity(runtime.dirs.workdir, runtime.env);
+  const configFile = join(findConfigRoot(runtime.dirs.workdir), ".kxm", "config.yaml");
+  const key = {
+    ...(keyOp ? { op: keyOp } : {}),
+    ...(tokenEnv ? { env: tokenEnv } : {}),
+  };
   const cloudNote = cloud ? " · token is not stored" : "";
   if (runtime.dryRun) {
     print(
       runtime.io,
       runtime.json,
-      { ok: true, command: "hub bind", dryRun: true, url, scope, file, ...cloudFields },
+      { ok: true, command: "hub bind", dryRun: true, url, scope, file, configFile, project: identity.project, ...cloudFields },
       `would bind hub ${url} (${scope})${cloudNote}`,
     );
     return 0;
   }
+  try {
+    writeHubEndpoint(runtime.dirs.workdir, {
+      mode: cloud ? "cloud" : "local",
+      url,
+      project: identity.project,
+      ...(key.op || key.env ? { key } : {}),
+    });
+  } catch (error) {
+    if (error instanceof KxmHubConfigError) {
+      print(
+        runtime.io,
+        runtime.json,
+        { ok: false, command: "hub bind", error: error.code, detail: error.message },
+        `${error.message}; no binding was written`,
+      );
+      return 2;
+    }
+    throw error;
+  }
   writeHubBinding({ ...record, boundAt: new Date().toISOString() }, runtime.env);
   const { health, probeMs } = await probeHubHealth(url, runtime.fetchImpl);
-  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, scope, file, health, probeMs, ...cloudFields },
+  print(runtime.io, runtime.json, { ok: true, command: "hub bind", url, scope, file, configFile, project: identity.project, health, probeMs, ...cloudFields },
     `bound hub ${url} · ${scope} · ${formatHubBindHealth(health)}${cloud ? cloudNote : scope === "remote" ? " · token leaves this machine" : ""}`);
   return 0;
 }
@@ -463,6 +521,7 @@ export async function cmdHubUnbind(runtime: Runtime): Promise<number> {
     return 1;
   }
   removeHubBinding(runtime.env);
+  deleteKxmConfigValue(findConfigRoot(runtime.dirs.workdir), "hub.mode");
   if (malformed) {
     print(runtime.io, runtime.json, { ok: true, command: "hub unbind", file }, "unbound hub (record was malformed)");
     return 0;

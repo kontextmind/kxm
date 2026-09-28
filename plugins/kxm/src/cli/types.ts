@@ -12,6 +12,7 @@ import {
   hubBindingFile,
   readHubBinding,
 } from "../hub-binding.ts";
+import { describeHubConnection } from "../hub-identity.ts";
 import type { InstallProbe } from "../kxm-install-kind.ts";
 
 export interface CliSpawnResult {
@@ -167,6 +168,11 @@ export function printWorker(
 
 export function hostMode(runtime: Runtime): "local" | "hub" {
   try {
+    if (describeHubConnection(runtime.cwd, runtime.env).scope === "remote") return "hub";
+  } catch {
+    // A malformed binding is classified from the URL below.
+  }
+  try {
     if (effectiveHubBindingScope(runtime.serverUrl, runtime.env) === "remote") return "hub";
   } catch {
     // A malformed binding is classified from the URL below.
@@ -282,13 +288,14 @@ export function runtimeFrom(ctx: CliContext, command: Command): Runtime {
       throw error;
     }
   }
+  const connection = describeHubConnection(ctx.cwd, ctx.env);
   return {
     ...ctx,
     json: Boolean(opts.json),
     dryRun: Boolean(opts.dryRun),
     ...(opts.workspace === undefined ? {} : { workspaceFlag: opts.workspace }),
     dirs: workspaceDirs(ctx.cwd, opts.workspace, ctx.env),
-    serverUrl: envServerUrl || boundHubUrl || "http://127.0.0.1:7331",
+    serverUrl: connection.url || envServerUrl || boundHubUrl || "http://127.0.0.1:7331",
     ...(boundHubUrl ? { boundHubUrl } : {}),
     fetchImpl: ctx.io.fetchImpl ?? fetch,
   };

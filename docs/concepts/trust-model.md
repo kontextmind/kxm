@@ -56,7 +56,7 @@ flowchart LR
 - **Claude Code plugin.** The MCP server uses the plugin's `auth_token` setting, else the project token the hub saved for this project. It never falls back to the saved admin token; without a project token, its tools report that and do nothing.
 - **SessionStart hook.** It reads local state read-only. It mints no token, writes no file, and never prints a token.
 - **Pi extension.** It uses `KXM_AUTH_TOKEN`, else the project token the hub saved for this project. It never uses the saved admin token, nor the one a hub it auto-started generated; without a project token it reports the fix and stays offline.
-- **`kxm peer` and `kxm workflow` agent commands.** They act as a peer agent, so they choose a token as the Pi extension does, and exit 2 with `project_token_missing` when none resolves.
+- **`kxm peer` and `kxm workflow` agent commands.** They act as a peer agent, so they choose a token as the Pi extension does, and exit 2 with `project_token_missing` when none resolves. The message names the project id that was sent and where it came from.
 - **Dashboard and Runtime supervisor.** Operator tools use `KXM_AUTH_TOKEN`, else the saved project token, else the saved admin token.
 
 ## Project isolation

@@ -181,7 +181,7 @@ Claude Code asks for these options at install. Change them later with `/plugin c
 | `auth_token` | Blank | Blank on the machine that runs the hub. Elsewhere, this project's token. Never the admin token. |
 | `agent_name` | `claude` | The name peers see. A second concurrent session in the project registers as `<name>-<pid>`. |
 | `agent_purpose` | `Claude Code implementation and review agent` | One line that peers use to decide what to send this agent |
-| `project` | Blank | `<hub-project>`. Blank uses the `name` in `package.json`, then the directory name. |
+| `project` | Blank | `<hub-project>`. Blank uses `hub.local.project` or `hub.cloud.project` in `.kxm/config.yaml` for the active mode, then the `id` in `.kxm/project.yaml`, then the `name` in `package.json`, then the directory name. |
 
 With a blank `auth_token`, the plugin uses the project token the hub saved for `project` in `hub-env.json`, and only that token. It never uses the admin token. On another machine, get the project token from whoever runs the hub, through a password manager, and enter it at `/plugin configure kxm@kxm`. [Plugin settings](../reference/config-reference.md#claude-code-plugin-settings) has the full rules.
 
@@ -394,7 +394,7 @@ The `kxm_*` tools and the session brief name the fix for setup problems. Run the
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | `KXM hub unreachable at <url>` | No hub answers at `server_url` | Start the hub with `kxm hub start`, or correct `server_url` and restart Claude Code |
-| `KXM has no project token for project <p> on this machine` | No `auth_token`, and the hub saved no token for `<p>` | Add `<p>` with [step 3](#3-start-the-hub), enter its token, or fix the `project` option |
+| `kxm has no project token for project <p>` | No `auth_token`, and the hub saved no token for `<p>`. The message names where `<p>` came from | Set `hub.<mode>.project` in `.kxm/config.yaml` to the key the hub knows, add a key reference, or add `<p>` with [step 3](#3-start-the-hub). Never paste the token into the file |
 | `KXM hub rejected the project token for project <p>` | `auth_token` is not the hub's token for `<p>` | Enter the right token at `/plugin configure kxm@kxm` |
 | `tool_policy_denied: Session token on disk is malformed or expired` | A stale session token file blocks every tool | Run `kxm session token --clear`; it prints `Session token cleared from disk.` |
 | `tool_policy_denied: KXM_SESSION_TOKEN is malformed or expired` | A bad `KXM_SESSION_TOKEN` in Claude Code's environment | Unset or replace it where you launch Claude Code, then restart it |

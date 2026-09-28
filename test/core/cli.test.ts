@@ -258,6 +258,9 @@ test("init rejects --hub and --hub-url as unknown options", async () => {
 
 test("hub bind writes the host binding and reports unknown for a blackholed URL within a second", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "kxm-hub-bind-"));
+  // Bind records the non-secret hub endpoint in the checkout's .kxm/config.yaml.
+  // A temp project keeps that write off this repository, which already has a project id.
+  const project = mkdtempSync(join(tmpdir(), "kxm-hub-bind-project-"));
   // This URL is beyond loopback, and a remote binding now requires a resolvable
   // credential (see the refusal test below), so the probe behaviour under test here is
   // exercised with one present rather than by loosening the rule.
@@ -274,7 +277,7 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
   try {
     const unknown = capture();
     const started = Date.now();
-    assert.equal(await runCli(["hub", "bind", url], env, { ...unknown, fetchImpl: abortingFetch }), 0);
+    assert.equal(await runCli(["hub", "bind", url], env, { ...unknown, fetchImpl: abortingFetch }, project), 0);
     assert.ok(Date.now() - started < 1000);
     assert.match(unknown.read().stdout, /health=unknown \(no reply within 300 ms\)/);
     assert.match(unknown.read().stdout, /remote/);
@@ -288,7 +291,7 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
     assert.equal(await runCli(["hub", "bind", url], env, {
       ...on,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    }), 0);
+    }, project), 0);
     assert.match(on.read().stdout, /health=on/);
 
     const off = capture();
@@ -297,7 +300,7 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
       fetchImpl: async () => {
         throw new TypeError("fetch failed");
       },
-    }), 0);
+    }, project), 0);
     assert.match(off.read().stdout, /health=off/);
 
     const seen: string[] = [];
@@ -308,11 +311,11 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
         seen.push(String(input));
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       },
-    }), 0);
+    }, project), 0);
     assert.equal(seen.includes(`${url}/health`), true);
 
     const unbind = capture();
-    assert.equal(await runCli(["hub", "unbind"], env, unbind), 0);
+    assert.equal(await runCli(["hub", "unbind"], env, unbind, project), 0);
     assert.equal(existsSync(bindingPath), false);
 
     const missing = capture();
@@ -324,6 +327,7 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
     assert.match(invalid.read().stderr, /hub_url_invalid/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
   }
 });
 
@@ -352,8 +356,10 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
     cleanup.push(brokenLocal);
     writeFileSync(join(brokenLocal, "hub-env.json"), "{malformed");
     const brokenLocalIo = capture();
+    const brokenLocalProject = mkdtempSync(join(tmpdir(), "kxm-hub-bind-broken-local-project-"));
+    cleanup.push(brokenLocalProject);
     assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"],
-      { KXM_STATE_HOME: brokenLocal }, { ...brokenLocalIo, fetchImpl: replyingFetch }), 0);
+      { KXM_STATE_HOME: brokenLocal }, { ...brokenLocalIo, fetchImpl: replyingFetch }, brokenLocalProject), 0);
     assert.match(brokenLocalIo.read().stdout, /loopback · health=on/);
     assert.equal(existsSync(join(brokenLocal, "hub-binding.json")), true);
 
@@ -376,8 +382,10 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
     const local = fresh();
     cleanup.push(local.dir);
     const localIo = capture();
+    const localProject = mkdtempSync(join(tmpdir(), "kxm-hub-bind-local-project-"));
+    cleanup.push(localProject);
     assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"], { KXM_STATE_HOME: local.dir },
-      { ...localIo, fetchImpl: replyingFetch }), 0);
+      { ...localIo, fetchImpl: replyingFetch }, localProject), 0);
     assert.match(localIo.read().stdout, /loopback · health=on/);
     assert.doesNotMatch(localIo.read().stdout, /token leaves this machine/);
 
@@ -385,9 +393,11 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
     const credentialed = fresh();
     cleanup.push(credentialed.dir);
     const credIo = capture();
+    const credentialedProject = mkdtempSync(join(tmpdir(), "kxm-hub-bind-cred-project-"));
+    cleanup.push(credentialedProject);
     assert.equal(await runCli(["hub", "bind", "http://10.255.255.1:7331"],
       { KXM_STATE_HOME: credentialed.dir, KXM_PROJECT: "acme", KXM_AUTH_TOKEN: "tenant-token" },
-      { ...credIo, fetchImpl: replyingFetch }), 0);
+      { ...credIo, fetchImpl: replyingFetch }, credentialedProject), 0);
     assert.match(credIo.read().stdout, /remote · health=on · token leaves this machine/);
 
     // 4. A record holding only another project's token cannot authorise this one.
@@ -421,8 +431,10 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
     const override = fresh();
     cleanup.push(override.dir);
     const bindIo = capture();
+    const overrideProject = mkdtempSync(join(tmpdir(), "kxm-hub-bind-override-project-"));
+    cleanup.push(overrideProject);
     assert.equal(await runCli(["hub", "bind", "http://127.0.0.1:7331"], { KXM_STATE_HOME: override.dir },
-      { ...bindIo, fetchImpl: replyingFetch }), 0);
+      { ...bindIo, fetchImpl: replyingFetch }, overrideProject), 0);
     const viewIo = capture();
     assert.equal(await runCli(["hub", "--json", "view"],
       { KXM_STATE_HOME: override.dir, KXM_SERVER_URL: "http://10.255.255.1:7331" },
@@ -1864,7 +1876,8 @@ test("cli agent commands never register with the persisted admin token", async (
     const refusal = JSON.parse(out.stderr) as Record<string, unknown>;
     assert.equal(refusal.error, "project_token_missing");
     assert.equal(refusal.project, "kxm");
-    assert.equal(refusal.nextAction, "export_kxm_auth_token");
+    assert.equal(refusal.nextAction, "configure_hub_project");
+    assert.equal(refusal.projectSource, "env");
     assert.match(String(refusal.detail), /no project token for project kxm/);
     assert.doesNotMatch(`${out.stdout}${out.stderr}`, /persisted-admin-token|other-project-token/);
     assert.deepEqual(requests, [], "no hub request may carry a borrowed credential");
