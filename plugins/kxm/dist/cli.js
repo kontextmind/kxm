@@ -27098,6 +27098,7 @@ var init_engine = __esm({
 });
 
 // plugins/kxm/src/oneshot-producer.ts
+var MAX_OUTCOME_PARSE_BYTES;
 var init_oneshot_producer = __esm({
   "plugins/kxm/src/oneshot-producer.ts"() {
     "use strict";
@@ -27107,6 +27108,7 @@ var init_oneshot_producer = __esm({
     init_harness();
     init_prices();
     init_engine();
+    MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
   }
 });
 

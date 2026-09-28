@@ -31532,6 +31532,8 @@ function stripOneClosingFence(trimmed) {
   return trimmed.slice(0, lineBreak).trimEnd();
 }
 var MAX_OUTCOME_CLOSERS = 32;
+var MAX_OUTCOME_OPENERS = 32;
+var MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
 function prefixIsBalanced(prefix) {
   let depth = 0;
   let inString = false;
@@ -31571,13 +31573,19 @@ function determineOutcome(text, allowedOutcomes) {
   const body = stripOneClosingFence(trimmed);
   if (!body) return "failed";
   let seenClosers = 0;
+  let parseBytes = 0;
   for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
     if (body[closeAt] !== "}") continue;
     seenClosers++;
     const end = closeAt + 1;
     if (end !== body.length) continue;
-    for (let openAt = closeAt - 1; openAt >= 0; openAt--) {
+    let seenOpeners = 0;
+    for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
       if (body[openAt] !== "{") continue;
+      seenOpeners++;
+      const sliceLen = end - openAt;
+      if (sliceLen > MAX_OUTCOME_PARSE_BYTES - parseBytes) break;
+      parseBytes += sliceLen;
       let result;
       try {
         result = JSON.parse(body.slice(openAt, end));
