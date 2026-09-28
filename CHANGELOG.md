@@ -167,9 +167,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   checks, 8.3-versus-long temp paths, and forward-slash path checks in the
   unit tests match what Windows can report. A spawned MCP server is stopped
   by closing stdin, which runs its unregister path, before its temp directory
-  is removed; a directory that is still locked is retried and then left
-  behind instead of failing the test. `CI / required` still fails when a lane
-  fails or is cancelled.
+  is removed. A directory that is still locked is retried for about three
+  seconds and then left behind, instead of a 20-by-250ms backoff (about 52
+  seconds) that the Windows light lane still paid once per locked directory.
+  `CI / required` still fails when a lane fails or is cancelled.
   See [CI and release](docs/contributing/ci-and-release.md).
 
 - **Workforce ids use one convention, and old ids still resolve.**
