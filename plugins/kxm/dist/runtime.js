@@ -17431,7 +17431,28 @@ var RESOURCE_SCHEMA = Object.freeze({
 var IDENTIFIER2 = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 var WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$|clock\$)$/i;
 var BUILTIN_EXECUTORS = ["local", "ssh", "exe-dev"];
-var BUILTIN_TOOL_PRESETS = ["coordinator", "read-only", "workspace-writer", "tests-writer"];
+var TOOL_PRESET_PROFILES = Object.freeze({
+  coordinator: "read-only",
+  "read-only": "read-only",
+  "workspace-writer": "edit",
+  "tests-writer": "edit"
+});
+var BUILTIN_TOOL_PRESETS = Object.keys(TOOL_PRESET_PROFILES);
+function toolPresetProfile(preset) {
+  if (!Object.hasOwn(TOOL_PRESET_PROFILES, preset)) return void 0;
+  return TOOL_PRESET_PROFILES[preset];
+}
+function toolPresetExceedsRoleMessage(preset, roleId, rolePermission, rolePreset) {
+  const profile = toolPresetProfile(preset);
+  if (profile !== "edit") return void 0;
+  if (rolePermission === "read-only") {
+    return `tools.preset ${preset} exceeds role ${roleId} permission read-only`;
+  }
+  if (rolePreset !== void 0 && toolPresetProfile(rolePreset) === "read-only") {
+    return `tools.preset ${preset} exceeds role ${roleId} preset ${rolePreset}`;
+  }
+  return void 0;
+}
 var SECRET_VALUE_PATTERNS = [
   /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/,
@@ -17830,6 +17851,15 @@ function objectValue(value) {
 }
 function stringValue(value) {
   return typeof value === "string" ? value : void 0;
+}
+function roleById(roles, roleId) {
+  const direct = roles.get(roleId);
+  if (direct) return direct;
+  const folded = roleId.toLocaleLowerCase("en-US");
+  for (const role of roles.values()) {
+    if ((role.id ?? "").toLocaleLowerCase("en-US") === folded) return role;
+  }
+  return void 0;
 }
 function numberValue(value, fallback) {
   return typeof value === "number" ? value : fallback;
@@ -18345,8 +18375,27 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     if (executor && !executors.has(executor)) issues.push(issue3("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue3("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
+    const roleId = stringValue(agent.value.role);
+    const role = roleId ? roleById(roles, roleId) : void 0;
+    const rolePermission = stringValue(role?.value.permission);
+    if (preset && role && (rolePermission === "edit" || rolePermission === "read-only")) {
+      const message = toolPresetExceedsRoleMessage(
+        preset,
+        role.id ?? roleId ?? "role",
+        rolePermission,
+        stringValue(objectValue(role.value.tools)?.preset)
+      );
+      if (message) issues.push(issue3("semantic", "tool_preset_exceeds_role", agent.logicalPath, message));
+    }
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
+    }
+  }
+  for (const role of roles.values()) {
+    const permission = stringValue(role.value.permission);
+    const rolePreset = stringValue(objectValue(role.value.tools)?.preset);
+    if (permission === "read-only" && rolePreset && toolPresetProfile(rolePreset) === "edit") {
+      issues.push(issue3("semantic", "tool_preset_exceeds_role", role.logicalPath, `tools.preset ${rolePreset} exceeds permission read-only`));
     }
   }
   validateModelReferences(models, issues);
@@ -30125,6 +30174,68 @@ function unsupportedAgentStepTimeout(step, limitMs) {
     detail: "step timeoutMs is wider than project limits.agentStepTimeoutMs"
   };
 }
+function narrowerPermission(left, right) {
+  return left === "read-only" || right === "read-only" ? "read-only" : "edit";
+}
+function stepRepositoryPermission(step) {
+  return Object.values(step.repositories).some((access) => access === "write") ? "edit" : "read-only";
+}
+function stepAccessDetail(step) {
+  const entries = Object.entries(step.repositories);
+  if (entries.length === 0) return "none";
+  return entries.map(([id, access]) => `${id} ${access}`).sort((left, right) => left < right ? -1 : left > right ? 1 : 0).join(", ");
+}
+function yamlToolsPreset(doc) {
+  const tools = doc?.tools;
+  if (!tools || typeof tools !== "object" || Array.isArray(tools)) return void 0;
+  const preset = tools.preset;
+  return typeof preset === "string" && preset.length > 0 ? preset : void 0;
+}
+function resolveToolDispatch(projectRoot, step, agentId) {
+  const stepPermission = stepRepositoryPermission(step);
+  if (step.kind !== "agent" && step.kind !== "moa") return { permission: stepPermission };
+  const agentFile = findYamlBasename(join18(projectRoot, ".kxm", "agents"), agentId, "agent") ?? agentId;
+  const agent = readYamlFile(join18(projectRoot, ".kxm", "agents", `${agentFile}.yaml`));
+  const roleId = typeof agent?.role === "string" ? agent.role : "";
+  if (!roleId) return { permission: stepPermission };
+  const roleDoc = readYamlFile(join18(projectRoot, ".kxm", "roles", `${roleId}.yaml`));
+  const rawPermission = roleDoc?.permission;
+  const rolePermission = rawPermission === "edit" || rawPermission === "read-only" ? rawPermission : void 0;
+  if (!rolePermission) return { permission: stepPermission };
+  const rolePreset = yamlToolsPreset(roleDoc);
+  const agentPreset = yamlToolsPreset(agent);
+  const rolePresetProfile = rolePreset ? toolPresetProfile(rolePreset) : void 0;
+  if (rolePreset && rolePresetProfile === "edit" && rolePermission === "read-only") {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "tools.preset",
+        detail: `tools.preset ${rolePreset} exceeds role ${roleId} permission read-only`
+      }
+    };
+  }
+  if (agentPreset) {
+    const exceeds = toolPresetExceedsRoleMessage(agentPreset, roleId, rolePermission, rolePreset);
+    if (exceeds) {
+      return { error: { reason: "step_unsupported", field: "tools.preset", detail: exceeds } };
+    }
+  }
+  let chain = rolePermission;
+  if (rolePresetProfile) chain = narrowerPermission(chain, rolePresetProfile);
+  const agentProfile = agentPreset ? toolPresetProfile(agentPreset) : void 0;
+  if (agentProfile) chain = narrowerPermission(chain, agentProfile);
+  const permission = narrowerPermission(chain, stepPermission);
+  if (stepPermission === "edit" && permission === "read-only") {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "permission",
+        detail: `role permission ${rolePermission} resolves to ${chain}; step access ${stepAccessDetail(step)}`
+      }
+    };
+  }
+  return { permission };
+}
 function executingSingletonAttempt(plan, state) {
   const current = state.currentStep;
   if (!current || current.panel.order.length !== 1) return void 0;
@@ -30317,10 +30428,17 @@ function prepareDispatch(context, runId, producerId, dispatchSources) {
   if (unsupported) return { kind: "return", state, handoff: { ...unsupported, stepId } };
   const wideTimeout = unsupportedAgentStepTimeout(step, projectAgentStepTimeoutMs(context, run));
   if (wideTimeout) return { kind: "return", state, handoff: { ...wideTimeout, stepId } };
+  const firstListed = step.assignments.allowedAgents[0];
+  const firstAgentId = step.kind === "agent" || step.kind === "moa" ? firstListed ? firstListed : step.agent : void 0;
+  if (firstAgentId) {
+    const toolDispatch = resolveToolDispatch(context.projectRoot, step, firstAgentId);
+    if ("error" in toolDispatch) {
+      return { kind: "return", state, handoff: { ...toolDispatch.error, stepId } };
+    }
+  }
   let resolvedRoute;
   if (producerId !== "driver-simulated") {
-    const allowed = step.assignments.allowedAgents;
-    const agentId = allowed && allowed.length > 0 && allowed[0] ? allowed[0] : step.kind === "agent" || step.kind === "moa" ? step.agent : "coordinator";
+    const agentId = firstAgentId ?? (step.kind === "agent" || step.kind === "moa" ? step.agent : "coordinator");
     const routeResult = resolveProducerRoute(context.projectRoot, step, agentId);
     if ("error" in routeResult) {
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
@@ -30440,6 +30558,10 @@ function birthMember(context, input) {
   const born = folded.currentStep?.panel.order.length ?? 0;
   const allowed = input.step.assignments.allowedAgents;
   const agentId = allowed && allowed.length > born && allowed[born] ? allowed[born] : input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator";
+  const toolDispatch = resolveToolDispatch(context.projectRoot, input.step, agentId);
+  if ("error" in toolDispatch) {
+    return { handoff: { ...toolDispatch.error, stepId: input.stepId } };
+  }
   let resolvedRoute = input.resolvedRoute;
   if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
     const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
@@ -30529,7 +30651,7 @@ function birthMember(context, input) {
       stepAttempt: input.stepAttempt,
       objective: promptText,
       allowedOutcomes: [...input.step.outcomes],
-      permissionCeiling: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only"
+      permissionCeiling: toolDispatch.permission
     },
     acceptanceCriteria: input.step.requiredEvidence.map((ev) => ({
       id: ev.key,
@@ -30574,7 +30696,7 @@ function birthMember(context, input) {
       prompt: input.step.instructions ? `${input.step.instructions}
 
 ${generatedPrompt}` : generatedPrompt,
-      permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
+      permission: toolDispatch.permission,
       ...(input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== void 0 ? { timeoutMs: input.step.timeoutMs } : {},
       contextPacket,
       ...resolvedRoute?.effort !== void 0 ? { thinking: resolvedRoute.effort } : {},

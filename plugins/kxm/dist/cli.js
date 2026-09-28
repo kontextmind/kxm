@@ -19950,6 +19950,21 @@ import { pathToFileURL } from "node:url";
 function defaultKxmSchemaDir() {
   return join9(findKxmRepoRoot(import.meta.url), "schemas");
 }
+function toolPresetProfile(preset) {
+  if (!Object.hasOwn(TOOL_PRESET_PROFILES, preset)) return void 0;
+  return TOOL_PRESET_PROFILES[preset];
+}
+function toolPresetExceedsRoleMessage(preset, roleId, rolePermission, rolePreset) {
+  const profile = toolPresetProfile(preset);
+  if (profile !== "edit") return void 0;
+  if (rolePermission === "read-only") {
+    return `tools.preset ${preset} exceeds role ${roleId} permission read-only`;
+  }
+  if (rolePreset !== void 0 && toolPresetProfile(rolePreset) === "read-only") {
+    return `tools.preset ${preset} exceeds role ${roleId} preset ${rolePreset}`;
+  }
+  return void 0;
+}
 function compareCodeUnits4(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -20234,6 +20249,15 @@ function objectValue(value) {
 }
 function stringValue(value) {
   return typeof value === "string" ? value : void 0;
+}
+function roleById(roles, roleId) {
+  const direct = roles.get(roleId);
+  if (direct) return direct;
+  const folded = roleId.toLocaleLowerCase("en-US");
+  for (const role of roles.values()) {
+    if ((role.id ?? "").toLocaleLowerCase("en-US") === folded) return role;
+  }
+  return void 0;
 }
 function numberValue(value, fallback) {
   return typeof value === "number" ? value : fallback;
@@ -20745,8 +20769,27 @@ function validateBundle(project, repositories, agents, models, workflows, enviro
     if (executor && !executors.has(executor)) issues.push(issue3("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue3("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
+    const roleId = stringValue(agent.value.role);
+    const role = roleId ? roleById(roles, roleId) : void 0;
+    const rolePermission = stringValue(role?.value.permission);
+    if (preset && role && (rolePermission === "edit" || rolePermission === "read-only")) {
+      const message = toolPresetExceedsRoleMessage(
+        preset,
+        role.id ?? roleId ?? "role",
+        rolePermission,
+        stringValue(objectValue(role.value.tools)?.preset)
+      );
+      if (message) issues.push(issue3("semantic", "tool_preset_exceeds_role", agent.logicalPath, message));
+    }
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue3("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
+    }
+  }
+  for (const role of roles.values()) {
+    const permission = stringValue(role.value.permission);
+    const rolePreset = stringValue(objectValue(role.value.tools)?.preset);
+    if (permission === "read-only" && rolePreset && toolPresetProfile(rolePreset) === "edit") {
+      issues.push(issue3("semantic", "tool_preset_exceeds_role", role.logicalPath, `tools.preset ${rolePreset} exceeds permission read-only`));
     }
   }
   validateModelReferences(models, issues);
@@ -21226,7 +21269,7 @@ function planKxmInitialization(start = process.cwd(), options = {}) {
   }
   return { mode: "create", inspectedFrom, projectRoot: candidateRoot, changesRequired: true, issues: [], legacyInputs: [] };
 }
-var import__, KxmConfigError, DEFAULT_SCHEMA_DIR, RESOURCE_SCHEMA, IDENTIFIER2, WINDOWS_RESERVED, BUILTIN_EXECUTORS, BUILTIN_TOOL_PRESETS, SECRET_VALUE_PATTERNS, KxmSchemaRegistry, cachedRunEventRegistry, GATE_STEP_OUTCOMES, LEGACY_CONFIG_FILES;
+var import__, KxmConfigError, DEFAULT_SCHEMA_DIR, RESOURCE_SCHEMA, IDENTIFIER2, WINDOWS_RESERVED, BUILTIN_EXECUTORS, TOOL_PRESET_PROFILES, BUILTIN_TOOL_PRESETS, SECRET_VALUE_PATTERNS, KxmSchemaRegistry, cachedRunEventRegistry, GATE_STEP_OUTCOMES, LEGACY_CONFIG_FILES;
 var init_project_config = __esm({
   "plugins/kxm/src/project-config.ts"() {
     "use strict";
@@ -21260,7 +21303,13 @@ var init_project_config = __esm({
     IDENTIFIER2 = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
     WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$|clock\$)$/i;
     BUILTIN_EXECUTORS = ["local", "ssh", "exe-dev"];
-    BUILTIN_TOOL_PRESETS = ["coordinator", "read-only", "workspace-writer", "tests-writer"];
+    TOOL_PRESET_PROFILES = Object.freeze({
+      coordinator: "read-only",
+      "read-only": "read-only",
+      "workspace-writer": "edit",
+      "tests-writer": "edit"
+    });
+    BUILTIN_TOOL_PRESETS = Object.keys(TOOL_PRESET_PROFILES);
     SECRET_VALUE_PATTERNS = [
       /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/,
       /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/,
@@ -27537,6 +27586,68 @@ function unsupportedAgentStepTimeout(step, limitMs) {
     detail: "step timeoutMs is wider than project limits.agentStepTimeoutMs"
   };
 }
+function narrowerPermission(left, right) {
+  return left === "read-only" || right === "read-only" ? "read-only" : "edit";
+}
+function stepRepositoryPermission(step) {
+  return Object.values(step.repositories).some((access) => access === "write") ? "edit" : "read-only";
+}
+function stepAccessDetail(step) {
+  const entries = Object.entries(step.repositories);
+  if (entries.length === 0) return "none";
+  return entries.map(([id, access]) => `${id} ${access}`).sort((left, right) => left < right ? -1 : left > right ? 1 : 0).join(", ");
+}
+function yamlToolsPreset(doc) {
+  const tools = doc?.tools;
+  if (!tools || typeof tools !== "object" || Array.isArray(tools)) return void 0;
+  const preset = tools.preset;
+  return typeof preset === "string" && preset.length > 0 ? preset : void 0;
+}
+function resolveToolDispatch(projectRoot, step, agentId) {
+  const stepPermission = stepRepositoryPermission(step);
+  if (step.kind !== "agent" && step.kind !== "moa") return { permission: stepPermission };
+  const agentFile = findYamlBasename(join19(projectRoot, ".kxm", "agents"), agentId, "agent") ?? agentId;
+  const agent = readYamlFile(join19(projectRoot, ".kxm", "agents", `${agentFile}.yaml`));
+  const roleId = typeof agent?.role === "string" ? agent.role : "";
+  if (!roleId) return { permission: stepPermission };
+  const roleDoc = readYamlFile(join19(projectRoot, ".kxm", "roles", `${roleId}.yaml`));
+  const rawPermission = roleDoc?.permission;
+  const rolePermission = rawPermission === "edit" || rawPermission === "read-only" ? rawPermission : void 0;
+  if (!rolePermission) return { permission: stepPermission };
+  const rolePreset = yamlToolsPreset(roleDoc);
+  const agentPreset = yamlToolsPreset(agent);
+  const rolePresetProfile = rolePreset ? toolPresetProfile(rolePreset) : void 0;
+  if (rolePreset && rolePresetProfile === "edit" && rolePermission === "read-only") {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "tools.preset",
+        detail: `tools.preset ${rolePreset} exceeds role ${roleId} permission read-only`
+      }
+    };
+  }
+  if (agentPreset) {
+    const exceeds = toolPresetExceedsRoleMessage(agentPreset, roleId, rolePermission, rolePreset);
+    if (exceeds) {
+      return { error: { reason: "step_unsupported", field: "tools.preset", detail: exceeds } };
+    }
+  }
+  let chain = rolePermission;
+  if (rolePresetProfile) chain = narrowerPermission(chain, rolePresetProfile);
+  const agentProfile = agentPreset ? toolPresetProfile(agentPreset) : void 0;
+  if (agentProfile) chain = narrowerPermission(chain, agentProfile);
+  const permission = narrowerPermission(chain, stepPermission);
+  if (stepPermission === "edit" && permission === "read-only") {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "permission",
+        detail: `role permission ${rolePermission} resolves to ${chain}; step access ${stepAccessDetail(step)}`
+      }
+    };
+  }
+  return { permission };
+}
 function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
   const workflow = lookupKxmResource(bundle.workflows.values(), workflowId, "workflow");
   if (!workflow) throw runtimeError("run_workflow_unknown", workflowId, `workflow ${workflowId} does not exist in this project`);
@@ -27564,6 +27675,11 @@ function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
     if (step.kind !== "agent" && step.kind !== "moa") continue;
     const agentIds = step.assignments.allowedAgents.length > 0 ? step.assignments.allowedAgents : [step.agent];
     for (const agentId of agentIds) {
+      const toolDispatch = resolveToolDispatch(projectRoot, step, agentId);
+      if ("error" in toolDispatch) {
+        prerequisites.push({ ...toolDispatch.error, stepId });
+        continue;
+      }
       const route = resolveProducerRoute(projectRoot, step, agentId);
       if ("error" in route) {
         const detail = route.error.detail === "producer_route_unsupported: agent step model is not honored" ? `${agentId}: agent step model is not honored; remove model from the step` : `${agentId}: ${route.error.detail}; set role in .kxm/agents/${agentId}.yaml and admit the route model with kxm routes admit --model <provider/model>`;
@@ -27571,7 +27687,7 @@ function kxmLiveRunPrerequisites(bundle, workflowId, projectRoot) {
         continue;
       }
       const harness = route.harness;
-      const permission = Object.values(step.repositories).includes("write") ? "edit" : "read-only";
+      const permission = toolDispatch.permission;
       if (!BUILTIN_HARNESSES.some((entry) => entry.id === harness && entry.oneShot) || !oneShotPermissionArgs(harness, permission)) {
         prerequisites.push({ reason: "step_unsupported", stepId, field: "harness", detail: `${agentId}: ${harness} has no audited ${permission} one-shot profile; use a supported workflow or execute this work directly in ${harness}, without substituting another harness` });
         continue;

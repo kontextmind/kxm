@@ -104,7 +104,40 @@ const RESOURCE_SCHEMA: Readonly<Record<KxmResourceKind, { identity: string; file
 const IDENTIFIER = /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/;
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$|clock\$)$/i;
 const BUILTIN_EXECUTORS = ["local", "ssh", "exe-dev"];
-const BUILTIN_TOOL_PRESETS = ["coordinator", "read-only", "workspace-writer", "tests-writer"];
+/** Builtin preset to the harness one-shot profile. An agent preset may only narrow. */
+export const TOOL_PRESET_PROFILES = Object.freeze({
+  coordinator: "read-only",
+  "read-only": "read-only",
+  "workspace-writer": "edit",
+  "tests-writer": "edit",
+} as const);
+const BUILTIN_TOOL_PRESETS = Object.keys(TOOL_PRESET_PROFILES);
+
+export function toolPresetProfile(preset: string): "read-only" | "edit" | undefined {
+  if (!Object.hasOwn(TOOL_PRESET_PROFILES, preset)) return undefined;
+  return TOOL_PRESET_PROFILES[preset as keyof typeof TOOL_PRESET_PROFILES];
+}
+
+/**
+ * Set when `preset` is wider than the role permission, or wider than a
+ * registered role preset. Same text at load and at dispatch.
+ */
+export function toolPresetExceedsRoleMessage(
+  preset: string,
+  roleId: string,
+  rolePermission: "edit" | "read-only",
+  rolePreset: string | undefined,
+): string | undefined {
+  const profile = toolPresetProfile(preset);
+  if (profile !== "edit") return undefined;
+  if (rolePermission === "read-only") {
+    return `tools.preset ${preset} exceeds role ${roleId} permission read-only`;
+  }
+  if (rolePreset !== undefined && toolPresetProfile(rolePreset) === "read-only") {
+    return `tools.preset ${preset} exceeds role ${roleId} preset ${rolePreset}`;
+  }
+  return undefined;
+}
 const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
   /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/,
@@ -581,6 +614,16 @@ function objectValue(value: JsonValue | undefined): JsonObject | undefined {
 
 function stringValue(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function roleById(roles: ReadonlyMap<string, KxmResource>, roleId: string): KxmResource | undefined {
+  const direct = roles.get(roleId);
+  if (direct) return direct;
+  const folded = roleId.toLocaleLowerCase("en-US");
+  for (const role of roles.values()) {
+    if ((role.id ?? "").toLocaleLowerCase("en-US") === folded) return role;
+  }
+  return undefined;
 }
 
 function numberValue(value: JsonValue | undefined, fallback: number): number {
@@ -1224,8 +1267,27 @@ function validateBundle(
     if (executor && !executors.has(executor)) issues.push(issue("reference", "executor_unknown", agent.logicalPath, `executor ${executor} is not registered`));
     const preset = stringValue(objectValue(agent.value.tools)?.preset);
     if (preset && !presets.has(preset)) issues.push(issue("reference", "tool_preset_unknown", agent.logicalPath, `tool preset ${preset} is not registered`));
+    const roleId = stringValue(agent.value.role);
+    const role = roleId ? roleById(roles, roleId) : undefined;
+    const rolePermission = stringValue(role?.value.permission);
+    if (preset && role && (rolePermission === "edit" || rolePermission === "read-only")) {
+      const message = toolPresetExceedsRoleMessage(
+        preset,
+        role.id ?? roleId ?? "role",
+        rolePermission,
+        stringValue(objectValue(role.value.tools)?.preset),
+      );
+      if (message) issues.push(issue("semantic", "tool_preset_exceeds_role", agent.logicalPath, message));
+    }
     for (const repositoryId of Object.keys(objectValue(agent.value.repositories) ?? {})) {
       if (!repositoryIds.has(repositoryId)) issues.push(issue("reference", "repository_unknown", agent.logicalPath, `references unknown repository ${repositoryId}`));
+    }
+  }
+  for (const role of roles.values()) {
+    const permission = stringValue(role.value.permission);
+    const rolePreset = stringValue(objectValue(role.value.tools)?.preset);
+    if (permission === "read-only" && rolePreset && toolPresetProfile(rolePreset) === "edit") {
+      issues.push(issue("semantic", "tool_preset_exceeds_role", role.logicalPath, `tools.preset ${rolePreset} exceeds permission read-only`));
     }
   }
   validateModelReferences(models, issues);

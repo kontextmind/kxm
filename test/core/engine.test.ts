@@ -4250,6 +4250,245 @@ roster:
   }
 });
 
+test("a stale agent preset wider than its role is step_unsupported before birth", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-preset-stale-");
+  try {
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    const writer = join(root, ".kxm", "roles", "writer.yaml");
+    writeFileSync(writer, readFileSync(writer, "utf8").replace("permission: edit\n", "permission: read-only\n"));
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "stale preset" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      let invoked = 0;
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          invoked += 1;
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+      const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "tools.preset");
+      assert.equal(result.handoff?.detail, "tools.preset workspace-writer exceeds role writer permission read-only");
+      assert.equal(invoked, 0);
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      assert.equal(events.filter((event) => event.eventType === "assignment.created").length, 0);
+      assert.equal(events.filter((event) => event.eventType === "step.entered").length, 0);
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a write step on a read-only role is step_unsupported before birth", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-preset-ro-write-");
+  try {
+    const planner = join(root, ".kxm", "agents", "planner.yaml");
+    writeFileSync(planner, readFileSync(planner, "utf8").replace("control: read", "control: write"));
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step on a read-only role
+coordinator: planner
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: planner
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const detail = "role permission read-only resolves to read-only; step access control write";
+    assert.ok(kxmLiveRunPrerequisites(bundle, "write-step", root).some((entry) => entry.field === "permission" && entry.detail === detail));
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "read-only write" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      let invoked = 0;
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          invoked += 1;
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+      const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "permission");
+      assert.equal(result.handoff?.detail, detail);
+      assert.equal(invoked, 0);
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      assert.equal(events.filter((event) => event.eventType === "assignment.created").length, 0);
+      assert.equal(events.filter((event) => event.eventType === "step.entered").length, 0);
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a write step narrowed by an agent preset is step_unsupported before birth", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-preset-narrow-write-");
+  try {
+    const writer = join(root, ".kxm", "agents", "writer.yaml");
+    writeFileSync(writer, readFileSync(writer, "utf8").replace("preset: workspace-writer", "preset: read-only"));
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step narrowed to read-only
+coordinator: planner
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: writer
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "narrowed write" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      let invoked = 0;
+      const liveProducer = {
+        id: "oneshot" as const,
+        async produce() {
+          invoked += 1;
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(liveProducer as never);
+      const result = await driveKxmRun(context, accepted.run.runId, liveProducer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "permission");
+      assert.equal(result.handoff?.detail, "role permission edit resolves to read-only; step access control write");
+      assert.equal(invoked, 0);
+      const events = context.eventStore.events(accepted.run.runId, 0, 100);
+      assert.equal(events.filter((event) => event.eventType === "assignment.created").length, 0);
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("a later panel member whose preset exceeds its role is step_unsupported before that member starts", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-preset-panel-");
+  try {
+    writePanelWorkflow(root, "panel-preset", {
+      maximum: 2,
+      target: 2,
+      maxParallel: 2,
+      allowedAgents: "allowedAgents: [implementer, coordinator]",
+    });
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    const planner = join(root, ".kxm", "agents", "planner.yaml");
+    writeFileSync(planner, readFileSync(planner, "utf8").replace("preset: coordinator", "preset: workspace-writer"));
+    try {
+      const seen: string[] = [];
+      const producer = {
+        id: "oneshot" as const,
+        async produce(request: { agentId: string }) {
+          seen.push(request.agentId);
+          return { outcome: "passed" as const, costBasis: "unmetered" as const, latencyMs: 1 };
+        },
+      };
+      registerTrustedProducer(producer as never);
+      const accepted = acceptKxmRun(context, bundle, { workflowId: "panel-preset", prompt: "panel preset" });
+      pinKxmCompiledPlan(context, bundle, accepted.run.runId);
+      const result = await driveKxmRun(context, accepted.run.runId, producer as never);
+      assert.equal(result.handoff?.reason, "step_unsupported");
+      assert.equal(result.handoff?.field, "tools.preset");
+      assert.equal(result.handoff?.detail, "tools.preset workspace-writer exceeds role planner permission read-only");
+      assert.deepEqual(seen, ["implementer"]);
+      const created = context.eventStore.events(accepted.run.runId, 0, 10_000)
+        .filter((event) => event.eventType === "assignment.created");
+      assert.equal(created.length, 1);
+      assert.equal(created[0]?.payload.agentId, "implementer");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
+test("dispatch permission is the narrowest of role permission, preset, and step access", async () => {
+  const { root, stateRoot } = engineProject("kxm-engine-preset-narrowest-");
+  try {
+    writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), `schema: kxm.workflow.v1
+description: Write step for the narrowest permission
+coordinator: planner
+limits:
+  maxTransitions: 2
+steps:
+  - id: write-step
+    kind: agent
+    agent: writer
+    repositories:
+      control: write
+    on:
+      passed:
+        target: $terminal
+        terminalStatus: completed
+      failed:
+        target: $terminal
+        terminalStatus: failed
+`);
+    const bundle = loadKxmProject(root);
+    const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    try {
+      const seen: Array<{ permission: string | undefined; ceiling: string | undefined }> = [];
+      const producer = createKxmSimulatedProducer(async (request) => {
+        seen.push({
+          permission: request.permission,
+          ceiling: request.contextPacket?.task.permissionCeiling,
+        });
+        return { outcome: "passed" };
+      });
+      const readRun = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "read narrows" });
+      pinKxmCompiledPlan(context, bundle, readRun.run.runId);
+      const readDriven = await driveKxmRun(context, readRun.run.runId, producer);
+      assert.equal(readDriven.handoff, undefined);
+      assert.equal(seen[0]?.permission, "read-only");
+      assert.equal(seen[0]?.ceiling, "read-only");
+      const writeRun = acceptKxmRun(context, bundle, { workflowId: "write-step", prompt: "edit when all three allow it" });
+      pinKxmCompiledPlan(context, bundle, writeRun.run.runId);
+      const writeDriven = await driveKxmRun(context, writeRun.run.runId, producer);
+      assert.equal(writeDriven.handoff, undefined);
+      assert.equal(seen[1]?.permission, "edit");
+      assert.equal(seen[1]?.ceiling, "edit");
+    } finally {
+      closeKxmRuntimeContext(context);
+    }
+  } finally {
+    removeTempDir(root, stateRoot);
+  }
+});
+
 test("live route refuses an agent step that sets model", () => {
   const { root, stateRoot } = engineProject("kxm-engine-step-model-");
   try {
@@ -4309,7 +4548,7 @@ test("live route refuses a role whose first admitted route is disabled", () => {
   try {
     writeFileSync(join(root, ".kxm", "models", "blocked.yaml"), "schema: kxm.model.v2\nid: blocked\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
     writeFileSync(join(root, ".kxm", "roles", "witness.yaml"), "schema: kxm.role.v2\nid: witness\npurpose: experiment\npermission: read-only\ndescription: witness\nroster:\n  - route: blocked\n");
-    writeFileSync(join(root, ".kxm", "agents", "implementer.yaml"), "schema: kxm.agent.v1\npurpose: Witness.\nrole: witness\ntools:\n  preset: workspace-writer\ndefaultRepositoryAccess: none\nrepositories:\n  control: write\nnetwork: provider-only\nresultSchema: kxm.assignment-result.v1\n");
+    writeFileSync(join(root, ".kxm", "agents", "implementer.yaml"), "schema: kxm.agent.v1\npurpose: Witness.\nrole: witness\ntools:\n  preset: read-only\ndefaultRepositoryAccess: none\nrepositories:\n  control: write\nnetwork: provider-only\nresultSchema: kxm.assignment-result.v1\n");
     setRouteState(root, "xai/grok-4.6", "disabled");
     const bundle = loadKxmProject(root);
     const found = kxmLiveRunPrerequisites(bundle, "one-step", root);

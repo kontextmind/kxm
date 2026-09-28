@@ -11,6 +11,7 @@ import {
   loadKxmProject,
   parseRestrictedYaml,
   planKxmInitialization,
+  toolPresetProfile,
 } from "../../plugins/kxm/src/project-config.ts";
 import { readKxmLocalBindings, kxmLocalBindingFile, withKxmLocalBindingLock } from "../../plugins/kxm/src/bindings.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
@@ -156,6 +157,78 @@ test("an agent file with model or harness is refused at load", () => {
       () => loadKxmProject(root),
       (error) => error instanceof KxmConfigError
         && error.issues.some((entry) => entry.code === "retired_agent_routing_fields" && entry.file.endsWith("planner.yaml")),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const PRESET_PROFILE_FIXTURES = [
+  { preset: "coordinator", profile: "read-only" },
+  { preset: "read-only", profile: "read-only" },
+  { preset: "workspace-writer", profile: "edit" },
+  { preset: "tests-writer", profile: "edit" },
+] as const;
+
+for (const fixture of PRESET_PROFILE_FIXTURES) {
+  test(`tool preset ${fixture.preset} maps to the ${fixture.profile} one-shot profile`, () => {
+    assert.equal(toolPresetProfile(fixture.preset), fixture.profile);
+  });
+}
+
+test("an agent preset wider than its role permission is tool_preset_exceeds_role", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-preset-exceeds-"));
+  try {
+    makeGitRoot(root);
+    initializeKxmProject(root, { projectId: "prj_01JPRESETPOLICY00000000000", projectName: "Preset" });
+    const planner = join(root, ".kxm", "agents", "planner.yaml");
+    writeFileSync(planner, readFileSync(planner, "utf8").replace("preset: coordinator", "preset: workspace-writer"));
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.some((entry) => entry.code === "tool_preset_exceeds_role"
+          && entry.file.endsWith("planner.yaml")
+          && entry.message === "tools.preset workspace-writer exceeds role planner permission read-only"),
+    );
+    writeFileSync(planner, readFileSync(planner, "utf8").replace("preset: workspace-writer", "preset: read-only"));
+    loadKxmProject(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an agent preset wider than its role preset is tool_preset_exceeds_role", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-preset-role-narrow-"));
+  try {
+    makeGitRoot(root);
+    initializeKxmProject(root, { projectId: "prj_01JPRESETNARROW00000000000", projectName: "Preset narrow" });
+    const writerRole = join(root, ".kxm", "roles", "writer.yaml");
+    writeFileSync(writerRole, readFileSync(writerRole, "utf8").replace("permission: edit\n", "permission: edit\ntools:\n  preset: read-only\n"));
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.some((entry) => entry.code === "tool_preset_exceeds_role"
+          && entry.file.endsWith("writer.yaml")
+          && entry.message === "tools.preset workspace-writer exceeds role writer preset read-only"),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a role preset wider than its permission is tool_preset_exceeds_role", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-role-preset-wide-"));
+  try {
+    makeGitRoot(root);
+    initializeKxmProject(root, { projectId: "prj_01JROLEPRESET0000000000000", projectName: "Role preset" });
+    const plannerRole = join(root, ".kxm", "roles", "planner.yaml");
+    writeFileSync(plannerRole, readFileSync(plannerRole, "utf8").replace("permission: read-only\n", "permission: read-only\ntools:\n  preset: tests-writer\n"));
+    assert.throws(
+      () => loadKxmProject(root),
+      (error) => error instanceof KxmConfigError
+        && error.issues.some((entry) => entry.code === "tool_preset_exceeds_role"
+          && entry.file.endsWith(".kxm/roles/planner.yaml")
+          && entry.message === "tools.preset tests-writer exceeds permission read-only"),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
