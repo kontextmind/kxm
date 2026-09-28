@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo, type CliSpawnResult } from "../../plugins/kxm/src/cli.ts";
 import { noticeFromVersions, writeUpdateCache } from "../../plugins/kxm/src/kxm-update.ts";
@@ -84,6 +84,7 @@ function npmGlobalSpawn(
   npmRoot: string,
   handlers: {
     gh?: (args: readonly string[]) => CliSpawnResult;
+    curl?: (args: readonly string[]) => CliSpawnResult;
     npmInstall?: (args: readonly string[]) => CliSpawnResult;
   } = {},
 ): { spawnSync: NonNullable<CliIo["spawnSync"]>; calls: Array<{ command: string; args: string[] }> } {
@@ -96,6 +97,7 @@ function npmGlobalSpawn(
         return { status: 0, stdout: `${npmRoot}\n`, stderr: "" };
       }
       if (command === "gh") return handlers.gh?.(args) ?? { status: 0, stdout: "", stderr: "" };
+      if (command === "curl") return handlers.curl?.(args) ?? { status: 1, stdout: "", stderr: "unexpected spawn curl" };
       if (command === "npm" && args.includes("install")) {
         return handlers.npmInstall?.(args) ?? { status: 0, stdout: "", stderr: "" };
       }
@@ -167,6 +169,24 @@ function writeGhTarball(args: readonly string[], body = TARBALL_BODY): CliSpawnR
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, pattern), body);
   return { status: 0, stdout: "", stderr: "" };
+}
+
+function writeCurlTarball(args: readonly string[], body = TARBALL_BODY): CliSpawnResult {
+  const output = args[args.indexOf("--output") + 1];
+  if (!output) return { status: 1, stdout: "", stderr: "missing --output" };
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, body);
+  return { status: 0, stdout: "", stderr: "" };
+}
+
+/** Hosts without `gh` download the same asset with curl. Tests record whichever dir the installer used. */
+function downloadReleaseTarball(args: readonly string[], command: "gh" | "curl", body = TARBALL_BODY): { result: CliSpawnResult; releaseDir: string } {
+  if (command === "curl") {
+    const output = args[args.indexOf("--output") + 1] ?? "";
+    return { result: writeCurlTarball(args, body), releaseDir: output ? dirname(output) : "" };
+  }
+  const releaseDir = String(args[args.indexOf("--dir") + 1] ?? "");
+  return { result: writeGhTarball(args, body), releaseDir };
 }
 
 test("update --check reports a newer GitHub release", async () => {
@@ -380,11 +400,14 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
   const fake = fakeNpmGlobal();
   try {
     let releaseDir = "";
+    const writeDownloaded = (command: "gh" | "curl") => (args: readonly string[]) => {
+      const downloaded = downloadReleaseTarball(args, command);
+      releaseDir = downloaded.releaseDir;
+      return downloaded.result;
+    };
     const mismatch = npmGlobalSpawn(fake.npmRoot, {
-      gh: (args) => {
-        releaseDir = String(args[args.indexOf("--dir") + 1] ?? "");
-        return writeGhTarball(args);
-      },
+      gh: writeDownloaded("gh"),
+      curl: writeDownloaded("curl"),
       npmInstall: () => {
         assert.fail("npm install must not run after a digest mismatch");
       },
@@ -405,6 +428,9 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
       gh: () => {
         assert.fail("gh must not run when the release digest is missing");
       },
+      curl: () => {
+        assert.fail("curl must not run when the release digest is missing");
+      },
     });
     const missingIo = capture();
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(missingIo, fake, {
@@ -414,11 +440,12 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
     const missingPayload = JSON.parse(missingIo.read().stderr) as { ok: boolean; error?: string };
     assert.equal(missingPayload.ok, false);
     assert.equal(missingPayload.error, "release_digest_missing");
-    assert.equal(missing.calls.some((call) => call.command === "gh"), false);
+    assert.equal(missing.calls.some((call) => call.command === "gh" || call.command === "curl"), false);
 
     const digest = createHash("sha256").update(TARBALL_BODY).digest("hex");
     const match = npmGlobalSpawn(fake.npmRoot, {
       gh: (args) => writeGhTarball(args),
+      curl: (args) => writeCurlTarball(args),
     });
     const matchIo = capture();
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(matchIo, fake, {
@@ -431,6 +458,7 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
 
     const failedInstall = npmGlobalSpawn(fake.npmRoot, {
       gh: (args) => writeGhTarball(args),
+      curl: (args) => writeCurlTarball(args),
       npmInstall: () => ({ status: 1, stdout: "", stderr: "npm install failed" }),
     });
     const failedIo = capture();
