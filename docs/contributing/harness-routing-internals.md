@@ -1,13 +1,13 @@
 # Harness routing internals
 
-This page records how the KXM repository applies [harness routing](../reference/harness-routing.md) to its own work: the routes this checkout admits, its writer roster, its price catalog, and the developer roster policy that `just assign` and the dev helper enforce. It is maintainer material. The snapshots were captured on 2026-09-23 on one operator machine, from a source checkout where `node scripts/kxm.mjs` is the same program as `kxm`; they change whenever an admission changes.
+This page records how the KXM repository applies [harness routing](../reference/harness-routing.md) to its own work: the routes this checkout admits, its writer roster, its price catalog, and the developer roster policy that `just assign` and the dev helper enforce. It is maintainer material. The route and roster transcripts below were regenerated on 2026-09-28 from this checkout, where `node scripts/kxm.mjs` is the same program as `kxm`. Readiness notes that name a capture machine are from 2026-09-23 and were not re-probed. The transcripts change whenever an admission changes.
 
 > [!IMPORTANT]
 > The files are the authority, not this page: `.kxm/routes.yaml`, `.kxm/roles/*.yaml`, `.kxm/models/*.yaml`, and `.kxm/prices.yaml`. Product routing decisions are recorded under Tracking → Decided in `plans/implementation-plan.md`.
 
 ## Current ids (2026-09-27)
 
-The command transcripts below are the 2026-09-23 capture. The files now use one id shape per kind. A route id is `<harness>-<model-slug>[-<provider>]`, with `.` written as `-`. An agent id equals its role. A workflow id is `default`, `land`, or `<role>-only`. An agent step id equals that role.
+The files use one id shape per kind. A route id is `<harness>-<model-slug>[-<provider>]`, with `.` written as `-`. An agent id equals its role. A workflow id is `default`, `land`, or `<role>-only`. An agent step id equals that role.
 
 This checkout's routes are `grok-grok-4-7`, `pi-qwen3-coder-plus-openrouter`, `agy-gemini-3-8-flash-high`, `agy-gemini-3-8-flash-medium`, `claude-fable`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Old ids resolve as aliases. Every roster entry names an effort. `reviewer-arch` dispatches `claude-fable`. #343's architecture critic ran on opus because the justfile recipe review-arch hardcoded that model; the role file on that commit listed only `fable-claude`. The helper now refuses `opus`.
 
@@ -18,26 +18,22 @@ This checkout's routes are `grok-grok-4-7`, `pi-qwen3-coder-plus-openrouter`, `a
 ```text
 schema: kxm.role.v2
 id: writer
-description: ""
+purpose: writer
+permission: edit
+description: Primary implementation agent.
 skills: []
 roster:
-  - model: xai/grok-4.6
+  - route: grok-grok-4-7
     effort: medium
-    enabled: true
-  - model: openrouter/qwen/qwen3-coder-plus
+  - route: pi-qwen3-coder-plus-openrouter
     effort: medium
-    enabled: true
-  - model: zai-coding-cn/glm-5.3-flash
+  - route: agy-gemini-3-8-flash-high
     effort: medium
-    enabled: true
-  - model: qwen-token-plan/qwen3.8-flash
+  - route: agy-gemini-3-8-flash-medium
     effort: medium
-    enabled: true
-  - model: google/gemini-3.8-flash-high
-    enabled: true
 ```
 
-The implementer agent declares `harness: grok`, so of this roster only `xai/grok-4.6` can run under it; the Pi selectors need an agent without `harness:`.
+The writer role lists route ids, in order: `grok-grok-4-7`, then `pi-qwen3-coder-plus-openrouter`, then `agy-gemini-3-8-flash-high` and `agy-gemini-3-8-flash-medium`. `grok-grok-4-7` is harness `grok`, model `grok-4.7`, vendor `xai`. An agent file does not declare `harness:`.
 
 `node scripts/kxm.mjs routes list`:
 
@@ -49,12 +45,17 @@ admitted openai/gpt-5.6-sol
 admitted openrouter/qwen/qwen3-coder-plus
 admitted openrouter/qwen/qwen3.8-flash
 admitted openrouter/z-ai/glm-5.3-flash
-admitted qwen-token-plan/deepseek-v4.1-flash
-admitted qwen-token-plan/qwen3.8-flash
-admitted qwen-token-plan/qwen3.8-max
-admitted xai/grok-4.6
-admitted zai-coding-cn/glm-5.3
-admitted zai-coding-cn/glm-5.3-flash
+admitted xai/grok-4.7
+planner claude-fable
+planner pi-qwen3-8-flash-openrouter
+reviewer-arch claude-fable
+reviewer-arch pi-glm-5-3-flash-openrouter
+reviewer-cli codex-gpt-5-6-sol
+reviewer-cli pi-qwen3-8-flash-openrouter
+writer grok-grok-4-7
+writer pi-qwen3-coder-plus-openrouter
+writer agy-gemini-3-8-flash-high
+writer agy-gemini-3-8-flash-medium
 ```
 
 `routes admit --model openrouter/qwen/qwen3-coder-plus --dry-run` exits 2 with `select a model from the refreshed inventory` even though that selector is already admitted, because the inventory never carries `openrouter/…` selectors. Selectors like these are admitted by a Git-reviewed edit of `.kxm/routes.yaml`.
@@ -63,7 +64,7 @@ On the capture machine, `kxm harness list` showed `claude` detected but logged o
 
 ### Price catalog and inventory
 
-`.kxm/prices.yaml` is dated `2026-09-16`, so every current run records `providerMetadata.priceCatalogStale: true` and no list estimate. The list prices below come from `.kxm/models/inventory.yaml`, fetched `2026-09-16T14:54:53Z`, in USD per 1M tokens. The checkout has no routing records yet, so none of the examples has recorded latency; for latency, run a bounded side-by-side experiment and compare p50 and p95 in `kxm routing report`.
+`.kxm/prices.yaml` is dated `2026-09-28`. A run on that date can record a list estimate. Any other day records `providerMetadata.priceCatalogStale: true` and no list estimate. The list prices below come from `.kxm/models/inventory.yaml`. OpenRouter and Nous were fetched at `2026-09-28T14:02:09.052Z`. `pi`, `grok`, and `agy` were not installed for that refresh, so models that exist only in those CLIs are still the 2026-09-16 rows. Prices are USD per 1M tokens. The checkout has no routing records yet, so none of the examples has recorded latency; for latency, run a bounded side-by-side experiment and compare p50 and p95 in `kxm routing report`.
 
 ## The developer roster
 
@@ -108,15 +109,15 @@ The product brake, the dev helper and the roster policy now agree on the vendor 
 
 These extend the generic examples on the reference page with this checkout's admissions, developer policy routes, readiness on the capture machine, and inventory prices.
 
-### Grok 4.6
+### Grok 4.7
 
 | | Native `grok` | Pi + OpenRouter |
 |---|---|---|
-| Selector | `xai/grok-4.6`: admitted, and first in the writer roster | `openrouter/x-ai/grok-4.6`: not admitted |
+| Selector | `xai/grok-4.7`: admitted, and first in the writer roster | `openrouter/x-ai/grok-4.7`: not admitted |
 | Developer roster | `grok-grok-4-7`, the writer route with `edit` | Refused: `native vendor cannot use Pi` |
-| Readiness | `grok` shows auth `yes` | `pi auth check --provider openrouter` returned `not_ready` |
-| Billing | grok.com subscription (OAuth) | $2.00 input, $6.00 output, $0.50 cached input |
-| Context | 500K (Pi's `xai` row; `grok models` does not print one) | 500,000 |
+| Readiness | `grok` showed auth `yes` on the 2026-09-23 capture machine | `pi auth check --provider openrouter` returned `not_ready` on that capture |
+| Billing | grok.com subscription (OAuth) | $1.60 input, $4.80 output, $0.40 cached input |
+| Context | 500,000 (`x-ai/grok-4.7` in the refreshed inventory) | 500,000 |
 
 Pi's own `xai` provider reported `ready` (OAuth) on the capture machine. When the grok quota runs out, the next writer in the lineup is `pi-qwen3-coder-plus-openrouter`, a different vendor.
 
@@ -147,7 +148,7 @@ In the inventory, `openai/gpt-5.6-sol` has sources `openrouter+nous` and carries
 
 | | Native `agy` | `antigravity` Pi provider | Pi + OpenRouter |
 |---|---|---|---|
-| Selector | `google/gemini-3.8-flash-high`: admitted, last in the writer roster | `antigravity/gemini-3.8-flash`: not admitted | `openrouter/google/gemini-3.8-flash`: not admitted |
+| Selector | `google/gemini-3.8-flash-high` and `google/gemini-3.8-flash-medium`: admitted, the last two writer routes | `antigravity/gemini-3.8-flash`: not admitted | `openrouter/google/gemini-3.8-flash`: not admitted |
 | Billing | Google subscription | Google subscription | $0.75 input, $3.75 output, $0.075 cached input |
 | Context | `agy` does not print it; the vendored catalog lists 1,048,576 | 1,048,576 | 1,048,576 |
 

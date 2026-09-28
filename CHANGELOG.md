@@ -156,6 +156,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **The checked-in price catalog and model inventory match the live OpenRouter and Nous feeds.**
+  `.kxm/prices.yaml` is dated 2026-09-28. It adds `xai/grok-4.7` (alias
+  `x-ai/grok-4.7`) at $1.60 input and $4.80 output per 1M tokens, with cache
+  read $0.40. `openrouter/z-ai/glm-5.3-flash` moves from $0.09 / $0.30 to
+  $0.15 / $0.50 (cache read $0.03); the anchored `zai-coding-cn/glm-5.3-flash`
+  row moves with it. `qwen-token-plan/deepseek-v4.1-flash` (alias
+  `deepseek/deepseek-v4.1-flash`) moves from $0.15 / $0.60 to $0.014 / $0.40
+  (cache read $0.004) because the routing docs still name that selector.
+  `xai/grok-4.6` stays: its base rate still matches the live catalog, and code
+  and tests still name it. `.kxm/models/inventory.yaml` was refreshed with
+  `kxm models inventory-refresh`. Pi, Grok, and agy were not installed for that
+  fetch, so models that exist only in those CLIs remain the 2026-09-16 rows.
+
 - **Windows pull-request unit lanes finish inside the job limit.** The light
   lane on `windows-latest` was cancelled at 20 minutes on #361, #362, and
   #363 after it stopped reporting tests. `package-install.test.ts` (171s on
