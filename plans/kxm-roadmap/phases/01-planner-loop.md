@@ -88,13 +88,15 @@ Evidence needed: The run-events store for this project with the attempt rows for
 
 ### kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)
 
-`loop-land-followup`. Status: open. Detail: scoped.
+`loop-land-followup`. Status: done. Detail: scoped.
 
 Template: `bug-fix`.
 
 Done criterion: A failing verify names the failing lines and a log path; the rebase stage polls UNKNOWN to a known state and rebases when BEHIND.
 
 Evidence needed: test/core/pr-land.test.ts cases for both, and one landing that hit each path.
+
+Evidence: `test/core/pr-land.test.ts`.
 
 ### kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20)
 
@@ -108,7 +110,6 @@ None.
 
 ## Questions
 
-- The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
 - The proof model behind kxm assign (backlog S11) is still an operator decision.
 
 [Dashboard](../dashboard.md)

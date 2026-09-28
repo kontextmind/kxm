@@ -617,6 +617,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **`kxm land` names a verify failure and refuses an UNKNOWN merge state.**
+  A failed `verify` records the exit code, the failing step, and a short
+  excerpt on the stage line and in `.kxm/logs/land-verify-<tree>.json`, and
+  writes the full output to `.kxm/logs/land-verify-<tree>.log`. The rebase
+  and merge stages poll `mergeStateStatus` while it is `UNKNOWN` and refuse
+  `land_merge_state_unknown` if it does not resolve. `CLEAN` and `HAS_HOOKS`
+  proceed; `BEHIND` and `DIRTY` still rebase; any other known state refuses
+  `land_merge_not_ready`. See the
+  [CLI reference](docs/reference/cli-reference.md#kxm-land).
+
 - **`kxm hub view` and `kxm hub bind` require a kxm hub body.** HTTP 200 HTML
   (an Authentik login page) and 30x redirects are not healthy. The JSON
   `health` field is `{ "error": "auth_proxy" }`, not the page. Bind refuses

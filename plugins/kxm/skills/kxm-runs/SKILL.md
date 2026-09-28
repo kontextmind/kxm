@@ -89,6 +89,10 @@ generated pages. `push` publishes the branch. `pr` reuses the open pull
 request or creates one from `--body-file`. `rebase` rebases onto
 `origin/main` for at most five rounds, resolving only the dist rebuild, the
 CHANGELOG Unreleased union, and the tracker "Landed in this tree" union.
+`UNKNOWN` is polled and never treated as ready; `CLEAN` and `HAS_HOOKS`
+proceed, `BEHIND` and `DIRTY` rebase, and any other known state blocks. A
+failed `verify` names the exit code, the failing step, and a short excerpt,
+and writes the full log under `.kxm/logs/`.
 `unblock` reruns one failed check and reports a required review. `merge`
 squash-merges. `release` waits for the tag and the npm publish. `milestone`
 reports `deep_review_required` when a phase flips to done or the body contains
