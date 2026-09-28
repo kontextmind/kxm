@@ -12,7 +12,7 @@ On a TTY, bare kxm opens the existing dashboard and a first-run panel that probe
 
 ### P0 sequence gate: dependencies on main before any product change
 
-Done criterion: The cloud-bind flag, the naming validator, and omp P3 through P7 are on main, and this plan says so.
+Done criterion: The cloud-bind flag and the naming validator are on main. omp P3 (#378) and P4 are on main. P5 through P7 are not, and this plan says so.
 
 Evidence needed: Commit or PR links in the plan change log.
 
@@ -36,12 +36,11 @@ Evidence needed: Catalog tests and a receipt that names the workflow hash.
 
 ## Blockers
 
-- omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
+- omp-alignment P5, P6, and P7 are still open. P3 tool policy (#378, v0.7.169) and P4 fallback are done.
 - The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself.
 
 ## Questions
 
-- The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.
 - Option B, a validated workflow file composed from a catalog, waits for an operator decision. The plan recommends it and does not schedule it.
 
 [Dashboard](../dashboard.md)

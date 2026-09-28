@@ -82,9 +82,9 @@ Evidence: `test/core/engine.test.ts`.
 
 Template: `feature`.
 
-Done criterion: One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report. P1 and P2 ran writers that way; P3 is the unit that completes the end-to-end proof on the engine (the witness and outcome fixes landed in #368).
+Done criterion: One real unit runs the writer and both critics through the one-step workflows, and kxm improve report shows those three attempt rows, each settled from a verified drive receipt. Transport recipes are already retired (#343). #378 enforces tool presets and does not supply this record. #356, #363, and #368 let an engine-driven step settle a real reviewer outcome. Backlog S33 records one truthful critic BLOCK on the vision lane. That is one critic, not a writer plus both critics. A report from the parent checkout still misses lane stores (backlog S30).
 
-Evidence needed: The run-events store for this project with the attempt rows for writer and both critics, each settled from a verified drive receipt.
+Evidence needed: The run-events store for this project with the attempt rows for the writer and both critics, each settled from a verified drive receipt, visible from kxm improve report on the parent checkout.
 
 ### kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)
 

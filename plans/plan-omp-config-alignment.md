@@ -285,8 +285,9 @@ the list is unknown.
 ## 5. Phases
 
 Each phase is one PR, written by the admitted writer route, reviewed by both
-critics, gated by `just verify` locally (CI is paused; the local pipeline is
-the gate per the tracker). [`plan-lane-cli.md`](plan-lane-cli.md) lands
+critics, gated by `npm run verify` locally and by `CI / required` on the
+pull request. Windows Validate legs run on main (#358 to #364). `Nightly`
+and `Real Pi smoke` stay disabled. [`plan-lane-cli.md`](plan-lane-cli.md) lands
 first: P1 is the first run dispatched as
 `kxm lane run omp-align-p1 --brief .kxm/briefs/omp-align-p1.md --wait`. Test policy per the tracker: one focused named test
 per behaviour that can break, in an existing suite; deleting a path deletes
@@ -296,7 +297,7 @@ its tests.
 |---|---|---|---|
 | P1 Promote the draft | Move the two v2 schemas to `schemas/`, add `extends` and `policy.fallback` to the role schema and to `validatePolicyDraft`; write `.kxm/models/*.yaml` from `roster.yaml` routes; rewrite the four role files to v2 with route ids; delete `routes.yaml` `roles:`; delete the v1 schemas, `DEFAULT_ROLES`, `DEFAULT_ROLE_SEATS`, role-hosts; `role list/get/add/modify/remove` read and write v2 only; `kxm init` template emits v2; register `role` and `model` as live resource kinds in `project-config.ts` so `kxm config` validation covers them | none at dispatch; `roster.yaml` still read by loader and engine | `just verify`; a test that every `.kxm/roles` and `.kxm/models` file validates against the live schema through `validatePolicyDraft` with the developer ceilings |
 | P2 Cut the loader and engine over | `roster-policy.mjs` builds the policy object from v2 files at `origin/main`; `engine.ts` membership and live-write checks read roles and routes; agents gain `role:`, lose `harness` and `model`; alias deleted; `roster.yaml` deleted; `justfile` literals replaced by the resolver; docs (`assignment-runner.md`, config reference) updated | dispatch reads the new files; same admissions | `just verify`; `test/core/roster-policy.test.ts` rewritten for the new source; one engine test per refusal path |
-| P3 Tool policy enforcement | 3.6 | steps can be refused that were accepted | a fixture per preset pair |
+| P3 Tool policy enforcement (landed #378, v0.7.169) | 3.6 | steps can be refused that were accepted | `test/core/engine.test.ts` and `test/core/project-config.test.ts` |
 | P4 Fallback walk | 3.5 plus `route_switch` in `run-event.schema.json` and the two reports | attempts continue on the next admitted route when a role opts in | simulated 429 and transport fixtures; report shows switches |
 | P5 Provenance and `extends` | 3.7 first two items | none at dispatch | unit tests |
 | P6 Effort catalog | 3.7 last item; probe evidence under `plans/evidence/` | invalid efforts rejected at edit time | evidence file plus validator test |

@@ -70,8 +70,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   [plan-python-migration.md](plan-python-migration.md) records the operator-requested
   conversion of KXM product services, runner and CLI to Python, alongside a central
   tenant/project control plane. Its MG0–MG8 waves are a proposal and do not change
-  the existing deployment or authorize a gate bypass. Select implementation slices
-  here before starting; at each accepted slice update any superseded TypeScript,
+  the existing deployment or authorize a gate bypass. MG0's witness is recorded
+  below; its evidence JSON is not in this checkout. MG1's code gate is done
+  off-repo and not on main: this checkout has no `python/` tree. Select
+  implementation slices here before starting; at each accepted slice update any superseded TypeScript,
   hosting, automation and package guidance in the same change. Browser Studio and
   native provider executables retain their own languages.
 
@@ -241,13 +243,13 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `scripts/`, or workflow files also runs those unit lanes on Windows Node 24.
   `Nightly` and `Real Pi smoke` stay disabled. `Release` still runs `validate:ci`.
 
-- **CI test pause (2026-09-24).** GitHub workflows `CI`, `Nightly` and
-  `Real Pi smoke` are disabled server-side, and required status checks are
-  removed from ruleset `protect-main`. `Auto-Release` and `Release` stay on,
-  because tenant VMs will upgrade from releases and `Release` still runs
-  `validate:ci`. Before any merge, the local WSL pipeline (Phase 0) is the
-  gate. Workflow files stay unchanged, so re-enabling is a single
-  `gh workflow enable` plus restoring the saved ruleset.
+- **CI test pause (2026-09-24), superseded.** Workflows `CI`, `Nightly`, and
+  `Real Pi smoke` were disabled, and required checks were removed from
+  ruleset `protect-main`. That pause is over. See **CI lanes (2026-09-27)**
+  above: `CI` is on, `CI / required` is a required check in `protect-main`
+  (`22251971`), and Windows Validate legs run on `main` (#358 to #364).
+  `Nightly` and `Real Pi smoke` stay disabled. `npm run verify` remains the
+  local commit gate.
 
 - **Single operator: no migrations, no legacy support, minimal tests (2026-09-20).**
   Nobody else runs this. Old state is deleted and re-created, not upgraded, and nothing
@@ -581,16 +583,18 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   authenticating browsers at the edge. Remote workflow execution (Phase 6) and
   distributed synchronization (Phase 8) remain post-MVP: reaching a tenant box does not
   pass either gate.
-- **Platform pause (operator, 2026-09-05):** Windows CI legs, hosted Windows
-  probes, and release automation are paused, not deprecated. Active verification
-  runs on the ARC runner scale set kontextmind-doks (DOKS, 0..4 ephemeral
-  pods): two Linux Node 22.19.0 and 24 Validate legs plus Docs lint and
-  Plugin validation; Classify changes is the fifth job. Local verification
-  is `npm run verify` on macOS. No new paid macOS runner. Windows source and
-  tests stay in tree. Windows resumption and release resumption are separate
-  choices; each updates Tracking, tests, and settings together. The release latch
-  was subsequently removed and v0.7.0 published (see Still open); Windows
-  qualification remains paused. The September 5 release-pause text is historical.
+- **Platform pause (operator, 2026-09-05), Windows CI superseded.** The
+  2026-09-05 pause covered Windows CI legs, hosted Windows probes, and
+  release automation. Windows Validate legs now run on `main` and
+  `workflow_dispatch` (`validate:pr` on Windows for Node 22.19.0 and Node 24),
+  restored in #358 through #364. Path-sensitive pull requests also run the
+  Windows unit lanes. `CI` is on, and `CI / required` is a required check in
+  ruleset `protect-main` (`22251971`). `Nightly`, `Real Pi smoke`, and the
+  Win Node24 probe workflow stay disabled. `Release` and `Auto-Release` are
+  active; the September 5 release-job latch is gone. Hosted Windows
+  qualification beyond those Validate legs was not restored by #358–#364.
+  Local verification is still `npm run verify`. Windows source and tests
+  stay in tree. No new paid macOS runner.
 - **Public npm prerequisite satisfied (checked 2026-09-15 UTC):** npm `latest`
   is `@kontextmind/kxm@0.7.0`; GitHub v0.7.0 is published. The prior wait for a
   first public package is historical. Current 02aaed31 code supports npm update
@@ -2366,16 +2370,15 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   newer, outdated, and malformed schemas still fail closed. Acceptance follows
   the single-repair operator exception above; the two unsuccessful native
   attempts remain in private history. Phase gates are unchanged.
-- **Platform pause (2026-09-05):** the active PR gate is two Linux
-  `validate:ci` + `check:generated` legs (Node 22.19.0 and 24) plus Docs lint
-  and Plugin validation. Classify changes plus those four jobs is five CI
-  jobs; all five run on docs-only diffs. Local verification is `npm run
-  verify` on macOS. Windows CI legs, hosted Windows probes, and `release.yml`
-  are paused: the two Windows contexts left ruleset `22251971`, the Release
-  and probe workflows are disabled in settings, and the `release` job carries
-  a source `if: false` latch so re-enabling the workflow cannot publish.
-  Release safety logic and its tests are unchanged. Windows is paused, not
-  unsupported; no Windows code was removed. No new paid macOS runner.
+- **Platform pause (2026-09-05), historical.** At that date the active PR
+  gate was two Linux `validate:ci` + `check:generated` legs (Node 22.19.0
+  and 24) plus Docs lint and Plugin validation, and Windows CI legs, hosted
+  Windows probes, and `release.yml` were paused. That shape is superseded.
+  `CI` is on, `CI / required` is the required check in `protect-main`, and
+  Windows Validate legs run on `main` (#358 to #364). `Nightly`, `Real Pi
+  smoke`, and the Win Node24 probe workflow stay disabled. `Release` and
+  `Auto-Release` are active. No Windows source was removed. No new paid
+  macOS runner.
 - PR CI no longer skips Validate or Plugin validation for docs-only diffs,
   restoring the ruleset’s required contexts (four expanded Validate names plus
   Plugin validation). That seven-job PR surface (four Validate legs plus
@@ -2627,8 +2630,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   immutable. Temporary probe workflow/branch/worktree deleted and never
   merged. All four normal `validate:ci` coverage legs remain required.
   Not a general Windows cure; no extra permanent npm gate.
-  Windows legs are paused as of 2026-09-05; the four-leg statement above is
-  historical. The pre-ack shutdown fixture fix remains landed.
+  Windows legs were paused as of 2026-09-05. That pause is superseded by
+  #358 to #364, which run Windows Validate on `main`. The four-leg statement
+  above is historical. The pre-ack shutdown fixture fix remains landed.
 - **D1 engine compile (pure):** `engine-compile.ts` compiles a validated
   `kxm.workflow.v1` into a deep-frozen, JSON-serializable plan keyed by step id
   with typed transitions, per-edge and global transition budgets, step
@@ -2689,8 +2693,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 ### Still open
 
 - **Python migration MG0 witness passed (2026-09-25).**
-  Evidence: [python-migration-mg0.json](evidence/python-migration-mg0.json)
+  Evidence named by the record:
+  [python-migration-mg0.json](evidence/python-migration-mg0.json)
   and [python-migration-mg0-corpus.json](evidence/python-migration-mg0-corpus.json).
+  Those JSON files are not in this checkout.
   Local `main` is `d90afc1`, already `origin/main`. Portal `main` was
   fast-forwarded to `0380a5f`. The live checkout on `kxm-dev-svr` was not
   switched; `origin/main` there was fetched to `d90afc1`. `kxm backup
@@ -2707,18 +2713,17 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   on `127.0.0.1:5432`. Temporal 1.32.0 listens on `127.0.0.1:7233`. Account
   `kxmd` has database `kxmd` and namespace `kxmd` (retention 168h). The
   product role cannot open the Temporal databases. KXM still writes SQLite.
-  MG1 code gate passed (2026-09-25). `python/kxm-control` is the uv workspace
-  caller and API. It resolves only database `kxmd`, role `kxmd`, and namespace
-  `kxmd`. A request that names another account, database, namespace, host, or
-  Temporal target is denied. Authentik login accepts an RS256 token only for
-  issuer, audience, and `kxm_actor` of `user` or `runner`; a user token is not
-  a runner membership, and a member of one tenant cannot read another.
-  Published revision round trip and the regenerated Studio client
-  (`python/kxm-control/generated/studio-client.ts`, checked against
-  `python/kxm-control/contract/openapi.json`) passed. `DROP SCHEMA
-  kxm_registry` removes registration and does not touch source state. The
-  schema is installed on the live `kxmd` database (tenants, memberships,
-  projects, repositories, revisions). Object storage is the on-host directory
+  MG1 code gate is done off-repo, not on main (recorded 2026-09-25). This
+  checkout has no `python/` tree. The off-repo record said `python/kxm-control`
+  was the uv workspace caller and API, that it resolved only database `kxmd`,
+  role `kxmd`, and namespace `kxmd`, that a request naming another account,
+  database, namespace, host, or Temporal target was denied, and that a
+  published-revision round trip and a regenerated Studio client passed.
+  Those paths (`python/kxm-control`, `python/kxm-control/generated/studio-client.ts`,
+  `python/kxm-control/contract/openapi.json`) are not files in this repository.
+  The same record said `DROP SCHEMA kxm_registry` removes registration and
+  does not touch source state, and that the schema was installed on the live
+  `kxmd` database (tenants, memberships, projects, repositories, revisions). Object storage is the on-host directory
   `/var/lib/kxm/artifacts/kxmd`, not S3. Authentik application `kxm-control`
   is live at issuer `https://id.kxmd.dev/application/o/kxm-control/`. A client
   credentials token verified against that JWKS as `kxm_actor=runner`. Issuer,
@@ -2974,7 +2979,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   shape as each slice is picked up (`packages/core/tui` is the only package
   migrated so far). CI legs stay npm + Node 22.19.0/24 and must not require Bun
   (the runners have none); installing Bun on the runners is a separate change
-  that carries its own CI evidence. Windows automation stays paused, not deprecated. No
+  that carries its own CI evidence. Windows Validate legs run on `main`
+  (#358 to #364). The Win Node24 probe workflow stays disabled. No
   phase gate changes until a slice carries its own witness.
 
 - **Remaining timing-dependent assertions in the core suite (owner: engine
@@ -3631,9 +3637,11 @@ here, not in Phase 3.
 temporary draft on tag `v0.5.20260905` and the same-digest rerun skipped
 without a second asset; mismatch tag failed before install. Cleanup left
 published `v0.5.1` and tree `0.5.1` unchanged. `protect-main` `22251971`
-now requires `Plugin validation`; `delete_branch_on_merge` is true. First
-published `kxm-<v>.tgz` and public npm remain later. Release automation is
-paused as of 2026-09-05 (job latch); the Phase 5 gate sentence is unchanged.
+then required `Plugin validation`; `delete_branch_on_merge` is true. The
+required check is now `CI / required`. First
+published `kxm-<v>.tgz` and public npm remain later. Release automation was
+paused as of 2026-09-05 (job latch). That latch is gone: `Release` and
+`Auto-Release` are active. The Phase 5 gate sentence is unchanged.
 
 **B4 note (not the Phase 5 gate):** package seams and the strict
 extension/mcp import boundary landed in tree. The old pack-unchanged

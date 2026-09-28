@@ -50,6 +50,6 @@ None.
 
 ## Questions
 
-- plans/plan-greenfield-infra.md is observed in this checkout as a kxm.doc.v1 stub (status draft, authority instruction, created and updated 2026-09-28): the long-form proposal was never committed, canonical facts live in the implementation-plan greenfield bullets, and the phase stays open with the backlog task. An older long-form draft survives untracked in the operator's tree (backup at /tmp/colliders/plans/plan-greenfield-infra.md).
+- plans/plan-greenfield-infra.md is a kxm.doc.v1 stub committed in #373 (status draft, authority instruction, created and updated 2026-09-28). The long-form proposal is not in this repository. Canonical installed and backlog facts live in the implementation-plan greenfield bullets. The phase stays open on the backlog task.
 
 [Dashboard](../dashboard.md)

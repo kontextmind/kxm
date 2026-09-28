@@ -2,7 +2,7 @@
 title: "Learnings"
 description: "Durable lessons from running the writer, critic, and landing loop on this repository. One entry per lesson, with the evidence and where it applies. Pruned when a lesson stops being true."
 audience: "agents and maintainers"
-updated: "2026-09-26"
+updated: "2026-09-28"
 ---
 
 # Learnings
@@ -97,7 +97,8 @@ entry whose fix has landed is deleted, not archived.
 
 - **Auto-merge cannot be enabled on a PR that is already `CLEAN`**; the
   mutation answers "clean status" and the REST squash merge is the path.
-  While CI is paused every PR is clean, so this is the normal path.
+  `CI` is on and `CI / required` is a required check in `protect-main`, so
+  a pull request is not clean until that check passes.
 - **A verify failure inside `kxm land` shows only the child's last output
   line.** Re-run verify by hand to see the cause until backlog S19 lands.
 

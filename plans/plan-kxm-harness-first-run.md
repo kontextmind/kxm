@@ -7,10 +7,10 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-27"
-updated: "2026-09-27"
+updated: "2026-09-28"
 authority: "hypothesis"
 confidence: "medium"
-summary: "Draft plan. Bare kxm on a TTY opens the existing dashboard and, on a first run, a guided onboarding panel that probes harnesses, hands auth to each harness or to an op:// reference, and writes user defaults. It does not write secrets into .kxm. Static kxm.workflow.v1 files stay the trust anchor. A later hybrid may compose a workflow from a typed catalog, validate it, and persist it as a normal workflow file. Implementation waits on hub bind --cloud, the route and role naming validator, and omp-alignment P3 through P7, especially P4. Execution tracking stays in implementation-plan.md."
+summary: "Draft plan. Bare kxm on a TTY opens the existing dashboard and, on a first run, a guided onboarding panel that probes harnesses, hands auth to each harness or to an op:// reference, and writes user defaults. It does not write secrets into .kxm. Static kxm.workflow.v1 files stay the trust anchor. A later hybrid may compose a workflow from a typed catalog, validate it, and persist it as a normal workflow file. Hub bind --cloud (#348), the naming validator, omp P3 (#378), and P4 are on main. Implementation still waits on omp-alignment P5 through P7. Execution tracking stays in implementation-plan.md."
 tags: ["onboarding", "tui", "harness", "auth", "omp", "pi", "deepseek", "workflows"]
 related:
   - evidence/harness-first-run-2026-09-27.md
@@ -107,8 +107,8 @@ Pi is the only long-lived worker (`kxm agent worker`). The others are one-shot.
 Hub auto-start defaults to `background` (`plugins/kxm/src/hub-autostart.ts`,
 `plugins/kxm/src/config.ts`). `kxm hub bind <url>` writes
 `hub-binding.json` under the user state root and refuses a remote URL with no
-credential (`plugins/kxm/src/cli/hub.ts`). This checkout has no `--cloud` flag
-on that command. User hub credentials are `kxm.hub-env.v1` in `hub-env.json`
+credential (`plugins/kxm/src/cli/hub.ts`). `kxm hub bind --cloud` is on main
+(#348, with #375 config identity and #376 probe fixes). User hub credentials are `kxm.hub-env.v1` in `hub-env.json`
 (`plugins/kxm/src/hub-env.ts`).
 
 Config layers:
@@ -120,10 +120,8 @@ Config layers:
 | User state | `KXM_STATE_HOME` or the platform state dir | Hub binding, hub env, repository bindings |
 
 `kxm config set` takes `--scope user|project`. Dispatch policy is the project
-role and model files. P1 (`#337`) and the dispatch cutover (`#343`) are on
-main. The roadmap row `omp-p2` was still `open` in `plans/kxm-roadmap/state.json`
-when this plan was written. Git is the authority for those two phases: they
-have landed. P3 through P7 have not.
+role and model files. P1 (`#337`), the dispatch cutover (`#343`), P3 tool
+policy (`#378`, v0.7.169), and P4 fallback are on main. P5 through P7 have not.
 
 Roles on disk are `writer`, `planner`, `reviewer-arch`, and `reviewer-cli`
 (`kxm.role.v2`). Agents keep the names `implementer`, `critic-arch`,
@@ -242,8 +240,9 @@ the provenance hash still matches.
    CLI review. The wizard must not add an admitted route, must not edit
    `origin/main` policy, and must not put a model pin back on an agent.
 6. Hub. Read `hub-binding.json`. Leave it unchanged. Offer the existing
-   loopback bind. Offer `kxm hub bind --cloud` only after that flag is on
-   main. Until then the scene says the cloud bind is not in this build.
+   loopback bind and `kxm hub bind --cloud`, which is on main (#348).
+   Clients of the kxmd hub use the SSH forward at `127.0.0.1:17331` because
+   `hub.kxmd.dev` sits behind Authentik.
 7. Doctor summary. Write the onboarding marker. Print the same report
    `kxm doctor` prints.
 
@@ -480,21 +479,20 @@ land implementation.
 
 ## 6. Sequence
 
-Implementation of this plan waits until all three are on main:
+Implementation of this plan waits until the remaining items are on main:
 
-1. `kxm hub bind --cloud` and the unified project id. The operator named
-   cloud agent `bc-e30865cc`. This run could not read that agent. The flag
-   is absent from `plugins/kxm/src/cli/hub.ts` at `7a956e0`. Treat the
-   dependency as unverified until the flag exists on main.
-2. Agent, role, and route naming plus the route and role validator. The
-   operator named cloud agent `bc-a4124155`. Also unreadable here. The
-   wizard and the composer must call that validator rather than grow a
+1. `kxm hub bind --cloud` and the unified project id are on main (#348,
+   #375, #376). Clients reach the kxmd hub over the SSH forward at
+   `127.0.0.1:17331` because `hub.kxmd.dev` sits behind Authentik.
+2. Agent, role, and route naming plus the route and role validator are on
+   main (`scripts/workforce-lint.mjs`, wired into check and `validate:pr`).
+   The wizard and the composer must call that validator rather than grow a
    third name table.
-3. omp-alignment P3 through P7, and P4 in particular. P4 is the in-run
-   fallback. Onboarding must not promise a fallback the runner does not
-   walk. P3 tool policy and P6 effort checks should be in place before the
-   wizard writes effort defaults. P5 and P7 can follow P4. P1 and P2 are
-   already on main as `#337` and `#343`.
+3. omp-alignment P5 through P7. P3 tool policy (#378, v0.7.169) and P4
+   fallback are on main. Onboarding must not promise a fallback the runner
+   does not walk. P6 effort checks should be in place before the wizard
+   writes effort defaults. P5 and P7 can follow. P1 and P2 are on main as
+   `#337` and `#343`.
 
 P0 below is the gate that checks this list. It is not a product change.
 [`plan-studio-cloud-host.md`](plan-studio-cloud-host.md) shares this gate.
@@ -503,8 +501,10 @@ Studio work does not start ahead of it.
 ## 7. Phases
 
 Each implementation phase is one PR by the admitted writer, reviewed by
-both critics, gated by `npm run verify` locally while CI test workflows
-stay paused. One focused test per new behavior, in an existing suite.
+both critics, gated by `npm run verify` locally and by `CI / required` on
+the pull request. Windows Validate legs run on main (#358 to #364).
+`Nightly` and `Real Pi smoke` stay disabled. One focused test per new
+behavior, in an existing suite.
 Rough effort is the size of the change, not a schedule.
 
 | Phase | Scope | Files | Exit | Effort |
@@ -586,15 +586,15 @@ The writer of a phase is not a critic of that phase.
   This draft keeps it as a model path until a headless `dsh` profile is
   verified.
 - Does guide setup (`init-guide-setup.ts`) fold into the wizard, or stay
-  the post-init prompt? This draft leaves it in place until P3, then the
-  wizard becomes the only prompt.
+  the post-init prompt? P3 tool policy is on main (#378). This draft still
+  leaves guide setup in place until the wizard is the only prompt.
 - Who may persist a composed workflow onto `origin/main`? This draft says
   a normal PR, the same as editing `default.yaml` by hand.
 
 ## 12. Out of scope
 
-- Implementing omp-alignment P3 through P7.
-- Implementing `kxm hub bind --cloud`.
+- Implementing omp-alignment P5 through P7. P3 (#378) and P4 are on main.
+- Implementing `kxm hub bind --cloud`. It is on main (#348, #375, #376).
 - Renaming agents, roles, or routes.
 - A new TUI toolkit, or moving the product shell onto omp's wizard.
 - Copying `workflowz` as the runner.
@@ -610,3 +610,4 @@ The writer of a phase is not a critic of that phase.
 |---|---|
 | 2026-09-27 | Draft opened from the operator request and the evidence file. |
 | 2026-09-27 | Cross-linked the Studio cloud-host companion. The sequence gate is shared. |
+| 2026-09-28 | `--cloud` (#348, #375, #376), the naming validator, P3 (#378), and P4 are on main. The sequence gate that remains is P5 through P7. CI is on. |

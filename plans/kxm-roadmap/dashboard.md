@@ -2,7 +2,7 @@
 
 Updated: 2026-09-28.
 
-Active blockers: 5. Active questions: 11. Later phases are excluded from both counts.
+Active blockers: 4. Active questions: 12. Later phases are excluded from both counts.
 
 ## Next
 
@@ -43,7 +43,6 @@ Goal: Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role 
 
 #### Open tasks
 
-- `omp-p3` P3 tool policy enforcement.
 - `omp-p5` P5 provenance and extends.
 - `omp-p6` P6 effort catalog.
 - `omp-p7` P7 quota-aware walk (optional).
@@ -54,7 +53,7 @@ None.
 
 #### Questions
 
-- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven on 0.7.159 (#363, #368): the authoring witness counts committed work and the outcome parser reads real reviewer shapes — an engine-driven critic settled a truthful BLOCK on the vision lane. P3 dispatch is the first full engine unit and completes loop-dispatch.
+- P2 landed in #343, P4 ships the error classifier with the walk, and P3 tool policy landed in #378 (v0.7.169). Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine can settle a real reviewer outcome (#363, #368). Backlog S33 records one truthful critic BLOCK on the vision lane. That settlement is not loop-dispatch.
 
 [Phase page](phases/02-role-authority.md)
 
@@ -82,7 +81,7 @@ None.
 
 #### Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and a python/ tree were observed untracked in the operator's primary worktree on 2026-09-28; neither is committed to main, and other checkouts do not have them.
+- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. MG0's witness is recorded in the implementation plan; its evidence JSON is not in this checkout. MG1's code gate is done off-repo and not on main: this checkout has no python/ tree.
 
 [Phase page](phases/03-python-migration.md)
 
@@ -104,7 +103,7 @@ None.
 
 #### Questions
 
-- plans/plan-greenfield-infra.md is observed in this checkout as a kxm.doc.v1 stub (status draft, authority instruction, created and updated 2026-09-28): the long-form proposal was never committed, canonical facts live in the implementation-plan greenfield bullets, and the phase stays open with the backlog task. An older long-form draft survives untracked in the operator's tree (backup at /tmp/colliders/plans/plan-greenfield-infra.md).
+- plans/plan-greenfield-infra.md is a kxm.doc.v1 stub committed in #373 (status draft, authority instruction, created and updated 2026-09-28). The long-form proposal is not in this repository. Canonical installed and backlog facts live in the implementation-plan greenfield bullets. The phase stays open on the backlog task.
 
 [Phase page](phases/04-greenfield-infra.md)
 
@@ -148,11 +147,11 @@ Goal: P0 through P6 from plans/plan-cross-host-phase.md, with delivered rows tak
 
 #### Blockers
 
-- P0 waits on a second box and an operator-owned forward to the loopback hub.
 - P4 stays behind its trigger: a cross-box request whose target is a role.
 
 #### Questions
 
+- P0 is unblocked and not done. The bind substrate is on main (#348, #375, #376). The two-box witness is still open. Clients use the operator-owned loopback SSH forward because the public hub name sits behind Authentik; the address is in plans/plan-cross-host-phase.md and docs/operations.md, not in this state file.
 - The P1 test is present in test/core/hub-api.test.ts. The tracker row is not marked delivered, so the task stays open.
 - P5 is marked delivered. The same tracker row still says the cross-box witness is not run. Done evidence is the in-repo test.
 
@@ -257,12 +256,11 @@ Goal: On a TTY, bare kxm opens the existing dashboard and a first-run panel that
 
 #### Blockers
 
-- omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
+- omp-alignment P5, P6, and P7 are still open. P3 tool policy (#378, v0.7.169) and P4 fallback are done.
 - The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself.
 
 #### Questions
 
-- The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.
 - Option B, a validated workflow file composed from a catalog, waits for an operator decision. The plan recommends it and does not schedule it.
 
 [Phase page](phases/09-harness-first-run.md)
@@ -283,7 +281,7 @@ Goal: Studio shows the seven dash panels, a first-run wizard, and live workflow 
 
 #### Blockers
 
-- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.
+- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried. omp P3 tool policy landed in #378 (v0.7.169) and P4 fallback is done. P5, P6, and P7 remain.
 - Setup and doctor screens also wait on first-run P1 through P5.
 
 #### Questions
@@ -339,7 +337,6 @@ No confirmed contacts.
 
 ## History
 
-- 2026-09-26: Roadmap seeded from state.json.
 - 2026-09-26: Portal mark applied.
 - 2026-09-26: Lane, land, assign, docs, and one-shot timeout slices landed (#330 to #335).
 - 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
@@ -351,3 +348,4 @@ No confirmed contacts.
 - 2026-09-27: P4 opt-in fallback walk records routing.route_switched and continues the attempt.
 - 2026-09-27: docs/operations.md indexes the six state roots and the cross-box peer attach recipe.
 - 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the operator's primary worktree; hub cloud binding inventoried.
+- 2026-09-28: P3 tool policy landed (#378, v0.7.169). Cross-host P0 bind unblocked (#348, #375, #376). MG1 is off-repo. CI pause text retired.

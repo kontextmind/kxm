@@ -90,11 +90,11 @@ Evidence: `test/core/driver.test.ts`.
 
 ## Blockers
 
-- P0 waits on a second box and an operator-owned forward to the loopback hub.
 - P4 stays behind its trigger: a cross-box request whose target is a role.
 
 ## Questions
 
+- P0 is unblocked and not done. The bind substrate is on main (#348, #375, #376). The two-box witness is still open. Clients use the operator-owned loopback SSH forward because the public hub name sits behind Authentik; the address is in plans/plan-cross-host-phase.md and docs/operations.md, not in this state file.
 - The P1 test is present in test/core/hub-api.test.ts. The tracker row is not marked delivered, so the task stays open.
 - P5 is marked delivered. The same tracker row still says the cross-box witness is not run. Done evidence is the in-repo test.
 
