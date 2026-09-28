@@ -176,6 +176,37 @@ test("enforceToolPolicy reads KXM_ATTEMPT_TOKEN and fails closed with tool_polic
   }
 });
 
+test("enforceToolPolicy allow list permits a listed tool and denies the rest", () => {
+  const originalAttempt = process.env.KXM_ATTEMPT_TOKEN;
+  const originalSession = process.env.KXM_SESSION_TOKEN;
+  const originalConfigDir = process.env.KXM_USER_CONFIG_DIR;
+  const isolatedConfig = mkdtempSync(join(tmpdir(), "kxm-env-allow-"));
+  try {
+    process.env.KXM_USER_CONFIG_DIR = isolatedConfig;
+    delete process.env.KXM_SESSION_TOKEN;
+    process.env.KXM_ATTEMPT_TOKEN = mintAttemptToken({
+      runId: "r-allow",
+      stageId: "s-allow",
+      attempt: 1,
+      allowedTools: ["kxm_list"],
+    });
+    const allowed = enforceToolPolicy("kxm_list");
+    assert.equal(allowed.allowed, true);
+    const denied = enforceToolPolicy("kxm_send");
+    assert.equal(denied.allowed, false);
+    assert.equal(denied.error, "tool_policy_denied");
+    assert.match(denied.detail ?? "", /denied by attempt tool policy/);
+  } finally {
+    if (originalAttempt !== undefined) process.env.KXM_ATTEMPT_TOKEN = originalAttempt;
+    else delete process.env.KXM_ATTEMPT_TOKEN;
+    if (originalSession !== undefined) process.env.KXM_SESSION_TOKEN = originalSession;
+    else delete process.env.KXM_SESSION_TOKEN;
+    if (originalConfigDir !== undefined) process.env.KXM_USER_CONFIG_DIR = originalConfigDir;
+    else delete process.env.KXM_USER_CONFIG_DIR;
+    rmSync(isolatedConfig, { recursive: true, force: true });
+  }
+});
+
 test("peer await command strictly caps timeoutMs at 60,000 ms (60 seconds)", () => {
   const awaitCmd = AGENT_COMMANDS_MAP.get("kxm_await")!;
   assert.ok(awaitCmd);

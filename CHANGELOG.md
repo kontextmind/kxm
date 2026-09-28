@@ -181,6 +181,18 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Tool policy is enforced at load and before dispatch.**
+  `coordinator` and `read-only` select the read-only one-shot profile.
+  `workspace-writer` and `tests-writer` select the edit profile. Dispatch
+  uses the narrowest of the role `permission`, that preset profile, and the
+  step's repository access. An agent preset wider than its role is
+  `tool_preset_exceeds_role` at load, and `step_unsupported` before a
+  producer starts if those files were already loaded. A write step whose
+  resolved profile is read-only is the same handoff. The detail names the
+  role permission and the step access. `tools.allow` and `tools.deny` stay
+  on the MCP surface through `enforceToolPolicy`. See
+  [agent files](docs/reference/config-reference.md#kxmagentsidyaml-kxmagentv1).
+
 - **The checked-in price catalog and model inventory match the live OpenRouter and Nous feeds.**
   `.kxm/prices.yaml` is dated 2026-09-28. It adds `xai/grok-4.7` (alias
   `x-ai/grok-4.7`) at $1.60 input and $4.80 output per 1M tokens, with cache

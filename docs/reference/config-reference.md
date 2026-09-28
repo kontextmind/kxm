@@ -337,7 +337,7 @@ with `retired_agent_routing_fields`.
 | `skills` | Unique identifiers, at most 64 | Optional | Skill names granted to the agent |
 | `instructions` | String, at most 16,000 characters | Optional | Not read by any code path yet. Step `instructions` are what reach the prompt. |
 | `executor` | `local`, `ssh`, or `exe-dev` | Optional | Loader (`executor_unknown`); recorded in the executor-policy revision; no dispatch path selects an executor from it yet |
-| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`): the preset must be registered. An agent `tools.preset` may only narrow the role preset. Enforcement of that rule is pending (P3). |
+| `tools.preset` | `coordinator`, `read-only`, `workspace-writer`, or `tests-writer` | Optional | Loader (`tool_preset_unknown`): the preset must be registered. `coordinator` and `read-only` select the read-only one-shot profile. `workspace-writer` and `tests-writer` select the edit profile. An agent preset may only narrow the role. A wider preset is `tool_preset_exceeds_role` at load. |
 | `tools.allow`, `tools.deny` | Unique identifiers, at most 128 each | Optional | A tool in both lists is `tool_policy_contradiction`; steps may only narrow the ceiling |
 | `defaultRepositoryAccess` | `none`, `read`, or `write` | Optional; the ceiling is `none` when absent | Loader: access ceiling for repositories not listed in `repositories` |
 | `repositories` | Map of repository ID to `none`, `read`, or `write`; at most 64 | Optional | Loader: per-repository access ceiling; IDs must be declared (`repository_unknown`) |
@@ -349,17 +349,29 @@ with `retired_agent_routing_fields`.
 | `session.reuse` | `compatible-run-scope` | Optional | Not read by any code path yet |
 | `session.maxIdleMs` | Integer, 0 to 31,536,000,000 | Optional | Not read by any code path yet |
 
-Tool presets are names checked against a registered list. The live one-shot
-producer launches the harness named by the selected model file, with a fixed
-argument set, and does not translate `tools` into harness flags. A read-only
-step uses the read-only set (`READ_ONLY_ONESHOT_ARGS` in
-`plugins/kxm/src/harness.ts`). A step with `write` access uses the audited
-writer set (`WRITER_ONESHOT_ARGS`), which exists only for `pi` (`-a` with
-extensions, skills, prompt templates and sessions off) and `grok`
-(`--always-approve` with subagents and web search off). Both approve every
-tool call, shell commands included, and neither confines the process to the
-checkout. A live write step on any other harness is handed off; see
+Tool presets are names checked against a registered list, then mapped onto
+the harness one-shot profiles in `plugins/kxm/src/harness.ts`. `coordinator`
+and `read-only` use the read-only argument set (`READ_ONLY_ONESHOT_ARGS`).
+`workspace-writer` and `tests-writer` use the audited writer set
+(`WRITER_ONESHOT_ARGS`), which exists only for `pi` (`-a` with extensions,
+skills, prompt templates and sessions off) and `grok` (`--always-approve`
+with subagents and web search off). Both approve every tool call, shell
+commands included, and neither confines the process to the checkout.
+
+Dispatch permission is the narrowest of the role `permission`, the preset
+profile (the role preset, then the agent preset), and the step's repository
+access (`write` is edit; `read` and `none` are read-only). A preset cannot
+widen a role. An agent preset that is wider fails load with
+`tool_preset_exceeds_role`, and dispatch refuses that file again with
+`step_unsupported` (field `tools.preset`) when the process already loaded
+it. A write step whose resolved profile is read-only is `step_unsupported`
+(field `permission`) before the producer starts. The detail names the role
+permission and the step access. A live write that does resolve to edit
+still hands off on a harness with no audited writer set; see
 [Steps the Runtime does not execute yet](#steps-the-runtime-does-not-execute-yet).
+
+`tools.allow` and `tools.deny` apply to the MCP surface through
+`enforceToolPolicy` in `plugins/kxm/src/commands.ts`.
 
 Example (the shape `kxm init` writes for `writer`):
 
@@ -394,7 +406,7 @@ Runtime cannot reach the `antigravity` Pi provider yet. `kxm run` and the
 Runtime read the agents. `kxm trust` diffs them.
 
 Error codes: `retired_agent_routing_fields`, `executor_unknown`,
-`tool_preset_unknown`, `tool_policy_contradiction`, `repository_unknown`, and
+`tool_preset_unknown`, `tool_preset_exceeds_role`, `tool_policy_contradiction`, `repository_unknown`, and
 the path codes under
 [Rules shared by the project bundle](#rules-shared-by-the-project-bundle).
 

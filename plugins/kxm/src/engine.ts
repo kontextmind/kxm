@@ -113,7 +113,7 @@ import {
   type KxmRunRecord,
   type KxmRunStatus,
 } from "./runtime-store.ts";
-import { KxmConfigError, kxmCanonicalJson, lookupKxmResource, type JsonValue, type KxmProjectBundle } from "./project-config.ts";
+import { KxmConfigError, kxmCanonicalJson, lookupKxmResource, toolPresetExceedsRoleMessage, toolPresetProfile, type JsonValue, type KxmProjectBundle } from "./project-config.ts";
 import { evaluateArtifactsGate } from "./engine-artifacts.ts";
 import { createCommandObserver } from "./engine-command.ts";
 import {
@@ -1726,6 +1726,85 @@ function unsupportedAgentStepTimeout(step: KxmCompiledStep, limitMs: number): Om
   };
 }
 
+function narrowerPermission(left: "read-only" | "edit", right: "read-only" | "edit"): "read-only" | "edit" {
+  return left === "read-only" || right === "read-only" ? "read-only" : "edit";
+}
+
+function stepRepositoryPermission(step: KxmCompiledStep): "read-only" | "edit" {
+  return Object.values(step.repositories).some((access) => access === "write") ? "edit" : "read-only";
+}
+
+function stepAccessDetail(step: KxmCompiledStep): string {
+  const entries = Object.entries(step.repositories);
+  if (entries.length === 0) return "none";
+  return entries
+    .map(([id, access]) => `${id} ${access}`)
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    .join(", ");
+}
+
+function yamlToolsPreset(doc: Record<string, unknown> | undefined): string | undefined {
+  const tools = doc?.tools;
+  if (!tools || typeof tools !== "object" || Array.isArray(tools)) return undefined;
+  const preset = (tools as { preset?: unknown }).preset;
+  return typeof preset === "string" && preset.length > 0 ? preset : undefined;
+}
+
+/**
+ * Dispatch permission is the narrowest of the role permission, the preset
+ * profile, and the step repository access. A wider agent preset, or a write
+ * step on a read-only chain, is step_unsupported.
+ */
+function resolveToolDispatch(
+  projectRoot: string,
+  step: KxmCompiledStep,
+  agentId: string,
+): { permission: "read-only" | "edit" } | { error: Omit<KxmRunHandoff, "stepId"> } {
+  const stepPermission = stepRepositoryPermission(step);
+  if (step.kind !== "agent" && step.kind !== "moa") return { permission: stepPermission };
+  const agentFile = findYamlBasename(join(projectRoot, ".kxm", "agents"), agentId, "agent") ?? agentId;
+  const agent = readYamlFile(join(projectRoot, ".kxm", "agents", `${agentFile}.yaml`));
+  const roleId = typeof agent?.role === "string" ? agent.role : "";
+  if (!roleId) return { permission: stepPermission };
+  const roleDoc = readYamlFile(join(projectRoot, ".kxm", "roles", `${roleId}.yaml`));
+  const rawPermission = roleDoc?.permission;
+  const rolePermission: "edit" | "read-only" | undefined = rawPermission === "edit" || rawPermission === "read-only" ? rawPermission : undefined;
+  if (!rolePermission) return { permission: stepPermission };
+  const rolePreset = yamlToolsPreset(roleDoc);
+  const agentPreset = yamlToolsPreset(agent);
+  const rolePresetProfile = rolePreset ? toolPresetProfile(rolePreset) : undefined;
+  if (rolePreset && rolePresetProfile === "edit" && rolePermission === "read-only") {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "tools.preset",
+        detail: `tools.preset ${rolePreset} exceeds role ${roleId} permission read-only`,
+      },
+    };
+  }
+  if (agentPreset) {
+    const exceeds = toolPresetExceedsRoleMessage(agentPreset, roleId, rolePermission, rolePreset);
+    if (exceeds) {
+      return { error: { reason: "step_unsupported", field: "tools.preset", detail: exceeds } };
+    }
+  }
+  let chain: "read-only" | "edit" = rolePermission;
+  if (rolePresetProfile) chain = narrowerPermission(chain, rolePresetProfile);
+  const agentProfile = agentPreset ? toolPresetProfile(agentPreset) : undefined;
+  if (agentProfile) chain = narrowerPermission(chain, agentProfile);
+  const permission = narrowerPermission(chain, stepPermission);
+  if (stepPermission === "edit" && permission === "read-only") {
+    return {
+      error: {
+        reason: "step_unsupported",
+        field: "permission",
+        detail: `role permission ${rolePermission} resolves to ${chain}; step access ${stepAccessDetail(step)}`,
+      },
+    };
+  }
+  return { permission };
+}
+
 function executingSingletonAttempt(
   plan: KxmCompiledPlan,
   state: KxmRunState,
@@ -1944,12 +2023,21 @@ function prepareDispatch(
   const wideTimeout = unsupportedAgentStepTimeout(step, projectAgentStepTimeoutMs(context, run));
   if (wideTimeout) return { kind: "return", state, handoff: { ...wideTimeout, stepId } };
 
+  const firstListed = step.assignments.allowedAgents[0];
+  const firstAgentId = (step.kind === "agent" || step.kind === "moa")
+    ? (firstListed ? firstListed : step.agent)
+    : undefined;
+  if (firstAgentId) {
+    const toolDispatch = resolveToolDispatch(context.projectRoot, step, firstAgentId);
+    if ("error" in toolDispatch) {
+      return { kind: "return", state, handoff: { ...toolDispatch.error, stepId } };
+    }
+  }
+
   let resolvedRoute: ResolvedProducerRoute | undefined;
   if (producerId !== "driver-simulated") {
-    const allowed = step.assignments.allowedAgents;
-    const agentId = (allowed && allowed.length > 0 && allowed[0])
-      ? allowed[0]!
-      : (step.kind === "agent" || step.kind === "moa" ? step.agent : "coordinator");
+    const agentId = firstAgentId
+      ?? ((step.kind === "agent" || step.kind === "moa") ? step.agent : "coordinator");
     const routeResult = resolveProducerRoute(context.projectRoot, step, agentId);
     if ("error" in routeResult) {
       return { kind: "return", state, handoff: { ...routeResult.error, stepId } };
@@ -2092,6 +2180,10 @@ function birthMember(
   const agentId = (allowed && allowed.length > born && allowed[born])
     ? allowed[born]!
     : (input.step.kind === "agent" || input.step.kind === "moa" ? input.step.agent : "coordinator");
+  const toolDispatch = resolveToolDispatch(context.projectRoot, input.step, agentId);
+  if ("error" in toolDispatch) {
+    return { handoff: { ...toolDispatch.error, stepId: input.stepId } };
+  }
   let resolvedRoute = input.resolvedRoute;
   if (!resolvedRoute && input.producerId && input.producerId !== "driver-simulated") {
     const routeResult = resolveProducerRoute(context.projectRoot, input.step, agentId);
@@ -2183,7 +2275,7 @@ function birthMember(
       stepAttempt: input.stepAttempt,
       objective: promptText,
       allowedOutcomes: [...input.step.outcomes],
-      permissionCeiling: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
+      permissionCeiling: toolDispatch.permission,
     },
     acceptanceCriteria: input.step.requiredEvidence.map((ev) => ({
       id: ev.key,
@@ -2227,7 +2319,7 @@ function birthMember(
       allowedOutcomes: input.step.outcomes,
       signal: controller.signal,
       prompt: input.step.instructions ? `${input.step.instructions}\n\n${generatedPrompt}` : generatedPrompt,
-      permission: Object.values(input.step.repositories).some((access) => access === "write") ? "edit" : "read-only",
+      permission: toolDispatch.permission,
       ...((input.step.kind === "agent" || input.step.kind === "moa") && input.step.timeoutMs !== undefined
         ? { timeoutMs: input.step.timeoutMs }
         : {}),
@@ -3144,6 +3236,11 @@ export function kxmLiveRunPrerequisites(
     if (step.kind !== "agent" && step.kind !== "moa") continue;
     const agentIds = step.assignments.allowedAgents.length > 0 ? step.assignments.allowedAgents : [step.agent];
     for (const agentId of agentIds) {
+      const toolDispatch = resolveToolDispatch(projectRoot, step, agentId);
+      if ("error" in toolDispatch) {
+        prerequisites.push({ ...toolDispatch.error, stepId });
+        continue;
+      }
       const route = resolveProducerRoute(projectRoot, step, agentId);
       if ("error" in route) {
         const detail = route.error.detail === "producer_route_unsupported: agent step model is not honored"
@@ -3153,7 +3250,7 @@ export function kxmLiveRunPrerequisites(
         continue;
       }
       const harness = route.harness;
-      const permission = Object.values(step.repositories).includes("write") ? "edit" : "read-only";
+      const permission = toolDispatch.permission;
       if (!BUILTIN_HARNESSES.some((entry) => entry.id === harness && entry.oneShot) || !oneShotPermissionArgs(harness, permission)) {
         prerequisites.push({ reason: "step_unsupported", stepId, field: "harness", detail: `${agentId}: ${harness} has no audited ${permission} one-shot profile; use a supported workflow or execute this work directly in ${harness}, without substituting another harness` });
         continue;

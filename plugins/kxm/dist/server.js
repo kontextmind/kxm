@@ -15542,6 +15542,13 @@ var RESOURCE_SCHEMA = Object.freeze({
   workflow: { identity: "kxm.workflow.v1", file: "workflow.schema.json" },
   "gate-registry": { identity: "kxm.gate-registry.v1", file: "gate-registry.schema.json" }
 });
+var TOOL_PRESET_PROFILES = Object.freeze({
+  coordinator: "read-only",
+  "read-only": "read-only",
+  "workspace-writer": "edit",
+  "tests-writer": "edit"
+});
+var BUILTIN_TOOL_PRESETS = Object.keys(TOOL_PRESET_PROFILES);
 function compareCodeUnits(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
