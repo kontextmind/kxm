@@ -6,7 +6,7 @@ import { kxmReleaseAssetName } from "../../plugins/kxm/src/kxm-update.ts";
 // @ts-expect-error Workflow scripts ship without a declaration file.
 import { classifyPaths, isDocsPath, isPlatformPath, unboundedClassification } from "../../scripts/ci-classify.mjs";
 // @ts-expect-error Workflow scripts ship without a declaration file.
-import { ENGINE_FILE, SERIAL_FILES, SHARD_TOTAL, coverageOfShards, extractTestPatterns, planEngineShard } from "../../scripts/ci-unit-shard.mjs";
+import { ENGINE_FILE, SERIAL_FILES, SHARD_TOTAL, coverageOfShards, extractTestPatterns, planEngineShard, planUnitFiles } from "../../scripts/ci-unit-shard.mjs";
 
 const releaseText = readFileSync(".github/workflows/release.yml", "utf8");
 const autoReleaseText = readFileSync(".github/workflows/auto-release.yml", "utf8");
@@ -359,6 +359,36 @@ test("unit shards cover every unit file and every engine test name once", () => 
   assert.ok(first.patterns.length > 0);
   assert.ok(second.patterns.length > 0);
   assert.equal(pkg.scripts?.["test:ci-shard"], "node scripts/ci-unit-shard.mjs");
+});
+
+test("unit shard plans compare windows separators as posix paths", () => {
+  const windows = [
+    "test\\core\\runtime.test.ts",
+    "packages\\core\\example\\tests\\unit\\sample.test.ts",
+    "test\\core\\engine.test.ts",
+    "test\\core/permission.test.ts",
+    "test/core/already-posix.test.ts",
+  ];
+  const lanes = planUnitFiles(windows);
+  assert.deepEqual(lanes.files, [
+    "packages/core/example/tests/unit/sample.test.ts",
+    "test/core/already-posix.test.ts",
+    "test/core/engine.test.ts",
+    "test/core/permission.test.ts",
+    "test/core/runtime.test.ts",
+  ]);
+  assert.deepEqual(lanes.serial, [...SERIAL_FILES]);
+  assert.deepEqual(lanes.light, [
+    "packages/core/example/tests/unit/sample.test.ts",
+    "test/core/already-posix.test.ts",
+  ]);
+  assert.equal(lanes.files.includes(ENGINE_FILE), true);
+  assert.equal(lanes.light.includes(ENGINE_FILE), false);
+  for (const file of lanes.files) assert.equal(file.includes("\\"), false, file);
+  assert.throws(
+    () => planUnitFiles(["test\\core\\permission.test.ts", "test\\core\\runtime.test.ts"]),
+    /test\/core\/engine\.test\.ts is missing/,
+  );
 });
 
 test("playwright e2e stays on Obscura outside node --test and outside ci.yml", () => {
