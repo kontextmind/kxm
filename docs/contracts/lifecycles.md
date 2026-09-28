@@ -119,8 +119,12 @@ toggles string state, a backslash escapes the next character inside a string, an
 and `[` track depth. Extra `}` and `]` do not drive depth below zero. The candidate is
 accepted only when that scan ends at depth 0 for both braces and arrays, outside a
 string, with no dangling escape. Any other end state is truncated or ambiguous, so
-that candidate is rejected and the next one is tried. An unpaired quote in the prose
-fails closed. Quotes, backticks, and balanced braces in the prose do not hide an
+that candidate is rejected and the next one is tried. The naive machine plus a
+container-lexer guard reject truncation. For each of the last 16 `{` or `[`
+openers in the prefix, a lexer from that opener through the end of the body
+rejects the candidate when the scan stays valid and ends inside a container or
+a string. A quote is not an opener. Prose with an odd quote count fails closed.
+Quotes, backticks, and balanced braces in the prose do not hide an
 object that ends the reply. Prose after the object, a reply with no such object, a
 disallowed outcome, an inner object at the end of a truncated outer object or array,
 and an object inside an unclosed string settle `failed`.

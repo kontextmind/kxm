@@ -81,6 +81,11 @@ const MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
 // Crossing this budget stops the lookup. Same byte measure as the slice cap.
 const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
 
+// How many `{` / `[` openers at the end of the prefix are re-lexed. A `"`
+// is not an opener. Each scan walks the body once, so the opener cap and
+// the slice budgets bound the work.
+const MAX_PREFIX_CONTAINER_OPENERS = 16;
+
 // Naive prefix scan. Quote handling toggles on every unescaped `"`. Braces
 // and brackets count only outside a string. Extra closers stay at depth 0
 // because they are prose, not an unclosed container. The slice itself is
@@ -116,6 +121,60 @@ function outcomePrefixIsAnchored(prefix: string): boolean {
   return objectDepth === 0 && arrayDepth === 0 && !inString && !escape;
 }
 
+// Same string, escape, and depth machine as the prefix scan, started at a
+// `{` or `[`. A closer that does not match an opener this scan pushed is
+// invalid. An invalid scan is not truncation. Truncation is a valid scan
+// that reaches the end of the body still inside a container or a string.
+function containerLexIsTruncated(body: string, start: number): boolean {
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < body.length; i++) {
+    const ch = body[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
+      continue;
+    }
+    if (ch === "}" || ch === "]") {
+      const open = ch === "}" ? "{" : "[";
+      const top = stack[stack.length - 1];
+      if (top !== open) return false;
+      stack.pop();
+    }
+  }
+  return stack.length > 0 || inString || escape;
+}
+
+// True when one of the last container openers in the prefix lexes as a
+// value that is still open at the end of the body. Quote positions are
+// left to the naive machine.
+function prefixHidesTruncatedContainer(body: string, openAt: number): boolean {
+  let seen = 0;
+  for (let i = openAt - 1; i >= 0 && seen < MAX_PREFIX_CONTAINER_OPENERS; i--) {
+    const ch = body[i];
+    if (ch !== "{" && ch !== "[") continue;
+    seen++;
+    if (containerLexIsTruncated(body, i)) return true;
+  }
+  return false;
+}
+
 // The outcome object is a JSON object that ends the trimmed reply. One
 // closing code fence may follow it; the fence is removed before the walk.
 // Candidates are slices from a `{` to a recent `}`, nearest last. Only the
@@ -129,7 +188,8 @@ function outcomePrefixIsAnchored(prefix: string): boolean {
 // The prefix before that opener, with trailing whitespace removed, must end
 // at depth 0 for both braces and arrays, outside a string, with no dangling
 // escape. Any other end state is truncated or ambiguous, so the candidate
-// is rejected and the next one is tried. An unpaired quote in the prose
+// is rejected and the next one is tried. The naive machine plus the
+// container-lexer guard reject truncation. Prose with an odd quote count
 // fails closed. An accepted candidate ends the lookup. Nothing left is
 // failed: prose after the object, no object, a disallowed outcome, an inner
 // object at the end of a truncated outer object or array, an object inside
@@ -167,6 +227,7 @@ function determineOutcome(text: string, allowedOutcomes: readonly string[]): str
       if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
       const prefix = body.slice(0, openAt).trimEnd();
       if (!outcomePrefixIsAnchored(prefix)) continue;
+      if (prefixHidesTruncatedContainer(body, openAt)) continue;
       return outcome;
     }
   }

@@ -30794,6 +30794,7 @@ var MAX_OUTCOME_CLOSERS = 32;
 var MAX_OUTCOME_OPENERS = 32;
 var MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
 var MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
+var MAX_PREFIX_CONTAINER_OPENERS = 16;
 function outcomePrefixIsAnchored(prefix) {
   let objectDepth = 0;
   let arrayDepth = 0;
@@ -30823,6 +30824,51 @@ function outcomePrefixIsAnchored(prefix) {
     else if (ch === "]" && arrayDepth > 0) arrayDepth -= 1;
   }
   return objectDepth === 0 && arrayDepth === 0 && !inString && !escape2;
+}
+function containerLexIsTruncated(body, start) {
+  const stack = [];
+  let inString = false;
+  let escape2 = false;
+  for (let i = start; i < body.length; i++) {
+    const ch = body[i];
+    if (inString) {
+      if (escape2) {
+        escape2 = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape2 = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
+      continue;
+    }
+    if (ch === "}" || ch === "]") {
+      const open2 = ch === "}" ? "{" : "[";
+      const top = stack[stack.length - 1];
+      if (top !== open2) return false;
+      stack.pop();
+    }
+  }
+  return stack.length > 0 || inString || escape2;
+}
+function prefixHidesTruncatedContainer(body, openAt) {
+  let seen = 0;
+  for (let i = openAt - 1; i >= 0 && seen < MAX_PREFIX_CONTAINER_OPENERS; i--) {
+    const ch = body[i];
+    if (ch !== "{" && ch !== "[") continue;
+    seen++;
+    if (containerLexIsTruncated(body, i)) return true;
+  }
+  return false;
 }
 function determineOutcome(text, allowedOutcomes) {
   const trimmed = text.trim();
@@ -30856,6 +30902,7 @@ function determineOutcome(text, allowedOutcomes) {
       if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
       const prefix = body.slice(0, openAt).trimEnd();
       if (!outcomePrefixIsAnchored(prefix)) continue;
+      if (prefixHidesTruncatedContainer(body, openAt)) continue;
       return outcome;
     }
   }
