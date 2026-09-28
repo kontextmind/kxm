@@ -4,9 +4,9 @@ Target. This page is a direction, not a live deployment.
 
 Read from `plans/plan-per-tenant-hosting.md`.
 `plans/plan-greenfield-infra.md` is in this checkout as a `kxm.doc.v1`
-stub (status draft, authority instruction): the long-form proposal was
-never committed, and the canonical facts below come from the
-implementation-plan greenfield bullets.
+stub committed in #373 (status draft, authority instruction). The
+long-form proposal is not in this repository. The canonical facts below
+come from the implementation-plan greenfield bullets.
 
 ```mermaid
 flowchart LR
@@ -47,10 +47,10 @@ roadmap question. The tracker wins.
 
 ## Greenfield infra plan
 
-`plans/plan-greenfield-infra.md` is observed from this checkout as a
-`kxm.doc.v1` stub (status draft, authority instruction, updated
-2026-09-28). Its delivery position is unchanged: none of the delivery is
-scheduled there.
+`plans/plan-greenfield-infra.md` is a `kxm.doc.v1` stub committed in #373
+(status draft, authority instruction, updated 2026-09-28). The long-form
+proposal is not in this repository. Its delivery position is unchanged:
+none of the delivery is scheduled there.
 
 The tracker names that file. The sentences that can be repeated without a
 hostname, an account name, or a secret are: a first move is recorded as

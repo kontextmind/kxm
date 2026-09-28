@@ -12,7 +12,7 @@ Studio shows the seven dash panels, a first-run wizard, and live workflow state 
 
 ### S0 shared sequence gate with the first-run plan
 
-Done criterion: The cloud-bind flag, the naming validator, and omp P3 through P7 are on main.
+Done criterion: The cloud-bind flag and the naming validator are on main. omp P3 (#378) and P4 are on main. P5 through P7 are not.
 
 Evidence needed: The same commit or PR links recorded on the first-run plan.
 
@@ -30,7 +30,7 @@ Evidence needed: test/e2e cases at 390, 800, and 1280, and a secret-absence asse
 
 ## Blockers
 
-- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.
+- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried. omp P3 tool policy landed in #378 (v0.7.169) and P4 fallback is done. P5, P6, and P7 remain.
 - Setup and doctor screens also wait on first-run P1 through P5.
 
 ## Questions

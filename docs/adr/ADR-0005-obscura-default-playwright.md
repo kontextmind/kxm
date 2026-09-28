@@ -7,7 +7,7 @@ project: "kxm"
 status: "accepted"
 owner: "@operator"
 created: "2026-09-27"
-updated: "2026-09-27"
+updated: "2026-09-28"
 authority: "decision"
 confidence: "verified"
 summary: "Playwright testing and verification connect to pinned Obscura v0.2.3 over CDP. Steel stays the browser for human takeover, MFA, and the live session viewer."
@@ -74,7 +74,7 @@ Obscura v0.2.3 is a headless Chromium build that speaks the Chrome DevTools Prot
 
 - Playwright tests and verification use Obscura unless the operator sets `KXM_BROWSER=steel`.
 - Steel session create, release, takeover, and the session viewer are unchanged.
-- CI for this smoke test is `.github/workflows/e2e.yml` on `ubuntu-latest`. It does not enable the paused CI, Nightly, or Real Pi smoke workflows.
+- CI for this smoke test is `.github/workflows/e2e.yml` on `ubuntu-latest`. The `CI` workflow is on, and `CI / required` is a required check in `protect-main`. `Nightly` and `Real Pi smoke` stay disabled. This ADR does not enable them.
 - The `node --test` globs do not collect `test/e2e/`.
 
 ## Related

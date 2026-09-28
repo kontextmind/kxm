@@ -7,10 +7,10 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-27"
-updated: "2026-09-27"
+updated: "2026-09-28"
 authority: "hypothesis"
 confidence: "medium"
-summary: "Draft companion to plan-kxm-harness-first-run.md. KXM Studio on the kxmd host should set up and show the shared hub: the seven dash TUI screens, the setup wizard, policy editors that open pull requests, and a live workflow view. Humans authenticate with Authentik at the edge. The browser never holds a hub token. Policy files stay on origin/main. The same three dependencies gate this plan and the first-run plan. Execution tracking stays in implementation-plan.md."
+summary: "Draft companion to plan-kxm-harness-first-run.md. KXM Studio on the kxmd host should set up and show the shared hub: the seven dash TUI screens, the setup wizard, policy editors that open pull requests, and a live workflow view. Humans authenticate with Authentik at the edge. The browser never holds a hub token. Policy files stay on origin/main. Hub bind --cloud (#348), the naming validator, omp P3 (#378), and P4 are on main. The shared gate that remains is omp-alignment P5 through P7. Execution tracking stays in implementation-plan.md."
 tags: ["studio", "hub", "tui", "authentik", "sse", "onboarding", "a11y"]
 related:
   - plan-kxm-harness-first-run.md
@@ -111,7 +111,7 @@ reimplement them.
 | `/roles` | Role, route, and model files. The naming validator from the in-flight naming work is the checker. | A pull request. Not a live file on the runner's checkout. |
 | `/routes` | Admitted and disabled routes, and `prices.yaml` acknowledgement state. | A pull request to change admission. Acknowledge stays the existing CLI. |
 | `/gates` | `gates.yaml` entries and the last result per gate. | A pull request to add or edit a gate. Results are read-only. |
-| `/bind` | Hub binding scope, project id, client bindings. `hub bind --cloud` appears here only after that flag is on main. Token values are never rendered. The page shows "present" or "missing". | Calls `kxm hub bind` / `unbind`. Does not write `hub-env.json` by hand. |
+| `/bind` | Hub binding scope, project id, client bindings. `kxm hub bind --cloud` is on main (#348, #375, #376). Token values are never rendered. The page shows "present" or "missing". | Calls `kxm hub bind` / `unbind`. Does not write `hub-env.json` by hand. |
 | `/peers` | Hosts and peer presence beyond the agent table: binding scope, last seen, stale, offline. | Read-only. |
 | `/doctor` | The `kxm doctor` report, including repair. | Repair calls `kxm doctor --repair` from the first-run plan. |
 
@@ -322,18 +322,24 @@ Roles editor, before a pull request exists:
 
 This plan uses the first-run plan's section 6 as its entry gate:
 
-1. `kxm hub bind --cloud` and the unified project id on main.
-2. The agent, role, and route naming validator on main.
-3. omp-alignment P3 through P7 on main, P4 before any screen claims a
-   route switch happened.
+1. `kxm hub bind --cloud` and the unified project id are on main (#348,
+   #375, #376). Clients reach the kxmd hub over the SSH forward at
+   `127.0.0.1:17331` because `hub.kxmd.dev` sits behind Authentik.
+2. The agent, role, and route naming validator is on main
+   (`scripts/workforce-lint.mjs`).
+3. omp-alignment P5 through P7 on main. P3 tool policy (#378, v0.7.169)
+   and P4 fallback are on main, so a screen may claim a route switch only
+   for the walk P4 already ships.
 
 S3 also waits for first-run P1 through P5, because the wizard and doctor
 buttons call those commands. S1 and S2 do not.
 
 ## 10. Phases
 
-One PR each, admitted writer, both critics, `npm run verify` while CI
-test workflows stay paused. Playwright uses the Obscura CDP fixture in
+One PR each, admitted writer, both critics, `npm run verify` locally and
+`CI / required` on the pull request. Windows Validate legs run on main
+(#358 to #364). `Nightly` and `Real Pi smoke` stay disabled. Playwright
+uses the Obscura CDP fixture in
 `test/e2e/fixtures.ts` ([ADR-0005](../docs/adr/ADR-0005-obscura-default-playwright.md)).
 Video stays off. Assertions are roles, names, and text. A screenshot is
 taken per breakpoint only when `page.screenshot` succeeds on that CDP
@@ -347,7 +353,7 @@ The structural assertions still have to pass.
 | S2 | Server-side hub SSE and `GET /api/events`. Live graph, stepper, spend, logs, presence. Polling only after a drop. | A fake hub SSE updates the page without a 3 second poll. Disconnect sets `transport` to `snapshot`. | medium |
 | S3 | `/setup`, `/harness`, `/doctor` calling the first-run CLI. | A logged-out harness does not write a marker. The page never shows an `op://` secret value. Depends on first-run P5. | medium |
 | S4 | `/roles`, `/routes`, `/gates` open a PR. Validator runs first. | A unit test refuses a name the validator rejects. The working tree the runner reads is unchanged. | larger |
-| S5 | `/bind` and `/peers`. Cloud bind control appears only when the CLI has the flag. | Token strings are absent from the HTML fixture. Bind calls the CLI and renders scope. | medium |
+| S5 | `/bind` and `/peers`. Cloud bind is on main (#348). | Token strings are absent from the HTML fixture. Bind calls the CLI and renders scope. | medium |
 | S6 | Breakpoints, motion, reduced motion, focus, live region. | Obscura tests at 390, 800, and 1280 widths. Reduced motion disables the dash animation. Keyboard reaches the inspector. | medium |
 
 S1 is the first product PR. S4 and S5 can follow S1 in either order. S3
@@ -421,3 +427,4 @@ Suggested commits, when a phase is selected:
 | Date | Note |
 |---|---|
 | 2026-09-27 | Companion draft opened against Studio and the dash TUI at `7a956e0`. |
+| 2026-09-28 | `--cloud` (#348, #375, #376), the naming validator, P3 (#378), and P4 are on main. The shared gate that remains is P5 through P7. CI is on. |

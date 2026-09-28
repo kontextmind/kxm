@@ -40,9 +40,17 @@ Evidence: `test/core/roster-policy.test.ts`.
 
 ### P3 tool policy enforcement
 
-Done criterion: A step outside its role's tool policy is refused.
+`omp-p3`. Status: done. Detail: ready.
+
+Template: [feature](../../templates/feature.md).
+
+Done criterion: A step whose tool preset is wider than its role permission is refused at load and again at dispatch, before a producer starts. Landed in #378, published v0.7.169.
 
 Evidence needed: A fixture per preset pair.
+
+Plan section: plans/plan-omp-config-alignment.md#5-phases.
+
+Evidence: `test/core/engine.test.ts`.
 
 ### P4 opt-in fallback walk with route_switch events
 
@@ -82,6 +90,6 @@ None.
 
 ## Questions
 
-- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven on 0.7.159 (#363, #368): the authoring witness counts committed work and the outcome parser reads real reviewer shapes — an engine-driven critic settled a truthful BLOCK on the vision lane. P3 dispatch is the first full engine unit and completes loop-dispatch.
+- P2 landed in #343, P4 ships the error classifier with the walk, and P3 tool policy landed in #378 (v0.7.169). Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine can settle a real reviewer outcome (#363, #368). Backlog S33 records one truthful critic BLOCK on the vision lane. That settlement is not loop-dispatch.
 
 [Dashboard](../dashboard.md)

@@ -22,7 +22,7 @@ Evidence needed: None.
 
 Evidence: `plans/implementation-plan.md`.
 
-### MG1 code gate recorded by the tracker
+### MG1 code gate done off-repo, not on main
 
 `py-mg1`. Status: done. Detail: ready.
 
@@ -110,6 +110,6 @@ None.
 
 ## Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and a python/ tree were observed untracked in the operator's primary worktree on 2026-09-28; neither is committed to main, and other checkouts do not have them.
+- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. MG0's witness is recorded in the implementation plan; its evidence JSON is not in this checkout. MG1's code gate is done off-repo and not on main: this checkout has no python/ tree.
 
 [Dashboard](../dashboard.md)

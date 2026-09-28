@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-14"
-updated: "2026-09-23"
+updated: "2026-09-28"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Consolidated proposed scope and contract dependencies for 36 fork reviews; execution status and phase gates remain in implementation-plan.md."
@@ -251,8 +251,10 @@ its required native witnesses; retain failed evidence.
 exports without optional peers, real activation/reload for each selected or
 advertised host surface, exact mode exposure,
 repeat setup and missing-prerequisite reasons. Qualify advertised platforms via
-M9, including paths with spaces. Windows CI remains paused until its canonical
-resumption decision; planning platform tests does not restore it.
+M9, including paths with spaces. Windows Validate legs run on main
+(pull requests #358 to #364). `Nightly`, `Real Pi smoke`, and the Win
+Node24 probe workflow stay disabled. Planning platform tests does not by
+itself widen that CI shape.
 
 ## M2 — Durable intake and streamed handoffs
 
@@ -474,9 +476,10 @@ an exception to a canonical requirement.
 Pi, Claude, Codex, Grok and AGY are target matrix rows, not automatic PASS rows.
 Kimi, DSH, Hermes or a replacement engine require their own probes and admission.
 Record supported/unsupported operations per route; do not require every route to
-offer steering, nor count a skipped witness as passed. Resolve Windows advertised
-support and its paused qualification decision explicitly in Tracking; do not
-silently restore CI or remove an existing platform promise.
+offer steering, nor count a skipped witness as passed. Windows Validate on main
+is already restored (#358 to #364). Resolve any further Windows
+advertised-support decision explicitly in Tracking; do not treat this plan as
+that decision, and do not remove an existing platform promise.
 
 **Exit evidence:** actual npm tarball, generated registrations, temporary-home
 install/activation/repeat setup, update/repair/removal, selected service access,

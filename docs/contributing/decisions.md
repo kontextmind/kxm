@@ -2,7 +2,7 @@
 title: "Decisions"
 description: "Decisions of medium significance or higher made by automated KXM work in this repository. One entry per decision: the options evaluated with their weights, and why the selected option won. Recorded the turn the decision is taken."
 audience: "agents and maintainers"
-updated: "2026-09-27"
+updated: "2026-09-28"
 ---
 
 # Decisions

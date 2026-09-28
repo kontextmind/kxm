@@ -13,10 +13,6 @@
   "history": [
     {
       "date": "2026-09-26",
-      "line": "Roadmap seeded from state.json."
-    },
-    {
-      "date": "2026-09-26",
       "line": "Portal mark applied."
     },
     {
@@ -58,6 +54,10 @@
     {
       "date": "2026-09-28",
       "line": "Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the operator's primary worktree; hub cloud binding inventoried."
+    },
+    {
+      "date": "2026-09-28",
+      "line": "P3 tool policy landed (#378, v0.7.169). Cross-host P0 bind unblocked (#348, #375, #376). MG1 is off-repo. CI pause text retired."
     }
   ],
   "architecture": {
@@ -151,8 +151,8 @@
           "title": "Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes",
           "status": "open",
           "evidence": "",
-          "doneCriterion": "One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report. P1 and P2 ran writers that way; P3 is the unit that completes the end-to-end proof on the engine (the witness and outcome fixes landed in #368).",
-          "evidenceNeeded": "The run-events store for this project with the attempt rows for writer and both critics, each settled from a verified drive receipt.",
+          "doneCriterion": "One real unit runs the writer and both critics through the one-step workflows, and kxm improve report shows those three attempt rows, each settled from a verified drive receipt. Transport recipes are already retired (#343). #378 enforces tool presets and does not supply this record. #356, #363, and #368 let an engine-driven step settle a real reviewer outcome. Backlog S33 records one truthful critic BLOCK on the vision lane. That is one critic, not a writer plus both critics. A report from the parent checkout still misses lane stores (backlog S30).",
+          "evidenceNeeded": "The run-events store for this project with the attempt rows for the writer and both critics, each settled from a verified drive receipt, visible from kxm improve report on the parent checkout.",
           "template": "feature",
           "detail": "scoped"
         },
@@ -186,7 +186,7 @@
       "source": "plans/plan-omp-config-alignment.md",
       "blockers": [],
       "questions": [
-        "P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven on 0.7.159 (#363, #368): the authoring witness counts committed work and the outcome parser reads real reviewer shapes — an engine-driven critic settled a truthful BLOCK on the vision lane. P3 dispatch is the first full engine unit and completes loop-dispatch."
+        "P2 landed in #343, P4 ships the error classifier with the walk, and P3 tool policy landed in #378 (v0.7.169). Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine can settle a real reviewer outcome (#363, #368). Backlog S33 records one truthful critic BLOCK on the vision lane. That settlement is not loop-dispatch."
       ],
       "tasks": [
         {
@@ -214,12 +214,13 @@
         {
           "id": "omp-p3",
           "title": "P3 tool policy enforcement",
-          "status": "open",
-          "evidence": "",
-          "doneCriterion": "A step outside its role's tool policy is refused.",
+          "status": "done",
+          "evidence": "test/core/engine.test.ts",
+          "planSection": "plans/plan-omp-config-alignment.md#5-phases",
+          "doneCriterion": "A step whose tool preset is wider than its role permission is refused at load and again at dispatch, before a producer starts. Landed in #378, published v0.7.169.",
           "evidenceNeeded": "A fixture per preset pair.",
-          "template": "none",
-          "detail": "brief"
+          "template": "feature",
+          "detail": "ready"
         },
         {
           "id": "omp-p4",
@@ -272,7 +273,7 @@
       "source": "plans/plan-python-migration.md",
       "blockers": [],
       "questions": [
-        "Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and a python/ tree were observed untracked in the operator's primary worktree on 2026-09-28; neither is committed to main, and other checkouts do not have them."
+        "Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. MG0's witness is recorded in the implementation plan; its evidence JSON is not in this checkout. MG1's code gate is done off-repo and not on main: this checkout has no python/ tree."
       ],
       "tasks": [
         {
@@ -285,7 +286,7 @@
         },
         {
           "id": "py-mg1",
-          "title": "MG1 code gate recorded by the tracker",
+          "title": "MG1 code gate done off-repo, not on main",
           "status": "done",
           "evidence": "plans/implementation-plan.md",
           "template": "test-report",
@@ -357,7 +358,7 @@
       "source": "plans/plan-greenfield-infra.md",
       "blockers": [],
       "questions": [
-        "plans/plan-greenfield-infra.md is observed in this checkout as a kxm.doc.v1 stub (status draft, authority instruction, created and updated 2026-09-28): the long-form proposal was never committed, canonical facts live in the implementation-plan greenfield bullets, and the phase stays open with the backlog task. An older long-form draft survives untracked in the operator's tree (backup at /tmp/colliders/plans/plan-greenfield-infra.md)."
+        "plans/plan-greenfield-infra.md is a kxm.doc.v1 stub committed in #373 (status draft, authority instruction, created and updated 2026-09-28). The long-form proposal is not in this repository. Canonical installed and backlog facts live in the implementation-plan greenfield bullets. The phase stays open on the backlog task."
       ],
       "tasks": [
         {
@@ -458,10 +459,10 @@
       "goal": "P0 through P6 from plans/plan-cross-host-phase.md, with delivered rows taken from the tracker.",
       "source": "plans/plan-cross-host-phase.md",
       "blockers": [
-        "P0 waits on a second box and an operator-owned forward to the loopback hub.",
         "P4 stays behind its trigger: a cross-box request whose target is a role."
       ],
       "questions": [
+        "P0 is unblocked and not done. The bind substrate is on main (#348, #375, #376). The two-box witness is still open. Clients use the operator-owned loopback SSH forward because the public hub name sits behind Authentik; the address is in plans/plan-cross-host-phase.md and docs/operations.md, not in this state file.",
         "The P1 test is present in test/core/hub-api.test.ts. The tracker row is not marked delivered, so the task stays open.",
         "P5 is marked delivered. The same tracker row still says the cross-box witness is not run. Done evidence is the in-repo test."
       ],
@@ -600,11 +601,10 @@
       "source": "plans/plan-kxm-harness-first-run.md",
       "priority": "later",
       "blockers": [
-        "omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.",
+        "omp-alignment P5, P6, and P7 are still open. P3 tool policy (#378, v0.7.169) and P4 fallback are done.",
         "The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself."
       ],
       "questions": [
-        "The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.",
         "Option B, a validated workflow file composed from a catalog, waits for an operator decision. The plan recommends it and does not schedule it."
       ],
       "tasks": [
@@ -614,7 +614,7 @@
           "status": "open",
           "evidence": "",
           "planSection": "plans/plan-kxm-harness-first-run.md#6-sequence",
-          "doneCriterion": "The cloud-bind flag, the naming validator, and omp P3 through P7 are on main, and this plan says so.",
+          "doneCriterion": "The cloud-bind flag and the naming validator are on main. omp P3 (#378) and P4 are on main. P5 through P7 are not, and this plan says so.",
           "evidenceNeeded": "Commit or PR links in the plan change log.",
           "template": "none",
           "detail": "brief"
@@ -662,7 +662,7 @@
       "source": "plans/plan-studio-cloud-host.md",
       "priority": "later",
       "blockers": [
-        "Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.",
+        "Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried. omp P3 tool policy landed in #378 (v0.7.169) and P4 fallback is done. P5, P6, and P7 remain.",
         "Setup and doctor screens also wait on first-run P1 through P5."
       ],
       "questions": [
@@ -675,7 +675,7 @@
           "status": "open",
           "evidence": "",
           "planSection": "plans/plan-studio-cloud-host.md#9-sequence",
-          "doneCriterion": "The cloud-bind flag, the naming validator, and omp P3 through P7 are on main.",
+          "doneCriterion": "The cloud-bind flag and the naming validator are on main. omp P3 (#378) and P4 are on main. P5 through P7 are not.",
           "evidenceNeeded": "The same commit or PR links recorded on the first-run plan.",
           "template": "none",
           "detail": "brief"
