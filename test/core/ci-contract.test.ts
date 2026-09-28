@@ -325,6 +325,7 @@ test("pull request classification skips docs and plans, and flags platform paths
     "plugins/kxm/src/runtime-supervisor.ts",
     "plugins/kxm/src/repo-root.ts",
     "test/core/worker.test.ts",
+    "test/core/studio-layout.test.ts",
     "test/helpers/mcp-spawn.ts",
   ]) {
     assert.equal(isPlatformPath(file), true, file);

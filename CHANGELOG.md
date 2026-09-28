@@ -170,7 +170,10 @@ All notable user-facing changes are documented here. The project follows [Semant
   is removed. A directory that is still locked is retried for about three
   seconds and then left behind, instead of a 20-by-250ms backoff (about 52
   seconds) that the Windows light lane still paid once per locked directory.
-  `CI / required` still fails when a lane fails or is cancelled.
+  The portal supervisor test uses that same cleanup after shutdown: a raw
+  `rmSync` raised `EPERM` on Windows, failed `light-2`, and cancelled the
+  other Windows lanes. `CI / required` still fails when a lane fails or is
+  cancelled.
   See [CI and release](docs/contributing/ci-and-release.md).
 
 - **Workforce ids use one convention, and old ids still resolve.**
