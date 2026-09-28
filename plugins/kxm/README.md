@@ -58,7 +58,7 @@ Claude Code asks for these options when you install the plugin. Change them late
 | `auth_token` | `KXM_AUTH_TOKEN` | Blank | This project's token from the hub's `KXM_PROJECT_TOKENS`. Leave it blank on the machine that runs the hub. Never the hub admin token. Marked sensitive. |
 | `agent_name` | `KXM_AGENT_NAME` | `claude` | Name other agents see. The first active session in a project keeps it; a later concurrent session registers as `<name>-<pid>`. |
 | `agent_purpose` | `KXM_AGENT_PURPOSE` | `Claude Code implementation and review agent` | One line that peers use to decide what to send this agent. |
-| `project` | `KXM_PROJECT` | Blank | Hub project key; must match a key in the hub's `KXM_PROJECT_TOKENS`. Blank uses the `id` in `.kxm/project.yaml`, then `name` from `package.json`, then the directory name. |
+| `project` | `KXM_PROJECT` | Blank | Hub project key. Blank uses the active mode's `project` in `.kxm/config.yaml`, then the `id` in `.kxm/project.yaml`, then `name` from `package.json`, then the directory name. |
 
 The MCP server also receives `KXM_PROJECT_DIR`, set to the directory Claude Code was started in (`CLAUDE_PROJECT_DIR`). It decides the default project key and whether this is a KXM project (one with a `.kxm/` directory).
 
@@ -69,7 +69,7 @@ The plugin acts as an agent of one hub project and authenticates with that proje
 - On the machine that runs the hub, leave `auth_token` blank. The MCP server then uses the project token the hub saved for this project in `hub-env.json` under the user state root (`KXM_STATE_HOME`, or the platform default listed in [State outside the project](../../docs/reference/config-reference.md#state-outside-the-project)). It uses only that entry, never the admin token saved beside it.
 - On any other machine, enter this project's token at `/plugin configure kxm@kxm`. Get it from whoever runs the hub, through your password manager. When the machine is bound with `kxm hub bind --cloud`, leave `auth_token` blank: the MCP server reads the binding's token source and does not store the token. The recipe is [Cross-box peer attach](../../docs/operations.md#cross-box-peer-attach).
 - Never enter the hub admin token. It is the operator's credential. The hub accepts it for any project that has no token of its own, so an agent holding it could act in projects it was never given.
-- Without a project token, every `kxm_*` tool fails with `KXM has no project token for project <p> on this machine`, and the MCP server does not contact the hub.
+- Without a project token, every `kxm_*` tool fails with `kxm has no project token for project <p>`, naming where that id came from, and the MCP server does not contact the hub.
 
 To give a project a token, the operator adds it to `KXM_PROJECT_TOKENS` and restarts the hub. That variable replaces the hub's saved token map rather than merging with it, so it must list every project, existing and new. [Add Claude Code to an existing project](../../docs/start/quickstart-claude-code.md#add-claude-code-to-an-existing-project) has a command that builds the full map. Run it in your own terminal, and never paste tokens or `hub-env.json` into Claude.
 
@@ -210,7 +210,7 @@ No hub answers at `server_url`. Start it with `kxm hub start`, or correct `serve
 
 ### `no project token for project <p>`
 
-The MCP server found neither an `auth_token` nor a token the hub saved for `<p>`, so it did not contact the hub. Enter the project's token at `/plugin configure kxm@kxm`, or add `<p>` to the hub's `KXM_PROJECT_TOKENS`, listing every existing project too because the variable replaces the saved map, and restart the hub. If `<p>` is not the key you expected, set the `project` option.
+The MCP server found neither an `auth_token` nor a token the hub saved for `<p>`, so it did not contact the hub. The message names where `<p>` came from. Enter the project's token at `/plugin configure kxm@kxm`, set `hub.local.project` or `hub.cloud.project` in `.kxm/config.yaml` to the key the hub already knows, or add `<p>` to the hub's `KXM_PROJECT_TOKENS` or `hub.projects` map. `KXM_PROJECT_TOKENS` replaces the saved map, so list every existing project, then restart the hub. Never paste the token into the config file.
 
 ### `KXM hub rejected the project token for project <p>`
 

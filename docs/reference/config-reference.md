@@ -1255,20 +1255,28 @@ in `plugins/kxm/src/config.ts`, then the user file
 `$KXM_USER_CONFIG_DIR/config.yaml` (default `~/.config/kxm/config.yaml`), then
 the project file `.kxm/config.yaml` in the current directory. Later layers win
 key by key; arrays are replaced, not merged. The files need no `schema` key.
-Nothing validates keys or values except `hub.autoStart` and the `improvement.*`
-keys, which fall back to their defaults field by field (see the table), but a file
-that is not valid YAML makes every `kxm config` command fail. `kxm improve` loads
-the project file from its project root (the current directory's Git root when it
-holds `.kxm/project.yaml`) rather than from the current directory.
+`hub.autoStart` and the `improvement.*` keys fall back to their defaults field
+by field (see the table). `hub.mode`, `hub.local`, `hub.cloud`, and
+`hub.projects` are validated: a literal token is refused with
+`hub_config_invalid`, and a mode other than `local` or `cloud` is refused. A
+file that is not valid YAML makes every `kxm config` command fail. `kxm improve`
+loads the project file from its project root (the current directory's Git root
+when it holds `.kxm/project.yaml`) rather than from the current directory.
 
-Two groups of keys change behavior today: `hub.autoStart`, and the `improvement.*`
-keys that shape the report `kxm improve` prints. The **Read by** column lists every
-reader found in `plugins/kxm/src`, `scripts/`, and `packages/`; the `kxm config`
-commands themselves are not counted.
+The keys that change behavior are the `hub` section below and the
+`improvement.*` keys that shape the report `kxm improve` prints. Hub URL, mode,
+project id, and key reference live here rather than in `.kxm/project.yaml`
+because `hub.autoStart` was already this file's hub setting, and
+`project.yaml` stays the stable hashed project id. The **Read by** column lists
+every reader found in `plugins/kxm/src`, `scripts/`, and `packages/`; the
+`kxm config` commands themselves are not counted.
 
 | Key | Type and allowed values | Default | Read by |
 |---|---|---|---|
 | `hub.autoStart` | `background` or `off`; any other value falls back to `background` | `background` | The Pi extension on load (`plugins/kxm/src/extension.ts`, `hub-autostart.ts`) |
+| `hub.mode` | `local` or `cloud`. Any other value is `hub_config_invalid`. Unset means local unless a cloud binding exists | unset | Every hub client (`hub-identity.ts`): CLI, Pi extension, MCP server, dash, and `kxm agent worker` |
+| `hub.local`, `hub.cloud` | `url` (http or https, no userinfo, query, or fragment), `project` (one line, no spaces), and `key` | unset | The same clients, for the active mode. `project` defaults to the `.kxm/project.yaml` id when omitted |
+| `hub.local.key`, `hub.cloud.key`, `hub.projects.<id>` | `op` is `op://vault/item/field`. `env` is an environment variable name. A string, or a field named like a token, is refused | unset | Clients resolve the active mode's key at use time. The hub process resolves `hub.projects` in memory (`server.ts`). Neither writes the resolved token |
 | `user.name`, `user.email` | String | none | Not read by any code path yet |
 | `user.preferredHarness`, `user.preferredModel` | String | none | Not read by any code path yet |
 | `user.preferredCritics` | Array of strings | `[reviewer-arch, reviewer-cli]` | Not read by any code path yet |
@@ -1302,9 +1310,26 @@ no recorded cost is never ready.
 
 ```yaml
 # .kxm/config.yaml (project scope) or ~/.config/kxm/config.yaml (user scope).
-# Only hub.autoStart and improvement.* change behavior today.
+# The project file wins. Key fields are references, never tokens.
 hub:
   autoStart: background        # background | off
+  mode: local                  # local | cloud
+  local:
+    url: http://127.0.0.1:7331
+    project: prj_example
+    key:
+      op: op://Private/kxm/local-project-token
+      env: KXM_LOCAL_PROJECT_TOKEN
+  cloud:
+    url: https://hub.kxmd.dev
+    project: prj_example
+    key:
+      op: op://Private/kxmd/project-token
+      env: KXMD_HUB_TOKEN
+  projects:
+    prj_example:
+      op: op://Private/kxm/local-project-token
+      env: KXM_LOCAL_PROJECT_TOKEN
 improvement:
   promotionPolicy: manual_pr   # manual_pr | critic_quorum | auto_threshold (readiness only)
   telemetryHalfLifeDays: 14

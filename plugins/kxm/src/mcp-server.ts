@@ -4,9 +4,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { HubClient, HubHttpError } from "./client.ts";
-import { resolveAgentHubAuthToken } from "./hub-env.ts";
-import { resolveHubServerUrl } from "./hub-binding.ts";
-import { defaultProjectName } from "./project-name.ts";
+import { AgentProjectTokenMissingError, resolveAgentHubAuthToken } from "./hub-env.ts";
+import { describeHubConnection, resolveProjectIdentity } from "./hub-identity.ts";
 import { AGENT_COMMANDS_MAP, enforceToolPolicy, getMcpTools, reconcileInbox } from "./commands.ts";
 import { deliverInboxNotification } from "./inbox.ts";
 import type { HubEvent, MessageRecord } from "./protocol.ts";
@@ -47,12 +46,15 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /** Where this session works and which hub it talks to, read from the launch environment. */
-function sessionIdentity(): { projectDir: string; project: string; serverUrl: string } {
+function sessionIdentity(): { projectDir: string; project: string; projectSource: string; sourceLabel: string; serverUrl: string } {
   const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const connection = describeHubConnection(projectDir, process.env);
   return {
     projectDir,
-    project: defaultProjectName(projectDir, process.env),
-    serverUrl: resolveHubServerUrl(process.env),
+    project: connection.project,
+    projectSource: connection.source,
+    sourceLabel: connection.sourceLabel,
+    serverUrl: connection.url,
   };
 }
 
@@ -136,15 +138,13 @@ async function ensureClient(): Promise<HubClient> {
   if (meshClient?.agent) return meshClient;
   if (starting) return starting;
   starting = (async () => {
-    const { project, serverUrl } = sessionIdentity();
+    const { project, projectDir, serverUrl } = sessionIdentity();
     // An agent session registers with a project token only. The hub admits its admin token
     // to any project missing from its token map, so no project token fails here, before the
     // hub is contacted.
-    const authToken = resolveAgentHubAuthToken(process.env, project);
+    const authToken = resolveAgentHubAuthToken(process.env, project, projectDir);
     if (!authToken) {
-      throw new Error(
-        `KXM has no project token for project ${project} on this machine. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) or to add ${project} to the hub KXM_PROJECT_TOKENS, listing every existing project too because that variable replaces the saved map.`,
-      );
+      throw new AgentProjectTokenMissingError(resolveProjectIdentity(projectDir, process.env));
     }
     const name = process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`;
     try {
@@ -192,8 +192,10 @@ async function connectedClient(): Promise<HubClient> {
 
 /** Tool errors are read by the model, so each names the next step and who takes it. */
 function toolErrorText(error: unknown): string {
-  if (error instanceof HubHttpError && error.code === "invalid_auth") {
-    return `KXM hub rejected the project token for project ${sessionIdentity().project}. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) to that project's token from the hub KXM_PROJECT_TOKENS.`;
+  if (error instanceof AgentProjectTokenMissingError) return error.message;
+  if (error instanceof HubHttpError && (error.code === "invalid_auth" || error.code === "project_token_missing")) {
+    const identity = sessionIdentity();
+    return `KXM hub rejected the project token for project ${identity.project} (from ${identity.sourceLabel}). Set hub.local.project or hub.cloud.project in .kxm/config.yaml to the key the hub already knows, and set hub.local.key or hub.cloud.key to an op:// reference or an environment variable name. Ask the user before changing the kxm plugin auth_token (${CONFIGURE_PLUGIN}). Never put the token in config.`;
   }
   return error instanceof Error ? error.message : String(error);
 }
@@ -238,7 +240,7 @@ function registersAtStartup(): boolean {
   const { projectDir, project } = sessionIdentity();
   try {
     if (!statSync(join(projectDir, ".kxm")).isDirectory()) return false;
-    if (!resolveAgentHubAuthToken(process.env, project)) return false;
+    if (!resolveAgentHubAuthToken(process.env, project, projectDir)) return false;
   } catch {
     return false;
   }

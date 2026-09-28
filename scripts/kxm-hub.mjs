@@ -165,9 +165,14 @@ try {
   process.stderr.write(`kxm hub: ${error.message}\n`);
   process.exit(1);
 }
+const operatorSetProjectTokens = Boolean(process.env.KXM_PROJECT_TOKENS?.trim());
 const launchEnv = { ...process.env };
 if (credentials.authToken) launchEnv.KXM_AUTH_TOKEN = credentials.authToken;
 if (credentials.projectTokens) launchEnv.KXM_PROJECT_TOKENS = JSON.stringify(credentials.projectTokens);
+// The operator's KXM_PROJECT_TOKENS replaces config. A map copied from
+// hub-env.json does not, so the server can prefer hub.projects references
+// and keep the resolved tokens out of the credential file.
+if (operatorSetProjectTokens) launchEnv.KXM_PROJECT_TOKENS_EXPLICIT = "1";
 if (credentials.authTokenSource !== "env") {
   process.stdout.write(`kxm hub: using ${credentials.authTokenSource === "generated" ? "newly generated" : "persisted"} KXM_AUTH_TOKEN from ${credentials.file}\n`);
 }

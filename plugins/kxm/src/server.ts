@@ -1,6 +1,7 @@
 import { createMeshHub } from "./hub.ts";
 import { createWriteStream, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { resolveConfiguredHubProjectTokens, selectHubProjectTokenMap } from "./hub-identity.ts";
 import {
   DEFAULT_MESSAGE_RETENTION_MS,
   DEFAULT_MESSAGE_TTL_MS,
@@ -42,10 +43,10 @@ const structuredLog = createLogger({
   path: logPath,
 });
 
-function projectTokens(): Record<string, string> | undefined {
-  const raw = process.env.KXM_PROJECT_TOKENS?.trim();
-  if (!raw) return undefined;
-  const value = JSON.parse(raw) as unknown;
+function parseProjectTokenEnv(raw: string | undefined): Record<string, string> | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const value = JSON.parse(trimmed) as unknown;
   if (!value || Array.isArray(value) || typeof value !== "object") {
     throw new Error("KXM_PROJECT_TOKENS must be a JSON object of project names to tokens");
   }
@@ -54,6 +55,23 @@ function projectTokens(): Record<string, string> | undefined {
     throw new Error("KXM_PROJECT_TOKENS must contain non-empty project names and token strings");
   }
   return Object.fromEntries(entries) as Record<string, string>;
+}
+
+function projectTokens(): Record<string, string> | undefined {
+  const explicit = process.env.KXM_PROJECT_TOKENS_EXPLICIT === "1";
+  const fromEnv = parseProjectTokenEnv(process.env.KXM_PROJECT_TOKENS);
+  const workdir = resolve(process.env.KXM_WORKDIR?.trim() || process.cwd());
+  const configured = explicit ? undefined : resolveConfiguredHubProjectTokens(workdir, process.env);
+  const selected = selectHubProjectTokenMap({
+    explicit: explicit ? fromEnv : undefined,
+    configured,
+    file: explicit ? undefined : fromEnv,
+  });
+  if (selected.source === "config") {
+    const count = Object.keys(selected.tokens ?? {}).length;
+    process.stderr.write(`kxm hub: project tokens from .kxm/config.yaml (${count} projects, key references resolved, values not saved)\n`);
+  }
+  return selected.tokens;
 }
 
 if (!Number.isInteger(port) || port < 0 || port > 65_535) {

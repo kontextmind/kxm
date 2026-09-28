@@ -108,7 +108,7 @@ Every agent client (the Pi extension, the Claude Code MCP server, and the `kxm p
 |---|---|---|
 | `KXM_SERVER_URL` | `http://127.0.0.1:7331` | Hub base URL. For the CLI, the machine's `kxm hub bind` URL is used when this is unset |
 | `KXM_AUTH_TOKEN` | See below | The project token for this agent's project |
-| `KXM_PROJECT` | `id` in the nearest `.kxm/project.yaml`, else `name` in `package.json` in the working directory, else the directory name | Project for discovery and authentication. An explicit `--project` flag on `kxm peer list` and `kxm tenant status` wins over this variable. The same resolver is used by peer commands, tenant status, workers, the Pi extension, and the Claude Code MCP server |
+| `KXM_PROJECT` | Active mode's `project` in `.kxm/config.yaml`, else `id` in the nearest `.kxm/project.yaml`, else `name` in `package.json` in the working directory, else the directory name | Project for discovery and authentication. An explicit `--project` flag wins over this variable, and this variable wins over the config file. The same resolver is used by peer commands, tenant status, workers, the Pi extension, dash, and the Claude Code MCP server |
 | `KXM_AGENT_NAME` | Harness-specific (see below) | Name peers see; unique among online agents in the project, compared case-insensitively |
 | `KXM_AGENT_PURPOSE` | Harness-specific (see below) | One line peers use to decide what to send this agent |
 
@@ -120,7 +120,7 @@ Every agent client (the Pi extension, the Claude Code MCP server, and the `kxm p
 
 A clean shutdown marks an identity offline. Reconnecting with the same project and name resumes its durable agent ID and rotates its agent key. If the Claude Code name is already online in the project, the MCP server registers once more as `<name>-<pid>`.
 
-A `--cloud` hub binding replaces this table's token lookup for every client, including agents. The token comes from the binding's `--token-env` or `--token-command`, never from this machine's hub-env file, and it is not written to disk. `kxm agent worker` copies it into the child process environment as `KXM_AUTH_TOKEN`.
+A cloud hub mode replaces this table's token lookup for every client, including agents. The token comes from that mode's key reference in `.kxm/config.yaml` (`key.env`, then `key.op` via `op read`), then from the binding's `--token-env` or `--token-command`. It never comes from this machine's hub-env file, and it is not written to disk. `kxm agent worker` copies it into the child process environment as `KXM_AUTH_TOKEN`. Local mode uses `KXM_AUTH_TOKEN`, then the local key reference, then the saved project token, and still never the admin token.
 
 Also check plugin.json is valid JSON.
 

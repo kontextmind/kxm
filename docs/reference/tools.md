@@ -64,7 +64,7 @@ Every tool returns its result as JSON text; Pi also attaches the same value as s
 
 | Error text | Harness | Fix |
 |---|---|---|
-| `KXM has no project token for project <p> on this machine` | Claude Code | Set `auth_token` with `/plugin configure kxm@kxm`, or [give the project a token](../start/quickstart-claude-code.md#give-the-project-a-token-on-the-running-hub) on the hub |
+| `kxm has no project token for project <p>` | Claude Code and the Pi extension | The message names where `<p>` came from. Set `hub.local.project` or `hub.cloud.project` and a key reference in `.kxm/config.yaml`, set `auth_token` with `/plugin configure kxm@kxm`, or [give the project a token](../start/quickstart-claude-code.md#give-the-project-a-token-on-the-running-hub) on the hub |
 | `KXM hub unreachable at <url> (<cause>)` | Claude Code | Start the hub with `kxm hub start`, or correct `server_url` |
 | `KXM hub rejected the project token for project <p>` | Claude Code | Enter that project's token from the hub's `KXM_PROJECT_TOKENS` |
 | `kxm hub is not connected; check KXM_SERVER_URL and /kxm hub` | Pi | Start the hub or fix `KXM_SERVER_URL`, then restart the session |

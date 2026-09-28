@@ -46,7 +46,7 @@ the hub admin token or a project token.
 |---|---|---|
 | `kxm hub start` | Start the hub in the foreground | `--json` |
 | `kxm hub stop` | Request managed hub and worker shutdown | `--wait-ms <ms>` |
-| `kxm hub bind <url>` | Bind this machine to a running hub | http or https URL. `--cloud` with `--token-env` or `--token-command` for an SSH forward to loopback. The token is not stored |
+| `kxm hub bind <url>` | Bind this machine to a running hub and record the non-secret endpoint in `.kxm/config.yaml` | http or https URL. `--token-env` and `--key-op` for either mode. `--cloud` with `--token-env`, `--token-command`, or `--key-op` for an SSH forward to loopback. The token is not stored |
 | `kxm hub unbind` | Remove this machine's hub binding | `--json` |
 | `kxm restore <manifest>` | Replace this project's live stores from a verified backup manifest | `--all-projects`, `--json` |
 
@@ -60,19 +60,27 @@ kxm restore .kxm/backups/pre-upgrade/manifest.json
   `KXM_AUTH_TOKEN` is unset it generates a long random admin token once and
   persists it in `hub-env.json` (schema `kxm.hub-env.v1`, mode `0600`) under
   the user state root, then reuses it on every restart.
-- `KXM_PROJECT_TOKENS` must list every project's token. It replaces the saved
-  token map rather than merging with it, and the replacement is saved. When a
-  hub already serves other projects, build the full map with the merge
-  command in the KXM documentation's Claude Code quick start
+- `KXM_PROJECT_TOKENS` must list every project's token when it is set. It
+  replaces the saved token map rather than merging with it, and the
+  replacement is saved. The same map can instead live in `.kxm/config.yaml`
+  as `hub.projects`, with `op://` references or environment variable names.
+  That map is resolved in memory and is not saved. When a hub already serves
+  other projects, build the full map with the merge command in the KXM
+  documentation's Claude Code quick start
   (docs/start/quickstart-claude-code.md, section "Start the hub") before
   restarting the hub.
+- `kxm hub view` prints the mode, URL, project id, and key source. It does
+  not print the token. The project id is the flag, then `KXM_PROJECT`, then
+  `hub.local.project` or `hub.cloud.project`, then `.kxm/project.yaml`, then
+  the package name, then the directory name.
 - `kxm hub bind` to a remote (non-loopback) URL fails closed with
   `hub_bind_unauthenticated` unless a credential for the current project
   resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`.
 - `kxm hub bind --cloud` is the bind for a loopback SSH forward of a remote
   hub. It never falls back to this machine's hub-env token. Pass
-  `--token-env KXMD_HUB_TOKEN` or `--token-command "op read op://..."`.
-  See docs/operations.md, section "Cross-box peer attach".
+  `--token-env KXMD_HUB_TOKEN`, `--key-op op://Private/kxmd/project-token`,
+  or `--token-command "op read op://..."`. The non-secret fields are written
+  to `.kxm/config.yaml`. See docs/operations.md, section "Cross-box peer attach".
 - Hub PID claims record the wrapper and server child PID. A dead wrapper's
   claim is reclaimed automatically, an orphaned server is terminated first,
   and `kxm hub stop` recovers such orphans directly.

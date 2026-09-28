@@ -7,8 +7,8 @@ import { HubClient, HubHttpError } from "./client.ts";
 import { loadKxmConfig } from "./config.ts";
 import { ensureHubRunning, hubAutoStartMode } from "./hub-autostart.ts";
 import { AgentProjectTokenMissingError, resolveAgentHubAuthToken } from "./hub-env.ts";
-import { CloudTokenError, resolveHubServerUrl } from "./hub-binding.ts";
-import { defaultProjectName } from "./project-name.ts";
+import { CloudTokenError } from "./hub-binding.ts";
+import { describeHubConnection, resolveProjectIdentity } from "./hub-identity.ts";
 import { nousFactoryWork, type NousRegistrationReport } from "./nous-pi.ts";
 import {
   antigravityRegistrationNotice,
@@ -347,7 +347,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
   }
 
   async function showKxmHub(ctx: { ui: { notify: (message: string, type: "info" | "warning" | "error") => void } }): Promise<void> {
-    const url = resolveHubServerUrl(process.env);
+    const url = describeHubConnection(process.cwd(), process.env).url;
     let health = "unreachable";
     try {
       const response = await fetch(`${url}/health`);
@@ -677,8 +677,9 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
       return;
     }
     currentPiSessionId = ctx.sessionManager?.getSessionId();
-    const serverUrl = resolveHubServerUrl(process.env);
-    const project = defaultProjectName(ctx.cwd, process.env);
+    const identity = resolveProjectIdentity(ctx.cwd, process.env);
+    const serverUrl = describeHubConnection(ctx.cwd, process.env).url;
+    const project = identity.project;
     const name = process.env.KXM_AGENT_NAME ?? pi.getSessionName() ?? `pi-${process.pid}`;
     agentName = name;
     projectName = project;
@@ -709,7 +710,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
     // stand in for a project token.
     let hubAuthToken: string | undefined;
     try {
-      hubAuthToken = resolveAgentHubAuthToken(process.env, project);
+      hubAuthToken = resolveAgentHubAuthToken(process.env, project, ctx.cwd);
     } catch (error) {
       const detail = error instanceof CloudTokenError
         ? error.message
@@ -719,7 +720,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
       return;
     }
     if (!hubAuthToken) {
-      ctx.ui.notify(new AgentProjectTokenMissingError(project).message, "error");
+      ctx.ui.notify(new AgentProjectTokenMissingError(identity).message, "error");
       await applySessionChrome(ctx, event, true);
       return;
     }

@@ -168,10 +168,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify(x) {
+    function stringify2(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -2991,7 +2991,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve5.call(this, root, ref);
+      let _sch = resolve6.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3018,7 +3018,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve5(root, ref) {
+    function resolve6(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3839,11 +3839,11 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse3(serialize(uri, options), options);
+        parse4(serialize(uri, options), options);
       }
       return uri;
     }
-    function resolve5(baseURI, relativeURI, options) {
+    function resolve6(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -3879,8 +3879,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse3(serialize(base, options), options);
-        relative = parse3(serialize(relative, options), options);
+        base = parse4(serialize(base, options), options);
+        relative = parse4(serialize(relative, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative.scheme) {
@@ -4172,7 +4172,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse3(uri, opts) {
+    function parse4(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -4205,11 +4205,11 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve5,
+      resolve: resolve6,
       resolveComponent,
       equal,
       serialize,
-      parse: parse3
+      parse: parse4
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -8664,7 +8664,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify(item, ctx, onComment, onChompKeep) {
+    function stringify2(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -8693,7 +8693,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
   }
 });
 
@@ -8703,7 +8703,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -8725,7 +8725,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify2.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -8777,7 +8777,7 @@ ${indent}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify2.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -8918,7 +8918,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log = require_log();
     var merge2 = require_merge();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map, { key, value }) {
@@ -8954,7 +8954,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify2.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node of ctx.anchors.keys())
           strCtx.anchors.add(node.anchor);
@@ -9021,12 +9021,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify2 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify2(collection, ctx, options);
+      const stringify3 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify3(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent, options: { commentString } } = ctx;
@@ -9051,7 +9051,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify2.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -9118,7 +9118,7 @@ ${indent}${line}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify.stringify(item, itemCtx, () => comment = null);
+        let str = stringify2.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -10479,7 +10479,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -10494,7 +10494,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify.createStringifyContext(doc, options);
+      const ctx = stringify2.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -10516,7 +10516,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify2.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -10524,7 +10524,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify.stringify(doc.contents, ctx));
+        lines.push(stringify2.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -12660,7 +12660,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -12713,7 +12713,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
   }
 });
 
@@ -14424,7 +14424,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse3(src, reviver, options) {
+    function parse4(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -14443,7 +14443,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify(value, replacer, options) {
+    function stringify2(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -14465,10 +14465,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse3;
+    exports.parse = parse4;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument;
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
   }
 });
 
@@ -14526,7 +14526,7 @@ var require_dist2 = __commonJS({
 
 // plugins/kxm/src/mcp-server.ts
 import { statSync } from "node:fs";
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 
 // node_modules/zod/v4/core/core.js
 var _a;
@@ -21846,7 +21846,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+        await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -21863,7 +21863,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -21941,7 +21941,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve5(parseResult.data);
+            resolve6(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -22202,12 +22202,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve5, reject) => {
+    return new Promise((resolve6, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve5, interval);
+      const timeoutId = setTimeout(resolve6, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -23083,12 +23083,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve5) => {
+    return new Promise((resolve6) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve5();
+        resolve6();
       } else {
-        this._stdout.once("drain", resolve5);
+        this._stdout.once("drain", resolve6);
       }
     });
   }
@@ -23504,7 +23504,7 @@ var HubClient = class {
       if (signal?.aborted) throw new MeshWaitError("aborted", messageId);
       const message = await this.getMessage(messageId);
       if (["replied", "cancelled", "expired", "error"].includes(message.status)) return message;
-      await new Promise((resolve5, reject) => {
+      await new Promise((resolve6, reject) => {
         const onAbort = () => {
           signal?.removeEventListener("abort", onAbort);
           clearTimeout(timer);
@@ -23512,7 +23512,7 @@ var HubClient = class {
         };
         const timer = setTimeout(() => {
           signal?.removeEventListener("abort", onAbort);
-          resolve5();
+          resolve6();
         }, Math.min(500, Math.max(1, deadline - Date.now())));
         signal?.addEventListener("abort", onAbort, { once: true });
         if (signal?.aborted) onAbort();
@@ -23567,7 +23567,7 @@ var HubClient = class {
       } catch (error2) {
         if (this.stopped || error2 instanceof Error && error2.name === "AbortError") return;
       }
-      if (!this.stopped) await new Promise((resolve5) => setTimeout(resolve5, this.options.reconnectMs));
+      if (!this.stopped) await new Promise((resolve6) => setTimeout(resolve6, this.options.reconnectMs));
     }
   }
   headers(includeIdentity = true) {
@@ -23654,15 +23654,330 @@ async function hubJsonRequest(options, path, init, headers) {
 }
 
 // plugins/kxm/src/hub-env.ts
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { dirname as dirname3, isAbsolute as isAbsolute2, join as join3, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, renameSync as renameSync2, rmSync as rmSync2, writeFileSync as writeFileSync3 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { dirname as dirname4, isAbsolute as isAbsolute2, join as join4, resolve as resolve4 } from "node:path";
+
+// plugins/kxm/src/config.ts
+var import_yaml = __toESM(require_dist2(), 1);
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir, homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+var KXM_CONFIG_SCHEMA = "kxm.config.v1";
+var KxmHubConfigError = class extends Error {
+  code = "hub_config_invalid";
+  constructor(message) {
+    super(message);
+    this.name = "KxmHubConfigError";
+  }
+};
+var HUB_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+var HUB_OP_REF = /^op:\/\/\S+\/\S+\/\S+$/;
+var LITERAL_SECRET_KEY = /^(token|secret|password|authToken|auth_token|apiKey|api_key|api_token|bearer|credential|access_token)$/i;
+function isHubKeyEnvName(value) {
+  return HUB_ENV_NAME.test(value);
+}
+function isHubOpReference(value) {
+  return HUB_OP_REF.test(value);
+}
+var IMPROVEMENT_PROMOTION_POLICIES = ["manual_pr", "critic_quorum", "auto_threshold"];
+var DEFAULT_KXM_CONFIG = {
+  schema: KXM_CONFIG_SCHEMA,
+  user: {
+    theme: "dark",
+    preferredCritics: ["reviewer-arch", "reviewer-cli"],
+    tokenBudget: 16e3
+  },
+  defaults: {
+    workflow: "software-engineering/feature-implementation",
+    harness: "pi"
+  },
+  dash: {
+    defaultScreen: "agents",
+    refreshIntervalMs: 1e3,
+    autoOpen: false
+  },
+  sync: {
+    defaultTracker: "none"
+  },
+  hub: {
+    autoStart: "background"
+  },
+  improvement: {
+    promotionPolicy: "manual_pr",
+    telemetryHalfLifeDays: 14,
+    autoThreshold: {
+      minRuns: 10,
+      minPassRate: 0.95,
+      minCostSavings: 0.5
+    }
+  },
+  routing: {
+    shadowExecution: {
+      enabled: false,
+      sampleRate: 0.05,
+      candidateModels: []
+    },
+    circuitBreaker: {
+      mode: "soft_demotion",
+      failureThreshold: 3,
+      windowSeconds: 3600,
+      cooldownSeconds: 1800,
+      penaltyMultiplier: 5
+    }
+  },
+  telemetry: {
+    federated: true,
+    anonymize: true
+  }
+};
+function userConfigDirectory(overrideDir) {
+  if (overrideDir) return resolve(overrideDir);
+  return resolve(process.env.KXM_USER_CONFIG_DIR?.trim() || join(homedir(), ".config", "kxm"));
+}
+function repoConfigDirectory(repoRoot) {
+  return resolve(repoRoot, ".kxm");
+}
+function deepMerge(target, source) {
+  const result = { ...target };
+  for (const [key, val] of Object.entries(source)) {
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const existing = result[key] && typeof result[key] === "object" && !Array.isArray(result[key]) ? result[key] : {};
+      result[key] = deepMerge(existing, val);
+    } else if (val !== void 0) {
+      result[key] = val;
+    }
+  }
+  return result;
+}
+function literalSecretMessage(path) {
+  return `refusing literal hub token at ${path}: store an op:// reference (key.op) or an environment variable name (key.env), never the token`;
+}
+function rejectLiteralHubSecrets(value, path) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => rejectLiteralHubSecrets(item, `${path}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${path}.${key}`;
+    if (typeof child === "string" && (key === "key" || LITERAL_SECRET_KEY.test(key))) {
+      throw new KxmHubConfigError(literalSecretMessage(childPath));
+    }
+    if (child && typeof child === "object") rejectLiteralHubSecrets(child, childPath);
+  }
+}
+function parseKeyRef(raw, path) {
+  if (raw === void 0) return void 0;
+  if (typeof raw === "string") throw new KxmHubConfigError(literalSecretMessage(path));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError(`${path} must be a key reference with op and/or env, never a token`);
+  }
+  const row = raw;
+  for (const key of Object.keys(row)) {
+    if (key !== "op" && key !== "env") {
+      throw new KxmHubConfigError(literalSecretMessage(`${path}.${key}`));
+    }
+  }
+  const ref = {};
+  if (row.op !== void 0) {
+    if (typeof row.op !== "string" || !isHubOpReference(row.op)) {
+      throw new KxmHubConfigError(`${path}.op must be an op://vault/item/field reference, not a token`);
+    }
+    ref.op = row.op;
+  }
+  if (row.env !== void 0) {
+    if (typeof row.env !== "string" || !isHubKeyEnvName(row.env)) {
+      throw new KxmHubConfigError(`${path}.env must be an environment variable name, not a token`);
+    }
+    ref.env = row.env;
+  }
+  if (!ref.op && !ref.env) throw new KxmHubConfigError(`${path} needs key.op, key.env, or both`);
+  return ref;
+}
+function parseEndpoint(raw, path) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError(`${path} must be an object with url, project, and key`);
+  }
+  const row = raw;
+  const endpoint = {};
+  if (row.url !== void 0) {
+    if (typeof row.url !== "string" || !isHubUrl(row.url)) {
+      throw new KxmHubConfigError(`${path}.url must be an http or https URL without credentials, query, or fragment`);
+    }
+    endpoint.url = row.url.replace(/\/$/, "");
+  }
+  if (row.project !== void 0) {
+    if (typeof row.project !== "string" || !isHubProjectId(row.project)) {
+      throw new KxmHubConfigError(`${path}.project must be a single-line project id, not a token`);
+    }
+    endpoint.project = row.project.trim();
+  }
+  const key = parseKeyRef(row.key, `${path}.key`);
+  if (key) endpoint.key = key;
+  for (const name of Object.keys(row)) {
+    if (name !== "url" && name !== "project" && name !== "key") {
+      if (typeof row[name] === "string") throw new KxmHubConfigError(literalSecretMessage(`${path}.${name}`));
+      throw new KxmHubConfigError(`${path}.${name} is not a hub endpoint field`);
+    }
+  }
+  return endpoint;
+}
+function isHubUrl(raw) {
+  try {
+    const parsed = new URL(raw);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.username === "" && parsed.password === "" && parsed.search === "" && parsed.hash === "" && !raw.includes("?") && !raw.includes("#");
+  } catch {
+    return false;
+  }
+}
+function isHubProjectId(raw) {
+  const value = raw.trim();
+  return value.length > 0 && value.length <= 200 && !/[\s\r\n]/.test(value);
+}
+function parseProjectMap(raw) {
+  if (raw === void 0) return void 0;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError("hub.projects must be a map of project id to key reference, never a token");
+  }
+  const projects = {};
+  for (const [project, value] of Object.entries(raw)) {
+    if (!isHubProjectId(project)) {
+      throw new KxmHubConfigError(`hub.projects key ${JSON.stringify(project)} must be a project id, not a token`);
+    }
+    const ref = parseKeyRef(value, `hub.projects.${project}`);
+    if (!ref) throw new KxmHubConfigError(`hub.projects.${project} needs an op:// reference or an environment variable name`);
+    projects[project.trim()] = ref;
+  }
+  return projects;
+}
+function normalizeHubConfig(raw) {
+  const autoStart = raw?.autoStart;
+  const hub = {
+    autoStart: autoStart === "off" || autoStart === "background" ? autoStart : DEFAULT_KXM_CONFIG.hub.autoStart
+  };
+  if (raw === void 0) return hub;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new KxmHubConfigError("hub must be an object");
+  }
+  rejectLiteralHubSecrets(raw, "hub");
+  const row = raw;
+  if (row.mode !== void 0) {
+    if (row.mode !== "local" && row.mode !== "cloud") {
+      throw new KxmHubConfigError("hub.mode must be local or cloud");
+    }
+    hub.mode = row.mode;
+  }
+  const local = parseEndpoint(row.local, "hub.local");
+  const cloud = parseEndpoint(row.cloud, "hub.cloud");
+  const projects = parseProjectMap(row.projects);
+  if (local) hub.local = local;
+  if (cloud) hub.cloud = cloud;
+  if (projects && Object.keys(projects).length > 0) hub.projects = projects;
+  return hub;
+}
+function findConfigRoot(start) {
+  let dir = resolve(start);
+  for (; ; ) {
+    if (existsSync(join(dir, ".kxm", "project.yaml")) || existsSync(join(dir, ".kxm", "config.yaml"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return resolve(start);
+    dir = parent;
+  }
+}
+function userConfigDirForEnv(env) {
+  const explicit = env.KXM_USER_CONFIG_DIR?.trim();
+  if (explicit) return explicit;
+  if (env === process.env) return void 0;
+  return join(tmpdir(), "kxm-no-user-config");
+}
+function loadHubSettings(start, env = process.env) {
+  const userConfigDir = userConfigDirForEnv(env);
+  return loadKxmConfig(findConfigRoot(start), userConfigDir === void 0 ? {} : { userConfigDir }).hub;
+}
+function recordOf(raw) {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+}
+function normalizeImprovementConfig(raw) {
+  const value = recordOf(raw);
+  const threshold = recordOf(value.autoThreshold);
+  const policy = value.promotionPolicy;
+  const halfLife = finiteNumber(value.telemetryHalfLifeDays);
+  const minRuns = finiteNumber(threshold.minRuns);
+  const minPassRate = finiteNumber(threshold.minPassRate);
+  const minCostSavings = finiteNumber(threshold.minCostSavings);
+  return {
+    promotionPolicy: IMPROVEMENT_PROMOTION_POLICIES.includes(policy) ? policy : "manual_pr",
+    telemetryHalfLifeDays: halfLife !== void 0 && halfLife > 0 && halfLife <= 3650 ? halfLife : 14,
+    autoThreshold: {
+      minRuns: minRuns !== void 0 && Number.isInteger(minRuns) && minRuns >= 1 && minRuns <= 1e6 ? minRuns : 10,
+      minPassRate: minPassRate !== void 0 && minPassRate >= 0 && minPassRate <= 1 ? minPassRate : 0.95,
+      minCostSavings: minCostSavings !== void 0 && minCostSavings >= 0 ? minCostSavings : 0.5
+    }
+  };
+}
+function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
+  const userDir = userConfigDirectory(options.userConfigDir);
+  const userConfigFile = join(userDir, "config.yaml");
+  const repoDir = repoConfigDirectory(repoRoot);
+  const repoConfigFile = join(repoDir, "config.yaml");
+  let userRaw = {};
+  let userLoadedPath;
+  if (existsSync(userConfigFile)) {
+    try {
+      const text = readFileSync(userConfigFile, "utf8");
+      userRaw = (0, import_yaml.parse)(text) ?? {};
+      userLoadedPath = userConfigFile;
+    } catch (error2) {
+      throw new Error(`invalid user config YAML at ${userConfigFile}`, { cause: error2 });
+    }
+  }
+  let repoRaw = {};
+  let repoLoadedPath;
+  if (existsSync(repoConfigFile)) {
+    try {
+      const text = readFileSync(repoConfigFile, "utf8");
+      repoRaw = (0, import_yaml.parse)(text) ?? {};
+      repoLoadedPath = repoConfigFile;
+    } catch (error2) {
+      throw new Error(`invalid project config YAML at ${repoConfigFile}`, { cause: error2 });
+    }
+  }
+  const baseCopy = JSON.parse(JSON.stringify(DEFAULT_KXM_CONFIG));
+  const mergedUser = deepMerge(baseCopy, userRaw);
+  const mergedAll = deepMerge(mergedUser, repoRaw);
+  return {
+    schema: KXM_CONFIG_SCHEMA,
+    user: mergedAll.user ?? {},
+    defaults: mergedAll.defaults ?? {},
+    dash: mergedAll.dash ?? {},
+    sync: mergedAll.sync ?? {},
+    hub: normalizeHubConfig(mergedAll.hub),
+    improvement: normalizeImprovementConfig(mergedAll.improvement),
+    routing: mergedAll.routing ?? DEFAULT_KXM_CONFIG.routing,
+    telemetry: mergedAll.telemetry ?? DEFAULT_KXM_CONFIG.telemetry,
+    loadedFrom: {
+      userConfigPath: userLoadedPath,
+      repoConfigPath: repoLoadedPath
+    }
+  };
+}
+
+// plugins/kxm/src/hub-identity.ts
+var import_yaml2 = __toESM(require_dist2(), 1);
+import { spawnSync as spawnSync2 } from "node:child_process";
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
+import { basename, dirname as dirname3, join as join3, resolve as resolve3 } from "node:path";
 
 // plugins/kxm/src/hub-binding.ts
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, renameSync, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname2, isAbsolute, join as join2, resolve as resolve2 } from "node:path";
 var HUB_BINDING_SCHEMA = "kxm.hub-binding.v1";
 var CloudTokenError = class extends Error {
   code;
@@ -23685,20 +24000,20 @@ function resolveUserStateRoot(env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute(explicit)) throw new HubBindingError("local_state_root_not_absolute");
-    return resolve(explicit);
+    return resolve2(explicit);
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute(localAppData) ? localAppData : join(homedir(), "AppData", "Local");
-    return resolve(base2, "KXM");
+    const base2 = localAppData && isAbsolute(localAppData) ? localAppData : join2(homedir2(), "AppData", "Local");
+    return resolve2(base2, "KXM");
   }
-  if (process.platform === "darwin") return resolve(homedir(), "Library", "Application Support", "KXM");
+  if (process.platform === "darwin") return resolve2(homedir2(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute(xdgState) ? xdgState : join(homedir(), ".local", "state");
-  return resolve(base, "kxm");
+  const base = xdgState && isAbsolute(xdgState) ? xdgState : join2(homedir2(), ".local", "state");
+  return resolve2(base, "kxm");
 }
 function hubBindingFile(env = process.env) {
-  return join(resolveUserStateRoot(env), "hub-binding.json");
+  return join2(resolveUserStateRoot(env), "hub-binding.json");
 }
 function validateHubUrl(raw) {
   let parsed;
@@ -23753,17 +24068,6 @@ function splitTokenCommand(raw) {
 function isCloudTokenEnvName(value) {
   return TOKEN_ENV_NAME.test(value);
 }
-function resolveHubServerUrl(env = process.env) {
-  const fromEnv = env.KXM_SERVER_URL?.trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
-  try {
-    const binding = readHubBinding(env);
-    if (binding?.url) return binding.url;
-  } catch (error2) {
-    if (!(error2 instanceof HubBindingError)) throw error2;
-  }
-  return "http://127.0.0.1:7331";
-}
 function resolveCloudHubToken(binding, env = process.env) {
   if (!binding.cloud) {
     throw new CloudTokenError("cloud_token_missing", "cloud hub token is missing; the local hub-env token was not used");
@@ -23805,16 +24109,27 @@ function runTokenCommand(command, env) {
   }
   return stdout.trim();
 }
+function hubBindingScope(url) {
+  let host;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return "remote";
+  }
+  if (host === "localhost" || host === "::1" || host === "[::1]" || host.endsWith(".localhost")) return "loopback";
+  const v4 = /^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$/.exec(host);
+  return v4 && [v4[1], v4[2], v4[3]].every((part) => Number(part) <= 255) ? "loopback" : "remote";
+}
 function isIsoTimestamp(value) {
   if (Number.isNaN(Date.parse(value))) return false;
   return value === new Date(value).toISOString();
 }
 function readHubBinding(env = process.env) {
   const file = hubBindingFile(env);
-  if (!existsSync(file)) return void 0;
+  if (!existsSync2(file)) return void 0;
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync(file, "utf8"));
+    parsed = JSON.parse(readFileSync2(file, "utf8"));
   } catch {
     throw new HubBindingError(`malformed hub binding at ${file}`);
   }
@@ -23864,31 +24179,23 @@ function readHubBinding(env = process.env) {
   };
 }
 
-// plugins/kxm/src/project-name.ts
-var import_yaml = __toESM(require_dist2(), 1);
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import { basename, dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
-function defaultProjectName(cwd, env = process.env, explicit) {
-  const fromExplicit = explicit?.trim();
-  if (fromExplicit) return fromExplicit;
-  const fromEnv = env.KXM_PROJECT?.trim();
-  if (fromEnv) return fromEnv;
-  const fromProject = readProjectYamlId(cwd);
-  if (fromProject) return fromProject;
+// plugins/kxm/src/hub-identity.ts
+var OP_TIMEOUT_MS = 15e3;
+var OP_MAX_BUFFER = 4096;
+function normalizeUrl(raw) {
   try {
-    const pkg = JSON.parse(readFileSync2(join2(cwd, "package.json"), "utf8"));
-    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
+    return validateHubUrl(raw);
   } catch {
+    return void 0;
   }
-  return basename(cwd);
 }
-function readProjectYamlId(start) {
-  let dir = resolve2(start);
+function projectYamlId(start) {
+  let dir = resolve3(start);
   for (; ; ) {
-    const file = join2(dir, ".kxm", "project.yaml");
-    if (existsSync2(file)) {
+    const file = join3(dir, ".kxm", "project.yaml");
+    if (existsSync3(file)) {
       try {
-        const doc = (0, import_yaml.parse)(readFileSync2(file, "utf8"));
+        const doc = (0, import_yaml2.parse)(readFileSync3(file, "utf8"));
         if (doc && typeof doc === "object" && !Array.isArray(doc) && typeof doc.id === "string" && doc.id.trim()) {
           return doc.id.trim();
         }
@@ -23896,10 +24203,172 @@ function readProjectYamlId(start) {
       }
       return void 0;
     }
-    const parent = dirname2(dir);
+    const parent = dirname3(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
+}
+function packageName(cwd) {
+  try {
+    const pkg = JSON.parse(readFileSync3(join3(cwd, "package.json"), "utf8"));
+    if (typeof pkg.name === "string" && pkg.name.trim().length > 0) return pkg.name.trim();
+  } catch {
+  }
+  return void 0;
+}
+function activeBinding(env) {
+  try {
+    return readHubBinding(env);
+  } catch (error2) {
+    if (error2 instanceof HubBindingError) return void 0;
+    throw error2;
+  }
+}
+function endpointFor(mode, settings) {
+  return mode === "cloud" ? settings.cloud : settings.local;
+}
+function resolveProjectIdentity(cwd, env = process.env, explicit) {
+  const fromExplicit = explicit?.trim();
+  if (fromExplicit) return { project: fromExplicit, source: "flag", sourceLabel: "--project" };
+  const fromEnv = env.KXM_PROJECT?.trim();
+  if (fromEnv) return { project: fromEnv, source: "env", sourceLabel: "KXM_PROJECT" };
+  const settings = loadHubSettings(cwd, env);
+  const mode = settings.mode ?? (activeBinding(env)?.cloud ? "cloud" : "local");
+  const fromConfig = endpointFor(mode, settings)?.project?.trim();
+  if (fromConfig) {
+    return { project: fromConfig, source: "config", sourceLabel: `.kxm/config.yaml hub.${mode}.project` };
+  }
+  const fromProject = projectYamlId(cwd);
+  if (fromProject) return { project: fromProject, source: "project.yaml", sourceLabel: ".kxm/project.yaml id" };
+  const fromPackage = packageName(cwd);
+  if (fromPackage) return { project: fromPackage, source: "package.json", sourceLabel: "package.json name" };
+  return { project: basename(cwd), source: "directory", sourceLabel: "directory name" };
+}
+function opReferenceFromTokenCommand(command) {
+  try {
+    const args = splitTokenCommand(command);
+    if (args[0] === "op" && args[1] === "read" && args[2] && isHubOpReference(args[2])) return args[2];
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function defaultOpRead(reference, env) {
+  if (!isHubOpReference(reference)) {
+    throw new CloudTokenError("cloud_token_command_invalid", `refusing to resolve ${reference}; an op:// reference is required`);
+  }
+  const result = spawnSync2("op", ["read", reference], {
+    encoding: "utf8",
+    shell: false,
+    timeout: OP_TIMEOUT_MS,
+    maxBuffer: OP_MAX_BUFFER,
+    env,
+    windowsHide: true
+  });
+  if (result.error || result.status !== 0) {
+    throw new CloudTokenError(
+      "cloud_token_command_failed",
+      `op read failed for ${reference}; the token was not saved`
+    );
+  }
+  const line = (result.stdout ?? "").trim();
+  if (!line || line.split(/\r?\n/).length !== 1) {
+    throw new CloudTokenError(
+      "cloud_token_command_failed",
+      `op read did not print a single token for ${reference}; the token was not saved`
+    );
+  }
+  return line;
+}
+function resolveKeyReference(ref, env, opRead = defaultOpRead) {
+  if (!ref) return void 0;
+  if (ref.env) {
+    const value = env[ref.env]?.trim();
+    if (value) return { value, source: `env:${ref.env}` };
+  }
+  if (ref.op) {
+    const value = opRead(ref.op, env).trim();
+    if (!value || value.split(/\r?\n/).length !== 1) {
+      throw new CloudTokenError("cloud_token_command_failed", `op read did not print a single token for ${ref.op}`);
+    }
+    return { value, source: `op:${ref.op}` };
+  }
+  return void 0;
+}
+function keySourceFor(input) {
+  const ref = input.endpoint?.key;
+  if (input.mode === "local" && input.env.KXM_AUTH_TOKEN?.trim()) return "env:KXM_AUTH_TOKEN";
+  if (ref?.env && input.env[ref.env]?.trim()) return `env:${ref.env}`;
+  if (ref?.op) return `op:${ref.op}`;
+  if (ref?.env) return `env:${ref.env}`;
+  if (input.mode === "cloud") {
+    if (input.binding?.tokenEnv) return `env:${input.binding.tokenEnv}`;
+    if (input.binding?.tokenCommand) {
+      const op = opReferenceFromTokenCommand(input.binding.tokenCommand);
+      return op ? `op:${op}` : "command";
+    }
+    return "missing";
+  }
+  if (input.hasSavedProjectToken?.(input.project)) return "hub-env";
+  return "missing";
+}
+function describeHubConnection(cwd, env = process.env, hooks = {}) {
+  const settings = loadHubSettings(cwd, env);
+  const binding = activeBinding(env);
+  const mode = settings.mode ?? (binding?.cloud ? "cloud" : "local");
+  const modeSource = settings.mode ? "config" : binding?.cloud ? "binding" : "default";
+  const endpoint = endpointFor(mode, settings);
+  const fromEnv = env.KXM_SERVER_URL?.trim();
+  const fromConfig = endpoint?.url?.trim();
+  const fromBinding = binding?.url;
+  let url = "http://127.0.0.1:7331";
+  let urlSource = "default";
+  if (fromEnv) {
+    url = fromEnv.replace(/\/$/, "");
+    urlSource = "env";
+  } else if (fromConfig) {
+    url = fromConfig.replace(/\/$/, "");
+    urlSource = "config";
+  } else if (fromBinding) {
+    url = fromBinding;
+    urlSource = "binding";
+  }
+  const identity = resolveProjectIdentity(cwd, env, hooks.explicitProject);
+  const configuredCloudUrl = settings.cloud?.url ?? (binding?.cloud ? binding.url : void 0);
+  let scope;
+  if (mode === "cloud") {
+    const override = fromEnv ? normalizeUrl(fromEnv) : void 0;
+    const named = configuredCloudUrl ? normalizeUrl(configuredCloudUrl) : void 0;
+    scope = override && named && override !== named ? hubBindingScope(url) : "remote";
+  } else {
+    scope = hubBindingScope(url);
+  }
+  return {
+    ...identity,
+    mode,
+    modeSource,
+    url,
+    urlSource,
+    scope,
+    ...endpoint ? { endpoint } : {},
+    ...binding ? { binding } : {},
+    keySource: keySourceFor({
+      mode,
+      env,
+      ...endpoint ? { endpoint } : {},
+      ...binding ? { binding } : {},
+      project: identity.project,
+      ...hooks.hasSavedProjectToken ? { hasSavedProjectToken: hooks.hasSavedProjectToken } : {}
+    })
+  };
+}
+function projectTokenMissingMessage(identity) {
+  return [
+    `kxm has no project token for project ${identity.project} (from ${identity.sourceLabel}).`,
+    `Ask the user to set this project's token. Set KXM_AUTH_TOKEN, or set hub.local.project or hub.cloud.project in .kxm/config.yaml to the project key the hub already knows, or add a key reference under hub.projects.${identity.project} (key.op is an op:// reference, key.env is an environment variable name, never the token) and restart the hub.`,
+    "KXM_PROJECT or --project overrides the id for one command.",
+    "An agent never uses the hub admin token."
+  ].join(" ");
 }
 
 // plugins/kxm/src/hub-env.ts
@@ -23914,27 +24383,27 @@ function resolveUserStateRoot2(env) {
   const explicit = env.KXM_STATE_HOME?.trim();
   if (explicit) {
     if (!isAbsolute2(explicit)) throw new HubEnvError("local_state_root_not_absolute");
-    return resolve3(explicit);
+    return resolve4(explicit);
   }
   if (process.platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim();
-    const base2 = localAppData && isAbsolute2(localAppData) ? localAppData : join3(homedir2(), "AppData", "Local");
-    return resolve3(base2, "KXM");
+    const base2 = localAppData && isAbsolute2(localAppData) ? localAppData : join4(homedir3(), "AppData", "Local");
+    return resolve4(base2, "KXM");
   }
-  if (process.platform === "darwin") return resolve3(homedir2(), "Library", "Application Support", "KXM");
+  if (process.platform === "darwin") return resolve4(homedir3(), "Library", "Application Support", "KXM");
   const xdgState = env.XDG_STATE_HOME?.trim();
-  const base = xdgState && isAbsolute2(xdgState) ? xdgState : join3(homedir2(), ".local", "state");
-  return resolve3(base, "kxm");
+  const base = xdgState && isAbsolute2(xdgState) ? xdgState : join4(homedir3(), ".local", "state");
+  return resolve4(base, "kxm");
 }
 function hubEnvFile(env = process.env) {
-  return join3(resolveUserStateRoot2(env), "hub-env.json");
+  return join4(resolveUserStateRoot2(env), "hub-env.json");
 }
 function readHubEnvRecord(env = process.env) {
   const file = hubEnvFile(env);
-  if (!existsSync3(file)) return void 0;
+  if (!existsSync4(file)) return void 0;
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync3(file, "utf8"));
+    parsed = JSON.parse(readFileSync4(file, "utf8"));
   } catch (error2) {
     throw new HubEnvError(`hub env file is malformed at ${file}: ${error2 instanceof Error ? error2.message : String(error2)}`);
   }
@@ -23966,33 +24435,48 @@ function readHubEnvRecord(env = process.env) {
     ...record2.projectTokens !== void 0 ? { projectTokens: record2.projectTokens } : {}
   };
 }
-function activeCloudBinding(env) {
-  try {
-    const binding = readHubBinding(env);
-    return binding?.cloud ? binding : void 0;
-  } catch (error2) {
-    if (error2 instanceof HubBindingError) {
-      throw new HubEnvError(
-        `${error2.message}; refusing to guess a credential \u2014 repair or remove ${hubBindingFile(env)}`
-      );
-    }
-    throw error2;
-  }
+function cloudModeToken(cwd, env, explicitProject, opRead) {
+  const connection = describeHubConnection(cwd, env, explicitProject === void 0 ? {} : { explicitProject });
+  if (connection.mode !== "cloud") return void 0;
+  const fromConfig = resolveKeyReference(connection.endpoint?.key, env, opRead);
+  if (fromConfig) return fromConfig.value;
+  if (connection.binding?.cloud) return resolveCloudHubToken(connection.binding, env);
+  throw new CloudTokenError(
+    "cloud_token_missing",
+    "cloud hub token is missing; the local hub-env token was not used"
+  );
 }
-function resolveAgentHubAuthToken(env, project) {
-  const cloud = activeCloudBinding(env);
-  if (cloud) return resolveCloudHubToken(cloud, env);
+function resolveAgentHubAuthToken(env, project, cwd = process.cwd(), opRead) {
+  const cloud = cloudModeToken(cwd, env, void 0, opRead);
+  if (cloud) return cloud;
   const envToken = env.KXM_AUTH_TOKEN?.trim();
   if (envToken) return envToken;
+  const fromConfig = resolveKeyReference(describeHubConnection(cwd, env).endpoint?.key, env, opRead);
+  if (fromConfig) return fromConfig.value;
   const tokens = readHubEnvRecord(env)?.projectTokens;
   if (!tokens || !Object.hasOwn(tokens, project)) return void 0;
   return tokens[project]?.trim() || void 0;
 }
+var AgentProjectTokenMissingError = class extends Error {
+  code = "project_token_missing";
+  project;
+  projectSource;
+  hint;
+  constructor(projectOrIdentity) {
+    const identity = typeof projectOrIdentity === "string" ? { project: projectOrIdentity, source: "env", sourceLabel: "the project id sent to the hub" } : projectOrIdentity;
+    const message = projectTokenMissingMessage(identity);
+    super(message);
+    this.name = "AgentProjectTokenMissingError";
+    this.project = identity.project;
+    this.projectSource = typeof projectOrIdentity === "string" ? "unknown" : identity.source;
+    this.hint = message;
+  }
+};
 
 // plugins/kxm/src/commands.ts
-import { chmodSync, existsSync as existsSync4, mkdirSync as mkdirSync3, readFileSync as readFileSync4, unlinkSync, writeFileSync as writeFileSync3 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { dirname as dirname4, join as join4, resolve as resolve4 } from "node:path";
+import { chmodSync, existsSync as existsSync5, mkdirSync as mkdirSync4, readFileSync as readFileSync5, unlinkSync, writeFileSync as writeFileSync4 } from "node:fs";
+import { homedir as homedir4 } from "node:os";
+import { dirname as dirname5, join as join5, resolve as resolve5 } from "node:path";
 function forwardedHops(handling) {
   if (!handling?.length) return void 0;
   return {
@@ -24755,11 +25239,11 @@ function parseSessionToken(token) {
   return void 0;
 }
 function resolveUserConfigDirectory(overrideDir) {
-  if (overrideDir) return resolve4(overrideDir);
-  return resolve4(process.env.KXM_USER_CONFIG_DIR?.trim() || join4(homedir3(), ".config", "kxm"));
+  if (overrideDir) return resolve5(overrideDir);
+  return resolve5(process.env.KXM_USER_CONFIG_DIR?.trim() || join5(homedir4(), ".config", "kxm"));
 }
 function sessionTokenPath(userConfigDir) {
-  return join4(resolveUserConfigDirectory(userConfigDir), "session.token");
+  return join5(resolveUserConfigDirectory(userConfigDir), "session.token");
 }
 function matchToolPattern(pattern, toolName) {
   if (pattern === "*" || pattern === toolName) return true;
@@ -24852,10 +25336,10 @@ function enforceToolPolicy(commandName, env = process.env, options) {
     return { allowed: true };
   }
   const tokenFile = sessionTokenPath(env.KXM_USER_CONFIG_DIR);
-  if (existsSync4(tokenFile)) {
+  if (existsSync5(tokenFile)) {
     let tokenRaw;
     try {
-      tokenRaw = readFileSync4(tokenFile, "utf8").trim();
+      tokenRaw = readFileSync5(tokenFile, "utf8").trim();
     } catch {
       return { allowed: false, error: "session_token_invalid", detail: "Session token file on disk could not be read" };
     }
@@ -24927,10 +25411,13 @@ function asRecord2(value) {
 }
 function sessionIdentity() {
   const projectDir = process.env.KXM_PROJECT_DIR || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const connection = describeHubConnection(projectDir, process.env);
   return {
     projectDir,
-    project: defaultProjectName(projectDir, process.env),
-    serverUrl: resolveHubServerUrl(process.env)
+    project: connection.project,
+    projectSource: connection.source,
+    sourceLabel: connection.sourceLabel,
+    serverUrl: connection.url
   };
 }
 async function announce(message) {
@@ -25000,12 +25487,10 @@ async function ensureClient() {
   if (meshClient?.agent) return meshClient;
   if (starting) return starting;
   starting = (async () => {
-    const { project, serverUrl } = sessionIdentity();
-    const authToken = resolveAgentHubAuthToken(process.env, project);
+    const { project, projectDir, serverUrl } = sessionIdentity();
+    const authToken = resolveAgentHubAuthToken(process.env, project, projectDir);
     if (!authToken) {
-      throw new Error(
-        `KXM has no project token for project ${project} on this machine. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) or to add ${project} to the hub KXM_PROJECT_TOKENS, listing every existing project too because that variable replaces the saved map.`
-      );
+      throw new AgentProjectTokenMissingError(resolveProjectIdentity(projectDir, process.env));
     }
     const name = process.env.KXM_AGENT_NAME?.trim() || `claude-${process.pid}`;
     try {
@@ -25048,8 +25533,10 @@ async function connectedClient() {
   }
 }
 function toolErrorText(error2) {
-  if (error2 instanceof HubHttpError && error2.code === "invalid_auth") {
-    return `KXM hub rejected the project token for project ${sessionIdentity().project}. Ask the user to set the kxm plugin auth_token (${CONFIGURE_PLUGIN}) to that project's token from the hub KXM_PROJECT_TOKENS.`;
+  if (error2 instanceof AgentProjectTokenMissingError) return error2.message;
+  if (error2 instanceof HubHttpError && (error2.code === "invalid_auth" || error2.code === "project_token_missing")) {
+    const identity = sessionIdentity();
+    return `KXM hub rejected the project token for project ${identity.project} (from ${identity.sourceLabel}). Set hub.local.project or hub.cloud.project in .kxm/config.yaml to the key the hub already knows, and set hub.local.key or hub.cloud.key to an op:// reference or an environment variable name. Ask the user before changing the kxm plugin auth_token (${CONFIGURE_PLUGIN}). Never put the token in config.`;
   }
   return error2 instanceof Error ? error2.message : String(error2);
 }
@@ -25083,8 +25570,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 function registersAtStartup() {
   const { projectDir, project } = sessionIdentity();
   try {
-    if (!statSync(join5(projectDir, ".kxm")).isDirectory()) return false;
-    if (!resolveAgentHubAuthToken(process.env, project)) return false;
+    if (!statSync(join6(projectDir, ".kxm")).isDirectory()) return false;
+    if (!resolveAgentHubAuthToken(process.env, project, projectDir)) return false;
   } catch {
     return false;
   }

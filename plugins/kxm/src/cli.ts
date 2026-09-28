@@ -17,10 +17,11 @@ import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import { readInstalledKxmVersion } from "./kxm-update.ts";
 import { findKxmRepoRoot } from "./repo-root.ts";
-import { HubClient } from "./client.ts";
+import { HubClient, HubHttpError } from "./client.ts";
 import { AgentProjectTokenMissingError, resolveAgentHubAuthToken } from "./hub-env.ts";
 import { CloudTokenError } from "./hub-binding.ts";
-import { defaultProjectName } from "./project-name.ts";
+import { KxmHubConfigError } from "./config.ts";
+import { resolveProjectIdentity } from "./hub-identity.ts";
 import {
   AGENT_COMMANDS_MAP,
   enforceToolPolicy,
@@ -256,13 +257,14 @@ function addGlobalOptions(command: Command): Command {
 
 async function ensureCliClient(runtime: Runtime): Promise<HubClient> {
   const serverUrl = runtime.serverUrl;
-  const project = defaultProjectName(runtime.cwd, runtime.env);
+  const identity = resolveProjectIdentity(runtime.cwd, runtime.env);
+  const project = identity.project;
   const name = runtime.env.KXM_AGENT_NAME?.trim() || `cli-${process.pid}`;
   const purpose = runtime.env.KXM_AGENT_PURPOSE?.trim() || "CLI agent client";
   // These commands act as a peer agent, so they take the agent credential: never the
   // persisted admin token, which the hub accepts for any project without its own token.
-  const authToken = resolveAgentHubAuthToken(runtime.env, project);
-  if (!authToken) throw new AgentProjectTokenMissingError(project);
+  const authToken = resolveAgentHubAuthToken(runtime.env, project, runtime.cwd);
+  if (!authToken) throw new AgentProjectTokenMissingError(identity);
   const client = new HubClient({
     serverUrl,
     name,
@@ -387,8 +389,35 @@ async function dispatchAgentCliCommand(
       print(
         runtime.io,
         runtime.json,
-        { ok: false, error: error.code, project: error.project, nextAction: "export_kxm_auth_token", detail: message },
+        {
+          ok: false,
+          error: error.code,
+          project: error.project,
+          projectSource: error.projectSource,
+          nextAction: "configure_hub_project",
+          hint: error.hint,
+          detail: message,
+        },
         message,
+      );
+      return 2;
+    }
+    if (error instanceof HubHttpError && error.code === "project_token_missing") {
+      const identity = resolveProjectIdentity(runtime.cwd, runtime.env);
+      const missing = new AgentProjectTokenMissingError(identity);
+      print(
+        runtime.io,
+        runtime.json,
+        {
+          ok: false,
+          error: missing.code,
+          project: identity.project,
+          projectSource: identity.source,
+          nextAction: "configure_hub_project",
+          hint: missing.hint,
+          detail: missing.message,
+        },
+        missing.message,
       );
       return 2;
     }
@@ -1344,7 +1373,8 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
     .option("--cloud", "Mark the hub remote even when the URL is a loopback forward")
     .option("--token-env <name>", "Environment variable that holds the hub token; the token is not stored")
     .option("--token-command <command>", "Program that prints the hub token; the token is not stored")
-    .action(async function hubBindAction(this: Command, url: string, options: { cloud?: boolean; tokenEnv?: string; tokenCommand?: string }) {
+    .option("--key-op <ref>", "op:// reference for the hub token; resolved with op read, never stored")
+    .action(async function hubBindAction(this: Command, url: string, options: { cloud?: boolean; tokenEnv?: string; tokenCommand?: string; keyOp?: string }) {
       result.code = await cmdHubBind(runtimeFrom(ctx, this), url, options);
     });
   addGlobalOptions(hub.command("unbind").description("Remove this machine's hub binding")).action(bind(cmdHubUnbind));
@@ -1562,6 +1592,10 @@ export async function runCli(
   } catch (error) {
     if (error instanceof CommanderError) return mapCommanderError(error, argv, program, io);
     if (error instanceof DryRunRefused) return error.code;
+    if (error instanceof KxmHubConfigError) {
+      print(io, hasJsonFlag(argv), { ok: false, error: error.code, detail: error.message }, error.message);
+      return 2;
+    }
     throw error;
   }
 }

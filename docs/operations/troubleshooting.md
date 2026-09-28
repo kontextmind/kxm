@@ -88,7 +88,7 @@ If a malformed claim remains, read the exact `.pid` JSON in the state directory 
 | `hub_bind_unauthenticated` | The URL is remote and this machine has no token for the project; export it and bind again |
 | `hub_credential_unreadable` | Repair or remove `hub-env.json` under the user state root |
 | `cloud_token_missing` | A `--cloud` binding's variable is empty and it has no working command. Export the variable or fix `--token-command`. This machine's hub-env token is not sent |
-| `cloud_flag_required` | `--token-env` or `--token-command` was passed without `--cloud` |
+| `cloud_flag_required` | `--token-command` was passed without `--cloud`. `--token-env` and `--key-op` are key references and are valid on a local bind |
 | 401 after binding a loopback forward | The bind was not `--cloud`, so the client sent the local hub-env token. See [Cross-box peer attach](../operations.md#cross-box-peer-attach) |
 
 ## Claude Code plugin and MCP
@@ -99,7 +99,7 @@ The [plugin troubleshooting guide](../../plugins/kxm/README.md#troubleshooting) 
 |---|---|
 | `kxm_*` tools do not appear | Check `/mcp` for the `kxm` server, check `node --version`, run `/reload-plugins`, and confirm `claude plugin list` shows `kxm@kxm` enabled |
 | `KXM hub unreachable at <url>` | Start the hub, or correct `server_url` with `/plugin configure kxm@kxm` |
-| `no project token for project <p>` | Enter the project token at `/plugin configure kxm@kxm`, or add `<p>` to the hub's full `KXM_PROJECT_TOKENS` map and restart the hub |
+| `kxm has no project token for project <p>` | The message names where `<p>` came from. Set `hub.local.project` or `hub.cloud.project` and a key reference in `.kxm/config.yaml`, or add `<p>` to the hub's full `KXM_PROJECT_TOKENS` map and restart the hub. Never paste the token into the file |
 | `KXM hub rejected the project token for project <p>` | Enter the token the hub holds for `<p>` |
 | `tool_policy_denied: Session token on disk is malformed or expired` | Run `kxm session token --clear` |
 | Pushed requests never arrive | Start Claude Code with `claude --dangerously-load-development-channels plugin:kxm@kxm` and accept the trust prompt, or use `kxm_inbox` and `kxm_reply` |
