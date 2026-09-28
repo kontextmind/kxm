@@ -30,7 +30,7 @@ Evidence needed: test/e2e cases at 390, 800, and 1280, and a secret-absence asse
 
 ## Blockers
 
-- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.
+- Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.
 - Setup and doctor screens also wait on first-run P1 through P5.
 
 ## Questions

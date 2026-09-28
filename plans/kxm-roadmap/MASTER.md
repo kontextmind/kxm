@@ -56,7 +56,7 @@ None.
 
 ### Questions
 
-- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven: test/core/worktree-witness.test.ts counts committed work in the authoring witness, test/core/oneshot-producer.test.ts settles real reviewer shapes through the outcome parser, and an engine-driven critic on the vision lane settled a truthful BLOCK (backlog S33). P3 dispatch is the first full engine unit and completes loop-dispatch.
+- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven on 0.7.159 (#363, #368): the authoring witness counts committed work and the outcome parser reads real reviewer shapes — an engine-driven critic settled a truthful BLOCK on the vision lane. P3 dispatch is the first full engine unit and completes loop-dispatch.
 
 ## Python migration
 
@@ -84,7 +84,7 @@ None.
 
 ### Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and an untracked python/ tree (kxm-control, pyproject, uv lock) were observed in the operator's primary worktree on 2026-09-28, untracked and not committed to main; other checkouts of this repository do not have them.
+- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and a python/ tree were observed untracked in the operator's primary worktree on 2026-09-28; neither is committed to main, and other checkouts do not have them.
 
 ## Greenfield infra
 
@@ -224,7 +224,7 @@ On a TTY, bare kxm opens the existing dashboard and a first-run panel that probe
 ### Blockers
 
 - omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
-- The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself.
+- kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
 
 ### Questions
 
@@ -247,7 +247,7 @@ Studio shows the seven dash panels, a first-run wizard, and live workflow state 
 
 ### Blockers
 
-- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.
+- Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.
 - Setup and doctor screens also wait on first-run P1 through P5.
 
 ### Questions
@@ -298,4 +298,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-27: P2 role authority landed (#343, published 0.7.131): the v2 files are the only dispatch source, roster.yaml and the transport recipes are gone.
 - 2026-09-27: P4 opt-in fallback walk records routing.route_switched and continues the attempt.
 - 2026-09-27: docs/operations.md indexes the six state roots and the cross-box peer attach recipe.
-- 2026-09-28: Deep pass: greenfield stub and MG0 evidence observed in the operator's primary worktree; an untracked python tree observed there too; hub cloud binding inventoried.
+- 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the operator's primary worktree; hub cloud binding inventoried.

@@ -82,6 +82,6 @@ None.
 
 ## Questions
 
-- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven: test/core/worktree-witness.test.ts counts committed work in the authoring witness, test/core/oneshot-producer.test.ts settles real reviewer shapes through the outcome parser, and an engine-driven critic on the vision lane settled a truthful BLOCK (backlog S33). P3 dispatch is the first full engine unit and completes loop-dispatch.
+- P2 landed in #343 and P4 ships the error classifier with the walk. Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine path is proven on 0.7.159 (#363, #368): the authoring witness counts committed work and the outcome parser reads real reviewer shapes — an engine-driven critic settled a truthful BLOCK on the vision lane. P3 dispatch is the first full engine unit and completes loop-dispatch.
 
 [Dashboard](../dashboard.md)

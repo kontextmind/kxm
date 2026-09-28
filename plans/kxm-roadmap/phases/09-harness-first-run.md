@@ -37,7 +37,7 @@ Evidence needed: Catalog tests and a receipt that names the workflow hash.
 ## Blockers
 
 - omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
-- The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself.
+- kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
 
 ## Questions
 
