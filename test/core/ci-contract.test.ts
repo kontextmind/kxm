@@ -331,6 +331,8 @@ test("pull request classification skips docs and plans, and flags platform paths
   assert.equal(isPlatformPath("plugins/kxm/src/store.ts"), false);
   assert.deepEqual(unboundedClassification(), { code: true, platform: false, runValidate: true });
   assert.match(ciText, /node scripts\/ci-classify\.mjs/);
+  const changes = JSON.stringify((parse(ciText) as { jobs?: CiJobs }).jobs?.changes?.steps ?? []);
+  assert.match(changes, /actions\/setup-node@v7/);
 });
 
 test("unit shards cover every unit file and every engine test name once", () => {
