@@ -36,7 +36,7 @@ test("hub env record round-trips with 0600 permissions and strict validation", (
     };
     assert.equal(writeHubEnvRecord(record, env), hubEnvFile(env));
     assert.equal(existsSync(hubEnvFile(env)), true);
-    assert.equal(mode(hubEnvFile(env)), 0o600);
+    if (process.platform !== "win32") assert.equal(mode(hubEnvFile(env)), 0o600);
     assert.deepEqual(readHubEnvRecord(env), record);
 
     writeFileSync(hubEnvFile(env), "{not json");
@@ -246,7 +246,7 @@ test("kxm-hub wrapper generates, injects, and persists credentials across restar
       assert.match(first.out, /using newly generated KXM_AUTH_TOKEN/);
       assert.match(first.out, /auth=token/);
       assert.equal(existsSync(envFile), true);
-      assert.equal(mode(envFile), 0o600);
+      if (process.platform !== "win32") assert.equal(mode(envFile), 0o600);
       const persisted = JSON.parse(readFileSync(envFile, "utf8")) as { authToken?: string };
       assert.match(persisted.authToken ?? "", /^kxm_admin_/);
       const record = JSON.parse(readFileSync(pidPath, "utf8")) as { pid: number; serverPid: number };

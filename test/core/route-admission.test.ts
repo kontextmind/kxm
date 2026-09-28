@@ -37,7 +37,9 @@ import {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HOME = "rtm_01JROUTING00000000000000";
-const NODE = process.execPath;
+// A Windows absolute execPath contains backslashes. Gate argv[0] must be a
+// bare executable or an absolute POSIX path, so Windows uses `node` on PATH.
+const NODE = process.platform === "win32" ? "node" : process.execPath;
 
 interface RoutingTestEnv {
   root: string;

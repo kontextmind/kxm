@@ -142,8 +142,17 @@ test("the MCP server publishes AGENT_COMMANDS plus exactly the hook-only tools",
     env: spawnEnv.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  context.after(() => {
-    child.kill();
+  context.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 2000);
+        child.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        child.kill();
+      });
+    }
     spawnEnv.cleanup();
   });
   const responses = new Map<number, (value: { result?: { tools?: Array<{ name: string }> } }) => void>();
