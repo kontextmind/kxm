@@ -65,32 +65,77 @@ function stripOneClosingFence(trimmed: string): string {
   return trimmed.slice(0, lineBreak).trimEnd();
 }
 
-// The outcome object is the newest complete top-level JSON object in the
-// trimmed reply, and that object must close on the reply's last character.
-// One closing code fence may follow it; the fence is removed before the scan.
-// One forward pass tracks string state and brace depth together. A `"` toggles
-// a string, and `\` escapes only inside a string. A `{` outside a string at
-// depth 0 opens a top-level object. When depth returns to 0, that object is
-// the newest complete top-level object. Braces inside strings do not change
-// depth, so the same scan shows that the object started at depth 0 and that
-// quotes in the prefix are closed. After the scan, if that object closes at
-// the end of the body, JSON.parse runs once on the slice. The value must be
-// a plain object whose outcome is a string in allowedOutcomes. Anything else
-// is failed: prose after the object, no object, a disallowed outcome, an
-// inner object at the end of a truncated outer object, a stray quote that
-// leaves a string open, or a prefix whose braces never return to depth 0.
-function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
-  const trimmed = text.trim();
-  if (!trimmed) return "failed";
-  const body = stripOneClosingFence(trimmed);
-  if (!body) return "failed";
-  let depth = 0;
+// How many `}` characters, counting from the end of the reply, we will try
+// as the end of an outcome object.
+const MAX_OUTCOME_CLOSERS = 32;
+
+// How many `{` openers before that closer we will consider, nearest last.
+const MAX_OUTCOME_OPENERS = 32;
+
+// A candidate whose UTF-8 size is over this is not parsed. Older openers
+// for the same closer contain the nearer slice, so the opener walk stops
+// there. The count is Buffer.byteLength, not JavaScript string length.
+const MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
+
+// Total UTF-8 bytes of candidate slices JSON.parse may see in one lookup.
+// Crossing this budget stops the lookup. Same byte measure as the slice cap.
+const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
+
+// How many `{` / `[` openers at the end of the prefix are re-lexed. A `"`
+// is not an opener. Each re-lex walks the body from that opener to the end,
+// so the lexer work is linear in the body per opener checked, per candidate.
+// This cap only limits how many openers are re-lexed. It does not bound the
+// lexer. The slice budgets bound JSON.parse bytes, not these scans. If the
+// walk reaches the cap and another container opener is still earlier in the
+// prefix, the prefix is ambiguous and the candidate is rejected.
+const MAX_PREFIX_CONTAINER_OPENERS = 16;
+
+// Naive prefix scan. Quote handling toggles on every unescaped `"`. Braces
+// and brackets count only outside a string. Extra closers stay at depth 0
+// because they are prose, not an unclosed container. The slice itself is
+// not scanned: JSON.parse owns strings and escapes there. O(prefix).
+function outcomePrefixIsAnchored(prefix: string): boolean {
+  let objectDepth = 0;
+  let arrayDepth = 0;
   let inString = false;
   let escape = false;
-  let currentStart = -1;
-  let objectStart = -1;
-  let objectEnd = -1;
-  for (let i = 0; i < body.length; i++) {
+  for (let i = 0; i < prefix.length; i++) {
+    const ch = prefix[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") objectDepth += 1;
+    else if (ch === "}" && objectDepth > 0) objectDepth -= 1;
+    else if (ch === "[") arrayDepth += 1;
+    else if (ch === "]" && arrayDepth > 0) arrayDepth -= 1;
+  }
+  return objectDepth === 0 && arrayDepth === 0 && !inString && !escape;
+}
+
+// Same string, escape, and depth machine as the prefix scan, started at a
+// `{` or `[`. A closer that does not match an opener this scan pushed is
+// invalid. An invalid scan is not truncation. Truncation is a valid scan
+// that reaches the end of the body still inside a container or a string.
+// One call walks from `start` through the rest of the body. The walk is
+// linear in that span. No byte budget stops it.
+function containerLexIsTruncated(body: string, start: number): boolean {
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < body.length; i++) {
     const ch = body[i];
     if (inString) {
       if (escape) {
@@ -101,38 +146,103 @@ function determineOutcome(text: string, allowedOutcomes: readonly string[]): str
         escape = true;
         continue;
       }
-      if (ch === '"') inString = false;
+      if (ch === "\"") inString = false;
       continue;
     }
-    if (ch === '"') {
+    if (ch === "\"") {
       inString = true;
       continue;
     }
-    if (ch === "{") {
-      if (depth === 0) currentStart = i;
-      depth++;
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
       continue;
     }
-    if (ch === "}") {
-      if (depth === 0) continue;
-      depth--;
-      if (depth === 0) {
-        objectStart = currentStart;
-        objectEnd = i;
-      }
+    if (ch === "}" || ch === "]") {
+      const open = ch === "}" ? "{" : "[";
+      const top = stack[stack.length - 1];
+      if (top !== open) return false;
+      stack.pop();
     }
   }
-  if (objectStart < 0 || objectEnd !== body.length - 1) return "failed";
-  let result: unknown;
-  try {
-    result = JSON.parse(body.slice(objectStart, objectEnd + 1));
-  } catch {
-    return "failed";
+  return stack.length > 0 || inString || escape;
+}
+
+// True when one of the last container openers in the prefix lexes as a
+// value that is still open at the end of the body, or when more container
+// openers sit further back than the re-lex cap. Those further openers are
+// not scanned. The prefix is ambiguous, so the candidate fails closed.
+// Quote positions are left to the naive machine.
+function prefixHidesTruncatedContainer(body: string, openAt: number): boolean {
+  let seen = 0;
+  for (let i = openAt - 1; i >= 0; i--) {
+    const ch = body[i];
+    if (ch !== "{" && ch !== "[") continue;
+    if (seen >= MAX_PREFIX_CONTAINER_OPENERS) return true;
+    seen++;
+    if (containerLexIsTruncated(body, i)) return true;
   }
-  if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
-  const outcome = (result as Record<string, unknown>).outcome;
-  if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
-  return outcome;
+  return false;
+}
+
+// The outcome object is a JSON object that ends the trimmed reply. One
+// closing code fence may follow it; the fence is removed before the walk.
+// Candidates are slices from a `{` to a recent `}`, nearest last. Only the
+// last 32 closers are visited, and only a closer on the reply's last
+// character can end the reply. For that closer the last 32 openers are
+// tried. A slice whose UTF-8 size is over 256 KiB is skipped. Parsed slices
+// share a 1 MiB UTF-8 budget, and crossing it stops the lookup. Both limits
+// use Buffer.byteLength. JSON.parse is the only
+// string and escape authority inside the slice. A slice that parses to a
+// plain object whose outcome is a string in allowedOutcomes is a candidate.
+// The prefix before that opener, with trailing whitespace removed, must end
+// at depth 0 for both braces and arrays, outside a string, with no dangling
+// escape. Any other end state is truncated or ambiguous, so the candidate
+// is rejected and the next one is tried. The naive machine plus the
+// container-lexer guard reject truncation. A prefix with more container
+// openers than the re-lex cap is ambiguous and fails closed. Prose with an
+// odd quote count fails closed. An accepted candidate ends the lookup.
+// Nothing left is failed: prose after the object, no object, a disallowed
+// outcome, an inner object at the end of a truncated outer object or array,
+// an object inside an unclosed string, an ambiguous prefix past the re-lex
+// cap, or a budget exhausted before a candidate.
+function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "failed";
+  const body = stripOneClosingFence(trimmed);
+  if (!body) return "failed";
+  let seenClosers = 0;
+  let parseBytes = 0;
+  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
+    if (body[closeAt] !== "}") continue;
+    seenClosers++;
+    const end = closeAt + 1;
+    // A candidate has to end the reply. One closer can sit at that position.
+    if (end !== body.length) continue;
+    let seenOpeners = 0;
+    for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
+      if (body[openAt] !== "{") continue;
+      seenOpeners++;
+      const slice = body.slice(openAt, end);
+      const sliceBytes = Buffer.byteLength(slice, "utf8");
+      if (sliceBytes > MAX_OUTCOME_SLICE_BYTES) break;
+      if (parseBytes + sliceBytes > MAX_OUTCOME_PARSE_BYTES) return "failed";
+      parseBytes += sliceBytes;
+      let result: unknown;
+      try {
+        result = JSON.parse(slice);
+      } catch {
+        continue;
+      }
+      if (!result || typeof result !== "object" || Array.isArray(result)) continue;
+      const outcome = (result as Record<string, unknown>).outcome;
+      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
+      const prefix = body.slice(0, openAt).trimEnd();
+      if (!outcomePrefixIsAnchored(prefix)) continue;
+      if (prefixHidesTruncatedContainer(body, openAt)) continue;
+      return outcome;
+    }
+  }
+  return "failed";
 }
 
 export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}): KxmOneShotProducer {

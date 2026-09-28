@@ -23,6 +23,12 @@ const DOCS_RULES = [
 // dependency and workflow files that change how those paths run.
 const PLATFORM_NAME = /(path|paths|process|shell|spawn|worker|supervisor|repo-root|ssh-remote)/i;
 
+// This test starts the real runtime supervisor and deletes its state root.
+// The Windows lock after shutdown does not show up on Linux.
+const PLATFORM_EXACT = new Set([
+  "test/core/studio-layout.test.ts",
+]);
+
 export function isDocsPath(file) {
   return DOCS_RULES.some((rule) => rule(file));
 }
@@ -32,6 +38,7 @@ export function isPlatformPath(file) {
   if (/(^|\/)package-lock\.json$/.test(file)) return true;
   if (file.startsWith(".github/workflows/")) return true;
   if (file.startsWith("scripts/")) return true;
+  if (PLATFORM_EXACT.has(file)) return true;
   const base = file.split("/").pop() ?? file;
   return PLATFORM_NAME.test(base);
 }

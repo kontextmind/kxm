@@ -8,7 +8,8 @@ import { runtimeError } from "../../plugins/kxm/src/runtime-store.ts";
 import { runCli } from "../../plugins/kxm/src/cli.ts";
 import { initializeKxmProject } from "../../plugins/kxm/src/init.ts";
 import { makeGitRoot } from "../helpers/git-root.ts";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { removeTempDir } from "../helpers.ts";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -781,9 +782,12 @@ test("portal create-drive-cancel preserves command identity and reports authorit
     } catch {
       confirmedStopped = false;
     }
-    rmSync(cwd, { recursive: true, force: true });
+    // Two not-running probes still leave the state root locked on Windows.
+    // A raw rmSync then throws EPERM, which failed light-2 and cancelled the
+    // other Windows lanes. Retry briefly and leave a locked directory behind.
+    removeTempDir(cwd);
     if (confirmedStopped) {
-      rmSync(stateRoot, { recursive: true, force: true });
+      removeTempDir(stateRoot);
     } else {
       // Leave the state root for inspection rather than corrupting a live supervisor;
       // failing here is the point — silence would hide exactly this leak.

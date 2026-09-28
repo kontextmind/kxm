@@ -31538,18 +31538,46 @@ function stripOneClosingFence(trimmed) {
   if (lineBreak < 0) return "";
   return trimmed.slice(0, lineBreak).trimEnd();
 }
-function determineOutcome(text, allowedOutcomes) {
-  const trimmed = text.trim();
-  if (!trimmed) return "failed";
-  const body = stripOneClosingFence(trimmed);
-  if (!body) return "failed";
-  let depth = 0;
+var MAX_OUTCOME_CLOSERS = 32;
+var MAX_OUTCOME_OPENERS = 32;
+var MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
+var MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
+var MAX_PREFIX_CONTAINER_OPENERS = 16;
+function outcomePrefixIsAnchored(prefix) {
+  let objectDepth = 0;
+  let arrayDepth = 0;
   let inString = false;
   let escape2 = false;
-  let currentStart = -1;
-  let objectStart = -1;
-  let objectEnd = -1;
-  for (let i = 0; i < body.length; i++) {
+  for (let i = 0; i < prefix.length; i++) {
+    const ch = prefix[i];
+    if (inString) {
+      if (escape2) {
+        escape2 = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape2 = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") objectDepth += 1;
+    else if (ch === "}" && objectDepth > 0) objectDepth -= 1;
+    else if (ch === "[") arrayDepth += 1;
+    else if (ch === "]" && arrayDepth > 0) arrayDepth -= 1;
+  }
+  return objectDepth === 0 && arrayDepth === 0 && !inString && !escape2;
+}
+function containerLexIsTruncated(body, start) {
+  const stack = [];
+  let inString = false;
+  let escape2 = false;
+  for (let i = start; i < body.length; i++) {
     const ch = body[i];
     if (inString) {
       if (escape2) {
@@ -31567,31 +31595,67 @@ function determineOutcome(text, allowedOutcomes) {
       inString = true;
       continue;
     }
-    if (ch === "{") {
-      if (depth === 0) currentStart = i;
-      depth++;
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
       continue;
     }
-    if (ch === "}") {
-      if (depth === 0) continue;
-      depth--;
-      if (depth === 0) {
-        objectStart = currentStart;
-        objectEnd = i;
-      }
+    if (ch === "}" || ch === "]") {
+      const open2 = ch === "}" ? "{" : "[";
+      const top = stack[stack.length - 1];
+      if (top !== open2) return false;
+      stack.pop();
     }
   }
-  if (objectStart < 0 || objectEnd !== body.length - 1) return "failed";
-  let result;
-  try {
-    result = JSON.parse(body.slice(objectStart, objectEnd + 1));
-  } catch {
-    return "failed";
+  return stack.length > 0 || inString || escape2;
+}
+function prefixHidesTruncatedContainer(body, openAt) {
+  let seen = 0;
+  for (let i = openAt - 1; i >= 0; i--) {
+    const ch = body[i];
+    if (ch !== "{" && ch !== "[") continue;
+    if (seen >= MAX_PREFIX_CONTAINER_OPENERS) return true;
+    seen++;
+    if (containerLexIsTruncated(body, i)) return true;
   }
-  if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
-  const outcome = result.outcome;
-  if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
-  return outcome;
+  return false;
+}
+function determineOutcome(text, allowedOutcomes) {
+  const trimmed = text.trim();
+  if (!trimmed) return "failed";
+  const body = stripOneClosingFence(trimmed);
+  if (!body) return "failed";
+  let seenClosers = 0;
+  let parseBytes = 0;
+  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
+    if (body[closeAt] !== "}") continue;
+    seenClosers++;
+    const end = closeAt + 1;
+    if (end !== body.length) continue;
+    let seenOpeners = 0;
+    for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
+      if (body[openAt] !== "{") continue;
+      seenOpeners++;
+      const slice = body.slice(openAt, end);
+      const sliceBytes = Buffer.byteLength(slice, "utf8");
+      if (sliceBytes > MAX_OUTCOME_SLICE_BYTES) break;
+      if (parseBytes + sliceBytes > MAX_OUTCOME_PARSE_BYTES) return "failed";
+      parseBytes += sliceBytes;
+      let result;
+      try {
+        result = JSON.parse(slice);
+      } catch {
+        continue;
+      }
+      if (!result || typeof result !== "object" || Array.isArray(result)) continue;
+      const outcome = result.outcome;
+      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
+      const prefix = body.slice(0, openAt).trimEnd();
+      if (!outcomePrefixIsAnchored(prefix)) continue;
+      if (prefixHidesTruncatedContainer(body, openAt)) continue;
+      return outcome;
+    }
+  }
+  return "failed";
 }
 function createKxmOneShotProducer(options = {}) {
   const running = /* @__PURE__ */ new Map();

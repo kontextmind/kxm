@@ -90,8 +90,14 @@ which was 268 seconds when every non-engine file shared one job.
 `package-install.test.ts` is serial because on Windows it took 171 seconds
 and the light job stopped reporting tests after that file finished (cancelled
 at 20 minutes on pull requests #361, #362, and #363). The other light files
-are round-robin split so each Windows job is about half of that pool. Linux
-jobs use the npm cache from `actions/setup-node`. Restoring a
+are round-robin split so each Windows job is about half of that pool. A
+locked test directory is abandoned after about three seconds. The previous
+retry was about 52 seconds and still failed with `EPERM`, which is what
+pushed Windows `light-1` to 13 minutes when many tests hit it.
+`test/core/studio-layout.test.ts` is platform-sensitive because it starts
+the real runtime supervisor; a Windows file lock after shutdown failed
+`light-2` and cancelled the other Windows jobs. Linux jobs use the npm
+cache from `actions/setup-node`. Restoring a
 `node_modules` tarball was slower than `npm ci` on the Linux runners (about
 24s versus 17s on 2026-09-24), so that cache stays on the Windows jobs,
 where `npm ci` is the slow step.

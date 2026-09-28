@@ -1191,16 +1191,21 @@ test("a JSON object inside an earlier code fence does not win over the last obje
     "```json",
     '{"outcome":"failed","summary":"fence sample"}',
     "```",
-    "Actual result:",
+    "Actual result",
     '{"outcome":"passed","summary":"last object"}',
   ].join("\n");
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
 test("braces inside an outcome string do not hide the final object", async () => {
-  const summary = "{".repeat(33);
-  const text = `{"outcome":"passed","summary":"${summary}"}`;
+  // The last 32 `{` openers are tried. Thirty-one braces in the summary leave
+  // the real opener inside that window. One more pushes it out of the budget.
+  const inside = "{".repeat(31);
+  const text = `{"outcome":"passed","summary":"${inside}"}`;
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+  const pastBudget = "{".repeat(32);
+  const hidden = `{"outcome":"passed","summary":"${pastBudget}"}`;
+  assert.equal(await settleOneShotText(hidden, ["passed", "failed"]), "failed");
 });
 
 test("nested braces and braces inside strings parse as the last outcome object", async () => {
@@ -1252,7 +1257,7 @@ test("a prose quote before a truncated outer object does not settle the inner ou
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
-test("a stray inch-mark quote before a final outcome object stays failed", async () => {
+test("a stray unpaired quote before a final outcome object stays failed", async () => {
   const text = [
     'a 27" monitor screenshot',
     '{"outcome":"passed"}',
@@ -1268,14 +1273,153 @@ test("a closed prose quote before a final outcome object still settles", async (
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
-test("a repeated opener prefix never closes a top-level outcome object", async () => {
-  const chunk = '{"b":';
-  const repeats = Math.ceil((600 * 1024) / chunk.length);
-  const attack = `${chunk.repeat(repeats)}}`;
+test("a repeated opener prefix settles within the outcome parse bound", async () => {
+  const attack = `${'{"b":'.repeat(100000)}}`;
   assert.equal(await settleOneShotText(attack, ["passed", "failed"]), "failed");
-  // The prefix stays above depth 0, so a final-line object is nested and stays failed.
+  // The prefix still has unclosed objects, so the following object is rejected.
   const followed = `${attack}\n{"outcome":"passed","summary":"after the bound"}`;
   assert.equal(await settleOneShotText(followed, ["passed", "failed"]), "failed");
+});
+
+test("findings prose with quotes, backticks, and braces settles the inline outcome", async () => {
+  const text = [
+    "## Findings",
+    "The witness names a `missing-argument` path. A sample call is `kxm assign run { id: \"x\" }`.",
+    'The write-up quotes "the docs misname the missing-argument error."',
+    "Braces in the notes ({braces}) and a sample {\"outcome\":\"failed\"} stay in the prose.",
+    "{",
+    '  "outcome": "passed",',
+    '  "summary": "paragraphs of findings, then the docs misname the missing-argument error."',
+    "}",
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("a truncated JSON signature before a parsing object stays failed", async () => {
+  assert.equal(await settleOneShotText('{\n{"outcome":"passed"}', ["passed", "failed"]), "failed");
+  assert.equal(await settleOneShotText('{"detail":\n{"outcome":"passed"}', ["passed", "failed"]), "failed");
+  assert.equal(await settleOneShotText('{"detail":1,\n{"outcome":"passed"}', ["passed", "failed"]), "failed");
+});
+
+test("an inner object at the end of a truncated array settles failed", async () => {
+  const text = '{"outcome":"failed","detail":[{"outcome":"passed"}';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a prefix that ends inside an unclosed array at object depth zero settles failed", async () => {
+  // The prefix is only `[`, so object depth stays 0. Removing the array-depth
+  // check would accept the outcome object.
+  const text = '[{"outcome":"passed"}';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a prefix that ends on an escape inside an unclosed string settles failed", async () => {
+  const text = [
+    'The note ends inside "an unclosed \\',
+    '{"outcome":"passed","summary":"honest object"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("multibyte text is accepted or rejected on the UTF-8 outcome budgets", async () => {
+  // U+5B57 is one UTF-16 code unit and three UTF-8 bytes, so a JavaScript
+  // length under the cap can still cross the byte budget.
+  const unit = "字";
+  assert.equal(Buffer.byteLength(unit, "utf8"), 3);
+  const sliceCap = 256 * 1024;
+  const parseCap = 1024 * 1024;
+  const oneSlice = (count: number): string => `{"outcome":"passed","pad":"${unit.repeat(count)}"}`;
+  const fixedSlice = Buffer.byteLength(oneSlice(0), "utf8");
+  const underSlice = Math.floor((sliceCap - fixedSlice) / 3);
+  const overSlice = underSlice + 1;
+  const underSliceText = oneSlice(underSlice);
+  const overSliceText = oneSlice(overSlice);
+  assert.ok(Buffer.byteLength(underSliceText, "utf8") <= sliceCap);
+  assert.ok(Buffer.byteLength(overSliceText, "utf8") > sliceCap);
+  assert.ok(overSliceText.length <= sliceCap);
+  assert.equal(await settleOneShotText(underSliceText, ["passed", "failed"]), "passed");
+  assert.equal(await settleOneShotText(overSliceText, ["passed", "failed"]), "failed");
+
+  // Five openers, each at most 256 KiB. Four sit inside the pad so only the
+  // outer object parses. Their UTF-8 sizes share the 1 MiB parse budget.
+  const manySlices = (count: number): string => `{"outcome":"passed","pad":"{{{{${unit.repeat(count)}"}`;
+  const openerByteSum = (body: string): number => {
+    let sum = 0;
+    let seen = 0;
+    for (let openAt = body.length - 1; openAt >= 0 && seen < 32; openAt--) {
+      if (body[openAt] !== "{") continue;
+      seen++;
+      sum += Buffer.byteLength(body.slice(openAt), "utf8");
+    }
+    return sum;
+  };
+  const underParse = Math.floor((parseCap - openerByteSum(manySlices(0))) / (3 * 5));
+  const overParse = underParse + 1;
+  const underParseText = manySlices(underParse);
+  const overParseText = manySlices(overParse);
+  assert.equal(openerByteSum(underParseText) <= parseCap, true);
+  assert.equal(openerByteSum(overParseText) > parseCap, true);
+  assert.ok(overParseText.length <= parseCap);
+  assert.equal(await settleOneShotText(underParseText, ["passed", "failed"]), "passed");
+  assert.equal(await settleOneShotText(overParseText, ["passed", "failed"]), "failed");
+});
+
+test("an outcome object inside an unclosed string settles failed", async () => {
+  const text = '{"outcome":"failed","note":"see {"outcome":"passed"}';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("even quotes before a truncated outer object do not settle the inner outcome", async () => {
+  // Eight quotes in the prefix leave the naive scan outside a string, and
+  // the stray quote hides the outer `{`. The container lexer still sees it.
+  const text = [
+    'a 27" monitor',
+    '{"outcome":"failed","note":"see {"outcome":"passed"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("sixteen balanced containers before a truncated outer do not settle the inner outcome", async () => {
+  // The `{}` pairs balance, and the last 16 openers each balance through
+  // the end. The outer `{` is the 17th opener. Even quotes leave the naive
+  // scan closed. The unchecked opener makes the prefix ambiguous.
+  const pairs = "{}".repeat(16);
+  const text = [
+    'a 27" monitor',
+    `{"outcome":"failed","note":"see ${pairs} {"outcome":"passed"}`,
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("an honest inch mark with no prefix container opener settles", async () => {
+  // The prefix has no `{` or `[`, so the container lexer does not run.
+  // Two inch marks keep an even quote count. The trailing object is
+  // complete and top-level-anchored. A lone inch mark is an odd quote
+  // count and still fails closed.
+  const text = [
+    'Use a 27" monitor, not a 32" one.',
+    '{"outcome":"passed","summary":"width recorded"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("findings prose then an inline outcome whose summary holds braces and quotes settles", async () => {
+  const text = [
+    "## Findings",
+    "The witness names a `missing-argument` path. A sample call is `kxm assign run { id: \"x\" }`.",
+    'The write-up quotes "the docs misname the missing-argument error."',
+    "Braces in the notes ({braces}) and a sample {\"outcome\":\"failed\"} stay in the prose.",
+    'Result {"outcome":"passed","summary":"the docs say \\"missing\\" and a sample { id: 1 }"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
+test("a prefix that ends inside an unclosed string does not settle the following object", async () => {
+  const text = [
+    'The note never closes its "quote',
+    '{"outcome":"passed","summary":"honest object"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
 test("a megabyte unbalanced prefix ending in an outcome object settles", async () => {

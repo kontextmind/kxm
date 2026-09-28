@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { mintSessionToken, persistSessionTokenToDisk } from "../../plugins/kxm/src/commands.ts";
 import { workflowWebhookHeaders } from "../../plugins/kxm/src/workflow.ts";
 import { HUB_ENV_SCHEMA, writeHubEnvRecord } from "../../plugins/kxm/src/hub-env.ts";
-import { createTestMesh, waitFor } from "../helpers.ts";
+import { createTestMesh, removeTempDirRetryBudgetMs, waitFor } from "../helpers.ts";
 import { isolatedMcpEnv, stopMcpChild, type IsolatedMcpEnvOptions } from "../helpers/mcp-spawn.ts";
 
 type RpcResponse = {
@@ -546,6 +546,14 @@ test("isolated MCP spawn env points project dir, state, user config and hub URL 
   assert.equal(existsSync(join(project.cwd, ".kxm")), true);
   assert.equal(existsSync(join(dirname(project.cwd), ".kxm")), false, "only the throwaway project dir gets .kxm");
   assert.equal(project.env.KXM_AUTH_TOKEN, "explicit-token");
+});
+
+test("a locked temp directory is abandoned after a few seconds, not about a minute", () => {
+  // Node's rmSync backoff is retryDelay * (1 + ... + maxRetries). 20 * 250ms
+  // is 52.5s and still ended in EPERM on windows-latest, once per MCP test
+  // and once in the offline-chrome extension test.
+  assert.equal(removeTempDirRetryBudgetMs(), 3_000);
+  assert.ok(removeTempDirRetryBudgetMs() <= 5_000);
 });
 
 test("every test that spawns dist/mcp-server.js uses the isolated spawn helper", () => {
