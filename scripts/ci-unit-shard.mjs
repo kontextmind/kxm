@@ -32,11 +32,31 @@ function escapeRegExp(value) {
   return value.replace(/[|\\{}()[\]^$+*?.]/g, "\\$&");
 }
 
+// Node's glob returns backslashes on Windows. Lane membership compares posix paths.
+export function toPosixPath(file) {
+  return file.replaceAll("\\", "/");
+}
+
+export function normalizeUnitFiles(files) {
+  return files.map((file) => toPosixPath(file)).sort();
+}
+
+export function planUnitFiles(files) {
+  const normalized = normalizeUnitFiles(files);
+  if (!normalized.includes(ENGINE_FILE)) throw new Error(`${ENGINE_FILE} is missing`);
+  for (const file of SERIAL_FILES) {
+    if (!normalized.includes(file)) throw new Error(`${file} is missing`);
+  }
+  const reserved = new Set([ENGINE_FILE, ...SERIAL_FILES]);
+  const light = normalized.filter((file) => !reserved.has(file));
+  return { files: normalized, serial: [...SERIAL_FILES], light };
+}
+
 export function listUnitFiles(root) {
-  return [
+  return normalizeUnitFiles([
     ...globSync("test/core/*.test.ts", { cwd: root }),
     ...globSync("packages/core/*/tests/unit/*.test.ts", { cwd: root }),
-  ].map((file) => file.replaceAll("\\", "/")).sort();
+  ]);
 }
 
 export function extractTestPatterns(source) {
@@ -96,19 +116,13 @@ export function planEngineShard(root, index, total = SHARD_TOTAL) {
 }
 
 export function planSerial(root) {
-  const files = listUnitFiles(root);
-  if (!files.includes(ENGINE_FILE)) throw new Error(`${ENGINE_FILE} is missing`);
-  for (const file of SERIAL_FILES) {
-    if (!files.includes(file)) throw new Error(`${file} is missing`);
-  }
-  return [...SERIAL_FILES];
+  return planUnitFiles(listUnitFiles(root)).serial;
 }
 
 export function planLight(root) {
-  const serial = new Set(SERIAL_FILES);
-  const files = listUnitFiles(root).filter((file) => file !== ENGINE_FILE && !serial.has(file));
-  if (files.length === 0) throw new Error("light lane has no unit files");
-  return files;
+  const { light } = planUnitFiles(listUnitFiles(root));
+  if (light.length === 0) throw new Error("light lane has no unit files");
+  return light;
 }
 
 export function coverageOfShards(root, total = SHARD_TOTAL) {
@@ -117,7 +131,9 @@ export function coverageOfShards(root, total = SHARD_TOTAL) {
     const plan = planEngineShard(root, index, total);
     for (const pattern of plan.patterns) heavy.set(pattern.source, (heavy.get(pattern.source) ?? 0) + 1);
   }
-  return { files: listUnitFiles(root), serial: planSerial(root), light: planLight(root), heavy };
+  const lanes = planUnitFiles(listUnitFiles(root));
+  if (lanes.light.length === 0) throw new Error("light lane has no unit files");
+  return { files: lanes.files, serial: lanes.serial, light: lanes.light, heavy };
 }
 
 function runNode(args, label, children) {
