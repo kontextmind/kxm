@@ -4,7 +4,7 @@ Status: later. Horizon: later.
 
 Source: `plans/plan-kxm-harness-first-run.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 On a TTY, bare kxm opens the existing dashboard and a first-run panel that probes harnesses, hands auth to each harness or an op:// reference, and writes user defaults. Static workflow files stay the trust anchor. A hybrid composer is proposed and not selected.
 

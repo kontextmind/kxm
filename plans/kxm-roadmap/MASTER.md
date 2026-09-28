@@ -84,7 +84,7 @@ None.
 
 ### Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and an untracked python/ tree (kxm-control, pyproject, uv lock) are now in this checkout; neither is committed to main yet.
+- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and an untracked python/ tree (kxm-control, pyproject, uv lock) were observed in the operator's primary worktree on 2026-09-28, untracked and not committed to main; other checkouts of this repository do not have them.
 
 ## Greenfield infra
 
@@ -298,4 +298,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-27: P2 role authority landed (#343, published 0.7.131): the v2 files are the only dispatch source, roster.yaml and the transport recipes are gone.
 - 2026-09-27: P4 opt-in fallback walk records routing.route_switched and continues the attempt.
 - 2026-09-27: docs/operations.md indexes the six state roots and the cross-box peer attach recipe.
-- 2026-09-28: Deep pass: greenfield stub, MG0 evidence, and an untracked python tree observed in the checkout; hub cloud binding inventoried.
+- 2026-09-28: Deep pass: greenfield stub and MG0 evidence observed in the operator's primary worktree; an untracked python tree observed there too; hub cloud binding inventoried.

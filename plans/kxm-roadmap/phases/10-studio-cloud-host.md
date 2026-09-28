@@ -4,7 +4,7 @@ Status: later. Horizon: later.
 
 Source: `plans/plan-studio-cloud-host.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 Studio shows the seven dash panels, a first-run wizard, and live workflow state for the shared hub. Humans sign in at the edge. Policy edits become pull requests. The browser does not hold a hub token.
 
