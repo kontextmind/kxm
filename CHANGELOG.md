@@ -414,22 +414,14 @@ All notable user-facing changes are documented here. The project follows [Semant
   reply for any declared outcome *word* and, failing that, returned `passed`. So
   `"the gate did not pass, so I would not call this passed"` settled the step as passed — the
   word was all it took — and an empty or prose-only reply was passed by default. Only a declared
-  result counts now: a reply that is one JSON object, or prose carrying an explicit
-  `{"outcome": "…"}` block, and only when the step declares that outcome. Anything else is
+  result counts now, and only when the step declares that outcome. Anything else is
   `failed`; an undeclared value still lands in `outcome_unknown` and terminates as `failed`, so a
   step without a `failed` transition cannot pass on a bad reply either. This matches the rule the
   one-shot producer already enforced, and `docs/contracts/lifecycles.md` now states it where
   `result_recorded` is defined. Three usage-capture fixtures that had been replying in prose now
   declare their result, which is what they were always supposed to do; the new test in
-  `test/core/pi-producer.test.ts` covers prose, empty, out-of-vocabulary, and both accepted
-  structured shapes. Review of that first cut found two more ways to mint success, both now
-  closed: a result block was matched **anywhere** in the reply, so
-  `Example: {"outcome": "passed"}. Actual result: {"outcome": "failed"}` returned `passed`;
-  a declaration is now a standalone JSON object — the whole reply, or one object on its own
-  line, with the **last** such object winning so an illustration cannot outrank the answer, and
-  the whole reply settling `failed` when anything after that line still looks like an outcome
-  key, because at that point the producer cannot tell which declaration was meant.
-  And cancellation fell through to `allowedOutcomes[0]` when a step declared neither
+  `test/core/pi-producer.test.ts` covers prose, empty, and out-of-vocabulary replies.
+  Cancellation fell through to `allowedOutcomes[0]` when a step declared neither
   `cancelled` nor `failed`, so aborting a `passed`-only step reported `passed`; a cancel now
   reports `cancelled` unconditionally and the engine terminates it `failed` when the step
   does not declare that outcome.
@@ -572,9 +564,7 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
-- **A one-shot outcome is the JSON object that ends the reply.** One forward scan tracks strings, escapes, and brace depth. The newest top-level object, opened at depth 0, must close at the end of the trimmed text (one closing code fence and trailing whitespace allowed). `JSON.parse` runs once on that slice. The `outcome` must be a string in the step's declared values. Braces inside a string do not count as structure, so a summary may contain any number of `{` characters. A bare object, a fenced object, and prose followed by an object that ends the reply settle when the outcome is allowed. Prose after the object, a reply with no object, a disallowed outcome, a stray `"` in the prose, and an inner object at the end of a truncated outer object settle `failed`.
-
-- **A committed checkout counts as authored work.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`.
+- **A one-shot outcome is the last top-level JSON object that ends the reply.** It is accepted only when the prefix before it leaves every string, object, and array closed (a naive state machine plus a container lexer over the last container openers). Anything ambiguous, truncated, or followed by prose fails closed. The authoring witness counts `HEAD`, so a writer that commits is credited.
 
 - **The test suite no longer passes `--test-timeout`.** Under `node --test` that flag bounds each file, so coverage on CI timed out `test/core/engine.test.ts` at three minutes. The wall clock in `scripts/run-bounded.mjs` still bounds each script.
 
@@ -891,8 +881,6 @@ All notable user-facing changes are documented here. The project follows [Semant
 - **`kxm vision` is owned by the browser-verify skill.** `plugins/kxm/skill-suite.json` lists `vision` on `kxm-browser-verify`, the skill that already teaches `kxm vision assert`.
 
 - **Dry-run ship status no longer rewrites `.git/index`.** `git status` refreshes the index under an optional lock. The ship-status read passes `--no-optional-locks`, so a dry run leaves the checkout untouched.
-
-- **A committed checkout counts as authored work, and a one-shot outcome must be a standalone JSON object.** The authoring witness includes `HEAD` with porcelain status and both diffs, so a write that commits its edits is `changed` and can stay `passed`. A `rev-parse` failure keeps that empty head term only when the repository has no commits; any other git failure is `unwitnessed`. A one-shot outcome is accepted when the whole reply is one JSON object, or when that object stands alone on the final line. A closing code fence around the final object is allowed. An object followed by prose, a truncated reply, and an ambiguous tail settle `failed`.
 
 ## 0.7.0 - 2026-09-11
 

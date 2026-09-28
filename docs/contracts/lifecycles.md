@@ -106,17 +106,28 @@ created → accepted → dispatched → executing → result_recorded → termin
 | `terminal` | The logical assignment outcome is final and immutable: passed, failed, or cancelled |
 
 A producer reply becomes a terminal outcome **only** through a declared result. A one-shot
-reply declares that result when one forward scan finds a JSON object that closes at the
-end of the trimmed text. The scan tracks strings, escapes, and brace depth together. A
-`{` outside a string at depth 0 opens a top-level object, and the newest object that
-returns to depth 0 is the candidate. One closing code fence may follow the object, with
-whitespace. The object may be the whole reply, a fenced reply, or the end of surrounding
-prose, on one line or several. `JSON.parse` runs once on that slice. The value must be a
-plain object whose `outcome` string is one of the step's declared values. Braces inside
-strings do not change depth. A stray `"` leaves the scan inside a string, so a following
-object is not top-level and settles `failed`. Prose after the object, a reply with no
-such object, a disallowed outcome, and an inner object at the end of a truncated outer
-object settle `failed`.
+reply declares that result when a candidate slice from a `{` to a `}` parses as a JSON
+object that closes at the end of the trimmed text. Candidates are tried nearest last.
+The walk considers at most the last 32 closers and the last 32 openers, skips a slice
+whose UTF-8 size is over 256 KiB, and stops after 1 MiB of UTF-8 bytes from parsed
+slices. One closing code fence may follow the object, with whitespace. The object may be the whole reply, a fenced reply,
+or the end of surrounding prose, on one line or several. `JSON.parse` is the authority
+for strings and escapes inside the slice. The value must be a plain object whose
+`outcome` string is one of the step's declared values. The prefix before that opener,
+with trailing whitespace removed, is scanned by a naive JSON lexer: an unescaped quote
+toggles string state, a backslash escapes the next character inside a string, and `{`
+and `[` track depth. Extra `}` and `]` do not drive depth below zero. The candidate is
+accepted only when that scan ends at depth 0 for both braces and arrays, outside a
+string, with no dangling escape. Any other end state is truncated or ambiguous, so
+that candidate is rejected and the next one is tried. The naive machine plus a
+container-lexer guard reject truncation. For each of the last 16 `{` or `[`
+openers in the prefix, a lexer from that opener through the end of the body
+rejects the candidate when the scan stays valid and ends inside a container or
+a string. A quote is not an opener. Prose with an odd quote count fails closed.
+Quotes, backticks, and balanced braces in the prose do not hide an
+object that ends the reply. Prose after the object, a reply with no such object, a
+disallowed outcome, an inner object at the end of a truncated outer object or array,
+and an object inside an unclosed string settle `failed`.
 
 Naming an outcome *word* anywhere in a reply is not a result. `"the gate did not pass, so I
 would not call this passed"` must not advance a step, and an empty or unstructured reply is
