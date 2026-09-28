@@ -39,8 +39,8 @@ together.
 | Before you push | Local | `npm run verify` |
 | Pull request, push to `main`, or manual | `ci.yml` (`required`) | Aggregates the lanes below into one pass/fail check named `CI / required` |
 | Pull request and push | `ci.yml` (Docs lint) | `lint:docs` and `check:versions`, always |
-| Code pull request and code push | `ci.yml` (Unit engine and Unit, Linux Node 24) | `engine.test.ts` split by test name; `permission.test.ts` and `runtime.test.ts` one file at a time; every other unit file together. Typecheck and `check-generated` run on the light lane |
-| Platform-sensitive pull request | `ci.yml` (Unit, Windows Node 24) | The same four unit lanes on `windows-latest` |
+| Code pull request and code push | `ci.yml` (Unit engine and Unit, Linux Node 24) | `engine.test.ts` split by test name; `permission.test.ts`, `runtime.test.ts`, and `package-install.test.ts` one file at a time; every other unit file in two light shards. Typecheck and `check-generated` run on `light-1` |
+| Platform-sensitive pull request | `ci.yml` (Unit, Windows Node 24) | The same unit lanes on `windows-latest` |
 | Push to `main`, or manual | `ci.yml` (Validate matrix) | `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24; not on a pull request |
 | Code pull request and code push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin |
 | Daily at 04:00 UTC, or manual | `nightly.yml` | `test:coverage:complete`, `check`, `check:generated`, `npm pack --dry-run` |
@@ -54,7 +54,7 @@ The npm scripts behind those rows:
 | Script | Composition |
 |---|---|
 | `verify` | `npm test` (core and package unit tests), `check`, `check:generated` |
-| `test:ci-shard` | One unit lane: build, then `engine <index> <total>`, `serial`, or `light` over `test/core/*.test.ts` and `packages/core/*/tests/unit/*.test.ts` |
+| `test:ci-shard` | One unit lane: build, then `engine <index> <total>`, `serial`, `light`, or `light-<index>` over `test/core/*.test.ts` and `packages/core/*/tests/unit/*.test.ts` |
 | `validate:pr` | `build`, `typecheck`, a compact contract and smoke set of nine `test/core` files, `check:versions`, and the generated-`dist` check |
 | `validate:ci` | `test:coverage` (core and package tests, 91/80/92 floors), `check`, `npm pack --dry-run`; the Release workflow runs it, and it stays available locally |
 | `test:coverage:complete` | Core, simulation and package tests with 93/80/93 floors |
@@ -81,15 +81,20 @@ blocker: it is the only place the simulation suite and coverage floors run.
 ### Lanes and the required check
 
 Code pull requests run Docs lint, two Linux Node 24 engine shards, a serial
-lane (`permission.test.ts` then `runtime.test.ts`), a light lane for every
-other unit file, and Plugin validation. The light lane typechecks and checks
-generated bundles. `engine.test.ts` is split by test name because that file
-alone was 174 seconds; the serial lane keeps the next two longest files off
-the light pool, which was 268 seconds when every non-engine file shared one
-job. Linux jobs use the npm cache from
-`actions/setup-node`. Restoring a `node_modules` tarball was slower than
-`npm ci` on the Linux runners (about 24s versus 17s on 2026-09-24), so that
-cache stays on the Windows jobs, where `npm ci` is the slow step.
+lane (`permission.test.ts`, then `runtime.test.ts`, then
+`package-install.test.ts`), two light shards for every other unit file, and
+Plugin validation. `light-1` typechecks and checks generated bundles.
+`engine.test.ts` is split by test name because that file alone was 174
+seconds; the serial lane keeps the next longest files off the light pool,
+which was 268 seconds when every non-engine file shared one job.
+`package-install.test.ts` is serial because on Windows it took 171 seconds
+and the light job stopped reporting tests after that file finished (cancelled
+at 20 minutes on pull requests #361, #362, and #363). The other light files
+are round-robin split so each Windows job is about half of that pool. Linux
+jobs use the npm cache from `actions/setup-node`. Restoring a
+`node_modules` tarball was slower than `npm ci` on the Linux runners (about
+24s versus 17s on 2026-09-24), so that cache stays on the Windows jobs,
+where `npm ci` is the slow step.
 
 The job `required` always runs. Its check name is `CI / required`. It fails
 when a lane fails or is cancelled, and it passes when a lane was skipped
