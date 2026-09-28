@@ -206,7 +206,7 @@ test("no hub found spawns a detached wrapper and generates + persists a new admi
     assert.ok(existsSync(logPath), "auto-start log created");
 
     const envFile = join(home, "hub-env.json");
-    assert.equal(statSync(envFile).mode & 0o777, 0o600, "generated key persisted with 0600");
+    if (process.platform !== "win32") assert.equal(statSync(envFile).mode & 0o777, 0o600, "generated key persisted with 0600");
     const persisted = JSON.parse(readFileSync(envFile, "utf8")) as { schema?: string; authToken?: string };
     assert.equal(persisted.schema, HUB_ENV_SCHEMA);
     assert.equal(persisted.authToken, res.authToken);
