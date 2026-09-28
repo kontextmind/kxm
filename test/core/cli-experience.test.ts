@@ -814,7 +814,7 @@ test("workflow add templates validate and plan a run, and a gate outcome the ste
       assert.equal(existsSync(workflowFile(id)), false, `--dry-run writes no ${id}.yaml`);
       const added = await kxm(["workflow", "add", id, "--template", template]);
       assert.equal(added.code, 0, added.err);
-      assert.equal((JSON.parse(added.out) as { filePath: string }).filePath, workflowFile(id));
+      assert.equal(realpathSync.native((JSON.parse(added.out) as { filePath: string }).filePath), realpathSync.native(workflowFile(id)));
       ids.push(id);
 
       const beforePick = treeSnapshot(root);

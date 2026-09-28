@@ -32,10 +32,10 @@ test("plugin README tool table lists every tool the bundled MCP server publishes
     stdio: ["pipe", "pipe", "pipe"],
   });
   const lines = createInterface({ input: child.stdout });
-  context.after(() => {
+  isolated.track(child);
+  context.after(async () => {
     lines.close();
-    if (child.exitCode === null) child.kill();
-    isolated.cleanup();
+    await isolated.cleanup();
   });
 
   let stderr = "";

@@ -1,6 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import type { ChildProcess } from "node:child_process";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { removeTempDir } from "../helpers.ts";
 
 export interface IsolatedMcpEnvOptions {
   /** Hub the spawned server talks to; defaults to a port nothing listens on. */
@@ -14,18 +16,36 @@ export interface IsolatedMcpEnvOptions {
   extra?: Record<string, string>;
 }
 
-function removeSpawnTree(root: string): void {
-  let last: unknown;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    try {
-      rmSync(root, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      last = error;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
-    }
-  }
-  throw last;
+const STOP_GRACE_MS = 5_000;
+
+function whenExited(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    child.once("exit", () => resolve());
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+  });
+}
+
+/** Stop a spawned MCP server, then let the caller remove its directory.
+ * `child.kill()` on Windows is TerminateProcess: the server's SIGTERM handler
+ * never runs, so the hub agent stays online and the temp directory stays
+ * locked. Ending stdin runs the same shutdown the server uses for a client
+ * that exits without a signal (unregister, then exit). Kill is the fallback
+ * when that shutdown does not finish. */
+export async function stopMcpChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const done = whenExited(child);
+  if (child.stdin && !child.stdin.writableEnded) child.stdin.end();
+  const graceful = await Promise.race([
+    done.then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), STOP_GRACE_MS)),
+  ]);
+  if (graceful || child.exitCode !== null || child.signalCode !== null) return;
+  try { child.kill(); } catch { /* already exited */ }
+  await Promise.race([
+    done,
+    new Promise<void>((resolve) => setTimeout(resolve, STOP_GRACE_MS)),
+  ]);
 }
 
 /** Launch environment for a spawned dist/mcp-server.js that never touches the developer's
@@ -35,7 +55,8 @@ function removeSpawnTree(root: string): void {
 export function isolatedMcpEnv(options: IsolatedMcpEnvOptions = {}): {
   env: NodeJS.ProcessEnv;
   cwd: string;
-  cleanup: () => void;
+  track: (child: ChildProcess) => void;
+  cleanup: () => Promise<void>;
 } {
   const root = mkdtempSync(join(tmpdir(), "kxm-mcp-spawn-"));
   const projectDir = join(root, "project");
@@ -64,9 +85,17 @@ export function isolatedMcpEnv(options: IsolatedMcpEnvOptions = {}): {
   if (options.project) env.KXM_PROJECT = options.project;
   if (options.agentName) env.KXM_AGENT_NAME = options.agentName;
   Object.assign(env, options.extra);
+  const children: ChildProcess[] = [];
   return {
     env,
     cwd: projectDir,
-    cleanup: () => removeSpawnTree(root),
+    track(child) { children.push(child); },
+    async cleanup() {
+      // After hooks run in registration order, and this cleanup is registered
+      // before the test's own stop hook. Stop tracked children here so the
+      // directory is not removed while a live process still uses it as cwd.
+      await Promise.all(children.splice(0).map((child) => stopMcpChild(child)));
+      removeTempDir(root);
+    },
   };
 }
