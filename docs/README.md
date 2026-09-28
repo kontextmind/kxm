@@ -117,6 +117,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 | [KXM terminal components](contributing/tui-components.md) | Maintainers, integrators | The panel kit behind `kxm dash` |
 | [Repository work delivery skill](contributing/repo-work-delivery.md) | Contributors | The repository-local skill for delivering a change |
 | [Operating rules](contributing/operating-rules.md) | Agents, maintainers | The operator's standing instructions, dated, and where each is enforced |
+| [Decisions](contributing/decisions.md) | Agents, maintainers | Medium-or-higher decisions from automated work, with weights and evidence |
 | [Learnings](contributing/learnings.md) | Agents, maintainers | Durable lessons from running the writer, landing, and docs loops |
 | [Artifact templates](templates/README.md) | Workflow authors | Document templates and where workflows use them |
 

@@ -2,7 +2,7 @@
 title: "Learnings"
 description: "Durable lessons from running the writer, critic, and landing loop on this repository. One entry per lesson, with the evidence and where it applies. Pruned when a lesson stops being true."
 audience: "agents and maintainers"
-updated: "2026-09-26"
+updated: "2026-09-28"
 ---
 
 # Learnings
@@ -49,6 +49,8 @@ entry whose fix has landed is deleted, not archived.
   timeout, use the detached runner, or `kxm lane run`. Evidence: the first
   lane-cli dispatch, 2026-09-26; omp-align-p2 repairs ran 15 to 36 minutes
   in 2026-09-26 background jobs with an unbounded timeout and survived.
+  Applies to: writer dispatches whose session tool kills a background
+  command at ten minutes.
 - **Do not run a standalone `npm run verify` on a branch that `kxm land`
   will land.** The `verify` stage runs it again, so the standalone run
   only spends one of the two verify slots twice. Run the critics on the
@@ -81,22 +83,36 @@ entry whose fix has landed is deleted, not archived.
   invisible from the parent (backlog S30): on 2026-09-26 the control-root
   report read 0 records while the lane store held the settled attempts.
   Run the reports inside the lane, or dispatch through the engine from the
-  root you report on.
+  root you report on. Evidence: `plans/backlog-shortcuts.md` S30
+  (2026-09-26: the control-root report read 0 records while the
+  omp-align-p2 lane store held the settled attempts). Applies to:
+  `kxm improve report` and `kxm routing report` when the attempts settled
+  in a registered lane.
 
 ## `kxm land`
 
 - **Auto-merge cannot be enabled on a PR that is already `CLEAN`**; the
   mutation answers "clean status" and the REST squash merge is the path.
   While CI is paused every PR is clean, so this is the normal path.
+  Evidence: `scripts/pr-land.mjs` `mergeStage` (a "clean status" answer
+  from `enablePullRequestAutoMerge` continues with
+  `PUT /repos/{owner}/{repo}/pulls/{n}/merge`) and the `merge` row in
+  `docs/reference/cli-reference.md`. Applies to: the `kxm land` merge
+  stage while CI is paused and every pull request is already `CLEAN`.
 - **A verify failure inside `kxm land` shows only the child's last output
   line.** Re-run verify by hand to see the cause until backlog S19 lands.
+  Evidence: `plans/backlog-shortcuts.md` S19 (#332, 2026-09-26, detail was
+  the last esbuild line) and `scripts/pr-land.mjs` `verifyStage`
+  (`land_verify_failed` keeps `safeDetail` of the child stderr or stdout).
+  Applies to: the `kxm land` verify stage until S19 lands.
 
 ## Reviews
 
 - **A CLI critic reviewing a branch cut from an older base will report
   main's later additions as deletions.** Say the base commit in the brief
   and tell the critic to review against it. Evidence: docs-site review,
-  two of five findings were base artifacts.
+  two of five findings were base artifacts. Applies to: every critic brief
+  whose branch base is behind `main`.
 - **Read-only critics cannot leave their lane sandbox.** The architecture
   critic three times could not read a brief under the main checkout's
   `.kxm/briefs/` and reviewed against the question list alone, once
@@ -111,7 +127,11 @@ entry whose fix has landed is deleted, not archived.
   provider errors with a revert policy; KXM's roster is a membership test
   and never rotates. The passive `kxm.role.v2` draft already has the
   better shape (routes with status and fallbacks); activate it rather than
-  invent a new v2. Source: `plans/research-omp-config-schema.md`.
+  invent a new v2. Evidence: `plans/research-omp-config-schema.md` sections
+  2 and 3 (`modelRoles`, `retry.fallbackChains`). Applies to: the omp
+  alignment plan when choosing how KXM roles fall back.
 - **omp has no workflow file.** Its `workflowz` is a prompt contract over
   an eval kernel. Nothing to port; KXM's workflow file is the stronger
-  model.
+  model. Evidence: `plans/research-omp-config-schema.md` section 9 and
+  `plans/research-omp-config-examples.md` section 1. Applies to: the omp
+  alignment plan's workflow comparison.
