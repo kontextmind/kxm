@@ -4,7 +4,7 @@ Status: open. Horizon: next.
 
 Source: `plans/plan-lane-cli.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 The kxm verbs that let the planner dispatch a writer into a worktree lane and land its branch without just recipes: lane, land, assign, docs, and bounded one-shot steps.
 
@@ -82,9 +82,9 @@ Evidence: `test/core/engine.test.ts`.
 
 Template: `feature`.
 
-Done criterion: One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report; P1 ran the writer that way but the critics and repairs went through the harness runner because the lane's schema cutover made the runtime refuse it.
+Done criterion: One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report. P1 and P2 ran writers that way; P3 is the unit that completes the end-to-end proof on the engine (the witness and outcome fixes landed in #368).
 
-Evidence needed: The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, impl-bg.
+Evidence needed: The run-events store for this project with the attempt rows for writer and both critics, each settled from a verified drive receipt.
 
 ### kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)
 
@@ -98,7 +98,7 @@ Evidence needed: test/core/pr-land.test.ts cases for both, and one landing that 
 
 ### kxm supervise: the roadmap supervisor as a Herdr session plus a launchd heartbeat (S20)
 
-Done criterion: The five-minute tick survives a closed terminal and a Claude restart, and resumes the same chat.
+Done criterion: The thirty-minute tick survives a closed terminal and a Claude restart, and resumes the same chat.
 
 Evidence needed: A tick logged in .kxm/logs/supervisor.log after the window that started it was closed.
 
@@ -108,7 +108,7 @@ None.
 
 ## Questions
 
-- The proof model behind kxm assign (backlog S11) is still an operator decision.
 - The land rebase stage passes on an UNKNOWN merge state (backlog S22); #334 and #335 merged as three-way merges, and main was verified by hand afterwards.
+- The proof model behind kxm assign (backlog S11) is still an operator decision.
 
 [Dashboard](../dashboard.md)

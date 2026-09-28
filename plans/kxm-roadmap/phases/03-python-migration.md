@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/plan-python-migration.md`.
 
-Updated: 2026-09-27.
+Updated: 2026-09-28.
 
 Waves MG0 through MG8 from plans/plan-python-migration.md, with status taken from the tracker where the two disagree.
 
@@ -110,6 +110,6 @@ None.
 
 ## Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The evidence JSON paths and the python tree named there are not in this checkout.
+- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. Still open records an MG0 witness, and the greenfield bullet records an MG1 code gate. The tracker wins for those two waves. The MG0 evidence JSON and a python/ tree were observed untracked in the operator's primary worktree on 2026-09-28; neither is committed to main, and other checkouts do not have them.
 
 [Dashboard](../dashboard.md)

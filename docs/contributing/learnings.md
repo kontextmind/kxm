@@ -13,6 +13,16 @@ entry whose fix has landed is deleted, not archived.
 
 ## Dispatch and lanes
 
+- **A "no retired names anywhere" rule must exclude the history pages.**
+  The P2 brief asked that retired recipe names appear nowhere in docs; the
+  writer then rewrote dated lessons and rules on this page and on
+  `operating-rules.md` into nonsense ("applies to `kxm lane run` and
+  `kxm lane run`") and hand-edited generated roadmap pages. Sweeps like
+  that exclude `docs/contributing/learnings.md`, `operating-rules.md`,
+  `plans/`, and `CHANGELOG.md`, and the planner reverts any edit to them.
+  Evidence: omp-align-p2, 2026-09-26. Applies to: every brief with a
+  "returns nothing" grep.
+
 - **Branch every lane from the current `origin/main`, and rebase before
   review, not after.** Three branches cut before #330 and #331 landed each
   needed a hand rebase with the same additive conflicts (`cli.ts`
@@ -31,11 +41,14 @@ entry whose fix has landed is deleted, not archived.
   supervisor tick and any batch of writers finishing together.
 - **The transport's stdin read can fail with `EAGAIN` under concurrent
   detached dispatch.** Retry once; the request itself is fine. Evidence:
-  two occurrences on 2026-09-26 (backlog S18). Applies to: `just impl-bg`
-  and `just review-cli` until they retire.
+  two occurrences on 2026-09-26 (backlog S18). Applies to:
+  `scripts/harness-run.mjs` dispatches, which outlive the retired just
+  recipes.
 - **Do not launch a writer under the Bash tool's ten-minute background
-  cap.** It kills the harness mid-run. Use the detached recipe or
-  `kxm lane run`. Evidence: the first lane-cli dispatch, 2026-09-26.
+  cap.** It kills the harness mid-run. Give the dispatch call an unbounded
+  timeout, use the detached runner, or `kxm lane run`. Evidence: the first
+  lane-cli dispatch, 2026-09-26; omp-align-p2 repairs ran 15 to 36 minutes
+  in 2026-09-26 background jobs with an unbounded timeout and survived.
 - **Do not run a standalone `npm run verify` on a branch that `kxm land`
   will land.** The `verify` stage runs it again, so the standalone run
   only spends one of the two verify slots twice. Run the critics on the
@@ -44,63 +57,47 @@ entry whose fix has landed is deleted, not archived.
 
 ## Engine and runtime
 
-- **A lane that changes `.kxm` schemas cannot be observed or re-driven by
-  the installed runtime until that change ships.** The runtime revalidates
-  the lane's project config on every request with the installed code, so
-  once the P1 writer rewrote the role files to v2, `kxm runs status`,
-  `cancel`, and a second `kxm lane run` all refused with
-  `schema_identity_mismatch`. Watch such a writer by process and tree, and
-  dispatch its repair through the harness runner. Evidence: omp-align-p1,
-  2026-09-26. Applies to: any schema or config-identity cutover.
+- **A lane whose `.kxm` schemas are ahead of the installed runtime cannot
+  be driven, observed, or cancelled by the engine.** Every run-scoped
+  request (status, drive, cancel, receipt) answers 400
+  `schema_additionalProperties`, because `loadKxmProject` validates the
+  project before the route: installed 0.7.130 refuses the P2 lane's
+  `role:` on `.kxm/agents/*.yaml` while the branch's own loader validates
+  clean. The morning `implement-only` run executed before the writer
+  rewrote the agent files (c352285 landed mid-run), then settled `failed`
+  with `authored: false` and witness unchanged, and the lane now refuses
+  new runs with `lane_run_open` because that run cannot be cancelled.
+  Until the branch ships, `kxm update --kxm` runs, and the runtime
+  supervisor restarts, dispatch repairs and critics through the harness
+  transport. Resolved for this lane by 0.7.131: after the update and a
+  runtime restart, the lane loads clean, the stuck run cancelled
+  idempotently, and a simulated drive returned a verified receipt.
+  Evidence: omp-align-p2 lane, 2026-09-26. Applies to: every
+  dispatch whose lane changes schemas.
 
-- **One control root per project id in the Runtime registry.** A lane
-  worktree carries the same `.kxm/project.yaml` id as the main checkout, so
-  the second root that posts a run is refused with `project_home_conflict`,
-  and a lane that was removed leaves a dead row behind. Until backlog S24
-  lands: stop the runtime, delete the dead row from `registry.db` under the
-  user state root, restart, redispatch. Never delete a row whose root still
-  exists. Evidence: omp-align-p1 dispatch, 2026-09-26. Applies to:
-  `kxm lane run` and `kxm run --lane`.
+- **The improvement reports read only the control root's own store.**
+  `kxm improve report` and `kxm routing report` read the run-events store
+  of the checkout they run in, so a registered lane's attempts are
+  invisible from the parent (backlog S30): on 2026-09-26 the control-root
+  report read 0 records while the lane store held the settled attempts.
+  Run the reports inside the lane, or dispatch through the engine from the
+  root you report on. Evidence: both reports on the P2 control root
+  (0 records) versus the same reports inside the omp-align-p2 and
+  docs-cadence lanes (settled attempts). Applies to: the supervisor's
+  improvement loop and any report run from a parent checkout.
 
-- **The improvement loop is blind while writers bypass `kxm run`.** Every
-  writer this week ran through the harness runner (`just impl-bg` and the
-  critic recipes), which records no engine events, so `kxm improve report`
-  and `kxm routing report` both return zero records and no candidates.
-  Evidence: both reports on 2026-09-26 at 08:14 UTC list the engine store as
-  absent and telemetry as empty. Applies to: dispatch. Once the one-step
-  workflows land, dispatch through `kxm lane run --workflow implement-only`
-  so attempts land in the run-events store; until then the sixth-tick
-  improvement loop reports nothing by design.
-  The reports read the store of the control root they run in, so a lane's
-  attempts show up only when the report runs inside that lane, or once the
-  lane is registered under the project (backlog S24).
-
-- **A live agent step had a hard 120 second timeout with no configuration
-  path.** The supervisor built the one-shot producer without a timeout.
-  Fixed on the run-driver-timeouts branch (step `timeoutMs`, project
-  `limits.agentStepTimeoutMs`, default one hour). Delete this entry when
-  that lands.
-- **A run with an unreconciled executing attempt could not be cancelled or
-  driven again**, and that survived a supervisor restart; deleting the
-  lane's Runtime project store was the only recovery. Fixed on the same
-  branch (`executing_unrecorded`, admission released on a handoff receipt).
-  Delete when it lands.
-- **The engine sends `--reasoning-effort low` on a first attempt regardless
-  of the role's effort.** `engine.ts` hard-codes it. Open; covered by the
-  role alignment plan P2 and P6.
 - **Template provenance is refused when the installed kxm moves ahead of
   the stamped revision, and a project without the file validates as
   ready.** Deleting the file is the sanctioned state until `kxm init` can
-  re-stamp. Evidence: every fresh lane on 2026-09-26 until #330 removed it.
+  re-stamp. Evidence: backlog S3 (still open; the re-stamp decision is
+  unmade) and the live check at `plugins/kxm/src/project-config.ts`.
+  Applies to: every fresh lane.
 
 ## `kxm land`
 
 - **Auto-merge cannot be enabled on a PR that is already `CLEAN`**; the
   mutation answers "clean status" and the REST squash merge is the path.
   While CI is paused every PR is clean, so this is the normal path.
-- **The Release workflow's run is titled `Release`, never the PR title.**
-  Match it by time after the Auto-Release run. Fixed on kxm-land-followup;
-  delete when it lands.
 - **A verify failure inside `kxm land` shows only the child's last output
   line.** Re-run verify by hand to see the cause until backlog S19 lands.
 
@@ -110,9 +107,13 @@ entry whose fix has landed is deleted, not archived.
   main's later additions as deletions.** Say the base commit in the brief
   and tell the critic to review against it. Evidence: docs-site review,
   two of five findings were base artifacts.
-- **Usage errors are Commander prose even under `--json` in every group.**
-  Repo-wide, one fix in `mapCommanderError`; on kxm-land-followup. Delete
-  when it lands.
+- **Read-only critics cannot leave their lane sandbox.** The architecture
+  critic three times could not read a brief under the main checkout's
+  `.kxm/briefs/` and reviewed against the question list alone, once
+  re-flagging a decision the brief had already settled. Copy the brief
+  into the lane's gitignored `.kxm/logs/` and dispatch from that path.
+  Evidence: omp-align-p2 passes 1 to 3, 2026-09-26. Applies to: every
+  read-only critic dispatch.
 
 ## omp research, kept for the alignment plan
 

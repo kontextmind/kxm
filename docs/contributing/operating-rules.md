@@ -30,7 +30,8 @@ replacement.
   merge, and follow through to the auto-release tag and the npm publish.
   Report the outcome; do not stop to ask for the merge. Enforced by
   `kxm land` (verify, docs, push, pr, rebase, unblock, merge, release,
-  milestone) and, until every stage is proven, by hand. (2026-09-26.)
+  milestone); every stage ran green end to end on #338 with kxm 0.7.126,
+  so hand landing is the exception, not the rule. (2026-09-26.)
 - **Documentation is regenerated after a green pipeline and before the
   merge.** The `docs` stage of `kxm land` runs the roadmap generator and
   commits the regenerated pages on the branch. (2026-09-26.)
@@ -54,9 +55,14 @@ replacement.
   entry point is a `kxm` command: a group under `plugins/kxm/src/cli/`,
   registered in `cli.ts`, owned by a bundled skill so `check:generated`
   passes, documented in the CLI reference. Existing recipes retire as their
-  `kxm` verbs land; the transport recipes (`impl`, `plan`, `review-*`,
-  `impl-bg`) retire last, after one real unit has run through the one-step
-  workflows. (2026-09-26.)
+  `kxm` verbs land; the transport recipes (`impl`, `plan`, `review-arch`,
+  `review-cli`, `impl-bg`, `dispatch`) retired in #343, so units dispatch
+  through `kxm lane run <unit> --brief <file> --workflow implement-only`
+  and the read-only critic workflows `review-arch-only` and
+  `review-cli-only`. `just` keeps only the assignment-runner recipes
+  (`assign`, `witness`, `accept`, `observe-cost`, `attribute`,
+  `change-report`, `plan-current`), which are harness transport for the
+  issue 127 runner. (2026-09-26.)
 
 ## Accounts
 
@@ -72,6 +78,13 @@ replacement.
 
 ## Decisions and debt
 
+- **Automated KXM work records every medium-or-higher decision it makes in
+  `docs/contributing/decisions.md`** for its working project: the options
+  evaluated, the weight each option scored and against what, and why the
+  selected option won. Recorded the turn the decision is taken, not at
+  session end. The doc keeps the last 50 entries; older ones rotate to
+  `docs/contributing/decisions-archive.jsonl` as `kxm.decision-archive.v1`
+  lines. (2026-09-27.)
 - **Every option comes with pros and cons and two recommendations**, the
   solid-product answer and the interim answer. (2026-09-26.)
 - **Every shortcut goes on the backlog the same turn it is taken**, as an
@@ -102,10 +115,10 @@ refusals, and the two roadmap skills. (2026-09-26.)
   form: `[{lane}/{agent}]: {phrase}. {No action|Review needed}. -
   {E}e|{D}d ({M}m{S}s)`. Routine lines are not echoed back in chat.
   (2026-09-26, formatter at `~/.claude/scripts/evt-monitor.sh`.)
-- **A supervisor tick runs every five minutes** while a session is open:
+- **A supervisor tick runs every thirty minutes** while a session is open:
   sweep the lanes, act on "Review needed", cap concurrent verifies at two,
   regenerate the roadmap after a merge, and run the improvement loop every
-  sixth tick. Its prompt is checked in at
+  tick. Its prompt is checked in at
   `plans/kxm-roadmap/supervisor-prompt.md`; a tick that finds the schedule
   missing or expiring recreates it from that file in the same chat session,
   never a new one, so the loop continues under the same task. (2026-09-26.)
