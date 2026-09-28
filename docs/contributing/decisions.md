@@ -14,12 +14,89 @@ the session's own 0-to-1 scores, not measurements. A decision that was
 made directly by the operator is recorded only when executing it required
 a choice.
 
-Retention: this file keeps the last 50 entries. When one more would exceed
+Entries run oldest first. Retention: this file keeps the last 50 entries. When one more would exceed
 the cap, the oldest entries rotate to
 `docs/contributing/decisions-archive.jsonl` as `kxm.decision-archive.v1`
 lines (date, title, area, options with weights, selected, why, evidence),
 oldest first. The archive is append-only cold storage; the md stays the
 working set.
+
+## 2026-09-26 — P2 critic transport while the engine was schema-blocked (dispatch)
+
+- Context: installed 0.7.130 refused the P2 lane's new agent schemas, so
+  `kxm run`, drive, cancel, and receipt all answered 400. Both critics
+  still had to review the unit, and loop-dispatch wanted engine attempts.
+- Options:
+  - Wait until #343 ships, then run critics through the engine — weight
+    0.2. Highest purity, but it stalls the unit for a release cycle and
+    the reviewers' context goes cold.
+  - Run a second runtime supervisor from the branch code — weight 0.1. It
+    would load the lane, but it mutates machine-global runtime state with
+    unreleased code and risks the exact registry corruption S24 just
+    fixed.
+  - Dispatch both critics through the harness runner with briefs copied
+    into the lane sandbox — weight 0.9. The documented relief for schema
+    cutover lanes, proven twice the same morning by the writer repairs;
+    costs only the improve-report attempt rows.
+- Selected: harness runner. Fastest safe path; the engine-attempt proof
+  was deliberately deferred to the next unit rather than falsified.
+Evidence: Evidence: the P2 lane store (bae17379) held the settled attempts while the control-root report read zero, and the 0.7.131 update plus runtime restart left the lane loadable with a verified simulated receipt.
+
+## 2026-09-26 — Supervisor cadence interpretation (operations)
+
+- Context: the operator ordered the schedule task changed to 30 minutes.
+  The improvement loop was anchored to wall-clock ("every sixth tick,
+  about 30 minutes"), which a longer tick would silently stretch to three
+  hours.
+- Options:
+  - Keep "every sixth tick" literally — weight 0.3. Preserves the prompt's
+    letter, breaks the documented ~30-minute wall-clock cadence the
+    parenthetical pins.
+  - Improvement loop every tick — weight 0.8. Preserves both documented
+    wall-clock behaviours; the tick count stops appearing anywhere.
+- Selected: every tick. The operator's order named the tick cadence; the
+  improvement loop's anchor was always the half hour. Stated in the report
+  so it can be flipped back with one word.
+Evidence: Evidence: plans/kxm-roadmap/supervisor-prompt.md and the operator order of 2026-09-26.
+
+## 2026-09-27 — Authoring witness misses committed work (engine)
+
+- Context: the engine failed two writer runs (P2 morning, vision port)
+  with `authoringWitness: unchanged` while both lanes held the writer's
+  commit. `captureWorktreeWitness` fingerprints porcelain, unstaged, and
+  staged diffs but not HEAD, so a writer that fully commits reads as
+  unchanged and a `passed` write step is flipped to `failed`.
+- Options:
+  - Add `git rev-parse HEAD` to the fingerprint — weight 0.9. One term in
+    one string; catches commits, resets, and branch switches, which are
+    all authoring-relevant moves of a lone-writer checkout.
+  - A separate commit-witness field with its own failure class — weight
+    0.6. Finer attribution (commit versus dirty edit) but a larger
+    surface for a distinction nothing consumes today.
+  - Trust the producer's `authored` metadata — weight 0.1. The module
+    documents that metadata is set here, not trusted from the producer.
+- Selected: HEAD in the fingerprint, one named test (committed-only
+  change keeps `passed` with `authored: true`), shipped before any more
+  engine-driven write steps.
+Evidence: Evidence: test/core/worktree-witness.test.ts (real temp git repositories), and the two failed lane runs run_fe3061b3 (vision) and run_f7a21c84 (P2) whose lanes held the writer commits.
+
+## 2026-09-27 — Open PR queue: draft handling and landing order (landing)
+
+- Context: six open PRs after #343. Two were drafts, one conflicted
+  against the restructured CLI, three were clean and non-draft. The
+  standing rule says every PR is landed without asking.
+- Options:
+  - Land everything including drafts — weight 0.2. A draft is the
+    author's own hold signal; overriding it defeats the state and risks
+    landing half-work.
+  - Land only clean non-drafts now, defer the conflicted one to a port,
+    leave drafts — weight 0.9. Honours both the autonomy rule and the
+    draft semantics; the queue drains in one session.
+  - Ask the operator per PR — weight 0.1. The standing rule explicitly
+    removes this ask for open PRs.
+- Selected: land non-drafts oldest-first (#341, #344, #346), leave
+  #325 and #342 as drafts, dispatch #345 as a port.
+Evidence: Evidence: gh pr list on 2026-09-27 (six open: two drafts, one conflicting, three clean).
 
 ## 2026-09-27 — Outcome parser rejects real model output (engine)
 
@@ -51,79 +128,7 @@ working set.
   the trimmed text": forward scan, depth- and string-aware, so trailing
   prose, mid-text objects, and inner objects of a truncated outer object
   all still fail, while the real inline-at-end shape passes.
-
-## 2026-09-27 — Authoring witness misses committed work (engine)
-
-- Context: the engine failed two writer runs (P2 morning, vision port)
-  with `authoringWitness: unchanged` while both lanes held the writer's
-  commit. `captureWorktreeWitness` fingerprints porcelain, unstaged, and
-  staged diffs but not HEAD, so a writer that fully commits reads as
-  unchanged and a `passed` write step is flipped to `failed`.
-- Options:
-  - Add `git rev-parse HEAD` to the fingerprint — weight 0.9. One term in
-    one string; catches commits, resets, and branch switches, which are
-    all authoring-relevant moves of a lone-writer checkout.
-  - A separate commit-witness field with its own failure class — weight
-    0.6. Finer attribution (commit versus dirty edit) but a larger
-    surface for a distinction nothing consumes today.
-  - Trust the producer's `authored` metadata — weight 0.1. The module
-    documents that metadata is set here, not trusted from the producer.
-- Selected: HEAD in the fingerprint, one named test (committed-only
-  change keeps `passed` with `authored: true`), shipped before any more
-  engine-driven write steps.
-
-## 2026-09-26 — P2 critic transport while the engine was schema-blocked (dispatch)
-
-- Context: installed 0.7.130 refused the P2 lane's new agent schemas, so
-  `kxm run`, drive, cancel, and receipt all answered 400. Both critics
-  still had to review the unit, and loop-dispatch wanted engine attempts.
-- Options:
-  - Wait until #343 ships, then run critics through the engine — weight
-    0.2. Highest purity, but it stalls the unit for a release cycle and
-    the reviewers' context goes cold.
-  - Run a second runtime supervisor from the branch code — weight 0.1. It
-    would load the lane, but it mutates machine-global runtime state with
-    unreleased code and risks the exact registry corruption S24 just
-    fixed.
-  - Dispatch both critics through the harness runner with briefs copied
-    into the lane sandbox — weight 0.9. The documented relief for schema
-    cutover lanes, proven twice the same morning by the writer repairs;
-    costs only the improve-report attempt rows.
-- Selected: harness runner. Fastest safe path; the engine-attempt proof
-  was deliberately deferred to the next unit rather than falsified.
-
-## 2026-09-26 — Supervisor cadence interpretation (operations)
-
-- Context: the operator ordered the schedule task changed to 30 minutes.
-  The improvement loop was anchored to wall-clock ("every sixth tick,
-  about 30 minutes"), which a longer tick would silently stretch to three
-  hours.
-- Options:
-  - Keep "every sixth tick" literally — weight 0.3. Preserves the prompt's
-    letter, breaks the documented ~30-minute wall-clock cadence the
-    parenthetical pins.
-  - Improvement loop every tick — weight 0.8. Preserves both documented
-    wall-clock behaviours; the tick count stops appearing anywhere.
-- Selected: every tick. The operator's order named the tick cadence; the
-  improvement loop's anchor was always the half hour. Stated in the report
-  so it can be flipped back with one word.
-
-## 2026-09-27 — Open PR queue: draft handling and landing order (landing)
-
-- Context: six open PRs after #343. Two were drafts, one conflicted
-  against the restructured CLI, three were clean and non-draft. The
-  standing rule says every PR is landed without asking.
-- Options:
-  - Land everything including drafts — weight 0.2. A draft is the
-    author's own hold signal; overriding it defeats the state and risks
-    landing half-work.
-  - Land only clean non-drafts now, defer the conflicted one to a port,
-    leave drafts — weight 0.9. Honours both the autonomy rule and the
-    draft semantics; the queue drains in one session.
-  - Ask the operator per PR — weight 0.1. The standing rule explicitly
-    removes this ask for open PRs.
-- Selected: land non-drafts oldest-first (#341, #344, #346), leave
-  #325 and #342 as drafts, dispatch #345 as a port.
+Evidence: Evidence: test/core/oneshot-producer.test.ts (real reviewer shapes), runs run_79bd2d13 and run_041dfb8e on the vision lane, and the shipped forward pass in #368.
 
 ## 2026-09-27 — PR #345: rebase, close, or port (dispatch)
 
@@ -145,3 +150,4 @@ working set.
     loop-dispatch.
 - Selected: port through the engine lane `vision-assert-port`; the PR is
   closed by its replacement landing, not by hand.
+Evidence: Evidence: merge-base 77beda4 predates the CLI restructure; merge-tree showed cli/vnext.ts deleted on main; vision-gate.ts already on main.

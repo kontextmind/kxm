@@ -74,14 +74,6 @@ a governance or proof gap, **medium** means a defect users will hit,
   behavior refuses a committed file every time the CLI moves ahead of it.
 - **Planned where:** not planned. Belongs with `kxm init` ownership.
 
-### S4. Thinking level hard-coded in the engine (medium)
-
-- **Done:** nothing; observed that `kxm run` sends `--reasoning-effort low`
-  on a first attempt regardless of the role's `effort`. The `just impl` path
-  used `medium`, so the two transports disagree.
-- **Proper fix:** dispatch reads effort from the role roster entry.
-- **Planned where:** `plan-omp-config-alignment.md` P2 and P6.
-
 ### S5. Reference doc gaps from the CLI critic (low)
 
 - **Done:** landed the lane-cli commit with two gaps in
@@ -468,6 +460,16 @@ a governance or proof gap, **medium** means a defect users will hit,
   browser-verify gate work.
 
 ## Closed
+
+### S4. Thinking level hard-coded in the engine (medium)
+
+- **Done:** nothing; observed that `kxm run` sends `--reasoning-effort low`
+  on a first attempt regardless of the role's `effort`. The `just impl` path
+  used `medium`, so the two transports disagree.
+- **Proper fix:** dispatch reads effort from the role roster entry.
+- **Planned where:** `plan-omp-config-alignment.md` P2 and P6.
+
+- **Landed (2026-09-27):** the engine reads effort from the role roster entry and the hard-coded first-attempt `low` is gone (#368-era outcome and witness fixes). The effort-catalog half stays with P6 and S25.
 
 ### S24. Worktree lanes collide with the Runtime project registry (closed 2026-09-26, #339)
 

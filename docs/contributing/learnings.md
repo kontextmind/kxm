@@ -81,7 +81,10 @@ entry whose fix has landed is deleted, not archived.
   invisible from the parent (backlog S30): on 2026-09-26 the control-root
   report read 0 records while the lane store held the settled attempts.
   Run the reports inside the lane, or dispatch through the engine from the
-  root you report on.
+  root you report on. Evidence: both reports on the P2 control root
+  (0 records) versus the same reports inside the omp-align-p2 and
+  docs-cadence lanes (settled attempts). Applies to: the supervisor's
+  improvement loop and any report run from a parent checkout.
 
 - **Template provenance is refused when the installed kxm moves ahead of
   the stamped revision, and a project without the file validates as
