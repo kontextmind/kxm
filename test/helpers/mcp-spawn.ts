@@ -14,6 +14,20 @@ export interface IsolatedMcpEnvOptions {
   extra?: Record<string, string>;
 }
 
+function removeSpawnTree(root: string): void {
+  let last: unknown;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      last = error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+  throw last;
+}
+
 /** Launch environment for a spawned dist/mcp-server.js that never touches the developer's
  * state. The server resolves its project dir from KXM_PROJECT_DIR, then CLAUDE_PROJECT_DIR,
  * then cwd, and the repository root has a `.kxm`; it reads hub-env.json from KXM_STATE_HOME
@@ -53,6 +67,6 @@ export function isolatedMcpEnv(options: IsolatedMcpEnvOptions = {}): {
   return {
     env,
     cwd: projectDir,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
+    cleanup: () => removeSpawnTree(root),
   };
 }

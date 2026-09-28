@@ -182,6 +182,21 @@ test("win32 harness probe tries .exe then npm .cmd after a missing bare command"
   assert.equal(status(linux, "claude").dispatch?.reason, "not_detected");
 });
 
+test("win32 probe does not treat cmd.exe's missing-shim message as a detected harness", () => {
+  const missing = "'omp.cmd' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n";
+  const inventory = probeHarnesses({
+    platform: "win32",
+    runCommand: runner({
+      "omp --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+      "omp.exe --version": { ok: false, code: null, stdout: "", stderr: "", error: "ENOENT" },
+      "omp.cmd --version": { ok: false, code: 1, stdout: "", stderr: missing },
+    }),
+  });
+  assert.equal(status(inventory, "omp").detected, false);
+  assert.equal(status(inventory, "omp").command, undefined);
+  assert.equal(status(inventory, "omp").dispatch?.reason, "not_detected");
+});
+
 test("win32 assignment probe uses the npm .cmd shim for Claude Code", () => {
   const probed = probeHarnessAssignment({
     harness: "claude",
