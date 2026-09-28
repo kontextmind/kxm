@@ -112,12 +112,18 @@ The walk considers at most the last 32 closers and the last 32 openers, skips a 
 longer than 256 KiB, and stops after 1 MiB of parsed slices. One closing code fence may
 follow the object, with whitespace. The object may be the whole reply, a fenced reply,
 or the end of surrounding prose, on one line or several. `JSON.parse` is the authority
-for strings and escapes. The value must be a plain object whose `outcome` string is one
-of the step's declared values. A prefix that, after trailing whitespace is removed, ends
-in `{`, `:`, or `,` is a truncated JSON signature, so that candidate is rejected and the
-next one is tried. Quotes, backticks, and braces in the prose do not hide an object that
-ends the reply. Prose after the object, a reply with no such object, a disallowed
-outcome, and an inner object at the end of a truncated outer object settle `failed`.
+for strings and escapes inside the slice. The value must be a plain object whose
+`outcome` string is one of the step's declared values. The prefix before that opener,
+with trailing whitespace removed, is scanned by a naive JSON lexer: an unescaped quote
+toggles string state, a backslash escapes the next character inside a string, and `{`
+and `[` track depth. Extra `}` and `]` do not drive depth below zero. The candidate is
+accepted only when that scan ends at depth 0 for both braces and arrays, outside a
+string, with no dangling escape. Any other end state is truncated or ambiguous, so
+that candidate is rejected and the next one is tried. An unpaired quote in the prose
+fails closed. Quotes, backticks, and balanced braces in the prose do not hide an
+object that ends the reply. Prose after the object, a reply with no such object, a
+disallowed outcome, an inner object at the end of a truncated outer object or array,
+and an object inside an unclosed string settle `failed`.
 
 Naming an outcome *word* anywhere in a reply is not a result. `"the gate did not pass, so I
 would not call this passed"` must not advance a step, and an empty or unstructured reply is

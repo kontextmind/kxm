@@ -80,6 +80,41 @@ const MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
 // Crossing this budget stops the lookup.
 const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
 
+// Naive prefix scan. Quote handling toggles on every unescaped `"`. Braces
+// and brackets count only outside a string. Extra closers stay at depth 0
+// because they are prose, not an unclosed container. The slice itself is
+// not scanned: JSON.parse owns strings and escapes there. O(prefix).
+function outcomePrefixIsAnchored(prefix: string): boolean {
+  let objectDepth = 0;
+  let arrayDepth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < prefix.length; i++) {
+    const ch = prefix[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") objectDepth += 1;
+    else if (ch === "}" && objectDepth > 0) objectDepth -= 1;
+    else if (ch === "[") arrayDepth += 1;
+    else if (ch === "]" && arrayDepth > 0) arrayDepth -= 1;
+  }
+  return objectDepth === 0 && arrayDepth === 0 && !inString && !escape;
+}
+
 // The outcome object is a JSON object that ends the trimmed reply. One
 // closing code fence may follow it; the fence is removed before the walk.
 // Candidates are slices from a `{` to a recent `}`, nearest last. Only the
@@ -87,15 +122,16 @@ const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
 // character can end the reply. For that closer the last 32 openers are
 // tried. A slice longer than 256 KiB is skipped. Parsed slices share a
 // 1 MiB budget, and crossing it stops the lookup. JSON.parse is the only
-// string and escape authority. A slice that parses to a plain object whose
-// outcome is a string in allowedOutcomes is an accepted candidate. The
-// prefix before that opener, with trailing whitespace removed, must not
-// end in `{`, `:`, or `,`. That signature means the object sits inside a
-// truncated JSON value, so the candidate is rejected and the next one is
-// tried. An accepted candidate ends the lookup. Nothing left is failed:
-// prose after the object, no object, a disallowed outcome, an inner object
-// at the end of a truncated outer object, or a budget exhausted before a
-// candidate.
+// string and escape authority inside the slice. A slice that parses to a
+// plain object whose outcome is a string in allowedOutcomes is a candidate.
+// The prefix before that opener, with trailing whitespace removed, must end
+// at depth 0 for both braces and arrays, outside a string, with no dangling
+// escape. Any other end state is truncated or ambiguous, so the candidate
+// is rejected and the next one is tried. An unpaired quote in the prose
+// fails closed. An accepted candidate ends the lookup. Nothing left is
+// failed: prose after the object, no object, a disallowed outcome, an inner
+// object at the end of a truncated outer object or array, an object inside
+// an unclosed string, or a budget exhausted before a candidate.
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
@@ -127,8 +163,7 @@ function determineOutcome(text: string, allowedOutcomes: readonly string[]): str
       const outcome = (result as Record<string, unknown>).outcome;
       if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
       const prefix = body.slice(0, openAt).trimEnd();
-      const signature = prefix.charAt(prefix.length - 1);
-      if (signature === "{" || signature === ":" || signature === ",") continue;
+      if (!outcomePrefixIsAnchored(prefix)) continue;
       return outcome;
     }
   }
