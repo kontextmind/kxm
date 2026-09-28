@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-09-28"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Proposed 1Password vault names, read grants, and same-name override order for the Families account. Delivery authority stays in the active implementation tracker."
@@ -16,6 +16,7 @@ related:
   - implementation-plan.md
   - plan-per-tenant-hosting.md
   - plan-greenfield-infra.md
+  - plan-kxm-harness-first-run.md
 depends_on: []
 blocked_by: []
 details:

@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-15"
+updated: "2026-09-28"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Technical reference for actual mode activation and selective loading over existing mode parsing and kxm explain."
@@ -17,6 +17,8 @@ related:
   - plan-unified-kxm-milestones.md
   - history/plan-role-configuration-governance.md
   - plan-token-reduction-rtk-ai.md
+  - plan-omp-config-alignment.md
+  - research-omp-config-schema.md
 depends_on: []
 blocked_by: []
 details:
