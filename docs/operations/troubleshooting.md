@@ -89,6 +89,7 @@ If a malformed claim remains, read the exact `.pid` JSON in the state directory 
 | `hub_credential_unreadable` | Repair or remove `hub-env.json` under the user state root |
 | `cloud_token_missing` | A `--cloud` binding's variable is empty and it has no working command. Export the variable or fix `--token-command`. This machine's hub-env token is not sent |
 | `cloud_flag_required` | `--token-command` was passed without `--cloud`. `--token-env` and `--key-op` are key references and are valid on a local bind |
+| `hub_not_kxm` | The URL returned an HTML login page or a 30x redirect, not a kxm `/health` body. `https://hub.kxmd.dev` is an Authentik forward-auth page. Bind the SSH forward `http://127.0.0.1:17331`. `--force` records the URL anyway and does not make the proxy a hub |
 | 401 after binding a loopback forward | The bind was not `--cloud`, so the client sent the local hub-env token. See [Cross-box peer attach](../operations.md#cross-box-peer-attach) |
 
 ## Claude Code plugin and MCP
@@ -209,6 +210,9 @@ A gate step declares an outcome its `expect` value never produces. The message n
 | `runtime supervisor is not running` or `runtime_not_running` | The supervisor stopped | `kxm runtime start`; commands such as `kxm run` also start it on demand |
 | `runtime_supervisor_unreachable` | A live supervisor process does not answer its token probe | Check the PID from `kxm runtime status`, stop a hung process with your OS tools, then `kxm runtime start` |
 | `project_required` | The command ran outside a KXM project | Run it from the checkout, or run `kxm init` |
+| `project_home_conflict` | This checkout is not the registered home for that project id. A different repository already owns it, the home runtime is immutable, or the primary checkout is already the home row | Use the original checkout, or a worktree of that repository. Do not copy the project id into an unrelated clone, and do not delete the database |
+| `runtime_schema_newer` | The store was written by a newer release than this build | Upgrade KXM. Do not delete the database |
+| `sync: the supervisor is running but did not answer /v1/sync/status` | The supervisor process is up, and `GET /v1/sync/status` failed. A hung process, a token mismatch, or a supervisor started on an older release | `kxm runtime stop`, then `kxm runtime start`. After an upgrade, restart the hub and workers before a cloud bind. See [Check sync status](runtime-sync.md#check-sync-status) |
 | `producer_route_not_admitted` | A live drive uses a model route that is not admitted | `kxm routes admit --model <provider/model>`, or drive with `--simulated` |
 | A 429, timeout, or provider error fails the attempt on the first route | The role's `policy.fallback.onError` is empty, omits that class, or `maxSwitches` is already spent. Cancellation, policy refusal, and authentication do not walk | List the class on the role, admit the next route, and read `routing.route_switched` in the run events. `kxm routing report` prints Route switches |
 | `pi_not_authenticated: pi harness not detected (pi_native_impersonation_blocked)` | A Pi agent's model belongs to a vendor with its own harness | Set the agent's native `harness:`, or choose an admitted Pi route whose vendor has none |

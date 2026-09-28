@@ -83,6 +83,11 @@ test("notice and github release install plan", () => {
   assert.equal(steps[1]?.kind, "verify");
   assert.ok(steps[1]?.kind === "verify" && steps[1].path.endsWith("kxm-0.5.2.tgz"));
   assert.equal(steps[2]?.kind, "install");
+  const curlSteps = planKxmPackageUpdate("github", "0.5.2", "/tmp/rel", asset, "curl");
+  assert.equal(curlSteps[0]?.kind, "download");
+  assert.equal(curlSteps[0]?.kind === "download" ? curlSteps[0].command : "", "curl");
+  assert.match(curlSteps[0]?.kind === "download" ? curlSteps[0].args.join(" ") : "", /https:\/\/github.com\/kontextmind\/kxm\/releases\/download\/v0\.5\.2\/kxm-0\.5\.2\.tgz/);
+  assert.equal(curlSteps[1]?.kind, "verify");
   const npmSteps = planKxmPackageUpdate("npm", "0.5.2", "/tmp/rel");
   assert.equal(npmSteps.length, 1);
   assert.equal(npmSteps[0]?.kind, "install");

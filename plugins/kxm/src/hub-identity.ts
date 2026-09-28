@@ -210,18 +210,26 @@ function keySourceFor(input: {
   hasSavedProjectToken?: (project: string) => boolean;
 }): string {
   const ref = input.endpoint?.key;
-  if (input.mode === "local" && input.env.KXM_AUTH_TOKEN?.trim()) return "env:KXM_AUTH_TOKEN";
-  if (ref?.env && input.env[ref.env]?.trim()) return `env:${ref.env}`;
-  if (ref?.op) return `op:${ref.op}`;
-  if (ref?.env) return `env:${ref.env}`;
+  const envName = (name: string | undefined): string | undefined => {
+    if (!name) return undefined;
+    return input.env[name]?.trim() ? `env:${name}` : undefined;
+  };
+  // Name the source that would actually supply a token. An unset variable is
+  // not that source, even when config still lists it.
   if (input.mode === "cloud") {
-    if (input.binding?.tokenEnv) return `env:${input.binding.tokenEnv}`;
-    if (input.binding?.tokenCommand) {
-      const op = opReferenceFromTokenCommand(input.binding.tokenCommand);
-      return op ? `op:${op}` : "command";
-    }
+    const fromEnv = envName(ref?.env);
+    if (fromEnv) return fromEnv;
+    if (ref?.op) return `op:${ref.op}`;
+    const fromBindingEnv = envName(input.binding?.tokenEnv);
+    if (fromBindingEnv) return fromBindingEnv;
+    if (input.binding?.tokenCommand) return "token-command";
     return "missing";
   }
+  const fromAuth = envName("KXM_AUTH_TOKEN");
+  if (fromAuth) return fromAuth;
+  const fromEnv = envName(ref?.env);
+  if (fromEnv) return fromEnv;
+  if (ref?.op) return `op:${ref.op}`;
   if (input.hasSavedProjectToken?.(input.project)) return "hub-env";
   return "missing";
 }

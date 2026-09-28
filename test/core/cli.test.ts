@@ -290,7 +290,10 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
     const on = capture();
     assert.equal(await runCli(["hub", "bind", url], env, {
       ...on,
-      fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true, agents: 0 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
     }, project), 0);
     assert.match(on.read().stdout, /health=on/);
 
@@ -309,7 +312,17 @@ test("hub bind writes the host binding and reports unknown for a blackholed URL 
       ...view,
       fetchImpl: async (input) => {
         seen.push(String(input));
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        const url = String(input);
+        if (url.endsWith("/ready")) {
+          return new Response(JSON.stringify({ ok: true, storage: "sqlite" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true, agents: 0 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       },
     }, project), 0);
     assert.equal(seen.includes(`${url}/health`), true);
@@ -336,8 +349,17 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
   // "was anything written" depend on the case that ran before it.
   const fresh = () => ({ dir: mkdtempSync(join(tmpdir(), "kxm-hub-bind-")), env: {} as NodeJS.ProcessEnv });
   const replyingFetch: NonNullable<CliIo["fetchImpl"]> = async (input) => {
-    if (String(input).endsWith("/ready")) return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    return new Response(JSON.stringify({ ok: true, agents: [], inbox: [] }), { status: 200 });
+    const url = String(input);
+    if (url.endsWith("/ready")) {
+      return new Response(JSON.stringify({ ok: true, storage: "sqlite" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, agents: 0 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   };
   const cleanup: string[] = [];
   try {
@@ -1694,7 +1716,16 @@ test("stop, signal, status, and help cover the remaining command contract", asyn
     const status = capture();
     assert.equal(await runCli(["hub", "--json", "view"], {}, {
       ...status,
-      fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+      fetchImpl: async (input) => {
+        const url = String(input);
+        const body = url.endsWith("/ready")
+          ? { ok: true, storage: "sqlite" }
+          : { ok: true, agents: 0 };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
     }, cwd), 0);
     const signalDry = capture();
     assert.equal(await runCli(

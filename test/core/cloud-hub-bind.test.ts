@@ -139,7 +139,7 @@ test("cloud hub bind uses one project id and the remote token for every hub work
     assert.equal(bound.scope, "remote");
     assert.equal(bound.cloud, true);
     assert.equal(bound.tokenEnv, "KXMD_HUB_TOKEN");
-    const bindingText = readFileSync(join(state, "hub-binding.json"), "utf8");
+    const bindingText = readFileSync(join(state, "hub-binding.cloud.json"), "utf8");
     assert.equal(bindingText.includes(REMOTE), false);
     assert.equal(bindingText.includes(LOCAL), false);
     assert.equal(readHubBinding(baseEnv)?.cloud, true);
@@ -286,7 +286,7 @@ test("cloud hub bind uses one project id and the remote token for every hub work
     assert.equal(session.KXM_PROJECT, PROJECT);
     assert.equal(session.KXM_SERVER_URL, address.url);
     assert.equal(session.KXM_AUTH_TOKEN, REMOTE);
-    assert.equal(readFileSync(join(state, "hub-binding.json"), "utf8").includes(REMOTE), false);
+    assert.equal(readFileSync(join(state, "hub-binding.cloud.json"), "utf8").includes(REMOTE), false);
 
     const localCalls: string[] = [];
     const localFetch: NonNullable<CliIo["fetchImpl"]> = async (input, init) => {
@@ -334,7 +334,7 @@ test("cloud hub bind uses one project id and the remote token for every hub work
       { ...commandBind, fetchImpl: watch.fetchImpl },
       cwd,
     ), 0, commandBind.read().stderr);
-    const commandBinding = readFileSync(join(state, "hub-binding.json"), "utf8");
+    const commandBinding = readFileSync(join(state, "hub-binding.cloud.json"), "utf8");
     assert.equal(commandBinding.includes(REMOTE), false);
     assert.match(commandBinding, /print-hub-token\.mjs/);
     const commandEnv = { ...baseEnv };
@@ -384,7 +384,10 @@ test("cloud hub bind uses one project id and the remote token for every hub work
     assert.equal(await runCli(
       ["hub", "bind", address.url],
       { KXM_STATE_HOME: broken },
-      { ...brokenIo, fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }) },
+      { ...brokenIo, fetchImpl: async () => new Response(JSON.stringify({ ok: true, agents: 0 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }) },
       cwd,
     ), 0);
     assert.match(brokenIo.read().stdout, /loopback/);

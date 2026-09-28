@@ -201,7 +201,12 @@ versions by hand.
 4. **Publish npm** runs in the protected `npm-publish` environment. It skips a
    version already on npm. Otherwise `scripts/kxm-publish-npm.mjs` confirms the
    GitHub release is published, downloads the asset, verifies its sha256
-   against the release digest, and runs `npm publish` on that exact file.
+   against the release digest, and runs `npm publish` on that exact file. The
+   job then polls `npm view @kontextmind/kxm@<version> version` (up to 20
+   minutes, `KXM_NPM_VISIBLE_WAIT_MS=0` skips the wait) and reports success
+   only after the registry shows that version. Log lines that say the GitHub
+   release is public are not an npm publish. The registry can lag the GitHub
+   release by many minutes.
 
 Every step is idempotent. Rerunning the Release workflow for a tag that is
 already published or already on npm reports it and changes nothing.

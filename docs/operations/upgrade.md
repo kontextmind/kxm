@@ -6,7 +6,7 @@ Move the `kxm` CLI, the hub, the Runtime, and the Claude Code or Pi integrations
 
 - Protected storage for a full backup; see [Back up and restore KXM](backup-and-restore.md).
 - A window in which the hub, the Runtime supervisor and long-lived workers may stop.
-- The GitHub CLI (`gh`, signed in) if you apply updates with `kxm update --kxm` from the default `github` source, which downloads the release tarball with it.
+- The GitHub CLI (`gh`, signed in) if you apply updates with `kxm update --kxm` from the default `github` source. When `gh` is not installed, that command downloads the same `kxm-<version>.tgz` with curl and still checks the release sha256 before installing. Without a working `kxm` either, use the curl commands in [Update the CLI without gh](#update-the-cli-without-gh).
 
 ## Check for an update
 
@@ -54,11 +54,26 @@ Use the path that matches how KXM was installed. `kxm update --kxm` applies an u
 | Project dependency | `npm install @kontextmind/kxm@latest` in that project |
 | Source checkout | `git pull`, then `npm ci` |
 
-`kxm update --kxm` refuses to install a GitHub release that does not publish a SHA-256 digest for its tarball (`release_digest_missing`) or whose download does not match it (`release_digest_mismatch`). Preview the steps first:
+`kxm update --kxm` refuses to install a GitHub release that does not publish a SHA-256 digest for its tarball (`release_digest_missing`) or whose download does not match it (`release_digest_mismatch`). When `gh --version` fails, the download step is `curl --fail --silent --show-error --location` against `https://github.com/kontextmind/kxm/releases/download/v<version>/kxm-<version>.tgz`, and the digest check is unchanged. Preview the steps first:
 
 ```bash
 kxm update --kxm --dry-run
 ```
+
+### Update the CLI without gh
+
+On a host that has neither `gh` nor a working `kxm`, download the release tarball and check the digest printed on the GitHub release before installing:
+
+```bash
+version=0.7.166
+curl --fail --silent --show-error --location \
+  --output "kxm-${version}.tgz" \
+  "https://github.com/kontextmind/kxm/releases/download/v${version}/kxm-${version}.tgz"
+sha256sum "kxm-${version}.tgz"
+npm install --global --omit=peer "./kxm-${version}.tgz"
+```
+
+Refuse a tarball whose sha256 does not match the release asset digest.
 
 ### Update harnesses and plugins
 
@@ -76,7 +91,7 @@ kxm update pi --models             # refresh Pi model catalogs
 
 ## Start and verify
 
-1. Start the hub (or its service), then the Runtime with `kxm runtime start`.
+1. Start the hub (or its service), then the Runtime with `kxm runtime start`. Restart workers too. Do this after the upgrade and again before `kxm hub bind --cloud`, so an older supervisor does not keep a binding it cannot read.
 2. Check `kxm hub view`, `/ready` and `/metrics`.
 3. Check `kxm runtime status` until every project reports `ok` or `no_hub`.
 4. Send one request between two agents and read one Runtime run with `kxm runs status <run-id>`.

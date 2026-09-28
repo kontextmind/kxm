@@ -8,7 +8,7 @@ KXM has three parts you can install: the `kxm` command-line tool, the Claude Cod
 - Git.
 - Claude Code, if you want the plugin.
 - Pi, if you want Pi agents. Install it with `npm install --global @earendil-works/pi-coding-agent` and sign in to a model provider as the [Pi documentation](https://pi.dev/docs/latest) describes.
-- The GitHub CLI (`gh`), only if you plan to update with `kxm update --kxm`, which downloads the release tarball from GitHub.
+- The GitHub CLI (`gh`), only if you plan to update with `kxm update --kxm` from the GitHub source. When `gh` is missing, that command falls back to curl and still checks the release checksum. The manual curl commands are in [Upgrade KXM](../operations/upgrade.md#update-the-cli-without-gh).
 
 ## Choose what to install
 

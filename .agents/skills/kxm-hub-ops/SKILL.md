@@ -77,10 +77,15 @@ kxm restore .kxm/backups/pre-upgrade/manifest.json
   `hub_bind_unauthenticated` unless a credential for the current project
   resolves from `KXM_AUTH_TOKEN` or the persisted `hub-env.json`.
 - `kxm hub bind --cloud` is the bind for a loopback SSH forward of a remote
-  hub. It never falls back to this machine's hub-env token. Pass
-  `--token-env KXMD_HUB_TOKEN`, `--key-op op://Private/kxmd/project-token`,
-  or `--token-command "op read op://..."`. The non-secret fields are written
-  to `.kxm/config.yaml`. See docs/operations.md, section "Cross-box peer attach".
+  hub (`http://127.0.0.1:17331`). `https://hub.kxmd.dev` is an Authentik login
+  page, not a client URL. Bind refuses an HTML 200 or a 30x (`hub_not_kxm`)
+  unless `--force` is set. It never falls back to this machine's hub-env
+  token. Pass `--token-env KXMD_HUB_TOKEN`, `--key-op op://Private/kxmd/project-token`,
+  or `--token-command "op read op://..."`. `--token-command` is stored only in
+  the machine-wide `hub-binding.cloud.json`, not in `.kxm/config.yaml`.
+  `kxm hub view` names the source that would supply the token. See
+  docs/operations.md, section "Cross-box peer attach". Restart the supervisor,
+  hub, and workers after an upgrade and before a cloud bind.
 - Hub PID claims record the wrapper and server child PID. A dead wrapper's
   claim is reclaimed automatically, an orphaned server is terminated first,
   and `kxm hub stop` recovers such orphans directly.

@@ -10,7 +10,7 @@ import {
   HubBindingError,
   effectiveHubBindingScope,
   hubBindingFile,
-  readHubBinding,
+  loadHubBinding,
 } from "../hub-binding.ts";
 import { describeHubConnection } from "../hub-identity.ts";
 import type { InstallProbe } from "../kxm-install-kind.ts";
@@ -280,10 +280,12 @@ export function runtimeFrom(ctx: CliContext, command: Command): Runtime {
   const envServerUrl = ctx.env.KXM_SERVER_URL?.trim();
   let boundHubUrl: string | undefined;
   try {
-    boundHubUrl = readHubBinding(ctx.env)?.url;
+    const loaded = loadHubBinding(ctx.env);
+    if (loaded.warning) ctx.io.stderr(`kxm: ${loaded.warning}\n`);
+    boundHubUrl = loaded.record?.url;
   } catch (error) {
     if (error instanceof HubBindingError) {
-      ctx.io.stderr(`kxm: ignoring malformed hub binding at ${hubBindingFile(ctx.env)}; run kxm hub bind <url> again\n`);
+      ctx.io.stderr(`kxm: ignoring malformed hub binding at ${hubBindingFile(ctx.env)}; falling back to the local hub. Run kxm hub bind <url> again\n`);
     } else {
       throw error;
     }

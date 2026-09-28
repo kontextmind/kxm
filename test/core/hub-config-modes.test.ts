@@ -196,7 +196,7 @@ test("cloud mode binds a key reference and does not fall back to the local token
       cwd,
     ), 0, bound.read().stderr);
     const configText = readFileSync(join(cwd, ".kxm", "config.yaml"), "utf8");
-    const bindingText = readFileSync(join(state, "hub-binding.json"), "utf8");
+    const bindingText = readFileSync(join(state, "hub-binding.cloud.json"), "utf8");
     assert.match(configText, /mode: cloud/);
     assert.match(configText, /env: KXMD_HUB_TOKEN/);
     assert.match(configText, new RegExp(CLOUD_OP.replaceAll("/", "\\/")));

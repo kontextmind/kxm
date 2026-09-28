@@ -137,7 +137,7 @@ jobs:
             },
           });
           if (response.status === 404) {
-            console.log(`No GitHub release exists for ${tag}`);
+            console.log(`No GitHub release exists for ${tag} (this is the GitHub release, not npm)`);
             appendFileSync(output, "published=false\n");
             process.exit(0);
           }
@@ -146,7 +146,7 @@ jobs:
           }
           const release = await response.json();
           const published = release.draft !== true;
-          console.log(`GitHub release ${tag}: ${published ? "published" : "draft"}`);
+          console.log(`GitHub release ${tag}: ${published ? "published on GitHub (npm is a later job)" : "draft"}`);
           appendFileSync(output, `published=${published}\n`);
           NODE
 
@@ -196,7 +196,7 @@ jobs:
           }
           const release = await releaseForTag();
           if (!release.draft) {
-            console.log(`Release ${tag} is already published`);
+            console.log(`GitHub release ${tag} is already public (npm publish is a later job)`);
           } else {
             const response = await fetch(`https://api.github.com/repos/${repo}/releases/${release.id}`, {
               method: "PATCH",
@@ -204,7 +204,7 @@ jobs:
               body: JSON.stringify({ draft: false }),
             });
             if (!response.ok) throw new Error(`release publish failed: ${response.status}`);
-            console.log(`Published release ${tag}`);
+            console.log(`GitHub release ${tag} is now public (npm publish is a later job and can lag)`);
           }
           NODE
 
@@ -212,7 +212,7 @@ jobs:
     name: Publish npm
     needs: release
     runs-on: kontextmind-doks
-    timeout-minutes: 10
+    timeout-minutes: 35
     environment: npm-publish
     permissions:
       contents: read

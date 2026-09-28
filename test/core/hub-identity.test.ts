@@ -11,6 +11,7 @@ import {
   resolveProjectIdentity,
   selectHubProjectTokenMap,
 } from "../../plugins/kxm/src/hub-identity.ts";
+import { writeHubBinding } from "../../plugins/kxm/src/hub-binding.ts";
 import { defaultProjectName } from "../../plugins/kxm/src/project-name.ts";
 
 const OP = "op://Private/kxm/local-project-token";
@@ -221,6 +222,37 @@ test("describeHubConnection names the key source and treats cloud mode as remote
     assert.equal(override.url, "http://127.0.0.1:7331");
     assert.equal(override.scope, "loopback");
     assert.equal(override.urlSource, "env");
+
+    const state = mkdtempSync(join(tmpdir(), "kxm-hub-identity-state-"));
+    const empty = mkdtempSync(join(tmpdir(), "kxm-hub-identity-empty-"));
+    try {
+      const commandEnv: NodeJS.ProcessEnv = { ...env, KXM_STATE_HOME: state };
+      writeFileSync(join(dir, ".kxm", "config.yaml"), [
+        "hub:",
+        "  mode: cloud",
+        "  cloud:",
+        "    url: http://127.0.0.1:17331",
+        "    project: prj_cloudidentity001",
+        "    key:",
+        "      env: KXMD_HUB_TOKEN",
+        "",
+      ].join("\n"));
+      writeHubBinding({
+        schema: "kxm.hub-binding.v1",
+        url: "http://127.0.0.1:17331",
+        boundAt: "2026-09-28T00:00:00.000Z",
+        cloud: true,
+        tokenEnv: "KXMD_HUB_TOKEN",
+        tokenCommand: "node print-hub-token.mjs",
+      }, commandEnv);
+      const fromCommand = describeHubConnection(dir, commandEnv);
+      assert.equal(fromCommand.keySource, "token-command");
+
+      const missing = describeHubConnection(dir, { ...commandEnv, KXM_STATE_HOME: empty });
+      assert.equal(missing.keySource, "missing");
+    } finally {
+      cleanup([state, empty]);
+    }
   } finally {
     cleanup([dir, home]);
   }

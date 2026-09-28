@@ -271,6 +271,36 @@ export async function runKxmNpmPublish(input) {
   };
 }
 
+/**
+ * npm can accept a publish minutes before `npm view <pkg>@<version>` answers.
+ * Callers that report success should wait until this returns visible.
+ */
+export function npmViewVersion(version, exec = execFile) {
+  return new Promise((resolve) => {
+    exec("npm", ["view", `@kontextmind/kxm@${version}`, "version"], { encoding: "utf8", timeout: 30_000 }, (error, stdout) => {
+      if (error) resolve("");
+      else resolve(String(stdout ?? "").trim());
+    });
+  });
+}
+
+export async function waitForNpmVersion(version, options = {}) {
+  const waitMs = Math.max(0, options.waitMs ?? 0);
+  const intervalMs = Math.max(250, options.intervalMs ?? 15_000);
+  const exec = options.npmView ?? ((value) => npmViewVersion(value));
+  const deadline = Date.now() + waitMs;
+  let last = "";
+  for (;;) {
+    const seen = String(await exec(version) ?? "").trim();
+    if (seen === version) return { visible: true, version };
+    last = seen || last;
+    if (Date.now() >= deadline) return { visible: false, version, detail: last };
+    const pause = Math.min(intervalMs, Math.max(0, deadline - Date.now()));
+    if (pause === 0) return { visible: false, version, detail: last };
+    await new Promise((resolve) => setTimeout(resolve, pause));
+  }
+}
+
 export async function main(env = process.env, stdout = process.stdout, stderr = process.stderr) {
   const token = env.GITHUB_TOKEN || env.GH_TOKEN;
   const npmToken = env.NODE_AUTH_TOKEN || env.NPM_TOKEN;
@@ -313,7 +343,23 @@ export async function main(env = process.env, stdout = process.stdout, stderr = 
         stdout.write(`release ${tag} is currently a draft; waiting for publish (${sec}s remaining)...\n`);
       },
     });
-    stdout.write(`${JSON.stringify(result)}\n`);
+    const version = String(tag).replace(/^v/, "");
+    const visibleWaitRaw = env.KXM_NPM_VISIBLE_WAIT_MS;
+    const visibleWaitMs = visibleWaitRaw == null || visibleWaitRaw === ""
+      ? 20 * 60 * 1000
+      : Math.max(0, Number(visibleWaitRaw) || 0);
+    const intervalRaw = env.KXM_NPM_VISIBLE_INTERVAL_MS;
+    const intervalMs = intervalRaw == null || intervalRaw === "" ? 15_000 : Math.max(250, Number(intervalRaw) || 15_000);
+    if (visibleWaitMs > 0) {
+      stdout.write(`npm publish submitted for @kontextmind/kxm@${version}; waiting until npm view shows it\n`);
+      const visible = await waitForNpmVersion(version, { waitMs: visibleWaitMs, intervalMs });
+      if (!visible.visible) {
+        stderr.write(`npm_not_visible: npm view @kontextmind/kxm@${version} version did not appear within ${visibleWaitMs}ms\n`);
+        return 1;
+      }
+      stdout.write(`npm view @kontextmind/kxm@${version} version is visible\n`);
+    }
+    stdout.write(`${JSON.stringify({ ...result, npmVisible: visibleWaitMs > 0 })}\n`);
     return 0;
   } catch (error) {
     const code = error instanceof KxmPublishNpmError ? error.code : "publish_failed";

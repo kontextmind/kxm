@@ -418,7 +418,12 @@ async function exerciseMode(input: {
     const binding = readHubBinding(env);
     assert.equal(binding?.url, input.proxyUrl);
     assert.equal(binding?.cloud === true, input.cloud);
-    const bindingText = readFileSync(join(state, "hub-binding.json"), "utf8");
+    const bindingText = ["hub-binding.json", "hub-binding.cloud.json"]
+      .map((name) => join(state, name))
+      .filter((file) => existsSync(file))
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    assert.ok(bindingText.length > 0);
     assert.equal(bindingText.includes(REMOTE), false);
     assert.equal(bindingText.includes(ADMIN), false);
     assert.equal(bindingText.includes(LOCAL_PROJECT_TOKEN), false);

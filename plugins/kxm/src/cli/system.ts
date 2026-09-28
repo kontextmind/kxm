@@ -75,6 +75,7 @@ import {
 import {
   installedKxmVersion,
   fetchLatestKxmVersion,
+  ghReleaseDownloadAvailable,
   kxmReleaseAssetName,
   noticeFromVersions,
   planKxmPackageUpdate,
@@ -159,7 +160,8 @@ export function applyKxmPackageUpdate(runtime: Runtime, notice: KxmUpdateNotice)
   }
   const releaseDir = mkdtempSync(join(tmpdir(), "kxm-pkg-update-"));
   try {
-    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset);
+    const downloader = notice.source === "github" && !ghReleaseDownloadAvailable(runtime.env) ? "curl" : "gh";
+    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset, downloader);
     if (runtime.dryRun) {
       return { ok: true, detail: planned.map(formatPackageUpdateStep).join(" && ") };
     }
