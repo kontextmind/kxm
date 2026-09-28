@@ -72,12 +72,13 @@ const MAX_OUTCOME_CLOSERS = 32;
 // How many `{` openers before that closer we will consider, nearest last.
 const MAX_OUTCOME_OPENERS = 32;
 
-// A candidate longer than this is not parsed. Older openers for the same
-// closer are longer, so the opener walk stops there.
+// A candidate whose UTF-8 size is over this is not parsed. Older openers
+// for the same closer contain the nearer slice, so the opener walk stops
+// there. The count is Buffer.byteLength, not JavaScript string length.
 const MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
 
-// Total bytes of candidate slices JSON.parse may see in one lookup.
-// Crossing this budget stops the lookup.
+// Total UTF-8 bytes of candidate slices JSON.parse may see in one lookup.
+// Crossing this budget stops the lookup. Same byte measure as the slice cap.
 const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
 
 // Naive prefix scan. Quote handling toggles on every unescaped `"`. Braces
@@ -120,8 +121,9 @@ function outcomePrefixIsAnchored(prefix: string): boolean {
 // Candidates are slices from a `{` to a recent `}`, nearest last. Only the
 // last 32 closers are visited, and only a closer on the reply's last
 // character can end the reply. For that closer the last 32 openers are
-// tried. A slice longer than 256 KiB is skipped. Parsed slices share a
-// 1 MiB budget, and crossing it stops the lookup. JSON.parse is the only
+// tried. A slice whose UTF-8 size is over 256 KiB is skipped. Parsed slices
+// share a 1 MiB UTF-8 budget, and crossing it stops the lookup. Both limits
+// use Buffer.byteLength. JSON.parse is the only
 // string and escape authority inside the slice. A slice that parses to a
 // plain object whose outcome is a string in allowedOutcomes is a candidate.
 // The prefix before that opener, with trailing whitespace removed, must end
@@ -149,13 +151,14 @@ function determineOutcome(text: string, allowedOutcomes: readonly string[]): str
     for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
       if (body[openAt] !== "{") continue;
       seenOpeners++;
-      const sliceLen = end - openAt;
-      if (sliceLen > MAX_OUTCOME_SLICE_BYTES) break;
-      if (parseBytes + sliceLen > MAX_OUTCOME_PARSE_BYTES) return "failed";
-      parseBytes += sliceLen;
+      const slice = body.slice(openAt, end);
+      const sliceBytes = Buffer.byteLength(slice, "utf8");
+      if (sliceBytes > MAX_OUTCOME_SLICE_BYTES) break;
+      if (parseBytes + sliceBytes > MAX_OUTCOME_PARSE_BYTES) return "failed";
+      parseBytes += sliceBytes;
       let result: unknown;
       try {
-        result = JSON.parse(body.slice(openAt, end));
+        result = JSON.parse(slice);
       } catch {
         continue;
       }

@@ -109,8 +109,8 @@ A producer reply becomes a terminal outcome **only** through a declared result. 
 reply declares that result when a candidate slice from a `{` to a `}` parses as a JSON
 object that closes at the end of the trimmed text. Candidates are tried nearest last.
 The walk considers at most the last 32 closers and the last 32 openers, skips a slice
-longer than 256 KiB, and stops after 1 MiB of parsed slices. One closing code fence may
-follow the object, with whitespace. The object may be the whole reply, a fenced reply,
+whose UTF-8 size is over 256 KiB, and stops after 1 MiB of UTF-8 bytes from parsed
+slices. One closing code fence may follow the object, with whitespace. The object may be the whole reply, a fenced reply,
 or the end of surrounding prose, on one line or several. `JSON.parse` is the authority
 for strings and escapes inside the slice. The value must be a plain object whose
 `outcome` string is one of the step's declared values. The prefix before that opener,
