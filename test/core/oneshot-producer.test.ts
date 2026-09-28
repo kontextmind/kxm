@@ -1306,6 +1306,64 @@ test("an inner object at the end of a truncated array settles failed", async () 
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
 });
 
+test("a prefix that ends inside an unclosed array at object depth zero settles failed", async () => {
+  // The prefix is only `[`, so object depth stays 0. Removing the array-depth
+  // check would accept the outcome object.
+  const text = '[{"outcome":"passed"}';
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("a prefix that ends on an escape inside an unclosed string settles failed", async () => {
+  const text = [
+    'The note ends inside "an unclosed \\',
+    '{"outcome":"passed","summary":"honest object"}',
+  ].join("\n");
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");
+});
+
+test("multibyte text is accepted or rejected on the UTF-8 outcome budgets", async () => {
+  // U+5B57 is one UTF-16 code unit and three UTF-8 bytes, so a JavaScript
+  // length under the cap can still cross the byte budget.
+  const unit = "字";
+  assert.equal(Buffer.byteLength(unit, "utf8"), 3);
+  const sliceCap = 256 * 1024;
+  const parseCap = 1024 * 1024;
+  const oneSlice = (count: number): string => `{"outcome":"passed","pad":"${unit.repeat(count)}"}`;
+  const fixedSlice = Buffer.byteLength(oneSlice(0), "utf8");
+  const underSlice = Math.floor((sliceCap - fixedSlice) / 3);
+  const overSlice = underSlice + 1;
+  const underSliceText = oneSlice(underSlice);
+  const overSliceText = oneSlice(overSlice);
+  assert.ok(Buffer.byteLength(underSliceText, "utf8") <= sliceCap);
+  assert.ok(Buffer.byteLength(overSliceText, "utf8") > sliceCap);
+  assert.ok(overSliceText.length <= sliceCap);
+  assert.equal(await settleOneShotText(underSliceText, ["passed", "failed"]), "passed");
+  assert.equal(await settleOneShotText(overSliceText, ["passed", "failed"]), "failed");
+
+  // Five openers, each at most 256 KiB. Four sit inside the pad so only the
+  // outer object parses. Their UTF-8 sizes share the 1 MiB parse budget.
+  const manySlices = (count: number): string => `{"outcome":"passed","pad":"{{{{${unit.repeat(count)}"}`;
+  const openerByteSum = (body: string): number => {
+    let sum = 0;
+    let seen = 0;
+    for (let openAt = body.length - 1; openAt >= 0 && seen < 32; openAt--) {
+      if (body[openAt] !== "{") continue;
+      seen++;
+      sum += Buffer.byteLength(body.slice(openAt), "utf8");
+    }
+    return sum;
+  };
+  const underParse = Math.floor((parseCap - openerByteSum(manySlices(0))) / (3 * 5));
+  const overParse = underParse + 1;
+  const underParseText = manySlices(underParse);
+  const overParseText = manySlices(overParse);
+  assert.equal(openerByteSum(underParseText) <= parseCap, true);
+  assert.equal(openerByteSum(overParseText) > parseCap, true);
+  assert.ok(overParseText.length <= parseCap);
+  assert.equal(await settleOneShotText(underParseText, ["passed", "failed"]), "passed");
+  assert.equal(await settleOneShotText(overParseText, ["passed", "failed"]), "failed");
+});
+
 test("an outcome object inside an unclosed string settles failed", async () => {
   const text = '{"outcome":"failed","note":"see {"outcome":"passed"}';
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "failed");

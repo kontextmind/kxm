@@ -30833,13 +30833,14 @@ function determineOutcome(text, allowedOutcomes) {
     for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
       if (body[openAt] !== "{") continue;
       seenOpeners++;
-      const sliceLen = end - openAt;
-      if (sliceLen > MAX_OUTCOME_SLICE_BYTES) break;
-      if (parseBytes + sliceLen > MAX_OUTCOME_PARSE_BYTES) return "failed";
-      parseBytes += sliceLen;
+      const slice = body.slice(openAt, end);
+      const sliceBytes = Buffer.byteLength(slice, "utf8");
+      if (sliceBytes > MAX_OUTCOME_SLICE_BYTES) break;
+      if (parseBytes + sliceBytes > MAX_OUTCOME_PARSE_BYTES) return "failed";
+      parseBytes += sliceBytes;
       let result;
       try {
-        result = JSON.parse(body.slice(openAt, end));
+        result = JSON.parse(slice);
       } catch {
         continue;
       }
