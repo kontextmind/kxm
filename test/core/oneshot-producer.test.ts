@@ -1197,6 +1197,12 @@ test("a JSON object inside an earlier code fence does not win over the last obje
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
+test("braces inside an outcome string do not hide the final object", async () => {
+  const summary = "{".repeat(33);
+  const text = `{"outcome":"passed","summary":"${summary}"}`;
+  assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
+});
+
 test("nested braces and braces inside strings parse as the last outcome object", async () => {
   const text = [
     'Notes before the result mention {braces} and a sample {"outcome":"failed"}.',
@@ -1262,12 +1268,12 @@ test("a closed prose quote before a final outcome object still settles", async (
   assert.equal(await settleOneShotText(text, ["passed", "failed"]), "passed");
 });
 
-test("a repeated opener prefix settles within the outcome scan bound", async () => {
+test("a repeated opener prefix never closes a top-level outcome object", async () => {
   const chunk = '{"b":';
   const repeats = Math.ceil((600 * 1024) / chunk.length);
   const attack = `${chunk.repeat(repeats)}}`;
   assert.equal(await settleOneShotText(attack, ["passed", "failed"]), "failed");
-  // The same prefix is still unbalanced, so a final-line outcome stays failed.
+  // The prefix stays above depth 0, so a final-line object is nested and stays failed.
   const followed = `${attack}\n{"outcome":"passed","summary":"after the bound"}`;
   assert.equal(await settleOneShotText(followed, ["passed", "failed"]), "failed");
 });
