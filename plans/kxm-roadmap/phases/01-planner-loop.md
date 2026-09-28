@@ -82,9 +82,9 @@ Evidence: `test/core/engine.test.ts`.
 
 Template: `feature`.
 
-Done criterion: One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report. P1 ran the writer that way; P2 is the unit that must run end to end now that lanes register under the project (#339).
+Done criterion: One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report. P1 and P2 ran writers that way; P3 is the unit that completes the end-to-end proof on the engine (the witness and outcome fixes landed in #368).
 
-Evidence needed: The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, impl-bg.
+Evidence needed: The run-events store for this project with the attempt rows for writer and both critics, each settled from a verified drive receipt.
 
 ### kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)
 

@@ -151,8 +151,8 @@
           "title": "Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes",
           "status": "open",
           "evidence": "",
-          "doneCriterion": "One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report. P1 ran the writer that way; P2 is the unit that must run end to end now that lanes register under the project (#339).",
-          "evidenceNeeded": "The run-events store for this project with the attempt rows, and the justfile without impl, plan, review-arch, review-cli, impl-bg.",
+          "doneCriterion": "One real unit runs writer and both critics through the one-step workflows with its attempts in kxm improve report. P1 and P2 ran writers that way; P3 is the unit that completes the end-to-end proof on the engine (the witness and outcome fixes landed in #368).",
+          "evidenceNeeded": "The run-events store for this project with the attempt rows for writer and both critics, each settled from a verified drive receipt.",
           "template": "feature",
           "detail": "scoped"
         },
@@ -601,7 +601,7 @@
       "priority": "later",
       "blockers": [
         "omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.",
-        "kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0."
+        "The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself."
       ],
       "questions": [
         "The operator named in-flight cloud agents bc-e30865cc and bc-a4124155. This run could not read them.",
@@ -662,7 +662,7 @@
       "source": "plans/plan-studio-cloud-host.md",
       "priority": "later",
       "blockers": [
-        "Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.",
+        "Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.",
         "Setup and doctor screens also wait on first-run P1 through P5."
       ],
       "questions": [

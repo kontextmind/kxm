@@ -224,7 +224,7 @@ On a TTY, bare kxm opens the existing dashboard and a first-run panel that probe
 ### Blockers
 
 - omp-alignment P3, P5, P6, and P7 are still open. P4 fallback is done.
-- kxm hub bind --cloud and the route and role naming validator were not on main at 7a956e0.
+- The workforce-id naming validator (scripts/workforce-lint.mjs, wired into check and validate:pr) and the hub cloud binding are on main and inventoried; what remains for this phase is the first-run sequence itself.
 
 ### Questions
 
@@ -247,7 +247,7 @@ Studio shows the seven dash panels, a first-run wizard, and live workflow state 
 
 ### Blockers
 
-- Shares the first-run sequence gate: cloud bind, the naming validator, and omp-alignment P3 through P7.
+- Shares the first-run sequence gate: the workforce-id naming validator and the hub cloud binding are on main and inventoried; omp-alignment P3, P5, P6, and P7 remain.
 - Setup and doctor screens also wait on first-run P1 through P5.
 
 ### Questions
