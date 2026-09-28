@@ -65,74 +65,74 @@ function stripOneClosingFence(trimmed: string): string {
   return trimmed.slice(0, lineBreak).trimEnd();
 }
 
-// The outcome object is the newest complete top-level JSON object in the
-// trimmed reply, and that object must close on the reply's last character.
-// One closing code fence may follow it; the fence is removed before the scan.
-// One forward pass tracks string state and brace depth together. A `"` toggles
-// a string, and `\` escapes only inside a string. A `{` outside a string at
-// depth 0 opens a top-level object. When depth returns to 0, that object is
-// the newest complete top-level object. Braces inside strings do not change
-// depth, so the same scan shows that the object started at depth 0 and that
-// quotes in the prefix are closed. After the scan, if that object closes at
-// the end of the body, JSON.parse runs once on the slice. The value must be
-// a plain object whose outcome is a string in allowedOutcomes. Anything else
-// is failed: prose after the object, no object, a disallowed outcome, an
-// inner object at the end of a truncated outer object, a stray quote that
-// leaves a string open, or a prefix whose braces never return to depth 0.
+// How many `}` characters, counting from the end of the reply, we will try
+// as the end of an outcome object.
+const MAX_OUTCOME_CLOSERS = 32;
+
+// How many `{` openers before that closer we will consider, nearest last.
+const MAX_OUTCOME_OPENERS = 32;
+
+// A candidate longer than this is not parsed. Older openers for the same
+// closer are longer, so the opener walk stops there.
+const MAX_OUTCOME_SLICE_BYTES = 256 * 1024;
+
+// Total bytes of candidate slices JSON.parse may see in one lookup.
+// Crossing this budget stops the lookup.
+const MAX_OUTCOME_PARSE_BYTES = 1024 * 1024;
+
+// The outcome object is a JSON object that ends the trimmed reply. One
+// closing code fence may follow it; the fence is removed before the walk.
+// Candidates are slices from a `{` to a recent `}`, nearest last. Only the
+// last 32 closers are visited, and only a closer on the reply's last
+// character can end the reply. For that closer the last 32 openers are
+// tried. A slice longer than 256 KiB is skipped. Parsed slices share a
+// 1 MiB budget, and crossing it stops the lookup. JSON.parse is the only
+// string and escape authority. A slice that parses to a plain object whose
+// outcome is a string in allowedOutcomes is an accepted candidate. The
+// prefix before that opener, with trailing whitespace removed, must not
+// end in `{`, `:`, or `,`. That signature means the object sits inside a
+// truncated JSON value, so the candidate is rejected and the next one is
+// tried. An accepted candidate ends the lookup. Nothing left is failed:
+// prose after the object, no object, a disallowed outcome, an inner object
+// at the end of a truncated outer object, or a budget exhausted before a
+// candidate.
 function determineOutcome(text: string, allowedOutcomes: readonly string[]): string {
   const trimmed = text.trim();
   if (!trimmed) return "failed";
   const body = stripOneClosingFence(trimmed);
   if (!body) return "failed";
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  let currentStart = -1;
-  let objectStart = -1;
-  let objectEnd = -1;
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
+  let seenClosers = 0;
+  let parseBytes = 0;
+  for (let closeAt = body.length - 1; closeAt >= 0 && seenClosers < MAX_OUTCOME_CLOSERS; closeAt--) {
+    if (body[closeAt] !== "}") continue;
+    seenClosers++;
+    const end = closeAt + 1;
+    // A candidate has to end the reply. One closer can sit at that position.
+    if (end !== body.length) continue;
+    let seenOpeners = 0;
+    for (let openAt = closeAt - 1; openAt >= 0 && seenOpeners < MAX_OUTCOME_OPENERS; openAt--) {
+      if (body[openAt] !== "{") continue;
+      seenOpeners++;
+      const sliceLen = end - openAt;
+      if (sliceLen > MAX_OUTCOME_SLICE_BYTES) break;
+      if (parseBytes + sliceLen > MAX_OUTCOME_PARSE_BYTES) return "failed";
+      parseBytes += sliceLen;
+      let result: unknown;
+      try {
+        result = JSON.parse(body.slice(openAt, end));
+      } catch {
         continue;
       }
-      if (ch === "\\") {
-        escape = true;
-        continue;
-      }
-      if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      if (depth === 0) currentStart = i;
-      depth++;
-      continue;
-    }
-    if (ch === "}") {
-      if (depth === 0) continue;
-      depth--;
-      if (depth === 0) {
-        objectStart = currentStart;
-        objectEnd = i;
-      }
+      if (!result || typeof result !== "object" || Array.isArray(result)) continue;
+      const outcome = (result as Record<string, unknown>).outcome;
+      if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) continue;
+      const prefix = body.slice(0, openAt).trimEnd();
+      const signature = prefix.charAt(prefix.length - 1);
+      if (signature === "{" || signature === ":" || signature === ",") continue;
+      return outcome;
     }
   }
-  if (objectStart < 0 || objectEnd !== body.length - 1) return "failed";
-  let result: unknown;
-  try {
-    result = JSON.parse(body.slice(objectStart, objectEnd + 1));
-  } catch {
-    return "failed";
-  }
-  if (!result || typeof result !== "object" || Array.isArray(result)) return "failed";
-  const outcome = (result as Record<string, unknown>).outcome;
-  if (typeof outcome !== "string" || !allowedOutcomes.includes(outcome)) return "failed";
-  return outcome;
+  return "failed";
 }
 
 export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}): KxmOneShotProducer {
