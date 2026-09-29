@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-09-29"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Proposed TypeScript-to-Python migration, central platform target, parity gates and project cutover; delivery authority stays in the active implementation tracker."
@@ -16,6 +16,7 @@ related:
   - implementation-plan.md
   - research-runtime-language-choices.md
   - plan-per-tenant-hosting.md
+  - plan-greenfield-infra.md
 depends_on: []
 blocked_by: []
 details:

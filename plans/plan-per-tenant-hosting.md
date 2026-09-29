@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-20"
-updated: "2026-09-28"
+updated: "2026-09-29"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Rationale and boundary for hosting KXM beside kxmd-portal: one tenant per box, Authentik at the edge, existing static-token auth unchanged, hub state stays SQLite, and the portal backend — not a new hub auth subsystem — is the hosted client of the loopback hub. Delivery order lives only in implementation-plan.md's queue (S0–S5); this file keeps no schedule of any kind, including slice counts."
@@ -23,6 +23,7 @@ related:
   - plan-python-migration.md
   - plan-1password-vaults.md
   - plan-studio-cloud-host.md
+  - plan-greenfield-infra.md
 depends_on: []
 blocked_by: []
 details:
