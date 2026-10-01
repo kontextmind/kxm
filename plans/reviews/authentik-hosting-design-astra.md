@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-20"
-updated: "2026-09-20"
+updated: "2026-10-01"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Independent design pass behind plan-per-tenant-hosting.md: architecture A (Authentik at the edge; the hub stays a bearer-token resource server with an optional proxy-asserted browser boundary), verified baseline with eight corrections, two-mode behaviour, threat model, credential lifecycle, CLI grammar, UI/UX states, six slices, footprint budget. Design input and critic opinion, not assignment, witness or acceptance proof."
@@ -15,6 +15,7 @@ tags: ["review", "hub", "studio", "auth", "hosting"]
 related:
   - ../plan-per-tenant-hosting.md
   - ../implementation-plan.md
+  - ./plan-set-reprioritization-astra.md
 depends_on: []
 blocked_by: []
 details:

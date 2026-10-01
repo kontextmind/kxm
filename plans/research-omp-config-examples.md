@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-28"
+updated: "2026-10-01"
 authority: "hypothesis"
 confidence: "verified"
 summary: "Companion to research-omp-config-schema.md. Section 1 walks a workflowz run turn by turn: the prompt, the hidden notice, the eval cells the orchestrator writes, the workpool lifecycle, the async-result notice, dependency handles, judge batches, budgets, and the phase boundary, with a process diagram. Section 2 shows the role and agent split on both sides: omp modelRoles plus fallbackChains next to agent frontmatter, and KXM kxm.role.v2 next to a kxm.agent.v1 with role:. Section 3 gives a complete example for every other omp surface: project config.yml, models.yml, rules, RULES.md, commands, prompts, hooks, extensions, custom tools, skills, mcp.json, plugin.json, AGENTS.md. Fields are marked verified when read from source and inferred otherwise."
@@ -15,6 +15,7 @@ tags: ["research", "omp", "examples", "workflowz", "roles", "agents", "config"]
 related:
   - research-omp-config-schema.md
   - plan-omp-config-alignment.md
+  - implementation-plan.md
   - plan-kxm-harness-first-run.md
   - evidence/omp-config-settings-18.3.1.md
   - ../diagrams/omp-workflowz-process.mmd

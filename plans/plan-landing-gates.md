@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-26"
-updated: "2026-09-26"
+updated: "2026-10-01"
 authority: "hypothesis"
 confidence: "high"
 summary: "Standing instruction from the operator: every PR is monitored, rebased onto main, unblocked, merged, and followed through to the npm publish without asking; documentation is regenerated after a green pipeline and before the merge; every phase or milestone triggers the deep roadmap review. This slice adds kxm land (plugins/kxm/src/cli/land.ts over scripts/pr-land.mjs), which chains a green npm run verify, the roadmap and docs regeneration, push, PR creation or reuse, a bounded rebase loop with the known conflict unions, auto-merge or direct squash merge, a release watch, and the milestone trigger, and registers those stages as command gates in gates.yaml with a land workflow so kxm run land drives them with receipts. No just recipe is added; the repo is migrating off just. npm run verify stays the pre-push gate and is the first step of landing, not replaced by it."
@@ -16,6 +16,7 @@ related:
   - plan-lane-cli.md
   - backlog-shortcuts.md
   - implementation-plan.md
+  - reviews/docs-site-review-arch.md
 depends_on:
   - plan-lane-cli.md
 blocked_by: []
