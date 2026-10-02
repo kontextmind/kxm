@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,22 @@ import {
   resolveProjectId,
   stableProjectId,
 } from "../../plugins/kxm/src/providers/antigravity/client/index.ts";
+
+function callbackPortFree(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createNetServer();
+    server.once("error", () => resolve(false));
+    server.listen(51121, "127.0.0.1", () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+async function skipIfCallbackPortBusy(t: { skip: (message?: string) => void }): Promise<boolean> {
+  if (await callbackPortFree()) return false;
+  t.skip("localhost:51121 is already in use");
+  return true;
+}
 import {
   getLastDiagnostics,
   resetDiagnosticsForTests,
@@ -339,7 +356,8 @@ test("refreshAntigravityToken discovers project when credentials omit it and red
   );
 });
 
-test("loginAntigravity completes via local callback server with recorded token exchange", async () => {
+test("loginAntigravity completes via local callback server with recorded token exchange", async (t) => {
+  if (await skipIfCallbackPortBusy(t)) return;
   fetchOverride = async (url) => {
     if (url.startsWith(TOKEN_URL)) return jsonResponse(tokenExchange);
     if (url.includes("userinfo")) return jsonResponse(userinfo);
@@ -380,7 +398,8 @@ test("loginAntigravity completes via local callback server with recorded token e
   assert.equal(creds.projectId, loadCodeAssistBody.projectId);
 });
 
-test("loginAntigravity paste path retries invalid callbacks then succeeds", async () => {
+test("loginAntigravity paste path retries invalid callbacks then succeeds", async (t) => {
+  if (await skipIfCallbackPortBusy(t)) return;
   fetchOverride = async (url) => {
     if (url.startsWith(TOKEN_URL)) return jsonResponse(tokenExchange);
     if (url.includes("userinfo")) return jsonResponse({ email: "paste@example.com" });
@@ -873,24 +892,27 @@ test("security, envelope, diagnostics, and registration probes", async () => {
     return seen;
   })();
   stream.push({ type: "start", partial: geminiModel() as never });
-  stream.push({ type: "done", reason: "stop", message: {
-    role: "assistant",
-    content: [],
-    api: "antigravity-api",
-    provider: "antigravity",
-    model: "gemini-3.8-flash",
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-    stopReason: "stop",
-    timestamp: 0,
-  } });
+  stream.push({
+    type: "done", reason: "stop", message: {
+      role: "assistant",
+      content: [],
+      api: "antigravity-api",
+      provider: "antigravity",
+      model: "gemini-3.8-flash",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: "stop",
+      timestamp: 0,
+    }
+  });
   stream.end();
   assert.ok((await waiter).includes("done"));
 });
 
-test("loginAntigravity aborts while waiting and refuses a token response without refresh", async () => {
+test("loginAntigravity aborts while waiting and refuses a token response without refresh", async (t) => {
+  if (await skipIfCallbackPortBusy(t)) return;
   const ac = new AbortController();
   const cancelled = loginAntigravity({
-    onAuth() {},
+    onAuth() { },
     async onPrompt() {
       ac.abort();
       throw new Error("prompt closed");
@@ -1059,95 +1081,95 @@ test("streamAntigravity reports recorded HTTP errors and unknown-model discovery
 test("header deadline, stall watchdog, prewarm, and remaining helpers", async () => {
   // The product stall timer is unref'd; keep the event loop alive so later tests in
   // this file still run when other concurrent files have already finished.
-  const keepAlive = setInterval(() => {}, 1000);
+  const keepAlive = setInterval(() => { }, 1000);
   try {
-  await assert.rejects(
-    () =>
-      fetchWithHeaderDeadline(
-        "https://daily-cloudcode-pa.googleapis.com/slow",
+    await assert.rejects(
+      () =>
+        fetchWithHeaderDeadline(
+          "https://daily-cloudcode-pa.googleapis.com/slow",
+          {},
+          undefined,
+          20,
+          0,
+          async (_url, init) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => {
+                reject(init.signal?.reason ?? new Error("aborted"));
+              });
+            }),
+        ),
+      /no response headers|aborted/,
+    );
+    const encoder = new TextEncoder();
+    await assert.rejects(async () => {
+      const response = await fetchWithHeaderDeadline(
+        "https://daily-cloudcode-pa.googleapis.com/stall",
         {},
         undefined,
-        20,
         0,
-        async (_url, init) =>
-          new Promise((_resolve, reject) => {
-            init?.signal?.addEventListener("abort", () => {
-              reject(init.signal?.reason ?? new Error("aborted"));
-            });
-          }),
-      ),
-    /no response headers|aborted/,
-  );
-  const encoder = new TextEncoder();
-  await assert.rejects(async () => {
-    const response = await fetchWithHeaderDeadline(
-      "https://daily-cloudcode-pa.googleapis.com/stall",
-      {},
-      undefined,
-      0,
-      30,
-      async () =>
-        new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(encoder.encode("data: {\"response\":{}}\n"));
-            },
-          }),
-          { status: 200 },
-        ),
-    );
-    await response.text();
-  }, /stream stalled/);
+        30,
+        async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(encoder.encode("data: {\"response\":{}}\n"));
+              },
+            }),
+            { status: 200 },
+          ),
+      );
+      await response.text();
+    }, /stream stalled/);
 
-  process.env.ANTIGRAVITY_NO_PREWARM = "1";
-  prewarmConnection("https://daily-cloudcode-pa.googleapis.com");
-  const previousTestContext = process.env.NODE_TEST_CONTEXT;
-  delete process.env.ANTIGRAVITY_NO_PREWARM;
-  delete process.env.NODE_TEST_CONTEXT;
-  prewarmConnection("https://daily-cloudcode-pa.googleapis.com");
-  process.env.NODE_TEST_CONTEXT = previousTestContext;
+    process.env.ANTIGRAVITY_NO_PREWARM = "1";
+    prewarmConnection("https://daily-cloudcode-pa.googleapis.com");
+    const previousTestContext = process.env.NODE_TEST_CONTEXT;
+    delete process.env.ANTIGRAVITY_NO_PREWARM;
+    delete process.env.NODE_TEST_CONTEXT;
+    prewarmConnection("https://daily-cloudcode-pa.googleapis.com");
+    process.env.NODE_TEST_CONTEXT = previousTestContext;
 
-  assert.match(nowRequestId(), /^agent\//);
-  assert.equal(escapeRegExp("a.b"), "a\\.b");
-  assert.ok(resolveSessionTrajectory({ messages: [] }).conversationId);
-  await runWithDiagnostics(async () => {
-    setLastMaskedEmail("a***@example.com");
-    setLastTokenExpiry("soon");
-  });
-  assert.equal(getLastDiagnostics().maskedEmail, "a***@example.com");
-  assert.equal(getLastDiagnostics().tokenExpiry, "soon");
+    assert.match(nowRequestId(), /^agent\//);
+    assert.equal(escapeRegExp("a.b"), "a\\.b");
+    assert.ok(resolveSessionTrajectory({ messages: [] }).conversationId);
+    await runWithDiagnostics(async () => {
+      setLastMaskedEmail("a***@example.com");
+      setLastTokenExpiry("soon");
+    });
+    assert.equal(getLastDiagnostics().maskedEmail, "a***@example.com");
+    assert.equal(getLastDiagnostics().tokenExpiry, "soon");
 
-  assert.match(friendlyAntigravityError(400, "plain bad"), /Bad request/);
-  assert.match(friendlyAntigravityError(403, "nope"), /denied this request/);
-  assert.match(friendlyAntigravityError(404, "missing"), /could not find/);
-  assert.match(friendlyAntigravityError(408, "x"), /timed out/);
-  assert.match(friendlyAntigravityError(409, "x"), /conflict/);
-  assert.match(friendlyAntigravityError(429, "quota hit. Resets in 2m"), /Quota reached/);
-  assert.match(friendlyAntigravityError(429, "slow down"), /Rate limited/);
-  assert.match(friendlyAntigravityError(502, "x"), /bad gateway/);
-  assert.match(friendlyAntigravityError(504, "x"), /timed out upstream/);
-  assert.match(friendlyAntigravityError(503, "busy"), /temporarily unavailable/);
+    assert.match(friendlyAntigravityError(400, "plain bad"), /Bad request/);
+    assert.match(friendlyAntigravityError(403, "nope"), /denied this request/);
+    assert.match(friendlyAntigravityError(404, "missing"), /could not find/);
+    assert.match(friendlyAntigravityError(408, "x"), /timed out/);
+    assert.match(friendlyAntigravityError(409, "x"), /conflict/);
+    assert.match(friendlyAntigravityError(429, "quota hit. Resets in 2m"), /Quota reached/);
+    assert.match(friendlyAntigravityError(429, "slow down"), /Rate limited/);
+    assert.match(friendlyAntigravityError(502, "x"), /bad gateway/);
+    assert.match(friendlyAntigravityError(504, "x"), /timed out upstream/);
+    assert.match(friendlyAntigravityError(503, "busy"), /temporarily unavailable/);
 
-  const hourReset = Date.now() + 90 * 60 * 1000;
-  const dayReset = Date.now() + 26 * 60 * 60 * 1000;
-  const summary = formatUsageSummary({
-    projectId: "p",
-    endpoint: "https://daily-cloudcode-pa.googleapis.com",
-    fetchedAt: Date.now(),
-    models: [],
-    groups: [
-      {
-        displayName: "Windows",
-        buckets: [
-          { bucketId: "h", displayName: "Hour", remainingFraction: 0.5, resetTime: new Date(hourReset).toISOString() },
-          { bucketId: "d", displayName: "Day", remainingFraction: 0.2, resetTime: new Date(dayReset).toISOString() },
-          { bucketId: "bad", displayName: "Bad", remainingFraction: 0.1, resetTime: "not-a-date" },
-        ],
-      },
-    ],
-  });
-  assert.match(summary, /1h/);
-  assert.match(summary, /1d/);
+    const hourReset = Date.now() + 90 * 60 * 1000;
+    const dayReset = Date.now() + 26 * 60 * 60 * 1000;
+    const summary = formatUsageSummary({
+      projectId: "p",
+      endpoint: "https://daily-cloudcode-pa.googleapis.com",
+      fetchedAt: Date.now(),
+      models: [],
+      groups: [
+        {
+          displayName: "Windows",
+          buckets: [
+            { bucketId: "h", displayName: "Hour", remainingFraction: 0.5, resetTime: new Date(hourReset).toISOString() },
+            { bucketId: "d", displayName: "Day", remainingFraction: 0.2, resetTime: new Date(dayReset).toISOString() },
+            { bucketId: "bad", displayName: "Bad", remainingFraction: 0.1, resetTime: "not-a-date" },
+          ],
+        },
+      ],
+    });
+    assert.match(summary, /1h/);
+    assert.match(summary, /1d/);
   } finally {
     clearInterval(keepAlive);
   }
@@ -1880,7 +1902,8 @@ test("client helpers cover remaining project, catalog, and runtime-match branche
   }
 });
 
-test("oauth callback server rejects provider errors and token exchange failures", async () => {
+test("oauth callback server rejects provider errors and token exchange failures", async (t) => {
+  if (await skipIfCallbackPortBusy(t)) return;
   async function waitForCallbackHost(): Promise<void> {
     const started = Date.now();
     while (Date.now() - started < 3000) {
@@ -1929,7 +1952,7 @@ test("oauth callback server rejects provider errors and token exchange failures"
   await missingResult;
 
   const mismatchLogin = loginAntigravity({
-    onAuth() {},
+    onAuth() { },
   });
   const mismatchResult = assert.rejects(mismatchLogin, /state mismatch/i);
   await waitForCallbackHost();
@@ -1999,7 +2022,7 @@ test("oauth callback server rejects provider errors and token exchange failures"
     await assert.rejects(
       () =>
         loginAntigravity({
-          onAuth() {},
+          onAuth() { },
         }),
       /Port 51121 is already in use/,
     );

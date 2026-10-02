@@ -2,7 +2,7 @@
 title: "Decisions"
 description: "Decisions of medium significance or higher made by automated KXM work in this repository. One entry per decision: the options evaluated with their weights, and why the selected option won. Recorded the turn the decision is taken."
 audience: "agents and maintainers"
-updated: "2026-09-28"
+updated: "2026-10-02"
 ---
 
 # Decisions
@@ -151,3 +151,24 @@ Evidence: Evidence: test/core/oneshot-producer.test.ts (real reviewer shapes), r
 - Selected: port through the engine lane `vision-assert-port`; the PR is
   closed by its replacement landing, not by hand.
 Evidence: Evidence: merge-base 77beda4 predates the CLI restructure; merge-tree showed cli/vnext.ts deleted on main; vision-gate.ts already on main.
+
+## 2026-10-02 — Porting the stale update-default branch onto main (landing)
+
+- Context: `feat/update-npm-default-and-all` was based on 2026-09-24 main
+  and still uncommitted. `origin/main` had moved about 66 commits and
+  already contained the claude-bridge `apiKey` registration fix and the
+  `gh`/`curl` release downloader. `kxm land`'s rebase stage only resolves
+  union conflicts, which cannot merge the `planKxmPackageUpdate` signature
+  clash (`downloader` vs `localRoot`).
+- Options:
+  - Rebase the 2026-09-24 branch through `kxm land`'s rebase stage — weight
+    0.2. Its union-only resolver cannot handle the `planKxmPackageUpdate`
+    signature clash.
+  - Stash-apply onto a fresh lane, take upstream for claude-bridge, `dist`,
+    and `package.json`, and merge the rest — weight 0.9. Keeps the reviewed
+    update-default work and the upstream fixes that must not be duplicated.
+  - Discard and re-dispatch to the writer — weight 0.3. Re-authors reviewed
+    work that already had a specified merge.
+- Selected: stash-apply onto a fresh lane off `origin/main`, take upstream
+  for claude-bridge, `dist`, and `package.json`, and merge the rest.
+Evidence: Evidence: `git diff HEAD origin/main` on the stale branch showed upstream's claude-bridge fix and curl downloader already landed; the lane port keeps both those and the npm/`--all` behavior.

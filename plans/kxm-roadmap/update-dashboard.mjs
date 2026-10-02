@@ -412,15 +412,36 @@ function writeFile(path, text) {
 }
 
 function ensureSymlink(linkPath, target) {
-  const rel = relative(dirname(linkPath), target);
+  const rel = relative(dirname(linkPath), target).split("\\").join("/");
+  const matchesText = (text) => text === rel || text === `${rel}\n`;
+  const keepTextLink = () => {
+    mkdirSync(dirname(linkPath), { recursive: true });
+    writeFileSync(linkPath, rel);
+  };
   try {
     const stat = lstatSync(linkPath);
-    if (stat.isSymbolicLink() && readlinkSync(linkPath) === rel) return;
+    if (stat.isSymbolicLink()) {
+      if (readlinkSync(linkPath).split("\\").join("/") === rel) return;
+    } else if (matchesText(readFileSync(linkPath, "utf8"))) {
+      try {
+        unlinkSync(linkPath);
+        symlinkSync(rel, linkPath);
+      } catch (error) {
+        if (!error || error.code !== "EPERM") throw error;
+        keepTextLink();
+      }
+      return;
+    }
     unlinkSync(linkPath);
   } catch (error) {
-    if (error && error.code !== "ENOENT") throw error;
+    if (!error || error.code !== "ENOENT") throw error;
   }
-  symlinkSync(rel, linkPath);
+  try {
+    symlinkSync(rel, linkPath);
+  } catch (error) {
+    if (!error || error.code !== "EPERM") throw error;
+    keepTextLink();
+  }
 }
 
 const MKDOCS_MISSING = "mkdocs build needs either mkdocs on PATH or uv. The command that works is: uv tool run --from mkdocs-material mkdocs build. uv tool install mkdocs-material does not, because the package exposes no executable.";

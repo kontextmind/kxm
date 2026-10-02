@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { symlinkOrSkip } from "../helpers.ts";
 import { nativeCriticLaunch } from "../../scripts/native-critic.mjs";
 import {
   agyAuth,
@@ -1740,8 +1741,8 @@ test("real just does not preload a working-directory .env, and every control can
 
     // The recipe resolves its script relative to the working directory, so link the
     // tree in — the `.env` under test is still the one in that directory.
-    symlinkSync(resolve("scripts"), join(dir, "scripts"), "dir");
-    symlinkSync(resolve("node_modules"), join(dir, "node_modules"), "dir");
+    if (!symlinkOrSkip(t, resolve("scripts"), join(dir, "scripts"), "dir")) return;
+    if (!symlinkOrSkip(t, resolve("node_modules"), join(dir, "node_modules"), "dir")) return;
 
     const refused = witnessRun(resolve("justfile"));
     assert.notEqual(refused.status, 0, "witness must refuse a missing record directory");

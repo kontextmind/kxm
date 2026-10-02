@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { removeTempDir } from "../helpers.ts";
+import { removeTempDir, symlinkOrSkip } from "../helpers.ts";
 import { engineProject } from "../helpers/project.ts";
 import { loadKxmProject, validateRunEvent } from "../../plugins/kxm/src/project-config.ts";
 import { kxmCanonicalJson } from "../../plugins/kxm/src/project-config.ts";
@@ -212,7 +212,7 @@ function acceptReady(
   return accepted.run;
 }
 
-test("S3 artifacts pass, fail, multi-path, missing root, and containment", async () => {
+test("S3 artifacts pass, fail, multi-path, missing root, and containment", async (t) => {
   await withS3(async ({ root, context, bundle }) => {
     writeAsset(root, "dist/index.js");
     const passed = acceptReady(context, bundle, "artifacts-ready", "pass");
@@ -249,7 +249,7 @@ test("S3 artifacts pass, fail, multi-path, missing root, and containment", async
 
     const outside = join(tmpdir(), "kxm-s3-outside.txt");
     writeFileSync(outside, "secret\n");
-    symlinkSync(outside, join(root, ".kxm", "assets", "keep", "escape"));
+    if (!symlinkOrSkip(t, outside, join(root, ".kxm", "assets", "keep", "escape"))) return;
     writeFileSync(join(root, ".kxm", "gates.yaml"), `schema: kxm.gate-registry.v1
 gates:
   test:

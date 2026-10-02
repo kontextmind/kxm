@@ -788,8 +788,9 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
   addGlobalOptions(program.command("update").description("Update kxm, harness CLIs, extensions, plugins, and model catalogs")
     .argument("[harness]", "Harness id (default: every detected harness)")
     .option("--check", "Check for a kxm package update without applying")
-    .option("--kxm", "Apply the kxm operator package update (GitHub release tarball or npm)")
-    .option("--self", "Update only the harness CLI")
+    .option("--all", "Update harness CLIs first (--self), then kxm, extensions, and models (default)")
+    .option("--kxm", "Apply only the kxm operator package update")
+    .option("--self", "Update only harness CLIs")
     .option("--extensions", "Update only extensions/plugins (Pi packages, Claude kxm)")
     .option("--models", "Refresh model catalogs where the harness supports it"))
     .action(async function updateAction(this: Command, harness: string | undefined, options: {
@@ -798,6 +799,7 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
       models?: boolean;
       check?: boolean;
       kxm?: boolean;
+      all?: boolean;
     }) {
       result.code = await cmdUpdate(runtimeFrom(ctx, this), harness, options);
     });

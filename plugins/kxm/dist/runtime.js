@@ -17298,8 +17298,17 @@ function argsFor(entry, scope) {
   if (scope === "extensions") return entry.update.extensions;
   return entry.update.models;
 }
+function detectedHarnesses(inventory, requestedHarness) {
+  if (requestedHarness) return inventory.harnesses.filter((entry) => entry.id === requestedHarness);
+  const detected = inventory.harnesses.filter((entry) => entry.detected);
+  const preferred = inventory.defaultHarness;
+  return [
+    ...detected.filter((entry) => entry.id === preferred),
+    ...detected.filter((entry) => entry.id !== preferred)
+  ];
+}
 function planHarnessUpdate(inventory, requested) {
-  const selected = requested.harness ? inventory.harnesses.filter((entry) => entry.id === requested.harness) : inventory.harnesses.filter((entry) => entry.detected);
+  const selected = detectedHarnesses(inventory, requested.harness);
   if (requested.harness && selected.length === 0) {
     return [{
       harness: requested.harness,
@@ -17310,36 +17319,44 @@ function planHarnessUpdate(inventory, requested) {
       detail: isKnownHarnessId(requested.harness) ? "not_detected" : "unknown_harness"
     }];
   }
+  const waves = requested.scope === "all" ? ["self", "extensions", "models"] : [requested.scope];
   const steps = [];
-  for (const status of selected) {
-    const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === status.id);
-    if (!entry) continue;
-    const scopes = scopesFor(requested.scope, entry);
-    if (scopes.length === 0) {
+  for (const scope of waves) {
+    for (const status of selected) {
+      const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === status.id);
+      if (!entry) continue;
+      const supported = scopesFor(requested.scope === "all" ? "all" : scope, entry);
+      if (!supported.includes(scope)) {
+        if (requested.scope !== "all") {
+          steps.push({
+            harness: status.id,
+            scope,
+            command: status.command ?? entry.commands[0],
+            args: [],
+            outcome: "skipped",
+            detail: "no_updater"
+          });
+        }
+        continue;
+      }
+      if (!status.detected || !status.command) {
+        steps.push({
+          harness: status.id,
+          scope,
+          command: entry.commands[0],
+          args: argsFor(entry, scope) ?? [],
+          outcome: "skipped",
+          detail: "not_detected"
+        });
+        continue;
+      }
       steps.push({
         harness: status.id,
-        scope: requested.scope === "all" ? "self" : requested.scope,
-        command: status.command ?? entry.commands[0],
-        args: [],
-        outcome: "skipped",
-        detail: "no_updater"
+        scope,
+        command: status.command,
+        args: argsFor(entry, scope) ?? [],
+        outcome: "would"
       });
-      continue;
-    }
-    if (!status.detected || !status.command) {
-      steps.push({
-        harness: status.id,
-        scope: scopes[0],
-        command: entry.commands[0],
-        args: argsFor(entry, scopes[0]) ?? [],
-        outcome: "skipped",
-        detail: "not_detected"
-      });
-      continue;
-    }
-    for (const scope of scopes) {
-      const args = argsFor(entry, scope) ?? [];
-      steps.push({ harness: status.id, scope, command: status.command, args, outcome: "would" });
     }
   }
   return steps;

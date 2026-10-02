@@ -145,7 +145,7 @@ The context suites in detail:
 | Permission-diff trust: authority lattice, prose neutrality, Git base shadowing, CLI diff and check | `permission.test.ts`, `cli.test.ts`, `contracts.test.ts`, `package-install.test.ts` |
 | KXM schemas, restricted YAML fixtures, cross-resource semantics and sync-safe rejection | `contracts.test.ts`, `restricted-yaml.test.ts` |
 | Harness detection, auth and dispatch for the built-in catalog, including Windows launch rules | `harness.test.ts` |
-| `kxm update`: `update.yaml` validation, GitHub or npm version checks, install-kind detection, `kxm-<v>.tgz` asset selection | `kxm-update.test.ts`, `kxm-update-cli.test.ts`, `kxm-install-kind.test.ts` |
+| `kxm update`: `update.yaml` validation, npm default / GitHub override, local checkout install, install-kind detection, `kxm-<v>.tgz` asset selection | `kxm-update.test.ts`, `kxm-update-cli.test.ts`, `kxm-install-kind.test.ts` |
 
 The round trip seeds its Runtime stores in a project-local `.kxm/runtime/`
 layout that the Runtime never writes. Separate tests seed two projects' event

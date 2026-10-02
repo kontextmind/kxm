@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { runCli as runCliImplementation, type CliIo, type CliSpawnResult } from "../../plugins/kxm/src/cli.ts";
 import { noticeFromVersions, writeUpdateCache } from "../../plugins/kxm/src/kxm-update.ts";
@@ -189,12 +189,12 @@ function downloadReleaseTarball(args: readonly string[], command: "gh" | "curl",
   return { result: writeGhTarball(args, body), releaseDir };
 }
 
-test("update --check reports a newer GitHub release", async () => {
+test("update --check reports a newer npm package by default", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();
   try {
     const io = capture();
-    assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(io, fake, { fetchImpl: githubFetch("v99.0.0") }), cwd), 0);
+    assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(io, fake, { fetchImpl: npmFetch("99.0.0") }), cwd), 0);
     const payload = JSON.parse(io.read().stdout) as {
       command: string;
       available: boolean;
@@ -206,8 +206,9 @@ test("update --check reports a newer GitHub release", async () => {
     assert.equal(payload.current, currentVersion);
     assert.equal(payload.latest, "99.0.0");
     assert.equal(payload.available, true);
-    assert.equal(payload.source, "github");
-    assert.match(io.read().stdout, /kxm update --kxm/);
+    assert.equal(payload.source, "npm");
+    assert.match(io.read().stdout, /kxm update/);
+    assert.doesNotMatch(io.read().stdout, /kxm update --kxm/);
     assert.equal(existsUpdateCache(cwd), true);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -221,7 +222,7 @@ test("update --check stays quiet when already current or the check fails", async
   try {
     const current = capture();
     assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(current, fake, {
-      fetchImpl: githubFetch(`v${currentVersion}`),
+      fetchImpl: npmFetch(currentVersion),
     }), cwd), 0);
     const currentPayload = JSON.parse(current.read().stdout) as { available: boolean; message: string };
     assert.equal(currentPayload.available, false);
@@ -229,13 +230,19 @@ test("update --check stays quiet when already current or the check fails", async
 
     const failed = capture();
     assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(failed, fake, {
-      fetchImpl: githubFetch("v99.0.0", 503),
+      fetchImpl: npmFetch("99.0.0", 503),
     }), cwd), 0);
-    assert.match(failed.read().stdout, /kxm update check unavailable \(github_http_503\)/);
+    assert.match(failed.read().stdout, /kxm update check unavailable \(npm_http_503\)/);
 
     const nonSemver = capture();
     assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(nonSemver, fake, {
-      fetchImpl: githubFetch("not-a-version"),
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("registry.npmjs.org/@kontextmind/kxm/latest")) {
+          return new Response(JSON.stringify({ version: "not-a-version" }), { status: 200 });
+        }
+        throw new Error(`unexpected URL ${url}`);
+      },
     }), cwd), 0);
     assert.match(nonSemver.read().stdout, /kxm update check unavailable/);
   } finally {
@@ -244,16 +251,16 @@ test("update --check stays quiet when already current or the check fails", async
   }
 });
 
-test("update --check uses npm when update.yaml selects it", async () => {
+test("update --check uses github when update.yaml selects it", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();
   const stateHome = mkdtempSync(join(tmpdir(), "kxm-update-state-"));
   try {
-    writeUserUpdateYaml(stateHome, "schema: kxm.update.v1\nauto: false\nsource: npm\n");
+    writeUserUpdateYaml(stateHome, "schema: kxm.update.v1\nauto: false\nsource: github\n");
     const io = capture();
-    assert.equal(await runCli(["update", "--json", "--check"], { KXM_STATE_HOME: stateHome }, withGlobal(io, fake, { fetchImpl: npmFetch("99.1.0") }), cwd), 0);
+    assert.equal(await runCli(["update", "--json", "--check"], { KXM_STATE_HOME: stateHome }, withGlobal(io, fake, { fetchImpl: githubFetch("v99.1.0") }), cwd), 0);
     const payload = JSON.parse(io.read().stdout) as { source: string; latest: string; available: boolean };
-    assert.equal(payload.source, "npm");
+    assert.equal(payload.source, "github");
     assert.equal(payload.latest, "99.1.0");
     assert.equal(payload.available, true);
   } finally {
@@ -276,6 +283,14 @@ test("update rejects conflicting flags and invalid update.yaml", async () => {
     assert.equal(await runCli(["update", "--json", "--self", "--models"], {}, withGlobal(twoScopes, fake, { fetchImpl: githubFetch() }), cwd), 2);
     assert.match(twoScopes.read().stderr, /scope_conflict/);
 
+    const allSelf = capture();
+    assert.equal(await runCli(["update", "--json", "--all", "--self"], {}, withGlobal(allSelf, fake, { fetchImpl: githubFetch() }), cwd), 2);
+    assert.match(allSelf.read().stderr, /scope_conflict/);
+
+    const checkAll = capture();
+    assert.equal(await runCli(["update", "--json", "--check", "--all"], {}, withGlobal(checkAll, fake, { fetchImpl: githubFetch() }), cwd), 2);
+    assert.match(checkAll.read().stderr, /scope_conflict/);
+
     writeUserUpdateYaml(stateHome, "schema: kxm.update.v1\nauto: maybe\n");
     const invalid = capture();
     assert.equal(await runCli(["update", "--json", "--check"], { KXM_STATE_HOME: stateHome }, withGlobal(invalid, fake, { fetchImpl: githubFetch() }), cwd), 2);
@@ -290,9 +305,11 @@ test("update rejects conflicting flags and invalid update.yaml", async () => {
 test("update --kxm dry-run plans a GitHub tarball install and skips harnesses", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();
+  const stateHome = mkdtempSync(join(tmpdir(), "kxm-update-github-"));
   try {
+    writeUserUpdateYaml(stateHome, "schema: kxm.update.v1\nauto: false\nsource: github\n");
     const io = capture();
-    assert.equal(await runCli(["update", "--json", "--dry-run", "--kxm"], {}, withGlobal(io, fake, { fetchImpl: githubFetch("v99.0.0") }), cwd), 0);
+    assert.equal(await runCli(["update", "--json", "--dry-run", "--kxm"], { KXM_STATE_HOME: stateHome }, withGlobal(io, fake, { fetchImpl: githubFetch("v99.0.0") }), cwd), 0);
     const payload = JSON.parse(io.read().stdout) as {
       command: string;
       dryRun: boolean;
@@ -311,6 +328,7 @@ test("update --kxm dry-run plans a GitHub tarball install and skips harnesses", 
     assert.equal(payload.steps, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(stateHome, { recursive: true, force: true });
     fake.cleanup();
   }
 });
@@ -321,7 +339,7 @@ test("update --kxm dry-run is a no-op when no package update is available", asyn
   try {
     const io = capture();
     assert.equal(await runCli(["update", "--json", "--dry-run", "--kxm"], {}, withGlobal(io, fake, {
-      fetchImpl: githubFetch(`v${currentVersion}`),
+      fetchImpl: npmFetch(currentVersion),
     }), cwd), 0);
     const payload = JSON.parse(io.read().stdout) as { kxm?: unknown; notice: { available: boolean; message: string } };
     assert.equal(payload.notice.available, false);
@@ -352,7 +370,7 @@ test("update dry-run with auto applies kxm then still plans harness updates", as
     assert.match(payload.kxm.detail, /gh release download|curl --fail --silent --show-error --location/);
     assert.equal(payload.scope, "all");
     assert.ok(Array.isArray(payload.steps));
-    assert.match(io.read().stdout, /kxm update --kxm \(auto\)/);
+    assert.match(io.read().stdout, /kxm update \(auto\)/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(stateHome, { recursive: true, force: true });
@@ -366,7 +384,7 @@ test("update dry-run unknown harness is fail-closed", async () => {
   try {
     const io = capture();
     assert.equal(await runCli(["update", "--json", "--dry-run", "not-a-harness"], {}, withGlobal(io, fake, {
-      fetchImpl: githubFetch(`v${currentVersion}`),
+      fetchImpl: npmFetch(currentVersion),
     }), cwd), 2);
     const payload = JSON.parse(io.read().stderr) as { ok: boolean; steps: Array<{ detail?: string }> };
     assert.equal(payload.ok, false);
@@ -377,20 +395,44 @@ test("update dry-run unknown harness is fail-closed", async () => {
   }
 });
 
-test("update --kxm dry-run plans npm install when source is npm", async () => {
+test("update --kxm dry-run plans npm install by default", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();
-  const stateHome = mkdtempSync(join(tmpdir(), "kxm-update-state-"));
   try {
-    writeUserUpdateYaml(stateHome, "schema: kxm.update.v1\nauto: false\nsource: npm\n");
     const io = capture();
-    assert.equal(await runCli(["update", "--json", "--dry-run", "--kxm"], { KXM_STATE_HOME: stateHome }, withGlobal(io, fake, { fetchImpl: npmFetch("99.0.0") }), cwd), 0);
+    assert.equal(await runCli(["update", "--json", "--dry-run", "--kxm"], {}, withGlobal(io, fake, { fetchImpl: npmFetch("99.0.0") }), cwd), 0);
     const payload = JSON.parse(io.read().stdout) as { kxm: { detail: string }; notice: { source: string } };
     assert.equal(payload.notice.source, "npm");
     assert.match(payload.kxm.detail, /@kontextmind\/kxm@99\.0\.0/);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
-    rmSync(stateHome, { recursive: true, force: true });
+    fake.cleanup();
+  }
+});
+
+test("update --dry-run applies kxm after harness --self by default", async () => {
+  const cwd = tempProject();
+  const fake = fakeNpmGlobal();
+  try {
+    const io = capture();
+    assert.equal(await runCli(["update", "--json", "--dry-run"], {}, withGlobal(io, fake, { fetchImpl: npmFetch("99.0.0") }), cwd), 0);
+    const payload = JSON.parse(io.read().stdout) as {
+      scope: string;
+      defaultHarness: string;
+      kxm: { detail: string };
+      steps: Array<{ harness: string; scope: string; outcome: string }>;
+    };
+    assert.equal(payload.scope, "all");
+    assert.equal(typeof payload.defaultHarness, "string");
+    assert.match(payload.kxm.detail, /@kontextmind\/kxm@99\.0\.0/);
+    const selfIdx = payload.steps.findIndex((step) => step.scope === "self" && step.outcome === "would");
+    const laterIdx = payload.steps.findIndex((step) => step.scope !== "self" && step.outcome === "would");
+    if (payload.steps.some((step) => step.outcome === "would")) {
+      assert.ok(selfIdx >= 0, "default update plans harness --self when a harness is detected");
+      if (laterIdx >= 0) assert.ok(selfIdx < laterIdx, "--self steps come before other harness scopes");
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
     fake.cleanup();
   }
 });
@@ -398,6 +440,8 @@ test("update --kxm dry-run plans npm install when source is npm", async () => {
 test("update --kxm refuses a tarball whose sha256 does not match the release digest", async () => {
   const cwd = tempProject();
   const fake = fakeNpmGlobal();
+  const githubHome = mkdtempSync(join(tmpdir(), "kxm-update-digest-"));
+  writeUserUpdateYaml(githubHome, "schema: kxm.update.v1\nauto: false\nsource: github\n");
   try {
     let releaseDir = "";
     const writeDownloaded = (command: "gh" | "curl") => (args: readonly string[]) => {
@@ -413,7 +457,7 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
       },
     });
     const mismatchIo = capture();
-    assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(mismatchIo, fake, {
+    assert.equal(await runCli(["update", "--json", "--kxm"], { KXM_STATE_HOME: githubHome }, withGlobal(mismatchIo, fake, {
       fetchImpl: releaseFetch("v99.0.0", "0".repeat(64)),
       spawnSync: mismatch.spawnSync,
     }), cwd), 1);
@@ -433,7 +477,7 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
       },
     });
     const missingIo = capture();
-    assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(missingIo, fake, {
+    assert.equal(await runCli(["update", "--json", "--kxm"], { KXM_STATE_HOME: githubHome }, withGlobal(missingIo, fake, {
       fetchImpl: releaseFetch("v99.0.0", null),
       spawnSync: missing.spawnSync,
     }), cwd), 1);
@@ -448,7 +492,7 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
       curl: (args) => writeCurlTarball(args),
     });
     const matchIo = capture();
-    assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(matchIo, fake, {
+    assert.equal(await runCli(["update", "--json", "--kxm"], { KXM_STATE_HOME: githubHome }, withGlobal(matchIo, fake, {
       fetchImpl: releaseFetch("v99.0.0", digest),
       spawnSync: match.spawnSync,
     }), cwd), 0);
@@ -462,7 +506,7 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
       npmInstall: () => ({ status: 1, stdout: "", stderr: "npm install failed" }),
     });
     const failedIo = capture();
-    assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(failedIo, fake, {
+    assert.equal(await runCli(["update", "--json", "--kxm"], { KXM_STATE_HOME: githubHome }, withGlobal(failedIo, fake, {
       fetchImpl: releaseFetch("v99.0.0", digest),
       spawnSync: failedInstall.spawnSync,
     }), cwd), 1);
@@ -472,6 +516,7 @@ test("update --kxm refuses a tarball whose sha256 does not match the release dig
     assert.ok((failedPayload.kxm?.detail ?? "").length > 0);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(githubHome, { recursive: true, force: true });
     fake.cleanup();
   }
 });
@@ -490,7 +535,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
     const piSpawn = npmGlobalSpawn(join(home, "node_modules"));
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
       ...piIo,
-      fetchImpl: releaseFetch(),
+      fetchImpl: npmFetch("99.0.0"),
       installProbe: {
         moduleDir: join(piRoot, "plugins", "kxm", "dist"),
         repoRoot: piRoot,
@@ -510,7 +555,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
     const marketIo = capture();
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
       ...marketIo,
-      fetchImpl: releaseFetch(),
+      fetchImpl: npmFetch("99.0.0"),
       installProbe: {
         moduleDir: marketDir,
         repoRoot: join(home, ".claude", "plugins", "cache", "kxm", "kxm"),
@@ -528,7 +573,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
       const localIo = capture();
       const localSpawn = npmGlobalSpawn(join(home, "other-global", "node_modules"));
       assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(localIo, fake, {
-        fetchImpl: releaseFetch(),
+        fetchImpl: npmFetch("99.0.0"),
         spawnSync: localSpawn.spawnSync,
       }), cwd), 2);
       const localPayload = JSON.parse(localIo.read().stderr) as { error: string };
@@ -542,7 +587,7 @@ test("update --kxm fails closed when kxm is not an npm global install", async ()
     const unknownIo = capture();
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
       ...unknownIo,
-      fetchImpl: releaseFetch(),
+      fetchImpl: npmFetch("99.0.0"),
       installProbe: {
         moduleDir: join(unknownRoot, "dist"),
         repoRoot: unknownRoot,
@@ -609,7 +654,7 @@ test("update --kxm refuses unsupported kinds when current or the release check f
     const piSpawn = npmGlobalSpawn(join(home, "node_modules"));
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
       ...piIo,
-      fetchImpl: releaseFetch(`v${currentVersion}`),
+      fetchImpl: npmFetch(currentVersion),
       installProbe: {
         moduleDir: join(piRoot, "plugins", "kxm", "dist"),
         repoRoot: piRoot,
@@ -631,7 +676,7 @@ test("update --kxm refuses unsupported kinds when current or the release check f
     const unknownCurrentSpawn = npmGlobalSpawn(join(home, "node_modules"));
     assert.equal(await runCli(["update", "--json", "--kxm"], {}, {
       ...unknownCurrent,
-      fetchImpl: releaseFetch(`v${currentVersion}`),
+      fetchImpl: npmFetch(currentVersion),
       installProbe: {
         moduleDir: join(unknownRoot, "dist"),
         repoRoot: unknownRoot,
@@ -677,7 +722,7 @@ test("update --kxm refuses unsupported kinds when current or the release check f
       const checkIo = capture();
       const checkSpawn = npmGlobalSpawn(join(home, "other-global", "node_modules"));
       assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(checkIo, fakeLocal, {
-        fetchImpl: releaseFetch(`v${currentVersion}`),
+        fetchImpl: npmFetch(currentVersion),
         spawnSync: checkSpawn.spawnSync,
       }), cwd), 0);
       const checkPayload = JSON.parse(checkIo.read().stdout) as { installKind: string };
@@ -693,7 +738,7 @@ test("update --kxm refuses unsupported kinds when current or the release check f
       const eligible = npmGlobalSpawn(fakeGlobal.npmRoot);
       const eligibleIo = capture();
       assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(eligibleIo, fakeGlobal, {
-        fetchImpl: releaseFetch(`v${currentVersion}`),
+        fetchImpl: npmFetch(currentVersion),
         spawnSync: eligible.spawnSync,
       }), cwd), 0);
       const eligiblePayload = JSON.parse(eligibleIo.read().stdout) as { kxm?: unknown; installKind: string };
@@ -784,7 +829,7 @@ test("harness list, runtime dry-run, and dash screens cover adjacent CLI branche
     assert.match(harness.read().stdout, /"command":"harness list"/);
 
     const self = capture();
-    assert.equal(await runCli(["update", "--json", "--dry-run", "--self"], {}, withGlobal(self, fake, { fetchImpl: githubFetch(`v${currentVersion}`) }), cwd), 0);
+    assert.equal(await runCli(["update", "--json", "--dry-run", "--self"], {}, withGlobal(self, fake, { fetchImpl: npmFetch(currentVersion) }), cwd), 0);
     assert.match(self.read().stdout, /"scope":"self"/);
 
     const runtimeEnv = { KXM_STATE_HOME: stateHome };
@@ -908,7 +953,7 @@ test("hub start prints an available update notice", async () => {
     const io = capture();
     let spawned = 0;
     assert.equal(await runCli(["hub", "start"], {}, withGlobal(io, fake, {
-      fetchImpl: githubFetch("v99.0.0"),
+      fetchImpl: npmFetch("99.0.0"),
       spawnHub: () => {
         spawned += 1;
         return 0;
@@ -920,7 +965,7 @@ test("hub start prints an available update notice", async () => {
     rmSync(join(cwd, ".kxm", "state", "update-check.json"), { force: true });
     const current = capture();
     assert.equal(await runCli(["hub", "start"], {}, withGlobal(current, fake, {
-      fetchImpl: githubFetch(`v${currentVersion}`),
+      fetchImpl: npmFetch(currentVersion),
       spawnHub: () => 0,
     }), cwd), 0);
     assert.doesNotMatch(current.read().stderr, /available/);
@@ -988,7 +1033,7 @@ test("hub start prints the cached notice before spawning and refreshes in the ba
       fetchImpl: async () => {
         await new Promise((resolve) => setTimeout(resolve, 200));
         fetchResolvedAt = Date.now();
-        return new Response(JSON.stringify({ tag_name: "v99.0.0" }), { status: 200 });
+        return new Response(JSON.stringify({ version: "99.0.0" }), { status: 200 });
       },
       spawnHub: () => {
         spawnedAt = Date.now();
@@ -1018,7 +1063,7 @@ test("kxm update reads the installed version from the install root, never the ca
     for (const [cwd, label] of [[bare, "no package.json"], [stranger, "a stranger's package.json"]] as const) {
       const io = capture();
       const code = await runCli(["update", "--json", "--check"], {}, withGlobal(io, fake, {
-        fetchImpl: releaseFetch("v99.0.0"),
+        fetchImpl: npmFetch("99.0.0"),
       }), cwd);
       assert.equal(code, 0, `update --check crashed from a cwd with ${label}: ${io.read().stderr.slice(0, 200)}`);
       const payload = JSON.parse(io.read().stdout) as { current?: string; installKind?: string };
@@ -1028,6 +1073,66 @@ test("kxm update reads the installed version from the install root, never the ca
   } finally {
     rmSync(bare, { recursive: true, force: true });
     rmSync(stranger, { recursive: true, force: true });
+    fake.cleanup();
+  }
+});
+
+function fakeKxmCheckout(version = currentVersion): { root: string; cleanup: () => void } {
+  const root = mkdtempSync(join(tmpdir(), "kxm-src-checkout-"));
+  mkdirSync(join(root, ".git"));
+  writeFileSync(join(root, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version })}\n`);
+  return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+test("update --check from a kxm source checkout reports local and does not fetch", async () => {
+  const checkout = fakeKxmCheckout("0.9.9");
+  const fake = fakeNpmGlobal("0.7.0");
+  try {
+    const io = capture();
+    assert.equal(await runCli(["update", "--json", "--check"], {}, withGlobal(io, fake, {
+      fetchImpl: async () => {
+        throw new Error("local checkout must not fetch");
+      },
+    }), checkout.root), 0);
+    const payload = JSON.parse(io.read().stdout) as {
+      source: string;
+      latest?: string;
+      current: string;
+      available: boolean;
+    };
+    assert.equal(payload.source, "local");
+    assert.equal(payload.latest, "0.9.9");
+    assert.equal(payload.current, "0.7.0");
+    assert.equal(payload.available, true);
+  } finally {
+    checkout.cleanup();
+    fake.cleanup();
+  }
+});
+
+test("update --kxm from a kxm source checkout installs the local package", async () => {
+  const checkout = fakeKxmCheckout("0.9.9");
+  const fake = fakeNpmGlobal("0.7.0");
+  try {
+    const spawn = npmGlobalSpawn(fake.npmRoot);
+    const io = capture();
+    assert.equal(await runCli(["update", "--json", "--kxm"], {}, withGlobal(io, fake, {
+      fetchImpl: async () => {
+        throw new Error("local checkout must not fetch");
+      },
+      spawnSync: spawn.spawnSync,
+    }), checkout.root), 0);
+    const payload = JSON.parse(io.read().stdout) as {
+      notice: { source: string; latest: string };
+      kxm: { ok: boolean; detail: string };
+    };
+    assert.equal(payload.notice.source, "local");
+    assert.equal(payload.notice.latest, "0.9.9");
+    const install = spawn.calls.find((call) => call.command === "npm" && call.args.includes("install"));
+    assert.ok(install);
+    assert.deepEqual(install.args, ["install", "--global", "--omit=peer", resolve(checkout.root)]);
+  } finally {
+    checkout.cleanup();
     fake.cleanup();
   }
 });

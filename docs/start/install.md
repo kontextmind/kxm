@@ -8,7 +8,7 @@ KXM has three parts you can install: the `kxm` command-line tool, the Claude Cod
 - Git.
 - Claude Code, if you want the plugin.
 - Pi, if you want Pi agents. Install it with `npm install --global @earendil-works/pi-coding-agent` and sign in to a model provider as the [Pi documentation](https://pi.dev/docs/latest) describes.
-- The GitHub CLI (`gh`), only if you plan to update with `kxm update --kxm` from the GitHub source. When `gh` is missing, that command falls back to curl and still checks the release checksum. The manual curl commands are in [Upgrade KXM](../operations/upgrade.md#update-the-cli-without-gh).
+- The GitHub CLI (`gh`), only if `update.yaml` sets `source: github` so `kxm update --kxm` downloads the release tarball. When `gh` is missing, that command falls back to curl and still checks the release checksum. The manual curl commands are in [Upgrade KXM](../operations/upgrade.md#update-the-cli-without-gh).
 
 ## Choose what to install
 
@@ -107,13 +107,13 @@ npm ci
 node scripts/kxm.mjs --version
 ```
 
-Use `node scripts/kxm.mjs` wherever the docs show `kxm`. It runs the CLI bundle committed in `plugins/kxm/dist/`. Update a checkout with `git pull` and `npm ci`; `kxm update --kxm` refuses to run there. [Develop KXM](../contributing/development.md) covers building and testing.
+Use `node scripts/kxm.mjs` wherever the docs show `kxm`. It runs the CLI bundle committed in `plugins/kxm/dist/`. Update a checkout with `git pull` and `npm ci`. From this repository, `kxm update --kxm` installs those local files globally. [Develop KXM](../contributing/development.md) covers building and testing.
 
 ## Update
 
 | Part | Command |
 |---|---|
-| `kxm` CLI | `npm install --global --omit=peer @kontextmind/kxm@latest` (check first with `kxm update --check`) |
+| `kxm` CLI | `kxm update --kxm` or `npm install --global --omit=peer @kontextmind/kxm@latest` (check first with `kxm update --check`) |
 | Claude Code plugin | `claude plugin marketplace update kxm`, then uninstall and reinstall the plugin; `claude plugin update` never refreshes it |
 | Pi package | `pi update --extensions` |
 

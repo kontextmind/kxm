@@ -8,7 +8,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const STAGES = Object.freeze([
@@ -67,13 +67,55 @@ function childEnv() {
   return env;
 }
 
+function pathValue(env) {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === "PATH");
+  return key ? env[key] : "";
+}
+
+function comSpec(env) {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === "COMSPEC");
+  return (key && env[key].trim()) || "cmd.exe";
+}
+
+/** CreateProcess does not run `npm.cmd`. Prefer a real `.exe`; otherwise launch the `.cmd`/`.bat` through cmd. */
+function windowsScriptOnPath(command, env) {
+  if (process.platform !== "win32") return undefined;
+  if (/\.(?:exe|com)$/i.test(command) || /[\\/]/.test(command)) return undefined;
+  if (/\.(?:cmd|bat)$/i.test(command)) return command;
+  for (const dir of pathValue(env).split(delimiter)) {
+    if (!dir) continue;
+    if (existsSync(join(dir, `${command}.exe`))) return undefined;
+    const cmd = join(dir, `${command}.cmd`);
+    if (existsSync(cmd)) return cmd;
+    const bat = join(dir, `${command}.bat`);
+    if (existsSync(bat)) return bat;
+  }
+  return undefined;
+}
+
+function quoteCmdArg(value) {
+  const text = String(value);
+  if (/[\0\r\n"%!]/.test(text)) {
+    throw new Error(`cannot pass ${JSON.stringify(text)} to a Windows command script`);
+  }
+  return `"${text}"`;
+}
+
 function run(command, args, timeout = 120_000) {
-  const result = spawnSync(command, args, {
+  const env = childEnv();
+  const script = windowsScriptOnPath(command, env);
+  const windowsCommandScript = Boolean(script);
+  const launchCommand = windowsCommandScript ? comSpec(env) : command;
+  const launchArgs = windowsCommandScript
+    ? ["/d", "/s", "/v:off", "/c", `"${[script, ...args].map(quoteCmdArg).join(" ")}"`]
+    : args;
+  const result = spawnSync(launchCommand, launchArgs, {
     cwd: root,
     encoding: "utf8",
-    env: childEnv(),
+    env,
     timeout,
     windowsHide: true,
+    windowsVerbatimArguments: windowsCommandScript,
   });
   return {
     status: result.status ?? 1,

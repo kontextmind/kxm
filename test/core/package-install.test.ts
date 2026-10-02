@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { npmPackArtifacts } from "../../scripts/npm-pack-json.mjs";
 import { hubEnvFile } from "../../plugins/kxm/src/hub-env.ts";
 
 function makeGitRoot(root: string): void {
@@ -60,7 +61,7 @@ test("packed npm artifact runs the operator CLI and hub outside the repository",
   try {
     const packed = runNpm(["pack", "--json", "--pack-destination", packDirectory], repository);
     assert.equal(packed.status, 0, `${packed.stderr}\n${packed.stdout}`);
-    const artifacts = JSON.parse(packed.stdout) as Array<{ filename: string }>;
+    const artifacts = npmPackArtifacts(packed.stdout) as Array<{ filename: string }>;
     assert.equal(artifacts.length, 1);
     const filename = artifacts[0]?.filename;
     assert.ok(filename);

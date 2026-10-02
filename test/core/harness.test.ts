@@ -318,8 +318,50 @@ test("update plans native commands and dry-run does not spawn", () => {
   assert(planned.some((step) => step.harness === "pi" && step.scope === "extensions"));
   assert(planned.some((step) => step.harness === "pi" && step.scope === "models"));
   assert(planned.every((step) => step.harness !== "claude"), "absent harnesses are not updated");
+  const selfIdx = planned.findIndex((step) => step.scope === "self");
+  const extIdx = planned.findIndex((step) => step.scope === "extensions");
+  const modelIdx = planned.findIndex((step) => step.scope === "models");
+  assert.ok(selfIdx >= 0 && selfIdx < extIdx && extIdx < modelIdx, "--all runs --self first, then extensions, then models");
   const dry = runHarnessUpdate(planned, { dryRun: true, runCommand: () => { throw new Error("spawned"); } });
   assert(dry.every((step) => step.outcome === "would"));
+});
+
+test("update --all plans default harness --self before other harnesses and scopes", () => {
+  const inventory: HarnessInventory = {
+    defaultHarness: "pi",
+    harnesses: [
+      {
+        id: "claude",
+        label: "Claude Code",
+        default: false,
+        mode: "either",
+        detected: true,
+        authenticated: true,
+        command: "claude",
+        canUpdate: { self: true, extensions: true, models: false },
+        issues: [],
+      },
+      {
+        id: "pi",
+        label: "Pi",
+        default: true,
+        mode: "headless",
+        detected: true,
+        authenticated: null,
+        command: "pi",
+        canUpdate: { self: true, extensions: true, models: true },
+        issues: [],
+      },
+    ],
+  };
+  const planned = planHarnessUpdate(inventory, { scope: "all" });
+  assert.deepEqual(planned.map((step) => `${step.harness}:${step.scope}`), [
+    "pi:self",
+    "claude:self",
+    "pi:extensions",
+    "claude:extensions",
+    "pi:models",
+  ]);
 });
 
 test("unknown harness update is skipped fail-closed", () => {

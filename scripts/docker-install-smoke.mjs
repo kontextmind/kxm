@@ -14,6 +14,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { npmPackArtifacts } from "./npm-pack-json.mjs";
 const repoRoot = resolve(import.meta.dirname, "..");
 
 const vault = process.env.KXM_SMOKE_VAULT ?? "AI Provider Keys";
@@ -92,7 +93,7 @@ function main() {
     //    commit gate (`npm run verify` -> check:generated) enforces that.
     process.stdout.write("==> npm pack\n");
     const packed = run("npm", ["pack", "--pack-destination", scratch, "--json"], { cwd: repoRoot });
-    const filename = JSON.parse(packed.stdout)[0]?.filename;
+    const filename = npmPackArtifacts(packed.stdout)[0]?.filename;
     if (!filename) die("npm pack produced no tarball");
     const tarball = join(scratch, filename);
 

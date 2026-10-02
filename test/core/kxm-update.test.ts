@@ -22,12 +22,12 @@ test("semver compare rejects non-semver and orders releases", () => {
   assert.equal(compareSemver("0.5.1-dev", "0.5.2"), undefined);
 });
 
-test("missing update.yaml defaults to github notice-only", () => {
+test("missing update.yaml defaults to npm notice-only", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-update-missing-"));
   try {
     const config = loadKxmUpdateConfig({ KXM_STATE_HOME: root });
     assert.equal(config.auto, false);
-    assert.equal(config.source, "github");
+    assert.equal(config.source, "npm");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -44,7 +44,7 @@ test("update.yaml auto github is valid; unknown fields fail closed", () => {
     writeFileSync(join(root, "update.yaml"), "schema: kxm.update.v1\nauto: false\nextra: 1\n");
     assert.throws(() => loadKxmUpdateConfig(env), KxmUpdateConfigError);
     writeFileSync(join(root, "update.yaml"), "schema: kxm.update.v1\nauto: false\n");
-    assert.equal(loadKxmUpdateConfig(env).source, "github");
+    assert.equal(loadKxmUpdateConfig(env).source, "npm");
     writeFileSync(join(root, "update.yaml"), "[]\n");
     assert.throws(() => loadKxmUpdateConfig(env), /must be a mapping/);
     writeFileSync(join(root, "update.yaml"), "foo: [unterminated\n");
@@ -92,6 +92,9 @@ test("notice and github release install plan", () => {
   assert.equal(npmSteps.length, 1);
   assert.equal(npmSteps[0]?.kind, "install");
   assert.match(npmSteps[0]?.kind === "install" ? npmSteps[0].args.join(" ") : "", /@kontextmind\/kxm@0\.5\.2/);
+  const localSteps = planKxmPackageUpdate("local", "0.5.2", "/tmp/rel", undefined, "gh", "/work/kxm");
+  assert.equal(localSteps.length, 1);
+  assert.deepEqual(localSteps[0]?.kind === "install" ? localSteps[0].args : [], ["install", "--global", "--omit=peer", "/work/kxm"]);
 });
 
 test("kxmReleaseAssetName is kxm-<v>.tgz", () => {

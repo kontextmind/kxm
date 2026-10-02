@@ -11,6 +11,7 @@ import type { Node } from "typescript/unstable/ast";
 import * as is from "typescript/unstable/ast/is";
 import { visitEachChild } from "typescript/unstable/ast/visitor";
 
+import { npmPackArtifacts } from "../../scripts/npm-pack-json.mjs";
 const { GENERATED_ARTIFACTS } = await import(
   pathToFileURL(resolve("scripts/check-generated.mjs")).href,
 ) as { GENERATED_ARTIFACTS: readonly string[] };
@@ -204,7 +205,7 @@ function runNpm(args: string[], cwd: string) {
 function packFilenames(cwd: string): string[] {
   const packed = runNpm(["pack", "--dry-run", "--json"], cwd);
   assert.equal(packed.status, 0, `${packed.stderr}\n${packed.stdout}`);
-  const artifacts = JSON.parse(packed.stdout) as Array<{ files?: Array<{ path: string }> }>;
+  const artifacts = npmPackArtifacts(packed.stdout) as Array<{ files?: Array<{ path: string }> }>;
   assert.equal(artifacts.length, 1);
   return (artifacts[0]?.files ?? []).map((file) => file.path).sort();
 }

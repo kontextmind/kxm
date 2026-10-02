@@ -181,6 +181,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **`kxm update --kxm` defaults to npm.** Missing or source-less `update.yaml` now
+  uses the public `@kontextmind/kxm` package instead of the GitHub release tarball.
+  `source: github` still selects the digest-checked tarball. When the working
+  directory is this repository, `--kxm` installs the local files and does not fetch.
+- **`kxm update` is a full update by default.** Bare `kxm update` and `--all` run
+  detected harness `--self` first (default harness leading), then the kxm package,
+  then extensions and models. `--kxm` remains kxm-only. Detected harness updater
+  failures on `--all` degrade the receipt and do not fail the command; an unknown
+  harness id still exits 2.
+- **`kxm land` runs `npm` on Windows.** The verify stage launches `npm.cmd` through `cmd.exe` when `npm` is not an `.exe`.
+- **npm 12 `pack --json`.** The install smoke and pack tests accept the package-keyed object as well as the older one-element array.
+- **Roadmap links on Windows.** `kxm land` keeps the git symlink text when this process cannot create the `docs/roadmap` links.
+
 - **Tool policy is enforced at load and before dispatch.**
   `coordinator` and `read-only` select the read-only one-shot profile.
   `workspace-writer` and `tests-writer` select the edit profile. Dispatch

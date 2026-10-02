@@ -245,6 +245,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `scripts/`, or workflow files also runs those unit lanes on Windows Node 24.
   `Nightly` and `Real Pi smoke` stay disabled. `Release` still runs `validate:ci`.
 
+- **npm update-source (operator, 2026-09-25).** `kxm update --kxm` installs from the
+  public npm package by default. GitHub release tarballs remain available when
+  `update.yaml` sets `source: github`. Inside this repository (`@kontextmind/kxm`
+  plus `.git`), `--kxm` installs the local files with `npm install --global --omit=peer <cwd>`
+  and does not fetch. Wiki compile/ingest stays unselected.
+- **`kxm update` default is `--all` (operator, 2026-09-25).** Bare `kxm update` and
+  `--all` run detected harness `--self` first (default harness leading), then the kxm
+  package, then extensions and models. `--kxm` is kxm-only. Detected harness updater
+  failures on `--all` degrade; unknown harness ids still exit 2.
+
 - **CI test pause (2026-09-24), superseded.** Workflows `CI`, `Nightly`, and
   `Real Pi smoke` were disabled, and required checks were removed from
   ruleset `protect-main`. That pause is over. See **CI lanes (2026-09-27)**
@@ -252,7 +262,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (`22251971`), and Windows Validate legs run on `main` (#358 to #364).
   `Nightly` and `Real Pi smoke` stay disabled. `npm run verify` remains the
   local commit gate.
-
 - **Single operator: no migrations, no legacy support, minimal tests (2026-09-20).**
   Nobody else runs this. Old state is deleted and re-created, not upgraded, and nothing
   carries a second shape of anything for the sake of a file that no longer exists. Applied
@@ -2394,15 +2403,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - Harness catalog + `kxm harness list` + `kxm update`.
 - Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
   projections, crash recovery. Runs stay `created` until Phase 3.
-- `kxm update --check` / `--kxm`: GitHub release tarball and npm source are
-  implemented; the public-package prerequisite is now satisfied. Default source
-  remains GitHub. `auto` only from per-user host-state
-  `update.yaml`. Install-kind detection: only npm-global applies; source
-  checkouts neither fetch nor nag; other kinds refuse and explain, including
-  explicit `--kxm` when already current or the release check fails. GitHub
-  installs verify the `kxm-<v>.tgz` sha256 digest (absent is fatal).
+- `kxm update --check` / `--kxm`: default source is npm. GitHub release tarballs
+  remain when `update.yaml` sets `source: github`. A working directory that is
+  this repository installs the local files. `auto` only from per-user host-state
+  `update.yaml`. Install-kind detection: only npm-global applies off-repo; source
+  checkouts neither fetch nor nag unless the cwd is this repo; other kinds refuse
+  and explain, including explicit `--kxm` when already current or the release
+  check fails. GitHub installs verify the `kxm-<v>.tgz` sha256 digest (absent is fatal).
   Notice on hub start (skipped for source) and session widget (cached). Does
-  not block session start on the network.
+  not block session start on the network. Without `gh`, a `source: github`
+  install downloads with curl and keeps the digest check.
 - Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
   on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
   skill `kxm-session`, `kxm hub bind <url>` / `kxm hub unbind`.
