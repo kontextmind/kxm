@@ -15,9 +15,9 @@ Read this first. Then follow
   `kxm hub bind <url>` binds this host to a running hub; `kxm init` is project-only.
 - DB: `.kxm/state/kxm.db`
 - Plugin / npm: `kxm` / `@kontextmind/kxm`
-- Wiki compile/ingest and the npm update-source stay **unselected**. The **public npm**
-  release they were punted behind is satisfied (2026-09-17), so that punt is no longer a
-  reason; they return only by a new decision, not by a prerequisite expiring.
+- Wiki compile/ingest stays **unselected**. The npm update-source is selected:
+  `kxm update --kxm` installs `@kontextmind/kxm` from the public npm registry, except
+  when the working directory is this repository, where it installs the local files.
 
 ## Who does what
 

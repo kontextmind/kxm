@@ -971,7 +971,7 @@ Not run: stores a credential.
 ## `kxm update`
 
 ```text
-kxm update [harness] [--check | --kxm] [--self | --extensions | --models]
+kxm update [harness] [--check | --kxm] [--all | --self | --extensions | --models]
 ```
 
 Checks for or applies a KXM operator package update, and runs the native updaters of detected harnesses.
@@ -979,14 +979,15 @@ Checks for or applies a KXM operator package update, and runs the native updater
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--check` | none | off | Check for a kxm package update without applying |
-| `--kxm` | none | off | Apply the kxm operator package update (GitHub release tarball or npm) |
-| `--self` | none | off | Update only the harness CLI |
+| `--all` | none | off | Update harness CLIs first (`--self`), then kxm, extensions, and models (default for a bare `kxm update`) |
+| `--kxm` | none | off | Apply only the kxm operator package update (npm by default, GitHub tarball when configured, or local files in this repo) |
+| `--self` | none | off | Update only harness CLIs |
 | `--extensions` | none | off | Update only extensions/plugins (Pi packages, Claude kxm) |
 | `--models` | none | off | Refresh model catalogs where the harness supports it |
 
 - Arguments: `[harness]`, Harness id (default: every detected harness).
-- `--check` cannot be combined with any other update flag or a harness (exit 2, `scope_conflict`), and at most one of `--self`, `--extensions`, `--models` is allowed (exit 2).
-- From a source checkout, `--check` reports the running version without network access, and `--kxm` is refused (exit 2, `install_kind_source`) with an instruction to `git pull`. Only npm-global installs can apply `--kxm`; other install kinds exit 2 with `install_kind_<kind>`. A GitHub release must publish a sha256 digest for `kxm-<version>.tgz` or the install fails closed (`release_digest_missing`, `release_digest_mismatch`). When `gh` is missing, the github source downloads that same asset with `curl --fail --silent --show-error --location` and still verifies the digest before `npm install -g`.
+- `--check` cannot be combined with any other update flag or a harness (exit 2, `scope_conflict`), and at most one of `--all`, `--self`, `--extensions`, `--models` is allowed (exit 2).
+- Default `source` is npm. Set `update.yaml` `source: github` for the release tarball. When the working directory is this repository (`@kontextmind/kxm` plus `.git`), `--check` reports `source: local` without a network fetch and `--kxm` runs `npm install --global --omit=peer <cwd>`. From a source-built binary used outside this repo, `--check` reports the running version without network access, and `--kxm` is refused (exit 2, `install_kind_source`) with an instruction to `git pull`. Only npm-global installs can apply a registry or GitHub `--kxm`; other install kinds exit 2 with `install_kind_<kind>`. A GitHub release must publish a sha256 digest for `kxm-<version>.tgz` or the install fails closed (`release_digest_missing`, `release_digest_mismatch`). When `gh` is missing, the github source downloads that same asset with `curl --fail --silent --show-error --location` and still verifies the digest before `npm install -g`.
 
 On a host with neither `gh` nor a working `kxm`, download and check it yourself:
 
@@ -1001,7 +1002,7 @@ npm install --global --omit=peer "./kxm-${version}.tgz"
 ```
 
 - Settings come only from `update.yaml` under the user state root (`auto: true` enables auto-apply); a project `.kxm/update.yaml` is ignored with a warning.
-- Without `--check` or a lone `--kxm`, KXM probes harnesses (as `harness list` does) and runs each updater for the selected scope. An unknown harness id exits 2 (`unknown_harness` step); a failed step exits 1.
+- Without `--check` or a lone `--kxm`, KXM probes harnesses (as `harness list` does) and runs each updater for the selected scope. An unknown harness id exits 2 (`unknown_harness` step); a failed step exits 1, except under `--all` (the default), where a failed harness updater sets `degraded: true` and exits 0.
 - Honors `--dry-run`: steps are planned, not run, and the cached update notice is not refreshed.
 - JSON keys: `--check` gives `current`, `available`, `auto`, `source`, `latest`, `message`, `installKind`, `root`; otherwise `dryRun`, `scope`, `notice`, `kxm` (when applying), `steps` (`harness`, `scope`, `command`, `args`, `outcome`, `detail`), `installKind`, `root`.
 
@@ -1010,7 +1011,7 @@ kxm update --check --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"update check","current":"0.7.1","available":false,"auto":false,"source":"github","installKind":"source","root":"/work/kxm","message":"kxm 0.7.1 (running from source at /work/kxm)"}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"update check","current":"0.7.1","available":false,"auto":false,"source":"npm","installKind":"source","root":"/work/kxm","message":"kxm 0.7.1 (running from source at /work/kxm)"}
 ```
 
 ```bash

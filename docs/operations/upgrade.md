@@ -6,7 +6,7 @@ Move the `kxm` CLI, the hub, the Runtime, and the Claude Code or Pi integrations
 
 - Protected storage for a full backup; see [Back up and restore KXM](backup-and-restore.md).
 - A window in which the hub, the Runtime supervisor and long-lived workers may stop.
-- The GitHub CLI (`gh`, signed in) if you apply updates with `kxm update --kxm` from the default `github` source. When `gh` is not installed, that command downloads the same `kxm-<version>.tgz` with curl and still checks the release sha256 before installing. Without a working `kxm` either, use the curl commands in [Update the CLI without gh](#update-the-cli-without-gh).
+- The GitHub CLI (`gh`, signed in), only when `update.yaml` sets `source: github`. When `gh` is not installed, that command downloads the same `kxm-<version>.tgz` with curl and still checks the release sha256 before installing. Without a working `kxm` either, use the curl commands in [Update the CLI without gh](#update-the-cli-without-gh).
 
 ## Check for an update
 
@@ -17,7 +17,7 @@ kxm update --check
 Expected output when a newer release exists:
 
 ```text
-kxm 0.7.1 → 0.7.2 available · kxm update --kxm
+kxm 0.7.1 → 0.7.2 available · kxm update
 ```
 
 From a source checkout, the check makes no network call and reports the checkout instead:
@@ -26,7 +26,7 @@ From a source checkout, the check makes no network call and reports the checkout
 kxm 0.7.1 (running from source at /work/kxm)
 ```
 
-The check reads `update.yaml` under the user state root. Its `source` is `github` (release tarballs) by default; `npm` is also accepted. See [Updater settings](../reference/config-reference.md#updater-settings-kxmupdatev1). Add `--json` to see the install kind KXM detected.
+The check reads `update.yaml` under the user state root. Its `source` is `npm` by default; `github` (release tarballs) is also accepted. When the working directory is this repository, `kxm update --kxm` installs the local files instead of fetching. See [Updater settings](../reference/config-reference.md#updater-settings-kxmupdatev1). Add `--json` to see the install kind KXM detected.
 
 ## Stop the services and back up
 
@@ -48,7 +48,7 @@ Use the path that matches how KXM was installed. `kxm update --kxm` applies an u
 
 | Install kind | Upgrade with |
 |---|---|
-| Global npm install | `kxm update --kxm` (release tarball, or npm with `source: npm`), or `npm install --global --omit=peer @kontextmind/kxm@latest` |
+| Global npm install | `kxm update --kxm` (npm registry, or GitHub tarball with `source: github`), or `npm install --global --omit=peer @kontextmind/kxm@latest` |
 | Pi package | `pi update` |
 | Claude Code marketplace plugin | Reinstall the plugin; see the plugin note below |
 | Project dependency | `npm install @kontextmind/kxm@latest` in that project |
@@ -77,7 +77,7 @@ Refuse a tarball whose sha256 does not match the release asset digest.
 
 ### Update harnesses and plugins
 
-Without `--check` or a lone `--kxm`, `kxm update` also runs the native updaters of detected harnesses. Narrow it with a harness id and one scope:
+Bare `kxm update` (same as `--all`) runs detected harness `--self` updaters first, then the kxm package, then extensions and models; `--kxm` alone updates only kxm. Narrow it with a harness id and one scope:
 
 ```bash
 kxm update --dry-run               # plan every detected harness

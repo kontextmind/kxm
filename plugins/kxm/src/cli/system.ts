@@ -68,6 +68,7 @@ import {
 } from "../init-guide-setup.ts";
 import {
   classifyInstallRoot,
+  kxmSourceCheckoutRoot,
   resolveInstallKind,
   type InstallKindReport,
   type InstallProbe,
@@ -161,7 +162,7 @@ export function applyKxmPackageUpdate(runtime: Runtime, notice: KxmUpdateNotice)
   const releaseDir = mkdtempSync(join(tmpdir(), "kxm-pkg-update-"));
   try {
     const downloader = notice.source === "github" && !ghReleaseDownloadAvailable(runtime.env) ? "curl" : "gh";
-    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset, downloader);
+    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset, downloader, notice.localRoot);
     if (runtime.dryRun) {
       return { ok: true, detail: planned.map(formatPackageUpdateStep).join(" && ") };
     }
@@ -309,14 +310,15 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
   models?: boolean | undefined;
   check?: boolean | undefined;
   kxm?: boolean | undefined;
+  all?: boolean | undefined;
 }): Promise<number> {
-  if (options.check && (options.kxm || options.self || options.extensions || options.models || harness)) {
+  if (options.check && (options.kxm || options.self || options.extensions || options.models || options.all || harness)) {
     print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "--check cannot be combined with other update flags");
     return 2;
   }
-  const selected = [options.self, options.extensions, options.models].filter(Boolean).length;
+  const selected = [options.self, options.extensions, options.models, options.all].filter(Boolean).length;
   if (selected > 1) {
-    print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "specify at most one of --self, --extensions, or --models");
+    print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "specify at most one of --all, --self, --extensions, or --models");
     return 2;
   }
   warnIgnoredProjectUpdateYaml(runtime);
@@ -328,10 +330,24 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
   // `cd ~ && kxm update --kxm` into an uncaught ENOENT on `$HOME/package.json`,
   // and would happily compare a stranger project's version wherever one did
   // exist. Unreadable is now a stated refusal.
+  // Exception: a cwd that *is* this repository (`@kontextmind/kxm` plus `.git`)
+  // is a local-files apply, not a stranger version compare.
   const current = installedKxmVersion(classified.root) ?? installedKxmVersion(findKxmRepoRoot(import.meta.url));
+  const localRoot = kxmSourceCheckoutRoot(runtime.dirs.workdir) ?? kxmSourceCheckoutRoot(runtime.cwd);
   let notice: KxmUpdateNotice;
   let kindReport = classified;
-  if (classified.kind === "source") {
+  if (localRoot) {
+    const localVersion = installedKxmVersion(localRoot) ?? current ?? "unknown";
+    notice = {
+      current: current ?? localVersion,
+      latest: localVersion,
+      available: true,
+      auto: false,
+      source: "local",
+      message: `kxm ${current ?? localVersion} (local ${localRoot})`,
+      localRoot,
+    };
+  } else if (classified.kind === "source") {
     if (options.check) {
       const message = `kxm ${current ?? "unknown"} (running from source at ${classified.root})`;
       print(runtime.io, runtime.json, {
@@ -340,7 +356,7 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
         current: current ?? "unknown",
         available: false,
         auto: false,
-        source: "github",
+        source: "npm",
         installKind: "source",
         root: classified.root,
         message,
@@ -362,7 +378,7 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
       current: current ?? "unknown",
       available: false,
       auto: false,
-      source: "github",
+      source: "npm",
       message: `kxm ${current ?? "unknown"} (running from source)`,
     };
   } else {
@@ -385,13 +401,30 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
     }, notice.message);
     return 0;
   }
-  const applyKxm = Boolean(options.kxm || notice.auto);
+  const fullUpdate = Boolean(options.all) || (selected === 0 && !options.kxm && !harness);
+  const applyKxm = Boolean(options.kxm || fullUpdate || notice.auto);
   let kxmApply: { ok: boolean; detail: string; error?: string } | undefined;
-  if (applyKxm) {
+  const applyKxmPackage = (requireSuccess: boolean): number | undefined => {
+    if (!applyKxm) return undefined;
+    if (notice.source === "local" && notice.localRoot) {
+      kxmApply = applyKxmPackageUpdate(runtime, notice);
+      if (!kxmApply.ok && requireSuccess) {
+        print(runtime.io, runtime.json, {
+          ok: false,
+          command: "update",
+          error: kxmApply.error,
+          kxm: kxmApply,
+          notice,
+          ...installKindPayload(classified),
+        }, kxmApply.detail);
+        return 1;
+      }
+      return undefined;
+    }
     const resolved = resolveInstallKind(probe, npmGlobalRootFn(runtime));
     kindReport = resolved;
     if (resolved.kind !== "npm-global") {
-      if (options.kxm) {
+      if (requireSuccess) {
         print(runtime.io, runtime.json, {
           ok: false,
           command: "update",
@@ -404,9 +437,11 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
         return 2;
       }
       if (notice.available) runtime.io.stderr(`kxm: ${resolved.instruction}\n`);
-    } else if (notice.available) {
+      return undefined;
+    }
+    if (notice.available) {
       kxmApply = applyKxmPackageUpdate(runtime, notice);
-      if (!kxmApply.ok && options.kxm) {
+      if (!kxmApply.ok && requireSuccess) {
         print(runtime.io, runtime.json, {
           ok: false,
           command: "update",
@@ -418,9 +453,12 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
         return 1;
       }
     }
-  }
-  const skipHarness = Boolean(options.kxm && selected === 0 && !harness && !notice.auto);
+    return undefined;
+  };
+  const skipHarness = Boolean(options.kxm && !fullUpdate && selected === 0 && !harness && !notice.auto);
   if (skipHarness) {
+    const aborted = applyKxmPackage(true);
+    if (aborted !== undefined) return aborted;
     print(
       runtime.io,
       runtime.json,
@@ -431,23 +469,39 @@ export async function cmdUpdate(runtime: Runtime, harness: string | undefined, o
   }
   const scope: HarnessUpdateScope = options.self ? "self" : options.extensions ? "extensions" : options.models ? "models" : "all";
   const inventory = await probeHarnessesAsync({ env: runtime.env });
-  const planned = planHarnessUpdate(inventory, { ...(harness ? { harness } : {}), scope });
-  const steps = runHarnessUpdate(planned, { env: runtime.env, dryRun: runtime.dryRun });
-  const failed = steps.some((step) => step.outcome === "failed") || kxmApply?.ok === false;
+  const planned = planHarnessUpdate(inventory, { ...(harness ? { harness } : {}), scope: fullUpdate ? "all" : scope });
+  const runOpts = { env: runtime.env, dryRun: runtime.dryRun };
+  let steps;
+  if (fullUpdate) {
+    const selfSteps = runHarnessUpdate(planned.filter((step) => step.scope === "self"), runOpts);
+    applyKxmPackage(false);
+    const restSteps = runHarnessUpdate(planned.filter((step) => step.scope !== "self"), runOpts);
+    steps = [...selfSteps, ...restSteps];
+  } else {
+    const aborted = applyKxmPackage(Boolean(options.kxm));
+    if (aborted !== undefined) return aborted;
+    steps = runHarnessUpdate(planned, runOpts);
+  }
+  const kxmFailed = kxmApply?.ok === false;
   const skippedUnknown = steps.some((step) => step.detail === "unknown_harness");
+  const harnessFailed = steps.some((step) => step.outcome === "failed");
   const text = [notice.available ? notice.message : undefined, kxmApply?.detail, formatHarnessUpdate(steps)].filter(Boolean).join("\n");
   print(runtime.io, runtime.json, {
-    ok: !failed && !skippedUnknown,
+    ok: !kxmFailed && !skippedUnknown,
     command: "update",
     dryRun: runtime.dryRun,
-    scope,
+    scope: fullUpdate ? "all" : scope,
+    defaultHarness: inventory.defaultHarness,
     notice,
     ...(kxmApply ? { kxm: kxmApply } : {}),
     steps,
+    ...(harnessFailed ? { degraded: true } : {}),
     ...installKindPayload(kindReport),
   }, text);
   if (skippedUnknown) return 2;
-  return failed ? 1 : 0;
+  if (kxmFailed) return 1;
+  if (harnessFailed && !fullUpdate) return 1;
+  return 0;
 }
 
 export async function cmdValidate(runtime: Runtime, fileFlag?: string | undefined): Promise<number> {

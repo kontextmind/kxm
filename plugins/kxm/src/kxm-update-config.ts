@@ -10,7 +10,7 @@ import { kxmUserStateRoot } from "./bindings.ts";
 
 export function loadKxmUpdateConfig(env: NodeJS.ProcessEnv = process.env): KxmUpdateConfig {
   const path = join(kxmUserStateRoot({ env }), "update.yaml");
-  if (!existsSync(path)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
+  if (!existsSync(path)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "npm" };
   let parsed: unknown;
   try {
     parsed = parseYaml(readFileSync(path, "utf8"));
@@ -31,7 +31,7 @@ export function loadKxmUpdateConfig(env: NodeJS.ProcessEnv = process.env): KxmUp
   if (typeof row.auto !== "boolean") {
     throw new KxmUpdateConfigError("update.yaml auto must be a boolean");
   }
-  const source = row.source === undefined ? "github" : row.source;
+  const source = row.source === undefined ? "npm" : row.source;
   if (source !== "npm" && source !== "github") {
     throw new KxmUpdateConfigError("update.yaml source must be npm or github");
   }

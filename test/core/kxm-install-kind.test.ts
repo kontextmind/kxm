@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import {
   classifyInstallRoot,
+  kxmSourceCheckoutRoot,
   resolveInstallKind,
   type InstallProbe,
 } from "../../plugins/kxm/src/kxm-install-kind.ts";
@@ -148,5 +149,19 @@ test("install classification follows the running module, not the caller's workin
   } finally {
     process.chdir(previousCwd);
     rmSync(decoy, { recursive: true, force: true });
+  }
+});
+
+test("kxmSourceCheckoutRoot only matches this package with a git dir", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-local-checkout-"));
+  try {
+    assert.equal(kxmSourceCheckoutRoot(root), undefined);
+    writeFileSync(join(root, "package.json"), `${JSON.stringify({ name: "other", version: "1.0.0" })}\n`);
+    mkdirSync(join(root, ".git"));
+    assert.equal(kxmSourceCheckoutRoot(root), undefined);
+    writeFileSync(join(root, "package.json"), `${JSON.stringify({ name: "@kontextmind/kxm", version: "0.0.1" })}\n`);
+    assert.equal(kxmSourceCheckoutRoot(root), root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

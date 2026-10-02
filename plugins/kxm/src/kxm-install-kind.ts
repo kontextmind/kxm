@@ -19,6 +19,12 @@ export interface InstallKindReport {
   instruction: string;
 }
 
+export function kxmSourceCheckoutRoot(dir: string): string | undefined {
+  if (!existsSync(join(dir, ".git"))) return undefined;
+  if (!packageIsKxm(dir)) return undefined;
+  return dir;
+}
+
 function packageIsKxm(root: string): boolean {
   try {
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name?: unknown };

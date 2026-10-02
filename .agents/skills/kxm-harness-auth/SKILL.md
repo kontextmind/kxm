@@ -34,15 +34,20 @@ still blocks the tools.
 | Command | Purpose |
 |---|---|
 | `kxm update --check` | Check for a kxm package update without applying it |
-| `kxm update --kxm` | Apply the kxm package update |
+| `kxm update` / `--all` | Harness `--self` first, then kxm, extensions, and models |
+| `kxm update --kxm` | Apply only the kxm package update |
 | `kxm update [harness] --self` | Update only the harness CLI |
 | `kxm update [harness] --extensions` | Update only extensions and plugins (Pi packages, the Claude kxm plugin) |
 | `kxm update [harness] --models` | Refresh model catalogs where the harness supports it |
 
-- `kxm update --kxm` downloads the GitHub release tarball by default. It uses
-  `gh` when that CLI answers `gh --version`, and otherwise curl with the same
+- Bare `kxm update` (and `--all`) updates detected harness CLIs first, then kxm,
+  then extensions and models. `--kxm` is kxm-only. kxm installs from npm by default;
+  it needs an authenticated `gh` only when `update.yaml` sets `source: github`.
+  It uses `gh` when that CLI answers `gh --version`, and otherwise curl with the same
   sha256 check. A host with neither can follow the curl commands in
   docs/operations/upgrade.md.
+  Inside the kxm repository it installs the local files. Detected harness updater
+  failures on `--all` are degraded, not fatal.
 - `kxm update claude --extensions` updates only a user-scope plugin install;
   its dry run prints `claude extensions: would claude plugin update kxm -y`.
   A project-scope install is the operator's `claude plugin update kxm@kxm --scope project`.

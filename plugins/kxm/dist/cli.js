@@ -19780,8 +19780,17 @@ function argsFor(entry, scope) {
   if (scope === "extensions") return entry.update.extensions;
   return entry.update.models;
 }
+function detectedHarnesses(inventory, requestedHarness) {
+  if (requestedHarness) return inventory.harnesses.filter((entry) => entry.id === requestedHarness);
+  const detected = inventory.harnesses.filter((entry) => entry.detected);
+  const preferred = inventory.defaultHarness;
+  return [
+    ...detected.filter((entry) => entry.id === preferred),
+    ...detected.filter((entry) => entry.id !== preferred)
+  ];
+}
 function planHarnessUpdate(inventory, requested) {
-  const selected = requested.harness ? inventory.harnesses.filter((entry) => entry.id === requested.harness) : inventory.harnesses.filter((entry) => entry.detected);
+  const selected = detectedHarnesses(inventory, requested.harness);
   if (requested.harness && selected.length === 0) {
     return [{
       harness: requested.harness,
@@ -19792,36 +19801,44 @@ function planHarnessUpdate(inventory, requested) {
       detail: isKnownHarnessId(requested.harness) ? "not_detected" : "unknown_harness"
     }];
   }
+  const waves = requested.scope === "all" ? ["self", "extensions", "models"] : [requested.scope];
   const steps = [];
-  for (const status of selected) {
-    const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === status.id);
-    if (!entry) continue;
-    const scopes = scopesFor(requested.scope, entry);
-    if (scopes.length === 0) {
+  for (const scope of waves) {
+    for (const status of selected) {
+      const entry = BUILTIN_HARNESSES.find((candidate) => candidate.id === status.id);
+      if (!entry) continue;
+      const supported = scopesFor(requested.scope === "all" ? "all" : scope, entry);
+      if (!supported.includes(scope)) {
+        if (requested.scope !== "all") {
+          steps.push({
+            harness: status.id,
+            scope,
+            command: status.command ?? entry.commands[0],
+            args: [],
+            outcome: "skipped",
+            detail: "no_updater"
+          });
+        }
+        continue;
+      }
+      if (!status.detected || !status.command) {
+        steps.push({
+          harness: status.id,
+          scope,
+          command: entry.commands[0],
+          args: argsFor(entry, scope) ?? [],
+          outcome: "skipped",
+          detail: "not_detected"
+        });
+        continue;
+      }
       steps.push({
         harness: status.id,
-        scope: requested.scope === "all" ? "self" : requested.scope,
-        command: status.command ?? entry.commands[0],
-        args: [],
-        outcome: "skipped",
-        detail: "no_updater"
+        scope,
+        command: status.command,
+        args: argsFor(entry, scope) ?? [],
+        outcome: "would"
       });
-      continue;
-    }
-    if (!status.detected || !status.command) {
-      steps.push({
-        harness: status.id,
-        scope: scopes[0],
-        command: entry.commands[0],
-        args: argsFor(entry, scopes[0]) ?? [],
-        outcome: "skipped",
-        detail: "not_detected"
-      });
-      continue;
-    }
-    for (const scope of scopes) {
-      const args = argsFor(entry, scope) ?? [];
-      steps.push({ harness: status.id, scope, command: status.command, args, outcome: "would" });
     }
   }
   return steps;
@@ -35526,7 +35543,7 @@ function compareSemver(left, right) {
 }
 function formatKxmUpdateNotice(notice) {
   if (!notice.available) return notice.message;
-  const apply = notice.auto ? "kxm update --kxm (auto)" : "kxm update --kxm";
+  const apply = notice.auto ? "kxm update (auto)" : "kxm update";
   return `kxm ${notice.current} \u2192 ${notice.latest} available \xB7 ${apply}`;
 }
 function withAsset(notice, asset) {
@@ -35644,7 +35661,11 @@ function verifyReleaseAssetDigest(path4, sha256) {
     return false;
   }
 }
-function planKxmPackageUpdate(source, latest, releaseDir, asset, downloader = "gh") {
+function planKxmPackageUpdate(source, latest, releaseDir, asset, downloader = "gh", localRoot) {
+  if (source === "local") {
+    if (!localRoot) return [];
+    return [{ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", localRoot] }];
+  }
   if (source === "npm") {
     return [{ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", `@kontextmind/kxm@${latest}`] }];
   }
@@ -51787,6 +51808,11 @@ init_hub_binding();
 init_bindings();
 import { existsSync as existsSync38, readFileSync as readFileSync34 } from "node:fs";
 import { dirname as dirname21, join as join48 } from "node:path";
+function kxmSourceCheckoutRoot(dir) {
+  if (!existsSync38(join48(dir, ".git"))) return void 0;
+  if (!packageIsKxm(dir)) return void 0;
+  return dir;
+}
 function packageIsKxm(root) {
   try {
     const pkg = JSON.parse(readFileSync34(join48(root, "package.json"), "utf8"));
@@ -51872,7 +51898,7 @@ import { join as join49 } from "node:path";
 init_bindings();
 function loadKxmUpdateConfig(env = process.env) {
   const path4 = join49(kxmUserStateRoot({ env }), "update.yaml");
-  if (!existsSync39(path4)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "github" };
+  if (!existsSync39(path4)) return { schema: KXM_UPDATE_SCHEMA, auto: false, source: "npm" };
   let parsed;
   try {
     parsed = (0, import_yaml19.parse)(readFileSync35(path4, "utf8"));
@@ -51893,7 +51919,7 @@ function loadKxmUpdateConfig(env = process.env) {
   if (typeof row.auto !== "boolean") {
     throw new KxmUpdateConfigError("update.yaml auto must be a boolean");
   }
-  const source = row.source === void 0 ? "github" : row.source;
+  const source = row.source === void 0 ? "npm" : row.source;
   if (source !== "npm" && source !== "github") {
     throw new KxmUpdateConfigError("update.yaml source must be npm or github");
   }
@@ -55090,7 +55116,7 @@ function applyKxmPackageUpdate(runtime, notice) {
   const releaseDir = mkdtempSync3(join57(tmpdir3(), "kxm-pkg-update-"));
   try {
     const downloader = notice.source === "github" && !ghReleaseDownloadAvailable(runtime.env) ? "curl" : "gh";
-    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset, downloader);
+    const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset, downloader, notice.localRoot);
     if (runtime.dryRun) {
       return { ok: true, detail: planned.map(formatPackageUpdateStep).join(" && ") };
     }
@@ -55216,22 +55242,34 @@ async function cmdSshClose(runtime, host) {
   return 0;
 }
 async function cmdUpdate(runtime, harness, options) {
-  if (options.check && (options.kxm || options.self || options.extensions || options.models || harness)) {
+  if (options.check && (options.kxm || options.self || options.extensions || options.models || options.all || harness)) {
     print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "--check cannot be combined with other update flags");
     return 2;
   }
-  const selected = [options.self, options.extensions, options.models].filter(Boolean).length;
+  const selected = [options.self, options.extensions, options.models, options.all].filter(Boolean).length;
   if (selected > 1) {
-    print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "specify at most one of --self, --extensions, or --models");
+    print(runtime.io, runtime.json, { ok: false, command: "update", error: "scope_conflict" }, "specify at most one of --all, --self, --extensions, or --models");
     return 2;
   }
   warnIgnoredProjectUpdateYaml(runtime);
   const probe = installProbeFrom(runtime);
   const classified = classifyInstallRoot(probe);
   const current = installedKxmVersion(classified.root) ?? installedKxmVersion(findKxmRepoRoot(import.meta.url));
+  const localRoot = kxmSourceCheckoutRoot(runtime.dirs.workdir) ?? kxmSourceCheckoutRoot(runtime.cwd);
   let notice;
   let kindReport = classified;
-  if (classified.kind === "source") {
+  if (localRoot) {
+    const localVersion = installedKxmVersion(localRoot) ?? current ?? "unknown";
+    notice = {
+      current: current ?? localVersion,
+      latest: localVersion,
+      available: true,
+      auto: false,
+      source: "local",
+      message: `kxm ${current ?? localVersion} (local ${localRoot})`,
+      localRoot
+    };
+  } else if (classified.kind === "source") {
     if (options.check) {
       const message = `kxm ${current ?? "unknown"} (running from source at ${classified.root})`;
       print(runtime.io, runtime.json, {
@@ -55240,7 +55278,7 @@ async function cmdUpdate(runtime, harness, options) {
         current: current ?? "unknown",
         available: false,
         auto: false,
-        source: "github",
+        source: "npm",
         installKind: "source",
         root: classified.root,
         message
@@ -55262,7 +55300,7 @@ async function cmdUpdate(runtime, harness, options) {
       current: current ?? "unknown",
       available: false,
       auto: false,
-      source: "github",
+      source: "npm",
       message: `kxm ${current ?? "unknown"} (running from source)`
     };
   } else {
@@ -55285,13 +55323,30 @@ async function cmdUpdate(runtime, harness, options) {
     }, notice.message);
     return 0;
   }
-  const applyKxm = Boolean(options.kxm || notice.auto);
+  const fullUpdate = Boolean(options.all) || selected === 0 && !options.kxm && !harness;
+  const applyKxm = Boolean(options.kxm || fullUpdate || notice.auto);
   let kxmApply;
-  if (applyKxm) {
+  const applyKxmPackage = (requireSuccess) => {
+    if (!applyKxm) return void 0;
+    if (notice.source === "local" && notice.localRoot) {
+      kxmApply = applyKxmPackageUpdate(runtime, notice);
+      if (!kxmApply.ok && requireSuccess) {
+        print(runtime.io, runtime.json, {
+          ok: false,
+          command: "update",
+          error: kxmApply.error,
+          kxm: kxmApply,
+          notice,
+          ...installKindPayload(classified)
+        }, kxmApply.detail);
+        return 1;
+      }
+      return void 0;
+    }
     const resolved = resolveInstallKind(probe, npmGlobalRootFn(runtime));
     kindReport = resolved;
     if (resolved.kind !== "npm-global") {
-      if (options.kxm) {
+      if (requireSuccess) {
         print(runtime.io, runtime.json, {
           ok: false,
           command: "update",
@@ -55305,9 +55360,11 @@ async function cmdUpdate(runtime, harness, options) {
       }
       if (notice.available) runtime.io.stderr(`kxm: ${resolved.instruction}
 `);
-    } else if (notice.available) {
+      return void 0;
+    }
+    if (notice.available) {
       kxmApply = applyKxmPackageUpdate(runtime, notice);
-      if (!kxmApply.ok && options.kxm) {
+      if (!kxmApply.ok && requireSuccess) {
         print(runtime.io, runtime.json, {
           ok: false,
           command: "update",
@@ -55319,9 +55376,12 @@ async function cmdUpdate(runtime, harness, options) {
         return 1;
       }
     }
-  }
-  const skipHarness = Boolean(options.kxm && selected === 0 && !harness && !notice.auto);
+    return void 0;
+  };
+  const skipHarness = Boolean(options.kxm && !fullUpdate && selected === 0 && !harness && !notice.auto);
   if (skipHarness) {
+    const aborted = applyKxmPackage(true);
+    if (aborted !== void 0) return aborted;
     print(
       runtime.io,
       runtime.json,
@@ -55332,23 +55392,39 @@ async function cmdUpdate(runtime, harness, options) {
   }
   const scope = options.self ? "self" : options.extensions ? "extensions" : options.models ? "models" : "all";
   const inventory = await probeHarnessesAsync({ env: runtime.env });
-  const planned = planHarnessUpdate(inventory, { ...harness ? { harness } : {}, scope });
-  const steps = runHarnessUpdate(planned, { env: runtime.env, dryRun: runtime.dryRun });
-  const failed2 = steps.some((step) => step.outcome === "failed") || kxmApply?.ok === false;
+  const planned = planHarnessUpdate(inventory, { ...harness ? { harness } : {}, scope: fullUpdate ? "all" : scope });
+  const runOpts = { env: runtime.env, dryRun: runtime.dryRun };
+  let steps;
+  if (fullUpdate) {
+    const selfSteps = runHarnessUpdate(planned.filter((step) => step.scope === "self"), runOpts);
+    applyKxmPackage(false);
+    const restSteps = runHarnessUpdate(planned.filter((step) => step.scope !== "self"), runOpts);
+    steps = [...selfSteps, ...restSteps];
+  } else {
+    const aborted = applyKxmPackage(Boolean(options.kxm));
+    if (aborted !== void 0) return aborted;
+    steps = runHarnessUpdate(planned, runOpts);
+  }
+  const kxmFailed = kxmApply?.ok === false;
   const skippedUnknown = steps.some((step) => step.detail === "unknown_harness");
+  const harnessFailed = steps.some((step) => step.outcome === "failed");
   const text = [notice.available ? notice.message : void 0, kxmApply?.detail, formatHarnessUpdate(steps)].filter(Boolean).join("\n");
   print(runtime.io, runtime.json, {
-    ok: !failed2 && !skippedUnknown,
+    ok: !kxmFailed && !skippedUnknown,
     command: "update",
     dryRun: runtime.dryRun,
-    scope,
+    scope: fullUpdate ? "all" : scope,
+    defaultHarness: inventory.defaultHarness,
     notice,
     ...kxmApply ? { kxm: kxmApply } : {},
     steps,
+    ...harnessFailed ? { degraded: true } : {},
     ...installKindPayload(kindReport)
   }, text);
   if (skippedUnknown) return 2;
-  return failed2 ? 1 : 0;
+  if (kxmFailed) return 1;
+  if (harnessFailed && !fullUpdate) return 1;
+  return 0;
 }
 async function cmdValidate(runtime, fileFlag) {
   const worker = gateOf(runtime, "validate");
@@ -56420,7 +56496,7 @@ function createProgram(ctx, result, argv) {
   addGlobalOptions(authCmd.command("token").description("Inspect, issue, or clear local disk session tokens")).option("--status", "Check status of the active session token").option("--clear", "Clear persisted disk session token").option("--issue", "Force issuing a fresh session token").action(async function authTokenAction(options) {
     result.code = await cmdAuthToken(runtimeFrom(ctx, this), options);
   });
-  addGlobalOptions(program2.command("update").description("Update kxm, harness CLIs, extensions, plugins, and model catalogs").argument("[harness]", "Harness id (default: every detected harness)").option("--check", "Check for a kxm package update without applying").option("--kxm", "Apply the kxm operator package update (GitHub release tarball or npm)").option("--self", "Update only the harness CLI").option("--extensions", "Update only extensions/plugins (Pi packages, Claude kxm)").option("--models", "Refresh model catalogs where the harness supports it")).action(async function updateAction(harness, options) {
+  addGlobalOptions(program2.command("update").description("Update kxm, harness CLIs, extensions, plugins, and model catalogs").argument("[harness]", "Harness id (default: every detected harness)").option("--check", "Check for a kxm package update without applying").option("--all", "Update harness CLIs first (--self), then kxm, extensions, and models (default)").option("--kxm", "Apply only the kxm operator package update").option("--self", "Update only harness CLIs").option("--extensions", "Update only extensions/plugins (Pi packages, Claude kxm)").option("--models", "Refresh model catalogs where the harness supports it")).action(async function updateAction(harness, options) {
     result.code = await cmdUpdate(runtimeFrom(ctx, this), harness, options);
   });
   const runtimeCmd = addGlobalOptions(program2.command("runtime").description("Manage the KXM Runtime supervisor"));

@@ -10,6 +10,7 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const SHA256_DIGEST = /^sha256:([0-9a-fA-F]{64})$/;
 
 export type KxmUpdateSource = "npm" | "github";
+export type KxmApplySource = KxmUpdateSource | "local";
 
 export interface KxmReleaseAsset {
   name: string;
@@ -27,9 +28,10 @@ export interface KxmUpdateNotice {
   latest?: string;
   available: boolean;
   auto: boolean;
-  source: KxmUpdateSource;
+  source: KxmApplySource;
   message: string;
   asset?: KxmReleaseAsset;
+  localRoot?: string;
 }
 
 export class KxmUpdateConfigError extends Error {
@@ -100,7 +102,7 @@ export function compareSemver(left: string, right: string): number | undefined {
 
 export function formatKxmUpdateNotice(notice: KxmUpdateNotice): string {
   if (!notice.available) return notice.message;
-  const apply = notice.auto ? "kxm update --kxm (auto)" : "kxm update --kxm";
+  const apply = notice.auto ? "kxm update (auto)" : "kxm update";
   return `kxm ${notice.current} → ${notice.latest} available · ${apply}`;
 }
 
@@ -243,14 +245,19 @@ export function verifyReleaseAssetDigest(path: string, sha256: string): boolean 
   }
 }
 
-/** npm registry apply is for after the public package exists. npm verifies registry integrity itself; do not duplicate that check here. Git installs use GitHub release tarballs. */
+/** npm is the default source and npm verifies registry integrity itself. "local" installs this repository's checkout. "github" downloads the release tarball (gh, or curl without gh) and verifies its sha256. */
 export function planKxmPackageUpdate(
-  source: KxmUpdateSource,
+  source: KxmApplySource,
   latest: string,
   releaseDir: string,
   asset?: KxmReleaseAsset,
   downloader: "gh" | "curl" = "gh",
+  localRoot?: string,
 ): KxmPackageUpdateStep[] {
+  if (source === "local") {
+    if (!localRoot) return [];
+    return [{ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", localRoot] }];
+  }
   if (source === "npm") {
     return [{ kind: "install", command: "npm", args: ["install", "--global", "--omit=peer", `@kontextmind/kxm@${latest}`] }];
   }

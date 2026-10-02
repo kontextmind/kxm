@@ -1656,14 +1656,14 @@ never mints a token or writes a file, and always exits 0. See the
 |---|---|---|
 | `schema` | `kxm.update.v1` | Required |
 | `auto` | Boolean | Required |
-| `source` | `github` or `npm` | Optional, `github` |
+| `source` | `github` or `npm` | Optional, `npm` |
 
 Unknown fields are refused (`update.yaml unknown field <name>`).
 
 ```yaml
 schema: kxm.update.v1
 auto: false        # required boolean
-source: github     # github (default) | npm
+source: npm        # npm (default) | github
 ```
 
 ## Workspace layout: tracked, ignored, and state
