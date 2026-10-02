@@ -6,14 +6,14 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import { symlinkOrSkip } from "../helpers.ts";
 
 const checker = resolve("scripts/check-generated.mjs");
 const emitter = resolve("scripts/emit-codex-artifacts.mjs");
@@ -207,7 +207,7 @@ test("missing or malformed skill suite manifest fails closed", () => {
   }
 });
 
-test("emit copies owned skills, preserves unrelated skills, and refuses symlinks", () => {
+test("emit copies owned skills, preserves unrelated skills, and refuses symlinks", (t) => {
   const root = mkdtempSync(join(tmpdir(), "kxm-emit-"));
   try {
     write(root, "plugins/kxm/skill-suite.json", suiteManifest([
@@ -237,7 +237,7 @@ test("emit copies owned skills, preserves unrelated skills, and refuses symlinks
     write(root, "plugins/kxm/skill-suite.json", suiteManifest([{ name: "alpha" }]));
     rmSync(join(root, "plugins/kxm/skills/alpha"), { recursive: true, force: true });
     mkdirSync(join(root, "plugins/kxm/skills"), { recursive: true });
-    symlinkSync(join(root, "outside"), join(root, "plugins/kxm/skills/alpha"));
+    if (!symlinkOrSkip(t, join(root, "outside"), join(root, "plugins/kxm/skills/alpha"))) return;
     assert.throws(() => emitCodexArtifacts(root), /symlinks are not allowed/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -257,7 +257,7 @@ function snapshotTree(dir: string): { names: string[]; files: Record<string, str
   return { names, files };
 }
 
-function emitFixtureWithExternal(linkKind: ".agents" | ".agents/skills"): { root: string; external: string } {
+function emitFixtureWithExternal(t: TestContext, linkKind: ".agents" | ".agents/skills"): { root: string; external: string } | undefined {
   const root = mkdtempSync(join(tmpdir(), "kxm-emit-ancestor-"));
   const external = mkdtempSync(join(tmpdir(), "kxm-emit-external-"));
   write(root, "plugins/kxm/skill-suite.json", suiteManifest([{ name: "alpha" }]));
@@ -265,16 +265,18 @@ function emitFixtureWithExternal(linkKind: ".agents" | ".agents/skills"): { root
   write(external, "sentinel.txt", "authored fixture\n");
   write(external, "foreign-skill/SKILL.md", "do-not-touch\n");
   if (linkKind === ".agents") {
-    symlinkSync(external, join(root, ".agents"));
+    if (!symlinkOrSkip(t, external, join(root, ".agents"))) return undefined;
   } else {
     mkdirSync(join(root, ".agents"), { recursive: true });
-    symlinkSync(external, join(root, ".agents", "skills"));
+    if (!symlinkOrSkip(t, external, join(root, ".agents", "skills"))) return undefined;
   }
   return { root, external };
 }
 
-test("emit refuses .agents ancestor symlink before mutating the external destination", () => {
-  const { root, external } = emitFixtureWithExternal(".agents");
+test("emit refuses .agents ancestor symlink before mutating the external destination", (t) => {
+  const fixture = emitFixtureWithExternal(t, ".agents");
+  if (!fixture) return;
+  const { root, external } = fixture;
   try {
     const before = snapshotTree(external);
     assert.equal(before.files["sentinel.txt"], "authored fixture\n");
@@ -290,8 +292,10 @@ test("emit refuses .agents ancestor symlink before mutating the external destina
   }
 });
 
-test("emit refuses .agents/skills ancestor symlink before mutating the external destination", () => {
-  const { root, external } = emitFixtureWithExternal(".agents/skills");
+test("emit refuses .agents/skills ancestor symlink before mutating the external destination", (t) => {
+  const fixture = emitFixtureWithExternal(t, ".agents/skills");
+  if (!fixture) return;
+  const { root, external } = fixture;
   try {
     const before = snapshotTree(external);
     assert.equal(before.files["sentinel.txt"], "authored fixture\n");

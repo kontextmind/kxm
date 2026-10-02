@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { TestContext } from "node:test";
 import { HubClient } from "../plugins/kxm/src/client.ts";
@@ -102,6 +102,20 @@ export function removeTempDir(...paths: string[]): void {
       if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
       process.stderr.write(`removeTempDir: leaving ${path} behind after ${code}\n`);
     }
+  }
+}
+
+/** Create a fixture symlink, or skip the test when this process is not allowed to. */
+export function symlinkOrSkip(t: TestContext, target: string, path: string, type?: "dir" | "file" | "junction"): boolean {
+  try {
+    symlinkSync(target, path, type);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EPERM") {
+      t.skip("this process cannot create symlinks");
+      return false;
+    }
+    throw error;
   }
 }
 

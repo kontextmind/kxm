@@ -191,6 +191,7 @@ All notable user-facing changes are documented here. The project follows [Semant
   failures on `--all` degrade the receipt and do not fail the command; an unknown
   harness id still exits 2.
 - **`kxm land` runs `npm` on Windows.** The verify stage launches `npm.cmd` through `cmd.exe` when `npm` is not an `.exe`.
+- **npm 12 `pack --json`.** The install smoke and pack tests accept the package-keyed object as well as the older one-element array.
 
 - **Tool policy is enforced at load and before dispatch.**
   `coordinator` and `read-only` select the read-only one-shot profile.
