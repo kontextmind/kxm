@@ -19,6 +19,7 @@
   "ignores": [
     "node_modules/**",
     "plugins/**/node_modules/**",
-    ".kxm/logs/**"
+    ".kxm/logs/**",
+    "docs/roadmap/**"
   ]
 }

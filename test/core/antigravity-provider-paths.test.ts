@@ -34,13 +34,13 @@ import {
 } from "../../plugins/kxm/src/providers/antigravity/client/index.ts";
 
 function callbackPortFree(): Promise<boolean> {
-  const { promise, resolve } = Promise.withResolvers<boolean>();
-  const server = createNetServer();
-  server.once("error", () => resolve(false));
-  server.listen(51121, "127.0.0.1", () => {
-    server.close(() => resolve(true));
+  return new Promise((resolve) => {
+    const server = createNetServer();
+    server.once("error", () => resolve(false));
+    server.listen(51121, "127.0.0.1", () => {
+      server.close(() => resolve(true));
+    });
   });
-  return promise;
 }
 
 async function skipIfCallbackPortBusy(t: { skip: (message?: string) => void }): Promise<boolean> {
