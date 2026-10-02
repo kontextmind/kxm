@@ -754,3 +754,43 @@ exit 0
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("verify launches npm.cmd on Windows", { timeout: 60_000 }, (t) => {
+  if (process.platform !== "win32") {
+    t.skip("npm.cmd launch is the Windows CreateProcess gap");
+    return;
+  }
+  const root = mkdtempSync(join(tmpdir(), "kxm-land-npm-cmd-"));
+  const dir = join(root, "repo");
+  const bin = join(root, "bin");
+  mkdirSync(dir);
+  mkdirSync(bin);
+  const capture = join(root, "npm.txt");
+  writeFileSync(join(bin, "npm.cmd"), `@echo off\r\necho npm-called> "${capture}"\r\nexit /b 0\r\n`);
+  const git = (args: string[]) => {
+    const result = spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+  };
+  git(["init"]);
+  git(["config", "user.email", "test@example.test"]);
+  git(["config", "user.name", "Test"]);
+  writeFileSync(join(dir, "README.md"), "x\n");
+  git(["add", "README.md"]);
+  git(["commit", "-m", "init"]);
+  const pathKey = Object.keys(process.env).find((name) => name.toUpperCase() === "PATH") ?? "PATH";
+  const pathValue = `${bin}${delimiter}${process.env[pathKey] ?? ""}`;
+  try {
+    const result = spawnSync(process.execPath, [script, "--stage", "verify", "--json"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, [pathKey]: pathValue, PATH: pathValue, Path: pathValue },
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(existsSync(capture), true, "npm.cmd was not launched");
+    const row = jsonLines(result.stdout).at(-1);
+    assert.equal(row?.stage, "verify");
+    assert.equal(row?.ok, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
