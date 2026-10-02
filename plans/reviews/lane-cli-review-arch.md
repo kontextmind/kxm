@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-25"
+updated: "2026-10-01"
 authority: "hypothesis"
 confidence: "verified"
 summary: "PASS with four notes. The commit implements plan-lane-cli.md sections 2 and 3 as specified: one worktree per unit, a 0600 lane record in the control checkout's state directory keyed by resolved base sha, --lane as a cwd swap and nothing else, --brief as a file prompt, seven named tests, and just recipes reduced to wrappers. just verify re-run green by the reviewer. Notes: the lane record ignores KXM_WORKDIR on swap, run and drop may start the supervisor, lane run keeps --brief as an option rather than an argument, and the worktree recipe lost its ready line. Planner record, not assignment, witness or acceptance proof."
@@ -16,6 +16,7 @@ related:
   - ../plan-lane-cli.md
   - ../plan-omp-config-alignment.md
   - ../implementation-plan.md
+  - ../backlog-shortcuts.md
 depends_on: []
 blocked_by: []
 details:
