@@ -23,8 +23,15 @@ const idsOnly = JSON.parse(readFileSync(join(fixtureDir, "models-ids-only.json")
 const withCapacity = JSON.parse(readFileSync(join(fixtureDir, "models-with-capacity.json"), "utf8"));
 const livePublic = JSON.parse(readFileSync(join(fixtureDir, "models-live-public.json"), "utf8"));
 const pinPath = join(fixtureDir, "catalog-pin.json");
-const PI_AI = resolve("node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/index.js");
-const PI_AI_COMPLETIONS = resolve("node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.lazy.js");
+// Resolve the pi-ai that this install's coding-agent loads. npm hoists it
+// next to other @earendil-works packages when they share 1.0.x, and nests it
+// when they do not. A hardcoded nested path misses the hoisted copy.
+const installedPiParent = pathToFileURL(resolve("node_modules/@earendil-works/pi-coding-agent/package.json")).href;
+function installedPiModule(specifier: string): string {
+  return fileURLToPath(import.meta.resolve(specifier, installedPiParent));
+}
+const PI_AI = installedPiModule("@earendil-works/pi-ai");
+const PI_AI_COMPLETIONS = installedPiModule("@earendil-works/pi-ai/api/openai-completions.lazy");
 
 const ENV_KEYS = [
   "KXM_NOUS_PROVIDERS",
