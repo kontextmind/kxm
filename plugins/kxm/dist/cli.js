@@ -43129,8 +43129,12 @@ function finalizeTruncatedResult(prefix, prefixWidth, ellipsis, ellipsisWidth, m
   return pad2 ? result + " ".repeat(Math.max(0, maxWidth - visibleWidth2)) : result;
 }
 function graphemeWidth(segment) {
-  if (segment === "	") {
-    return 3;
+  if (segment.length === 1) {
+    const code = segment.charCodeAt(0);
+    if (code >= 32 && code <= 126)
+      return 1;
+    if (code === 9)
+      return 3;
   }
   if (terminalSpacingMarkRegex.test(segment)) {
     return [...segment].length;
@@ -43174,8 +43178,9 @@ function visibleWidth(str) {
   if (str.length === 0) {
     return 0;
   }
-  if (isPrintableAscii(str)) {
-    return str.length;
+  const asciiWidth = asciiVisibleWidth(str);
+  if (asciiWidth !== -1) {
+    return asciiWidth;
   }
   const cached = widthCache.get(str);
   if (cached !== void 0) {
@@ -43185,19 +43190,22 @@ function visibleWidth(str) {
   if (str.includes("	")) {
     clean = clean.replace(/\t/g, "   ");
   }
-  if (clean.includes("\x1B")) {
+  let escapeIndex = clean.indexOf("\x1B");
+  if (escapeIndex !== -1) {
     let stripped = "";
-    let i = 0;
-    while (i < clean.length) {
-      const ansi = extractAnsiCode(clean, i);
-      if (ansi) {
-        i += ansi.length;
-        continue;
+    let copyFrom = 0;
+    while (escapeIndex !== -1) {
+      const length = ansiCodeLength(clean, escapeIndex);
+      if (length > 0) {
+        stripped += clean.slice(copyFrom, escapeIndex);
+        escapeIndex += length;
+        copyFrom = escapeIndex;
+      } else {
+        escapeIndex++;
       }
-      stripped += clean[i];
-      i++;
+      escapeIndex = clean.indexOf("\x1B", escapeIndex);
     }
-    clean = stripped;
+    clean = stripped + clean.slice(copyFrom);
   }
   let width = 0;
   for (const { segment } of graphemeSegmenter.segment(clean)) {
@@ -43301,40 +43309,54 @@ function normalizeTerminalOutput(str) {
   return result;
 }
 function extractAnsiCode(str, pos) {
-  if (pos >= str.length || str[pos] !== "\x1B")
-    return null;
+  const length = ansiCodeLength(str, pos);
+  return length > 0 ? { code: str.substring(pos, pos + length), length } : null;
+}
+function asciiVisibleWidth(str) {
+  let width = 0;
+  let i = 0;
+  while (i < str.length) {
+    const code = str.charCodeAt(i);
+    if (code >= 32 && code <= 126) {
+      width++;
+      i++;
+    } else if (code === 9) {
+      width += 3;
+      i++;
+    } else if (code === 27) {
+      const length = ansiCodeLength(str, i);
+      if (length === 0)
+        return -1;
+      i += length;
+    } else {
+      return -1;
+    }
+  }
+  return width;
+}
+function ansiCodeLength(str, pos) {
+  if (pos >= str.length || str.charCodeAt(pos) !== 27)
+    return 0;
   const next = str[pos + 1];
   if (next === "[") {
-    let j2 = pos + 2;
-    while (j2 < str.length && !/[mGKHJ]/.test(str[j2]))
-      j2++;
-    if (j2 < str.length)
-      return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
-    return null;
-  }
-  if (next === "]") {
-    let j2 = pos + 2;
-    while (j2 < str.length) {
-      if (str[j2] === "\x07")
-        return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
-      if (str[j2] === "\x1B" && str[j2 + 1] === "\\")
-        return { code: str.substring(pos, j2 + 2), length: j2 + 2 - pos };
-      j2++;
+    for (let j2 = pos + 2; j2 < str.length; j2++) {
+      const c = str.charCodeAt(j2);
+      if (c === 109 || c === 71 || c === 75 || c === 72 || c === 74)
+        return j2 + 1 - pos;
     }
-    return null;
+    return 0;
   }
-  if (next === "_") {
-    let j2 = pos + 2;
-    while (j2 < str.length) {
-      if (str[j2] === "\x07")
-        return { code: str.substring(pos, j2 + 1), length: j2 + 1 - pos };
-      if (str[j2] === "\x1B" && str[j2 + 1] === "\\")
-        return { code: str.substring(pos, j2 + 2), length: j2 + 2 - pos };
-      j2++;
+  if (next === "]" || next === "_") {
+    for (let j2 = pos + 2; j2 < str.length; j2++) {
+      const c = str.charCodeAt(j2);
+      if (c === 7)
+        return j2 + 1 - pos;
+      if (c === 27 && str[j2 + 1] === "\\")
+        return j2 + 2 - pos;
     }
-    return null;
+    return 0;
   }
-  return null;
+  return 0;
 }
 function parseOsc8Hyperlink(ansiCode) {
   if (!ansiCode.startsWith("\x1B]8;")) {
@@ -43578,21 +43600,26 @@ var AnsiCodeTracker = class {
   }
 };
 function updateTrackerFromText(text, tracker) {
-  let i = 0;
-  while (i < text.length) {
-    const ansiResult = extractAnsiCode(text, i);
-    if (ansiResult) {
-      tracker.process(ansiResult.code);
-      i += ansiResult.length;
+  let i = text.indexOf("\x1B");
+  while (i !== -1) {
+    const length = ansiCodeLength(text, i);
+    if (length > 0) {
+      tracker.process(text.substring(i, i + length));
+      i += length;
     } else {
       i++;
     }
+    i = text.indexOf("\x1B", i);
   }
 }
 function getActiveBackgroundAnsi(text) {
   const tracker = new AnsiCodeTracker();
   updateTrackerFromText(text, tracker);
   return tracker.getActiveBackgroundCode();
+}
+function* graphemeSegments(text) {
+  for (const { segment } of graphemeSegmenter.segment(text))
+    yield segment;
 }
 function splitIntoTokensWithAnsi(text) {
   const tokens = [];
@@ -43615,13 +43642,17 @@ function splitIntoTokensWithAnsi(text) {
       i += ansiResult.length;
       continue;
     }
-    let end = i;
-    while (end < text.length && !extractAnsiCode(text, end)) {
-      end++;
+    let end = text.indexOf("\x1B", i + 1);
+    while (end !== -1 && ansiCodeLength(text, end) === 0) {
+      end = text.indexOf("\x1B", end + 1);
     }
-    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+    if (end === -1)
+      end = text.length;
+    const chunk = text.slice(i, end);
+    const ascii = isPrintableAscii(chunk);
+    for (const segment of ascii ? chunk : graphemeSegments(chunk)) {
       const segmentIsSpace = segment === " ";
-      if (!segmentIsSpace && cjkBreakRegex.test(segment)) {
+      if (!ascii && !segmentIsSpace && cjkBreakRegex.test(segment)) {
         flushCurrent();
         const token = pendingAnsi + segment;
         pendingAnsi = "";
@@ -43654,6 +43685,10 @@ function splitIntoTokensWithAnsi(text) {
     tokens.push(current);
   }
   return tokens;
+}
+function flattenLines(lines) {
+  for (const line of lines)
+    Number(line);
 }
 function wrapTextWithAnsi(text, width) {
   if (!text) {
@@ -43927,9 +43962,10 @@ function sliceWithWidth(line, startCol, length, strict = false) {
   while (i < line.length) {
     const ansi = extractAnsiCode(line, i);
     if (ansi) {
-      if (currentCol >= startCol && currentCol < endCol)
-        result += ansi.code;
-      else if (currentCol < startCol)
+      if (currentCol >= startCol && currentCol < endCol) {
+        result += pendingAnsi + ansi.code;
+        pendingAnsi = "";
+      } else if (currentCol < startCol)
         pendingAnsi += ansi.code;
       i += ansi.length;
       continue;
@@ -44016,8 +44052,19 @@ function extractSegments(line, beforeEnd, afterStart, afterLen, strictAfter = fa
 // node_modules/@earendil-works/pi-tui/dist/autocomplete.js
 var tokenStartRegex = new RegExp(`${autocompleteBoundaryRegex.source}$`, "u");
 
+// node_modules/@earendil-works/pi-tui/dist/oklab.js
+var K1 = 0.206;
+var K2 = 0.03;
+var K3 = (1 + K1) / (1 + K2);
+
+// node_modules/@earendil-works/pi-tui/dist/colors.js
+var NUMBER_PATTERN = String.raw`[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?`;
+var OKLCH_PATTERN = new RegExp(`^oklch\\(\\s*(${NUMBER_PATTERN})(%)?\\s+(${NUMBER_PATTERN})\\s+(${NUMBER_PATTERN})(?:deg)?\\s*\\)$`, "i");
+var OKHSL_PATTERN = new RegExp(`^okhsl\\(\\s*(${NUMBER_PATTERN})(?:deg)?\\s+(${NUMBER_PATTERN})(%)?\\s+(${NUMBER_PATTERN})(%)?\\s*\\)$`, "i");
+var GRAY_VALUES = Array.from({ length: 24 }, (_2, index) => 8 + index * 10);
+
 // node_modules/@earendil-works/pi-tui/dist/tui.js
-import { performance } from "node:perf_hooks";
+import { performance as performance2 } from "node:perf_hooks";
 
 // node_modules/@earendil-works/pi-tui/dist/keys.js
 var _kittyProtocolActive = false;
@@ -44729,17 +44776,18 @@ function parseOscHexChannel(channel) {
   }
   return Math.round(parseInt(channel, 16) / max * 255);
 }
-var OSC11_BACKGROUND_COLOR_RESPONSE_PATTERN = /^\x1b\]11;([^\x07\x1b]*)(?:\x07|\x1b\\)$/i;
+var OSC_COLOR_RESPONSE_PATTERN = /^\x1b\](?:(1[01])|4;(\d{1,3}));([^\x07\x1b]*)(?:\x07|\x1b\\)$/i;
 var COLOR_SCHEME_REPORT_PATTERN = /^(?:\x1b\[\?997;(1|2)n)+$/;
-function isOsc11BackgroundColorResponse(data) {
-  return OSC11_BACKGROUND_COLOR_RESPONSE_PATTERN.test(data);
-}
-function parseOsc11BackgroundColor(data) {
-  const match = data.match(OSC11_BACKGROUND_COLOR_RESPONSE_PATTERN);
+function parseOscColorResponse(data) {
+  const match = data.match(OSC_COLOR_RESPONSE_PATTERN);
   if (!match) {
     return void 0;
   }
-  const value = match[1].trim();
+  const target = match[1] === "10" ? "foreground" : match[1] === "11" ? "background" : Number.parseInt(match[2], 10);
+  return { target, rgb: parseOscColorValue(match[3]) };
+}
+function parseOscColorValue(rawValue) {
+  const value = rawValue.trim();
   if (value.startsWith("#")) {
     const hex = value.slice(1);
     if (/^[0-9a-f]{6}$/i.test(hex)) {
@@ -44796,7 +44844,7 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   const terminalEmulator = process.env.TERMINAL_EMULATOR?.toLowerCase() || "";
   const term = process.env.TERM?.toLowerCase() || "";
   const colorTerm = process.env.COLORTERM?.toLowerCase() || "";
-  const hasTrueColorHint = colorTerm === "truecolor" || colorTerm === "24bit";
+  const hasTrueColorHint = colorTerm === "truecolor" || colorTerm === "24bit" || term.endsWith("-direct");
   const isWindowsConsole = process.platform === "win32";
   if (process.env.TMUX || term.startsWith("tmux")) {
     return { images: null, trueColor: hasTrueColorHint, hyperlinks: tmuxForwardsHyperlink() };
@@ -44880,12 +44928,23 @@ function deleteAllKittyPlacements() {
   return "\x1B_Ga=d,d=a,q=2\x1B\\";
 }
 var kittyImageMetadata = /* @__PURE__ */ new Map();
-function getRegisteredKittyImageMetadata(line) {
-  const controls = /\x1b_G([^;]*);/.exec(line)?.[1];
-  if (!controls)
-    return void 0;
+function getRegisteredKittyImageMetadataFromControls(controls) {
   const imageId = /(?:^|,)i=(\d+)(?:,|$)/.exec(controls)?.[1];
   return imageId === void 0 ? void 0 : kittyImageMetadata.get(Number.parseInt(imageId, 10));
+}
+function getRegisteredKittyImageMetadata(line) {
+  const controls = /\x1b_G([^;]*);/.exec(line)?.[1];
+  return controls === void 0 ? void 0 : getRegisteredKittyImageMetadataFromControls(controls);
+}
+function getExplicitKittyImageRows(controls) {
+  const value = /(?:^|,)r=(\d+)(?:,|$)/.exec(controls)?.[1];
+  if (value === void 0)
+    return void 0;
+  const rows = Number.parseInt(value, 10);
+  return rows > 0 ? rows : void 0;
+}
+function getKittyImageRowsFromControls(controls, fallbackRows) {
+  return getExplicitKittyImageRows(controls) ?? fallbackRows;
 }
 function getKittyImageMetadata(line) {
   const metadata = getRegisteredKittyImageMetadata(line);
@@ -44918,10 +44977,21 @@ var KITTY_PLACEMENT_CONTROL_KEYS = /* @__PURE__ */ new Set([
   "H",
   "V"
 ]);
+function getKittyImagePlacementRows(line) {
+  const controls = /\x1b_G([^;]*);/.exec(line)?.[1];
+  if (controls === void 0)
+    return void 0;
+  const explicitRows = getExplicitKittyImageRows(controls);
+  if (explicitRows !== void 0)
+    return explicitRows;
+  return getRegisteredKittyImageMetadataFromControls(controls)?.rows;
+}
 function getKittyImagePlacement(line) {
   const match = /\x1b_G([^;]*);/.exec(line);
-  const metadata = getRegisteredKittyImageMetadata(line);
-  if (!match || !metadata)
+  if (!match)
+    return void 0;
+  const metadata = getRegisteredKittyImageMetadataFromControls(match[1]);
+  if (!metadata)
     return void 0;
   let commandStart = match.index;
   let commandControls = match[1];
@@ -44948,6 +45018,7 @@ function getKittyImagePlacement(line) {
     transmissionGeneration: metadata.transmissionGeneration,
     transmissionBytes: transmissionEnd - match.index,
     estimatedDecodedBytes: metadata.widthPx * metadata.heightPx * 4,
+    rows: getKittyImageRowsFromControls(match[1], metadata.rows),
     sequence,
     replacementLine: `${line.slice(0, match.index)}${sequence}${line.slice(transmissionEnd)}`
   };
@@ -44973,8 +45044,10 @@ function dispatchMouseEvent(component, event) {
   const result = component.handleMouse?.(event);
   if (!result)
     return void 0;
-  if ("target" in result)
-    return result;
+  if ("target" in result) {
+    const forwarded = result;
+    return forwarded.focus && component.handleInput ? { ...forwarded, focusTarget: component } : forwarded;
+  }
   if (!result.handled && !result.capture && !result.focus)
     return void 0;
   return {
@@ -44999,6 +45072,10 @@ function retargetMouseEvent(event, target) {
     height: target.height
   };
 }
+var TERMINAL_PALETTE_SIZE = 16;
+var TERMINAL_COLOR_REPLY_COUNT = 2 + TERMINAL_PALETTE_SIZE;
+var TERMINAL_COLOR_QUERY = `\x1B]10;?\x07\x1B]11;?\x07${Array.from({ length: TERMINAL_PALETTE_SIZE }, (_2, index) => `\x1B]4;${index};?\x07`).join("")}\x1B[c`;
+var DEVICE_ATTRIBUTES_RESPONSE_PATTERN = /^\x1b\[\?[\d;]*c$/;
 function isFocusable(component) {
   return component !== null && "focused" in component;
 }
@@ -45100,8 +45177,11 @@ var TuiBase = class _TuiBase extends Container {
   clearOnShrink = false;
   fullRedrawCount = 0;
   stopped = false;
-  pendingOsc11BackgroundReplies = 0;
-  pendingOsc11BackgroundQueries = [];
+  /**
+   * Color queries waiting for their DA1 reply, oldest first. Terminals answer in order, so color
+   * replies belong to the oldest one. Queries stay here after a timeout to collect late replies.
+   */
+  pendingTerminalColorQueries = [];
   terminalColorSchemeListeners = /* @__PURE__ */ new Set();
   terminalColorSchemeNotificationsEnabled = false;
   /** Directory for debug/crash logs. When undefined, debug logging is disabled and crash dumps fall back to the OS temp directory. */
@@ -45143,7 +45223,7 @@ var TuiBase = class _TuiBase extends Container {
       return;
     this.showHardwareCursor = enabled;
     if (!enabled) {
-      this.terminal.hideCursor();
+      this.hideTerminalCursor();
     }
     this.requestRender();
   }
@@ -45279,7 +45359,7 @@ var TuiBase = class _TuiBase extends Container {
     if (!options?.nonCapturing && this.isOverlayVisible(entry)) {
       this.setFocus(component);
     }
-    this.terminal.hideCursor();
+    this.hideTerminalCursor();
     this.requestRender();
     return {
       hide: () => {
@@ -45293,7 +45373,7 @@ var TuiBase = class _TuiBase extends Container {
             this.setFocus(topVisible?.component ?? entry.preFocus);
           }
           if (this.overlayStack.length === 0)
-            this.terminal.hideCursor();
+            this.hideTerminalCursor();
           this.requestRender();
         }
       },
@@ -45372,8 +45452,13 @@ var TuiBase = class _TuiBase extends Container {
       this.setFocus(topVisible?.component ?? overlay.preFocus);
     }
     if (this.overlayStack.length === 0)
-      this.terminal.hideCursor();
+      this.hideTerminalCursor();
     this.requestRender();
+  }
+  /** Hide the cursor while running. After stop(), the shell owns the cursor and it must stay visible. */
+  hideTerminalCursor() {
+    if (!this.stopped)
+      this.terminal.hideCursor();
   }
   /** Check if there are any visible overlays */
   hasOverlay() {
@@ -45499,7 +45584,7 @@ var TuiBase = class _TuiBase extends Container {
       this.resetRenderState();
     this.renderRequested = false;
     this.cancelRenderTimer();
-    this.lastRenderAt = performance.now();
+    this.lastRenderAt = performance2.now();
     this.doRender();
   }
   requestRender(force = false) {
@@ -45525,7 +45610,7 @@ var TuiBase = class _TuiBase extends Container {
         return;
       this.cancelRenderTimer();
       this.renderRequested = false;
-      this.lastRenderAt = performance.now();
+      this.lastRenderAt = performance2.now();
       this.doRender();
     });
   }
@@ -45539,7 +45624,7 @@ var TuiBase = class _TuiBase extends Container {
     if (this.stopped || this.renderTimer || !this.renderRequested) {
       return;
     }
-    const elapsed = performance.now() - this.lastRenderAt;
+    const elapsed = performance2.now() - this.lastRenderAt;
     const delay = Math.max(0, _TuiBase.MIN_RENDER_INTERVAL_MS - elapsed);
     this.renderTimer = setTimeout(() => {
       this.renderTimer = void 0;
@@ -45547,7 +45632,7 @@ var TuiBase = class _TuiBase extends Container {
         return;
       }
       this.renderRequested = false;
-      this.lastRenderAt = performance.now();
+      this.lastRenderAt = performance2.now();
       this.doRender();
       if (this.renderRequested) {
         this.scheduleRender();
@@ -45555,7 +45640,7 @@ var TuiBase = class _TuiBase extends Container {
     }, delay);
   }
   handleTerminalInput(data) {
-    if (this.consumeOsc11BackgroundResponse(data)) {
+    if (this.consumeTerminalColorResponse(data)) {
       return;
     }
     if (this.consumeTerminalColorSchemeReport(data)) {
@@ -45615,26 +45700,47 @@ var TuiBase = class _TuiBase extends Container {
       this.requestImmediateRender();
     }
   }
-  consumeOsc11BackgroundResponse(data) {
-    if (this.pendingOsc11BackgroundReplies <= 0) {
+  consumeTerminalColorResponse(data) {
+    const query = this.pendingTerminalColorQueries[0];
+    if (!query) {
       return false;
     }
-    if (!isOsc11BackgroundColorResponse(data)) {
+    if (DEVICE_ATTRIBUTES_RESPONSE_PATTERN.test(data)) {
+      this.pendingTerminalColorQueries.shift();
+      this.completeTerminalColorQuery(query);
+      return true;
+    }
+    const response = parseOscColorResponse(data);
+    if (!response) {
       return false;
     }
-    const rgb = parseOsc11BackgroundColor(data);
-    this.pendingOsc11BackgroundReplies -= 1;
-    const query = this.pendingOsc11BackgroundQueries.shift();
-    if (query && !query.settled) {
-      query.settled = true;
-      if (query.timer) {
-        clearTimeout(query.timer);
-        query.timer = void 0;
-      }
-      query.resolve?.(rgb);
-      query.resolve = void 0;
+    const { target, rgb } = response;
+    const key = String(target);
+    if (!query.deliver || query.replied.has(key)) {
+      return true;
+    }
+    query.replied.add(key);
+    if (target === "foreground") {
+      query.foreground = rgb;
+    } else if (target === "background") {
+      query.background = rgb;
+    } else if (target < TERMINAL_PALETTE_SIZE) {
+      query.palette[target] = rgb;
+    }
+    if (query.replied.size === TERMINAL_COLOR_REPLY_COUNT) {
+      this.completeTerminalColorQuery(query);
     }
     return true;
+  }
+  terminalColorQueryResult(query) {
+    const palette = query.palette.every((color) => color !== void 0) ? query.palette : void 0;
+    return { foreground: query.foreground, background: query.background, palette };
+  }
+  completeTerminalColorQuery(query) {
+    const deliver = query.deliver;
+    query.deliver = void 0;
+    clearTimeout(query.timer);
+    deliver?.(this.terminalColorQueryResult(query));
   }
   consumeTerminalColorSchemeReport(data) {
     const scheme = parseTerminalColorSchemeReport(data);
@@ -45844,56 +45950,27 @@ var TuiBase = class _TuiBase extends Container {
     return null;
   }
   /**
-   * Query the terminal's default background color with OSC 11 (`ESC ] 11 ; ? BEL`).
-   * @param timeoutMs Query timeout in milliseconds.
-   * @returns Promise containing the parsed RGB color, or undefined if it times out or fails to parse.
+   * Query the terminal's theme colors: the default foreground (OSC 10), the default background
+   * (OSC 11), and ANSI colors 0-15 (OSC 4), followed by a DA1 request that marks the end of the
+   * replies. Resolves when the DA1 reply or all color replies arrive, or when the timeout expires.
+   * Colors the terminal did not report are undefined; the palette is only set when all 16 arrived.
+   * @param timeoutMs Query timeout in milliseconds, for terminals that do not answer DA1 either.
+   * @param onLateReply Receives the replies if the query completes after the timeout, e.g. over slow links.
    */
-  queryTerminalBackgroundColor({ timeoutMs }) {
+  queryTerminalColors({ timeoutMs, onLateReply }) {
     return new Promise((resolve35) => {
       const query = {
-        settled: false,
-        resolve: resolve35,
+        palette: Array.from({ length: TERMINAL_PALETTE_SIZE }, () => void 0),
+        replied: /* @__PURE__ */ new Set(),
+        deliver: resolve35,
         timer: void 0
       };
       query.timer = setTimeout(() => {
-        if (query.settled) {
-          return;
-        }
-        query.settled = true;
-        query.timer = void 0;
-        query.resolve?.(void 0);
-        query.resolve = void 0;
+        query.deliver = onLateReply;
+        resolve35(this.terminalColorQueryResult(query));
       }, timeoutMs);
-      this.pendingOsc11BackgroundQueries.push(query);
-      this.pendingOsc11BackgroundReplies += 1;
-      this.terminal.write("\x1B]11;?\x07");
-    });
-  }
-  /**
-   * Query the terminal's color-scheme preference with DSR (`CSI ? 996 n`).
-   * Terminals that support the color palette notification protocol reply with
-   * `CSI ? 997 ; 1 n` for dark or `CSI ? 997 ; 2 n` for light.
-   */
-  queryTerminalColorScheme({ timeoutMs }) {
-    return new Promise((resolve35) => {
-      let settled = false;
-      let timer;
-      let unsubscribe = () => {
-      };
-      const settle = (scheme) => {
-        if (settled)
-          return;
-        settled = true;
-        if (timer) {
-          clearTimeout(timer);
-          timer = void 0;
-        }
-        unsubscribe();
-        resolve35(scheme);
-      };
-      unsubscribe = this.onTerminalColorSchemeChange(settle);
-      timer = setTimeout(() => settle(void 0), timeoutMs);
-      this.terminal.write("\x1B[?996n");
+      this.pendingTerminalColorQueries.push(query);
+      this.terminal.write(TERMINAL_COLOR_QUERY);
     });
   }
 };
@@ -45977,7 +46054,7 @@ var Box = class {
       const lines = child.render(contentWidth);
       mouseChildren.push({ component: child, height: lines.length });
       for (const line of lines) {
-        childLines.push(leftPad + line);
+        childLines.push(line);
       }
     }
     this.mouseLayout = { width: contentWidth, children: mouseChildren };
@@ -45993,11 +46070,12 @@ var Box = class {
       result.push(this.applyBg("", width));
     }
     for (const line of childLines) {
-      result.push(this.applyBg(line, width));
+      result.push(this.applyBg(leftPad + line, width));
     }
     for (let i = 0; i < this.paddingY; i++) {
       result.push(this.applyBg("", width));
     }
+    flattenLines(result);
     this.cache = { childLines, width, bgSample, lines: result };
     return result;
   }
@@ -46005,10 +46083,7 @@ var Box = class {
     const visLen = visibleWidth(line);
     const padNeeded = Math.max(0, width - visLen);
     const padded = line + " ".repeat(padNeeded);
-    if (this.bgFn) {
-      return applyBackgroundToLine(padded, width, this.bgFn);
-    }
-    return padded;
+    return this.bgFn ? this.bgFn(padded) : padded;
   }
 };
 
@@ -46312,6 +46387,7 @@ var Text = class {
       emptyLines.push(line);
     }
     const result = [...emptyLines, ...contentLines, ...emptyLines];
+    flattenLines(result);
     this.cachedText = this.text;
     this.cachedWidth = width;
     this.cachedLines = result;
@@ -46443,6 +46519,7 @@ function findWordForward(text, cursor2, options) {
 var graphemeSegmenter2 = getGraphemeSegmenter();
 var wordSegmenter3 = getWordSegmenter();
 var unquotedAutocompleteSuffixRegex = new RegExp(`(?:(?!${autocompleteSeparatorRegex.source}).)*`, "u");
+var autocompleteTokenStartSource = `${autocompleteBoundaryRegex.source}[([{<\`]*`;
 
 // node_modules/@earendil-works/pi-tui/dist/layout-node.js
 var LAYOUT_NODE = /* @__PURE__ */ Symbol.for("@earendil-works/pi-tui/layout-node");
@@ -47733,6 +47810,8 @@ var ProcessTerminal = class {
   _kittyProtocolActive = false;
   _modifyOtherKeysActive = false;
   keyboardProtocolPushed = false;
+  /** DA1 replies owed to keyboard protocol queries. Later DA1 replies answer other queries and are forwarded. */
+  pendingKeyboardProtocolDeviceAttributes = 0;
   keyboardProtocolNegotiationBuffer = "";
   keyboardProtocolBufferFlushTimer;
   stdinBuffer;
@@ -47784,15 +47863,15 @@ var ProcessTerminal = class {
   setupStdinBuffer() {
     this.stdinBuffer = new StdinBuffer({ escapeTimeout: resolveEscapeTimeoutMs() });
     this.stdinBuffer.on("data", (sequence) => {
-      const negotiationSequence = this.readKeyboardProtocolNegotiationSequence(sequence);
-      if (negotiationSequence === "pending") {
+      const negotiation = this.readKeyboardProtocolNegotiationSequence(sequence);
+      if (negotiation === "pending") {
         this.scheduleKeyboardProtocolNegotiationBufferFlush();
         return;
       }
-      if (this.handleKeyboardProtocolNegotiationSequence(negotiationSequence)) {
+      if (negotiation && this.handleKeyboardProtocolNegotiationSequence(negotiation.parsed)) {
         return;
       }
-      this.forwardInputSequence(sequence);
+      this.forwardInputSequence(negotiation?.sequence ?? sequence);
     });
     this.stdinBuffer.on("paste", (content) => {
       if (this.inputHandler) {
@@ -47820,13 +47899,17 @@ var ProcessTerminal = class {
     this.setupStdinBuffer();
     process.stdin.on("data", this.stdinDataHandler);
     this.keyboardProtocolPushed = true;
+    this.pendingKeyboardProtocolDeviceAttributes += 1;
     this.clearKeyboardProtocolNegotiationBuffer();
     process.stdout.write(KITTY_KEYBOARD_PROTOCOL_QUERY);
   }
   handleKeyboardProtocolNegotiationSequence(negotiationSequence) {
-    if (!negotiationSequence)
-      return false;
     this.clearKeyboardProtocolNegotiationBuffer();
+    if (negotiationSequence.type === "device-attributes") {
+      if (this.pendingKeyboardProtocolDeviceAttributes === 0)
+        return false;
+      this.pendingKeyboardProtocolDeviceAttributes -= 1;
+    }
     if (negotiationSequence.type === "kitty-flags") {
       if (negotiationSequence.flags !== 0) {
         this.disableModifyOtherKeys();
@@ -47844,13 +47927,14 @@ var ProcessTerminal = class {
     }
     return true;
   }
+  /** Returns the parsed negotiation reply with its full (possibly reassembled) sequence. */
   readKeyboardProtocolNegotiationSequence(sequence) {
     if (this.keyboardProtocolNegotiationBuffer) {
       const bufferedSequence = this.keyboardProtocolNegotiationBuffer + sequence;
       const negotiationSequence2 = parseKeyboardProtocolNegotiationSequence(bufferedSequence);
       if (negotiationSequence2) {
         this.clearKeyboardProtocolNegotiationBuffer();
-        return negotiationSequence2;
+        return { parsed: negotiationSequence2, sequence: bufferedSequence };
       }
       if (isKeyboardProtocolNegotiationSequencePrefix(bufferedSequence)) {
         this.setKeyboardProtocolNegotiationBuffer(bufferedSequence);
@@ -47860,7 +47944,7 @@ var ProcessTerminal = class {
     }
     const negotiationSequence = parseKeyboardProtocolNegotiationSequence(sequence);
     if (negotiationSequence)
-      return negotiationSequence;
+      return { parsed: negotiationSequence, sequence };
     if (isKeyboardProtocolNegotiationSequencePrefix(sequence)) {
       this.setKeyboardProtocolNegotiationBuffer(sequence);
       return "pending";
@@ -48677,6 +48761,61 @@ function getScrollViewsAt(frame, x2, y2) {
   return result.map((entry) => entry.scrollView);
 }
 
+// node_modules/@earendil-works/pi-tui/dist/wheel-scroll.js
+var BURST_GAP_MS = 5;
+var GESTURE_GAP_MS = 200;
+var REFERENCE_GAP_MS = 100;
+var MAX_AUTO_LINES = 6;
+function terminalAcceleratesWheel() {
+  const env = process.env;
+  return process.platform === "darwin" && env.SSH_CONNECTION === void 0 && env.SSH_CLIENT === void 0 && env.SSH_TTY === void 0;
+}
+var WheelScrollAccelerator = class {
+  lines;
+  accelerate;
+  lastTime = Number.NEGATIVE_INFINITY;
+  lastDirection = 0;
+  averageGap;
+  carry = 0;
+  constructor(lines = "auto", accelerate = !terminalAcceleratesWheel()) {
+    this.lines = lines;
+    this.accelerate = accelerate;
+  }
+  setLines(lines) {
+    this.lines = lines;
+    this.reset();
+  }
+  /** Return the positive line count for a wheel event in `direction` at time `now` (milliseconds). */
+  next(direction, now) {
+    if (this.lines !== "auto")
+      return Number.isFinite(this.lines) ? Math.max(1, Math.floor(this.lines)) : 1;
+    if (!this.accelerate)
+      return 1;
+    const gap = now - this.lastTime;
+    const sameGesture = direction === this.lastDirection && gap <= GESTURE_GAP_MS;
+    this.lastTime = now;
+    this.lastDirection = direction;
+    if (!sameGesture) {
+      this.averageGap = void 0;
+      this.carry = 0;
+      return 1;
+    }
+    if (gap < BURST_GAP_MS)
+      return 1;
+    this.averageGap = this.averageGap === void 0 ? gap : (this.averageGap + gap) / 2;
+    const lines = Math.min(MAX_AUTO_LINES, Math.max(1, REFERENCE_GAP_MS / this.averageGap)) + this.carry;
+    const whole = Math.floor(lines);
+    this.carry = lines - whole;
+    return whole;
+  }
+  reset() {
+    this.lastTime = Number.NEGATIVE_INFINITY;
+    this.lastDirection = 0;
+    this.averageGap = void 0;
+    this.carry = 0;
+  }
+};
+
 // node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js
 var ENTER_ALT_SCREEN = "\x1B[?1049h";
 var EXIT_ALT_SCREEN = "\x1B[?1049l";
@@ -48736,7 +48875,7 @@ var TuiAltScreen = class extends TuiBase {
   mousePressPoint;
   mousePressMoved = false;
   lastComponentClick;
-  wheelScrollLines;
+  wheelScroll;
   mouseEnabled;
   searchMatchStyle;
   searchCurrentMatchStyle;
@@ -48758,7 +48897,7 @@ var TuiAltScreen = class extends TuiBase {
     };
     this.implicitScrollView = new ScrollView(this.implicitDocument, { follow: "end", primary: true });
     this.flashes = new AltScreenFlashContainer(() => this.requestRender());
-    this.wheelScrollLines = Math.max(1, Math.floor(options.wheelScrollLines ?? 1));
+    this.wheelScroll = new WheelScrollAccelerator(options.wheelScrollLines ?? 1);
     this.mouseEnabled = options.mouse ?? true;
     this.searchMatchStyle = options.searchMatchStyle ?? ((text) => `\x1B[4m${text}\x1B[24m`);
     this.searchCurrentMatchStyle = options.searchCurrentMatchStyle ?? ((text) => `\x1B[1;7m${text}\x1B[22;27m`);
@@ -48776,6 +48915,9 @@ var TuiAltScreen = class extends TuiBase {
   get isFollowingOutput() {
     return this.getPrimaryScrollView().isFollowingEnd;
   }
+  setWheelScrollLines(lines) {
+    this.wheelScroll.setLines(lines);
+  }
   getCopyOnSelect() {
     return this.copyOnSelect;
   }
@@ -48792,6 +48934,10 @@ var TuiAltScreen = class extends TuiBase {
     if (!text)
       return false;
     return this.copyTextToClipboard(text);
+  }
+  /** The lines of the last rendered frame, one per terminal row, as written to the terminal. */
+  getScreenLines() {
+    return [...this.previousScreen];
   }
   setLayoutRoot(component) {
     if (this.layoutRoot === component)
@@ -49135,9 +49281,9 @@ var TuiAltScreen = class extends TuiBase {
       return { consume: true };
     const wheelEvent = this.parseWheelEvent(data);
     if (wheelEvent) {
-      const event = this.createMouseEvent("wheel", wheelEvent.button, wheelEvent.x, wheelEvent.y, {
-        wheelDelta: wheelEvent.direction * this.getWheelScrollLines(wheelEvent.button)
-      });
+      const lines = this.wheelScroll.next(wheelEvent.direction, performance.now());
+      const wheelDelta = wheelEvent.direction * ((wheelEvent.button & 8) !== 0 ? lines * ALT_WHEEL_SCROLL_MULTIPLIER : lines);
+      const event = this.createMouseEvent("wheel", wheelEvent.button, wheelEvent.x, wheelEvent.y, { wheelDelta });
       const overlay = this.dispatchMouseToOverlay(event);
       const result = overlay.result ?? (overlay.hit ? void 0 : this.dispatchMouseToLayout(event));
       if (result) {
@@ -49147,7 +49293,7 @@ var TuiAltScreen = class extends TuiBase {
       }
       if (this.shouldDeferViewportInputToOverlay())
         return void 0;
-      this.routeWheel(wheelEvent);
+      this.routeWheel(wheelEvent, wheelDelta);
       return { consume: true };
     }
     const mouseEvent = this.parseSgrMouseEvent(data);
@@ -49410,11 +49556,8 @@ var TuiAltScreen = class extends TuiBase {
     }
     return void 0;
   }
-  getWheelScrollLines(button) {
-    return (button & 8) !== 0 ? this.wheelScrollLines * ALT_WHEEL_SCROLL_MULTIPLIER : this.wheelScrollLines;
-  }
-  routeWheel(event) {
-    let remaining = event.direction * this.getWheelScrollLines(event.button);
+  routeWheel(event, delta) {
+    let remaining = delta;
     const seen = /* @__PURE__ */ new Set();
     for (const scrollView of this.currentLayout ? getScrollViewsAt(this.currentLayout, event.x, event.y) : []) {
       seen.add(scrollView);
@@ -50035,7 +50178,20 @@ var TuiAltScreen = class extends TuiBase {
       return sliceByColumn(line, 0, width, true);
     });
     const fullRedraw = this.previousScreen.length === 0 || this.previousScreenWidth !== width || this.previousScreenHeight !== height;
-    const imagesNeedRedraw = screen.some((line, row) => line !== this.previousScreen[row] && (isImageLine(line) || isImageLine(this.previousScreen[row] ?? "")));
+    const changedRows = screen.map((line, row) => line !== this.previousScreen[row]);
+    const imageAnchorsNeedRedraw = screen.some((line, row) => changedRows[row] && (isImageLine(line) || isImageLine(this.previousScreen[row] ?? "")));
+    const isWezTerm = Boolean(process.env.WEZTERM_PANE) || process.env.TERM_PROGRAM?.toLowerCase() === "wezterm";
+    const imageCellsNeedRedraw = !imageAnchorsNeedRedraw && isWezTerm && this.imageProtocol === "kitty" && changedRows.some(Boolean) && screen.some((line, row) => {
+      const placementRows = getKittyImagePlacementRows(line);
+      if (placementRows === void 0)
+        return false;
+      for (let coveredRow = row; coveredRow < row + placementRows; coveredRow++) {
+        if (changedRows[coveredRow])
+          return true;
+      }
+      return false;
+    });
+    const imagesNeedRedraw = imageAnchorsNeedRedraw || imageCellsNeedRedraw;
     const redrawImages = fullRedraw || imagesNeedRedraw;
     const hadUploadedKittyImages = this.uploadedKittyImages.size > 0;
     const preparedKittyScreen = redrawImages && this.imageProtocol === "kitty" ? this.prepareKittyScreen(screen) : { lines: screen, evictedImageDeletion: "" };
@@ -50051,18 +50207,33 @@ var TuiAltScreen = class extends TuiBase {
         buffer += deleteAllKittyPlacements();
     }
     buffer += preparedKittyScreen.evictedImageDeletion;
-    const clearRowsBeforeKittyImages = redrawImages && this.imageProtocol === "kitty" && screen.some(isImageLine) && (Boolean(process.env.WEZTERM_PANE) || process.env.TERM_PROGRAM?.toLowerCase() === "wezterm");
-    if (clearRowsBeforeKittyImages) {
+    const drawKittyImagesLast = redrawImages && this.imageProtocol === "kitty" && screen.some(isImageLine) && isWezTerm;
+    if (drawKittyImagesLast) {
       for (let row = 0; row < height; row++) {
         if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
           continue;
         buffer += `\x1B[${row + 1};1H\x1B[2K`;
       }
-    }
-    for (let row = 0; row < height; row++) {
-      if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
-        continue;
-      buffer += `\x1B[${row + 1};1H${clearRowsBeforeKittyImages ? "" : "\x1B[2K"}${preparedKittyScreen.lines[row] ?? ""}`;
+      for (let row = 0; row < height; row++) {
+        if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
+          continue;
+        if (isImageLine(preparedKittyScreen.lines[row] ?? ""))
+          continue;
+        buffer += `\x1B[${row + 1};1H${preparedKittyScreen.lines[row] ?? ""}`;
+      }
+      for (let row = 0; row < height; row++) {
+        if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
+          continue;
+        if (!isImageLine(preparedKittyScreen.lines[row] ?? ""))
+          continue;
+        buffer += `\x1B[${row + 1};1H${preparedKittyScreen.lines[row] ?? ""}`;
+      }
+    } else {
+      for (let row = 0; row < height; row++) {
+        if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
+          continue;
+        buffer += `\x1B[${row + 1};1H\x1B[2K${preparedKittyScreen.lines[row] ?? ""}`;
+      }
     }
     if (cursorPos) {
       buffer += `\x1B[${cursorPos.row + 1};${Math.min(width, cursorPos.col) + 1}H`;
