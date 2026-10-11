@@ -6,7 +6,7 @@ Record the local-first KXM shape that this checkout can show, and track the prop
 
 ## Planner loop and lanes
 
-Status: open. Horizon: next.
+Status: done. Horizon: soon.
 
 Source: `plans/plan-lane-cli.md`.
 
@@ -19,7 +19,7 @@ The kxm verbs that let the planner dispatch a writer into a worktree lane and la
 - `loop-assign` kxm assign over the assignment runner, seven verbs, argv pass-through. Evidence: `test/core/cli.test.ts`.
 - `loop-docs` Tailnet docs site, roadmap generator, and kxm docs build and serve. Evidence: `plans/kxm-roadmap/update-dashboard.mjs`.
 - `loop-timeouts` Configurable one-shot step timeout, cancel recovery, and the three one-step workflows. Evidence: `test/core/engine.test.ts`.
-- `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
+- `loop-dispatch` Dispatch the writer and both critics through one-step workflows and surface their lane attempts in the parent report. Evidence: `plans/evidence/loop-dispatch-2026-10-11.json`.
 - `loop-land-followup` kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22). Evidence: `test/core/pr-land.test.ts`.
 - `loop-supervise` kxm supervise persists in-flight lanes, pull request and CI state, and backoff timers (S20). Evidence: `test/core/supervise.test.ts`.
 
@@ -33,7 +33,7 @@ None.
 
 ## Role authority from the v2 policy draft
 
-Status: open. Horizon: soon.
+Status: open. Horizon: next.
 
 Source: `plans/plan-omp-config-alignment.md`.
 
@@ -286,7 +286,6 @@ Tracker items that are not already tasks on the phases above.
 
 ## History
 
-- 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-26: Lanes register under their project and the test suite is bounded (#339).
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
 - 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.
@@ -298,3 +297,4 @@ Tracker items that are not already tasks on the phases above.
 - 2026-09-28: Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves.
 - 2026-09-28: kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart.
 - 2026-10-11: The kxm.config.v1 terminal editor now shares one owner-validated surface across the CLI and OMP/Pi.
+- 2026-10-11: loop-dispatch completed: a live writer and both critics settled from verified drives, and the parent improvement report included all three lane attempts.

@@ -403,26 +403,6 @@ a governance or proof gap, **medium** means a defect users will hit,
 - **Planned where:** the next engine slice after P2, or sooner if a hang
   recurs.
 
-### S30. Improvement reports read only the control root's own store (medium)
-
-- **Shortcut:** `kxm improve report` and `kxm routing report` read the
-  run-events store derived from the checkout they run in
-  (`improve-sources.ts` calls `kxmProjectRunEventsPath(projectRoot)`), so
-  attempts that a registered lane settles are invisible from the parent.
-  On 2026-09-26 the control-root report read 0 records while the
-  omp-align-p2 lane store held its settled attempt; S24 registered the
-  lane for the runtime but did not extend the report sources.
-- **Why:** the P2 unit's writer and critic attempts ran through the
-  harness transport and in-lane engine drives while the schema gap held,
-  so the roadmap proof (loop-dispatch) still lacks a parent-visible
-  attempt row.
-- **Proper fix:** read the project's home store and every lane store for
-  the same project id (the registry carries `lane_of`), with the same
-  read-only single query and duplicate drop as today. One test: an
-  attempt recorded in a lane appears in a report run from the primary
-  checkout.
-- **Planned where:** the next engine or improve slice.
-
 ### S31. Drive-time routing re-reads role and model files unpinned (medium)
 
 - **Shortcut:** the engine resolves a step's route from the working tree
@@ -467,6 +447,17 @@ a governance or proof gap, **medium** means a defect users will hit,
   browser-verify gate work.
 
 ## Closed
+
+### S30. Improvement reports read only the control root's own store (closed 2026-10-11)
+
+- **Shortcut:** `kxm improve report` and `kxm routing report` read the
+  run-events store derived from the checkout they run in, so attempts that
+  a registered lane settles were invisible from the parent.
+- **Landed:** `improve-sources.ts` reads the home store and every lane store
+  for the same project id from the existing registry, read-only, with the
+  same duplicate drop. One test records an attempt only in a real worktree
+  lane and reads it from the primary checkout. The live `loop-dispatch` unit
+  then supplied the writer and both critic receipts from a registered lane.
 
 ### S4. Thinking level hard-coded in the engine (medium)
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -543,6 +543,153 @@ gates:
     assert.ok(routing.sources.some((source) => source.path === enginePath));
   } finally {
     rmSync(root, { recursive: true, force: true });
+    rmSync(stateRoot, { recursive: true, force: true });
+    rmSync(logs, { recursive: true, force: true });
+  }
+});
+
+test("kxm improve report and kxm routing report from the primary include an attempt recorded only in a registered lane", async () => {
+  const { runCli: runCliImpl } = await import("../../plugins/kxm/src/cli.ts");
+  const root = mkdtempSync(join(tmpdir(), "kxm-improve-lane-"));
+  const worktree = join(dirname(root), `${basename(root)}-lane`);
+  const stateRoot = mkdtempSync(join(tmpdir(), "kxm-improve-lane-state-"));
+  const logs = mkdtempSync(join(tmpdir(), "kxm-improve-lane-logs-"));
+  try {
+    cpSync(join(repoRoot, "examples/project"), root, { recursive: true });
+    cpSync(join(repoRoot, "test/fixtures/engine/agent-only.yaml"), join(root, ".kxm", "workflows", "agent-only.yaml"));
+    makeGitRoot(root);
+    const gateScriptPath = join(root, "gate-script.cjs");
+    writeFileSync(gateScriptPath, "process.exit(0);\n");
+    writeFileSync(
+      join(root, ".kxm", "gates.yaml"),
+      `schema: kxm.gate-registry.v1
+gates:
+  test:
+    kind: command
+    argv: [${JSON.stringify(NODE)}, ${JSON.stringify(gateScriptPath)}]
+    timeoutMs: 3600000
+  scm-delivery:
+    kind: command
+    argv: [${JSON.stringify(NODE)}, ${JSON.stringify(gateScriptPath)}]
+    timeoutMs: 1800000
+`,
+    );
+    const staged = spawnSync("git", ["-C", root, "add", "-A"], { encoding: "utf8", windowsHide: true });
+    assert.equal(staged.status, 0, staged.stderr);
+    const committed = spawnSync(
+      "git",
+      ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "init"],
+      { encoding: "utf8", windowsHide: true },
+    );
+    assert.equal(committed.status, 0, committed.stderr);
+    const added = spawnSync("git", ["-C", root, "worktree", "add", "-b", "lane-report", worktree, "HEAD"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert.equal(added.status, 0, added.stderr);
+    for (const checkout of [root, worktree]) {
+      makeGitRoot(join(checkout, "repositories", "api"));
+      makeGitRoot(join(checkout, "repositories", "web"));
+    }
+
+
+    const env = { KXM_STATE_HOME: stateRoot, KXM_LOGS_DIR: logs, KXM_USER_CONFIG_DIR: join(stateRoot, "user-config") };
+    const primary = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
+    const homePath = primary.eventStore.path;
+    closeKxmRuntimeContext(primary);
+    const lane = openKxmRuntimeContext(worktree, { stateRoot, homeRuntimeId: HOME });
+    const lanePath = lane.eventStore.path;
+    let attemptIds: string[] = [];
+    try {
+      assert.equal(lane.registry.projectByRoot(root)?.laneOf, undefined);
+      assert.ok(lane.registry.projectByRoot(worktree)?.laneOf);
+      const bundle = loadKxmProject(worktree);
+      const accepted = acceptKxmRun(lane, bundle, { workflowId: "agent-only", prompt: "Recorded only in the lane" });
+      pinKxmCompiledPlan(lane, bundle, accepted.run.runId);
+      const driven = await driveKxmRun(
+        lane,
+        accepted.run.runId,
+        createKxmSimulatedProducer(() => ({ outcome: "passed", harness: "pi" })),
+        { allowLimits: true },
+      );
+      assert.equal(driven.state.status, "completed");
+      const laneRecords = lane.eventStore.events(accepted.run.runId, 0, 10_000)
+        .filter((event) => event.eventType === "routing.attempt.recorded")
+        .map((event) => (event.payload as unknown as { routing: RoutingRecordV2 }).routing);
+      attemptIds = laneRecords.map((record) => record.attemptId);
+      assert.ok(attemptIds.length >= 1);
+      assert.equal(existsSync(homePath), true);
+      writeFileSync(
+        join(logs, "telemetry.jsonl"),
+        `${JSON.stringify({ eventType: "routing.attempt.recorded", payload: { routing: laneRecords[0] } })}\n`,
+      );
+    } finally {
+      closeKxmRuntimeContext(lane);
+    }
+
+    const capture = () => {
+      let stdout = "";
+      let stderr = "";
+      return {
+        stdout: (text: string) => { stdout += text; },
+        stderr: (text: string) => { stderr += text; },
+        read: () => ({ stdout, stderr }),
+      };
+    };
+    const improveIo = capture();
+    assert.equal(await runCliImpl(["improve", "report", "--json"], env, improveIo, root), 0, improveIo.read().stderr);
+    const improve = JSON.parse(improveIo.read().stdout) as {
+      recordsCount: number;
+      sources: Array<{ kind: string; path: string; exists: boolean; records: number; duplicatesDropped?: number }>;
+      report: { groups: Array<{ evidenceRefs?: string[] }> };
+    };
+    const engines = improve.sources.filter((source) => source.kind === "engine");
+    assert.deepEqual(engines.map((source) => source.path), [homePath, lanePath]);
+    assert.equal(engines[0]?.exists, true);
+    assert.equal(engines[0]?.records, 0);
+    assert.equal(engines[1]?.exists, true);
+    assert.equal(engines[1]?.records, attemptIds.length);
+    assert.equal(improve.recordsCount, attemptIds.length);
+    const telemetry = improve.sources.find((source) => source.kind === "telemetry");
+    assert.equal(telemetry?.records, 1);
+    assert.equal(telemetry?.duplicatesDropped, 1);
+    const evidence = improve.report.groups.flatMap((group) => group.evidenceRefs ?? []);
+    for (const attemptId of attemptIds) assert.ok(evidence.includes(attemptId), attemptId);
+
+    const routingIo = capture();
+    assert.equal(await runCliImpl(["--json", "routing", "report"], env, routingIo, root), 0, routingIo.read().stderr);
+    const routing = JSON.parse(routingIo.read().stdout) as {
+      report: { totalAttempts: number };
+      sources: Array<{ kind: string; path: string }>;
+    };
+    assert.equal(routing.report.totalAttempts, attemptIds.length);
+    assert.ok(routing.sources.some((source) => source.kind === "engine" && source.path === lanePath));
+
+    const isolated = join(logs, "only.jsonl");
+    const fileAttempt = "att_file_only_lane_report";
+    writeFileSync(isolated, `${JSON.stringify({ routing: sampleRoutingRecord({ stepId: "file-only", attemptId: fileAttempt }) })}\n`);
+    const fileIo = capture();
+    assert.equal(await runCliImpl(["improve", "report", "--json", "--file", isolated], env, fileIo, root), 0, fileIo.read().stderr);
+    const filed = JSON.parse(fileIo.read().stdout) as { recordsCount: number; sources: Array<Record<string, unknown>> };
+    assert.equal(filed.recordsCount, 1);
+    assert.deepEqual(filed.sources, [{ kind: "file", path: isolated, exists: true, records: 1, duplicatesDropped: 0 }]);
+    assert.equal(fileIo.read().stdout.includes(lanePath), false);
+    assert.equal(fileIo.read().stdout.includes(attemptIds[0] ?? "missing-lane-attempt"), false);
+
+    const routingFileIo = capture();
+    assert.equal(
+      await runCliImpl(["--json", "routing", "report", "--file", isolated], env, routingFileIo, root),
+      0,
+      routingFileIo.read().stderr,
+    );
+    const routingFile = JSON.parse(routingFileIo.read().stdout) as { report: { totalAttempts: number }; sources?: unknown };
+    assert.equal(routingFile.report.totalAttempts, 1);
+    assert.equal(routingFile.sources, undefined);
+    assert.equal(routingFileIo.read().stdout.includes(lanePath), false);
+  } finally {
+    spawnSync("git", ["-C", root, "worktree", "remove", "--force", worktree], { windowsHide: true });
+    rmSync(root, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
     rmSync(stateRoot, { recursive: true, force: true });
     rmSync(logs, { recursive: true, force: true });
   }

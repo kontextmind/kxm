@@ -659,6 +659,28 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **Improvement reports read registered lane stores (2026-10-11; backlog S30).**
+  `kxm improve report` and `kxm routing report` discover Runtime event stores
+  from the existing user-state `registry.db` without constructing the registry,
+  migrating it, taking a write lock, or copying events. An absent registry, or
+  a checkout that is not registered, still reads only the store derived from
+  that checkout. A present registry must be a regular schema-v2 file. One query
+  joins the current project key to the home row and every lane row for that
+  project id (home first, then lanes by registration time and key). Exactly one
+  home row and 24-character lowercase hex keys are required; a corrupt identity
+  fails closed with `improve_source_unreadable`. Store paths come from the
+  stored keys and `runtime/projects`. A missing store is a zero-record engine
+  source. An unreadable store still fails. Engine sources are loaded before
+  telemetry, and the first `attemptId` still wins. `--file` is unchanged. No
+  second report schema and no hub, route, or lane-lifecycle change.
+  Live unit `loop-dispatch` then ran `writer-only`, `reviewer-arch-only`, and
+  `reviewer-cli-only`; every run completed from a verified drive receipt. The
+  report invoked from the parent checkout read all three lane-only attempts.
+  Redacted receipt identities and report counts are in
+  `plans/evidence/loop-dispatch-2026-10-11.json`. Named test: `kxm improve
+  report and kxm routing report from the primary include an attempt recorded
+  only in a registered lane` in `test/core/improve.test.ts`.
+
 - **`kxm lane` worktree lanes and file briefs (2026-09-26; #330, v0.7.120).** `lane create`,
   `list`, `status`, `drop`, `run`; `kxm run --brief` and `--lane`; `kxm runs * --lane`. Design
   `plans/plan-lane-cli.md`. Named tests: the `lane create`, `lane drop`, `lane run`, and `run --brief --lane` cases in `test/core/cli.test.ts`.
@@ -1185,9 +1207,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   version; `kxm.candidate.v1` is unchanged (cost 0 still means unknown, and the report
   exposes `costSamples`), and `kxm.improvement-report.v2` gains additive fields only.
   **Not done here:** no backfill of engine records written before this change (they resolve
-  outcomes but group per run, so they never become candidates); the report covers one
-  checkout because `projectRuntimeKey` is realpath based (no `--project-root`, no
-  cross-worktree aggregation); the routing report's ranking code is untouched, its rework
+  outcomes but group per run, so they never become candidates); that slice covered one
+  checkout because `projectRuntimeKey` is realpath based (no `--project-root`). Registered
+  lanes of the same project are included by the 2026-10-11 S30 entry in Landed in this
+  tree. The routing report's ranking code is untouched, its rework
   column still reads `transitions`, which engine records never set, and its text output
   does not list the sources (JSON only); `critic_quorum` readiness is never met from the
   CLI because `kxm improve` passes no critic receipts; the session-brief and local-snapshot
