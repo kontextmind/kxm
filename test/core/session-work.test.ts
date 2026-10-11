@@ -64,7 +64,7 @@ test("session brief lists hub tasks and plans without message bodies", () => {
   assert.match(formatSessionBriefText(brief), /Tasks/);
 });
 
-test("session status line reports hub online and idle", () => {
+test("session chrome keeps only actionable work, hub, ship, cost, and update signals", () => {
   const empty = {
     activeTasks: 0,
     waitingTasks: 0,
@@ -72,11 +72,18 @@ test("session status line reports hub online and idle", () => {
     inbox: 0,
     runTotal: 0,
   };
-  assert.equal(formatSessionStatusLine(empty), "kxm idle");
-  assert.match(formatSessionStatusLine(empty, undefined, { online: true }), /hub:on/);
+  assert.equal(formatSessionStatusLine(empty), "kxm");
+  assert.equal(formatSessionStatusLine(empty, undefined, { online: true }), "kxm");
+  assert.equal(formatSessionStatusLine(empty, undefined, { state: "off", evidence: "probed" }), "kxm · hub:off");
+  assert.equal(formatSessionStatusLine(empty, undefined, { state: "on", evidence: "probed", scope: "remote" }), "kxm · hub:remote");
   assert.match(formatSessionStatusLine(empty, undefined, undefined, { dirty: true, ahead: 0 }), /dirty/);
   assert.match(formatSessionStatusLine(empty, undefined, undefined, undefined, "0.5.2"), /upd 0\.5\.2/);
+  assert.match(formatSessionWidget(empty, undefined, undefined, undefined, undefined, "$9.99 sess").join("\n"), /\$9\.99 sess/);
   assert.equal(formatShipLine({ dirty: true, ahead: 0 }), "ship dirty · commit after verify");
+  assert.deepEqual(
+    formatSessionWidget(empty, undefined, { state: "on", evidence: "probed" }, { dirty: false, ahead: 0 }, undefined, "unknown"),
+    ["KXM · hub:on"],
+  );
   assert.match(formatSessionWidget(empty, undefined, undefined, { dirty: false, ahead: 2 }).join("\n"), /2 local/);
 });
 
@@ -111,7 +118,7 @@ test("Gate 1: blackholed hub URL returns in under a second with unknown", async 
   assert.equal(hub.online, false);
 
   const statusLine = renderStatusLine({ activeTasks: 0, waitingTasks: 0, planCount: 0, inbox: 0, runTotal: 0 }, undefined, hub);
-  assert.match(statusLine, /kxm hub:unknown/);
+  assert.equal(statusLine, "kxm · hub:unknown");
 });
 
 test("Gate 2: fresh branch with two local commits renders 2 local", () => {
@@ -174,7 +181,7 @@ test("Gate 3: three callers produce identical lines and never exceed 80 columns"
   const piStatusSlot = renderStatusLine(brief);
 
   // Caller 3: /kxm status slash command (ctx.ui.notify)
-  const slashStatusCommand = renderStatusLine(brief.stats, undefined, brief.hub, ship, undefined, brief.cost);
+  const slashStatusCommand = renderStatusLine(brief.stats, undefined, brief.hub, ship);
 
   assert.equal(cliStatusLine, piStatusSlot);
   assert.equal(piStatusSlot, slashStatusCommand);
@@ -246,14 +253,14 @@ test("session brief caches at .kxm/state/session-brief.json with 5s TTL", () => 
   }
 });
 
-test("formatCostLine handles metered and unmetered costs", () => {
+test("formatCostLine omits unknown costs and formats metered costs", () => {
   assert.equal(
     formatCostLine({ sessionCostUsd: 0.42, runCostUsd: 0.08, harness: "claude", model: "fable" }),
     "$0.42 sess · $0.08 run · claude/fable",
   );
   assert.equal(
     formatCostLine({ harness: "claude", model: "fable" }),
-    "unknown",
+    undefined,
   );
   assert.equal(
     formatCostLine({ sessionCostUsd: 1.5 }),
@@ -298,7 +305,7 @@ test("estimateSessionCost reads telemetry.jsonl", () => {
       effectiveModel: "gpt-5.6-sol",
     };
     writeFileSync(telemetryFile, `${JSON.stringify(rec3)}\n`);
-    assert.equal(estimateSessionCost(tmp), "unknown");
+    assert.equal(estimateSessionCost(tmp), undefined);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

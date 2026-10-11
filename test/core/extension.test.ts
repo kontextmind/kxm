@@ -219,7 +219,7 @@ test("Pi extension registers tools, exchanges work, queues inbound turns, and re
     model: { provider: "test", id: "model" },
     ui,
   });
-  assert.ok(statuses.some((s) => s.startsWith("kxm hub:on")));
+  assert.ok(statuses.some((status) => status.startsWith("kxm") && !/hub:(?:off|unknown)/.test(status)));
   await waitFor(async () => (await peer.listAgents()).some((agent) => agent.name === "pi-under-test"));
 
   const listed = await fake.tools.get("kxm_list")!.execute("call-list", {});
@@ -1416,7 +1416,8 @@ function seedSessionSnapshot(root: string): void {
 }
 
 function assertOnlineChrome(rec: ReturnType<typeof recordingUi>): void {
-  assert.match(lastKxmStatus(rec.statuses), /^kxm hub:on/);
+  assert.match(lastKxmStatus(rec.statuses), /^kxm(?: ·|$)/);
+  assert.doesNotMatch(lastKxmStatus(rec.statuses), /hub:(?:off|unknown)/);
   assert.match(lastKxmWidget(rec.widgets)[0]!, /hub:on/);
 }
 
@@ -1553,12 +1554,12 @@ test("Pi extension session readiness reports offline chrome and reapplies /kxm",
   const offline = recordingUi();
   const ctx = sessionCtx(cwd, offline.ui);
   await fake.emit("session_start", { reason: "new" }, ctx);
-  assert.match(lastKxmStatus(offline.statuses), /^kxm hub:off/);
+  assert.match(lastKxmStatus(offline.statuses), /^kxm · hub:off/);
   assert.match(lastKxmWidget(offline.widgets)[0]!, /hub:off/);
   assert.ok(offline.notices.some((notice) => notice.type === "error" && /kxm connection failed/.test(notice.message)));
 
   await fake.commands.get("kxm")!.handler("", ctx);
-  assert.match(lastKxmStatus(offline.statuses), /^kxm hub:off/);
+  assert.match(lastKxmStatus(offline.statuses), /^kxm · hub:off/);
   assert.match(lastKxmWidget(offline.widgets)[0]!, /hub:off/);
   await shutdownExtension(fake);
 });

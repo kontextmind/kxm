@@ -659,6 +659,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Landed in this tree (unreleased)
 
+- **OMP subscription status band and concise session chrome (2026-10-11).**
+  `kxm plugin install --omp --status-band` explicitly selects a focused OMP
+  custom layout that uses OMP's native active-account quota segment; ordinary
+  plugin installation does not change user chrome. The shared KXM hook line
+  omits idle, zero-count, clean-ship, cost, and healthy local hub noise while
+  retaining degraded hub, current work, waiting/inbox, dirty/ahead, and update
+  signals. The work widget retains known metered cost and suppresses unknown
+  cost. Named tests: the session chrome cases in `test/core/session-work.test.ts`
+  and the plugin install case in `test/core/cli.test.ts`.
+
 - **`kxm lane` worktree lanes and file briefs (2026-09-26; #330, v0.7.120).** `lane create`,
   `list`, `status`, `drop`, `run`; `kxm run --brief` and `--lane`; `kxm runs * --lane`. Design
   `plans/plan-lane-cli.md`. Named tests: the `lane create`, `lane drop`, `lane run`, and `run --brief --lane` cases in `test/core/cli.test.ts`.

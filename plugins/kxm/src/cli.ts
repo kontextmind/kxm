@@ -773,7 +773,8 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
     .option("--claude", "Install plugin for Claude Code")
     .option("--omp", "Install plugin for Oh My Pi (OMP)")
     .option("--pi", "Install plugin for Pi")
-    .action(async function pluginInstallAction(this: Command, options: { all?: boolean; claude?: boolean; omp?: boolean; pi?: boolean }) {
+    .option("--status-band", "Configure OMP's focused status band with live subscription usage")
+    .action(async function pluginInstallAction(this: Command, options: { all?: boolean; claude?: boolean; omp?: boolean; pi?: boolean; statusBand?: boolean }) {
       result.code = await cmdPluginInstall(runtimeFrom(ctx, this), options);
     });
 
