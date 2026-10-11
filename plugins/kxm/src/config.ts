@@ -440,13 +440,14 @@ function normalizeImprovementConfig(raw: unknown): KxmImprovementConfig {
 
 export function loadKxmConfig(
   repoRoot = process.cwd(),
-  options: { userConfigDir?: string } = {},
+  options: { userConfigDir?: string; layers?: "user" | "all" } = {},
 ): KxmResolvedConfig {
   const userDir = userConfigDirectory(options.userConfigDir);
   const userConfigFile = join(userDir, "config.yaml");
 
   const repoDir = repoConfigDirectory(repoRoot);
   const repoConfigFile = join(repoDir, "config.yaml");
+  const includeProject = options.layers !== "user";
 
   let userRaw: Record<string, unknown> = {};
   let userLoadedPath: string | undefined;
@@ -462,7 +463,7 @@ export function loadKxmConfig(
 
   let repoRaw: Record<string, unknown> = {};
   let repoLoadedPath: string | undefined;
-  if (existsSync(repoConfigFile)) {
+  if (includeProject && existsSync(repoConfigFile)) {
     try {
       const text = readFileSync(repoConfigFile, "utf8");
       repoRaw = (parse(text) as Record<string, unknown>) ?? {};

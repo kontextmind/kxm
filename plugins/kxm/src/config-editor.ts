@@ -36,7 +36,8 @@ export type KxmConfigEditorScope = "project" | "user";
 
 const INTEGER_TEXT = /^(0|[1-9][0-9]*)$/;
 const DECIMAL_TEXT = /^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$/;
-const TEXT_VALUE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+/** Workflow and harness ids already in use, including `@`, with no whitespace. */
+const TEXT_VALUE = /^[A-Za-z0-9@][A-Za-z0-9@._:/-]{0,127}$/;
 
 interface EnumSpec {
   readonly kind: "enum";
@@ -167,9 +168,6 @@ const SECTIONS: readonly ConfigEditorSectionSpec[] = [
   },
 ];
 
-const FIELDS = new Map<string, ConfigEditorFieldSpec>(
-  SECTIONS.flatMap((section) => section.fields.map((field) => [field.id, field] as const)),
-);
 
 export class KxmConfigEditorError extends Error {
   readonly code = "config_edit_refused";
@@ -197,10 +195,10 @@ export function createKxmConfigEditorContribution(target: KxmConfigEditorTarget)
     listSections: () => listConfigEditorSections(target),
     handlers: {
       [KXM_TUI_SET_ACTION]: (input) => {
-        writeConfigEditorValue(target, input.fieldId, input.value);
+        writeConfigEditorValue(target, input.sectionId, input.fieldId, input.value);
       },
       [KXM_TUI_CLEAR_ACTION]: (input) => {
-        clearConfigEditorValue(target, input.fieldId);
+        clearConfigEditorValue(target, input.sectionId, input.fieldId);
       },
     },
     describeError: (error) => (error instanceof Error && error.message ? error.message : "config edit failed"),
@@ -216,17 +214,25 @@ function scopePhrase(scope: KxmConfigEditorScope): string {
 }
 
 function listConfigEditorSections(target: KxmConfigEditorTarget): KxmTuiSectionView[] {
-  const config = loadKxmConfig(target.cwd, target.userConfigDir === undefined ? {} : { userConfigDir: target.userConfigDir });
+  const config = loadKxmConfig(target.cwd, {
+    ...(target.userConfigDir === undefined ? {} : { userConfigDir: target.userConfigDir }),
+    layers: target.scope === "user" ? "user" : "all",
+  });
   const owned = readScopeDocument(scopeFile(target));
   const where = scopePhrase(target.scope);
-  return SECTIONS.map((section) => ({
-    source: KXM_CONFIG_EDITOR_SOURCE,
-    id: section.id,
-    title: section.title,
-    order: section.order,
-    detail: `kxm.config.v1 · ${target.scope} scope. Re-read from disk after each write.`,
-    fields: section.fields.map((field) => publishField(field, config, owned, where)),
-  }));
+  return SECTIONS.map((section) => {
+    const fields = section.fields.map((field) => publishField(field, config, owned, where));
+    const diagnosis = fields.find((field) => field.statusText)?.statusText;
+    return {
+      source: KXM_CONFIG_EDITOR_SOURCE,
+      id: section.id,
+      title: section.title,
+      order: section.order,
+      detail: `kxm.config.v1 · ${target.scope} scope. Re-read from disk after each write.`,
+      ...(diagnosis === undefined ? {} : { notice: diagnosis, noticeLevel: "error" as const }),
+      fields,
+    };
+  });
 }
 
 function publishField(
@@ -239,13 +245,13 @@ function publishField(
   const stored = ownValue(owned, field.keyPath);
   const shown = displayScalar(effective);
   const inherited = !stored.present;
-  const unsupported = stored.present && !sameScalar(stored.value, effective);
+  const diagnosis = storedDiagnosis(field, stored, effective);
   const detail = [
     `Writes ${where}.`,
-    inherited ? "Shown value is inherited." : "This scope sets the value.",
-    "Clear removes only this scope's override.",
+    inherited ? "Inherited." : "Set in this scope.",
+    "Clear removes only this override.",
     field.note ?? "",
-    unsupported ? "Stored value is unsupported; showing the effective value." : "",
+    diagnosis ?? "",
   ].filter((part) => part.length > 0).join(" ");
   const choices = field.spec.kind === "enum"
     ? field.spec.choices.map((choice) => ({ id: choice, label: choice }))
@@ -259,7 +265,7 @@ function publishField(
     status: "ready",
     ...(shown === undefined ? {} : { value: shown }),
     ...(choices === undefined ? {} : { choices }),
-    ...(unsupported ? { statusText: "stored value is not a supported scalar" } : {}),
+    ...(diagnosis === undefined ? {} : { statusText: diagnosis }),
   };
 }
 
@@ -270,14 +276,43 @@ function displayScalar(value: unknown): string | undefined {
   return undefined;
 }
 
-function sameScalar(stored: unknown, effective: unknown): boolean {
-  if (typeof stored === "boolean" || typeof stored === "number") return stored === effective;
-  if (typeof stored === "string") return stored === effective || stored === displayScalar(effective);
-  return false;
+function isBooleanEnum(spec: ValueSpec): boolean {
+  return spec.kind === "enum"
+    && spec.choices.length === 2
+    && spec.choices.every((choice) => choice === "true" || choice === "false");
 }
 
-function writeConfigEditorValue(target: KxmConfigEditorTarget, fieldId: string, raw: string | undefined): void {
-  const field = requireField(fieldId);
+/** A display string such as `"true"` is not a boolean. The stored YAML type has to match the descriptor. */
+function storedTypeMatches(field: ConfigEditorFieldSpec, value: unknown): boolean {
+  if (field.spec.kind === "number") {
+    return typeof value === "number"
+      && Number.isFinite(value)
+      && (!field.spec.integer || Number.isInteger(value));
+  }
+  if (isBooleanEnum(field.spec)) return typeof value === "boolean";
+  return typeof value === "string";
+}
+
+function storedDiagnosis(
+  field: ConfigEditorFieldSpec,
+  stored: { present: boolean; value: unknown },
+  effective: unknown,
+): string | undefined {
+  if (!stored.present) return undefined;
+  if (!storedTypeMatches(field, stored.value)) return "stored type does not match this field";
+  if (field.spec.kind === "enum" && !isBooleanEnum(field.spec) && !field.spec.choices.includes(stored.value as string)) {
+    return "stored value is not a supported scalar";
+  }
+  if (field.spec.kind === "number") {
+    const value = stored.value as number;
+    if (value < field.spec.min || value > field.spec.max) return "stored value is not a supported scalar";
+  }
+  if (stored.value !== effective) return "stored value is not a supported scalar";
+  return undefined;
+}
+
+function writeConfigEditorValue(target: KxmConfigEditorTarget, sectionId: string, fieldId: string, raw: string | undefined): void {
+  const field = requireField(sectionId, fieldId);
   const value = parseEditorValue(field, raw);
   setKxmConfigValue(target.cwd, field.keyPath, value, {
     scope: target.scope,
@@ -285,16 +320,17 @@ function writeConfigEditorValue(target: KxmConfigEditorTarget, fieldId: string, 
   });
 }
 
-function clearConfigEditorValue(target: KxmConfigEditorTarget, fieldId: string): void {
-  const field = requireField(fieldId);
+function clearConfigEditorValue(target: KxmConfigEditorTarget, sectionId: string, fieldId: string): void {
+  const field = requireField(sectionId, fieldId);
   deleteKxmConfigValue(target.cwd, field.keyPath, {
     scope: target.scope,
     ...(target.userConfigDir === undefined ? {} : { userConfigDir: target.userConfigDir }),
   });
 }
 
-function requireField(fieldId: string): ConfigEditorFieldSpec {
-  const field = FIELDS.get(fieldId);
+function requireField(sectionId: string, fieldId: string): ConfigEditorFieldSpec {
+  const section = SECTIONS.find((item) => item.id === sectionId);
+  const field = section?.fields.find((item) => item.id === fieldId);
   if (!field) throw new KxmConfigEditorError("unknown configuration field");
   return field;
 }
@@ -306,7 +342,7 @@ function parseEditorValue(field: ConfigEditorFieldSpec, raw: string | undefined)
   }
   if (field.spec.kind === "enum") {
     if (!field.spec.choices.includes(raw)) throw new KxmConfigEditorError("value is not a supported choice");
-    if (field.spec.choices.length === 2 && field.spec.choices[0] === "true" && field.spec.choices[1] === "false") return raw === "true";
+    if (isBooleanEnum(field.spec)) return raw === "true";
     return raw;
   }
   if (field.spec.kind === "text") {
@@ -371,7 +407,7 @@ export async function runKxmConfigEditor(input: {
       helpLines: EDITOR_HELP,
       stdout: input.stdout,
       isTty: interactive,
-      theme: interactive ? undefined : createPlainKxmTuiTheme(),
+      ...(interactive ? {} : { theme: createPlainKxmTuiTheme() }),
       now: () => FRAME_NOW_MS,
     });
   } finally {
@@ -380,7 +416,7 @@ export async function runKxmConfigEditor(input: {
 }
 
 interface ConfigPanelUi {
-  notify?: ((message: string, type?: string) => void) | undefined;
+  notify?: ((message: string, type?: "error" | "info" | "warning") => void) | undefined;
   custom?: ((
     factory: (
       tui: { requestRender(): void },
@@ -388,15 +424,24 @@ interface ConfigPanelUi {
       keybindings: unknown,
       done: (result: undefined) => void,
     ) => { render(width: number): string[]; handleInput(data: string): void; invalidate(): void },
+    options?: { overlay?: boolean },
   ) => Promise<unknown>) | undefined;
 }
 
-/** Mount the project-scope editor on Pi's generic custom panel. */
+/** Mount the project-scope editor on Pi's generic custom panel. Only a TUI session may open it. */
 export async function openKxmProjectConfigPanel(
-  ui: { notify?: (message: string, type?: string) => void; custom?: unknown },
+  ui: { notify?: (message: string, type?: "error" | "info" | "warning") => void; custom?: unknown },
   cwd: string,
   env: NodeJS.ProcessEnv = process.env,
+  mode?: string,
 ): Promise<void> {
+  if (mode !== "tui") {
+    ui.notify?.(
+      "kxm: /kxm config opens only in the Pi TUI. Nothing was written. Run kxm config edit --scope project",
+      "warning",
+    );
+    return;
+  }
   if (typeof ui.custom !== "function") {
     ui.notify?.(
       "kxm: /kxm config needs Pi's custom panel. Open the repository in the Pi TUI, or run kxm config edit --scope project",
@@ -413,18 +458,21 @@ export async function openKxmProjectConfigPanel(
       scope: "project",
       ...(userConfigDir === undefined ? {} : { userConfigDir }),
     }));
-    await custom((tui, theme, _keybindings, done) => createKxmTuiPiPanel({
-      registry,
-      tui,
-      theme,
-      title: "KXM configuration",
-      breadcrumb: "kxm.config.v1 · project scope",
-      helpLines: EDITOR_HELP,
-      done: () => {
-        registry.dispose();
-        done(undefined);
-      },
-    }));
+    await custom(
+      (tui, theme, _keybindings, done) => createKxmTuiPiPanel({
+        registry,
+        tui,
+        theme,
+        title: "KXM configuration",
+        breadcrumb: "kxm.config.v1 · project scope",
+        helpLines: EDITOR_HELP,
+        done: () => {
+          registry.dispose();
+          done(undefined);
+        },
+      }),
+      { overlay: true },
+    );
   } finally {
     registry.dispose();
   }

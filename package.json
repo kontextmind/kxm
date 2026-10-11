@@ -70,7 +70,7 @@
   },
   "pi": {
     "extensions": [
-      "./plugins/kxm/src/extension.ts"
+      "./plugins/kxm/dist/extension.js"
     ],
     "skills": [
       "./plugins/kxm/skills"

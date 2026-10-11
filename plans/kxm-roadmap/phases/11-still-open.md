@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/implementation-plan.md`.
 
-Updated: 2026-09-28.
+Updated: 2026-10-11.
 
 Tracker items that are not already tasks on the phases above.
 
@@ -79,6 +79,20 @@ Template: `none`.
 Done criterion: None.
 
 Evidence needed: None.
+
+### Owner-validated kxm.config.v1 editor in the CLI and OMP/Pi
+
+`open-config-editor`. Status: done. Detail: ready.
+
+Template: [feature](../../templates/feature.md).
+
+Done criterion: None.
+
+Evidence needed: None.
+
+Plan section: plans/implementation-plan.md#tracking.
+
+Evidence: `test/core/config-editor.test.ts`.
 
 ### Package restructure slices after packages/core/tui
 

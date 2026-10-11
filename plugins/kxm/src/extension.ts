@@ -916,7 +916,7 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
   }
 
   pi.registerCommand("kxm", {
-    description: "Hub session brief, status line, and hub view",
+    description: "KXM session, workflow, hub, and configuration surfaces",
     getArgumentCompletions: (prefix: string) => {
       const items = kxmSlashCompletions(prefix);
       return items.length > 0 ? items : null;
@@ -952,7 +952,8 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
       }
       if (command === "config") {
         const cwd = typeof ctx.cwd === "string" && ctx.cwd.trim().length > 0 ? ctx.cwd : process.cwd();
-        await openKxmProjectConfigPanel(ctx.ui, cwd);
+        const mode = typeof ctx.mode === "string" ? ctx.mode : undefined;
+        await openKxmProjectConfigPanel(ctx.ui, cwd, process.env, mode);
         return;
       }
       if (command === "help") {

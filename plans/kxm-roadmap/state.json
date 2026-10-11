@@ -1,6 +1,6 @@
 {
   "schema": "kxm.roadmap.v1",
-  "updated": "2026-09-28",
+  "updated": "2026-10-11",
   "goal": "Record the local-first KXM shape that this checkout can show, and track the proposal and queue items the implementation tracker actually records.",
   "constraints": [
     "SQLite remains the hub store recorded in this checkout.",
@@ -58,10 +58,14 @@
     {
       "date": "2026-09-28",
       "line": "kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart."
+    },
+    {
+      "date": "2026-10-11",
+      "line": "The kxm.config.v1 terminal editor now shares one owner-validated surface across the CLI and OMP/Pi."
     }
   ],
   "architecture": {
-    "verified": "2026-09-28",
+    "verified": "2026-10-11",
     "docs": [
       "docs/architecture/index.md",
       "docs/architecture/platform.md",
@@ -773,6 +777,15 @@
           "evidence": "",
           "template": "none",
           "detail": "scoped"
+        },
+        {
+          "id": "open-config-editor",
+          "title": "Owner-validated kxm.config.v1 editor in the CLI and OMP/Pi",
+          "status": "done",
+          "evidence": "test/core/config-editor.test.ts",
+          "planSection": "plans/implementation-plan.md#tracking",
+          "template": "feature",
+          "detail": "ready"
         },
         {
           "id": "open-packages",

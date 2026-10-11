@@ -4,11 +4,11 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
-  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
-}) : x)(function(x) {
+var __require = /* @__PURE__ */ ((x2) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x2, {
+  get: (a, b2) => (typeof require !== "undefined" ? require : a)[b2]
+}) : x2)(function(x2) {
   if (typeof require !== "undefined") return require.apply(this, arguments);
-  throw Error('Dynamic require of "' + x + '" is not supported');
+  throw Error('Dynamic require of "' + x2 + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
   try {
@@ -244,8 +244,8 @@ var require_visit = __commonJS({
       } else if (identity.isDocument(parent)) {
         parent.contents = node;
       } else {
-        const pt = identity.isAlias(parent) ? "alias" : "scalar";
-        throw new Error(`Cannot replace node with ${pt} parent`);
+        const pt2 = identity.isAlias(parent) ? "alias" : "scalar";
+        throw new Error(`Cannot replace node with ${pt2} parent`);
       }
     }
     exports.visit = visit;
@@ -510,13 +510,13 @@ var require_applyReviver = __commonJS({
               val[i] = v1;
           }
         } else if (val instanceof Map) {
-          for (const k of Array.from(val.keys())) {
-            const v0 = val.get(k);
-            const v1 = applyReviver(reviver, val, k, v0);
+          for (const k2 of Array.from(val.keys())) {
+            const v0 = val.get(k2);
+            const v1 = applyReviver(reviver, val, k2, v0);
             if (v1 === void 0)
-              val.delete(k);
+              val.delete(k2);
             else if (v1 !== v0)
-              val.set(k, v1);
+              val.set(k2, v1);
           }
         } else if (val instanceof Set) {
           for (const v0 of Array.from(val)) {
@@ -529,12 +529,12 @@ var require_applyReviver = __commonJS({
             }
           }
         } else {
-          for (const [k, v0] of Object.entries(val)) {
-            const v1 = applyReviver(reviver, val, k, v0);
+          for (const [k2, v0] of Object.entries(val)) {
+            const v1 = applyReviver(reviver, val, k2, v0);
             if (v1 === void 0)
-              delete val[k];
+              delete val[k2];
             else if (v1 !== v0)
-              val[k] = v1;
+              val[k2] = v1;
           }
         }
       }
@@ -551,7 +551,7 @@ var require_toJS = __commonJS({
     var identity = require_identity();
     function toJS(value, arg, ctx2) {
       if (Array.isArray(value))
-        return value.map((v, i) => toJS(v, String(i), ctx2));
+        return value.map((v2, i) => toJS(v2, String(i), ctx2));
       if (value && typeof value.toJSON === "function") {
         if (!ctx2 || !identity.hasAnchor(value))
           return value.toJSON(arg, ctx2);
@@ -846,18 +846,18 @@ var require_Collection = __commonJS({
     var identity = require_identity();
     var Node = require_Node();
     function collectionFromPath(schema, path, value) {
-      let v = value;
+      let v2 = value;
       for (let i = path.length - 1; i >= 0; --i) {
-        const k = path[i];
-        if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
+        const k2 = path[i];
+        if (typeof k2 === "number" && Number.isInteger(k2) && k2 >= 0) {
           const a = [];
-          a[k] = v;
-          v = a;
+          a[k2] = v2;
+          v2 = a;
         } else {
-          v = /* @__PURE__ */ new Map([[k, v]]);
+          v2 = /* @__PURE__ */ new Map([[k2, v2]]);
         }
       }
-      return createNode.createNode(v, void 0, {
+      return createNode.createNode(v2, void 0, {
         aliasDuplicateObjects: false,
         keepUndefined: false,
         onAnchor: () => {
@@ -887,7 +887,7 @@ var require_Collection = __commonJS({
         const copy = Object.create(Object.getPrototypeOf(this), Object.getOwnPropertyDescriptors(this));
         if (schema)
           copy.schema = schema;
-        copy.items = copy.items.map((it) => identity.isNode(it) || identity.isPair(it) ? it.clone(schema) : it);
+        copy.items = copy.items.map((it2) => identity.isNode(it2) || identity.isPair(it2) ? it2.clone(schema) : it2);
         if (this.range)
           copy.range = this.range.slice();
         return copy;
@@ -1073,12 +1073,12 @@ var require_foldFlowLines = __commonJS({
                 ch = text[i += 1];
                 overflow = true;
               }
-              const j = i > escEnd + 1 ? i - 2 : escStart - 1;
-              if (escapedFolds[j])
+              const j2 = i > escEnd + 1 ? i - 2 : escStart - 1;
+              if (escapedFolds[j2])
                 return text;
-              folds.push(j);
-              escapedFolds[j] = true;
-              end = j + endStep;
+              folds.push(j2);
+              escapedFolds[j2] = true;
+              end = j2 + endStep;
               split = void 0;
             } else {
               overflow = true;
@@ -1717,11 +1717,11 @@ var require_merge = __commonJS({
     function addMergeToJSMap(ctx2, map, value) {
       const source = resolveAliasValue(ctx2, value);
       if (identity.isSeq(source))
-        for (const it of source.items)
-          mergeValue(ctx2, map, it);
+        for (const it2 of source.items)
+          mergeValue(ctx2, map, it2);
       else if (Array.isArray(source))
-        for (const it of source)
-          mergeValue(ctx2, map, it);
+        for (const it2 of source)
+          mergeValue(ctx2, map, it2);
       else
         mergeValue(ctx2, map, source);
     }
@@ -1829,9 +1829,9 @@ var require_Pair = __commonJS({
     var addPairToJSMap = require_addPairToJSMap();
     var identity = require_identity();
     function createPair(key, value, ctx2) {
-      const k = createNode.createNode(key, void 0, ctx2);
-      const v = createNode.createNode(value, void 0, ctx2);
-      return new Pair(k, v);
+      const k2 = createNode.createNode(key, void 0, ctx2);
+      const v2 = createNode.createNode(value, void 0, ctx2);
+      return new Pair(k2, v2);
     }
     var Pair = class _Pair {
       constructor(key, value = null) {
@@ -1847,7 +1847,7 @@ var require_Pair = __commonJS({
           value = value.clone(schema);
         return new _Pair(key, value);
       }
-      toJSON(_, ctx2) {
+      toJSON(_2, ctx2) {
         const pair = ctx2?.mapAsMap ? /* @__PURE__ */ new Map() : {};
         return addPairToJSMap.addPairToJSMap(ctx2, pair, this);
       }
@@ -2022,13 +2022,13 @@ var require_YAMLMap = __commonJS({
     var Pair = require_Pair();
     var Scalar = require_Scalar();
     function findPair(items, key) {
-      const k = identity.isScalar(key) ? key.value : key;
-      for (const it of items) {
-        if (identity.isPair(it)) {
-          if (it.key === key || it.key === k)
-            return it;
-          if (identity.isScalar(it.key) && it.key.value === k)
-            return it;
+      const k2 = identity.isScalar(key) ? key.value : key;
+      for (const it2 of items) {
+        if (identity.isPair(it2)) {
+          if (it2.key === key || it2.key === k2)
+            return it2;
+          if (identity.isScalar(it2.key) && it2.key.value === k2)
+            return it2;
         }
       }
       return void 0;
@@ -2102,15 +2102,15 @@ var require_YAMLMap = __commonJS({
         }
       }
       delete(key) {
-        const it = findPair(this.items, key);
-        if (!it)
+        const it2 = findPair(this.items, key);
+        if (!it2)
           return false;
-        const del = this.items.splice(this.items.indexOf(it), 1);
+        const del = this.items.splice(this.items.indexOf(it2), 1);
         return del.length > 0;
       }
       get(key, keepScalar) {
-        const it = findPair(this.items, key);
-        const node = it?.value;
+        const it2 = findPair(this.items, key);
+        const node = it2?.value;
         return (!keepScalar && identity.isScalar(node) ? node.value : node) ?? void 0;
       }
       has(key) {
@@ -2124,7 +2124,7 @@ var require_YAMLMap = __commonJS({
        * @param {Class} Type - If set, forces the returned collection type
        * @returns Instance of Type, Map, or Object
        */
-      toJSON(_, ctx2, Type) {
+      toJSON(_2, ctx2, Type) {
         const map = Type ? new Type() : ctx2?.mapAsMap ? /* @__PURE__ */ new Map() : {};
         if (ctx2?.onCreate)
           ctx2.onCreate(map);
@@ -2217,8 +2217,8 @@ var require_YAMLSeq = __commonJS({
         const idx = asItemIndex(key);
         if (typeof idx !== "number")
           return void 0;
-        const it = this.items[idx];
-        return !keepScalar && identity.isScalar(it) ? it.value : it;
+        const it2 = this.items[idx];
+        return !keepScalar && identity.isScalar(it2) ? it2.value : it2;
       }
       /**
        * Checks if the collection includes a value with the key `key`.
@@ -2247,7 +2247,7 @@ var require_YAMLSeq = __commonJS({
         else
           this.items[idx] = value;
       }
-      toJSON(_, ctx2) {
+      toJSON(_2, ctx2) {
         const seq = [];
         if (ctx2?.onCreate)
           ctx2.onCreate(seq);
@@ -2272,12 +2272,12 @@ var require_YAMLSeq = __commonJS({
         const seq = new this(schema);
         if (obj && Symbol.iterator in Object(obj)) {
           let i = 0;
-          for (let it of obj) {
+          for (let it2 of obj) {
             if (typeof replacer === "function") {
-              const key = obj instanceof Set ? it : String(i++);
-              it = replacer.call(obj, key, it);
+              const key = obj instanceof Set ? it2 : String(i++);
+              it2 = replacer.call(obj, key, it2);
             }
-            seq.items.push(createNode.createNode(it, void 0, ctx2));
+            seq.items.push(createNode.createNode(it2, void 0, ctx2));
           }
         }
         return seq;
@@ -2695,26 +2695,26 @@ ${cn.comment}` : item.comment;
       pairs2.tag = "tag:yaml.org,2002:pairs";
       let i = 0;
       if (iterable && Symbol.iterator in Object(iterable))
-        for (let it of iterable) {
+        for (let it2 of iterable) {
           if (typeof replacer === "function")
-            it = replacer.call(iterable, String(i++), it);
+            it2 = replacer.call(iterable, String(i++), it2);
           let key, value;
-          if (Array.isArray(it)) {
-            if (it.length === 2) {
-              key = it[0];
-              value = it[1];
+          if (Array.isArray(it2)) {
+            if (it2.length === 2) {
+              key = it2[0];
+              value = it2[1];
             } else
-              throw new TypeError(`Expected [key, value] tuple: ${it}`);
-          } else if (it && it instanceof Object) {
-            const keys = Object.keys(it);
+              throw new TypeError(`Expected [key, value] tuple: ${it2}`);
+          } else if (it2 && it2 instanceof Object) {
+            const keys = Object.keys(it2);
             if (keys.length === 1) {
               key = keys[0];
-              value = it[key];
+              value = it2[key];
             } else {
               throw new TypeError(`Expected tuple with one key, not ${keys.length} keys`);
             }
           } else {
-            key = it;
+            key = it2;
           }
           pairs2.items.push(Pair.createPair(key, value, ctx2));
         }
@@ -2756,9 +2756,9 @@ var require_omap = __commonJS({
        * If `ctx` is given, the return type is actually `Map<unknown, unknown>`,
        * but TypeScript won't allow widening the signature of a child method.
        */
-      toJSON(_, ctx2) {
+      toJSON(_2, ctx2) {
         if (!ctx2)
-          return super.toJSON(_);
+          return super.toJSON(_2);
         const map = /* @__PURE__ */ new Map();
         if (ctx2?.onCreate)
           ctx2.onCreate(map);
@@ -2878,9 +2878,9 @@ var require_float2 = __commonJS({
         const node = new Scalar.Scalar(parseFloat(str.replace(/_/g, "")));
         const dot = str.indexOf(".");
         if (dot !== -1) {
-          const f = str.substring(dot + 1).replace(/_/g, "");
-          if (f[f.length - 1] === "0")
-            node.minFractionDigits = f.length;
+          const f2 = str.substring(dot + 1).replace(/_/g, "");
+          if (f2[f2.length - 1] === "0")
+            node.minFractionDigits = f2.length;
         }
         return node;
       },
@@ -3013,8 +3013,8 @@ var require_set = __commonJS({
           this.items.push(new Pair.Pair(key));
         }
       }
-      toJSON(_, ctx2) {
-        return super.toJSON(_, ctx2, Set);
+      toJSON(_2, ctx2) {
+        return super.toJSON(_2, ctx2, Set);
       }
       toString(ctx2, onComment, onChompKeep) {
         if (!ctx2)
@@ -3295,7 +3295,7 @@ var require_Schema = __commonJS({
     var seq = require_seq();
     var string3 = require_string();
     var tags = require_tags();
-    var sortMapEntriesByKey = (a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+    var sortMapEntriesByKey = (a, b2) => a.key < b2.key ? -1 : a.key > b2.key ? 1 : 0;
     var Schema = class _Schema {
       constructor({ compat, customTags, merge: merge2, resolveKnownTags, schema, sortMapEntries, toStringDefaults }) {
         this.compat = Array.isArray(compat) ? tags.getTags(compat, "compat") : compat ? tags.getTags(null, compat) : null;
@@ -3503,7 +3503,7 @@ var require_Document = __commonJS({
           value = replacer.call({ "": value }, "", value);
           _replacer = replacer;
         } else if (Array.isArray(replacer)) {
-          const keyToStr = (v) => typeof v === "number" || v instanceof String || v instanceof Number;
+          const keyToStr = (v2) => typeof v2 === "number" || v2 instanceof String || v2 instanceof Number;
           const asStr = replacer.filter(keyToStr).map(String);
           if (asStr.length > 0)
             replacer = replacer.concat(asStr);
@@ -3538,9 +3538,9 @@ var require_Document = __commonJS({
        * recursively wrapping all values as `Scalar` or `Collection` nodes.
        */
       createPair(key, value, options = {}) {
-        const k = this.createNode(key, null, options);
-        const v = this.createNode(value, null, options);
-        return new Pair.Pair(k, v);
+        const k2 = this.createNode(key, null, options);
+        const v2 = this.createNode(value, null, options);
+        return new Pair.Pair(k2, v2);
       }
       /**
        * Removes a value from the document.
@@ -3921,22 +3921,22 @@ var require_util_contains_newline = __commonJS({
           if (key.source.includes("\n"))
             return true;
           if (key.end) {
-            for (const st of key.end)
-              if (st.type === "newline")
+            for (const st2 of key.end)
+              if (st2.type === "newline")
                 return true;
           }
           return false;
         case "flow-collection":
-          for (const it of key.items) {
-            for (const st of it.start)
-              if (st.type === "newline")
+          for (const it2 of key.items) {
+            for (const st2 of it2.start)
+              if (st2.type === "newline")
                 return true;
-            if (it.sep) {
-              for (const st of it.sep)
-                if (st.type === "newline")
+            if (it2.sep) {
+              for (const st2 of it2.sep)
+                if (st2.type === "newline")
                   return true;
             }
-            if (containsNewline(it.key) || containsNewline(it.value))
+            if (containsNewline(it2.key) || containsNewline(it2.value))
               return true;
           }
           return false;
@@ -3975,7 +3975,7 @@ var require_util_map_includes = __commonJS({
       const { uniqueKeys } = ctx2.options;
       if (uniqueKeys === false)
         return false;
-      const isEqual = typeof uniqueKeys === "function" ? uniqueKeys : (a, b) => a === b || identity.isScalar(a) && identity.isScalar(b) && a.value === b.value;
+      const isEqual = typeof uniqueKeys === "function" ? uniqueKeys : (a, b2) => a === b2 || identity.isScalar(a) && identity.isScalar(b2) && a.value === b2.value;
       return items.some((pair) => isEqual(pair.key, search));
     }
     exports.mapIncludes = mapIncludes;
@@ -4253,13 +4253,13 @@ var require_resolve_flow_collection = __commonJS({
             onError(props.start, "MISSING_CHAR", `Missing , between ${fcName} items`);
           if (props.comment) {
             let prevItemComment = "";
-            loop: for (const st of start) {
-              switch (st.type) {
+            loop: for (const st2 of start) {
+              switch (st2.type) {
                 case "comma":
                 case "space":
                   break;
                 case "comment":
-                  prevItemComment = st.source.substring(1);
+                  prevItemComment = st2.source.substring(1);
                   break loop;
                 default:
                   break loop;
@@ -4302,11 +4302,11 @@ var require_resolve_flow_collection = __commonJS({
           if (valueProps.found) {
             if (!isMap && !props.found && ctx2.options.strict) {
               if (sep)
-                for (const st of sep) {
-                  if (st === valueProps.found)
+                for (const st2 of sep) {
+                  if (st2 === valueProps.found)
                     break;
-                  if (st.type === "newline") {
-                    onError(st, "MULTILINE_IMPLICIT_KEY", "Implicit keys of flow sequence pairs need to be on a single line");
+                  if (st2.type === "newline") {
+                    onError(st2, "MULTILINE_IMPLICIT_KEY", "Implicit keys of flow sequence pairs need to be on a single line");
                     break;
                   }
                 }
@@ -4349,19 +4349,19 @@ var require_resolve_flow_collection = __commonJS({
         }
       }
       const expectedEnd = isMap ? "}" : "]";
-      const [ce, ...ee] = fc.end;
+      const [ce2, ...ee2] = fc.end;
       let cePos = offset;
-      if (ce?.source === expectedEnd)
-        cePos = ce.offset + ce.source.length;
+      if (ce2?.source === expectedEnd)
+        cePos = ce2.offset + ce2.source.length;
       else {
         const name = fcName[0].toUpperCase() + fcName.substring(1);
         const msg = atRoot ? `${name} must end with a ${expectedEnd}` : `${name} in block collection must be sufficiently indented and end with a ${expectedEnd}`;
         onError(offset, atRoot ? "MISSING_CHAR" : "BAD_INDENT", msg);
-        if (ce && ce.source.length !== 1)
-          ee.unshift(ce);
+        if (ce2 && ce2.source.length !== 1)
+          ee2.unshift(ce2);
       }
-      if (ee.length > 0) {
-        const end = resolveEnd.resolveEnd(ee, cePos, ctx2.options.strict, onError);
+      if (ee2.length > 0) {
+        const end = resolveEnd.resolveEnd(ee2, cePos, ctx2.options.strict, onError);
         if (end.comment) {
           if (coll.comment)
             coll.comment += "\n" + end.comment;
@@ -4417,13 +4417,13 @@ var require_compose_collection = __commonJS({
       }
       let tag = ctx2.schema.tags.find((t) => t.tag === tagName && t.collection === expType);
       if (!tag) {
-        const kt = ctx2.schema.knownTags[tagName];
-        if (kt?.collection === expType) {
-          ctx2.schema.tags.push(Object.assign({}, kt, { default: false }));
-          tag = kt;
+        const kt2 = ctx2.schema.knownTags[tagName];
+        if (kt2?.collection === expType) {
+          ctx2.schema.tags.push(Object.assign({}, kt2, { default: false }));
+          tag = kt2;
         } else {
-          if (kt) {
-            onError(tagToken, "BAD_COLLECTION_TYPE", `${kt.tag} used for ${expType} collection, but expects ${kt.collection ?? "scalar"}`, true);
+          if (kt2) {
+            onError(tagToken, "BAD_COLLECTION_TYPE", `${kt2.tag} used for ${expType} collection, but expects ${kt2.collection ?? "scalar"}`, true);
           } else {
             onError(tagToken, "TAG_RESOLVE_FAILED", `Unresolved tag: ${tagName}`, true);
           }
@@ -4615,8 +4615,8 @@ var require_resolve_block_scalar = __commonJS({
     function splitLines(source) {
       const split = source.split(/\n( *)/);
       const first = split[0];
-      const m = first.match(/^( *)/);
-      const line0 = m?.[1] ? [m[1], first.slice(m[1].length)] : ["", first];
+      const m2 = first.match(/^( *)/);
+      const line0 = m2?.[1] ? [m2[1], first.slice(m2[1].length)] : ["", first];
       const lines = [line0];
       for (let i = 1; i < split.length; i += 2)
         lines.push([split[i], split[i + 1]]);
@@ -4903,10 +4903,10 @@ var require_compose_scalar = __commonJS({
       for (const tag of matchWithTest)
         if (tag.test?.test(value))
           return tag;
-      const kt = schema.knownTags[tagName];
-      if (kt && !kt.collection) {
-        schema.tags.push(Object.assign({}, kt, { default: false, test: void 0 }));
-        return kt;
+      const kt2 = schema.knownTags[tagName];
+      if (kt2 && !kt2.collection) {
+        schema.tags.push(Object.assign({}, kt2, { default: false, test: void 0 }));
+        return kt2;
       }
       onError(tagToken, "TAG_RESOLVE_FAILED", `Unresolved tag: ${tagName}`, tagName !== "tag:yaml.org,2002:str");
       return schema[identity.SCALAR];
@@ -4936,18 +4936,18 @@ var require_util_empty_scalar_position = __commonJS({
       if (before) {
         pos ?? (pos = before.length);
         for (let i = pos - 1; i >= 0; --i) {
-          let st = before[i];
-          switch (st.type) {
+          let st2 = before[i];
+          switch (st2.type) {
             case "space":
             case "comment":
             case "newline":
-              offset -= st.source.length;
+              offset -= st2.source.length;
               continue;
           }
-          st = before[++i];
-          while (st?.type === "space") {
-            offset += st.source.length;
-            st = before[++i];
+          st2 = before[++i];
+          while (st2?.type === "space") {
+            offset += st2.source.length;
+            st2 = before[++i];
           }
           break;
         }
@@ -5178,11 +5178,11 @@ ${comment}` : comment;
           } else if (afterEmptyLine || doc.directives.docStart || !dc) {
             doc.commentBefore = comment;
           } else if (identity.isCollection(dc) && !dc.flow && dc.items.length > 0) {
-            let it = dc.items[0];
-            if (identity.isPair(it))
-              it = it.key;
-            const cb = it.commentBefore;
-            it.commentBefore = cb ? `${comment}
+            let it2 = dc.items[0];
+            if (identity.isPair(it2))
+              it2 = it2.key;
+            const cb = it2.commentBefore;
+            it2.commentBefore = cb ? `${comment}
 ${cb}` : comment;
           } else {
             const cb = dc.commentBefore;
@@ -5357,9 +5357,9 @@ var require_cst_scalar = __commonJS({
       switch (source[0]) {
         case "|":
         case ">": {
-          const he = source.indexOf("\n");
-          const head = source.substring(0, he);
-          const body = source.substring(he + 1) + "\n";
+          const he2 = source.indexOf("\n");
+          const head = source.substring(0, he2);
+          const body = source.substring(he2 + 1) + "\n";
           const props = [
             { type: "block-scalar-header", offset, indent, source: head }
           ];
@@ -5420,9 +5420,9 @@ var require_cst_scalar = __commonJS({
       }
     }
     function setBlockScalarValue(token, source) {
-      const he = source.indexOf("\n");
-      const head = source.substring(0, he);
-      const body = source.substring(he + 1) + "\n";
+      const he2 = source.indexOf("\n");
+      const head = source.substring(0, he2);
+      const body = source.substring(he2 + 1) + "\n";
       if (token.type === "block-scalar") {
         const header = token.props[0];
         if (header.type !== "block-scalar-header")
@@ -5445,14 +5445,14 @@ var require_cst_scalar = __commonJS({
     }
     function addEndtoBlockProps(props, end) {
       if (end)
-        for (const st of end)
-          switch (st.type) {
+        for (const st2 of end)
+          switch (st2.type) {
             case "space":
             case "comment":
-              props.push(st);
+              props.push(st2);
               break;
             case "newline":
-              props.push(st);
+              props.push(st2);
               return true;
           }
       return false;
@@ -5486,7 +5486,7 @@ var require_cst_scalar = __commonJS({
         }
         default: {
           const indent = "indent" in token ? token.indent : -1;
-          const end = "end" in token && Array.isArray(token.end) ? token.end.filter((st) => st.type === "space" || st.type === "comment" || st.type === "newline") : [];
+          const end = "end" in token && Array.isArray(token.end) ? token.end.filter((st2) => st2.type === "space" || st2.type === "comment" || st2.type === "newline") : [];
           for (const key of Object.keys(token))
             if (key !== "type" && key !== "offset")
               delete token[key];
@@ -5524,35 +5524,35 @@ var require_cst_stringify = __commonJS({
           let res = token.start.source;
           for (const item of token.items)
             res += stringifyItem(item);
-          for (const st of token.end)
-            res += st.source;
+          for (const st2 of token.end)
+            res += st2.source;
           return res;
         }
         case "document": {
           let res = stringifyItem(token);
           if (token.end)
-            for (const st of token.end)
-              res += st.source;
+            for (const st2 of token.end)
+              res += st2.source;
           return res;
         }
         default: {
           let res = token.source;
           if ("end" in token && token.end)
-            for (const st of token.end)
-              res += st.source;
+            for (const st2 of token.end)
+              res += st2.source;
           return res;
         }
       }
     }
     function stringifyItem({ start, key, sep, value }) {
       let res = "";
-      for (const st of start)
-        res += st.source;
+      for (const st2 of start)
+        res += st2.source;
       if (key)
         res += stringifyToken(key);
       if (sep)
-        for (const st of sep)
-          res += st.source;
+        for (const st2 of sep)
+          res += st2.source;
       if (value)
         res += stringifyToken(value);
       return res;
@@ -5807,8 +5807,8 @@ var require_lexer = __commonJS({
           return ch === "\n" || indent >= this.indentNext || !ch && !this.atEnd ? offset + indent : -1;
         }
         if (ch === "-" || ch === ".") {
-          const dt = this.buffer.substr(offset, 3);
-          if ((dt === "---" || dt === "...") && isEmpty(this.buffer[offset + 3]))
+          const dt2 = this.buffer.substr(offset, 3);
+          if ((dt2 === "---" || dt2 === "...") && isEmpty(this.buffer[offset + 3]))
             return -1;
         }
         return offset;
@@ -6388,8 +6388,8 @@ var require_parser = __commonJS({
         case "document":
           return parent.start;
         case "block-map": {
-          const it = parent.items[parent.items.length - 1];
-          return it.sep ?? it.start;
+          const it2 = parent.items[parent.items.length - 1];
+          return it2.sep ?? it2.start;
         }
         case "block-seq":
           return parent.items[parent.items.length - 1].start;
@@ -6425,19 +6425,19 @@ var require_parser = __commonJS({
     }
     function fixFlowSeqItems(fc) {
       if (fc.start.type === "flow-seq-start") {
-        for (const it of fc.items) {
-          if (it.sep && !it.value && !includesToken(it.start, "explicit-key-ind") && !includesToken(it.sep, "map-value-ind")) {
-            if (it.key)
-              it.value = it.key;
-            delete it.key;
-            if (isFlowToken(it.value)) {
-              if (it.value.end)
-                arrayPushArray(it.value.end, it.sep);
+        for (const it2 of fc.items) {
+          if (it2.sep && !it2.value && !includesToken(it2.start, "explicit-key-ind") && !includesToken(it2.sep, "map-value-ind")) {
+            if (it2.key)
+              it2.value = it2.key;
+            delete it2.key;
+            if (isFlowToken(it2.value)) {
+              if (it2.value.end)
+                arrayPushArray(it2.value.end, it2.sep);
               else
-                it.value.end = it.sep;
+                it2.value.end = it2.sep;
             } else
-              arrayPushArray(it.start, it.sep);
-            delete it.sep;
+              arrayPushArray(it2.start, it2.sep);
+            delete it2.sep;
           }
         }
       }
@@ -6532,13 +6532,13 @@ var require_parser = __commonJS({
           yield* this.pop();
       }
       get sourceToken() {
-        const st = {
+        const st2 = {
           type: this.type,
           offset: this.offset,
           indent: this.indent,
           source: this.source
         };
-        return st;
+        return st2;
       }
       *step() {
         const top = this.peek(1);
@@ -6602,36 +6602,36 @@ var require_parser = __commonJS({
               top.props.push(token);
               break;
             case "block-map": {
-              const it = top.items[top.items.length - 1];
-              if (it.value) {
+              const it2 = top.items[top.items.length - 1];
+              if (it2.value) {
                 top.items.push({ start: [], key: token, sep: [] });
                 this.onKeyLine = true;
                 return;
-              } else if (it.sep) {
-                it.value = token;
+              } else if (it2.sep) {
+                it2.value = token;
               } else {
-                Object.assign(it, { key: token, sep: [] });
-                this.onKeyLine = !it.explicitKey;
+                Object.assign(it2, { key: token, sep: [] });
+                this.onKeyLine = !it2.explicitKey;
                 return;
               }
               break;
             }
             case "block-seq": {
-              const it = top.items[top.items.length - 1];
-              if (it.value)
+              const it2 = top.items[top.items.length - 1];
+              if (it2.value)
                 top.items.push({ start: [], value: token });
               else
-                it.value = token;
+                it2.value = token;
               break;
             }
             case "flow-collection": {
-              const it = top.items[top.items.length - 1];
-              if (!it || it.value)
+              const it2 = top.items[top.items.length - 1];
+              if (!it2 || it2.value)
                 top.items.push({ start: [], key: token, sep: [] });
-              else if (it.sep)
-                it.value = token;
+              else if (it2.sep)
+                it2.value = token;
               else
-                Object.assign(it, { key: token, sep: [] });
+                Object.assign(it2, { key: token, sep: [] });
               return;
             }
             /* istanbul ignore next should not happen */
@@ -6641,7 +6641,7 @@ var require_parser = __commonJS({
           }
           if ((top.type === "document" || top.type === "block-map" || top.type === "block-seq") && (token.type === "block-map" || token.type === "block-seq")) {
             const last = token.items[token.items.length - 1];
-            if (last && !last.sep && !last.value && last.start.length > 0 && findNonEmptyIndex(last.start) === -1 && (token.indent === 0 || last.start.every((st) => st.type !== "comment" || st.indent < token.indent))) {
+            if (last && !last.sep && !last.value && last.start.length > 0 && findNonEmptyIndex(last.start) === -1 && (token.indent === 0 || last.start.every((st2) => st2.type !== "comment" || st2.indent < token.indent))) {
               if (top.type === "document")
                 top.end = last.start;
               else
@@ -6763,60 +6763,60 @@ var require_parser = __commonJS({
         }
       }
       *blockMap(map) {
-        const it = map.items[map.items.length - 1];
+        const it2 = map.items[map.items.length - 1];
         switch (this.type) {
           case "newline":
             this.onKeyLine = false;
-            if (it.value) {
-              const end = "end" in it.value ? it.value.end : void 0;
+            if (it2.value) {
+              const end = "end" in it2.value ? it2.value.end : void 0;
               const last = Array.isArray(end) ? end[end.length - 1] : void 0;
               if (last?.type === "comment")
                 end?.push(this.sourceToken);
               else
                 map.items.push({ start: [this.sourceToken] });
-            } else if (it.sep) {
-              it.sep.push(this.sourceToken);
+            } else if (it2.sep) {
+              it2.sep.push(this.sourceToken);
             } else {
-              it.start.push(this.sourceToken);
+              it2.start.push(this.sourceToken);
             }
             return;
           case "space":
           case "comment":
-            if (it.value) {
+            if (it2.value) {
               map.items.push({ start: [this.sourceToken] });
-            } else if (it.sep) {
-              it.sep.push(this.sourceToken);
+            } else if (it2.sep) {
+              it2.sep.push(this.sourceToken);
             } else {
-              if (this.atIndentedComment(it.start, map.indent)) {
+              if (this.atIndentedComment(it2.start, map.indent)) {
                 const prev = map.items[map.items.length - 2];
                 const end = prev?.value?.end;
                 if (Array.isArray(end)) {
-                  arrayPushArray(end, it.start);
+                  arrayPushArray(end, it2.start);
                   end.push(this.sourceToken);
                   map.items.pop();
                   return;
                 }
               }
-              it.start.push(this.sourceToken);
+              it2.start.push(this.sourceToken);
             }
             return;
         }
         if (this.indent >= map.indent) {
           const atMapIndent = !this.onKeyLine && this.indent === map.indent;
-          const atNextItem = atMapIndent && (it.sep || it.explicitKey) && this.type !== "seq-item-ind";
+          const atNextItem = atMapIndent && (it2.sep || it2.explicitKey) && this.type !== "seq-item-ind";
           let start = [];
-          if (atNextItem && it.sep && !it.value) {
+          if (atNextItem && it2.sep && !it2.value) {
             const nl = [];
-            for (let i = 0; i < it.sep.length; ++i) {
-              const st = it.sep[i];
-              switch (st.type) {
+            for (let i = 0; i < it2.sep.length; ++i) {
+              const st2 = it2.sep[i];
+              switch (st2.type) {
                 case "newline":
                   nl.push(i);
                   break;
                 case "space":
                   break;
                 case "comment":
-                  if (st.indent > map.indent)
+                  if (st2.indent > map.indent)
                     nl.length = 0;
                   break;
                 default:
@@ -6824,26 +6824,26 @@ var require_parser = __commonJS({
               }
             }
             if (nl.length >= 2)
-              start = it.sep.splice(nl[1]);
+              start = it2.sep.splice(nl[1]);
           }
           switch (this.type) {
             case "anchor":
             case "tag":
-              if (atNextItem || it.value) {
+              if (atNextItem || it2.value) {
                 start.push(this.sourceToken);
                 map.items.push({ start });
                 this.onKeyLine = true;
-              } else if (it.sep) {
-                it.sep.push(this.sourceToken);
+              } else if (it2.sep) {
+                it2.sep.push(this.sourceToken);
               } else {
-                it.start.push(this.sourceToken);
+                it2.start.push(this.sourceToken);
               }
               return;
             case "explicit-key-ind":
-              if (!it.sep && !it.explicitKey) {
-                it.start.push(this.sourceToken);
-                it.explicitKey = true;
-              } else if (atNextItem || it.value) {
+              if (!it2.sep && !it2.explicitKey) {
+                it2.start.push(this.sourceToken);
+                it2.explicitKey = true;
+              } else if (atNextItem || it2.value) {
                 start.push(this.sourceToken);
                 map.items.push({ start, explicitKey: true });
               } else {
@@ -6857,12 +6857,12 @@ var require_parser = __commonJS({
               this.onKeyLine = true;
               return;
             case "map-value-ind":
-              if (it.explicitKey) {
-                if (!it.sep) {
-                  if (includesToken(it.start, "newline")) {
-                    Object.assign(it, { key: null, sep: [this.sourceToken] });
+              if (it2.explicitKey) {
+                if (!it2.sep) {
+                  if (includesToken(it2.start, "newline")) {
+                    Object.assign(it2, { key: null, sep: [this.sourceToken] });
                   } else {
-                    const start2 = getFirstKeyStartProps(it.start);
+                    const start2 = getFirstKeyStartProps(it2.start);
                     this.stack.push({
                       type: "block-map",
                       offset: this.offset,
@@ -6870,22 +6870,22 @@ var require_parser = __commonJS({
                       items: [{ start: start2, key: null, sep: [this.sourceToken] }]
                     });
                   }
-                } else if (it.value) {
+                } else if (it2.value) {
                   map.items.push({ start: [], key: null, sep: [this.sourceToken] });
-                } else if (includesToken(it.sep, "map-value-ind")) {
+                } else if (includesToken(it2.sep, "map-value-ind")) {
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
                     items: [{ start, key: null, sep: [this.sourceToken] }]
                   });
-                } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
-                  const start2 = getFirstKeyStartProps(it.start);
-                  const key = it.key;
-                  const sep = it.sep;
+                } else if (isFlowToken(it2.key) && !includesToken(it2.sep, "newline")) {
+                  const start2 = getFirstKeyStartProps(it2.start);
+                  const key = it2.key;
+                  const sep = it2.sep;
                   sep.push(this.sourceToken);
-                  delete it.key;
-                  delete it.sep;
+                  delete it2.key;
+                  delete it2.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
@@ -6893,16 +6893,16 @@ var require_parser = __commonJS({
                     items: [{ start: start2, key, sep }]
                   });
                 } else if (start.length > 0) {
-                  it.sep = it.sep.concat(start, this.sourceToken);
+                  it2.sep = it2.sep.concat(start, this.sourceToken);
                 } else {
-                  it.sep.push(this.sourceToken);
+                  it2.sep.push(this.sourceToken);
                 }
               } else {
-                if (!it.sep) {
-                  Object.assign(it, { key: null, sep: [this.sourceToken] });
-                } else if (it.value || atNextItem) {
+                if (!it2.sep) {
+                  Object.assign(it2, { key: null, sep: [this.sourceToken] });
+                } else if (it2.value || atNextItem) {
                   map.items.push({ start, key: null, sep: [this.sourceToken] });
-                } else if (includesToken(it.sep, "map-value-ind")) {
+                } else if (includesToken(it2.sep, "map-value-ind")) {
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
@@ -6910,7 +6910,7 @@ var require_parser = __commonJS({
                     items: [{ start: [], key: null, sep: [this.sourceToken] }]
                   });
                 } else {
-                  it.sep.push(this.sourceToken);
+                  it2.sep.push(this.sourceToken);
                 }
               }
               this.onKeyLine = true;
@@ -6920,13 +6920,13 @@ var require_parser = __commonJS({
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
               const fs = this.flowScalar(this.type);
-              if (atNextItem || it.value) {
+              if (atNextItem || it2.value) {
                 map.items.push({ start, key: fs, sep: [] });
                 this.onKeyLine = true;
-              } else if (it.sep) {
+              } else if (it2.sep) {
                 this.stack.push(fs);
               } else {
-                Object.assign(it, { key: fs, sep: [] });
+                Object.assign(it2, { key: fs, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -6935,7 +6935,7 @@ var require_parser = __commonJS({
               const bv = this.startBlockValue(map);
               if (bv) {
                 if (bv.type === "block-seq") {
-                  if (!it.explicitKey && it.sep && !includesToken(it.sep, "newline")) {
+                  if (!it2.explicitKey && it2.sep && !includesToken(it2.sep, "newline")) {
                     yield* this.pop({
                       type: "error",
                       offset: this.offset,
@@ -6957,50 +6957,50 @@ var require_parser = __commonJS({
         yield* this.step();
       }
       *blockSequence(seq) {
-        const it = seq.items[seq.items.length - 1];
+        const it2 = seq.items[seq.items.length - 1];
         switch (this.type) {
           case "newline":
-            if (it.value) {
-              const end = "end" in it.value ? it.value.end : void 0;
+            if (it2.value) {
+              const end = "end" in it2.value ? it2.value.end : void 0;
               const last = Array.isArray(end) ? end[end.length - 1] : void 0;
               if (last?.type === "comment")
                 end?.push(this.sourceToken);
               else
                 seq.items.push({ start: [this.sourceToken] });
             } else
-              it.start.push(this.sourceToken);
+              it2.start.push(this.sourceToken);
             return;
           case "space":
           case "comment":
-            if (it.value)
+            if (it2.value)
               seq.items.push({ start: [this.sourceToken] });
             else {
-              if (this.atIndentedComment(it.start, seq.indent)) {
+              if (this.atIndentedComment(it2.start, seq.indent)) {
                 const prev = seq.items[seq.items.length - 2];
                 const end = prev?.value?.end;
                 if (Array.isArray(end)) {
-                  arrayPushArray(end, it.start);
+                  arrayPushArray(end, it2.start);
                   end.push(this.sourceToken);
                   seq.items.pop();
                   return;
                 }
               }
-              it.start.push(this.sourceToken);
+              it2.start.push(this.sourceToken);
             }
             return;
           case "anchor":
           case "tag":
-            if (it.value || this.indent <= seq.indent)
+            if (it2.value || this.indent <= seq.indent)
               break;
-            it.start.push(this.sourceToken);
+            it2.start.push(this.sourceToken);
             return;
           case "seq-item-ind":
             if (this.indent !== seq.indent)
               break;
-            if (it.value || includesToken(it.start, "seq-item-ind"))
+            if (it2.value || includesToken(it2.start, "seq-item-ind"))
               seq.items.push({ start: [this.sourceToken] });
             else
-              it.start.push(this.sourceToken);
+              it2.start.push(this.sourceToken);
             return;
         }
         if (this.indent > seq.indent) {
@@ -7014,7 +7014,7 @@ var require_parser = __commonJS({
         yield* this.step();
       }
       *flowCollection(fc) {
-        const it = fc.items[fc.items.length - 1];
+        const it2 = fc.items[fc.items.length - 1];
         if (this.type === "flow-error-end") {
           let top;
           do {
@@ -7025,42 +7025,42 @@ var require_parser = __commonJS({
           switch (this.type) {
             case "comma":
             case "explicit-key-ind":
-              if (!it || it.sep)
+              if (!it2 || it2.sep)
                 fc.items.push({ start: [this.sourceToken] });
               else
-                it.start.push(this.sourceToken);
+                it2.start.push(this.sourceToken);
               return;
             case "map-value-ind":
-              if (!it || it.value)
+              if (!it2 || it2.value)
                 fc.items.push({ start: [], key: null, sep: [this.sourceToken] });
-              else if (it.sep)
-                it.sep.push(this.sourceToken);
+              else if (it2.sep)
+                it2.sep.push(this.sourceToken);
               else
-                Object.assign(it, { key: null, sep: [this.sourceToken] });
+                Object.assign(it2, { key: null, sep: [this.sourceToken] });
               return;
             case "space":
             case "comment":
             case "newline":
             case "anchor":
             case "tag":
-              if (!it || it.value)
+              if (!it2 || it2.value)
                 fc.items.push({ start: [this.sourceToken] });
-              else if (it.sep)
-                it.sep.push(this.sourceToken);
+              else if (it2.sep)
+                it2.sep.push(this.sourceToken);
               else
-                it.start.push(this.sourceToken);
+                it2.start.push(this.sourceToken);
               return;
             case "alias":
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
               const fs = this.flowScalar(this.type);
-              if (!it || it.value)
+              if (!it2 || it2.value)
                 fc.items.push({ start: [], key: fs, sep: [] });
-              else if (it.sep)
+              else if (it2.sep)
                 this.stack.push(fs);
               else
-                Object.assign(it, { key: fs, sep: [] });
+                Object.assign(it2, { key: fs, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -7177,7 +7177,7 @@ var require_parser = __commonJS({
           return false;
         if (this.indent <= indent)
           return false;
-        return start.every((st) => st.type === "newline" || st.type === "space");
+        return start.every((st2) => st2.type === "newline" || st2.type === "space");
       }
       *documentEnd(docEnd) {
         if (this.type !== "doc-mode") {
@@ -7268,7 +7268,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse4(src, reviver, options) {
+    function parse5(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -7309,7 +7309,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse4;
+    exports.parse = parse5;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument;
     exports.stringify = stringify2;
@@ -7425,7 +7425,7 @@ var require_code = __commonJS({
     };
     exports._Code = _Code;
     exports.nil = new _Code("");
-    function _(strs, ...args) {
+    function _2(strs, ...args) {
       const code = [strs[0]];
       let i = 0;
       while (i < args.length) {
@@ -7434,7 +7434,7 @@ var require_code = __commonJS({
       }
       return new _Code(code);
     }
-    exports._ = _;
+    exports._ = _2;
     var plus = new _Code("+");
     function str(strs, ...args) {
       const expr = [safeStringify(strs[0])];
@@ -7471,41 +7471,41 @@ var require_code = __commonJS({
         i++;
       }
     }
-    function mergeExprItems(a, b) {
-      if (b === '""')
+    function mergeExprItems(a, b2) {
+      if (b2 === '""')
         return a;
       if (a === '""')
-        return b;
+        return b2;
       if (typeof a == "string") {
-        if (b instanceof Name || a[a.length - 1] !== '"')
+        if (b2 instanceof Name || a[a.length - 1] !== '"')
           return;
-        if (typeof b != "string")
-          return `${a.slice(0, -1)}${b}"`;
-        if (b[0] === '"')
-          return a.slice(0, -1) + b.slice(1);
+        if (typeof b2 != "string")
+          return `${a.slice(0, -1)}${b2}"`;
+        if (b2[0] === '"')
+          return a.slice(0, -1) + b2.slice(1);
         return;
       }
-      if (typeof b == "string" && b[0] === '"' && !(a instanceof Name))
-        return `"${a}${b.slice(1)}`;
+      if (typeof b2 == "string" && b2[0] === '"' && !(a instanceof Name))
+        return `"${a}${b2.slice(1)}`;
       return;
     }
     function strConcat(c1, c2) {
       return c2.emptyStr() ? c1 : c1.emptyStr() ? c2 : str`${c1}${c2}`;
     }
     exports.strConcat = strConcat;
-    function interpolate(x) {
-      return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
+    function interpolate(x2) {
+      return typeof x2 == "number" || typeof x2 == "boolean" || x2 === null ? x2 : safeStringify(Array.isArray(x2) ? x2.join(",") : x2);
     }
-    function stringify2(x) {
-      return new _Code(safeStringify(x));
+    function stringify2(x2) {
+      return new _Code(safeStringify(x2));
     }
     exports.stringify = stringify2;
-    function safeStringify(x) {
-      return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+    function safeStringify(x2) {
+      return JSON.stringify(x2).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
     exports.safeStringify = safeStringify;
     function getProperty(key) {
-      return typeof key == "string" && exports.IDENTIFIER.test(key) ? new _Code(`.${key}`) : _`[${key}]`;
+      return typeof key == "string" && exports.IDENTIFIER.test(key) ? new _Code(`.${key}`) : _2`[${key}]`;
     }
     exports.getProperty = getProperty;
     function getEsmExportName(key) {
@@ -8364,8 +8364,8 @@ var require_codegen = __commonJS({
       for (const n in from)
         names[n] = (names[n] || 0) - (from[n] || 0);
     }
-    function not(x) {
-      return typeof x == "boolean" || typeof x == "number" || x === null ? !x : (0, code_1._)`!${par(x)}`;
+    function not(x2) {
+      return typeof x2 == "boolean" || typeof x2 == "number" || x2 === null ? !x2 : (0, code_1._)`!${par(x2)}`;
     }
     exports.not = not;
     var andCode = mappend(exports.operators.AND);
@@ -8379,10 +8379,10 @@ var require_codegen = __commonJS({
     }
     exports.or = or;
     function mappend(op) {
-      return (x, y) => x === code_1.nil ? y : y === code_1.nil ? x : (0, code_1._)`${par(x)} ${op} ${par(y)}`;
+      return (x2, y2) => x2 === code_1.nil ? y2 : y2 === code_1.nil ? x2 : (0, code_1._)`${par(x2)} ${op} ${par(y2)}`;
     }
-    function par(x) {
-      return x instanceof code_1.Name ? x : (0, code_1._)`(${x})`;
+    function par(x2) {
+      return x2 instanceof code_1.Name ? x2 : (0, code_1._)`(${x2})`;
     }
   }
 });
@@ -8402,17 +8402,17 @@ var require_util = __commonJS({
       return hash;
     }
     exports.toHash = toHash;
-    function alwaysValidSchema(it, schema) {
+    function alwaysValidSchema(it2, schema) {
       if (typeof schema == "boolean")
         return schema;
       if (Object.keys(schema).length === 0)
         return true;
-      checkUnknownRules(it, schema);
-      return !schemaHasRules(schema, it.self.RULES.all);
+      checkUnknownRules(it2, schema);
+      return !schemaHasRules(schema, it2.self.RULES.all);
     }
     exports.alwaysValidSchema = alwaysValidSchema;
-    function checkUnknownRules(it, schema = it.schema) {
-      const { opts, self } = it;
+    function checkUnknownRules(it2, schema = it2.schema) {
+      const { opts, self } = it2;
       if (!opts.strictSchema)
         return;
       if (typeof schema === "boolean")
@@ -8420,7 +8420,7 @@ var require_util = __commonJS({
       const rules = self.RULES.keywords;
       for (const key in schema) {
         if (!rules[key])
-          checkStrictMode(it, `unknown keyword: "${key}"`);
+          checkStrictMode(it2, `unknown keyword: "${key}"`);
       }
     }
     exports.checkUnknownRules = checkUnknownRules;
@@ -8470,12 +8470,12 @@ var require_util = __commonJS({
       return str.replace(/~1/g, "/").replace(/~0/g, "~");
     }
     exports.unescapeJsonPointer = unescapeJsonPointer;
-    function eachItem(xs, f) {
+    function eachItem(xs, f2) {
       if (Array.isArray(xs)) {
-        for (const x of xs)
-          f(x);
+        for (const x2 of xs)
+          f2(x2);
       } else {
-        f(xs);
+        f2(xs);
       }
     }
     exports.eachItem = eachItem;
@@ -8522,10 +8522,10 @@ var require_util = __commonJS({
     }
     exports.setEvaluated = setEvaluated;
     var snippets = {};
-    function useFunc(gen, f) {
+    function useFunc(gen, f2) {
       return gen.scopeValue("func", {
-        ref: f,
-        code: snippets[f.code] || (snippets[f.code] = new code_1._Code(f.code))
+        ref: f2,
+        code: snippets[f2.code] || (snippets[f2.code] = new code_1._Code(f2.code))
       });
     }
     exports.useFunc = useFunc;
@@ -8542,13 +8542,13 @@ var require_util = __commonJS({
       return jsPropertySyntax ? (0, codegen_1.getProperty)(dataProp).toString() : "/" + escapeJsonPointer(dataProp);
     }
     exports.getErrorPath = getErrorPath;
-    function checkStrictMode(it, msg, mode = it.opts.strictSchema) {
+    function checkStrictMode(it2, msg, mode = it2.opts.strictSchema) {
       if (!mode)
         return;
       msg = `strict mode: ${msg}`;
       if (mode === true)
         throw new Error(msg);
-      it.self.logger.warn(msg);
+      it2.self.logger.warn(msg);
     }
     exports.checkStrictMode = checkStrictMode;
   }
@@ -8609,23 +8609,23 @@ var require_errors2 = __commonJS({
       message: ({ keyword, schemaType }) => schemaType ? (0, codegen_1.str)`"${keyword}" keyword must be ${schemaType} ($data)` : (0, codegen_1.str)`"${keyword}" keyword is invalid ($data)`
     };
     function reportError(cxt, error2 = exports.keywordError, errorPaths, overrideAllErrors) {
-      const { it } = cxt;
-      const { gen, compositeRule, allErrors } = it;
+      const { it: it2 } = cxt;
+      const { gen, compositeRule, allErrors } = it2;
       const errObj = errorObjectCode(cxt, error2, errorPaths);
       if (overrideAllErrors !== null && overrideAllErrors !== void 0 ? overrideAllErrors : compositeRule || allErrors) {
         addError(gen, errObj);
       } else {
-        returnErrors(it, (0, codegen_1._)`[${errObj}]`);
+        returnErrors(it2, (0, codegen_1._)`[${errObj}]`);
       }
     }
     exports.reportError = reportError;
     function reportExtraError(cxt, error2 = exports.keywordError, errorPaths) {
-      const { it } = cxt;
-      const { gen, compositeRule, allErrors } = it;
+      const { it: it2 } = cxt;
+      const { gen, compositeRule, allErrors } = it2;
       const errObj = errorObjectCode(cxt, error2, errorPaths);
       addError(gen, errObj);
       if (!(compositeRule || allErrors)) {
-        returnErrors(it, names_1.default.vErrors);
+        returnErrors(it2, names_1.default.vErrors);
       }
     }
     exports.reportExtraError = reportExtraError;
@@ -8634,15 +8634,15 @@ var require_errors2 = __commonJS({
       gen.if((0, codegen_1._)`${names_1.default.vErrors} !== null`, () => gen.if(errsCount, () => gen.assign((0, codegen_1._)`${names_1.default.vErrors}.length`, errsCount), () => gen.assign(names_1.default.vErrors, null)));
     }
     exports.resetErrorsCount = resetErrorsCount;
-    function extendErrors({ gen, keyword, schemaValue, data, errsCount, it }) {
+    function extendErrors({ gen, keyword, schemaValue, data, errsCount, it: it2 }) {
       if (errsCount === void 0)
         throw new Error("ajv implementation error");
       const err = gen.name("err");
       gen.forRange("i", errsCount, names_1.default.errors, (i) => {
         gen.const(err, (0, codegen_1._)`${names_1.default.vErrors}[${i}]`);
-        gen.if((0, codegen_1._)`${err}.instancePath === undefined`, () => gen.assign((0, codegen_1._)`${err}.instancePath`, (0, codegen_1.strConcat)(names_1.default.instancePath, it.errorPath)));
-        gen.assign((0, codegen_1._)`${err}.schemaPath`, (0, codegen_1.str)`${it.errSchemaPath}/${keyword}`);
-        if (it.opts.verbose) {
+        gen.if((0, codegen_1._)`${err}.instancePath === undefined`, () => gen.assign((0, codegen_1._)`${err}.instancePath`, (0, codegen_1.strConcat)(names_1.default.instancePath, it2.errorPath)));
+        gen.assign((0, codegen_1._)`${err}.schemaPath`, (0, codegen_1.str)`${it2.errSchemaPath}/${keyword}`);
+        if (it2.opts.verbose) {
           gen.assign((0, codegen_1._)`${err}.schema`, schemaValue);
           gen.assign((0, codegen_1._)`${err}.data`, data);
         }
@@ -8654,10 +8654,10 @@ var require_errors2 = __commonJS({
       gen.if((0, codegen_1._)`${names_1.default.vErrors} === null`, () => gen.assign(names_1.default.vErrors, (0, codegen_1._)`[${err}]`), (0, codegen_1._)`${names_1.default.vErrors}.push(${err})`);
       gen.code((0, codegen_1._)`${names_1.default.errors}++`);
     }
-    function returnErrors(it, errs) {
-      const { gen, validateName, schemaEnv } = it;
+    function returnErrors(it2, errs) {
+      const { gen, validateName, schemaEnv } = it2;
       if (schemaEnv.$async) {
-        gen.throw((0, codegen_1._)`new ${it.ValidationError}(${errs})`);
+        gen.throw((0, codegen_1._)`new ${it2.ValidationError}(${errs})`);
       } else {
         gen.assign((0, codegen_1._)`${validateName}.errors`, errs);
         gen.return(false);
@@ -8680,9 +8680,9 @@ var require_errors2 = __commonJS({
       return errorObject(cxt, error2, errorPaths);
     }
     function errorObject(cxt, error2, errorPaths = {}) {
-      const { gen, it } = cxt;
+      const { gen, it: it2 } = cxt;
       const keyValues = [
-        errorInstancePath(it, errorPaths),
+        errorInstancePath(it2, errorPaths),
         errorSchemaPath(cxt, errorPaths)
       ];
       extraErrorProps(cxt, error2, keyValues);
@@ -8700,8 +8700,8 @@ var require_errors2 = __commonJS({
       return [E.schemaPath, schPath];
     }
     function extraErrorProps(cxt, { params, message }, keyValues) {
-      const { keyword, data, schemaValue, it } = cxt;
-      const { opts, propertyName, topSchemaRef, schemaPath } = it;
+      const { keyword, data, schemaValue, it: it2 } = cxt;
+      const { opts, propertyName, topSchemaRef, schemaPath } = it2;
       keyValues.push([E.keyword, keyword], [E.params, typeof params == "function" ? params(cxt) : params || (0, codegen_1._)`{}`]);
       if (opts.messages) {
         keyValues.push([E.message, typeof message == "function" ? message(cxt) : message]);
@@ -8727,10 +8727,10 @@ var require_boolSchema = __commonJS({
     var boolError = {
       message: "boolean schema is false"
     };
-    function topBoolOrEmptySchema(it) {
-      const { gen, schema, validateName } = it;
+    function topBoolOrEmptySchema(it2) {
+      const { gen, schema, validateName } = it2;
       if (schema === false) {
-        falseSchemaError(it, false);
+        falseSchemaError(it2, false);
       } else if (typeof schema == "object" && schema.$async === true) {
         gen.return(names_1.default.data);
       } else {
@@ -8739,18 +8739,18 @@ var require_boolSchema = __commonJS({
       }
     }
     exports.topBoolOrEmptySchema = topBoolOrEmptySchema;
-    function boolOrEmptySchema(it, valid) {
-      const { gen, schema } = it;
+    function boolOrEmptySchema(it2, valid) {
+      const { gen, schema } = it2;
       if (schema === false) {
         gen.var(valid, false);
-        falseSchemaError(it);
+        falseSchemaError(it2);
       } else {
         gen.var(valid, true);
       }
     }
     exports.boolOrEmptySchema = boolOrEmptySchema;
-    function falseSchemaError(it, overrideAllErrors) {
-      const { gen, data } = it;
+    function falseSchemaError(it2, overrideAllErrors) {
+      const { gen, data } = it2;
       const cxt = {
         gen,
         keyword: "false schema",
@@ -8759,7 +8759,7 @@ var require_boolSchema = __commonJS({
         schemaCode: false,
         schemaValue: false,
         params: {},
-        it
+        it: it2
       };
       (0, errors_1.reportError)(cxt, boolError, void 0, overrideAllErrors);
     }
@@ -8774,8 +8774,8 @@ var require_rules = __commonJS({
     exports.getRules = exports.isJSONType = void 0;
     var _jsonTypes = ["string", "number", "integer", "boolean", "null", "object", "array"];
     var jsonTypes = new Set(_jsonTypes);
-    function isJSONType(x) {
-      return typeof x == "string" && jsonTypes.has(x);
+    function isJSONType(x2) {
+      return typeof x2 == "string" && jsonTypes.has(x2);
     }
     exports.isJSONType = isJSONType;
     function getRules() {
@@ -8859,17 +8859,17 @@ var require_dataType = __commonJS({
       throw new Error("type must be JSONType or JSONType[]: " + types.join(","));
     }
     exports.getJSONTypes = getJSONTypes;
-    function coerceAndCheckDataType(it, types) {
-      const { gen, data, opts } = it;
+    function coerceAndCheckDataType(it2, types) {
+      const { gen, data, opts } = it2;
       const coerceTo = coerceToTypes(types, opts.coerceTypes);
-      const checkTypes = types.length > 0 && !(coerceTo.length === 0 && types.length === 1 && (0, applicability_1.schemaHasRulesForType)(it, types[0]));
+      const checkTypes = types.length > 0 && !(coerceTo.length === 0 && types.length === 1 && (0, applicability_1.schemaHasRulesForType)(it2, types[0]));
       if (checkTypes) {
         const wrongType = checkDataTypes(types, data, opts.strictNumbers, DataType.Wrong);
         gen.if(wrongType, () => {
           if (coerceTo.length)
-            coerceData(it, types, coerceTo);
+            coerceData(it2, types, coerceTo);
           else
-            reportTypeError(it);
+            reportTypeError(it2);
         });
       }
       return checkTypes;
@@ -8879,8 +8879,8 @@ var require_dataType = __commonJS({
     function coerceToTypes(types, coerceTypes) {
       return coerceTypes ? types.filter((t) => COERCIBLE.has(t) || coerceTypes === "array" && t === "array") : [];
     }
-    function coerceData(it, types, coerceTo) {
-      const { gen, data, opts } = it;
+    function coerceData(it2, types, coerceTo) {
+      const { gen, data, opts } = it2;
       const dataType = gen.let("dataType", (0, codegen_1._)`typeof ${data}`);
       const coerced = gen.let("coerced", (0, codegen_1._)`undefined`);
       if (opts.coerceTypes === "array") {
@@ -8893,11 +8893,11 @@ var require_dataType = __commonJS({
         }
       }
       gen.else();
-      reportTypeError(it);
+      reportTypeError(it2);
       gen.endIf();
       gen.if((0, codegen_1._)`${coerced} !== undefined`, () => {
         gen.assign(data, coerced);
-        assignParentData(it, coerced);
+        assignParentData(it2, coerced);
       });
       function coerceSpecificType(t) {
         switch (t) {
@@ -8981,14 +8981,14 @@ var require_dataType = __commonJS({
       message: ({ schema }) => `must be ${schema}`,
       params: ({ schema, schemaValue }) => typeof schema == "string" ? (0, codegen_1._)`{type: ${schema}}` : (0, codegen_1._)`{type: ${schemaValue}}`
     };
-    function reportTypeError(it) {
-      const cxt = getTypeErrorContext(it);
+    function reportTypeError(it2) {
+      const cxt = getTypeErrorContext(it2);
       (0, errors_1.reportError)(cxt, typeError);
     }
     exports.reportTypeError = reportTypeError;
-    function getTypeErrorContext(it) {
-      const { gen, data, schema } = it;
-      const schemaCode = (0, util_1.schemaRefOrVal)(it, schema, "type");
+    function getTypeErrorContext(it2) {
+      const { gen, data, schema } = it2;
+      const schemaCode = (0, util_1.schemaRefOrVal)(it2, schema, "type");
       return {
         gen,
         keyword: "type",
@@ -8998,7 +8998,7 @@ var require_dataType = __commonJS({
         schemaValue: schemaCode,
         parentSchema: schema,
         params: {},
-        it
+        it: it2
       };
     }
   }
@@ -9012,24 +9012,24 @@ var require_defaults = __commonJS({
     exports.assignDefaults = void 0;
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    function assignDefaults(it, ty) {
-      const { properties, items } = it.schema;
+    function assignDefaults(it2, ty) {
+      const { properties, items } = it2.schema;
       if (ty === "object" && properties) {
         for (const key in properties) {
-          assignDefault(it, key, properties[key].default);
+          assignDefault(it2, key, properties[key].default);
         }
       } else if (ty === "array" && Array.isArray(items)) {
-        items.forEach((sch, i) => assignDefault(it, i, sch.default));
+        items.forEach((sch, i) => assignDefault(it2, i, sch.default));
       }
     }
     exports.assignDefaults = assignDefaults;
-    function assignDefault(it, prop, defaultValue) {
-      const { gen, compositeRule, data, opts } = it;
+    function assignDefault(it2, prop, defaultValue) {
+      const { gen, compositeRule, data, opts } = it2;
       if (defaultValue === void 0)
         return;
       const childData = (0, codegen_1._)`${data}${(0, codegen_1.getProperty)(prop)}`;
       if (compositeRule) {
-        (0, util_1.checkStrictMode)(it, `default is ignored for: ${childData}`);
+        (0, util_1.checkStrictMode)(it2, `default is ignored for: ${childData}`);
         return;
       }
       let condition = (0, codegen_1._)`${childData} === undefined`;
@@ -9052,8 +9052,8 @@ var require_code2 = __commonJS({
     var names_1 = require_names();
     var util_2 = require_util();
     function checkReportMissingProp(cxt, prop) {
-      const { gen, data, it } = cxt;
-      gen.if(noPropertyInData(gen, data, prop, it.opts.ownProperties), () => {
+      const { gen, data, it: it2 } = cxt;
+      gen.if(noPropertyInData(gen, data, prop, it2.opts.ownProperties), () => {
         cxt.setParams({ missingProperty: (0, codegen_1._)`${prop}` }, true);
         cxt.error();
       });
@@ -9094,19 +9094,19 @@ var require_code2 = __commonJS({
       return schemaMap ? Object.keys(schemaMap).filter((p) => p !== "__proto__") : [];
     }
     exports.allSchemaProperties = allSchemaProperties;
-    function schemaProperties(it, schemaMap) {
-      return allSchemaProperties(schemaMap).filter((p) => !(0, util_1.alwaysValidSchema)(it, schemaMap[p]));
+    function schemaProperties(it2, schemaMap) {
+      return allSchemaProperties(schemaMap).filter((p) => !(0, util_1.alwaysValidSchema)(it2, schemaMap[p]));
     }
     exports.schemaProperties = schemaProperties;
-    function callValidateCode({ schemaCode, data, it: { gen, topSchemaRef, schemaPath, errorPath }, it }, func, context, passSchema) {
+    function callValidateCode({ schemaCode, data, it: { gen, topSchemaRef, schemaPath, errorPath }, it: it2 }, func, context, passSchema) {
       const dataAndSchema = passSchema ? (0, codegen_1._)`${schemaCode}, ${data}, ${topSchemaRef}${schemaPath}` : data;
       const valCxt = [
         [names_1.default.instancePath, (0, codegen_1.strConcat)(names_1.default.instancePath, errorPath)],
-        [names_1.default.parentData, it.parentData],
-        [names_1.default.parentDataProperty, it.parentDataProperty],
+        [names_1.default.parentData, it2.parentData],
+        [names_1.default.parentDataProperty, it2.parentDataProperty],
         [names_1.default.rootData, names_1.default.rootData]
       ];
-      if (it.opts.dynamicRef)
+      if (it2.opts.dynamicRef)
         valCxt.push([names_1.default.dynamicAnchors, names_1.default.dynamicAnchors]);
       const args = (0, codegen_1._)`${dataAndSchema}, ${gen.object(...valCxt)}`;
       return context !== codegen_1.nil ? (0, codegen_1._)`${func}.call(${context}, ${args})` : (0, codegen_1._)`${func}(${args})`;
@@ -9125,9 +9125,9 @@ var require_code2 = __commonJS({
     }
     exports.usePattern = usePattern;
     function validateArray(cxt) {
-      const { gen, data, keyword, it } = cxt;
+      const { gen, data, keyword, it: it2 } = cxt;
       const valid = gen.name("valid");
-      if (it.allErrors) {
+      if (it2.allErrors) {
         const validArr = gen.let("valid", true);
         validateItems(() => gen.assign(validArr, false));
         return validArr;
@@ -9149,11 +9149,11 @@ var require_code2 = __commonJS({
     }
     exports.validateArray = validateArray;
     function validateUnion(cxt) {
-      const { gen, schema, keyword, it } = cxt;
+      const { gen, schema, keyword, it: it2 } = cxt;
       if (!Array.isArray(schema))
         throw new Error("ajv implementation error");
-      const alwaysValid = schema.some((sch) => (0, util_1.alwaysValidSchema)(it, sch));
-      if (alwaysValid && !it.opts.unevaluated)
+      const alwaysValid = schema.some((sch) => (0, util_1.alwaysValidSchema)(it2, sch));
+      if (alwaysValid && !it2.opts.unevaluated)
         return;
       const valid = gen.let("valid", false);
       const schValid = gen.name("_valid");
@@ -9185,16 +9185,16 @@ var require_keyword = __commonJS({
     var code_1 = require_code2();
     var errors_1 = require_errors2();
     function macroKeywordCode(cxt, def) {
-      const { gen, keyword, schema, parentSchema, it } = cxt;
-      const macroSchema = def.macro.call(it.self, schema, parentSchema, it);
+      const { gen, keyword, schema, parentSchema, it: it2 } = cxt;
+      const macroSchema = def.macro.call(it2.self, schema, parentSchema, it2);
       const schemaRef = useKeyword(gen, keyword, macroSchema);
-      if (it.opts.validateSchema !== false)
-        it.self.validateSchema(macroSchema, true);
+      if (it2.opts.validateSchema !== false)
+        it2.self.validateSchema(macroSchema, true);
       const valid = gen.name("valid");
       cxt.subschema({
         schema: macroSchema,
         schemaPath: codegen_1.nil,
-        errSchemaPath: `${it.errSchemaPath}/${keyword}`,
+        errSchemaPath: `${it2.errSchemaPath}/${keyword}`,
         topSchemaRef: schemaRef,
         compositeRule: true
       }, valid);
@@ -9203,10 +9203,10 @@ var require_keyword = __commonJS({
     exports.macroKeywordCode = macroKeywordCode;
     function funcKeywordCode(cxt, def) {
       var _a3;
-      const { gen, keyword, schema, parentSchema, $data, it } = cxt;
-      checkAsyncKeyword(it, def);
-      const validate = !$data && def.compile ? def.compile.call(it.self, schema, parentSchema, it) : def.validate;
-      const validateRef = useKeyword(gen, keyword, validate);
+      const { gen, keyword, schema, parentSchema, $data, it: it2 } = cxt;
+      checkAsyncKeyword(it2, def);
+      const validate2 = !$data && def.compile ? def.compile.call(it2.self, schema, parentSchema, it2) : def.validate;
+      const validateRef = useKeyword(gen, keyword, validate2);
       const valid = gen.let("valid");
       cxt.block$data(valid, validateKeyword);
       cxt.ok((_a3 = def.valid) !== null && _a3 !== void 0 ? _a3 : valid);
@@ -9225,7 +9225,7 @@ var require_keyword = __commonJS({
       }
       function validateAsync() {
         const ruleErrs = gen.let("ruleErrs", null);
-        gen.try(() => assignValid((0, codegen_1._)`await `), (e) => gen.assign(valid, false).if((0, codegen_1._)`${e} instanceof ${it.ValidationError}`, () => gen.assign(ruleErrs, (0, codegen_1._)`${e}.errors`), () => gen.throw(e)));
+        gen.try(() => assignValid((0, codegen_1._)`await `), (e) => gen.assign(valid, false).if((0, codegen_1._)`${e} instanceof ${it2.ValidationError}`, () => gen.assign(ruleErrs, (0, codegen_1._)`${e}.errors`), () => gen.throw(e)));
         return ruleErrs;
       }
       function validateSync() {
@@ -9235,7 +9235,7 @@ var require_keyword = __commonJS({
         return validateErrs;
       }
       function assignValid(_await = def.async ? (0, codegen_1._)`await ` : codegen_1.nil) {
-        const passCxt = it.opts.passContext ? names_1.default.this : names_1.default.self;
+        const passCxt = it2.opts.passContext ? names_1.default.this : names_1.default.self;
         const passSchema = !("compile" in def && !$data || def.schema === false);
         gen.assign(valid, (0, codegen_1._)`${_await}${(0, code_1.callValidateCode)(cxt, validateRef, passCxt, passSchema)}`, def.modifying);
       }
@@ -9246,8 +9246,8 @@ var require_keyword = __commonJS({
     }
     exports.funcKeywordCode = funcKeywordCode;
     function modifyData(cxt) {
-      const { gen, data, it } = cxt;
-      gen.if(it.parentData, () => gen.assign(data, (0, codegen_1._)`${it.parentData}[${it.parentDataProperty}]`));
+      const { gen, data, it: it2 } = cxt;
+      gen.if(it2.parentData, () => gen.assign(data, (0, codegen_1._)`${it2.parentData}[${it2.parentDataProperty}]`));
     }
     function addErrs(cxt, errs) {
       const { gen } = cxt;
@@ -9266,7 +9266,7 @@ var require_keyword = __commonJS({
       return gen.scopeValue("keyword", typeof result2 == "function" ? { ref: result2 } : { ref: result2, code: (0, codegen_1.stringify)(result2) });
     }
     function validSchemaType(schema, schemaType, allowUndefined = false) {
-      return !schemaType.length || schemaType.some((st) => st === "array" ? Array.isArray(schema) : st === "object" ? schema && typeof schema == "object" && !Array.isArray(schema) : typeof schema == st || allowUndefined && typeof schema == "undefined");
+      return !schemaType.length || schemaType.some((st2) => st2 === "array" ? Array.isArray(schema) : st2 === "object" ? schema && typeof schema == "object" && !Array.isArray(schema) : typeof schema == st2 || allowUndefined && typeof schema == "undefined");
     }
     exports.validSchemaType = validSchemaType;
     function validateKeywordUsage({ schema, opts, self, errSchemaPath }, def, keyword) {
@@ -9300,20 +9300,20 @@ var require_subschema = __commonJS({
     exports.extendSubschemaMode = exports.extendSubschemaData = exports.getSubschema = void 0;
     var codegen_1 = require_codegen();
     var util_1 = require_util();
-    function getSubschema(it, { keyword, schemaProp, schema, schemaPath, errSchemaPath, topSchemaRef }) {
+    function getSubschema(it2, { keyword, schemaProp, schema, schemaPath, errSchemaPath, topSchemaRef }) {
       if (keyword !== void 0 && schema !== void 0) {
         throw new Error('both "keyword" and "schema" passed, only one allowed');
       }
       if (keyword !== void 0) {
-        const sch = it.schema[keyword];
+        const sch = it2.schema[keyword];
         return schemaProp === void 0 ? {
           schema: sch,
-          schemaPath: (0, codegen_1._)`${it.schemaPath}${(0, codegen_1.getProperty)(keyword)}`,
-          errSchemaPath: `${it.errSchemaPath}/${keyword}`
+          schemaPath: (0, codegen_1._)`${it2.schemaPath}${(0, codegen_1.getProperty)(keyword)}`,
+          errSchemaPath: `${it2.errSchemaPath}/${keyword}`
         } : {
           schema: sch[schemaProp],
-          schemaPath: (0, codegen_1._)`${it.schemaPath}${(0, codegen_1.getProperty)(keyword)}${(0, codegen_1.getProperty)(schemaProp)}`,
-          errSchemaPath: `${it.errSchemaPath}/${keyword}/${(0, util_1.escapeFragment)(schemaProp)}`
+          schemaPath: (0, codegen_1._)`${it2.schemaPath}${(0, codegen_1.getProperty)(keyword)}${(0, codegen_1.getProperty)(schemaProp)}`,
+          errSchemaPath: `${it2.errSchemaPath}/${keyword}/${(0, util_1.escapeFragment)(schemaProp)}`
         };
       }
       if (schema !== void 0) {
@@ -9330,14 +9330,14 @@ var require_subschema = __commonJS({
       throw new Error('either "keyword" or "schema" must be passed');
     }
     exports.getSubschema = getSubschema;
-    function extendSubschemaData(subschema, it, { dataProp, dataPropType: dpType, data, dataTypes, propertyName }) {
+    function extendSubschemaData(subschema, it2, { dataProp, dataPropType: dpType, data, dataTypes, propertyName }) {
       if (data !== void 0 && dataProp !== void 0) {
         throw new Error('both "data" and "dataProp" passed, only one allowed');
       }
-      const { gen } = it;
+      const { gen } = it2;
       if (dataProp !== void 0) {
-        const { errorPath, dataPathArr, opts } = it;
-        const nextData = gen.let("data", (0, codegen_1._)`${it.data}${(0, codegen_1.getProperty)(dataProp)}`, true);
+        const { errorPath, dataPathArr, opts } = it2;
+        const nextData = gen.let("data", (0, codegen_1._)`${it2.data}${(0, codegen_1.getProperty)(dataProp)}`, true);
         dataContextProps(nextData);
         subschema.errorPath = (0, codegen_1.str)`${errorPath}${(0, util_1.getErrorPath)(dataProp, dpType, opts.jsPropertySyntax)}`;
         subschema.parentDataProperty = (0, codegen_1._)`${dataProp}`;
@@ -9353,11 +9353,11 @@ var require_subschema = __commonJS({
         subschema.dataTypes = dataTypes;
       function dataContextProps(_nextData) {
         subschema.data = _nextData;
-        subschema.dataLevel = it.dataLevel + 1;
+        subschema.dataLevel = it2.dataLevel + 1;
         subschema.dataTypes = [];
-        it.definedProperties = /* @__PURE__ */ new Set();
-        subschema.parentData = it.data;
-        subschema.dataNames = [...it.dataNames, _nextData];
+        it2.definedProperties = /* @__PURE__ */ new Set();
+        subschema.parentData = it2.data;
+        subschema.dataNames = [...it2.dataNames, _nextData];
       }
     }
     exports.extendSubschemaData = extendSubschemaData;
@@ -9379,33 +9379,33 @@ var require_subschema = __commonJS({
 var require_fast_deep_equal = __commonJS({
   "node_modules/fast-deep-equal/index.js"(exports, module) {
     "use strict";
-    module.exports = function equal(a, b) {
-      if (a === b) return true;
-      if (a && b && typeof a == "object" && typeof b == "object") {
-        if (a.constructor !== b.constructor) return false;
+    module.exports = function equal(a, b2) {
+      if (a === b2) return true;
+      if (a && b2 && typeof a == "object" && typeof b2 == "object") {
+        if (a.constructor !== b2.constructor) return false;
         var length, i, keys;
         if (Array.isArray(a)) {
           length = a.length;
-          if (length != b.length) return false;
+          if (length != b2.length) return false;
           for (i = length; i-- !== 0; )
-            if (!equal(a[i], b[i])) return false;
+            if (!equal(a[i], b2[i])) return false;
           return true;
         }
-        if (a.constructor === RegExp) return a.source === b.source && a.flags === b.flags;
-        if (a.valueOf !== Object.prototype.valueOf) return a.valueOf() === b.valueOf();
-        if (a.toString !== Object.prototype.toString) return a.toString() === b.toString();
+        if (a.constructor === RegExp) return a.source === b2.source && a.flags === b2.flags;
+        if (a.valueOf !== Object.prototype.valueOf) return a.valueOf() === b2.valueOf();
+        if (a.toString !== Object.prototype.toString) return a.toString() === b2.toString();
         keys = Object.keys(a);
         length = keys.length;
-        if (length !== Object.keys(b).length) return false;
+        if (length !== Object.keys(b2).length) return false;
         for (i = length; i-- !== 0; )
-          if (!Object.prototype.hasOwnProperty.call(b, keys[i])) return false;
+          if (!Object.prototype.hasOwnProperty.call(b2, keys[i])) return false;
         for (i = length; i-- !== 0; ) {
           var key = keys[i];
-          if (!equal(a[key], b[key])) return false;
+          if (!equal(a[key], b2[key])) return false;
         }
         return true;
       }
-      return a !== a && b !== b;
+      return a !== a && b2 !== b2;
     };
   }
 });
@@ -9602,7 +9602,7 @@ var require_resolve = __commonJS({
       const pathPrefix = getFullPath(uriResolver, schId, false);
       const localRefs = {};
       const schemaRefs = /* @__PURE__ */ new Set();
-      traverse(schema, { allKeys: true }, (sch, jsonPtr, _, parentJsonPtr) => {
+      traverse(schema, { allKeys: true }, (sch, jsonPtr, _2, parentJsonPtr) => {
         if (parentJsonPtr === void 0)
           return;
         const fullPath = pathPrefix + jsonPtr;
@@ -9672,15 +9672,15 @@ var require_validate = __commonJS({
     var resolve_1 = require_resolve();
     var util_1 = require_util();
     var errors_1 = require_errors2();
-    function validateFunctionCode(it) {
-      if (isSchemaObj(it)) {
-        checkKeywords(it);
-        if (schemaCxtHasRules(it)) {
-          topSchemaObjCode(it);
+    function validateFunctionCode(it2) {
+      if (isSchemaObj(it2)) {
+        checkKeywords(it2);
+        if (schemaCxtHasRules(it2)) {
+          topSchemaObjCode(it2);
           return;
         }
       }
-      validateFunction(it, () => (0, boolSchema_1.topBoolOrEmptySchema)(it));
+      validateFunction(it2, () => (0, boolSchema_1.topBoolOrEmptySchema)(it2));
     }
     exports.validateFunctionCode = validateFunctionCode;
     function validateFunction({ gen, validateName, schema, schemaEnv, opts }, body) {
@@ -9714,40 +9714,40 @@ var require_validate = __commonJS({
           gen.var(names_1.default.dynamicAnchors, (0, codegen_1._)`{}`);
       });
     }
-    function topSchemaObjCode(it) {
-      const { schema, opts, gen } = it;
-      validateFunction(it, () => {
+    function topSchemaObjCode(it2) {
+      const { schema, opts, gen } = it2;
+      validateFunction(it2, () => {
         if (opts.$comment && schema.$comment)
-          commentKeyword(it);
-        checkNoDefault(it);
+          commentKeyword(it2);
+        checkNoDefault(it2);
         gen.let(names_1.default.vErrors, null);
         gen.let(names_1.default.errors, 0);
         if (opts.unevaluated)
-          resetEvaluated(it);
-        typeAndKeywords(it);
-        returnResults(it);
+          resetEvaluated(it2);
+        typeAndKeywords(it2);
+        returnResults(it2);
       });
       return;
     }
-    function resetEvaluated(it) {
-      const { gen, validateName } = it;
-      it.evaluated = gen.const("evaluated", (0, codegen_1._)`${validateName}.evaluated`);
-      gen.if((0, codegen_1._)`${it.evaluated}.dynamicProps`, () => gen.assign((0, codegen_1._)`${it.evaluated}.props`, (0, codegen_1._)`undefined`));
-      gen.if((0, codegen_1._)`${it.evaluated}.dynamicItems`, () => gen.assign((0, codegen_1._)`${it.evaluated}.items`, (0, codegen_1._)`undefined`));
+    function resetEvaluated(it2) {
+      const { gen, validateName } = it2;
+      it2.evaluated = gen.const("evaluated", (0, codegen_1._)`${validateName}.evaluated`);
+      gen.if((0, codegen_1._)`${it2.evaluated}.dynamicProps`, () => gen.assign((0, codegen_1._)`${it2.evaluated}.props`, (0, codegen_1._)`undefined`));
+      gen.if((0, codegen_1._)`${it2.evaluated}.dynamicItems`, () => gen.assign((0, codegen_1._)`${it2.evaluated}.items`, (0, codegen_1._)`undefined`));
     }
     function funcSourceUrl(schema, opts) {
       const schId = typeof schema == "object" && schema[opts.schemaId];
       return schId && (opts.code.source || opts.code.process) ? (0, codegen_1._)`/*# sourceURL=${schId} */` : codegen_1.nil;
     }
-    function subschemaCode(it, valid) {
-      if (isSchemaObj(it)) {
-        checkKeywords(it);
-        if (schemaCxtHasRules(it)) {
-          subSchemaObjCode(it, valid);
+    function subschemaCode(it2, valid) {
+      if (isSchemaObj(it2)) {
+        checkKeywords(it2);
+        if (schemaCxtHasRules(it2)) {
+          subSchemaObjCode(it2, valid);
           return;
         }
       }
-      (0, boolSchema_1.boolOrEmptySchema)(it, valid);
+      (0, boolSchema_1.boolOrEmptySchema)(it2, valid);
     }
     function schemaCxtHasRules({ schema, self }) {
       if (typeof schema == "boolean")
@@ -9757,49 +9757,49 @@ var require_validate = __commonJS({
           return true;
       return false;
     }
-    function isSchemaObj(it) {
-      return typeof it.schema != "boolean";
+    function isSchemaObj(it2) {
+      return typeof it2.schema != "boolean";
     }
-    function subSchemaObjCode(it, valid) {
-      const { schema, gen, opts } = it;
+    function subSchemaObjCode(it2, valid) {
+      const { schema, gen, opts } = it2;
       if (opts.$comment && schema.$comment)
-        commentKeyword(it);
-      updateContext(it);
-      checkAsyncSchema(it);
+        commentKeyword(it2);
+      updateContext(it2);
+      checkAsyncSchema(it2);
       const errsCount = gen.const("_errs", names_1.default.errors);
-      typeAndKeywords(it, errsCount);
+      typeAndKeywords(it2, errsCount);
       gen.var(valid, (0, codegen_1._)`${errsCount} === ${names_1.default.errors}`);
     }
-    function checkKeywords(it) {
-      (0, util_1.checkUnknownRules)(it);
-      checkRefsAndKeywords(it);
+    function checkKeywords(it2) {
+      (0, util_1.checkUnknownRules)(it2);
+      checkRefsAndKeywords(it2);
     }
-    function typeAndKeywords(it, errsCount) {
-      if (it.opts.jtd)
-        return schemaKeywords(it, [], false, errsCount);
-      const types = (0, dataType_1.getSchemaTypes)(it.schema);
-      const checkedTypes = (0, dataType_1.coerceAndCheckDataType)(it, types);
-      schemaKeywords(it, types, !checkedTypes, errsCount);
+    function typeAndKeywords(it2, errsCount) {
+      if (it2.opts.jtd)
+        return schemaKeywords(it2, [], false, errsCount);
+      const types = (0, dataType_1.getSchemaTypes)(it2.schema);
+      const checkedTypes = (0, dataType_1.coerceAndCheckDataType)(it2, types);
+      schemaKeywords(it2, types, !checkedTypes, errsCount);
     }
-    function checkRefsAndKeywords(it) {
-      const { schema, errSchemaPath, opts, self } = it;
+    function checkRefsAndKeywords(it2) {
+      const { schema, errSchemaPath, opts, self } = it2;
       if (schema.$ref && opts.ignoreKeywordsWithRef && (0, util_1.schemaHasRulesButRef)(schema, self.RULES)) {
         self.logger.warn(`$ref: keywords ignored in schema at path "${errSchemaPath}"`);
       }
     }
-    function checkNoDefault(it) {
-      const { schema, opts } = it;
+    function checkNoDefault(it2) {
+      const { schema, opts } = it2;
       if (schema.default !== void 0 && opts.useDefaults && opts.strictSchema) {
-        (0, util_1.checkStrictMode)(it, "default is ignored in the schema root");
+        (0, util_1.checkStrictMode)(it2, "default is ignored in the schema root");
       }
     }
-    function updateContext(it) {
-      const schId = it.schema[it.opts.schemaId];
+    function updateContext(it2) {
+      const schId = it2.schema[it2.opts.schemaId];
       if (schId)
-        it.baseId = (0, resolve_1.resolveUrl)(it.opts.uriResolver, it.baseId, schId);
+        it2.baseId = (0, resolve_1.resolveUrl)(it2.opts.uriResolver, it2.baseId, schId);
     }
-    function checkAsyncSchema(it) {
-      if (it.schema.$async && !it.schemaEnv.$async)
+    function checkAsyncSchema(it2) {
+      if (it2.schema.$async && !it2.schemaEnv.$async)
         throw new Error("async schema in sync schema");
     }
     function commentKeyword({ gen, schemaEnv, schema, errSchemaPath, opts }) {
@@ -9812,14 +9812,14 @@ var require_validate = __commonJS({
         gen.code((0, codegen_1._)`${names_1.default.self}.opts.$comment(${msg}, ${schemaPath}, ${rootName}.schema)`);
       }
     }
-    function returnResults(it) {
-      const { gen, schemaEnv, validateName, ValidationError, opts } = it;
+    function returnResults(it2) {
+      const { gen, schemaEnv, validateName, ValidationError, opts } = it2;
       if (schemaEnv.$async) {
         gen.if((0, codegen_1._)`${names_1.default.errors} === 0`, () => gen.return(names_1.default.data), () => gen.throw((0, codegen_1._)`new ${ValidationError}(${names_1.default.vErrors})`));
       } else {
         gen.assign((0, codegen_1._)`${validateName}.errors`, names_1.default.vErrors);
         if (opts.unevaluated)
-          assignEvaluated(it);
+          assignEvaluated(it2);
         gen.return((0, codegen_1._)`${names_1.default.errors} === 0`);
       }
     }
@@ -9829,15 +9829,15 @@ var require_validate = __commonJS({
       if (items instanceof codegen_1.Name)
         gen.assign((0, codegen_1._)`${evaluated}.items`, items);
     }
-    function schemaKeywords(it, types, typeErrors, errsCount) {
-      const { gen, schema, data, allErrors, opts, self } = it;
+    function schemaKeywords(it2, types, typeErrors, errsCount) {
+      const { gen, schema, data, allErrors, opts, self } = it2;
       const { RULES } = self;
       if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES))) {
-        gen.block(() => keywordCode(it, "$ref", RULES.all.$ref.definition));
+        gen.block(() => keywordCode(it2, "$ref", RULES.all.$ref.definition));
         return;
       }
       if (!opts.jtd)
-        checkStrictTypes(it, types);
+        checkStrictTypes(it2, types);
       gen.block(() => {
         for (const group of RULES.rules)
           groupKeywords(group);
@@ -9848,66 +9848,66 @@ var require_validate = __commonJS({
           return;
         if (group.type) {
           gen.if((0, dataType_2.checkDataType)(group.type, data, opts.strictNumbers));
-          iterateKeywords(it, group);
+          iterateKeywords(it2, group);
           if (types.length === 1 && types[0] === group.type && typeErrors) {
             gen.else();
-            (0, dataType_2.reportTypeError)(it);
+            (0, dataType_2.reportTypeError)(it2);
           }
           gen.endIf();
         } else {
-          iterateKeywords(it, group);
+          iterateKeywords(it2, group);
         }
         if (!allErrors)
           gen.if((0, codegen_1._)`${names_1.default.errors} === ${errsCount || 0}`);
       }
     }
-    function iterateKeywords(it, group) {
-      const { gen, schema, opts: { useDefaults } } = it;
+    function iterateKeywords(it2, group) {
+      const { gen, schema, opts: { useDefaults } } = it2;
       if (useDefaults)
-        (0, defaults_1.assignDefaults)(it, group.type);
+        (0, defaults_1.assignDefaults)(it2, group.type);
       gen.block(() => {
         for (const rule of group.rules) {
           if ((0, applicability_1.shouldUseRule)(schema, rule)) {
-            keywordCode(it, rule.keyword, rule.definition, group.type);
+            keywordCode(it2, rule.keyword, rule.definition, group.type);
           }
         }
       });
     }
-    function checkStrictTypes(it, types) {
-      if (it.schemaEnv.meta || !it.opts.strictTypes)
+    function checkStrictTypes(it2, types) {
+      if (it2.schemaEnv.meta || !it2.opts.strictTypes)
         return;
-      checkContextTypes(it, types);
-      if (!it.opts.allowUnionTypes)
-        checkMultipleTypes(it, types);
-      checkKeywordTypes(it, it.dataTypes);
+      checkContextTypes(it2, types);
+      if (!it2.opts.allowUnionTypes)
+        checkMultipleTypes(it2, types);
+      checkKeywordTypes(it2, it2.dataTypes);
     }
-    function checkContextTypes(it, types) {
+    function checkContextTypes(it2, types) {
       if (!types.length)
         return;
-      if (!it.dataTypes.length) {
-        it.dataTypes = types;
+      if (!it2.dataTypes.length) {
+        it2.dataTypes = types;
         return;
       }
       types.forEach((t) => {
-        if (!includesType(it.dataTypes, t)) {
-          strictTypesError(it, `type "${t}" not allowed by context "${it.dataTypes.join(",")}"`);
+        if (!includesType(it2.dataTypes, t)) {
+          strictTypesError(it2, `type "${t}" not allowed by context "${it2.dataTypes.join(",")}"`);
         }
       });
-      narrowSchemaTypes(it, types);
+      narrowSchemaTypes(it2, types);
     }
-    function checkMultipleTypes(it, ts) {
+    function checkMultipleTypes(it2, ts) {
       if (ts.length > 1 && !(ts.length === 2 && ts.includes("null"))) {
-        strictTypesError(it, "use allowUnionTypes to allow union type keyword");
+        strictTypesError(it2, "use allowUnionTypes to allow union type keyword");
       }
     }
-    function checkKeywordTypes(it, ts) {
-      const rules = it.self.RULES.all;
+    function checkKeywordTypes(it2, ts) {
+      const rules = it2.self.RULES.all;
       for (const keyword in rules) {
         const rule = rules[keyword];
-        if (typeof rule == "object" && (0, applicability_1.shouldUseRule)(it.schema, rule)) {
+        if (typeof rule == "object" && (0, applicability_1.shouldUseRule)(it2.schema, rule)) {
           const { type } = rule.definition;
           if (type.length && !type.some((t) => hasApplicableType(ts, t))) {
-            strictTypesError(it, `missing type "${type.join(",")}" for keyword "${keyword}"`);
+            strictTypesError(it2, `missing type "${type.join(",")}" for keyword "${keyword}"`);
           }
         }
       }
@@ -9918,38 +9918,38 @@ var require_validate = __commonJS({
     function includesType(ts, t) {
       return ts.includes(t) || t === "integer" && ts.includes("number");
     }
-    function narrowSchemaTypes(it, withTypes) {
+    function narrowSchemaTypes(it2, withTypes) {
       const ts = [];
-      for (const t of it.dataTypes) {
+      for (const t of it2.dataTypes) {
         if (includesType(withTypes, t))
           ts.push(t);
         else if (withTypes.includes("integer") && t === "number")
           ts.push("integer");
       }
-      it.dataTypes = ts;
+      it2.dataTypes = ts;
     }
-    function strictTypesError(it, msg) {
-      const schemaPath = it.schemaEnv.baseId + it.errSchemaPath;
+    function strictTypesError(it2, msg) {
+      const schemaPath = it2.schemaEnv.baseId + it2.errSchemaPath;
       msg += ` at "${schemaPath}" (strictTypes)`;
-      (0, util_1.checkStrictMode)(it, msg, it.opts.strictTypes);
+      (0, util_1.checkStrictMode)(it2, msg, it2.opts.strictTypes);
     }
     var KeywordCxt = class {
-      constructor(it, def, keyword) {
-        (0, keyword_1.validateKeywordUsage)(it, def, keyword);
-        this.gen = it.gen;
-        this.allErrors = it.allErrors;
+      constructor(it2, def, keyword) {
+        (0, keyword_1.validateKeywordUsage)(it2, def, keyword);
+        this.gen = it2.gen;
+        this.allErrors = it2.allErrors;
         this.keyword = keyword;
-        this.data = it.data;
-        this.schema = it.schema[keyword];
-        this.$data = def.$data && it.opts.$data && this.schema && this.schema.$data;
-        this.schemaValue = (0, util_1.schemaRefOrVal)(it, this.schema, keyword, this.$data);
+        this.data = it2.data;
+        this.schema = it2.schema[keyword];
+        this.$data = def.$data && it2.opts.$data && this.schema && this.schema.$data;
+        this.schemaValue = (0, util_1.schemaRefOrVal)(it2, this.schema, keyword, this.$data);
         this.schemaType = def.schemaType;
-        this.parentSchema = it.schema;
+        this.parentSchema = it2.schema;
         this.params = {};
-        this.it = it;
+        this.it = it2;
         this.def = def;
         if (this.$data) {
-          this.schemaCode = it.gen.const("vSchema", getData(this.$data, it));
+          this.schemaCode = it2.gen.const("vSchema", getData(this.$data, it2));
         } else {
           this.schemaCode = this.schemaValue;
           if (!(0, keyword_1.validSchemaType)(this.schema, def.schemaType, def.allowUndefined)) {
@@ -9957,7 +9957,7 @@ var require_validate = __commonJS({
           }
         }
         if ("code" in def ? def.trackErrors : def.errors !== false) {
-          this.errsCount = it.gen.const("_errs", names_1.default.errors);
+          this.errsCount = it2.gen.const("_errs", names_1.default.errors);
         }
       }
       result(condition, successAction, failAction) {
@@ -10057,14 +10057,14 @@ var require_validate = __commonJS({
         gen.else();
       }
       invalid$data() {
-        const { gen, schemaCode, schemaType, def, it } = this;
+        const { gen, schemaCode, schemaType, def, it: it2 } = this;
         return (0, codegen_1.or)(wrong$DataType(), invalid$DataSchema());
         function wrong$DataType() {
           if (schemaType.length) {
             if (!(schemaCode instanceof codegen_1.Name))
               throw new Error("ajv implementation error");
-            const st = Array.isArray(schemaType) ? schemaType : [schemaType];
-            return (0, codegen_1._)`${(0, dataType_2.checkDataTypes)(st, schemaCode, it.opts.strictNumbers, dataType_2.DataType.Wrong)}`;
+            const st2 = Array.isArray(schemaType) ? schemaType : [schemaType];
+            return (0, codegen_1._)`${(0, dataType_2.checkDataTypes)(st2, schemaCode, it2.opts.strictNumbers, dataType_2.DataType.Wrong)}`;
           }
           return codegen_1.nil;
         }
@@ -10085,27 +10085,27 @@ var require_validate = __commonJS({
         return nextContext;
       }
       mergeEvaluated(schemaCxt, toName) {
-        const { it, gen } = this;
-        if (!it.opts.unevaluated)
+        const { it: it2, gen } = this;
+        if (!it2.opts.unevaluated)
           return;
-        if (it.props !== true && schemaCxt.props !== void 0) {
-          it.props = util_1.mergeEvaluated.props(gen, schemaCxt.props, it.props, toName);
+        if (it2.props !== true && schemaCxt.props !== void 0) {
+          it2.props = util_1.mergeEvaluated.props(gen, schemaCxt.props, it2.props, toName);
         }
-        if (it.items !== true && schemaCxt.items !== void 0) {
-          it.items = util_1.mergeEvaluated.items(gen, schemaCxt.items, it.items, toName);
+        if (it2.items !== true && schemaCxt.items !== void 0) {
+          it2.items = util_1.mergeEvaluated.items(gen, schemaCxt.items, it2.items, toName);
         }
       }
       mergeValidEvaluated(schemaCxt, valid) {
-        const { it, gen } = this;
-        if (it.opts.unevaluated && (it.props !== true || it.items !== true)) {
+        const { it: it2, gen } = this;
+        if (it2.opts.unevaluated && (it2.props !== true || it2.items !== true)) {
           gen.if(valid, () => this.mergeEvaluated(schemaCxt, codegen_1.Name));
           return true;
         }
       }
     };
     exports.KeywordCxt = KeywordCxt;
-    function keywordCode(it, keyword, def, ruleType) {
-      const cxt = new KeywordCxt(it, def, keyword);
+    function keywordCode(it2, keyword, def, ruleType) {
+      const cxt = new KeywordCxt(it2, def, keyword);
       if ("code" in def) {
         def.code(cxt, ruleType);
       } else if (cxt.$data && def.validate) {
@@ -10279,28 +10279,28 @@ var require_compile = __commonJS({
         if (this.opts.code.process)
           sourceCode = this.opts.code.process(sourceCode, sch);
         const makeValidate = new Function(`${names_1.default.self}`, `${names_1.default.scope}`, sourceCode);
-        const validate = makeValidate(this, this.scope.get());
-        this.scope.value(validateName, { ref: validate });
-        validate.errors = null;
-        validate.schema = sch.schema;
-        validate.schemaEnv = sch;
+        const validate2 = makeValidate(this, this.scope.get());
+        this.scope.value(validateName, { ref: validate2 });
+        validate2.errors = null;
+        validate2.schema = sch.schema;
+        validate2.schemaEnv = sch;
         if (sch.$async)
-          validate.$async = true;
+          validate2.$async = true;
         if (this.opts.code.source === true) {
-          validate.source = { validateName, validateCode, scopeValues: gen._values };
+          validate2.source = { validateName, validateCode, scopeValues: gen._values };
         }
         if (this.opts.unevaluated) {
           const { props, items } = schemaCxt;
-          validate.evaluated = {
+          validate2.evaluated = {
             props: props instanceof codegen_1.Name ? void 0 : props,
             items: items instanceof codegen_1.Name ? void 0 : items,
             dynamicProps: props instanceof codegen_1.Name,
             dynamicItems: items instanceof codegen_1.Name
           };
-          if (validate.source)
-            validate.source.evaluated = (0, codegen_1.stringify)(validate.evaluated);
+          if (validate2.source)
+            validate2.source.evaluated = (0, codegen_1.stringify)(validate2.evaluated);
         }
-        sch.validate = validate;
+        sch.validate = validate2;
         return sch;
       } catch (e) {
         delete sch.validate;
@@ -11167,7 +11167,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse4(serialize(uri, options), options);
+        parse5(serialize(uri, options), options);
       }
       return uri;
     }
@@ -11207,8 +11207,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse4(serialize(base, options), options);
-        relative = parse4(serialize(relative, options), options);
+        base = parse5(serialize(base, options), options);
+        relative = parse5(serialize(relative, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative.scheme) {
@@ -11500,7 +11500,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse4(uri, opts) {
+    function parse5(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -11537,7 +11537,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse4
+      parse: parse5
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -11637,14 +11637,14 @@ var require_core = __commonJS({
     };
     var MAX_EXPRESSION = 200;
     function requiredOptions(o) {
-      var _a3, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0;
+      var _a3, _b, _c, _d, _e2, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0;
       const s = o.strict;
       const _optz = (_a3 = o.code) === null || _a3 === void 0 ? void 0 : _a3.optimize;
       const optimize = _optz === true || _optz === void 0 ? 1 : _optz || 0;
       const regExp = (_c = (_b = o.code) === null || _b === void 0 ? void 0 : _b.regExp) !== null && _c !== void 0 ? _c : defaultRegExp;
       const uriResolver = (_d = o.uriResolver) !== null && _d !== void 0 ? _d : uri_1.default;
       return {
-        strictSchema: (_f = (_e = o.strictSchema) !== null && _e !== void 0 ? _e : s) !== null && _f !== void 0 ? _f : true,
+        strictSchema: (_f = (_e2 = o.strictSchema) !== null && _e2 !== void 0 ? _e2 : s) !== null && _f !== void 0 ? _f : true,
         strictNumbers: (_h = (_g = o.strictNumbers) !== null && _g !== void 0 ? _g : s) !== null && _h !== void 0 ? _h : true,
         strictTypes: (_k = (_j = o.strictTypes) !== null && _j !== void 0 ? _j : s) !== null && _k !== void 0 ? _k : "log",
         strictTuples: (_m = (_l = o.strictTuples) !== null && _l !== void 0 ? _l : s) !== null && _m !== void 0 ? _m : "log",
@@ -11712,17 +11712,17 @@ var require_core = __commonJS({
         return this.opts.defaultMeta = typeof meta2 == "object" ? meta2[schemaId] || meta2 : void 0;
       }
       validate(schemaKeyRef, data) {
-        let v;
+        let v2;
         if (typeof schemaKeyRef == "string") {
-          v = this.getSchema(schemaKeyRef);
-          if (!v)
+          v2 = this.getSchema(schemaKeyRef);
+          if (!v2)
             throw new Error(`no schema with key or ref "${schemaKeyRef}"`);
         } else {
-          v = this.compile(schemaKeyRef);
+          v2 = this.compile(schemaKeyRef);
         }
-        const valid = v(data);
-        if (!("$async" in v))
-          this.errors = v.errors;
+        const valid = v2(data);
+        if (!("$async" in v2))
+          this.errors = v2.errors;
         return valid;
       }
       compile(schema, _meta) {
@@ -11919,7 +11919,7 @@ var require_core = __commonJS({
           type: (0, dataType_1.getJSONTypes)(def.type),
           schemaType: (0, dataType_1.getJSONTypes)(def.schemaType)
         };
-        (0, util_1.eachItem)(keyword, definition.type.length === 0 ? (k) => addRule.call(this, k, definition) : (k) => definition.type.forEach((t) => addRule.call(this, k, definition, t)));
+        (0, util_1.eachItem)(keyword, definition.type.length === 0 ? (k2) => addRule.call(this, k2, definition) : (k2) => definition.type.forEach((t) => addRule.call(this, k2, definition, t)));
         return this;
       }
       getKeyword(keyword) {
@@ -12198,14 +12198,14 @@ var require_ref = __commonJS({
       keyword: "$ref",
       schemaType: "string",
       code(cxt) {
-        const { gen, schema: $ref, it } = cxt;
-        const { baseId, schemaEnv: env, validateName, opts, self } = it;
+        const { gen, schema: $ref, it: it2 } = cxt;
+        const { baseId, schemaEnv: env, validateName, opts, self } = it2;
         const { root } = env;
         if (($ref === "#" || $ref === "#/") && baseId === root.baseId)
           return callRootRef();
         const schOrEnv = compile_1.resolveRef.call(self, root, baseId, $ref);
         if (schOrEnv === void 0)
-          throw new ref_error_1.default(it.opts.uriResolver, baseId, $ref);
+          throw new ref_error_1.default(it2.opts.uriResolver, baseId, $ref);
         if (schOrEnv instanceof compile_1.SchemaEnv)
           return callValidate(schOrEnv);
         return inlineRefSchema(schOrEnv);
@@ -12216,8 +12216,8 @@ var require_ref = __commonJS({
           return callRef(cxt, (0, codegen_1._)`${rootName}.validate`, root, root.$async);
         }
         function callValidate(sch) {
-          const v = getValidate(cxt, sch);
-          callRef(cxt, v, sch, sch.$async);
+          const v2 = getValidate(cxt, sch);
+          callRef(cxt, v2, sch, sch.$async);
         }
         function inlineRefSchema(sch) {
           const schName = gen.scopeValue("schema", opts.code.source === true ? { ref: sch, code: (0, codegen_1.stringify)(sch) } : { ref: sch });
@@ -12239,9 +12239,9 @@ var require_ref = __commonJS({
       return sch.validate ? gen.scopeValue("validate", { ref: sch.validate }) : (0, codegen_1._)`${gen.scopeValue("wrapper", { ref: sch })}.validate`;
     }
     exports.getValidate = getValidate;
-    function callRef(cxt, v, sch, $async) {
-      const { gen, it } = cxt;
-      const { allErrors, schemaEnv: env, opts } = it;
+    function callRef(cxt, v2, sch, $async) {
+      const { gen, it: it2 } = cxt;
+      const { allErrors, schemaEnv: env, opts } = it2;
       const passCxt = opts.passContext ? names_1.default.this : codegen_1.nil;
       if ($async)
         callAsyncRef();
@@ -12252,12 +12252,12 @@ var require_ref = __commonJS({
           throw new Error("async schema referenced by sync schema");
         const valid = gen.let("valid");
         gen.try(() => {
-          gen.code((0, codegen_1._)`await ${(0, code_1.callValidateCode)(cxt, v, passCxt)}`);
-          addEvaluatedFrom(v);
+          gen.code((0, codegen_1._)`await ${(0, code_1.callValidateCode)(cxt, v2, passCxt)}`);
+          addEvaluatedFrom(v2);
           if (!allErrors)
             gen.assign(valid, true);
         }, (e) => {
-          gen.if((0, codegen_1._)`!(${e} instanceof ${it.ValidationError})`, () => gen.throw(e));
+          gen.if((0, codegen_1._)`!(${e} instanceof ${it2.ValidationError})`, () => gen.throw(e));
           addErrorsFrom(e);
           if (!allErrors)
             gen.assign(valid, false);
@@ -12265,7 +12265,7 @@ var require_ref = __commonJS({
         cxt.ok(valid);
       }
       function callSyncRef() {
-        cxt.result((0, code_1.callValidateCode)(cxt, v, passCxt), () => addEvaluatedFrom(v), () => addErrorsFrom(v));
+        cxt.result((0, code_1.callValidateCode)(cxt, v2, passCxt), () => addEvaluatedFrom(v2), () => addErrorsFrom(v2));
       }
       function addErrorsFrom(source) {
         const errs = (0, codegen_1._)`${source}.errors`;
@@ -12274,27 +12274,27 @@ var require_ref = __commonJS({
       }
       function addEvaluatedFrom(source) {
         var _a3;
-        if (!it.opts.unevaluated)
+        if (!it2.opts.unevaluated)
           return;
         const schEvaluated = (_a3 = sch === null || sch === void 0 ? void 0 : sch.validate) === null || _a3 === void 0 ? void 0 : _a3.evaluated;
-        if (it.props !== true) {
+        if (it2.props !== true) {
           if (schEvaluated && !schEvaluated.dynamicProps) {
             if (schEvaluated.props !== void 0) {
-              it.props = util_1.mergeEvaluated.props(gen, schEvaluated.props, it.props);
+              it2.props = util_1.mergeEvaluated.props(gen, schEvaluated.props, it2.props);
             }
           } else {
             const props = gen.var("props", (0, codegen_1._)`${source}.evaluated.props`);
-            it.props = util_1.mergeEvaluated.props(gen, props, it.props, codegen_1.Name);
+            it2.props = util_1.mergeEvaluated.props(gen, props, it2.props, codegen_1.Name);
           }
         }
-        if (it.items !== true) {
+        if (it2.items !== true) {
           if (schEvaluated && !schEvaluated.dynamicItems) {
             if (schEvaluated.items !== void 0) {
-              it.items = util_1.mergeEvaluated.items(gen, schEvaluated.items, it.items);
+              it2.items = util_1.mergeEvaluated.items(gen, schEvaluated.items, it2.items);
             }
           } else {
             const items = gen.var("items", (0, codegen_1._)`${source}.evaluated.items`);
-            it.items = util_1.mergeEvaluated.items(gen, items, it.items, codegen_1.Name);
+            it2.items = util_1.mergeEvaluated.items(gen, items, it2.items, codegen_1.Name);
           }
         }
       }
@@ -12374,8 +12374,8 @@ var require_multipleOf = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, schemaCode, it } = cxt;
-        const prec = it.opts.multipleOfPrecision;
+        const { gen, data, schemaCode, it: it2 } = cxt;
+        const prec = it2.opts.multipleOfPrecision;
         const res = gen.let("res");
         const invalid = prec ? (0, codegen_1._)`Math.abs(Math.round(${res}) - ${res}) > 1e-${prec}` : (0, codegen_1._)`${res} !== parseInt(${res})`;
         cxt.fail$data((0, codegen_1._)`(${schemaCode} === 0 || (${res} = ${data}/${schemaCode}, ${invalid}))`);
@@ -12433,9 +12433,9 @@ var require_limitLength = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { keyword, data, schemaCode, it } = cxt;
+        const { keyword, data, schemaCode, it: it2 } = cxt;
         const op = keyword === "maxLength" ? codegen_1.operators.GT : codegen_1.operators.LT;
-        const len = it.opts.unicode === false ? (0, codegen_1._)`${data}.length` : (0, codegen_1._)`${(0, util_1.useFunc)(cxt.gen, ucs2length_1.default)}(${data})`;
+        const len = it2.opts.unicode === false ? (0, codegen_1._)`${data}.length` : (0, codegen_1._)`${(0, util_1.useFunc)(cxt.gen, ucs2length_1.default)}(${data})`;
         cxt.fail$data((0, codegen_1._)`${len} ${op} ${schemaCode}`);
       }
     };
@@ -12462,10 +12462,10 @@ var require_pattern = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
-        const u = it.opts.unicodeRegExp ? "u" : "";
+        const { gen, data, $data, schema, schemaCode, it: it2 } = cxt;
+        const u = it2.opts.unicodeRegExp ? "u" : "";
         if ($data) {
-          const { regExp } = it.opts.code;
+          const { regExp } = it2.opts.code;
           const regExpCode = regExp.code === "new RegExp" ? (0, codegen_1._)`new RegExp` : (0, util_1.useFunc)(gen, regExp);
           const valid = gen.let("valid");
           gen.try(() => gen.assign(valid, (0, codegen_1._)`${regExpCode}(${schemaCode}, ${u}).test(${data})`), () => gen.assign(valid, false));
@@ -12528,12 +12528,12 @@ var require_required = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, schemaCode, data, $data, it } = cxt;
-        const { opts } = it;
+        const { gen, schema, schemaCode, data, $data, it: it2 } = cxt;
+        const { opts } = it2;
         if (!$data && schema.length === 0)
           return;
         const useLoop = schema.length >= opts.loopRequired;
-        if (it.allErrors)
+        if (it2.allErrors)
           allErrorsMode();
         else
           exitOnErrorMode();
@@ -12542,9 +12542,9 @@ var require_required = __commonJS({
           const { definedProperties } = cxt.it;
           for (const requiredKey of schema) {
             if ((props === null || props === void 0 ? void 0 : props[requiredKey]) === void 0 && !definedProperties.has(requiredKey)) {
-              const schemaPath = it.schemaEnv.baseId + it.errSchemaPath;
+              const schemaPath = it2.schemaEnv.baseId + it2.errSchemaPath;
               const msg = `required property "${requiredKey}" is not defined at "${schemaPath}" (strictRequired)`;
-              (0, util_1.checkStrictMode)(it, msg, it.opts.strictRequired);
+              (0, util_1.checkStrictMode)(it2, msg, it2.opts.strictRequired);
             }
           }
         }
@@ -12641,8 +12641,8 @@ var require_uniqueItems = __commonJS({
     var util_1 = require_util();
     var equal_1 = require_equal();
     var error2 = {
-      message: ({ params: { i, j } }) => (0, codegen_1.str)`must NOT have duplicate items (items ## ${j} and ${i} are identical)`,
-      params: ({ params: { i, j } }) => (0, codegen_1._)`{i: ${i}, j: ${j}}`
+      message: ({ params: { i, j: j2 } }) => (0, codegen_1.str)`must NOT have duplicate items (items ## ${j2} and ${i} are identical)`,
+      params: ({ params: { i, j: j2 } }) => (0, codegen_1._)`{i: ${i}, j: ${j2}}`
     };
     var def = {
       keyword: "uniqueItems",
@@ -12651,7 +12651,7 @@ var require_uniqueItems = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, parentSchema, schemaCode, it } = cxt;
+        const { gen, data, $data, schema, parentSchema, schemaCode, it: it2 } = cxt;
         if (!$data && !schema)
           return;
         const valid = gen.let("valid");
@@ -12660,17 +12660,17 @@ var require_uniqueItems = __commonJS({
         cxt.ok(valid);
         function validateUniqueItems() {
           const i = gen.let("i", (0, codegen_1._)`${data}.length`);
-          const j = gen.let("j");
-          cxt.setParams({ i, j });
+          const j2 = gen.let("j");
+          cxt.setParams({ i, j: j2 });
           gen.assign(valid, true);
-          gen.if((0, codegen_1._)`${i} > 1`, () => (canOptimize() ? loopN : loopN2)(i, j));
+          gen.if((0, codegen_1._)`${i} > 1`, () => (canOptimize() ? loopN : loopN2)(i, j2));
         }
         function canOptimize() {
           return itemTypes.length > 0 && !itemTypes.some((t) => t === "object" || t === "array");
         }
-        function loopN(i, j) {
+        function loopN(i, j2) {
           const item = gen.name("item");
-          const wrongType = (0, dataType_1.checkDataTypes)(itemTypes, item, it.opts.strictNumbers, dataType_1.DataType.Wrong);
+          const wrongType = (0, dataType_1.checkDataTypes)(itemTypes, item, it2.opts.strictNumbers, dataType_1.DataType.Wrong);
           const indices = gen.const("indices", (0, codegen_1._)`{}`);
           gen.for((0, codegen_1._)`;${i}--;`, () => {
             gen.let(item, (0, codegen_1._)`${data}[${i}]`);
@@ -12678,16 +12678,16 @@ var require_uniqueItems = __commonJS({
             if (itemTypes.length > 1)
               gen.if((0, codegen_1._)`typeof ${item} == "string"`, (0, codegen_1._)`${item} += "_"`);
             gen.if((0, codegen_1._)`typeof ${indices}[${item}] == "number"`, () => {
-              gen.assign(j, (0, codegen_1._)`${indices}[${item}]`);
+              gen.assign(j2, (0, codegen_1._)`${indices}[${item}]`);
               cxt.error();
               gen.assign(valid, false).break();
             }).code((0, codegen_1._)`${indices}[${item}] = ${i}`);
           });
         }
-        function loopN2(i, j) {
+        function loopN2(i, j2) {
           const eql = (0, util_1.useFunc)(gen, equal_1.default);
           const outer = gen.name("outer");
-          gen.label(outer).for((0, codegen_1._)`;${i}--;`, () => gen.for((0, codegen_1._)`${j} = ${i}; ${j}--;`, () => gen.if((0, codegen_1._)`${eql}(${data}[${i}], ${data}[${j}])`, () => {
+          gen.label(outer).for((0, codegen_1._)`;${i}--;`, () => gen.for((0, codegen_1._)`${j2} = ${i}; ${j2}--;`, () => gen.if((0, codegen_1._)`${eql}(${data}[${i}], ${data}[${j2}])`, () => {
             cxt.error();
             gen.assign(valid, false).break(outer);
           })));
@@ -12745,10 +12745,10 @@ var require_enum = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
+        const { gen, data, $data, schema, schemaCode, it: it2 } = cxt;
         if (!$data && schema.length === 0)
           throw new Error("enum must have non-empty array");
-        const useLoop = schema.length >= it.opts.loopEnum;
+        const useLoop = schema.length >= it2.opts.loopEnum;
         let eql;
         const getEql = () => eql !== null && eql !== void 0 ? eql : eql = (0, util_1.useFunc)(gen, equal_1.default);
         let valid;
@@ -12764,7 +12764,7 @@ var require_enum = __commonJS({
         cxt.pass(valid);
         function loopEnum() {
           gen.assign(valid, false);
-          gen.forOf("v", schemaCode, (v) => gen.if((0, codegen_1._)`${getEql()}(${data}, ${v})`, () => gen.assign(valid, true).break()));
+          gen.forOf("v", schemaCode, (v2) => gen.if((0, codegen_1._)`${getEql()}(${data}, ${v2})`, () => gen.assign(valid, true).break()));
         }
         function equalCode(vSchema, i) {
           const sch = schema[i];
@@ -12833,23 +12833,23 @@ var require_additionalItems = __commonJS({
       before: "uniqueItems",
       error: error2,
       code(cxt) {
-        const { parentSchema, it } = cxt;
+        const { parentSchema, it: it2 } = cxt;
         const { items } = parentSchema;
         if (!Array.isArray(items)) {
-          (0, util_1.checkStrictMode)(it, '"additionalItems" is ignored when "items" is not an array of schemas');
+          (0, util_1.checkStrictMode)(it2, '"additionalItems" is ignored when "items" is not an array of schemas');
           return;
         }
         validateAdditionalItems(cxt, items);
       }
     };
     function validateAdditionalItems(cxt, items) {
-      const { gen, schema, data, keyword, it } = cxt;
-      it.items = true;
+      const { gen, schema, data, keyword, it: it2 } = cxt;
+      it2.items = true;
       const len = gen.const("len", (0, codegen_1._)`${data}.length`);
       if (schema === false) {
         cxt.setParams({ len: items.length });
         cxt.pass((0, codegen_1._)`${len} <= ${items.length}`);
-      } else if (typeof schema == "object" && !(0, util_1.alwaysValidSchema)(it, schema)) {
+      } else if (typeof schema == "object" && !(0, util_1.alwaysValidSchema)(it2, schema)) {
         const valid = gen.var("valid", (0, codegen_1._)`${len} <= ${items.length}`);
         gen.if((0, codegen_1.not)(valid), () => validateItems(valid));
         cxt.ok(valid);
@@ -12857,7 +12857,7 @@ var require_additionalItems = __commonJS({
       function validateItems(valid) {
         gen.forRange("i", items.length, len, (i) => {
           cxt.subschema({ keyword, dataProp: i, dataPropType: util_1.Type.Num }, valid);
-          if (!it.allErrors)
+          if (!it2.allErrors)
             gen.if((0, codegen_1.not)(valid), () => gen.break());
         });
       }
@@ -12882,25 +12882,25 @@ var require_items = __commonJS({
       schemaType: ["object", "array", "boolean"],
       before: "uniqueItems",
       code(cxt) {
-        const { schema, it } = cxt;
+        const { schema, it: it2 } = cxt;
         if (Array.isArray(schema))
           return validateTuple(cxt, "additionalItems", schema);
-        it.items = true;
-        if ((0, util_1.alwaysValidSchema)(it, schema))
+        it2.items = true;
+        if ((0, util_1.alwaysValidSchema)(it2, schema))
           return;
         cxt.ok((0, code_1.validateArray)(cxt));
       }
     };
     function validateTuple(cxt, extraItems, schArr = cxt.schema) {
-      const { gen, parentSchema, data, keyword, it } = cxt;
+      const { gen, parentSchema, data, keyword, it: it2 } = cxt;
       checkStrictTuple(parentSchema);
-      if (it.opts.unevaluated && schArr.length && it.items !== true) {
-        it.items = util_1.mergeEvaluated.items(gen, schArr.length, it.items);
+      if (it2.opts.unevaluated && schArr.length && it2.items !== true) {
+        it2.items = util_1.mergeEvaluated.items(gen, schArr.length, it2.items);
       }
       const valid = gen.name("valid");
       const len = gen.const("len", (0, codegen_1._)`${data}.length`);
       schArr.forEach((sch, i) => {
-        if ((0, util_1.alwaysValidSchema)(it, sch))
+        if ((0, util_1.alwaysValidSchema)(it2, sch))
           return;
         gen.if((0, codegen_1._)`${len} > ${i}`, () => cxt.subschema({
           keyword,
@@ -12910,12 +12910,12 @@ var require_items = __commonJS({
         cxt.ok(valid);
       });
       function checkStrictTuple(sch) {
-        const { opts, errSchemaPath } = it;
-        const l = schArr.length;
-        const fullTuple = l === sch.minItems && (l === sch.maxItems || sch[extraItems] === false);
+        const { opts, errSchemaPath } = it2;
+        const l3 = schArr.length;
+        const fullTuple = l3 === sch.minItems && (l3 === sch.maxItems || sch[extraItems] === false);
         if (opts.strictTuples && !fullTuple) {
-          const msg = `"${keyword}" is ${l}-tuple, but minItems or maxItems/${extraItems} are not specified or different at path "${errSchemaPath}"`;
-          (0, util_1.checkStrictMode)(it, msg, opts.strictTuples);
+          const msg = `"${keyword}" is ${l3}-tuple, but minItems or maxItems/${extraItems} are not specified or different at path "${errSchemaPath}"`;
+          (0, util_1.checkStrictMode)(it2, msg, opts.strictTuples);
         }
       }
     }
@@ -12961,10 +12961,10 @@ var require_items2020 = __commonJS({
       before: "uniqueItems",
       error: error2,
       code(cxt) {
-        const { schema, parentSchema, it } = cxt;
+        const { schema, parentSchema, it: it2 } = cxt;
         const { prefixItems } = parentSchema;
-        it.items = true;
-        if ((0, util_1.alwaysValidSchema)(it, schema))
+        it2.items = true;
+        if ((0, util_1.alwaysValidSchema)(it2, schema))
           return;
         if (prefixItems)
           (0, additionalItems_1.validateAdditionalItems)(cxt, prefixItems);
@@ -12995,11 +12995,11 @@ var require_contains = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, data, it } = cxt;
+        const { gen, schema, parentSchema, data, it: it2 } = cxt;
         let min;
         let max;
         const { minContains, maxContains } = parentSchema;
-        if (it.opts.next) {
+        if (it2.opts.next) {
           min = minContains === void 0 ? 1 : minContains;
           max = maxContains;
         } else {
@@ -13008,22 +13008,22 @@ var require_contains = __commonJS({
         const len = gen.const("len", (0, codegen_1._)`${data}.length`);
         cxt.setParams({ min, max });
         if (max === void 0 && min === 0) {
-          (0, util_1.checkStrictMode)(it, `"minContains" == 0 without "maxContains": "contains" keyword ignored`);
+          (0, util_1.checkStrictMode)(it2, `"minContains" == 0 without "maxContains": "contains" keyword ignored`);
           return;
         }
         if (max !== void 0 && min > max) {
-          (0, util_1.checkStrictMode)(it, `"minContains" > "maxContains" is always invalid`);
+          (0, util_1.checkStrictMode)(it2, `"minContains" > "maxContains" is always invalid`);
           cxt.fail();
           return;
         }
-        if ((0, util_1.alwaysValidSchema)(it, schema)) {
+        if ((0, util_1.alwaysValidSchema)(it2, schema)) {
           let cond = (0, codegen_1._)`${len} >= ${min}`;
           if (max !== void 0)
             cond = (0, codegen_1._)`${cond} && ${len} <= ${max}`;
           cxt.pass(cond);
           return;
         }
-        it.items = true;
+        it2.items = true;
         const valid = gen.name("valid");
         if (max === void 0 && min === 1) {
           validateItems(valid, () => gen.if(valid, () => gen.break()));
@@ -13113,7 +13113,7 @@ var require_dependencies = __commonJS({
       return [propertyDeps, schemaDeps];
     }
     function validatePropertyDeps(cxt, propertyDeps = cxt.schema) {
-      const { gen, data, it } = cxt;
+      const { gen, data, it: it2 } = cxt;
       if (Object.keys(propertyDeps).length === 0)
         return;
       const missing = gen.let("missing");
@@ -13121,13 +13121,13 @@ var require_dependencies = __commonJS({
         const deps = propertyDeps[prop];
         if (deps.length === 0)
           continue;
-        const hasProperty = (0, code_1.propertyInData)(gen, data, prop, it.opts.ownProperties);
+        const hasProperty = (0, code_1.propertyInData)(gen, data, prop, it2.opts.ownProperties);
         cxt.setParams({
           property: prop,
           depsCount: deps.length,
           deps: deps.join(", ")
         });
-        if (it.allErrors) {
+        if (it2.allErrors) {
           gen.if(hasProperty, () => {
             for (const depProp of deps) {
               (0, code_1.checkReportMissingProp)(cxt, depProp);
@@ -13142,13 +13142,13 @@ var require_dependencies = __commonJS({
     }
     exports.validatePropertyDeps = validatePropertyDeps;
     function validateSchemaDeps(cxt, schemaDeps = cxt.schema) {
-      const { gen, data, keyword, it } = cxt;
+      const { gen, data, keyword, it: it2 } = cxt;
       const valid = gen.name("valid");
       for (const prop in schemaDeps) {
-        if ((0, util_1.alwaysValidSchema)(it, schemaDeps[prop]))
+        if ((0, util_1.alwaysValidSchema)(it2, schemaDeps[prop]))
           continue;
         gen.if(
-          (0, code_1.propertyInData)(gen, data, prop, it.opts.ownProperties),
+          (0, code_1.propertyInData)(gen, data, prop, it2.opts.ownProperties),
           () => {
             const schCxt = cxt.subschema({ keyword, schemaProp: prop }, valid);
             cxt.mergeValidEvaluated(schCxt, valid);
@@ -13181,8 +13181,8 @@ var require_propertyNames = __commonJS({
       schemaType: ["object", "boolean"],
       error: error2,
       code(cxt) {
-        const { gen, schema, data, it } = cxt;
-        if ((0, util_1.alwaysValidSchema)(it, schema))
+        const { gen, schema, data, it: it2 } = cxt;
+        if ((0, util_1.alwaysValidSchema)(it2, schema))
           return;
         const valid = gen.name("valid");
         gen.forIn("key", data, (key) => {
@@ -13196,7 +13196,7 @@ var require_propertyNames = __commonJS({
           }, valid);
           gen.if((0, codegen_1.not)(valid), () => {
             cxt.error(true);
-            if (!it.allErrors)
+            if (!it2.allErrors)
               gen.break();
           });
         });
@@ -13228,12 +13228,12 @@ var require_additionalProperties = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, data, errsCount, it } = cxt;
+        const { gen, schema, parentSchema, data, errsCount, it: it2 } = cxt;
         if (!errsCount)
           throw new Error("ajv implementation error");
-        const { allErrors, opts } = it;
-        it.props = true;
-        if (opts.removeAdditional !== "all" && (0, util_1.alwaysValidSchema)(it, schema))
+        const { allErrors, opts } = it2;
+        it2.props = true;
+        if (opts.removeAdditional !== "all" && (0, util_1.alwaysValidSchema)(it2, schema))
           return;
         const props = (0, code_1.allSchemaProperties)(parentSchema.properties);
         const patProps = (0, code_1.allSchemaProperties)(parentSchema.patternProperties);
@@ -13250,7 +13250,7 @@ var require_additionalProperties = __commonJS({
         function isAdditional(key) {
           let definedProp;
           if (props.length > 8) {
-            const propsSchema = (0, util_1.schemaRefOrVal)(it, parentSchema.properties, "properties");
+            const propsSchema = (0, util_1.schemaRefOrVal)(it2, parentSchema.properties, "properties");
             definedProp = (0, code_1.isOwnProperty)(gen, propsSchema, key);
           } else if (props.length) {
             definedProp = (0, codegen_1.or)(...props.map((p) => (0, codegen_1._)`${key} === ${p}`));
@@ -13277,7 +13277,7 @@ var require_additionalProperties = __commonJS({
               gen.break();
             return;
           }
-          if (typeof schema == "object" && !(0, util_1.alwaysValidSchema)(it, schema)) {
+          if (typeof schema == "object" && !(0, util_1.alwaysValidSchema)(it2, schema)) {
             const valid = gen.name("valid");
             if (opts.removeAdditional === "failing") {
               applyAdditionalSchema(key, valid, false);
@@ -13327,18 +13327,18 @@ var require_properties = __commonJS({
       type: "object",
       schemaType: "object",
       code(cxt) {
-        const { gen, schema, parentSchema, data, it } = cxt;
-        if (it.opts.removeAdditional === "all" && parentSchema.additionalProperties === void 0) {
-          additionalProperties_1.default.code(new validate_1.KeywordCxt(it, additionalProperties_1.default, "additionalProperties"));
+        const { gen, schema, parentSchema, data, it: it2 } = cxt;
+        if (it2.opts.removeAdditional === "all" && parentSchema.additionalProperties === void 0) {
+          additionalProperties_1.default.code(new validate_1.KeywordCxt(it2, additionalProperties_1.default, "additionalProperties"));
         }
         const allProps = (0, code_1.allSchemaProperties)(schema);
         for (const prop of allProps) {
-          it.definedProperties.add(prop);
+          it2.definedProperties.add(prop);
         }
-        if (it.opts.unevaluated && allProps.length && it.props !== true) {
-          it.props = util_1.mergeEvaluated.props(gen, (0, util_1.toHash)(allProps), it.props);
+        if (it2.opts.unevaluated && allProps.length && it2.props !== true) {
+          it2.props = util_1.mergeEvaluated.props(gen, (0, util_1.toHash)(allProps), it2.props);
         }
-        const properties = allProps.filter((p) => !(0, util_1.alwaysValidSchema)(it, schema[p]));
+        const properties = allProps.filter((p) => !(0, util_1.alwaysValidSchema)(it2, schema[p]));
         if (properties.length === 0)
           return;
         const valid = gen.name("valid");
@@ -13346,9 +13346,9 @@ var require_properties = __commonJS({
           if (hasDefault(prop)) {
             applyPropertySchema(prop);
           } else {
-            gen.if((0, code_1.propertyInData)(gen, data, prop, it.opts.ownProperties));
+            gen.if((0, code_1.propertyInData)(gen, data, prop, it2.opts.ownProperties));
             applyPropertySchema(prop);
-            if (!it.allErrors)
+            if (!it2.allErrors)
               gen.else().var(valid, true);
             gen.endIf();
           }
@@ -13356,7 +13356,7 @@ var require_properties = __commonJS({
           cxt.ok(valid);
         }
         function hasDefault(prop) {
-          return it.opts.useDefaults && !it.compositeRule && schema[prop].default !== void 0;
+          return it2.opts.useDefaults && !it2.compositeRule && schema[prop].default !== void 0;
         }
         function applyPropertySchema(prop) {
           cxt.subschema({
@@ -13385,25 +13385,25 @@ var require_patternProperties = __commonJS({
       type: "object",
       schemaType: "object",
       code(cxt) {
-        const { gen, schema, data, parentSchema, it } = cxt;
-        const { opts } = it;
+        const { gen, schema, data, parentSchema, it: it2 } = cxt;
+        const { opts } = it2;
         const patterns = (0, code_1.allSchemaProperties)(schema);
-        const alwaysValidPatterns = patterns.filter((p) => (0, util_1.alwaysValidSchema)(it, schema[p]));
-        if (patterns.length === 0 || alwaysValidPatterns.length === patterns.length && (!it.opts.unevaluated || it.props === true)) {
+        const alwaysValidPatterns = patterns.filter((p) => (0, util_1.alwaysValidSchema)(it2, schema[p]));
+        if (patterns.length === 0 || alwaysValidPatterns.length === patterns.length && (!it2.opts.unevaluated || it2.props === true)) {
           return;
         }
         const checkProperties = opts.strictSchema && !opts.allowMatchingProperties && parentSchema.properties;
         const valid = gen.name("valid");
-        if (it.props !== true && !(it.props instanceof codegen_1.Name)) {
-          it.props = (0, util_2.evaluatedPropsToName)(gen, it.props);
+        if (it2.props !== true && !(it2.props instanceof codegen_1.Name)) {
+          it2.props = (0, util_2.evaluatedPropsToName)(gen, it2.props);
         }
-        const { props } = it;
+        const { props } = it2;
         validatePatternProperties();
         function validatePatternProperties() {
           for (const pat of patterns) {
             if (checkProperties)
               checkMatchingProperties(pat);
-            if (it.allErrors) {
+            if (it2.allErrors) {
               validateProperties(pat);
             } else {
               gen.var(valid, true);
@@ -13415,7 +13415,7 @@ var require_patternProperties = __commonJS({
         function checkMatchingProperties(pat) {
           for (const prop in checkProperties) {
             if (new RegExp(pat).test(prop)) {
-              (0, util_1.checkStrictMode)(it, `property ${prop} matches pattern ${pat} (use allowMatchingProperties)`);
+              (0, util_1.checkStrictMode)(it2, `property ${prop} matches pattern ${pat} (use allowMatchingProperties)`);
             }
           }
         }
@@ -13431,9 +13431,9 @@ var require_patternProperties = __commonJS({
                   dataPropType: util_2.Type.Str
                 }, valid);
               }
-              if (it.opts.unevaluated && props !== true) {
+              if (it2.opts.unevaluated && props !== true) {
                 gen.assign((0, codegen_1._)`${props}[${key}]`, true);
-              } else if (!alwaysValid && !it.allErrors) {
+              } else if (!alwaysValid && !it2.allErrors) {
                 gen.if((0, codegen_1.not)(valid), () => gen.break());
               }
             });
@@ -13456,8 +13456,8 @@ var require_not = __commonJS({
       schemaType: ["object", "boolean"],
       trackErrors: true,
       code(cxt) {
-        const { gen, schema, it } = cxt;
-        if ((0, util_1.alwaysValidSchema)(it, schema)) {
+        const { gen, schema, it: it2 } = cxt;
+        if ((0, util_1.alwaysValidSchema)(it2, schema)) {
           cxt.fail();
           return;
         }
@@ -13510,10 +13510,10 @@ var require_oneOf = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, schema, parentSchema, it } = cxt;
+        const { gen, schema, parentSchema, it: it2 } = cxt;
         if (!Array.isArray(schema))
           throw new Error("ajv implementation error");
-        if (it.opts.discriminator && parentSchema.discriminator)
+        if (it2.opts.discriminator && parentSchema.discriminator)
           return;
         const schArr = schema;
         const valid = gen.let("valid", false);
@@ -13525,7 +13525,7 @@ var require_oneOf = __commonJS({
         function validateOneOf() {
           schArr.forEach((sch, i) => {
             let schCxt;
-            if ((0, util_1.alwaysValidSchema)(it, sch)) {
+            if ((0, util_1.alwaysValidSchema)(it2, sch)) {
               gen.var(schValid, true);
             } else {
               schCxt = cxt.subschema({
@@ -13561,12 +13561,12 @@ var require_allOf = __commonJS({
       keyword: "allOf",
       schemaType: "array",
       code(cxt) {
-        const { gen, schema, it } = cxt;
+        const { gen, schema, it: it2 } = cxt;
         if (!Array.isArray(schema))
           throw new Error("ajv implementation error");
         const valid = gen.name("valid");
         schema.forEach((sch, i) => {
-          if ((0, util_1.alwaysValidSchema)(it, sch))
+          if ((0, util_1.alwaysValidSchema)(it2, sch))
             return;
           const schCxt = cxt.subschema({ keyword: "allOf", schemaProp: i }, valid);
           cxt.ok(valid);
@@ -13595,12 +13595,12 @@ var require_if = __commonJS({
       trackErrors: true,
       error: error2,
       code(cxt) {
-        const { gen, parentSchema, it } = cxt;
+        const { gen, parentSchema, it: it2 } = cxt;
         if (parentSchema.then === void 0 && parentSchema.else === void 0) {
-          (0, util_1.checkStrictMode)(it, '"if" without "then" and "else" is ignored');
+          (0, util_1.checkStrictMode)(it2, '"if" without "then" and "else" is ignored');
         }
-        const hasThen = hasSchema(it, "then");
-        const hasElse = hasSchema(it, "else");
+        const hasThen = hasSchema(it2, "then");
+        const hasElse = hasSchema(it2, "else");
         if (!hasThen && !hasElse)
           return;
         const valid = gen.let("valid", true);
@@ -13639,9 +13639,9 @@ var require_if = __commonJS({
         }
       }
     };
-    function hasSchema(it, keyword) {
-      const schema = it.schema[keyword];
-      return schema !== void 0 && !(0, util_1.alwaysValidSchema)(it, schema);
+    function hasSchema(it2, keyword) {
+      const schema = it2.schema[keyword];
+      return schema !== void 0 && !(0, util_1.alwaysValidSchema)(it2, schema);
     }
     exports.default = def;
   }
@@ -13656,9 +13656,9 @@ var require_thenElse = __commonJS({
     var def = {
       keyword: ["then", "else"],
       schemaType: ["object", "boolean"],
-      code({ keyword, parentSchema, it }) {
+      code({ keyword, parentSchema, it: it2 }) {
         if (parentSchema.if === void 0)
-          (0, util_1.checkStrictMode)(it, `"${keyword}" without "if" is ignored`);
+          (0, util_1.checkStrictMode)(it2, `"${keyword}" without "if" is ignored`);
       }
     };
     exports.default = def;
@@ -13730,8 +13730,8 @@ var require_format = __commonJS({
       $data: true,
       error: error2,
       code(cxt, ruleType) {
-        const { gen, data, $data, schema, schemaCode, it } = cxt;
-        const { opts, errSchemaPath, schemaEnv, self } = it;
+        const { gen, data, $data, schema, schemaCode, it: it2 } = cxt;
+        const { opts, errSchemaPath, schemaEnv, self } = it2;
         if (!opts.validateFormats)
           return;
         if ($data)
@@ -13893,9 +13893,9 @@ var require_discriminator = __commonJS({
       schemaType: "object",
       error: error2,
       code(cxt) {
-        const { gen, data, schema, parentSchema, it } = cxt;
+        const { gen, data, schema, parentSchema, it: it2 } = cxt;
         const { oneOf } = parentSchema;
-        if (!it.opts.discriminator) {
+        if (!it2.opts.discriminator) {
           throw new Error("discriminator: requires discriminator option");
         }
         const tagName = schema.propertyName;
@@ -13933,13 +13933,13 @@ var require_discriminator = __commonJS({
           let tagRequired = true;
           for (let i = 0; i < oneOf.length; i++) {
             let sch = oneOf[i];
-            if ((sch === null || sch === void 0 ? void 0 : sch.$ref) && !(0, util_1.schemaHasRulesButRef)(sch, it.self.RULES)) {
+            if ((sch === null || sch === void 0 ? void 0 : sch.$ref) && !(0, util_1.schemaHasRulesButRef)(sch, it2.self.RULES)) {
               const ref = sch.$ref;
-              sch = compile_1.resolveRef.call(it.self, it.schemaEnv.root, it.baseId, ref);
+              sch = compile_1.resolveRef.call(it2.self, it2.schemaEnv.root, it2.baseId, ref);
               if (sch instanceof compile_1.SchemaEnv)
                 sch = sch.schema;
               if (sch === void 0)
-                throw new ref_error_1.default(it.opts.uriResolver, it.baseId, ref);
+                throw new ref_error_1.default(it2.opts.uriResolver, it2.baseId, ref);
             }
             const propSch = (_a3 = sch === null || sch === void 0 ? void 0 : sch.properties) === null || _a3 === void 0 ? void 0 : _a3[tagName];
             if (typeof propSch != "object") {
@@ -14150,7 +14150,7 @@ var require_ajv = __commonJS({
     var Ajv2 = class extends core_1.default {
       _addVocabularies() {
         super._addVocabularies();
-        draft7_1.default.forEach((v) => this.addVocabulary(v));
+        draft7_1.default.forEach((v2) => this.addVocabulary(v2));
         if (this.opts.discriminator)
           this.addKeyword(discriminator_1.default);
       }
@@ -14211,8 +14211,8 @@ var require_formats = __commonJS({
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.formatNames = exports.fastFormats = exports.fullFormats = void 0;
-    function fmtDef(validate, compare) {
-      return { validate, compare };
+    function fmtDef(validate2, compare) {
+      return { validate: validate2, compare };
     }
     exports.fullFormats = {
       // date: http://tools.ietf.org/html/rfc3339#section-5.6
@@ -14434,11 +14434,11 @@ var require_limit = __commonJS({
       $data: true,
       error: error2,
       code(cxt) {
-        const { gen, data, schemaCode, keyword, it } = cxt;
-        const { opts, self } = it;
+        const { gen, data, schemaCode, keyword, it: it2 } = cxt;
+        const { opts, self } = it2;
         if (!opts.validateFormats)
           return;
-        const fCxt = new ajv_1.KeywordCxt(it, self.RULES.all.format.definition, "format");
+        const fCxt = new ajv_1.KeywordCxt(it2, self.RULES.all.format.definition, "format");
         if (fCxt.$data)
           validate$DataFormat();
         else
@@ -14504,17 +14504,17 @@ var require_dist2 = __commonJS({
     };
     formatsPlugin.get = (name, mode = "full") => {
       const formats = mode === "fast" ? formats_1.fastFormats : formats_1.fullFormats;
-      const f = formats[name];
-      if (!f)
+      const f2 = formats[name];
+      if (!f2)
         throw new Error(`Unknown format "${name}"`);
-      return f;
+      return f2;
     };
     function addFormats(ajv, list, fs, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
-      for (const f of list)
-        ajv.addFormat(f, fs[f]);
+      for (const f2 of list)
+        ajv.addFormat(f2, fs[f2]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -14524,7 +14524,7 @@ var require_dist2 = __commonJS({
 
 // plugins/kxm/src/extension.ts
 import { spawnSync as spawnSync4 } from "node:child_process";
-import { existsSync as existsSync13, mkdirSync as mkdirSync9, readFileSync as readFileSync14, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync15, renameSync as renameSync5, rmSync as rmSync4, writeFileSync as writeFileSync7 } from "node:fs";
 import { dirname as dirname8, join as join15 } from "node:path";
 
 // plugins/kxm/src/commands.ts
@@ -16259,6 +16259,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   const userConfigFile = join2(userDir, "config.yaml");
   const repoDir = repoConfigDirectory(repoRoot);
   const repoConfigFile = join2(repoDir, "config.yaml");
+  const includeProject = options.layers !== "user";
   let userRaw = {};
   let userLoadedPath;
   if (existsSync2(userConfigFile)) {
@@ -16272,7 +16273,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   }
   let repoRaw = {};
   let repoLoadedPath;
-  if (existsSync2(repoConfigFile)) {
+  if (includeProject && existsSync2(repoConfigFile)) {
     try {
       const text = readFileSync2(repoConfigFile, "utf8");
       repoRaw = (0, import_yaml.parse)(text) ?? {};
@@ -16299,6 +16300,80 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
       repoConfigPath: repoLoadedPath
     }
   };
+}
+function getKxmConfigValue(config2, keyPath) {
+  const parts = keyPath.split(".");
+  let current = config2;
+  for (const part of parts) {
+    if (!current || typeof current !== "object") return void 0;
+    current = current[part];
+  }
+  return current;
+}
+function kxmConfigFileForScope(repoRoot, scope, userConfigDir) {
+  return scope === "user" ? join2(userConfigDirectory(userConfigDir), "config.yaml") : join2(repoConfigDirectory(repoRoot), "config.yaml");
+}
+function configKeyParts(keyPath) {
+  const parts = keyPath.split(".");
+  if (parts.some((part) => !part || part === "__proto__" || part === "prototype" || part === "constructor")) {
+    throw new Error("invalid config key path");
+  }
+  return parts;
+}
+function readConfigFile(targetFile) {
+  let existing = {};
+  if (existsSync2(targetFile)) {
+    try {
+      existing = (0, import_yaml.parse)(readFileSync2(targetFile, "utf8")) ?? {};
+    } catch {
+      existing = {};
+    }
+  }
+  return existing;
+}
+function writeConfigFile(targetFile, value) {
+  mkdirSync2(dirname2(targetFile), { recursive: true });
+  writeFileSync2(targetFile, (0, import_yaml.stringify)(value).trim() + "\n", "utf8");
+}
+function setKxmConfigValue(repoRoot, keyPath, value, options = {}) {
+  const targetFile = kxmConfigFileForScope(repoRoot, options.scope ?? "project", options.userConfigDir);
+  const existing = readConfigFile(targetFile);
+  const parts = configKeyParts(keyPath);
+  let cursor = existing;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    if (!cursor[p] || typeof cursor[p] !== "object") {
+      cursor[p] = {};
+    }
+    cursor = cursor[p];
+  }
+  cursor[parts[parts.length - 1]] = value;
+  if (parts[0] === "hub") normalizeHubConfig(existing.hub);
+  if (!options.dryRun) writeConfigFile(targetFile, existing);
+  return { file: targetFile };
+}
+function deleteKxmConfigValue(repoRoot, keyPath, options = {}) {
+  const targetFile = kxmConfigFileForScope(repoRoot, options.scope ?? "project", options.userConfigDir);
+  if (!existsSync2(targetFile)) return false;
+  const existing = readConfigFile(targetFile);
+  const parts = configKeyParts(keyPath);
+  const parents = [existing];
+  let cursor = existing;
+  for (const part of parts.slice(0, -1)) {
+    const next = cursor[part];
+    if (!next || typeof next !== "object" || Array.isArray(next)) return false;
+    cursor = next;
+    parents.push(cursor);
+  }
+  const leaf = parts[parts.length - 1];
+  if (!Object.prototype.hasOwnProperty.call(cursor, leaf)) return false;
+  delete cursor[leaf];
+  for (let i = parents.length - 1; i > 0; i -= 1) {
+    if (Object.keys(parents[i]).length > 0) break;
+    delete parents[i - 1][parts[i - 1]];
+  }
+  writeConfigFile(targetFile, existing);
+  return true;
 }
 
 // plugins/kxm/src/hub-autostart.ts
@@ -18417,7 +18492,7 @@ function stableUuid(seed) {
   const bytes = createHash3("sha1").update(seed).digest().subarray(0, 16);
   bytes[6] = bytes[6] & 15 | 80;
   bytes[8] = bytes[8] & 63 | 128;
-  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const hex = [...bytes].map((b2) => b2.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 var sessionTrajectoryMap = /* @__PURE__ */ new Map();
@@ -19654,12 +19729,12 @@ function parseGeminiVersion(id) {
   if (!match) return 0;
   return Number(match[1]) * 1e3 + Number(match[2] || 0);
 }
-function comparePublicModels(a, b) {
+function comparePublicModels(a, b2) {
   const rankA = modelRank(a.id);
-  const rankB = modelRank(b.id);
+  const rankB = modelRank(b2.id);
   if (rankA[0] !== rankB[0]) return rankA[0] - rankB[0];
   if (rankA[1] !== rankB[1]) return rankA[1] - rankB[1];
-  return a.id.localeCompare(b.id);
+  return a.id.localeCompare(b2.id);
 }
 function modelRank(id) {
   const version2 = parseGeminiVersion(id);
@@ -19956,7 +20031,7 @@ function convertMessages(model, context, runtimeModel) {
       }
       const parts = [];
       const isSameModel = msg.provider === PROVIDER_ID && msg.model === model.id;
-      const toolCalls = msg.content.filter((b) => b.type === "toolCall");
+      const toolCalls = msg.content.filter((b2) => b2.type === "toolCall");
       const firstCallHasSig = toolCalls.length > 0 && isValidThoughtSignature(toolCalls[0]?.thoughtSignature);
       const allSigsValid = toolCalls.every(
         (tc) => !tc.thoughtSignature || isValidThoughtSignature(tc.thoughtSignature)
@@ -20189,7 +20264,7 @@ function dereferenceSchema(schema, rootSchema = schema, refStack = /* @__PURE__ 
       path,
       depth + 1
     );
-    const { $ref: _, ...siblings } = s;
+    const { $ref: _2, ...siblings } = s;
     const siblingResult = dereferenceSchema(
       siblings,
       rootSchema,
@@ -20335,7 +20410,7 @@ function convertTools(tools, useLegacyParameters = false) {
   const functionDeclarations = tools.flatMap((tool) => {
     const dereferenced = dereferenceSchema(tool.parameters);
     if (dereferenced.issues.length > 0) {
-      const detail = dereferenced.issues.map((issue2) => `${issue2.path} (${issue2.ref}: ${issue2.reason})`).join(", ");
+      const detail = dereferenced.issues.map((issue3) => `${issue3.path} (${issue3.ref}: ${issue3.reason})`).join(", ");
       warnings.push(`Skipped tool '${tool.name}' due to unresolved schema reference: ${detail}`);
       return [];
     }
@@ -20409,7 +20484,7 @@ function buildRequest(model, context, projectId, options, runtimeModel) {
   const step = Math.max(1, request.contents.length);
   const lastStepIndex = String(Math.max(0, request.contents.length - 1));
   const requestIndex = context.messages?.filter(
-    (m) => m.role === "assistant" && m.stopReason !== "error" && m.stopReason !== "aborted"
+    (m2) => m2.role === "assistant" && m2.stopReason !== "error" && m2.stopReason !== "aborted"
   ).length ?? 0;
   const { conversationId, trajectoryId } = resolveSessionTrajectory(context);
   const envelope = antigravityRequestEnvelope(runtimeModel, {
@@ -20737,7 +20812,7 @@ async function streamResponse(response, stream, output, model) {
       }
       if (candidate?.finishReason) {
         output.rawStopReason = candidate.finishReason;
-        output.stopReason = blocks.some((b) => b.type === "toolCall") ? StopReason.ToolUse : mapStopReason(candidate.finishReason);
+        output.stopReason = blocks.some((b2) => b2.type === "toolCall") ? StopReason.ToolUse : mapStopReason(candidate.finishReason);
       }
       if (responseData.usageMetadata) {
         const prompt = responseData.usageMetadata.promptTokenCount || 0;
@@ -21085,10 +21160,10 @@ function claudeCodeModelId(model, settings) {
   return resolveClaudeCodeRuntimeModel(model.id, settings).cliModelId;
 }
 function applyLongContext(models, settings) {
-  return models.map((m) => {
-    const { contextWindow } = resolveClaudeCodeRuntimeModel(m.id, settings);
-    const name = contextWindow > TWO_HUNDRED_K_CONTEXT && !/\b1M\b/i.test(m.name) ? `${m.name} 1M` : m.name;
-    return contextWindow === m.contextWindow && name === m.name ? m : { ...m, contextWindow, name };
+  return models.map((m2) => {
+    const { contextWindow } = resolveClaudeCodeRuntimeModel(m2.id, settings);
+    const name = contextWindow > TWO_HUNDRED_K_CONTEXT && !/\b1M\b/i.test(m2.name) ? `${m2.name} 1M` : m2.name;
+    return contextWindow === m2.contextWindow && name === m2.name ? m2 : { ...m2, contextWindow, name };
   });
 }
 function staticModel(id) {
@@ -21323,7 +21398,7 @@ function turnStart(messages) {
 function extractUserPrompt(messages) {
   const turn = messages.slice(turnStart(messages));
   if (turn.length === 0) return null;
-  return turn.map((m) => typeof m.content === "string" ? m.content : messageContentToText(m.content)).filter((text) => text).join("\n");
+  return turn.map((m2) => typeof m2.content === "string" ? m2.content : messageContentToText(m2.content)).filter((text) => text).join("\n");
 }
 function extractUserPromptBlocks(messages) {
   const turn = messages.slice(turnStart(messages));
@@ -21356,7 +21431,7 @@ function extractUserPromptBlocks(messages) {
 // node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
-  util2.assertEqual = (_) => {
+  util2.assertEqual = (_2) => {
   };
   function assertIs2(_arg) {
   }
@@ -21373,10 +21448,10 @@ var util;
     return obj;
   };
   util2.getValidEnumValues = (obj) => {
-    const validKeys = util2.objectKeys(obj).filter((k) => typeof obj[obj[k]] !== "number");
+    const validKeys = util2.objectKeys(obj).filter((k2) => typeof obj[obj[k2]] !== "number");
     const filtered = {};
-    for (const k of validKeys) {
-      filtered[k] = obj[k];
+    for (const k2 of validKeys) {
+      filtered[k2] = obj[k2];
     }
     return util2.objectValues(filtered);
   };
@@ -21406,7 +21481,7 @@ var util;
     return array2.map((val) => typeof val === "string" ? `'${val}'` : val).join(separator);
   }
   util2.joinValues = joinValues2;
-  util2.jsonStringifyReplacer = (_, value) => {
+  util2.jsonStringifyReplacer = (_2, value) => {
     if (typeof value === "bigint") {
       return value.toString();
     }
@@ -21529,31 +21604,31 @@ var ZodError = class _ZodError extends Error {
     this.issues = issues;
   }
   format(_mapper) {
-    const mapper = _mapper || function(issue2) {
-      return issue2.message;
+    const mapper = _mapper || function(issue3) {
+      return issue3.message;
     };
     const fieldErrors = { _errors: [] };
     const processError = (error2) => {
-      for (const issue2 of error2.issues) {
-        if (issue2.code === "invalid_union") {
-          issue2.unionErrors.map(processError);
-        } else if (issue2.code === "invalid_return_type") {
-          processError(issue2.returnTypeError);
-        } else if (issue2.code === "invalid_arguments") {
-          processError(issue2.argumentsError);
-        } else if (issue2.path.length === 0) {
-          fieldErrors._errors.push(mapper(issue2));
+      for (const issue3 of error2.issues) {
+        if (issue3.code === "invalid_union") {
+          issue3.unionErrors.map(processError);
+        } else if (issue3.code === "invalid_return_type") {
+          processError(issue3.returnTypeError);
+        } else if (issue3.code === "invalid_arguments") {
+          processError(issue3.argumentsError);
+        } else if (issue3.path.length === 0) {
+          fieldErrors._errors.push(mapper(issue3));
         } else {
           let curr = fieldErrors;
           let i = 0;
-          while (i < issue2.path.length) {
-            const el = issue2.path[i];
-            const terminal = i === issue2.path.length - 1;
+          while (i < issue3.path.length) {
+            const el = issue3.path[i];
+            const terminal = i === issue3.path.length - 1;
             if (!terminal) {
               curr[el] = curr[el] || { _errors: [] };
             } else {
               curr[el] = curr[el] || { _errors: [] };
-              curr[el]._errors.push(mapper(issue2));
+              curr[el]._errors.push(mapper(issue3));
             }
             curr = curr[el];
             i++;
@@ -21578,7 +21653,7 @@ var ZodError = class _ZodError extends Error {
   get isEmpty() {
     return this.issues.length === 0;
   }
-  flatten(mapper = (issue2) => issue2.message) {
+  flatten(mapper = (issue3) => issue3.message) {
     const fieldErrors = /* @__PURE__ */ Object.create(null);
     const formErrors = [];
     for (const sub of this.issues) {
@@ -21602,30 +21677,30 @@ ZodError.create = (issues) => {
 };
 
 // node_modules/zod/v3/locales/en.js
-var errorMap = (issue2, _ctx2) => {
+var errorMap = (issue3, _ctx2) => {
   let message;
-  switch (issue2.code) {
+  switch (issue3.code) {
     case ZodIssueCode.invalid_type:
-      if (issue2.received === ZodParsedType.undefined) {
+      if (issue3.received === ZodParsedType.undefined) {
         message = "Required";
       } else {
-        message = `Expected ${issue2.expected}, received ${issue2.received}`;
+        message = `Expected ${issue3.expected}, received ${issue3.received}`;
       }
       break;
     case ZodIssueCode.invalid_literal:
-      message = `Invalid literal value, expected ${JSON.stringify(issue2.expected, util.jsonStringifyReplacer)}`;
+      message = `Invalid literal value, expected ${JSON.stringify(issue3.expected, util.jsonStringifyReplacer)}`;
       break;
     case ZodIssueCode.unrecognized_keys:
-      message = `Unrecognized key(s) in object: ${util.joinValues(issue2.keys, ", ")}`;
+      message = `Unrecognized key(s) in object: ${util.joinValues(issue3.keys, ", ")}`;
       break;
     case ZodIssueCode.invalid_union:
       message = `Invalid input`;
       break;
     case ZodIssueCode.invalid_union_discriminator:
-      message = `Invalid discriminator value. Expected ${util.joinValues(issue2.options)}`;
+      message = `Invalid discriminator value. Expected ${util.joinValues(issue3.options)}`;
       break;
     case ZodIssueCode.invalid_enum_value:
-      message = `Invalid enum value. Expected ${util.joinValues(issue2.options)}, received '${issue2.received}'`;
+      message = `Invalid enum value. Expected ${util.joinValues(issue3.options)}, received '${issue3.received}'`;
       break;
     case ZodIssueCode.invalid_arguments:
       message = `Invalid function arguments`;
@@ -21637,50 +21712,50 @@ var errorMap = (issue2, _ctx2) => {
       message = `Invalid date`;
       break;
     case ZodIssueCode.invalid_string:
-      if (typeof issue2.validation === "object") {
-        if ("includes" in issue2.validation) {
-          message = `Invalid input: must include "${issue2.validation.includes}"`;
-          if (typeof issue2.validation.position === "number") {
-            message = `${message} at one or more positions greater than or equal to ${issue2.validation.position}`;
+      if (typeof issue3.validation === "object") {
+        if ("includes" in issue3.validation) {
+          message = `Invalid input: must include "${issue3.validation.includes}"`;
+          if (typeof issue3.validation.position === "number") {
+            message = `${message} at one or more positions greater than or equal to ${issue3.validation.position}`;
           }
-        } else if ("startsWith" in issue2.validation) {
-          message = `Invalid input: must start with "${issue2.validation.startsWith}"`;
-        } else if ("endsWith" in issue2.validation) {
-          message = `Invalid input: must end with "${issue2.validation.endsWith}"`;
+        } else if ("startsWith" in issue3.validation) {
+          message = `Invalid input: must start with "${issue3.validation.startsWith}"`;
+        } else if ("endsWith" in issue3.validation) {
+          message = `Invalid input: must end with "${issue3.validation.endsWith}"`;
         } else {
-          util.assertNever(issue2.validation);
+          util.assertNever(issue3.validation);
         }
-      } else if (issue2.validation !== "regex") {
-        message = `Invalid ${issue2.validation}`;
+      } else if (issue3.validation !== "regex") {
+        message = `Invalid ${issue3.validation}`;
       } else {
         message = "Invalid";
       }
       break;
     case ZodIssueCode.too_small:
-      if (issue2.type === "array")
-        message = `Array must contain ${issue2.exact ? "exactly" : issue2.inclusive ? `at least` : `more than`} ${issue2.minimum} element(s)`;
-      else if (issue2.type === "string")
-        message = `String must contain ${issue2.exact ? "exactly" : issue2.inclusive ? `at least` : `over`} ${issue2.minimum} character(s)`;
-      else if (issue2.type === "number")
-        message = `Number must be ${issue2.exact ? `exactly equal to ` : issue2.inclusive ? `greater than or equal to ` : `greater than `}${issue2.minimum}`;
-      else if (issue2.type === "bigint")
-        message = `Number must be ${issue2.exact ? `exactly equal to ` : issue2.inclusive ? `greater than or equal to ` : `greater than `}${issue2.minimum}`;
-      else if (issue2.type === "date")
-        message = `Date must be ${issue2.exact ? `exactly equal to ` : issue2.inclusive ? `greater than or equal to ` : `greater than `}${new Date(Number(issue2.minimum))}`;
+      if (issue3.type === "array")
+        message = `Array must contain ${issue3.exact ? "exactly" : issue3.inclusive ? `at least` : `more than`} ${issue3.minimum} element(s)`;
+      else if (issue3.type === "string")
+        message = `String must contain ${issue3.exact ? "exactly" : issue3.inclusive ? `at least` : `over`} ${issue3.minimum} character(s)`;
+      else if (issue3.type === "number")
+        message = `Number must be ${issue3.exact ? `exactly equal to ` : issue3.inclusive ? `greater than or equal to ` : `greater than `}${issue3.minimum}`;
+      else if (issue3.type === "bigint")
+        message = `Number must be ${issue3.exact ? `exactly equal to ` : issue3.inclusive ? `greater than or equal to ` : `greater than `}${issue3.minimum}`;
+      else if (issue3.type === "date")
+        message = `Date must be ${issue3.exact ? `exactly equal to ` : issue3.inclusive ? `greater than or equal to ` : `greater than `}${new Date(Number(issue3.minimum))}`;
       else
         message = "Invalid input";
       break;
     case ZodIssueCode.too_big:
-      if (issue2.type === "array")
-        message = `Array must contain ${issue2.exact ? `exactly` : issue2.inclusive ? `at most` : `less than`} ${issue2.maximum} element(s)`;
-      else if (issue2.type === "string")
-        message = `String must contain ${issue2.exact ? `exactly` : issue2.inclusive ? `at most` : `under`} ${issue2.maximum} character(s)`;
-      else if (issue2.type === "number")
-        message = `Number must be ${issue2.exact ? `exactly` : issue2.inclusive ? `less than or equal to` : `less than`} ${issue2.maximum}`;
-      else if (issue2.type === "bigint")
-        message = `BigInt must be ${issue2.exact ? `exactly` : issue2.inclusive ? `less than or equal to` : `less than`} ${issue2.maximum}`;
-      else if (issue2.type === "date")
-        message = `Date must be ${issue2.exact ? `exactly` : issue2.inclusive ? `smaller than or equal to` : `smaller than`} ${new Date(Number(issue2.maximum))}`;
+      if (issue3.type === "array")
+        message = `Array must contain ${issue3.exact ? `exactly` : issue3.inclusive ? `at most` : `less than`} ${issue3.maximum} element(s)`;
+      else if (issue3.type === "string")
+        message = `String must contain ${issue3.exact ? `exactly` : issue3.inclusive ? `at most` : `under`} ${issue3.maximum} character(s)`;
+      else if (issue3.type === "number")
+        message = `Number must be ${issue3.exact ? `exactly` : issue3.inclusive ? `less than or equal to` : `less than`} ${issue3.maximum}`;
+      else if (issue3.type === "bigint")
+        message = `BigInt must be ${issue3.exact ? `exactly` : issue3.inclusive ? `less than or equal to` : `less than`} ${issue3.maximum}`;
+      else if (issue3.type === "date")
+        message = `Date must be ${issue3.exact ? `exactly` : issue3.inclusive ? `smaller than or equal to` : `smaller than`} ${new Date(Number(issue3.maximum))}`;
       else
         message = "Invalid input";
       break;
@@ -21691,14 +21766,14 @@ var errorMap = (issue2, _ctx2) => {
       message = `Intersection results could not be merged`;
       break;
     case ZodIssueCode.not_multiple_of:
-      message = `Number must be a multiple of ${issue2.multipleOf}`;
+      message = `Number must be a multiple of ${issue3.multipleOf}`;
       break;
     case ZodIssueCode.not_finite:
       message = "Number must be finite";
       break;
     default:
       message = _ctx2.defaultError;
-      util.assertNever(issue2);
+      util.assertNever(issue3);
   }
   return { message };
 };
@@ -21726,7 +21801,7 @@ var makeIssue = (params) => {
     };
   }
   let errorMessage = "";
-  const maps = errorMaps.filter((m) => !!m).slice().reverse();
+  const maps = errorMaps.filter((m2) => !!m2).slice().reverse();
   for (const map of maps) {
     errorMessage = map(fullIssue, { data, defaultError: errorMessage }).message;
   }
@@ -21738,7 +21813,7 @@ var makeIssue = (params) => {
 };
 function addIssueToContext(ctx2, issueData) {
   const overrideMap = getErrorMap();
-  const issue2 = makeIssue({
+  const issue3 = makeIssue({
     issueData,
     data: ctx2.data,
     path: ctx2.path,
@@ -21751,9 +21826,9 @@ function addIssueToContext(ctx2, issueData) {
       // then global override map
       overrideMap === en_default ? void 0 : en_default
       // then global default map
-    ].filter((x) => !!x)
+    ].filter((x2) => !!x2)
   });
-  ctx2.common.issues.push(issue2);
+  ctx2.common.issues.push(issue3);
 }
 var ParseStatus = class _ParseStatus {
   constructor() {
@@ -21814,10 +21889,10 @@ var INVALID = Object.freeze({
 });
 var DIRTY = (value) => ({ status: "dirty", value });
 var OK = (value) => ({ status: "valid", value });
-var isAborted = (x) => x.status === "aborted";
-var isDirty = (x) => x.status === "dirty";
-var isValid = (x) => x.status === "valid";
-var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
+var isAborted = (x2) => x2.status === "aborted";
+var isDirty = (x2) => x2.status === "dirty";
+var isValid = (x2) => x2.status === "valid";
+var isAsync = (x2) => typeof Promise !== "undefined" && x2 instanceof Promise;
 
 // node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
@@ -23711,9 +23786,9 @@ var ZodObject = class _ZodObject extends ZodType {
       ...this._def,
       unknownKeys: "strict",
       ...message !== void 0 ? {
-        errorMap: (issue2, ctx2) => {
-          const defaultError = this._def.errorMap?.(issue2, ctx2).message ?? ctx2.defaultError;
-          if (issue2.code === "unrecognized_keys")
+        errorMap: (issue3, ctx2) => {
+          const defaultError = this._def.errorMap?.(issue3, ctx2).message ?? ctx2.defaultError;
+          if (issue3.code === "unrecognized_keys")
             return {
               message: errorUtil.errToObj(message).message ?? defaultError
             };
@@ -24137,17 +24212,17 @@ var ZodDiscriminatedUnion = class _ZodDiscriminatedUnion extends ZodType {
     });
   }
 };
-function mergeValues(a, b) {
+function mergeValues(a, b2) {
   const aType = getParsedType(a);
-  const bType = getParsedType(b);
-  if (a === b) {
+  const bType = getParsedType(b2);
+  if (a === b2) {
     return { valid: true, data: a };
   } else if (aType === ZodParsedType.object && bType === ZodParsedType.object) {
-    const bKeys = util.objectKeys(b);
+    const bKeys = util.objectKeys(b2);
     const sharedKeys = util.objectKeys(a).filter((key) => bKeys.indexOf(key) !== -1);
-    const newObj = { ...a, ...b };
+    const newObj = { ...a, ...b2 };
     for (const key of sharedKeys) {
-      const sharedValue = mergeValues(a[key], b[key]);
+      const sharedValue = mergeValues(a[key], b2[key]);
       if (!sharedValue.valid) {
         return { valid: false };
       }
@@ -24155,13 +24230,13 @@ function mergeValues(a, b) {
     }
     return { valid: true, data: newObj };
   } else if (aType === ZodParsedType.array && bType === ZodParsedType.array) {
-    if (a.length !== b.length) {
+    if (a.length !== b2.length) {
       return { valid: false };
     }
     const newArray = [];
     for (let index = 0; index < a.length; index++) {
       const itemA = a[index];
-      const itemB = b[index];
+      const itemB = b2[index];
       const sharedValue = mergeValues(itemA, itemB);
       if (!sharedValue.valid) {
         return { valid: false };
@@ -24169,7 +24244,7 @@ function mergeValues(a, b) {
       newArray.push(sharedValue.data);
     }
     return { valid: true, data: newArray };
-  } else if (aType === ZodParsedType.date && bType === ZodParsedType.date && +a === +b) {
+  } else if (aType === ZodParsedType.date && bType === ZodParsedType.date && +a === +b2) {
     return { valid: true, data: a };
   } else {
     return { valid: false };
@@ -24265,7 +24340,7 @@ var ZodTuple = class _ZodTuple extends ZodType {
       if (!schema)
         return null;
       return schema._parse(new ParseInputLazyPath(ctx2, item, ctx2.path, itemIndex));
-    }).filter((x) => !!x);
+    }).filter((x2) => !!x2);
     if (ctx2.common.async) {
       return Promise.all(items).then((results) => {
         return ParseStatus.mergeArray(status, results);
@@ -24518,7 +24593,7 @@ var ZodFunction = class _ZodFunction extends ZodType {
       return makeIssue({
         data: args,
         path: ctx2.path,
-        errorMaps: [ctx2.common.contextualErrorMap, ctx2.schemaErrorMap, getErrorMap(), en_default].filter((x) => !!x),
+        errorMaps: [ctx2.common.contextualErrorMap, ctx2.schemaErrorMap, getErrorMap(), en_default].filter((x2) => !!x2),
         issueData: {
           code: ZodIssueCode.invalid_arguments,
           argumentsError: error2
@@ -24529,7 +24604,7 @@ var ZodFunction = class _ZodFunction extends ZodType {
       return makeIssue({
         data: returns,
         path: ctx2.path,
-        errorMaps: [ctx2.common.contextualErrorMap, ctx2.schemaErrorMap, getErrorMap(), en_default].filter((x) => !!x),
+        errorMaps: [ctx2.common.contextualErrorMap, ctx2.schemaErrorMap, getErrorMap(), en_default].filter((x2) => !!x2),
         issueData: {
           code: ZodIssueCode.invalid_return_type,
           returnTypeError: error2
@@ -24539,29 +24614,29 @@ var ZodFunction = class _ZodFunction extends ZodType {
     const params = { errorMap: ctx2.common.contextualErrorMap };
     const fn = ctx2.data;
     if (this._def.returns instanceof ZodPromise) {
-      const me = this;
+      const me2 = this;
       return OK(async function(...args) {
         const error2 = new ZodError([]);
-        const parsedArgs = await me._def.args.parseAsync(args, params).catch((e) => {
+        const parsedArgs = await me2._def.args.parseAsync(args, params).catch((e) => {
           error2.addIssue(makeArgsIssue(args, e));
           throw error2;
         });
         const result2 = await Reflect.apply(fn, this, parsedArgs);
-        const parsedReturns = await me._def.returns._def.type.parseAsync(result2, params).catch((e) => {
+        const parsedReturns = await me2._def.returns._def.type.parseAsync(result2, params).catch((e) => {
           error2.addIssue(makeReturnsIssue(result2, e));
           throw error2;
         });
         return parsedReturns;
       });
     } else {
-      const me = this;
+      const me2 = this;
       return OK(function(...args) {
-        const parsedArgs = me._def.args.safeParse(args, params);
+        const parsedArgs = me2._def.args.safeParse(args, params);
         if (!parsedArgs.success) {
           throw new ZodError([makeArgsIssue(args, parsedArgs.error)]);
         }
         const result2 = Reflect.apply(fn, this, parsedArgs.data);
-        const parsedReturns = me._def.returns.safeParse(result2, params);
+        const parsedReturns = me2._def.returns.safeParse(result2, params);
         if (!parsedReturns.success) {
           throw new ZodError([makeReturnsIssue(result2, parsedReturns.error)]);
         }
@@ -25122,10 +25197,10 @@ var ZodPipeline = class _ZodPipeline extends ZodType {
       }
     }
   }
-  static create(a, b) {
+  static create(a, b2) {
     return new _ZodPipeline({
       in: a,
-      out: b,
+      out: b2,
       typeName: ZodFirstPartyTypeKind.ZodPipeline
     });
   }
@@ -25238,7 +25313,7 @@ function $constructor(name, initializer3, params) {
       Object.defineProperty(inst, "_zod", {
         value: {
           def,
-          constr: _,
+          constr: _2,
           traits: /* @__PURE__ */ new Set()
         },
         enumerable: false
@@ -25249,12 +25324,12 @@ function $constructor(name, initializer3, params) {
     }
     inst._zod.traits.add(name);
     initializer3(inst, def);
-    const proto = _.prototype;
+    const proto = _2.prototype;
     const keys = Object.keys(proto);
     for (let i = 0; i < keys.length; i++) {
-      const k = keys[i];
-      if (!(k in inst)) {
-        inst[k] = proto[k].bind(inst);
+      const k2 = keys[i];
+      if (!(k2 in inst)) {
+        inst[k2] = proto[k2].bind(inst);
       }
     }
   }
@@ -25262,7 +25337,7 @@ function $constructor(name, initializer3, params) {
   class Definition extends Parent {
   }
   Object.defineProperty(Definition, "name", { value: name });
-  function _(def) {
+  function _2(def) {
     var _a3;
     const inst = params?.Parent ? new Definition() : this;
     init(inst, def);
@@ -25272,16 +25347,16 @@ function $constructor(name, initializer3, params) {
     }
     return inst;
   }
-  Object.defineProperty(_, "init", { value: init });
-  Object.defineProperty(_, Symbol.hasInstance, {
+  Object.defineProperty(_2, "init", { value: init });
+  Object.defineProperty(_2, Symbol.hasInstance, {
     value: (inst) => {
       if (params?.Parent && inst instanceof params.Parent)
         return true;
       return inst?._zod?.traits?.has(name);
     }
   });
-  Object.defineProperty(_, "name", { value: name });
-  return _;
+  Object.defineProperty(_2, "name", { value: name });
+  return _2;
 }
 var $ZodAsyncError = class extends Error {
   constructor() {
@@ -25380,17 +25455,17 @@ function assertIs(_arg) {
 function assertNever(_x) {
   throw new Error("Unexpected value in exhaustive check");
 }
-function assert(_) {
+function assert(_2) {
 }
 function getEnumValues(entries) {
-  const numericValues = Object.values(entries).filter((v) => typeof v === "number");
-  const values = Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+  const numericValues = Object.values(entries).filter((v2) => typeof v2 === "number");
+  const values = Object.entries(entries).filter(([k2, _2]) => numericValues.indexOf(+k2) === -1).map(([_2, v2]) => v2);
   return values;
 }
 function joinValues(array2, separator = "|") {
   return array2.map((val) => stringifyPrimitive(val)).join(separator);
 }
-function jsonStringifyReplacer(_, value) {
+function jsonStringifyReplacer(_2, value) {
   if (typeof value === "bigint")
     return value.toString();
   return value;
@@ -25438,9 +25513,9 @@ function defineLazy(object3, key, getter) {
       }
       return value;
     },
-    set(v) {
+    set(v2) {
       Object.defineProperty(object3, key, {
-        value: v
+        value: v2
         // configurable: true,
       });
     },
@@ -25512,10 +25587,10 @@ var allowsEval = /* @__PURE__ */ cached(() => {
     return false;
   }
   try {
-    const F = Function;
-    new F("");
+    const F2 = Function;
+    new F2("");
     return true;
-  } catch (_) {
+  } catch (_2) {
     return false;
   }
 });
@@ -25636,31 +25711,31 @@ function normalizeParams(_params) {
 function createTransparentProxy(getter) {
   let target;
   return new Proxy({}, {
-    get(_, prop, receiver) {
+    get(_2, prop, receiver) {
       target ?? (target = getter());
       return Reflect.get(target, prop, receiver);
     },
-    set(_, prop, value, receiver) {
+    set(_2, prop, value, receiver) {
       target ?? (target = getter());
       return Reflect.set(target, prop, value, receiver);
     },
-    has(_, prop) {
+    has(_2, prop) {
       target ?? (target = getter());
       return Reflect.has(target, prop);
     },
-    deleteProperty(_, prop) {
+    deleteProperty(_2, prop) {
       target ?? (target = getter());
       return Reflect.deleteProperty(target, prop);
     },
-    ownKeys(_) {
+    ownKeys(_2) {
       target ?? (target = getter());
       return Reflect.ownKeys(target);
     },
-    getOwnPropertyDescriptor(_, prop) {
+    getOwnPropertyDescriptor(_2, prop) {
       target ?? (target = getter());
       return Reflect.getOwnPropertyDescriptor(target, prop);
     },
-    defineProperty(_, prop, descriptor) {
+    defineProperty(_2, prop, descriptor) {
       target ?? (target = getter());
       return Reflect.defineProperty(target, prop, descriptor);
     }
@@ -25674,8 +25749,8 @@ function stringifyPrimitive(value) {
   return `${value}`;
 }
 function optionalKeys(shape) {
-  return Object.keys(shape).filter((k) => {
-    return shape[k]._zod.optin === "optional" && shape[k]._zod.optout === "optional";
+  return Object.keys(shape).filter((k2) => {
+    return shape[k2]._zod.optin === "optional" && shape[k2]._zod.optout === "optional";
   });
 }
 var NUMBER_FORMAT_RANGES = {
@@ -25775,20 +25850,20 @@ function safeExtend(schema, shape) {
   });
   return clone(schema, def);
 }
-function merge(a, b) {
+function merge(a, b2) {
   if (a._zod.def.checks?.length) {
     throw new Error(".merge() cannot be used on object schemas containing refinements. Use .safeExtend() instead.");
   }
   const def = mergeDefs(a._zod.def, {
     get shape() {
-      const _shape = { ...a._zod.def.shape, ...b._zod.def.shape };
+      const _shape = { ...a._zod.def.shape, ...b2._zod.def.shape };
       assignProp(this, "shape", _shape);
       return _shape;
     },
     get catchall() {
-      return b._zod.def.catchall;
+      return b2._zod.def.catchall;
     },
-    checks: b._zod.def.checks ?? []
+    checks: b2._zod.def.checks ?? []
   });
   return clone(a, def);
 }
@@ -25861,21 +25936,21 @@ function required(Class2, schema, mask) {
   });
   return clone(schema, def);
 }
-function aborted(x, startIndex = 0) {
-  if (x.aborted === true)
+function aborted(x2, startIndex = 0) {
+  if (x2.aborted === true)
     return true;
-  for (let i = startIndex; i < x.issues.length; i++) {
-    if (x.issues[i]?.continue !== true) {
+  for (let i = startIndex; i < x2.issues.length; i++) {
+    if (x2.issues[i]?.continue !== true) {
       return true;
     }
   }
   return false;
 }
-function explicitlyAborted(x, startIndex = 0) {
-  if (x.aborted === true)
+function explicitlyAborted(x2, startIndex = 0) {
+  if (x2.aborted === true)
     return true;
-  for (let i = startIndex; i < x.issues.length; i++) {
-    if (x.issues[i]?.continue === false) {
+  for (let i = startIndex; i < x2.issues.length; i++) {
+    if (x2.issues[i]?.continue === false) {
       return true;
     }
   }
@@ -25952,8 +26027,8 @@ function issue(...args) {
   return { ...iss };
 }
 function cleanEnum(obj) {
-  return Object.entries(obj).filter(([k, _]) => {
-    return Number.isNaN(Number.parseInt(k, 10));
+  return Object.entries(obj).filter(([k2, _2]) => {
+    return Number.isNaN(Number.parseInt(k2, 10));
   }).map((el) => el[1]);
 }
 function base64ToUint8Array(base642) {
@@ -25991,7 +26066,7 @@ function hexToUint8Array(hex) {
   return bytes;
 }
 function uint8ArrayToHex(bytes) {
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes).map((b2) => b2.toString(16).padStart(2, "0")).join("");
 }
 var Class = class {
   constructor(..._args) {
@@ -26017,7 +26092,7 @@ var initializer = (inst, def) => {
 };
 var $ZodError = $constructor("$ZodError", initializer);
 var $ZodRealError = $constructor("$ZodError", initializer, { Parent: Error });
-function flattenError(error2, mapper = (issue2) => issue2.message) {
+function flattenError(error2, mapper = (issue3) => issue3.message) {
   const fieldErrors = {};
   const formErrors = [];
   for (const sub of error2.issues) {
@@ -26030,20 +26105,20 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
   }
   return { formErrors, fieldErrors };
 }
-function formatError(error2, mapper = (issue2) => issue2.message) {
+function formatError(error2, mapper = (issue3) => issue3.message) {
   const fieldErrors = { _errors: [] };
   const processError = (error3, path = []) => {
-    for (const issue2 of error3.issues) {
-      if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path, ...issue2.path]));
-      } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path, ...issue2.path]);
-      } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path, ...issue2.path]);
+    for (const issue3 of error3.issues) {
+      if (issue3.code === "invalid_union" && issue3.errors.length) {
+        issue3.errors.map((issues) => processError({ issues }, [...path, ...issue3.path]));
+      } else if (issue3.code === "invalid_key") {
+        processError({ issues: issue3.issues }, [...path, ...issue3.path]);
+      } else if (issue3.code === "invalid_element") {
+        processError({ issues: issue3.issues }, [...path, ...issue3.path]);
       } else {
-        const fullpath = [...path, ...issue2.path];
+        const fullpath = [...path, ...issue3.path];
         if (fullpath.length === 0) {
-          fieldErrors._errors.push(mapper(issue2));
+          fieldErrors._errors.push(mapper(issue3));
         } else {
           let curr = fieldErrors;
           let i = 0;
@@ -26054,7 +26129,7 @@ function formatError(error2, mapper = (issue2) => issue2.message) {
               curr[el] = curr[el] || { _errors: [] };
             } else {
               curr[el] = curr[el] || { _errors: [] };
-              curr[el]._errors.push(mapper(issue2));
+              curr[el]._errors.push(mapper(issue3));
             }
             curr = curr[el];
             i++;
@@ -26615,19 +26690,19 @@ var Doc = class {
       return;
     }
     const content = arg;
-    const lines = content.split("\n").filter((x) => x);
-    const minIndent = Math.min(...lines.map((x) => x.length - x.trimStart().length));
-    const dedented = lines.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
+    const lines = content.split("\n").filter((x2) => x2);
+    const minIndent = Math.min(...lines.map((x2) => x2.length - x2.trimStart().length));
+    const dedented = lines.map((x2) => x2.slice(minIndent)).map((x2) => " ".repeat(this.indent * 2) + x2);
     for (const line of dedented) {
       this.content.push(line);
     }
   }
   compile() {
-    const F = Function;
+    const F2 = Function;
     const args = this?.args;
     const content = this?.content ?? [``];
-    const lines = [...content.map((x) => `  ${x}`)];
-    return new F(...args, lines.join("\n"));
+    const lines = [...content.map((x2) => `  ${x2}`)];
+    return new F2(...args, lines.join("\n"));
   }
 };
 
@@ -26674,13 +26749,13 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
           continue;
         }
         const currLen = payload.issues.length;
-        const _ = ch._zod.check(payload);
-        if (_ instanceof Promise && ctx2?.async === false) {
+        const _2 = ch._zod.check(payload);
+        if (_2 instanceof Promise && ctx2?.async === false) {
           throw new $ZodAsyncError();
         }
-        if (asyncResult || _ instanceof Promise) {
+        if (asyncResult || _2 instanceof Promise) {
           asyncResult = (asyncResult ?? Promise.resolve()).then(async () => {
-            await _;
+            await _2;
             const nextLen = payload.issues.length;
             if (nextLen === currLen)
               return;
@@ -26742,7 +26817,7 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
       try {
         const r = safeParse(inst, value);
         return r.success ? { value: r.data } : { issues: r.error?.issues };
-      } catch (_) {
+      } catch (_2) {
         return safeParseAsync(inst, value).then((r) => r.success ? { value: r.data } : { issues: r.error?.issues });
       }
     },
@@ -26753,11 +26828,11 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
 var $ZodString = /* @__PURE__ */ $constructor("$ZodString", (inst, def) => {
   $ZodType.init(inst, def);
   inst._zod.pattern = [...inst?._zod.bag?.patterns ?? []].pop() ?? string(inst._zod.bag);
-  inst._zod.parse = (payload, _) => {
+  inst._zod.parse = (payload, _2) => {
     if (def.coerce)
       try {
         payload.value = String(payload.value);
-      } catch (_2) {
+      } catch (_3) {
       }
     if (typeof payload.value === "string")
       return payload;
@@ -26790,10 +26865,10 @@ var $ZodUUID = /* @__PURE__ */ $constructor("$ZodUUID", (inst, def) => {
       v7: 7,
       v8: 8
     };
-    const v = versionMap[def.version];
-    if (v === void 0)
+    const v2 = versionMap[def.version];
+    if (v2 === void 0)
       throw new Error(`Invalid UUID version: "${def.version}"`);
-    def.pattern ?? (def.pattern = uuid(v));
+    def.pattern ?? (def.pattern = uuid(v2));
   } else
     def.pattern ?? (def.pattern = uuid());
   $ZodStringFormat.init(inst, def);
@@ -26855,7 +26930,7 @@ var $ZodURL = /* @__PURE__ */ $constructor("$ZodURL", (inst, def) => {
         payload.value = trimmed;
       }
       return;
-    } catch (_) {
+    } catch (_2) {
       payload.issues.push({
         code: "invalid_format",
         format: "url",
@@ -27063,7 +27138,7 @@ var $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
     if (def.coerce)
       try {
         payload.value = Number(payload.value);
-      } catch (_) {
+      } catch (_2) {
       }
     const input = payload.value;
     if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) {
@@ -27091,7 +27166,7 @@ var $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
     if (def.coerce)
       try {
         payload.value = Boolean(payload.value);
-      } catch (_) {
+      } catch (_2) {
       }
     const input = payload.value;
     if (typeof input === "boolean")
@@ -27206,9 +27281,9 @@ function handlePropertyResult(result2, final, key, input, isOptionalIn, isOption
 }
 function normalizeDef(def) {
   const keys = Object.keys(def.shape);
-  for (const k of keys) {
-    if (!def.shape?.[k]?._zod?.traits?.has("$ZodType")) {
-      throw new Error(`Invalid element at key "${k}": expected a Zod schema`);
+  for (const k2 of keys) {
+    if (!def.shape?.[k2]?._zod?.traits?.has("$ZodType")) {
+      throw new Error(`Invalid element at key "${k2}": expected a Zod schema`);
     }
   }
   const okeys = optionalKeys(def.shape);
@@ -27280,8 +27355,8 @@ var $ZodObject = /* @__PURE__ */ $constructor("$ZodObject", (inst, def) => {
       const field = shape[key]._zod;
       if (field.values) {
         propValues[key] ?? (propValues[key] = /* @__PURE__ */ new Set());
-        for (const v of field.values)
-          propValues[key].add(v);
+        for (const v2 of field.values)
+          propValues[key].add(v2);
       }
     }
     return propValues;
@@ -27329,8 +27404,8 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
     const doc = new Doc(["shape", "payload", "ctx"]);
     const normalized = _normalized.value;
     const parseStr = (key) => {
-      const k = esc(key);
-      return `shape[${k}]._zod.run({ value: input[${k}], issues: [] }, ctx)`;
+      const k2 = esc(key);
+      return `shape[${k2}]._zod.run({ value: input[${k2}], issues: [] }, ctx)`;
     };
     doc.write(`const input = payload.value;`);
     const ids = /* @__PURE__ */ Object.create(null);
@@ -27341,7 +27416,7 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
     doc.write(`const newResult = {};`);
     for (const key of normalized.keys) {
       const id = ids[key];
-      const k = esc(key);
+      const k2 = esc(key);
       const schema = shape[key];
       const isOptionalIn = schema?._zod?.optin === "optional";
       const isOptionalOut = schema?._zod?.optout === "optional";
@@ -27349,30 +27424,30 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
       if (isOptionalIn && isOptionalOut) {
         doc.write(`
         if (${id}.issues.length) {
-          if (${k} in input) {
+          if (${k2} in input) {
             payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
               ...iss,
-              path: iss.path ? [${k}, ...iss.path] : [${k}]
+              path: iss.path ? [${k2}, ...iss.path] : [${k2}]
             })));
           }
         }
         
         if (${id}.value === undefined) {
-          if (${k} in input) {
-            newResult[${k}] = undefined;
+          if (${k2} in input) {
+            newResult[${k2}] = undefined;
           }
         } else {
-          newResult[${k}] = ${id}.value;
+          newResult[${k2}] = ${id}.value;
         }
         
       `);
       } else if (!isOptionalIn) {
         doc.write(`
-        const ${id}_present = ${k} in input;
+        const ${id}_present = ${k2} in input;
         if (${id}.issues.length) {
           payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
             ...iss,
-            path: iss.path ? [${k}, ...iss.path] : [${k}]
+            path: iss.path ? [${k2}, ...iss.path] : [${k2}]
           })));
         }
         if (!${id}_present && !${id}.issues.length) {
@@ -27380,15 +27455,15 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
             code: "invalid_type",
             expected: "nonoptional",
             input: undefined,
-            path: [${k}]
+            path: [${k2}]
           });
         }
 
         if (${id}_present) {
           if (${id}.value === undefined) {
-            newResult[${k}] = undefined;
+            newResult[${k2}] = undefined;
           } else {
-            newResult[${k}] = ${id}.value;
+            newResult[${k2}] = ${id}.value;
           }
         }
 
@@ -27398,16 +27473,16 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
         if (${id}.issues.length) {
           payload.issues = payload.issues.concat(${id}.issues.map(iss => ({
             ...iss,
-            path: iss.path ? [${k}, ...iss.path] : [${k}]
+            path: iss.path ? [${k2}, ...iss.path] : [${k2}]
           })));
         }
         
         if (${id}.value === undefined) {
-          if (${k} in input) {
-            newResult[${k}] = undefined;
+          if (${k2} in input) {
+            newResult[${k2}] = undefined;
           }
         } else {
-          newResult[${k}] = ${id}.value;
+          newResult[${k2}] = ${id}.value;
         }
         
       `);
@@ -27523,11 +27598,11 @@ var $ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("$ZodDiscriminatedUnio
       const pv = option._zod.propValues;
       if (!pv || Object.keys(pv).length === 0)
         throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option)}"`);
-      for (const [k, v] of Object.entries(pv)) {
-        if (!propValues[k])
-          propValues[k] = /* @__PURE__ */ new Set();
-        for (const val of v) {
-          propValues[k].add(val);
+      for (const [k2, v2] of Object.entries(pv)) {
+        if (!propValues[k2])
+          propValues[k2] = /* @__PURE__ */ new Set();
+        for (const val of v2) {
+          propValues[k2].add(val);
         }
       }
     }
@@ -27540,11 +27615,11 @@ var $ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("$ZodDiscriminatedUnio
       const values = o._zod.propValues?.[def.discriminator];
       if (!values || values.size === 0)
         throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(o)}"`);
-      for (const v of values) {
-        if (map.has(v)) {
-          throw new Error(`Duplicate discriminator value "${String(v)}"`);
+      for (const v2 of values) {
+        if (map.has(v2)) {
+          throw new Error(`Duplicate discriminator value "${String(v2)}"`);
         }
-        map.set(v, o);
+        map.set(v2, o);
       }
     }
     return map;
@@ -27595,19 +27670,19 @@ var $ZodIntersection = /* @__PURE__ */ $constructor("$ZodIntersection", (inst, d
     return handleIntersectionResults(payload, left, right);
   };
 });
-function mergeValues2(a, b) {
-  if (a === b) {
+function mergeValues2(a, b2) {
+  if (a === b2) {
     return { valid: true, data: a };
   }
-  if (a instanceof Date && b instanceof Date && +a === +b) {
+  if (a instanceof Date && b2 instanceof Date && +a === +b2) {
     return { valid: true, data: a };
   }
-  if (isPlainObject(a) && isPlainObject(b)) {
-    const bKeys = Object.keys(b);
+  if (isPlainObject(a) && isPlainObject(b2)) {
+    const bKeys = Object.keys(b2);
     const sharedKeys = Object.keys(a).filter((key) => bKeys.indexOf(key) !== -1);
-    const newObj = { ...a, ...b };
+    const newObj = { ...a, ...b2 };
     for (const key of sharedKeys) {
-      const sharedValue = mergeValues2(a[key], b[key]);
+      const sharedValue = mergeValues2(a[key], b2[key]);
       if (!sharedValue.valid) {
         return {
           valid: false,
@@ -27618,14 +27693,14 @@ function mergeValues2(a, b) {
     }
     return { valid: true, data: newObj };
   }
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) {
+  if (Array.isArray(a) && Array.isArray(b2)) {
+    if (a.length !== b2.length) {
       return { valid: false, mergeErrorPath: [] };
     }
     const newArray = [];
     for (let index = 0; index < a.length; index++) {
       const itemA = a[index];
-      const itemB = b[index];
+      const itemB = b2[index];
       const sharedValue = mergeValues2(itemA, itemB);
       if (!sharedValue.valid) {
         return {
@@ -27645,10 +27720,10 @@ function handleIntersectionResults(result2, left, right) {
   for (const iss of left.issues) {
     if (iss.code === "unrecognized_keys") {
       unrecIssue ?? (unrecIssue = iss);
-      for (const k of iss.keys) {
-        if (!unrecKeys.has(k))
-          unrecKeys.set(k, {});
-        unrecKeys.get(k).l = true;
+      for (const k2 of iss.keys) {
+        if (!unrecKeys.has(k2))
+          unrecKeys.set(k2, {});
+        unrecKeys.get(k2).l = true;
       }
     } else {
       result2.issues.push(iss);
@@ -27656,16 +27731,16 @@ function handleIntersectionResults(result2, left, right) {
   }
   for (const iss of right.issues) {
     if (iss.code === "unrecognized_keys") {
-      for (const k of iss.keys) {
-        if (!unrecKeys.has(k))
-          unrecKeys.set(k, {});
-        unrecKeys.get(k).r = true;
+      for (const k2 of iss.keys) {
+        if (!unrecKeys.has(k2))
+          unrecKeys.set(k2, {});
+        unrecKeys.get(k2).r = true;
       }
     } else {
       result2.issues.push(iss);
     }
   }
-  const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);
+  const bothKeys = [...unrecKeys].filter(([, f2]) => f2.l && f2.r).map(([k2]) => k2);
   if (bothKeys.length && unrecIssue) {
     result2.issues.push({ ...unrecIssue, keys: bothKeys });
   }
@@ -27809,7 +27884,7 @@ var $ZodEnum = /* @__PURE__ */ $constructor("$ZodEnum", (inst, def) => {
   const values = getEnumValues(def.entries);
   const valuesSet = new Set(values);
   inst._zod.values = valuesSet;
-  inst._zod.pattern = new RegExp(`^(${values.filter((k) => propertyKeyTypes.has(typeof k)).map((o) => typeof o === "string" ? escapeRegex(o) : o.toString()).join("|")})$`);
+  inst._zod.pattern = new RegExp(`^(${values.filter((k2) => propertyKeyTypes.has(typeof k2)).map((o) => typeof o === "string" ? escapeRegex(o) : o.toString()).join("|")})$`);
   inst._zod.parse = (payload, _ctx2) => {
     const input = payload.value;
     if (valuesSet.has(input)) {
@@ -27968,8 +28043,8 @@ var $ZodPrefault = /* @__PURE__ */ $constructor("$ZodPrefault", (inst, def) => {
 var $ZodNonOptional = /* @__PURE__ */ $constructor("$ZodNonOptional", (inst, def) => {
   $ZodType.init(inst, def);
   defineLazy(inst._zod, "values", () => {
-    const v = def.innerType._zod.values;
-    return v ? new Set([...v].filter((x) => x !== void 0)) : void 0;
+    const v2 = def.innerType._zod.values;
+    return v2 ? new Set([...v2].filter((x2) => x2 !== void 0)) : void 0;
   });
   inst._zod.parse = (payload, ctx2) => {
     const result2 = def.innerType._zod.run(payload, ctx2);
@@ -28087,7 +28162,7 @@ function handleReadonlyResult(payload) {
 var $ZodCustom = /* @__PURE__ */ $constructor("$ZodCustom", (inst, def) => {
   $ZodCheck.init(inst, def);
   $ZodType.init(inst, def);
-  inst._zod.parse = (payload, _) => {
+  inst._zod.parse = (payload, _2) => {
     return payload;
   };
   inst._zod.check = (payload) => {
@@ -28166,35 +28241,35 @@ var error = () => {
     nan: "NaN"
     // All other type names omitted - they fall back to raw values via ?? operator
   };
-  return (issue2) => {
-    switch (issue2.code) {
+  return (issue3) => {
+    switch (issue3.code) {
       case "invalid_type": {
-        const expected = TypeDictionary[issue2.expected] ?? issue2.expected;
-        const receivedType = parsedType(issue2.input);
+        const expected = TypeDictionary[issue3.expected] ?? issue3.expected;
+        const receivedType = parsedType(issue3.input);
         const received = TypeDictionary[receivedType] ?? receivedType;
         return `Invalid input: expected ${expected}, received ${received}`;
       }
       case "invalid_value":
-        if (issue2.values.length === 1)
-          return `Invalid input: expected ${stringifyPrimitive(issue2.values[0])}`;
-        return `Invalid option: expected one of ${joinValues(issue2.values, "|")}`;
+        if (issue3.values.length === 1)
+          return `Invalid input: expected ${stringifyPrimitive(issue3.values[0])}`;
+        return `Invalid option: expected one of ${joinValues(issue3.values, "|")}`;
       case "too_big": {
-        const adj = issue2.inclusive ? "<=" : "<";
-        const sizing = getSizing(issue2.origin);
+        const adj = issue3.inclusive ? "<=" : "<";
+        const sizing = getSizing(issue3.origin);
         if (sizing)
-          return `Too big: expected ${issue2.origin ?? "value"} to have ${adj}${issue2.maximum.toString()} ${sizing.unit ?? "elements"}`;
-        return `Too big: expected ${issue2.origin ?? "value"} to be ${adj}${issue2.maximum.toString()}`;
+          return `Too big: expected ${issue3.origin ?? "value"} to have ${adj}${issue3.maximum.toString()} ${sizing.unit ?? "elements"}`;
+        return `Too big: expected ${issue3.origin ?? "value"} to be ${adj}${issue3.maximum.toString()}`;
       }
       case "too_small": {
-        const adj = issue2.inclusive ? ">=" : ">";
-        const sizing = getSizing(issue2.origin);
+        const adj = issue3.inclusive ? ">=" : ">";
+        const sizing = getSizing(issue3.origin);
         if (sizing) {
-          return `Too small: expected ${issue2.origin} to have ${adj}${issue2.minimum.toString()} ${sizing.unit}`;
+          return `Too small: expected ${issue3.origin} to have ${adj}${issue3.minimum.toString()} ${sizing.unit}`;
         }
-        return `Too small: expected ${issue2.origin} to be ${adj}${issue2.minimum.toString()}`;
+        return `Too small: expected ${issue3.origin} to be ${adj}${issue3.minimum.toString()}`;
       }
       case "invalid_format": {
-        const _issue = issue2;
+        const _issue = issue3;
         if (_issue.format === "starts_with") {
           return `Invalid string: must start with "${_issue.prefix}"`;
         }
@@ -28204,22 +28279,22 @@ var error = () => {
           return `Invalid string: must include "${_issue.includes}"`;
         if (_issue.format === "regex")
           return `Invalid string: must match pattern ${_issue.pattern}`;
-        return `Invalid ${FormatDictionary[_issue.format] ?? issue2.format}`;
+        return `Invalid ${FormatDictionary[_issue.format] ?? issue3.format}`;
       }
       case "not_multiple_of":
-        return `Invalid number: must be a multiple of ${issue2.divisor}`;
+        return `Invalid number: must be a multiple of ${issue3.divisor}`;
       case "unrecognized_keys":
-        return `Unrecognized key${issue2.keys.length > 1 ? "s" : ""}: ${joinValues(issue2.keys, ", ")}`;
+        return `Unrecognized key${issue3.keys.length > 1 ? "s" : ""}: ${joinValues(issue3.keys, ", ")}`;
       case "invalid_key":
-        return `Invalid key in ${issue2.origin}`;
+        return `Invalid key in ${issue3.origin}`;
       case "invalid_union":
-        if (issue2.options && Array.isArray(issue2.options) && issue2.options.length > 0) {
-          const opts = issue2.options.map((o) => `'${o}'`).join(" | ");
+        if (issue3.options && Array.isArray(issue3.options) && issue3.options.length > 0) {
+          const opts = issue3.options.map((o) => `'${o}'`).join(" | ");
           return `Invalid discriminator value. Expected ${opts}`;
         }
         return "Invalid input";
       case "invalid_element":
-        return `Invalid value in ${issue2.origin}`;
+        return `Invalid value in ${issue3.origin}`;
       default:
         return `Invalid input`;
     }
@@ -28264,8 +28339,8 @@ var $ZodRegistry = class {
     if (p) {
       const pm = { ...this.get(p) ?? {} };
       delete pm.id;
-      const f = { ...pm, ...this._map.get(schema) };
-      return Object.keys(f).length ? f : void 0;
+      const f2 = { ...pm, ...this._map.get(schema) };
+      return Object.keys(f2).length ? f2 : void 0;
     }
     return this._map.get(schema);
   }
@@ -28779,11 +28854,11 @@ function _refine(Class2, fn, _params) {
 // @__NO_SIDE_EFFECTS__
 function _superRefine(fn, params) {
   const ch = /* @__PURE__ */ _check((payload) => {
-    payload.addIssue = (issue2) => {
-      if (typeof issue2 === "string") {
-        payload.issues.push(issue(issue2, payload.value, ch._zod.def));
+    payload.addIssue = (issue3) => {
+      if (typeof issue3 === "string") {
+        payload.issues.push(issue(issue3, payload.value, ch._zod.def));
       } else {
-        const _issue = issue2;
+        const _issue = issue3;
         if (_issue.fatal)
           _issue.continue = false;
         _issue.code ?? (_issue.code = "custom");
@@ -29287,9 +29362,9 @@ var dateProcessor = (_schema, ctx2, _json, _params) => {
 var enumProcessor = (schema, _ctx2, json, _params) => {
   const def = schema._zod.def;
   const values = getEnumValues(def.entries);
-  if (values.every((v) => typeof v === "number"))
+  if (values.every((v2) => typeof v2 === "number"))
     json.type = "number";
-  if (values.every((v) => typeof v === "string"))
+  if (values.every((v2) => typeof v2 === "string"))
     json.type = "string";
   json.enum = values;
 };
@@ -29322,13 +29397,13 @@ var literalProcessor = (schema, ctx2, json, _params) => {
       json.const = val;
     }
   } else {
-    if (vals.every((v) => typeof v === "number"))
+    if (vals.every((v2) => typeof v2 === "number"))
       json.type = "number";
-    if (vals.every((v) => typeof v === "string"))
+    if (vals.every((v2) => typeof v2 === "string"))
       json.type = "string";
-    if (vals.every((v) => typeof v === "boolean"))
+    if (vals.every((v2) => typeof v2 === "boolean"))
       json.type = "boolean";
-    if (vals.every((v) => v === null))
+    if (vals.every((v2) => v2 === null))
       json.type = "null";
     json.enum = vals;
   }
@@ -29364,7 +29439,7 @@ var fileProcessor = (schema, _ctx2, json, _params) => {
       Object.assign(_json, file);
     } else {
       Object.assign(_json, file);
-      _json.anyOf = mime.map((m) => ({ contentMediaType: m }));
+      _json.anyOf = mime.map((m2) => ({ contentMediaType: m2 }));
     }
   } else {
     Object.assign(_json, file);
@@ -29426,11 +29501,11 @@ var objectProcessor = (schema, ctx2, _json, params) => {
   }
   const allKeys = new Set(Object.keys(shape));
   const requiredKeys = new Set([...allKeys].filter((key) => {
-    const v = def.shape[key]._zod;
+    const v2 = def.shape[key]._zod;
     if (ctx2.io === "input") {
-      return v.optin === void 0;
+      return v2.optin === void 0;
     } else {
-      return v.optout === void 0;
+      return v2.optout === void 0;
     }
   }));
   if (requiredKeys.size > 0) {
@@ -29451,7 +29526,7 @@ var objectProcessor = (schema, ctx2, _json, params) => {
 var unionProcessor = (schema, ctx2, json, params) => {
   const def = schema._zod.def;
   const isExclusive = def.inclusive === false;
-  const options = def.options.map((x, i) => process2(x, ctx2, {
+  const options = def.options.map((x2, i) => process2(x2, ctx2, {
     ...params,
     path: [...params.path, isExclusive ? "oneOf" : "anyOf", i]
   }));
@@ -29467,14 +29542,14 @@ var intersectionProcessor = (schema, ctx2, json, params) => {
     ...params,
     path: [...params.path, "allOf", 0]
   });
-  const b = process2(def.right, ctx2, {
+  const b2 = process2(def.right, ctx2, {
     ...params,
     path: [...params.path, "allOf", 1]
   });
   const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
   const allOf = [
     ...isSimpleIntersection(a) ? a.allOf : [a],
-    ...isSimpleIntersection(b) ? b.allOf : [b]
+    ...isSimpleIntersection(b2) ? b2.allOf : [b2]
   ];
   json.allOf = allOf;
 };
@@ -29484,7 +29559,7 @@ var tupleProcessor = (schema, ctx2, _json, params) => {
   json.type = "array";
   const prefixPath = ctx2.target === "draft-2020-12" ? "prefixItems" : "items";
   const restPath = ctx2.target === "draft-2020-12" ? "items" : ctx2.target === "openapi-3.0" ? "items" : "additionalItems";
-  const prefixItems = def.items.map((x, i) => process2(x, ctx2, {
+  const prefixItems = def.items.map((x2, i) => process2(x2, ctx2, {
     ...params,
     path: [...params.path, prefixPath, i]
   }));
@@ -29550,7 +29625,7 @@ var recordProcessor = (schema, ctx2, _json, params) => {
   }
   const keyValues = keyType._zod.values;
   if (keyValues) {
-    const validKeyValues = [...keyValues].filter((v) => typeof v === "string" || typeof v === "number");
+    const validKeyValues = [...keyValues].filter((v2) => typeof v2 === "string" || typeof v2 === "number");
     if (validKeyValues.length > 0) {
       json.required = validKeyValues;
     }
@@ -29681,7 +29756,7 @@ function toJSONSchema(input, params) {
     const ctx3 = initializeContext({ ...params, processors: allProcessors });
     const defs = {};
     for (const entry of registry2._idmap.entries()) {
-      const [_, schema] = entry;
+      const [_2, schema] = entry;
       process2(schema, ctx3);
     }
     const schemas = {};
@@ -29821,7 +29896,7 @@ function normalizeObjectSchema(schema) {
     const asV4 = schema;
     if (!asV3._def && !asV4._zod) {
       const values = Object.values(schema);
-      if (values.length > 0 && values.every((v) => typeof v === "object" && v !== null && (v._def !== void 0 || v._zod !== void 0 || typeof v.parse === "function"))) {
+      if (values.length > 0 && values.every((v2) => typeof v2 === "object" && v2 !== null && (v2._def !== void 0 || v2._zod !== void 0 || typeof v2.parse === "function"))) {
         return objectFromShape(schema);
       }
     }
@@ -29971,8 +30046,8 @@ var initializer2 = (inst, issues) => {
       // enumerable: false,
     },
     addIssue: {
-      value: (issue2) => {
-        inst.issues.push(issue2);
+      value: (issue3) => {
+        inst.issues.push(issue3);
         inst.message = JSON.stringify(inst.issues, jsonStringifyReplacer, 2);
       }
       // enumerable: false,
@@ -30037,12 +30112,12 @@ function _installLazyMethods(inst, group, methods) {
         });
         return bound;
       },
-      set(v) {
+      set(v2) {
         Object.defineProperty(this, key, {
           configurable: true,
           writable: true,
           enumerable: true,
-          value: v
+          value: v2
         });
       }
     });
@@ -30637,7 +30712,7 @@ var ZodEnum2 = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   };
 });
 function _enum(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
+  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v2) => [v2, v2])) : values;
   return new ZodEnum2({
     type: "enum",
     entries,
@@ -30673,11 +30748,11 @@ var ZodTransform = /* @__PURE__ */ $constructor("ZodTransform", (inst, def) => {
     if (_ctx2.direction === "backward") {
       throw new $ZodEncodeError(inst.constructor.name);
     }
-    payload.addIssue = (issue2) => {
-      if (typeof issue2 === "string") {
-        payload.issues.push(util_exports.issue(issue2, payload.value, def));
+    payload.addIssue = (issue3) => {
+      if (typeof issue3 === "string") {
+        payload.issues.push(util_exports.issue(issue3, payload.value, def));
       } else {
-        const _issue = issue2;
+        const _issue = issue3;
         if (_issue.fatal)
           _issue.continue = false;
         _issue.code ?? (_issue.code = "custom");
@@ -30860,7 +30935,7 @@ var LATEST_PROTOCOL_VERSION = "2025-11-25";
 var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
 var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
 var JSONRPC_VERSION = "2.0";
-var AssertObjectSchema = custom((v) => v !== null && (typeof v === "object" || typeof v === "function"));
+var AssertObjectSchema = custom((v2) => v2 !== null && (typeof v2 === "object" || typeof v2 === "function"));
 var ProgressTokenSchema = union([string2(), number2().int()]);
 var CursorSchema = string2();
 var TaskCreationParamsSchema = looseObject({
@@ -32671,7 +32746,7 @@ function parseIntersectionDef(def, refs) {
       ...refs,
       currentPath: [...refs.currentPath, "allOf", "1"]
     })
-  ].filter((x) => !!x);
+  ].filter((x2) => !!x2);
   let unevaluatedProperties = refs.target === "jsonSchema2019-09" ? { unevaluatedProperties: false } : void 0;
   const mergedAllOf = [];
   allOf.forEach((schema) => {
@@ -32889,7 +32964,7 @@ function parseStringDef(def, refs) {
         case "trim":
           break;
         default:
-          /* @__PURE__ */ ((_) => {
+          /* @__PURE__ */ ((_2) => {
           })(check);
       }
     }
@@ -32911,7 +32986,7 @@ function escapeNonAlphaNumeric(source) {
   return result2;
 }
 function addFormat(schema, value, message, refs) {
-  if (schema.format || schema.anyOf?.some((x) => x.format)) {
+  if (schema.format || schema.anyOf?.some((x2) => x2.format)) {
     if (!schema.anyOf) {
       schema.anyOf = [];
     }
@@ -32939,7 +33014,7 @@ function addFormat(schema, value, message, refs) {
   }
 }
 function addPattern(schema, regex, message, refs) {
-  if (schema.pattern || schema.allOf?.some((x) => x.pattern)) {
+  if (schema.pattern || schema.allOf?.some((x2) => x2.pattern)) {
     if (!schema.allOf) {
       schema.allOf = [];
     }
@@ -32978,13 +33053,13 @@ function stringifyRegExpWithFlags(regex, refs) {
   };
   const source = flags.i ? regex.source.toLowerCase() : regex.source;
   let pattern = "";
-  let isEscaped = false;
+  let isEscaped2 = false;
   let inCharGroup = false;
   let inCharRange = false;
   for (let i = 0; i < source.length; i++) {
-    if (isEscaped) {
+    if (isEscaped2) {
       pattern += source[i];
-      isEscaped = false;
+      isEscaped2 = false;
       continue;
     }
     if (flags.i) {
@@ -33026,7 +33101,7 @@ function stringifyRegExpWithFlags(regex, refs) {
     }
     pattern += source[i];
     if (source[i] === "\\") {
-      isEscaped = true;
+      isEscaped2 = true;
     } else if (inCharGroup && source[i] === "]") {
       inCharGroup = false;
     } else if (!inCharGroup && source[i] === "[") {
@@ -33165,17 +33240,17 @@ function parseUnionDef(def, refs) {
   if (refs.target === "openApi3")
     return asAnyOf(def, refs);
   const options = def.options instanceof Map ? Array.from(def.options.values()) : def.options;
-  if (options.every((x) => x._def.typeName in primitiveMappings && (!x._def.checks || !x._def.checks.length))) {
-    const types = options.reduce((types2, x) => {
-      const type = primitiveMappings[x._def.typeName];
+  if (options.every((x2) => x2._def.typeName in primitiveMappings && (!x2._def.checks || !x2._def.checks.length))) {
+    const types = options.reduce((types2, x2) => {
+      const type = primitiveMappings[x2._def.typeName];
       return type && !types2.includes(type) ? [...types2, type] : types2;
     }, []);
     return {
       type: types.length > 1 ? types : types[0]
     };
-  } else if (options.every((x) => x._def.typeName === "ZodLiteral" && !x.description)) {
-    const types = options.reduce((acc, x) => {
-      const type = typeof x._def.value;
+  } else if (options.every((x2) => x2._def.typeName === "ZodLiteral" && !x2.description)) {
+    const types = options.reduce((acc, x2) => {
+      const type = typeof x2._def.value;
       switch (type) {
         case "string":
         case "number":
@@ -33184,7 +33259,7 @@ function parseUnionDef(def, refs) {
         case "bigint":
           return [...acc, "integer"];
         case "object":
-          if (x._def.value === null)
+          if (x2._def.value === null)
             return [...acc, "null"];
         case "symbol":
         case "undefined":
@@ -33194,30 +33269,30 @@ function parseUnionDef(def, refs) {
       }
     }, []);
     if (types.length === options.length) {
-      const uniqueTypes = types.filter((x, i, a) => a.indexOf(x) === i);
+      const uniqueTypes = types.filter((x2, i, a) => a.indexOf(x2) === i);
       return {
         type: uniqueTypes.length > 1 ? uniqueTypes : uniqueTypes[0],
-        enum: options.reduce((acc, x) => {
-          return acc.includes(x._def.value) ? acc : [...acc, x._def.value];
+        enum: options.reduce((acc, x2) => {
+          return acc.includes(x2._def.value) ? acc : [...acc, x2._def.value];
         }, [])
       };
     }
-  } else if (options.every((x) => x._def.typeName === "ZodEnum")) {
+  } else if (options.every((x2) => x2._def.typeName === "ZodEnum")) {
     return {
       type: "string",
-      enum: options.reduce((acc, x) => [
+      enum: options.reduce((acc, x2) => [
         ...acc,
-        ...x._def.values.filter((x2) => !acc.includes(x2))
+        ...x2._def.values.filter((x3) => !acc.includes(x3))
       ], [])
     };
   }
   return asAnyOf(def, refs);
 }
 var asAnyOf = (def, refs) => {
-  const anyOf = (def.options instanceof Map ? Array.from(def.options.values()) : def.options).map((x, i) => parseDef(x._def, {
+  const anyOf = (def.options instanceof Map ? Array.from(def.options.values()) : def.options).map((x2, i) => parseDef(x2._def, {
     ...refs,
     currentPath: [...refs.currentPath, "anyOf", `${i}`]
-  })).filter((x) => !!x && (!refs.strictUnions || typeof x === "object" && Object.keys(x).length > 0));
+  })).filter((x2) => !!x2 && (!refs.strictUnions || typeof x2 === "object" && Object.keys(x2).length > 0));
   return anyOf.length ? { anyOf } : void 0;
 };
 
@@ -33402,12 +33477,12 @@ var parsePipelineDef = (def, refs) => {
     ...refs,
     currentPath: [...refs.currentPath, "allOf", "0"]
   });
-  const b = parseDef(def.out._def, {
+  const b2 = parseDef(def.out._def, {
     ...refs,
     currentPath: [...refs.currentPath, "allOf", a ? "1" : "0"]
   });
   return {
-    allOf: [a, b].filter((x) => x !== void 0)
+    allOf: [a, b2].filter((x2) => x2 !== void 0)
   };
 };
 
@@ -33442,10 +33517,10 @@ function parseTupleDef(def, refs) {
     return {
       type: "array",
       minItems: def.items.length,
-      items: def.items.map((x, i) => parseDef(x._def, {
+      items: def.items.map((x2, i) => parseDef(x2._def, {
         ...refs,
         currentPath: [...refs.currentPath, "items", `${i}`]
-      })).reduce((acc, x) => x === void 0 ? acc : [...acc, x], []),
+      })).reduce((acc, x2) => x2 === void 0 ? acc : [...acc, x2], []),
       additionalItems: parseDef(def.rest._def, {
         ...refs,
         currentPath: [...refs.currentPath, "additionalItems"]
@@ -33456,10 +33531,10 @@ function parseTupleDef(def, refs) {
       type: "array",
       minItems: def.items.length,
       maxItems: def.items.length,
-      items: def.items.map((x, i) => parseDef(x._def, {
+      items: def.items.map((x2, i) => parseDef(x2._def, {
         ...refs,
         currentPath: [...refs.currentPath, "items", `${i}`]
-      })).reduce((acc, x) => x === void 0 ? acc : [...acc, x], [])
+      })).reduce((acc, x2) => x2 === void 0 ? acc : [...acc, x2], [])
     };
   }
 }
@@ -33553,7 +33628,7 @@ var selectParser = (def, typeName, refs) => {
     case ZodFirstPartyTypeKind.ZodSymbol:
       return void 0;
     default:
-      return /* @__PURE__ */ ((_) => void 0)(typeName);
+      return /* @__PURE__ */ ((_2) => void 0)(typeName);
   }
 };
 
@@ -34680,15 +34755,15 @@ function isPlainObject2(value) {
 function mergeCapabilities(base, additional) {
   const result2 = { ...base };
   for (const key in additional) {
-    const k = key;
-    const addValue = additional[k];
+    const k2 = key;
+    const addValue = additional[k2];
     if (addValue === void 0)
       continue;
-    const baseValue = result2[k];
+    const baseValue = result2[k2];
     if (isPlainObject2(baseValue) && isPlainObject2(addValue)) {
-      result2[k] = { ...baseValue, ...addValue };
+      result2[k2] = { ...baseValue, ...addValue };
     } else {
-      result2[k] = addValue;
+      result2[k2] = addValue;
     }
   }
   return result2;
@@ -35814,7 +35889,7 @@ var McpServer = class {
       }
     });
     this.server.setRequestHandler(ListResourcesRequestSchema, async (request, extra) => {
-      const resources = Object.entries(this._registeredResources).filter(([_, resource]) => resource.enabled).map(([uri, resource]) => ({
+      const resources = Object.entries(this._registeredResources).filter(([_2, resource]) => resource.enabled).map(([uri, resource]) => ({
         uri,
         name: resource.name,
         ...resource.metadata
@@ -36015,7 +36090,7 @@ var McpServer = class {
     };
     this._registeredResourceTemplates[name] = registeredResourceTemplate;
     const variableNames = template.uriTemplate.variableNames;
-    const hasCompleter = Array.isArray(variableNames) && variableNames.some((v) => !!template.completeCallback(v));
+    const hasCompleter = Array.isArray(variableNames) && variableNames.some((v2) => !!template.completeCallback(v2));
     if (hasCompleter) {
       this.setCompletionRequestHandler();
     }
@@ -36132,7 +36207,7 @@ var McpServer = class {
           annotations = rest.shift();
         }
       } else if (typeof firstArg === "object" && firstArg !== null) {
-        if (Object.values(firstArg).some((v) => typeof v === "object" && v !== null)) {
+        if (Object.values(firstArg).some((v2) => typeof v2 === "object" && v2 !== null)) {
           throw new Error(`Tool ${name} expected a Zod schema or ToolAnnotations, but received an unrecognized object`);
         }
         annotations = rest.shift();
@@ -36560,7 +36635,7 @@ function processStreamEvent(message, customToolNameToPi, model, c) {
     return;
   }
   if (event.type === "content_block_delta") {
-    const index = c.turnBlocks.findIndex((b) => b.index === event.index);
+    const index = c.turnBlocks.findIndex((b2) => b2.index === event.index);
     const block = c.turnBlocks[index];
     if (!block) return;
     if (event.delta?.type === "text_delta" && block.type === "text") {
@@ -36594,7 +36669,7 @@ function processStreamEvent(message, customToolNameToPi, model, c) {
     return;
   }
   if (event.type === "content_block_stop") {
-    const index = c.turnBlocks.findIndex((b) => b.index === event.index);
+    const index = c.turnBlocks.findIndex((b2) => b2.index === event.index);
     const block = c.turnBlocks[index];
     if (!block) return;
     delete block.index;
@@ -37698,10 +37773,10 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
       uniqueRuns.push(run);
     }
   }
-  uniqueRuns.sort((a, b) => {
-    const at = a.updatedAt ? Date.parse(a.updatedAt) : 0;
-    const bt = b.updatedAt ? Date.parse(b.updatedAt) : 0;
-    return bt - at;
+  uniqueRuns.sort((a, b2) => {
+    const at2 = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+    const bt = b2.updatedAt ? Date.parse(b2.updatedAt) : 0;
+    return bt - at2;
   });
   const runs = uniqueRuns.slice(0, 16);
   const runTotal = legacyRunTotal + kxmRunTotal;
@@ -37717,7 +37792,7 @@ function loadLocalMeshSnapshot(dataPath, stateDir, options) {
   const spend = existsSync9(telemetryFile) ? readRoutingRecords(telemetryFile) : [];
   return {
     source,
-    agents: agents.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
+    agents: agents.sort((a, b2) => Number(b2.online) - Number(a.online) || a.name.localeCompare(b2.name)),
     openMessages,
     openMessageTotal,
     runs,
@@ -38095,11 +38170,11 @@ function sessionBriefPickerEnabled(input) {
   const reason = input.reason ?? "startup";
   return reason === "startup" || reason === "new" || reason === "fork";
 }
-var KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "progress", "workflow", "help"];
+var KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "progress", "workflow", "config", "help"];
 function parseKxmSlashArgs(args) {
   const raw = String(args ?? "").trim().toLowerCase();
   if (raw === "" || raw === "brief") return "brief";
-  if (raw === "status" || raw === "hub" || raw === "memory" || raw === "progress" || raw === "workflow" || raw === "help") return raw;
+  if (raw === "status" || raw === "hub" || raw === "memory" || raw === "progress" || raw === "workflow" || raw === "config" || raw === "help") return raw;
   return "help";
 }
 function kxmSlashCompletions(prefix) {
@@ -38107,12 +38182,9699 @@ function kxmSlashCompletions(prefix) {
   return KXM_SLASH_SUBCOMMANDS.filter((name) => name.startsWith(p)).map((name) => ({ value: name, label: name }));
 }
 
-// plugins/kxm/src/workflow-tui.ts
+// plugins/kxm/src/config-editor.ts
+var import_yaml3 = __toESM(require_dist(), 1);
 import { existsSync as existsSync12, readFileSync as readFileSync13 } from "node:fs";
+
+// packages/core/tui/src/types/surface.ts
+var KXM_TUI_FIELD_KINDS = ["text", "enum", "choice", "info"];
+var KXM_TUI_STATUSES = ["ready", "available", "blocked"];
+var KXM_TUI_STEP_STATES = ["pending", "satisfied", "running", "done", "failed"];
+var KXM_TUI_NOTICE_LEVELS = ["info", "error"];
+var KXM_TUI_SET_ACTION = "set";
+var KXM_TUI_CLEAR_ACTION = "clear";
+var KXM_TUI_ABORT_ACTION = "abort";
+var KXM_TUI_LIMITS = Object.freeze({
+  sourceMax: 128,
+  idMax: 128,
+  choiceIdMax: 256,
+  labelMax: 48,
+  choiceLabelMax: 96,
+  detailMax: 240,
+  shortDetailMax: 96,
+  stepDetailMax: 160,
+  statusTextMax: 240,
+  valueMax: 4096,
+  keyPathMax: 128,
+  outputLineMax: 512,
+  outputMaxLines: 64,
+  choicesMax: 128,
+  actionsMax: 4,
+  stepsMax: 24,
+  fieldsMax: 64,
+  sectionsMax: 32,
+  orderMax: 1e3
+});
+var ID_PATTERN = /^[a-z0-9][a-z0-9._:-]*$/;
+var SOURCE_PATTERN = /^[A-Za-z0-9@][A-Za-z0-9@/._:-]*$/;
+var KEY_PATH_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.[\]-]*$/;
+var ACTION_KEY_PATTERN = /^[A-Za-z0-9]$/;
+function issue2(path, code, message) {
+  return { path, code, message };
+}
+function isPlainObject3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function boundedText(issues, path, value, max, required2) {
+  if (value === void 0) {
+    if (required2) issues.push(issue2(path, "required", `${path} is required`));
+    return;
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    issues.push(issue2(path, "invalid_string", `${path} must be a non-empty string`));
+    return;
+  }
+  if (value.length > max) {
+    issues.push(issue2(path, "too_long", `${path} exceeds ${max} characters`));
+    return;
+  }
+  if (/[\u0000-\u0008\u000a-\u001f\u007f]/u.test(value)) {
+    issues.push(issue2(path, "control_character", `${path} must not contain control characters`));
+  }
+}
+function optionalEnum(issues, path, value, allowed) {
+  if (value === void 0) return;
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    issues.push(issue2(path, "invalid_choice", `${path} must be one of ${allowed.join(", ")}`));
+  }
+}
+function ratioField(issues, path, value) {
+  if (value === void 0) return;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    issues.push(issue2(path, "invalid_ratio", `${path} must be a finite number between 0 and 1`));
+  }
+}
+function validateChoice(issues, path, raw) {
+  if (!isPlainObject3(raw)) {
+    issues.push(issue2(path, "invalid_object", `${path} must be an object`));
+    return;
+  }
+  boundedText(issues, `${path}.id`, raw.id, KXM_TUI_LIMITS.choiceIdMax, true);
+  if (typeof raw.id === "string" && /[\s]/u.test(raw.id)) {
+    issues.push(issue2(`${path}.id`, "invalid_choice_id", `${path}.id must not contain whitespace`));
+  }
+  boundedText(issues, `${path}.label`, raw.label, KXM_TUI_LIMITS.choiceLabelMax, true);
+  boundedText(issues, `${path}.detail`, raw.detail, KXM_TUI_LIMITS.shortDetailMax, false);
+  boundedText(issues, `${path}.group`, raw.group, KXM_TUI_LIMITS.shortDetailMax, false);
+  boundedText(issues, `${path}.statusText`, raw.statusText, KXM_TUI_LIMITS.shortDetailMax, false);
+  boundedText(issues, `${path}.action`, raw.action, KXM_TUI_LIMITS.idMax, false);
+  optionalEnum(issues, `${path}.status`, raw.status, KXM_TUI_STATUSES);
+}
+function validateAction(issues, path, raw) {
+  if (!isPlainObject3(raw)) {
+    issues.push(issue2(path, "invalid_object", `${path} must be an object`));
+    return;
+  }
+  if (typeof raw.key !== "string" || !ACTION_KEY_PATTERN.test(raw.key)) {
+    issues.push(issue2(`${path}.key`, "invalid_action_key", `${path}.key must be a single alphanumeric key`));
+  }
+  boundedText(issues, `${path}.label`, raw.label, KXM_TUI_LIMITS.shortDetailMax, true);
+  boundedText(issues, `${path}.action`, raw.action, KXM_TUI_LIMITS.idMax, true);
+}
+function validateStep(issues, path, raw) {
+  if (!isPlainObject3(raw)) {
+    issues.push(issue2(path, "invalid_object", `${path} must be an object`));
+    return;
+  }
+  boundedText(issues, `${path}.label`, raw.label, KXM_TUI_LIMITS.shortDetailMax, true);
+  boundedText(issues, `${path}.detail`, raw.detail, KXM_TUI_LIMITS.stepDetailMax, false);
+  optionalEnum(issues, `${path}.state`, raw.state, KXM_TUI_STEP_STATES);
+  if (raw.state === void 0) issues.push(issue2(`${path}.state`, "required", `${path}.state is required`));
+}
+function validateField(issues, path, raw) {
+  if (!isPlainObject3(raw)) {
+    issues.push(issue2(path, "invalid_object", `${path} must be an object`));
+    return;
+  }
+  boundedText(issues, `${path}.id`, raw.id, KXM_TUI_LIMITS.idMax, true);
+  if (typeof raw.id === "string" && !ID_PATTERN.test(raw.id)) {
+    issues.push(issue2(`${path}.id`, "invalid_id", `${path}.id must match ${ID_PATTERN}`));
+  }
+  boundedText(issues, `${path}.label`, raw.label, KXM_TUI_LIMITS.labelMax, true);
+  if (raw.kind === void 0) {
+    issues.push(issue2(`${path}.kind`, "required", `${path}.kind is required`));
+  } else {
+    optionalEnum(issues, `${path}.kind`, raw.kind, KXM_TUI_FIELD_KINDS);
+  }
+  boundedText(issues, `${path}.value`, raw.value, KXM_TUI_LIMITS.valueMax, false);
+  boundedText(issues, `${path}.placeholder`, raw.placeholder, KXM_TUI_LIMITS.shortDetailMax, false);
+  boundedText(issues, `${path}.detail`, raw.detail, KXM_TUI_LIMITS.detailMax, false);
+  boundedText(issues, `${path}.statusText`, raw.statusText, KXM_TUI_LIMITS.statusTextMax, false);
+  if (raw.updatedAt !== void 0) {
+    boundedText(issues, `${path}.updatedAt`, raw.updatedAt, 64, false);
+    if (typeof raw.updatedAt === "string" && !Number.isFinite(Date.parse(raw.updatedAt))) {
+      issues.push(issue2(`${path}.updatedAt`, "invalid_timestamp", `${path}.updatedAt must be an ISO timestamp`));
+    }
+  }
+  optionalEnum(issues, `${path}.status`, raw.status, KXM_TUI_STATUSES);
+  if (raw.keyPath !== void 0) {
+    boundedText(issues, `${path}.keyPath`, raw.keyPath, KXM_TUI_LIMITS.keyPathMax, false);
+    if (typeof raw.keyPath === "string" && !KEY_PATH_PATTERN.test(raw.keyPath)) {
+      issues.push(issue2(`${path}.keyPath`, "invalid_key_path", `${path}.keyPath must be a dotted config key`));
+    }
+  }
+  for (const listKey of ["busy", "awaitingInput"]) {
+    if (raw[listKey] !== void 0 && typeof raw[listKey] !== "boolean") {
+      issues.push(issue2(`${path}.${listKey}`, "invalid_boolean", `${path}.${listKey} must be a boolean`));
+    }
+  }
+  if (raw.progress !== void 0) {
+    if (!isPlainObject3(raw.progress)) {
+      issues.push(issue2(`${path}.progress`, "invalid_object", `${path}.progress must be an object`));
+    } else {
+      boundedText(issues, `${path}.progress.label`, raw.progress.label, KXM_TUI_LIMITS.shortDetailMax, true);
+      ratioField(issues, `${path}.progress.ratio`, raw.progress.ratio);
+    }
+  }
+  for (const [listKey, max, check] of [
+    ["choices", KXM_TUI_LIMITS.choicesMax, validateChoice],
+    ["actions", KXM_TUI_LIMITS.actionsMax, validateAction],
+    ["steps", KXM_TUI_LIMITS.stepsMax, validateStep]
+  ]) {
+    const list = raw[listKey];
+    if (list === void 0) continue;
+    if (!Array.isArray(list) || list.length > max) {
+      issues.push(issue2(`${path}.${listKey}`, "invalid_list", `${path}.${listKey} must be an array of at most ${max}`));
+      continue;
+    }
+    list.forEach((entry, index) => check(issues, `${path}.${listKey}[${index}]`, entry));
+  }
+  const output = raw.output;
+  if (output !== void 0) {
+    if (!Array.isArray(output) || output.length > KXM_TUI_LIMITS.outputMaxLines) {
+      issues.push(issue2(`${path}.output`, "invalid_list", `${path}.output must be an array of at most ${KXM_TUI_LIMITS.outputMaxLines} lines`));
+    } else {
+      output.forEach((line, index) => {
+        if (typeof line !== "string") issues.push(issue2(`${path}.output[${index}]`, "invalid_string", "output lines must be strings"));
+        else if (line.length > KXM_TUI_LIMITS.outputLineMax) issues.push(issue2(`${path}.output[${index}]`, "too_long", "output line is too long"));
+      });
+    }
+  }
+}
+function validateSection(issues, path, raw) {
+  if (!isPlainObject3(raw)) {
+    issues.push(issue2(path, "invalid_object", `${path} must be an object`));
+    return;
+  }
+  boundedText(issues, `${path}.id`, raw.id, KXM_TUI_LIMITS.idMax, true);
+  if (typeof raw.id === "string" && !ID_PATTERN.test(raw.id)) {
+    issues.push(issue2(`${path}.id`, "invalid_id", `${path}.id must match ${ID_PATTERN}`));
+  }
+  boundedText(issues, `${path}.title`, raw.title, KXM_TUI_LIMITS.labelMax, true);
+  boundedText(issues, `${path}.detail`, raw.detail, KXM_TUI_LIMITS.shortDetailMax, false);
+  boundedText(issues, `${path}.notice`, raw.notice, KXM_TUI_LIMITS.detailMax, false);
+  optionalEnum(issues, `${path}.noticeLevel`, raw.noticeLevel, KXM_TUI_NOTICE_LEVELS);
+  if (typeof raw.order !== "number" || !Number.isInteger(raw.order) || raw.order < 0 || raw.order > KXM_TUI_LIMITS.orderMax) {
+    issues.push(issue2(`${path}.order`, "invalid_order", `${path}.order must be an integer between 0 and ${KXM_TUI_LIMITS.orderMax}`));
+  }
+  if (!Array.isArray(raw.fields) || raw.fields.length > KXM_TUI_LIMITS.fieldsMax) {
+    issues.push(issue2(`${path}.fields`, "invalid_list", `${path}.fields must be an array of at most ${KXM_TUI_LIMITS.fieldsMax}`));
+    return;
+  }
+  const seen = /* @__PURE__ */ new Set();
+  raw.fields.forEach((field, index) => {
+    const fieldPath = `${path}.fields[${index}]`;
+    validateField(issues, fieldPath, field);
+    if (isPlainObject3(field) && typeof field.id === "string") {
+      if (seen.has(field.id)) issues.push(issue2(`${fieldPath}.id`, "duplicate_id", `${field.id} is published twice in ${path}`));
+      seen.add(field.id);
+    }
+  });
+}
+function validateKxmTuiSurface(sections) {
+  if (!Array.isArray(sections)) return [issue2("sections", "invalid_list", "sections must be an array")];
+  if (sections.length > KXM_TUI_LIMITS.sectionsMax) {
+    return [issue2("sections", "too_many", `sections must number at most ${KXM_TUI_LIMITS.sectionsMax}`)];
+  }
+  const issues = [];
+  const seenSources = /* @__PURE__ */ new Map();
+  sections.forEach((section, index) => {
+    const path = `sections[${index}]`;
+    validateSection(issues, path, section);
+    if (!isPlainObject3(section)) return;
+    boundedText(issues, `${path}.source`, section.source, KXM_TUI_LIMITS.sourceMax, true);
+    if (typeof section.source === "string" && !SOURCE_PATTERN.test(section.source)) {
+      issues.push(issue2(`${path}.source`, "invalid_source", `${path}.source must be an addressable owner id`));
+    }
+    if (typeof section.source === "string" && typeof section.id === "string") {
+      const ids = seenSources.get(section.source) ?? /* @__PURE__ */ new Set();
+      seenSources.set(section.source, ids);
+      if (ids.has(section.id)) issues.push(issue2(`${path}.id`, "duplicate_section", `${section.source}/${section.id} is published twice`));
+      ids.add(section.id);
+    }
+  });
+  return issues;
+}
+function isSelectableField(field) {
+  return field !== void 0 && field.kind !== "info";
+}
+function groupedKxmTuiChoices(field) {
+  const choices = field.choices ?? [];
+  if (choices.length === 0) return [];
+  if (choices.every((choice) => choice.group === void 0)) return [{ group: "", choices }];
+  const groups = [];
+  const index = /* @__PURE__ */ new Map();
+  for (const choice of choices) {
+    const group = choice.group ?? "";
+    let bucket = index.get(group);
+    if (!bucket) {
+      bucket = [];
+      index.set(group, bucket);
+      groups.push({ group, choices: bucket });
+    }
+    bucket.push(choice);
+  }
+  return groups;
+}
+
+// node_modules/marked/lib/marked.esm.js
+function A() {
+  return { async: false, breaks: false, extensions: null, gfm: true, hooks: null, pedantic: false, renderer: null, silent: false, tokenizer: null, walkTokens: null };
+}
+var R = A();
+function j(l3) {
+  R = l3;
+}
+var z = { exec: () => null };
+function I(l3) {
+  let e = [];
+  return (t) => {
+    let n = Math.max(0, Math.min(3, t - 1)), s = e[n];
+    return s || (s = l3(n), e[n] = s), s;
+  };
+}
+function k(l3, e = "") {
+  let t = typeof l3 == "string" ? l3 : l3.source, n = { replace: (s, r) => {
+    let i = typeof r == "string" ? r : r.source;
+    return i = i.replace(m.caret, "$1"), t = t.replace(s, i), n;
+  }, getRegex: () => new RegExp(t, e) };
+  return n;
+}
+var Oe = ((l3 = "") => {
+  try {
+    return !!new RegExp("(?<=1)(?<!1)" + l3);
+  } catch {
+    return false;
+  }
+})();
+var m = { codeRemoveIndent: /^(?: {1,4}| {0,3}\t)/gm, outputLinkReplace: /\\([\[\]])/g, indentCodeCompensation: /^(\s+)(?:```)/, beginningSpace: /^\s+/, endingHash: /#$/, startingSpaceChar: /^ /, endingSpaceChar: / $/, nonSpaceChar: /[^ ]/, newLineCharGlobal: /\n/g, tabCharGlobal: /\t/g, multipleSpaceGlobal: /\s+/g, blankLine: /^[ \t]*$/, doubleBlankLine: /\n[ \t]*\n[ \t]*$/, blockquoteStart: /^ {0,3}>/, blockquoteSetextReplace: /\n {0,3}((?:=+|-+) *)(?=\n|$)/g, blockquoteSetextReplace2: /^ {0,3}>[ \t]?/gm, listReplaceNesting: /^ {1,4}(?=( {4})*[^ ])/g, listIsTask: /^\[[ xX]\] +\S/, listReplaceTask: /^\[[ xX]\] +/, listTaskCheckbox: /\[[ xX]\]/, anyLine: /\n.*\n/, hrefBrackets: /^<(.*)>$/, tableDelimiter: /[:|]/, tableAlignChars: /^\||\| *$/g, tableRowBlankLine: /\n[ \t]*$/, tableAlignRight: /^ *-+: *$/, tableAlignCenter: /^ *:-+: *$/, tableAlignLeft: /^ *:-+ *$/, startATag: /^<a /i, endATag: /^<\/a>/i, startPreScriptTag: /^<(pre|code|kbd|script)(\s|>)/i, endPreScriptTag: /^<\/(pre|code|kbd|script)(\s|>)/i, startAngleBracket: /^</, endAngleBracket: />$/, pedanticHrefTitle: /^([^'"]*[^\s])\s+(['"])(.*)\2/, unicodeAlphaNumeric: /[\p{L}\p{N}]/u, escapeTest: /[&<>"']/, escapeReplace: /[&<>"']/g, escapeTestNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/, escapeReplaceNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g, caret: /(^|[^\[])\^/g, percentDecode: /%25/g, findPipe: /\|/g, splitPipe: / \|/, slashPipe: /\\\|/g, carriageReturn: /\r\n|\r/g, spaceLine: /^ +$/gm, notSpaceStart: /^\S*/, endingNewline: /\n$/, listItemRegex: (l3) => new RegExp(`^( {0,3}${l3})((?:[	 ][^\\n]*)?(?:\\n|$))`), nextBulletRegex: I((l3) => new RegExp(`^ {0,${l3}}(?:[*+-]|\\d{1,9}[.)])((?:[ 	][^\\n]*)?(?:\\n|$))`)), hrRegex: I((l3) => new RegExp(`^ {0,${l3}}((?:- *){3,}|(?:_ *){3,}|(?:\\* *){3,})(?:\\n+|$)`)), fencesBeginRegex: I((l3) => new RegExp(`^ {0,${l3}}(?:\`\`\`|~~~)`)), headingBeginRegex: I((l3) => new RegExp(`^ {0,${l3}}#`)), htmlBeginRegex: I((l3) => new RegExp(`^ {0,${l3}}<(?:[a-z].*>|!--)`, "i")), blockquoteBeginRegex: I((l3) => new RegExp(`^ {0,${l3}}>`)) };
+var Te = /^(?:[ \t]*(?:\n|$))+/;
+var we = /^((?: {4}| {0,3}\t)[^\n]+(?:\n(?:[ \t]*(?:\n|$))*)?)+/;
+var ye = /^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})([^\n]*)(?:\n|$)(?:|([\s\S]*?)(?:\n|$))(?: {0,3}\1[~`]* *(?=\n|$)|$)/;
+var q = /^ {0,3}((?:-[\t ]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})(?:\n+|$)/;
+var Pe = /^ {0,3}(#{1,6})(?=\s|$)(.*)(?:\n+|$)/;
+var U = / {0,3}(?:[*+-]|\d{1,9}[.)])/;
+var oe = /^(?!bull |blockCode|fences|blockquote|heading|html|table)((?:.|\n(?!\s*?\n|bull |blockCode|fences|blockquote|heading|html|table))+?)\n {0,3}(=+|-+) *(?:\n+|$)/;
+var ae = k(oe).replace(/bull/g, U).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}(?:\s|$)/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/\|table/g, "").getRegex();
+var Se = k(oe).replace(/bull/g, U).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}(?:\s|$)/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/table/g, / {0,3}\|?(?:[:\- ]*\|)+[\:\- ]*\n/).getRegex();
+var K = /^([^\n]+(?:\n(?!hr|heading|lheading|blockquote|fences|list|html|table|[ \t]+\n)[^\n]+)*)/;
+var _e = /^[^\n]+/;
+var W = /(?!\s*\])(?:\\[\s\S]|[^\[\]\\])+/;
+var $e = k(/^ {0,3}\[(label)\]: *(?:\n[ \t]*)?([^<\s][^\s]*|<.*?>)(?:(?: +(?:\n[ \t]*)?| *\n[ \t]*)(title))? *(?:\n+|$)/).replace("label", W).replace("title", /(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\))/).getRegex();
+var Le = k(/^(bull)([ \t][^\n]*?)?(?:\n|$)/).replace(/bull/g, U).getRegex();
+var Q = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
+var X = /<!--(?:-?>|[\s\S]*?(?:-->|$))/;
+var Ee = k("^ {0,3}(?:<(script|pre|style|textarea)[\\s>][\\s\\S]*?(?:</\\1>[^\\n]*\\n*|$)|comment[^\\n]*(\\n+|$)|<\\?[\\s\\S]*?(?:\\?>[^\\n]*\\n*|$)|<![A-Z][\\s\\S]*?(?:>[^\\n]*\\n*|$)|<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>[^\\n]*\\n*|$)|</?(tag)(?: +|\\n|/?>)[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|<(?!script|pre|style|textarea)([a-z][\\w-]*)(?:attribute)*? */?>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$)|</(?!script|pre|style|textarea)[a-z][\\w-]*\\s*>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ 	]*)+\\n|$))", "i").replace("comment", X).replace("tag", Q).replace("attribute", / +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'| *= *[^\s"'=<>`]+)?/).getRegex();
+var le = (l3) => k(K).replace("hr", q).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("|table", "").replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*(?:\\n|$))|~~~)[^\\n]*(?:\\n|$)").replace("list", l3).replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", Q).getRegex();
+var ze = le(/ {0,3}(?:[*+-]|1[.)])[ \t]+[^ \t\n]/);
+var Me = le(/ {0,3}(?:[*+-]|\d{1,9}[.)])(?:[ \t]|\n|$)/);
+var Ae = k(/^( {0,3}> ?(paragraph|[^\n]*)(?:\n|$))+/).replace("paragraph", Me).getRegex();
+var J = { blockquote: Ae, code: we, def: $e, fences: ye, heading: Pe, hr: q, html: Ee, lheading: ae, list: Le, newline: Te, paragraph: ze, table: z, text: _e };
+var se = k("^ *([^\\n ].*)\\n {0,3}((?:\\| *)?:?-+:? *(?:\\| *:?-+:? *)*(?:\\| *)?)(?:\\n((?:(?! *\\n|hr|heading|blockquote|code|fences|list|html).*(?:\\n|$))*)\\n*|$)").replace("hr", q).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("blockquote", " {0,3}>").replace("code", "(?: {4}| {0,3}	)[^\\n]").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*(?:\\n|$))|~~~)[^\\n]*(?:\\n|$)").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", Q).getRegex();
+var Ie = { ...J, lheading: Se, table: se, paragraph: k(K).replace("hr", q).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("table", se).replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*(?:\\n|$))|~~~)[^\\n]*(?:\\n|$)").replace("list", " {0,3}(?:[*+-]|1[.)])[ \\t]+[^ \\t\\n]").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", Q).getRegex() };
+var Ce = { ...J, html: k(`^ *(?:comment *(?:\\n|\\s*$)|<(tag)[\\s\\S]+?</\\1> *(?:\\n{2,}|\\s*$)|<tag(?:"[^"]*"|'[^']*'|\\s[^'"/>\\s]*)*?/?> *(?:\\n{2,}|\\s*$))`).replace("comment", X).replace(/tag/g, "(?!(?:a|em|strong|small|s|cite|q|dfn|abbr|data|time|code|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo|span|br|wbr|ins|del|img)\\b)\\w+(?!:|[^\\w\\s@]*@)\\b").getRegex(), def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +(["(][^\n]+[")]))? *(?:\n+|$)/, heading: /^(#{1,6})(.*)(?:\n+|$)/, fences: z, lheading: /^(.+?)\n {0,3}(=+|-+) *(?:\n+|$)/, paragraph: k(K).replace("hr", q).replace("heading", ` *#{1,6} *[^
+]`).replace("lheading", ae).replace("|table", "").replace("blockquote", " {0,3}>").replace("|fences", "").replace("|list", "").replace("|html", "").replace("|tag", "").getRegex() };
+var Be = /^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/;
+var De = /^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/;
+var ue = /^( {2,}|\\)\n(?!\s*$)/;
+var qe = /^(`+|[^`])(?:(?= {2,}\n)|[\s\S]*?(?:(?=[\\<!\[`*_]|\b_|$)|[^ ](?= {2,}\n)))/;
+var _ = /[\p{P}\p{S}]/u;
+var C = /[\s\p{P}\p{S}]/u;
+var v = /[^\s\p{P}\p{S}]/u;
+var ve = k(/^((?![*_])punctSpace)/, "u").replace(/punctSpace/g, C).getRegex();
+var He = /[\p{Pi}\p{Ps}"']/u;
+var pe = /(?!~)[\p{P}\p{S}]/u;
+var Ze = /(?!~)[\s\p{P}\p{S}]/u;
+var Ge = /(?:[^\s\p{P}\p{S}]|~)/u;
+var Qe = k(/link|precode-code|html/, "g").replace("link", /\[(?:[^\[\]`]|(?<a>`+)[^`]+\k<a>(?!`))*?\]\((?:\\[\s\S]|[^\\\(\)]|\((?:\\[\s\S]|[^\\\(\)])*\))*\)/).replace("precode-", Oe ? "(?<!`)()" : "(^^|[^`])").replace("code", /(?<b>`+)[^`]+\k<b>(?!`)/).replace("html", /<(?! )[^<>]*?>/).getRegex();
+var ce = /^(?:\*+(?:((?!\*)punct)|([^\s*]))?)|^_+(?:((?!_)punct)|([^\s_]))?/;
+var Ne = k(ce, "u").replace(/punct/g, _).getRegex();
+var je = k(ce, "u").replace(/punct/g, pe).getRegex();
+var Fe = /^(?:\*+(?:((?!\*)(?!openQuote)punct)|([^\s*]))?)|^_+(?:((?!_)(?!openQuote)punct)|([^\s_]))?/;
+var Ue = k(Fe, "u").replace(/openQuote/g, He).replace(/punct/g, _).getRegex();
+var he = "^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)punct(\\*+)(?=[\\s]|$)|notPunctSpace(\\*+)(?!\\*)(?=punctSpace|$)|(?!\\*)punctSpace(\\*+)(?=notPunctSpace)|[\\s](\\*+)(?!\\*)(?=punct)|(?!\\*)punct(\\*+)(?!\\*)(?=punct)|notPunctSpace(\\*+)(?=notPunctSpace)";
+var Ke = k(he, "gu").replace(/notPunctSpace/g, v).replace(/punctSpace/g, C).replace(/punct/g, _).getRegex();
+var We = k(he, "gu").replace(/notPunctSpace/g, Ge).replace(/punctSpace/g, Ze).replace(/punct/g, pe).getRegex();
+var Xe = "^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)punct(\\*+)(?=[\\s]|$)|notPunctSpace(\\*+)(?!\\*)(?=punctSpace|$)|(?!\\*)[\\s](\\*+)(?=notPunctSpace)|[\\s](\\*+)(?!\\*)(?=punct)|(?!\\*)punct(\\*+)(?!\\*)(?=punct)|(?:(?!\\*)punct|notPunctSpace)(\\*+)(?!\\*)(?=notPunctSpace)";
+var Je = k(Xe, "gu").replace(/notPunctSpace/g, v).replace(/punctSpace/g, C).replace(/punct/g, _).getRegex();
+var Ve = k("^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)punct(_+)(?=[\\s]|$)|notPunctSpace(_+)(?!_)(?=punctSpace|$)|(?!_)punctSpace(_+)(?=notPunctSpace)|[\\s](_+)(?!_)(?=punct)|(?!_)punct(_+)(?!_)(?=punct)", "gu").replace(/notPunctSpace/g, v).replace(/punctSpace/g, C).replace(/punct/g, _).getRegex();
+var Ye = "^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)punct(_+)(?=[\\s]|$)|notPunctSpace(_+)(?!_)(?=punctSpace|$)|(?!_)[\\s](_+)(?=notPunctSpace)|[\\s](_+)(?!_)(?=punct)|(?!_)punct(_+)(?!_)(?=punct)|(?:(?!_)punct|notPunctSpace)(_+)(?!_)(?=notPunctSpace)";
+var et = k(Ye, "gu").replace(/notPunctSpace/g, v).replace(/punctSpace/g, C).replace(/punct/g, _).getRegex();
+var tt = k(/^~~?(?:((?!~)punct)|[^\s~])/, "u").replace(/punct/g, _).getRegex();
+var nt = "^[^~]+(?=[^~])|(?!~)punct(~~?)(?=[\\s]|$)|notPunctSpace(~~?)(?!~)(?=punctSpace|$)|(?!~)punctSpace(~~?)(?=notPunctSpace)|[\\s](~~?)(?!~)(?=punct)|(?!~)punct(~~?)(?!~)(?=punct)|notPunctSpace(~~?)(?=notPunctSpace)";
+var rt = k(nt, "gu").replace(/notPunctSpace/g, v).replace(/punctSpace/g, C).replace(/punct/g, _).getRegex();
+var st = k(/\\(punct)/, "gu").replace(/punct/g, _).getRegex();
+var it = k(/^<(scheme:[^\s\x00-\x1f<>]*|email)>/).replace("scheme", /[a-zA-Z][a-zA-Z0-9+.-]{1,31}/).replace("email", /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+(@)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+(?![-_])/).getRegex();
+var ot = k(X).replace("(?:-->|$)", "-->").getRegex();
+var at = k("^comment|^</[a-zA-Z][\\w:-]*\\s*>|^<[a-zA-Z][\\w-]*(?:attribute)*?\\s*/?>|^<\\?[\\s\\S]*?\\?>|^<![a-zA-Z]+\\s[\\s\\S]*?>|^<!\\[CDATA\\[[\\s\\S]*?\\]\\]>").replace("comment", ot).replace("attribute", /\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*"[^"]*"|\s*=\s*'[^']*'|\s*=\s*[^\s"'=<>`]+)?/).getRegex();
+var G = /(?:\[(?:\\[\s\S]|[^\[\]\\])*\]|\\[\s\S]|`+(?!`)[^`]*?`+(?!`)|``+(?=\])|[^\[\]\\`])*?/;
+var lt = k(/^!?\[(label)\]\(\s*(href)(?:(?:[ \t]+(?:\n[ \t]*)?|\n[ \t]*)(title))?\s*\)/).replace("label", G).replace("href", /<(?:\\.|[^\n<>\\])+>|[^ \t\n\x00-\x1f]+|(?=\))/).replace("title", /"(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)/).getRegex();
+var ke = k(/^!?\[(label)\]\[(ref)\]/).replace("label", G).replace("ref", W).getRegex();
+var de = k(/^!?\[(ref)\](?:\[\])?/).replace("ref", W).getRegex();
+var ut = k("reflink|nolink(?!\\()", "g").replace("reflink", ke).replace("nolink", de).getRegex();
+var ie = /[hH][tT][tT][pP][sS]?|[fF][tT][pP]/;
+var V = { _backpedal: z, anyPunctuation: st, autolink: it, blockSkip: Qe, br: ue, code: De, del: z, delLDelim: z, delRDelim: z, emStrongLDelim: Ne, emStrongRDelimAst: Ke, emStrongRDelimUnd: Ve, escape: Be, link: lt, nolink: de, punctuation: ve, reflink: ke, reflinkSearch: ut, tag: at, text: qe, url: z };
+var pt = { ...V, emStrongLDelim: Ue, emStrongRDelimAst: Je, emStrongRDelimUnd: et, link: k(/^!?\[(label)\]\((.*?)\)/).replace("label", G).getRegex(), reflink: k(/^!?\[(label)\]\s*\[([^\]]*)\]/).replace("label", G).getRegex() };
+var F = { ...V, emStrongRDelimAst: We, emStrongLDelim: je, delLDelim: tt, delRDelim: rt, url: k(/^((?:protocol):\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/).replace("protocol", ie).replace("email", /[A-Za-z0-9._+-]+(@)[a-zA-Z0-9-_]+(?:\.[a-zA-Z0-9-_]*[a-zA-Z0-9])+(?![-_])/).getRegex(), _backpedal: /(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/, del: /^(~~?)(?=[^\s~])((?:\\[\s\S]|[^\\])*?(?:\\[\s\S]|[^\s~\\]))\1(?=[^~]|$)/, text: k(/^(`+|~+|[^`~])(?:(?=[`~])|(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|protocol:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/).replace("protocol", ie).getRegex() };
+var ct = { ...F, br: k(ue).replace("{2,}", "*").getRegex(), text: k(F.text).replace("\\b_", "\\b_| {2,}\\n").replace(/\{2,\}/g, "*").getRegex() };
+var H = { normal: J, gfm: Ie, pedantic: Ce };
+var B = { normal: V, gfm: F, breaks: ct, pedantic: pt };
+var ht = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+var ge = (l3) => ht[l3];
+function T(l3, e) {
+  if (e) {
+    if (m.escapeTest.test(l3)) return l3.replace(m.escapeReplace, ge);
+  } else if (m.escapeTestNoEncode.test(l3)) return l3.replace(m.escapeReplaceNoEncode, ge);
+  return l3;
+}
+function Y(l3) {
+  try {
+    l3 = encodeURI(l3).replace(m.percentDecode, "%");
+  } catch {
+    return null;
+  }
+  return l3;
+}
+function ee(l3, e) {
+  let t = l3.replace(m.findPipe, (r, i, o) => {
+    let u = false, a = i;
+    for (; --a >= 0 && o[a] === "\\"; ) u = !u;
+    return u ? "|" : " |";
+  }), n = t.split(m.splitPipe), s = 0;
+  if (n[0].trim() || n.shift(), n.length > 0 && !n.at(-1)?.trim() && n.pop(), e) if (n.length > e) n.splice(e);
+  else for (; n.length < e; ) n.push("");
+  for (; s < n.length; s++) n[s] = n[s].trim().replace(m.slashPipe, "|");
+  return n;
+}
+function $(l3, e, t) {
+  let n = l3.length;
+  if (n === 0) return "";
+  let s = 0;
+  for (; s < n; ) {
+    let r = l3.charAt(n - s - 1);
+    if (r === e && !t) s++;
+    else if (r !== e && t) s++;
+    else break;
+  }
+  return l3.slice(0, n - s);
+}
+function te(l3) {
+  let e = l3.split(`
+`), t = e.length - 1;
+  for (; t >= 0 && m.blankLine.test(e[t]); ) t--;
+  return e.length - t <= 2 ? l3 : e.slice(0, t + 1).join(`
+`);
+}
+function fe(l3, e) {
+  if (l3.indexOf(e[1]) === -1) return -1;
+  let t = 0;
+  for (let n = 0; n < l3.length; n++) if (l3[n] === "\\") n++;
+  else if (l3[n] === e[0]) t++;
+  else if (l3[n] === e[1] && (t--, t < 0)) return n;
+  return t > 0 ? -2 : -1;
+}
+function me(l3, e = 0) {
+  let t = e, n = "";
+  for (let s of l3) if (s === "	") {
+    let r = 4 - t % 4;
+    n += " ".repeat(r), t += r;
+  } else n += s, t++;
+  return n;
+}
+function xe(l3, e, t, n, s) {
+  let r = e.href, i = e.title || null, o = l3[1].replace(s.other.outputLinkReplace, "$1"), u = l3[0].charAt(0) === "!";
+  n.state.inLink = true;
+  let a = n.state.linkEmitted, p = n.state.inRawBlock;
+  n.state.linkEmitted = false;
+  let c = n.inlineTokens(o), h = n.state.linkEmitted;
+  if (n.state.linkEmitted = a, n.state.inLink = false, !u) {
+    if (h) {
+      n.state.inRawBlock = p;
+      return;
+    }
+    n.state.linkEmitted = true;
+  }
+  return { type: u ? "image" : "link", raw: t, href: r, title: i, text: o, tokens: c };
+}
+function kt(l3, e, t) {
+  let n = l3.match(t.other.indentCodeCompensation);
+  if (n === null) return e;
+  let s = n[1];
+  return e.split(`
+`).map((r) => {
+    let i = r.match(t.other.beginningSpace);
+    if (i === null) return r;
+    let [o] = i;
+    return o.length >= s.length ? r.slice(s.length) : r;
+  }).join(`
+`);
+}
+var y = class {
+  options;
+  rules;
+  lexer;
+  constructor(e) {
+    this.options = e || R;
+  }
+  space(e) {
+    let t = this.rules.block.newline.exec(e);
+    if (t && t[0].length > 0) return { type: "space", raw: t[0] };
+  }
+  code(e) {
+    let t = this.rules.block.code.exec(e);
+    if (t) {
+      let n = this.options.pedantic ? t[0] : te(t[0]), s = n.replace(this.rules.other.codeRemoveIndent, "");
+      return { type: "code", raw: n, codeBlockStyle: "indented", text: s };
+    }
+  }
+  fences(e) {
+    let t = this.rules.block.fences.exec(e);
+    if (t) {
+      let n = t[0], s = kt(n, t[3] || "", this.rules);
+      return { type: "code", raw: n, lang: t[2] ? t[2].trim().replace(this.rules.inline.anyPunctuation, "$1") : t[2], text: s };
+    }
+  }
+  heading(e) {
+    let t = this.rules.block.heading.exec(e);
+    if (t) {
+      let n = t[2].trim();
+      if (this.rules.other.endingHash.test(n)) {
+        let s = $(n, "#");
+        (this.options.pedantic || !s || this.rules.other.endingSpaceChar.test(s)) && (n = s.trim());
+      }
+      return { type: "heading", raw: $(t[0], `
+`), depth: t[1].length, text: n, tokens: this.lexer.inline(n) };
+    }
+  }
+  hr(e) {
+    let t = this.rules.block.hr.exec(e);
+    if (t) return { type: "hr", raw: $(t[0], `
+`) };
+  }
+  blockquote(e) {
+    let t = this.rules.block.blockquote.exec(e);
+    if (t) {
+      let n = $(t[0], `
+`).split(`
+`), s = "", r = "", i = [];
+      for (; n.length > 0; ) {
+        let o = false, u = [], a;
+        for (a = 0; a < n.length; a++) if (this.rules.other.blockquoteStart.test(n[a])) u.push(n[a]), o = true;
+        else if (!o) u.push(n[a]);
+        else break;
+        n = n.slice(a);
+        let p = u.join(`
+`), c = p.replace(this.rules.other.blockquoteSetextReplace, `
+    $1`).replace(this.rules.other.blockquoteSetextReplace2, "");
+        s = s ? `${s}
+${p}` : p, r = r ? `${r}
+${c}` : c;
+        let h = this.lexer.state.top;
+        if (this.lexer.state.top = true, this.lexer.blockTokens(c, i, true), this.lexer.state.top = h, n.length === 0) break;
+        let d = i.at(-1);
+        if (d?.type === "code") break;
+        if (d?.type === "blockquote") {
+          let O = d, g = n.join(`
+`), w = O.raw + `
+` + g.replace(this.rules.other.blockquoteSetextReplace2, ""), E = this.blockquote(w);
+          i[i.length - 1] = E, s = `${s}
+${g}`, r = r.substring(0, r.length - O.text.length) + E.text;
+          break;
+        } else if (d?.type === "list") {
+          let O = d, g = O.raw + `
+` + n.join(`
+`), w = this.list(g);
+          i[i.length - 1] = w, s = s.substring(0, s.length - d.raw.length) + w.raw, r = r.substring(0, r.length - O.raw.length) + w.raw, n = g.substring(i.at(-1).raw.length).split(`
+`);
+          continue;
+        }
+      }
+      return { type: "blockquote", raw: s, tokens: i, text: r };
+    }
+  }
+  list(e) {
+    let t = this.rules.block.list.exec(e);
+    if (t) {
+      let n = t[1].trim(), s = n.length > 1, r = { type: "list", raw: "", ordered: s, start: s ? +n.slice(0, -1) : "", loose: false, items: [] };
+      n = s ? `\\d{1,9}\\${n.slice(-1)}` : `\\${n}`, this.options.pedantic && (n = s ? n : "[*+-]");
+      let i = this.rules.other.listItemRegex(n), o = false;
+      for (; e; ) {
+        let a = false, p = "", c = "";
+        if (!(t = i.exec(e)) || this.rules.block.hr.test(e)) break;
+        p = t[0], e = e.substring(p.length);
+        let h = me(t[2].split(`
+`, 1)[0], t[1].length), d = e.split(`
+`, 1)[0], O = !h.trim(), g = 0;
+        if (this.options.pedantic ? (g = 2, c = h.trimStart()) : O ? g = t[1].length + 1 : (g = h.search(this.rules.other.nonSpaceChar), g = g > 4 ? 1 : g, c = h.slice(g), g += t[1].length), O && this.rules.other.blankLine.test(d) && (p += d + `
+`, e = e.substring(d.length + 1), a = true), !a) {
+          let w = this.rules.other.nextBulletRegex(g), E = this.rules.other.hrRegex(g), ne = this.rules.other.fencesBeginRegex(g), re = this.rules.other.headingBeginRegex(g), be = this.rules.other.htmlBeginRegex(g), Re = this.rules.other.blockquoteBeginRegex(g);
+          for (; e; ) {
+            let N = e.split(`
+`, 1)[0], D;
+            if (d = N, this.options.pedantic ? (d = d.replace(this.rules.other.listReplaceNesting, "  "), D = d) : D = d.replace(this.rules.other.tabCharGlobal, "    "), ne.test(d) || re.test(d) || be.test(d) || Re.test(d) || w.test(d) || E.test(d)) break;
+            if (D.search(this.rules.other.nonSpaceChar) >= g || !d.trim()) c += `
+` + D.slice(g);
+            else {
+              if (O || h.replace(this.rules.other.tabCharGlobal, "    ").search(this.rules.other.nonSpaceChar) >= 4 || ne.test(h) || re.test(h) || E.test(h)) break;
+              c += `
+` + d;
+            }
+            O = !d.trim(), p += N + `
+`, e = e.substring(N.length + 1), h = D.slice(g);
+          }
+        }
+        r.loose || (o ? r.loose = true : this.rules.other.doubleBlankLine.test(p) && (o = true)), r.items.push({ type: "list_item", raw: p, task: !!this.options.gfm && this.rules.other.listIsTask.test(c), loose: false, text: c, tokens: [] }), r.raw += p;
+      }
+      let u = r.items.at(-1);
+      if (u) u.raw = u.raw.trimEnd(), u.text = u.text.trimEnd();
+      else return;
+      r.raw = r.raw.trimEnd();
+      for (let a of r.items) if (this.lexer.state.top = false, a.tokens = this.lexer.blockTokens(a.text, []), !r.loose) {
+        let p = a.tokens.filter((h) => h.type === "space"), c = p.length > 0 && p.some((h) => this.rules.other.anyLine.test(h.raw));
+        r.loose = c;
+      }
+      for (let a of r.items) {
+        let p = a.tokens[0];
+        if (a.task && (p?.type === "text" || p?.type === "paragraph")) {
+          a.text = a.text.replace(this.rules.other.listReplaceTask, ""), p.raw = p.raw.replace(this.rules.other.listReplaceTask, ""), p.text = p.text.replace(this.rules.other.listReplaceTask, "");
+          for (let h = this.lexer.inlineQueue.length - 1; h >= 0; h--) if (this.rules.other.listIsTask.test(this.lexer.inlineQueue[h].src)) {
+            this.lexer.inlineQueue[h].src = this.lexer.inlineQueue[h].src.replace(this.rules.other.listReplaceTask, "");
+            break;
+          }
+          let c = this.rules.other.listTaskCheckbox.exec(a.raw);
+          if (c) {
+            let h = { type: "checkbox", raw: c[0] + " ", checked: c[0] !== "[ ]" };
+            a.checked = h.checked, r.loose ? a.tokens[0] && ["paragraph", "text"].includes(a.tokens[0].type) && "tokens" in a.tokens[0] && a.tokens[0].tokens ? (a.tokens[0].raw = h.raw + a.tokens[0].raw, a.tokens[0].text = h.raw + a.tokens[0].text, a.tokens[0].tokens.unshift(h)) : a.tokens.unshift({ type: "paragraph", raw: h.raw, text: h.raw, tokens: [h] }) : a.tokens.unshift(h);
+          }
+        } else a.task && (a.task = false);
+      }
+      if (r.loose) for (let a of r.items) {
+        a.loose = true;
+        for (let p of a.tokens) p.type === "text" && (p.type = "paragraph");
+      }
+      return r;
+    }
+  }
+  html(e) {
+    let t = this.rules.block.html.exec(e);
+    if (t) {
+      let n = te(t[0]);
+      return { type: "html", block: true, raw: n, pre: t[1] === "pre" || t[1] === "script" || t[1] === "style", text: n };
+    }
+  }
+  def(e) {
+    let t = this.rules.block.def.exec(e);
+    if (t) {
+      let n = t[1].toLowerCase().replace(this.rules.other.multipleSpaceGlobal, " "), s = t[2] ? t[2].replace(this.rules.other.hrefBrackets, "$1").replace(this.rules.inline.anyPunctuation, "$1") : "", r = t[3] ? t[3].substring(1, t[3].length - 1).replace(this.rules.inline.anyPunctuation, "$1") : t[3];
+      return { type: "def", tag: n, raw: $(t[0], `
+`), href: s, title: r };
+    }
+  }
+  table(e) {
+    let t = this.rules.block.table.exec(e);
+    if (!t || !this.rules.other.tableDelimiter.test(t[2])) return;
+    let n = ee(t[1]), s = t[2].replace(this.rules.other.tableAlignChars, "").split("|"), r = t[3]?.trim() ? t[3].replace(this.rules.other.tableRowBlankLine, "").split(`
+`) : [], i = { type: "table", raw: $(t[0], `
+`), header: [], align: [], rows: [] };
+    if (n.length === s.length) {
+      for (let o of s) this.rules.other.tableAlignRight.test(o) ? i.align.push("right") : this.rules.other.tableAlignCenter.test(o) ? i.align.push("center") : this.rules.other.tableAlignLeft.test(o) ? i.align.push("left") : i.align.push(null);
+      for (let o = 0; o < n.length; o++) i.header.push({ text: n[o], tokens: this.lexer.inline(n[o]), header: true, align: i.align[o] });
+      for (let o of r) i.rows.push(ee(o, i.header.length).map((u, a) => ({ text: u, tokens: this.lexer.inline(u), header: false, align: i.align[a] })));
+      return i;
+    }
+  }
+  lheading(e) {
+    let t = this.rules.block.lheading.exec(e);
+    if (t) {
+      let n = t[1].trim();
+      return { type: "heading", raw: $(t[0], `
+`), depth: t[2].charAt(0) === "=" ? 1 : 2, text: n, tokens: this.lexer.inline(n) };
+    }
+  }
+  paragraph(e) {
+    let t = this.rules.block.paragraph.exec(e);
+    if (t) {
+      let n = t[1].charAt(t[1].length - 1) === `
+` ? t[1].slice(0, -1) : t[1];
+      return { type: "paragraph", raw: t[0], text: n, tokens: this.lexer.inline(n) };
+    }
+  }
+  text(e) {
+    let t = this.rules.block.text.exec(e);
+    if (t) return { type: "text", raw: t[0], text: t[0], tokens: this.lexer.inline(t[0]) };
+  }
+  escape(e) {
+    let t = this.rules.inline.escape.exec(e);
+    if (t) return { type: "escape", raw: t[0], text: t[1] };
+  }
+  tag(e) {
+    let t = this.rules.inline.tag.exec(e);
+    if (t) return !this.lexer.state.inLink && this.rules.other.startATag.test(t[0]) ? this.lexer.state.inLink = true : this.lexer.state.inLink && this.rules.other.endATag.test(t[0]) && (this.lexer.state.inLink = false), !this.lexer.state.inRawBlock && this.rules.other.startPreScriptTag.test(t[0]) ? this.lexer.state.inRawBlock = true : this.lexer.state.inRawBlock && this.rules.other.endPreScriptTag.test(t[0]) && (this.lexer.state.inRawBlock = false), { type: "html", raw: t[0], inLink: this.lexer.state.inLink, inRawBlock: this.lexer.state.inRawBlock, block: false, text: t[0] };
+  }
+  link(e) {
+    let t = this.rules.inline.link.exec(e);
+    if (t) {
+      let n = t[2].trim();
+      if (!this.options.pedantic && this.rules.other.startAngleBracket.test(n)) {
+        if (!this.rules.other.endAngleBracket.test(n)) return;
+        let i = $(n.slice(0, -1), "\\");
+        if ((n.length - i.length) % 2 === 0) return;
+      } else {
+        let i = fe(t[2], "()");
+        if (i === -2) return;
+        if (i > -1) {
+          let u = (t[0].indexOf("!") === 0 ? 5 : 4) + t[1].length + i;
+          t[2] = t[2].substring(0, i), t[0] = t[0].substring(0, u).trim(), t[3] = "";
+        }
+      }
+      let s = t[2], r = "";
+      if (this.options.pedantic) {
+        let i = this.rules.other.pedanticHrefTitle.exec(s);
+        i && (s = i[1], r = i[3]);
+      } else r = t[3] ? t[3].slice(1, -1) : "";
+      return s = s.trim(), this.rules.other.startAngleBracket.test(s) && (this.options.pedantic && !this.rules.other.endAngleBracket.test(n) ? s = s.slice(1) : s = s.slice(1, -1)), xe(t, { href: s && s.replace(this.rules.inline.anyPunctuation, "$1"), title: r && r.replace(this.rules.inline.anyPunctuation, "$1") }, t[0], this.lexer, this.rules);
+    }
+  }
+  reflink(e, t) {
+    let n;
+    if ((n = this.rules.inline.reflink.exec(e)) || (n = this.rules.inline.nolink.exec(e))) {
+      let s = (n[2] || n[1]).replace(this.rules.other.multipleSpaceGlobal, " "), r = t[s.toLowerCase()];
+      if (!r) {
+        let i = n[0].charAt(0);
+        return { type: "text", raw: i, text: i };
+      }
+      return xe(n, r, n[0], this.lexer, this.rules);
+    }
+  }
+  emStrong(e, t, n = "") {
+    let s = this.rules.inline.emStrongLDelim.exec(e);
+    if (!s || !s[1] && !s[2] && !s[3] && !s[4] || s[4] && n.match(this.rules.other.unicodeAlphaNumeric)) return;
+    if (!(s[1] || s[3] || "") || !n || this.rules.inline.punctuation.exec(n)) {
+      let i = [...s[0]].length - 1, o, u, a = i, p = 0, c = s[0][0], h = n === c, d = c === "*" ? this.rules.inline.emStrongRDelimAst : this.rules.inline.emStrongRDelimUnd;
+      for (d.lastIndex = 0, t = t.slice(-1 * e.length + i); (s = d.exec(t)) !== null; ) {
+        if (o = s[1] || s[2] || s[3] || s[4] || s[5] || s[6], !o) continue;
+        if (u = [...o].length, s[3] || s[4]) {
+          a += u;
+          continue;
+        } else if (s[5] || s[6]) {
+          if (i % 3 && !((i + u) % 3)) {
+            p += u;
+            continue;
+          }
+          if (h) break;
+        }
+        if (a -= u, a > 0) continue;
+        u = Math.min(u, u + a + p);
+        let O = [...s[0]][0].length, g = e.slice(0, i + s.index + O + u);
+        if (Math.min(i, u) % 2) {
+          let E = g.slice(1, -1);
+          return { type: "em", raw: g, text: E, tokens: this.lexer.inlineTokens(E) };
+        }
+        let w = g.slice(2, -2);
+        return { type: "strong", raw: g, text: w, tokens: this.lexer.inlineTokens(w) };
+      }
+    }
+  }
+  codespan(e) {
+    let t = this.rules.inline.code.exec(e);
+    if (t) {
+      let n = t[2].replace(this.rules.other.newLineCharGlobal, " "), s = this.rules.other.nonSpaceChar.test(n), r = this.rules.other.startingSpaceChar.test(n) && this.rules.other.endingSpaceChar.test(n);
+      return s && r && (n = n.substring(1, n.length - 1)), { type: "codespan", raw: t[0], text: n };
+    }
+  }
+  br(e) {
+    let t = this.rules.inline.br.exec(e);
+    if (t) return { type: "br", raw: t[0] };
+  }
+  del(e, t, n = "") {
+    let s = this.rules.inline.delLDelim.exec(e);
+    if (!s) return;
+    if (!(s[1] || "") || !n || this.rules.inline.punctuation.exec(n)) {
+      let i = [...s[0]].length - 1, o, u, a = i, p = this.rules.inline.delRDelim;
+      for (p.lastIndex = 0, t = t.slice(-1 * e.length + i); (s = p.exec(t)) !== null; ) {
+        if (o = s[1] || s[2] || s[3] || s[4] || s[5] || s[6], !o || (u = [...o].length, u !== i)) continue;
+        if (s[3] || s[4]) {
+          a += u;
+          continue;
+        }
+        if (a -= u, a > 0) continue;
+        u = Math.min(u, u + a);
+        let c = [...s[0]][0].length, h = e.slice(0, i + s.index + c + u), d = h.slice(i, -i);
+        return { type: "del", raw: h, text: d, tokens: this.lexer.inlineTokens(d) };
+      }
+    }
+  }
+  autolink(e) {
+    let t = this.rules.inline.autolink.exec(e);
+    if (t) {
+      let n, s;
+      return t[2] === "@" ? (n = t[1], s = "mailto:" + n) : (n = t[1], s = n), { type: "link", raw: t[0], text: n, href: s, tokens: [{ type: "text", raw: n, text: n }] };
+    }
+  }
+  url(e) {
+    let t;
+    if (t = this.rules.inline.url.exec(e)) {
+      let n, s;
+      if (t[2] === "@") n = t[0], s = "mailto:" + n;
+      else {
+        let r;
+        do
+          r = t[0], t[0] = this.rules.inline._backpedal.exec(t[0])?.[0] ?? "";
+        while (r !== t[0]);
+        n = t[0], t[1] === "www." ? s = "http://" + t[0] : s = t[0];
+      }
+      return { type: "link", raw: t[0], text: n, href: s, tokens: [{ type: "text", raw: n, text: n }] };
+    }
+  }
+  inlineText(e) {
+    let t = this.rules.inline.text.exec(e);
+    if (t) {
+      let n = this.lexer.state.inRawBlock;
+      return { type: "text", raw: t[0], text: t[0], escaped: n };
+    }
+  }
+};
+var x = class l {
+  tokens;
+  options;
+  state;
+  inlineQueue;
+  tokenizer;
+  constructor(e) {
+    this.tokens = [], this.tokens.links = /* @__PURE__ */ Object.create(null), this.options = e || R, this.options.tokenizer = this.options.tokenizer || new y(), this.tokenizer = this.options.tokenizer, this.tokenizer.options = this.options, this.tokenizer.lexer = this, this.inlineQueue = [], this.state = { inLink: false, inRawBlock: false, linkEmitted: false, top: true };
+    let t = { other: m, block: H.normal, inline: B.normal };
+    this.options.pedantic ? (t.block = H.pedantic, t.inline = B.pedantic) : this.options.gfm && (t.block = H.gfm, this.options.breaks ? t.inline = B.breaks : t.inline = B.gfm), this.tokenizer.rules = t;
+  }
+  static get rules() {
+    return { block: H, inline: B };
+  }
+  static lex(e, t) {
+    return new l(t).lex(e);
+  }
+  static lexInline(e, t) {
+    return new l(t).inlineTokens(e);
+  }
+  lex(e) {
+    e = e.replace(m.carriageReturn, `
+`), this.blockTokens(e, this.tokens);
+    for (let t = 0; t < this.inlineQueue.length; t++) {
+      let n = this.inlineQueue[t];
+      this.inlineTokens(n.src, n.tokens);
+    }
+    return this.inlineQueue = [], this.tokens;
+  }
+  blockTokens(e, t = [], n = false) {
+    this.tokenizer.lexer = this, this.options.pedantic && (e = e.replace(m.tabCharGlobal, "    ").replace(m.spaceLine, ""));
+    let s = 1 / 0;
+    for (; e; ) {
+      if (e.length < s) s = e.length;
+      else {
+        this.infiniteLoopError(e.charCodeAt(0));
+        break;
+      }
+      let r;
+      if (this.options.extensions?.block?.some((o) => (r = o.call({ lexer: this }, e, t)) ? (e = e.substring(r.raw.length), t.push(r), true) : false)) continue;
+      if (r = this.tokenizer.space(e)) {
+        e = e.substring(r.raw.length);
+        let o = t.at(-1);
+        r.raw.length === 1 && o !== void 0 ? o.raw += `
+` : t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.code(e)) {
+        e = e.substring(r.raw.length);
+        let o = t.at(-1);
+        o?.type === "paragraph" || o?.type === "text" ? (o.raw += (o.raw.endsWith(`
+`) ? "" : `
+`) + r.raw, o.text += `
+` + r.text, this.inlineQueue.at(-1).src = o.text) : t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.fences(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.heading(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.hr(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.blockquote(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.list(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.html(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.def(e)) {
+        e = e.substring(r.raw.length);
+        let o = t.at(-1);
+        o?.type === "paragraph" || o?.type === "text" ? (o.raw += (o.raw.endsWith(`
+`) ? "" : `
+`) + r.raw, o.text += `
+` + r.raw, this.inlineQueue.at(-1).src = o.text) : this.tokens.links[r.tag] || (this.tokens.links[r.tag] = { href: r.href, title: r.title }, t.push(r));
+        continue;
+      }
+      if (r = this.tokenizer.table(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.lheading(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      let i = e;
+      if (this.options.extensions?.startBlock) {
+        let o = 1 / 0, u = e.slice(1), a;
+        this.options.extensions.startBlock.forEach((p) => {
+          a = p.call({ lexer: this }, u), typeof a == "number" && a >= 0 && (o = Math.min(o, a));
+        }), o < 1 / 0 && o >= 0 && (i = e.substring(0, o + 1));
+      }
+      if (this.state.top && (r = this.tokenizer.paragraph(i))) {
+        let o = t.at(-1);
+        n && o?.type === "paragraph" ? (o.raw += (o.raw.endsWith(`
+`) ? "" : `
+`) + r.raw, o.text += `
+` + r.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = o.text) : t.push(r), n = i.length !== e.length, e = e.substring(r.raw.length);
+        continue;
+      }
+      if (r = this.tokenizer.text(e)) {
+        e = e.substring(r.raw.length);
+        let o = t.at(-1);
+        o?.type === "text" ? (o.raw += (o.raw.endsWith(`
+`) ? "" : `
+`) + r.raw, o.text += `
+` + r.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = o.text) : t.push(r);
+        continue;
+      }
+      if (e) {
+        this.infiniteLoopError(e.charCodeAt(0));
+        break;
+      }
+    }
+    return this.state.top = true, t;
+  }
+  inline(e, t = []) {
+    return this.inlineQueue.push({ src: e, tokens: t }), t;
+  }
+  linkInText(e) {
+    if (!e.includes("[")) return false;
+    let t = this.tokenizer.rules.inline.link;
+    for (let n of e.matchAll(this.tokenizer.rules.inline.blockSkip)) if (t.test(n[0]) && e.charAt(n.index - 1) !== "!") return true;
+    for (let n of e.matchAll(this.tokenizer.rules.inline.reflinkSearch)) {
+      let s = n[0], r = s.lastIndexOf("[");
+      if (!(s.charAt(0) === "!" || !Object.hasOwn(this.tokens.links, s.slice(r + 1, -1))) && !(r > 1 && this.linkInText(s.slice(1, r - 1)))) return true;
+    }
+    return false;
+  }
+  inlineTokens(e, t = []) {
+    this.tokenizer.lexer = this;
+    let n = e;
+    if (this.tokens.links && e.includes("[")) {
+      let o = this.tokenizer.rules.inline.reflinkSearch, u = (a) => {
+        let p = a.lastIndexOf("[");
+        if (!Object.hasOwn(this.tokens.links, a.slice(p + 1, -1))) return a;
+        if (p > 1 && a.charAt(0) !== "!") {
+          let c = a.slice(1, p - 1);
+          if (this.linkInText(c)) return "[" + c.replace(o, u) + "][" + "a".repeat(a.length - p - 2) + "]";
+        }
+        return "[" + "a".repeat(a.length - 2) + "]";
+      };
+      n = n.replace(o, u);
+    }
+    n = n.replace(this.tokenizer.rules.inline.anyPunctuation, (o) => "+".repeat(o.length)), n = n.replace(this.tokenizer.rules.inline.blockSkip, (o, u, a) => {
+      let p = a ? a.length : 0;
+      return o.slice(0, p) + "[" + "a".repeat(o.length - p - 2) + "]";
+    }), n = this.options.hooks?.emStrongMask?.call({ lexer: this }, n) ?? n;
+    let s = false, r = "", i = 1 / 0;
+    for (; e; ) {
+      if (e.length < i) i = e.length;
+      else {
+        this.infiniteLoopError(e.charCodeAt(0));
+        break;
+      }
+      s || (r = ""), s = false;
+      let o;
+      if (this.options.extensions?.inline?.some((a) => (o = a.call({ lexer: this }, e, t)) ? (e = e.substring(o.raw.length), t.push(o), true) : false)) continue;
+      if (o = this.tokenizer.escape(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.tag(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.link(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.reflink(e, this.tokens.links)) {
+        e = e.substring(o.raw.length);
+        let a = t.at(-1);
+        o.type === "text" && a?.type === "text" ? (a.raw += o.raw, a.text += o.text) : t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.emStrong(e, n, r)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.codespan(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.br(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.del(e, n, r)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.autolink(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (!this.state.inLink && (o = this.tokenizer.url(e))) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      let u = e;
+      if (this.options.extensions?.startInline) {
+        let a = 1 / 0, p = e.slice(1), c;
+        this.options.extensions.startInline.forEach((h) => {
+          c = h.call({ lexer: this }, p), typeof c == "number" && c >= 0 && (a = Math.min(a, c));
+        }), a < 1 / 0 && a >= 0 && (u = e.substring(0, a + 1));
+      }
+      if (o = this.tokenizer.inlineText(u)) {
+        e = e.substring(o.raw.length), o.raw.slice(-1) !== "_" && (r = o.raw.slice(-1)), s = true;
+        let a = t.at(-1);
+        a?.type === "text" ? (a.raw += o.raw, a.text += o.text) : t.push(o);
+        continue;
+      }
+      if (e) {
+        this.infiniteLoopError(e.charCodeAt(0));
+        break;
+      }
+    }
+    return t;
+  }
+  infiniteLoopError(e) {
+    let t = "Infinite loop on byte: " + e;
+    if (this.options.silent) console.error(t);
+    else throw new Error(t);
+  }
+};
+var P = class {
+  options;
+  parser;
+  constructor(e) {
+    this.options = e || R;
+  }
+  space(e) {
+    return "";
+  }
+  code({ text: e, lang: t, escaped: n }) {
+    let s = (t || "").match(m.notSpaceStart)?.[0], r = e.replace(m.endingNewline, "") + `
+`;
+    return s ? '<pre><code class="language-' + T(s) + '">' + (n ? r : T(r, true)) + `</code></pre>
+` : "<pre><code>" + (n ? r : T(r, true)) + `</code></pre>
+`;
+  }
+  blockquote({ tokens: e }) {
+    return `<blockquote>
+${this.parser.parse(e)}</blockquote>
+`;
+  }
+  html({ text: e }) {
+    return e;
+  }
+  def(e) {
+    return "";
+  }
+  heading({ tokens: e, depth: t }) {
+    return `<h${t}>${this.parser.parseInline(e)}</h${t}>
+`;
+  }
+  hr(e) {
+    return `<hr>
+`;
+  }
+  list(e) {
+    let t = e.ordered, n = e.start, s = "";
+    for (let o = 0; o < e.items.length; o++) {
+      let u = e.items[o];
+      s += this.listitem(u);
+    }
+    let r = t ? "ol" : "ul", i = t && n !== 1 ? ' start="' + n + '"' : "";
+    return "<" + r + i + `>
+` + s + "</" + r + `>
+`;
+  }
+  listitem(e) {
+    return `<li>${this.parser.parse(e.tokens)}</li>
+`;
+  }
+  checkbox({ checked: e }) {
+    return "<input " + (e ? 'checked="" ' : "") + 'disabled="" type="checkbox"> ';
+  }
+  paragraph({ tokens: e }) {
+    return `<p>${this.parser.parseInline(e)}</p>
+`;
+  }
+  table(e) {
+    let t = "", n = "";
+    for (let r = 0; r < e.header.length; r++) n += this.tablecell(e.header[r]);
+    t += this.tablerow({ text: n });
+    let s = "";
+    for (let r = 0; r < e.rows.length; r++) {
+      let i = e.rows[r];
+      n = "";
+      for (let o = 0; o < i.length; o++) n += this.tablecell(i[o]);
+      s += this.tablerow({ text: n });
+    }
+    return s && (s = `<tbody>${s}</tbody>`), `<table>
+<thead>
+` + t + `</thead>
+` + s + `</table>
+`;
+  }
+  tablerow({ text: e }) {
+    return `<tr>
+${e}</tr>
+`;
+  }
+  tablecell(e) {
+    let t = this.parser.parseInline(e.tokens), n = e.header ? "th" : "td";
+    return (e.align ? `<${n} align="${e.align}">` : `<${n}>`) + t + `</${n}>
+`;
+  }
+  strong({ tokens: e }) {
+    return `<strong>${this.parser.parseInline(e)}</strong>`;
+  }
+  em({ tokens: e }) {
+    return `<em>${this.parser.parseInline(e)}</em>`;
+  }
+  codespan({ text: e }) {
+    return `<code>${T(e, true)}</code>`;
+  }
+  br(e) {
+    return "<br>";
+  }
+  del({ tokens: e }) {
+    return `<del>${this.parser.parseInline(e)}</del>`;
+  }
+  link({ href: e, title: t, tokens: n }) {
+    let s = this.parser.parseInline(n), r = Y(e);
+    if (r === null) return s;
+    e = r;
+    let i = '<a href="' + e + '"';
+    return t && (i += ' title="' + T(t) + '"'), i += ">" + s + "</a>", i;
+  }
+  image({ href: e, title: t, text: n, tokens: s }) {
+    s && (n = this.parser.parseInline(s, this.parser.textRenderer));
+    let r = Y(e);
+    if (r === null) return T(n);
+    e = r;
+    let i = `<img src="${e}" alt="${T(n)}"`;
+    return t && (i += ` title="${T(t)}"`), i += ">", i;
+  }
+  text(e) {
+    return "tokens" in e && e.tokens ? this.parser.parseInline(e.tokens) : "escaped" in e && e.escaped ? e.text : T(e.text);
+  }
+};
+var L = class {
+  strong({ text: e }) {
+    return e;
+  }
+  em({ text: e }) {
+    return e;
+  }
+  codespan({ text: e }) {
+    return e;
+  }
+  del({ text: e }) {
+    return e;
+  }
+  html({ text: e }) {
+    return e;
+  }
+  text({ text: e }) {
+    return e;
+  }
+  link({ text: e }) {
+    return "" + e;
+  }
+  image({ text: e }) {
+    return "" + e;
+  }
+  br() {
+    return "";
+  }
+  checkbox({ raw: e }) {
+    return e;
+  }
+};
+var b = class l2 {
+  options;
+  renderer;
+  textRenderer;
+  constructor(e) {
+    this.options = e || R, this.options.renderer = this.options.renderer || new P(), this.renderer = this.options.renderer, this.renderer.options = this.options, this.renderer.parser = this, this.textRenderer = new L();
+  }
+  static parse(e, t) {
+    return new l2(t).parse(e);
+  }
+  static parseInline(e, t) {
+    return new l2(t).parseInline(e);
+  }
+  parse(e) {
+    this.renderer.parser = this;
+    let t = "";
+    for (let n = 0; n < e.length; n++) {
+      let s = e[n];
+      if (this.options.extensions?.renderers?.[s.type]) {
+        let i = s, o = this.options.extensions.renderers[i.type].call({ parser: this }, i);
+        if (o !== false || !["space", "hr", "heading", "code", "table", "blockquote", "list", "checkbox", "html", "def", "paragraph", "text"].includes(i.type)) {
+          t += o || "";
+          continue;
+        }
+      }
+      let r = s;
+      switch (r.type) {
+        case "space": {
+          t += this.renderer.space(r);
+          break;
+        }
+        case "hr": {
+          t += this.renderer.hr(r);
+          break;
+        }
+        case "heading": {
+          t += this.renderer.heading(r);
+          break;
+        }
+        case "code": {
+          t += this.renderer.code(r);
+          break;
+        }
+        case "table": {
+          t += this.renderer.table(r);
+          break;
+        }
+        case "blockquote": {
+          t += this.renderer.blockquote(r);
+          break;
+        }
+        case "list": {
+          t += this.renderer.list(r);
+          break;
+        }
+        case "checkbox": {
+          t += this.renderer.checkbox(r);
+          break;
+        }
+        case "html": {
+          t += this.renderer.html(r);
+          break;
+        }
+        case "def": {
+          t += this.renderer.def(r);
+          break;
+        }
+        case "paragraph": {
+          t += this.renderer.paragraph(r);
+          break;
+        }
+        case "text": {
+          t += this.renderer.text(r);
+          break;
+        }
+        default: {
+          let i = 'Token with "' + r.type + '" type was not found.';
+          if (this.options.silent) return console.error(i), "";
+          throw new Error(i);
+        }
+      }
+    }
+    return t;
+  }
+  parseInline(e, t = this.renderer) {
+    this.renderer.parser = this;
+    let n = "";
+    for (let s = 0; s < e.length; s++) {
+      let r = e[s];
+      if (this.options.extensions?.renderers?.[r.type]) {
+        let o = this.options.extensions.renderers[r.type].call({ parser: this }, r);
+        if (o !== false || !["escape", "html", "link", "image", "checkbox", "strong", "em", "codespan", "br", "del", "text"].includes(r.type)) {
+          n += o || "";
+          continue;
+        }
+      }
+      let i = r;
+      switch (i.type) {
+        case "escape": {
+          n += t.text(i);
+          break;
+        }
+        case "html": {
+          n += t.html(i);
+          break;
+        }
+        case "link": {
+          n += t.link(i);
+          break;
+        }
+        case "image": {
+          n += t.image(i);
+          break;
+        }
+        case "checkbox": {
+          n += t.checkbox(i);
+          break;
+        }
+        case "strong": {
+          n += t.strong(i);
+          break;
+        }
+        case "em": {
+          n += t.em(i);
+          break;
+        }
+        case "codespan": {
+          n += t.codespan(i);
+          break;
+        }
+        case "br": {
+          n += t.br(i);
+          break;
+        }
+        case "del": {
+          n += t.del(i);
+          break;
+        }
+        case "text": {
+          n += t.text(i);
+          break;
+        }
+        default: {
+          let o = 'Token with "' + i.type + '" type was not found.';
+          if (this.options.silent) return console.error(o), "";
+          throw new Error(o);
+        }
+      }
+    }
+    return n;
+  }
+};
+var S = class {
+  options;
+  block;
+  constructor(e) {
+    this.options = e || R;
+  }
+  static passThroughHooks = /* @__PURE__ */ new Set(["preprocess", "postprocess", "processAllTokens", "emStrongMask"]);
+  static passThroughHooksRespectAsync = /* @__PURE__ */ new Set(["preprocess", "postprocess", "processAllTokens"]);
+  preprocess(e) {
+    return e;
+  }
+  postprocess(e) {
+    return e;
+  }
+  processAllTokens(e) {
+    return e;
+  }
+  emStrongMask(e) {
+    return e;
+  }
+  provideLexer(e = this.block) {
+    return e ? x.lex : x.lexInline;
+  }
+  provideParser(e = this.block) {
+    return e ? b.parse : b.parseInline;
+  }
+};
+var Z = class {
+  defaults = A();
+  options = this.setOptions;
+  parse = this.parseMarkdown(true);
+  parseInline = this.parseMarkdown(false);
+  Parser = b;
+  Renderer = P;
+  TextRenderer = L;
+  Lexer = x;
+  Tokenizer = y;
+  Hooks = S;
+  constructor(...e) {
+    this.use(...e);
+  }
+  walkTokens(e, t) {
+    let n = [];
+    for (let s of e) switch (n = n.concat(t.call(this, s)), s.type) {
+      case "table": {
+        let r = s;
+        for (let i of r.header) n = n.concat(this.walkTokens(i.tokens, t));
+        for (let i of r.rows) for (let o of i) n = n.concat(this.walkTokens(o.tokens, t));
+        break;
+      }
+      case "list": {
+        let r = s;
+        n = n.concat(this.walkTokens(r.items, t));
+        break;
+      }
+      default: {
+        let r = s;
+        this.defaults.extensions?.childTokens?.[r.type] ? this.defaults.extensions.childTokens[r.type].forEach((i) => {
+          let o = r[i].flat(1 / 0);
+          n = n.concat(this.walkTokens(o, t));
+        }) : r.tokens && (n = n.concat(this.walkTokens(r.tokens, t)));
+      }
+    }
+    return n;
+  }
+  use(...e) {
+    let t = this.defaults.extensions || { renderers: {}, childTokens: {} };
+    return e.forEach((n) => {
+      let s = { ...n };
+      if (s.async = this.defaults.async || s.async || false, n.extensions && (n.extensions.forEach((r) => {
+        if (!r.name) throw new Error("extension name required");
+        if ("renderer" in r) {
+          let i = t.renderers[r.name];
+          i ? t.renderers[r.name] = function(...o) {
+            let u = r.renderer.apply(this, o);
+            return u === false && (u = i.apply(this, o)), u;
+          } : t.renderers[r.name] = r.renderer;
+        }
+        if ("tokenizer" in r) {
+          if (!r.level || r.level !== "block" && r.level !== "inline") throw new Error("extension level must be 'block' or 'inline'");
+          let i = t[r.level];
+          i ? i.unshift(r.tokenizer) : t[r.level] = [r.tokenizer], r.start && (r.level === "block" ? t.startBlock ? t.startBlock.push(r.start) : t.startBlock = [r.start] : r.level === "inline" && (t.startInline ? t.startInline.push(r.start) : t.startInline = [r.start]));
+        }
+        "childTokens" in r && r.childTokens && (t.childTokens[r.name] = r.childTokens);
+      }), s.extensions = t), n.renderer) {
+        let r = this.defaults.renderer || new P(this.defaults);
+        for (let i in n.renderer) {
+          if (!(i in r)) throw new Error(`renderer '${i}' does not exist`);
+          if (["options", "parser"].includes(i)) continue;
+          let o = i, u = n.renderer[o], a = r[o];
+          r[o] = (...p) => {
+            let c = u.apply(r, p);
+            return c === false && (c = a.apply(r, p)), c || "";
+          };
+        }
+        s.renderer = r;
+      }
+      if (n.tokenizer) {
+        let r = this.defaults.tokenizer || new y(this.defaults);
+        for (let i in n.tokenizer) {
+          if (!(i in r)) throw new Error(`tokenizer '${i}' does not exist`);
+          if (["options", "rules", "lexer"].includes(i)) continue;
+          let o = i, u = n.tokenizer[o], a = r[o];
+          r[o] = (...p) => {
+            let c = u.apply(r, p);
+            return c === false && (c = a.apply(r, p)), c;
+          };
+        }
+        s.tokenizer = r;
+      }
+      if (n.hooks) {
+        let r = this.defaults.hooks || new S();
+        for (let i in n.hooks) {
+          if (!(i in r)) throw new Error(`hook '${i}' does not exist`);
+          if (["options", "block"].includes(i)) continue;
+          let o = i, u = n.hooks[o], a = r[o];
+          S.passThroughHooks.has(i) ? r[o] = (p) => {
+            if (this.defaults.async && S.passThroughHooksRespectAsync.has(i)) return (async () => {
+              let h = await u.call(r, p);
+              return a.call(r, h);
+            })();
+            let c = u.call(r, p);
+            return a.call(r, c);
+          } : r[o] = (...p) => {
+            if (this.defaults.async) return (async () => {
+              let h = await u.apply(r, p);
+              return h === false && (h = await a.apply(r, p)), h;
+            })();
+            let c = u.apply(r, p);
+            return c === false && (c = a.apply(r, p)), c;
+          };
+        }
+        s.hooks = r;
+      }
+      if (n.walkTokens) {
+        let r = this.defaults.walkTokens, i = n.walkTokens;
+        s.walkTokens = function(o) {
+          let u = [];
+          return u.push(i.call(this, o)), r && (u = u.concat(r.call(this, o))), u;
+        };
+      }
+      this.defaults = { ...this.defaults, ...s };
+    }), this;
+  }
+  setOptions(e) {
+    return this.defaults = { ...this.defaults, ...e }, this;
+  }
+  lexer(e, t) {
+    return x.lex(e, t ?? this.defaults);
+  }
+  parser(e, t) {
+    return b.parse(e, t ?? this.defaults);
+  }
+  parseMarkdown(e) {
+    return (n, s) => {
+      let r = { ...s }, i = { ...this.defaults, ...r }, o = this.onError(!!i.silent, !!i.async);
+      if (this.defaults.async === true && r.async === false) return o(new Error("marked(): The async option was set to true by an extension. Remove async: false from the parse options object to return a Promise."));
+      if (typeof n > "u" || n === null) return o(new Error("marked(): input parameter is undefined or null"));
+      if (typeof n != "string") return o(new Error("marked(): input parameter is of type " + Object.prototype.toString.call(n) + ", string expected"));
+      if (i.hooks && (i.hooks.options = i, i.hooks.block = e), i.async) return (async () => {
+        let u = i.hooks ? await i.hooks.preprocess(n) : n, p = await (i.hooks ? await i.hooks.provideLexer(e) : e ? x.lex : x.lexInline)(u, i), c = i.hooks ? await i.hooks.processAllTokens(p) : p;
+        i.walkTokens && await Promise.all(this.walkTokens(c, i.walkTokens));
+        let d = await (i.hooks ? await i.hooks.provideParser(e) : e ? b.parse : b.parseInline)(c, i);
+        return i.hooks ? await i.hooks.postprocess(d) : d;
+      })().catch(o);
+      try {
+        i.hooks && (n = i.hooks.preprocess(n));
+        let a = (i.hooks ? i.hooks.provideLexer(e) : e ? x.lex : x.lexInline)(n, i);
+        i.hooks && (a = i.hooks.processAllTokens(a)), i.walkTokens && this.walkTokens(a, i.walkTokens);
+        let c = (i.hooks ? i.hooks.provideParser(e) : e ? b.parse : b.parseInline)(a, i);
+        return i.hooks && (c = i.hooks.postprocess(c)), c;
+      } catch (u) {
+        return o(u);
+      }
+    };
+  }
+  onError(e, t) {
+    return (n) => {
+      if (n.message += `
+Please report this to https://github.com/markedjs/marked.`, e) {
+        let s = "<p>An error occurred:</p><pre>" + T(n.message + "", true) + "</pre>";
+        return t ? Promise.resolve(s) : s;
+      }
+      if (t) return Promise.reject(n);
+      throw n;
+    };
+  }
+};
+var M = new Z();
+function f(l3, e) {
+  return M.parse(l3, e);
+}
+f.options = f.setOptions = function(l3) {
+  return M.setOptions(l3), f.defaults = M.defaults, j(f.defaults), f;
+};
+f.getDefaults = A;
+f.defaults = R;
+function dt(...l3) {
+  return M.use(...l3), f.defaults = M.defaults, j(f.defaults), f;
+}
+f.use = dt;
+f.walkTokens = function(l3, e) {
+  return M.walkTokens(l3, e);
+};
+f.parseInline = M.parseInline;
+f.Parser = b;
+f.parser = b.parse;
+f.Renderer = P;
+f.TextRenderer = L;
+f.Lexer = x;
+f.lexer = x.lex;
+f.Tokenizer = y;
+f.Hooks = S;
+f.parse = f;
+var nn = f.options;
+var rn = f.setOptions;
+var sn = f.walkTokens;
+var on = f.parseInline;
+var ln = b.parse;
+var un = x.lex;
+
+// node_modules/get-east-asian-width/lookup-data.js
+var ambiguousMinimalCodePoint = 161;
+var ambiguousMaximumCodePoint = 1114109;
+var ambiguousRanges = [161, 161, 164, 164, 167, 168, 170, 170, 173, 174, 176, 180, 182, 186, 188, 191, 198, 198, 208, 208, 215, 216, 222, 225, 230, 230, 232, 234, 236, 237, 240, 240, 242, 243, 247, 250, 252, 252, 254, 254, 257, 257, 273, 273, 275, 275, 283, 283, 294, 295, 299, 299, 305, 307, 312, 312, 319, 322, 324, 324, 328, 331, 333, 333, 338, 339, 358, 359, 363, 363, 462, 462, 464, 464, 466, 466, 468, 468, 470, 470, 472, 472, 474, 474, 476, 476, 593, 593, 609, 609, 708, 708, 711, 711, 713, 715, 717, 717, 720, 720, 728, 731, 733, 733, 735, 735, 768, 879, 913, 929, 931, 937, 945, 961, 963, 969, 1025, 1025, 1040, 1103, 1105, 1105, 8208, 8208, 8211, 8214, 8216, 8217, 8220, 8221, 8224, 8226, 8228, 8231, 8240, 8240, 8242, 8243, 8245, 8245, 8251, 8251, 8254, 8254, 8308, 8308, 8319, 8319, 8321, 8324, 8364, 8364, 8451, 8451, 8453, 8453, 8457, 8457, 8467, 8467, 8470, 8470, 8481, 8482, 8486, 8486, 8491, 8491, 8531, 8532, 8539, 8542, 8544, 8555, 8560, 8569, 8585, 8585, 8592, 8601, 8632, 8633, 8658, 8658, 8660, 8660, 8679, 8679, 8704, 8704, 8706, 8707, 8711, 8712, 8715, 8715, 8719, 8719, 8721, 8721, 8725, 8725, 8730, 8730, 8733, 8736, 8739, 8739, 8741, 8741, 8743, 8748, 8750, 8750, 8756, 8759, 8764, 8765, 8776, 8776, 8780, 8780, 8786, 8786, 8800, 8801, 8804, 8807, 8810, 8811, 8814, 8815, 8834, 8835, 8838, 8839, 8853, 8853, 8857, 8857, 8869, 8869, 8895, 8895, 8978, 8978, 9312, 9449, 9451, 9547, 9552, 9587, 9600, 9615, 9618, 9621, 9632, 9633, 9635, 9641, 9650, 9651, 9654, 9655, 9660, 9661, 9664, 9665, 9670, 9672, 9675, 9675, 9678, 9681, 9698, 9701, 9711, 9711, 9733, 9734, 9737, 9737, 9742, 9743, 9756, 9756, 9758, 9758, 9792, 9792, 9794, 9794, 9824, 9825, 9827, 9829, 9831, 9834, 9836, 9837, 9839, 9839, 9886, 9887, 9919, 9919, 9926, 9933, 9935, 9939, 9941, 9953, 9955, 9955, 9960, 9961, 9963, 9969, 9972, 9972, 9974, 9977, 9979, 9980, 9982, 9983, 10045, 10045, 10102, 10111, 11094, 11097, 12872, 12879, 57344, 63743, 65024, 65039, 65533, 65533, 127232, 127242, 127248, 127277, 127280, 127337, 127344, 127373, 127375, 127376, 127387, 127404, 917760, 917999, 983040, 1048573, 1048576, 1114109];
+var fullwidthMinimalCodePoint = 12288;
+var fullwidthMaximumCodePoint = 65510;
+var fullwidthRanges = [12288, 12288, 65281, 65376, 65504, 65510];
+var wideMinimalCodePoint = 4352;
+var wideMaximumCodePoint = 262141;
+var wideRanges = [4352, 4447, 8986, 8987, 9001, 9002, 9193, 9196, 9200, 9200, 9203, 9203, 9725, 9726, 9748, 9749, 9776, 9783, 9800, 9811, 9855, 9855, 9866, 9871, 9875, 9875, 9889, 9889, 9898, 9899, 9917, 9918, 9924, 9925, 9934, 9934, 9940, 9940, 9962, 9962, 9970, 9971, 9973, 9973, 9978, 9978, 9981, 9981, 9989, 9989, 9994, 9995, 10024, 10024, 10060, 10060, 10062, 10062, 10067, 10069, 10071, 10071, 10133, 10135, 10160, 10160, 10175, 10175, 11035, 11036, 11088, 11088, 11093, 11093, 11904, 11929, 11931, 12019, 12032, 12245, 12272, 12287, 12289, 12350, 12353, 12438, 12441, 12543, 12549, 12591, 12593, 12686, 12688, 12773, 12783, 12830, 12832, 12871, 12880, 42124, 42128, 42182, 43360, 43388, 44032, 55203, 63744, 64255, 65040, 65049, 65072, 65106, 65108, 65126, 65128, 65131, 94176, 94180, 94192, 94198, 94208, 101589, 101631, 101662, 101760, 101874, 110576, 110579, 110581, 110587, 110589, 110590, 110592, 110882, 110898, 110898, 110928, 110930, 110933, 110933, 110948, 110951, 110960, 111355, 119552, 119638, 119648, 119670, 126980, 126980, 127183, 127183, 127374, 127374, 127377, 127386, 127488, 127490, 127504, 127547, 127552, 127560, 127568, 127569, 127584, 127589, 127744, 127776, 127789, 127797, 127799, 127868, 127870, 127891, 127904, 127946, 127951, 127955, 127968, 127984, 127988, 127988, 127992, 128062, 128064, 128064, 128066, 128252, 128255, 128317, 128331, 128334, 128336, 128359, 128378, 128378, 128405, 128406, 128420, 128420, 128507, 128591, 128640, 128709, 128716, 128716, 128720, 128722, 128725, 128728, 128732, 128735, 128747, 128748, 128756, 128764, 128992, 129003, 129008, 129008, 129292, 129338, 129340, 129349, 129351, 129535, 129648, 129660, 129664, 129674, 129678, 129734, 129736, 129736, 129741, 129756, 129759, 129770, 129775, 129784, 131072, 196605, 196608, 262141];
+
+// node_modules/get-east-asian-width/utilities.js
+var isInRange = (ranges, codePoint) => {
+  let low = 0;
+  let high = Math.floor(ranges.length / 2) - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const i = mid * 2;
+    if (codePoint < ranges[i]) {
+      high = mid - 1;
+    } else if (codePoint > ranges[i + 1]) {
+      low = mid + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
+};
+
+// node_modules/get-east-asian-width/lookup.js
+var commonCjkCodePoint = 19968;
+var [wideFastPathStart, wideFastPathEnd] = /* @__PURE__ */ findWideFastPathRange(wideRanges);
+function findWideFastPathRange(ranges) {
+  let fastPathStart = ranges[0];
+  let fastPathEnd = ranges[1];
+  for (let index = 0; index < ranges.length; index += 2) {
+    const start = ranges[index];
+    const end = ranges[index + 1];
+    if (commonCjkCodePoint >= start && commonCjkCodePoint <= end) {
+      return [start, end];
+    }
+    if (end - start > fastPathEnd - fastPathStart) {
+      fastPathStart = start;
+      fastPathEnd = end;
+    }
+  }
+  return [fastPathStart, fastPathEnd];
+}
+var isAmbiguous = (codePoint) => {
+  if (codePoint < ambiguousMinimalCodePoint || codePoint > ambiguousMaximumCodePoint) {
+    return false;
+  }
+  return isInRange(ambiguousRanges, codePoint);
+};
+var isFullWidth = (codePoint) => {
+  if (codePoint < fullwidthMinimalCodePoint || codePoint > fullwidthMaximumCodePoint) {
+    return false;
+  }
+  return isInRange(fullwidthRanges, codePoint);
+};
+var isWide = (codePoint) => {
+  if (codePoint >= wideFastPathStart && codePoint <= wideFastPathEnd) {
+    return true;
+  }
+  if (codePoint < wideMinimalCodePoint || codePoint > wideMaximumCodePoint) {
+    return false;
+  }
+  return isInRange(wideRanges, codePoint);
+};
+
+// node_modules/get-east-asian-width/index.js
+function validate(codePoint) {
+  if (!Number.isSafeInteger(codePoint)) {
+    throw new TypeError(`Expected a code point, got \`${typeof codePoint}\`.`);
+  }
+}
+function eastAsianWidth(codePoint, { ambiguousAsWide = false } = {}) {
+  validate(codePoint);
+  if (isFullWidth(codePoint) || isWide(codePoint) || ambiguousAsWide && isAmbiguous(codePoint)) {
+    return 2;
+  }
+  return 1;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/utils.js
+var graphemeSegmenter = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+var wordSegmenter = new Intl.Segmenter(void 0, { granularity: "word" });
+function getGraphemeSegmenter() {
+  return graphemeSegmenter;
+}
+function getWordSegmenter() {
+  return wordSegmenter;
+}
+function couldBeEmoji(segment) {
+  const cp = segment.codePointAt(0);
+  return cp >= 126976 && cp <= 130047 || // Emoji and Pictograph
+  cp >= 8960 && cp <= 9215 || // Misc technical
+  cp >= 9728 && cp <= 10175 || // Misc symbols, dingbats
+  cp >= 11088 && cp <= 11093 || // Specific stars/circles
+  segment.includes("\uFE0F") || // Contains VS16 (emoji presentation selector)
+  segment.length > 2;
+}
+var zeroWidthRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Mark}|\\p{Surrogate})+$", "v");
+var leadingNonPrintingRegex = new RegExp("^[\\p{Default_Ignorable_Code_Point}\\p{Control}\\p{Format}\\p{Mark}\\p{Surrogate}]+", "v");
+var nonPrintingCharRegex = new RegExp("^(?:\\p{Default_Ignorable_Code_Point}|\\p{Control}|\\p{Format}|\\p{Mark}|\\p{Surrogate})$", "v");
+var markCharRegex = new RegExp("^\\p{Mark}$", "v");
+var terminalSpacingMarkRegex = new RegExp("^(?:[\\p{Spacing_Mark}--[\\u1734\\u302E\\u302F]]|[\\u065F\\u0F7F\\u102B\\u102C\\u1031\\u1033-\\u1035\\u1038\\u103A-\\u103E])+$", "v");
+var rgiEmojiRegex = new RegExp("^\\p{RGI_Emoji}$", "v");
+var WIDTH_CACHE_SIZE = 512;
+var widthCache = /* @__PURE__ */ new Map();
+var cjkBreakRegex = /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Hangul}\p{Script_Extensions=Bopomofo}]/u;
+var cjkPunctuationRegex = new RegExp(`(?:(?=\\p{Punctuation})${cjkBreakRegex.source}|[\uFF0C\uFF0E\uFF1A\uFF1B\uFF01\uFF1F\uFF08\uFF09\uFF3B\uFF3D\uFF5B\uFF5D\u201C\u201D\u2018\u2019\u2026\u2014])`, "u");
+var autocompleteSeparatorRegex = new RegExp(`(?:\\s|${cjkPunctuationRegex.source})`, "u");
+var autocompleteBoundaryRegex = new RegExp(`(?:^|${autocompleteSeparatorRegex.source})`, "u");
+function isPrintableAscii(str) {
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code < 32 || code > 126) {
+      return false;
+    }
+  }
+  return true;
+}
+function truncateFragmentToWidth(text, maxWidth) {
+  if (maxWidth <= 0 || text.length === 0) {
+    return { text: "", width: 0 };
+  }
+  if (isPrintableAscii(text)) {
+    const clipped = text.slice(0, maxWidth);
+    return { text: clipped, width: clipped.length };
+  }
+  const hasAnsi = text.includes("\x1B");
+  const hasTabs = text.includes("	");
+  if (!hasAnsi && !hasTabs) {
+    let result3 = "";
+    let width2 = 0;
+    for (const { segment } of graphemeSegmenter.segment(text)) {
+      const w = graphemeWidth(segment);
+      if (width2 + w > maxWidth) {
+        break;
+      }
+      result3 += segment;
+      width2 += w;
+    }
+    return { text: result3, width: width2 };
+  }
+  let result2 = "";
+  let width = 0;
+  let i = 0;
+  let pendingAnsi = "";
+  while (i < text.length) {
+    const ansi = extractAnsiCode(text, i);
+    if (ansi) {
+      pendingAnsi += ansi.code;
+      i += ansi.length;
+      continue;
+    }
+    if (text[i] === "	") {
+      if (width + 3 > maxWidth) {
+        break;
+      }
+      if (pendingAnsi) {
+        result2 += pendingAnsi;
+        pendingAnsi = "";
+      }
+      result2 += "	";
+      width += 3;
+      i++;
+      continue;
+    }
+    let end = i;
+    while (end < text.length && text[end] !== "	") {
+      const nextAnsi = extractAnsiCode(text, end);
+      if (nextAnsi) {
+        break;
+      }
+      end++;
+    }
+    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+      const w = graphemeWidth(segment);
+      if (width + w > maxWidth) {
+        return { text: result2, width };
+      }
+      if (pendingAnsi) {
+        result2 += pendingAnsi;
+        pendingAnsi = "";
+      }
+      result2 += segment;
+      width += w;
+    }
+    i = end;
+  }
+  return { text: result2, width };
+}
+function finalizeTruncatedResult(prefix, prefixWidth, ellipsis, ellipsisWidth, maxWidth, pad) {
+  const reset = "\x1B[0m";
+  const hyperlinkClose = getActiveOsc8Close(prefix);
+  const visibleWidth2 = prefixWidth + ellipsisWidth;
+  let result2;
+  if (ellipsis.length > 0) {
+    result2 = `${prefix}${hyperlinkClose}${reset}${ellipsis}${reset}`;
+  } else {
+    result2 = `${prefix}${hyperlinkClose}${reset}`;
+  }
+  return pad ? result2 + " ".repeat(Math.max(0, maxWidth - visibleWidth2)) : result2;
+}
+function graphemeWidth(segment) {
+  if (segment.length === 1) {
+    const code = segment.charCodeAt(0);
+    if (code >= 32 && code <= 126)
+      return 1;
+    if (code === 9)
+      return 3;
+  }
+  if (terminalSpacingMarkRegex.test(segment)) {
+    return [...segment].length;
+  }
+  if (zeroWidthRegex.test(segment)) {
+    return 0;
+  }
+  if (couldBeEmoji(segment) && rgiEmojiRegex.test(segment)) {
+    return 2;
+  }
+  const base = segment.replace(leadingNonPrintingRegex, "");
+  const cp = base.codePointAt(0);
+  if (cp === void 0) {
+    return 0;
+  }
+  if (cp >= 127462 && cp <= 127487) {
+    return 2;
+  }
+  let width = eastAsianWidth(cp);
+  let followsMark = false;
+  const chars = [...base];
+  for (const char of chars.slice(1)) {
+    if (terminalSpacingMarkRegex.test(char)) {
+      width += 1;
+      followsMark = false;
+    } else if (markCharRegex.test(char)) {
+      followsMark = true;
+    } else if (!nonPrintingCharRegex.test(char)) {
+      const c = char.codePointAt(0);
+      if (followsMark || c >= 65280 && c <= 65519) {
+        width += eastAsianWidth(c);
+      } else if (c === 3635 || c === 3763) {
+        width += 1;
+      }
+      followsMark = false;
+    }
+  }
+  return width;
+}
+function visibleWidth(str) {
+  if (str.length === 0) {
+    return 0;
+  }
+  const asciiWidth = asciiVisibleWidth(str);
+  if (asciiWidth !== -1) {
+    return asciiWidth;
+  }
+  const cached2 = widthCache.get(str);
+  if (cached2 !== void 0) {
+    return cached2;
+  }
+  let clean = str;
+  if (str.includes("	")) {
+    clean = clean.replace(/\t/g, "   ");
+  }
+  let escapeIndex = clean.indexOf("\x1B");
+  if (escapeIndex !== -1) {
+    let stripped = "";
+    let copyFrom = 0;
+    while (escapeIndex !== -1) {
+      const length = ansiCodeLength(clean, escapeIndex);
+      if (length > 0) {
+        stripped += clean.slice(copyFrom, escapeIndex);
+        escapeIndex += length;
+        copyFrom = escapeIndex;
+      } else {
+        escapeIndex++;
+      }
+      escapeIndex = clean.indexOf("\x1B", escapeIndex);
+    }
+    clean = stripped + clean.slice(copyFrom);
+  }
+  let width = 0;
+  for (const { segment } of graphemeSegmenter.segment(clean)) {
+    width += graphemeWidth(segment);
+  }
+  if (widthCache.size >= WIDTH_CACHE_SIZE) {
+    const firstKey = widthCache.keys().next().value;
+    if (firstKey !== void 0) {
+      widthCache.delete(firstKey);
+    }
+  }
+  widthCache.set(str, width);
+  return width;
+}
+function stripTerminalSequences(str) {
+  if (!str.includes("\x1B"))
+    return str;
+  let result2 = "";
+  let i = 0;
+  while (i < str.length) {
+    const ansi = extractAnsiCode(str, i);
+    if (ansi) {
+      i += ansi.length;
+      continue;
+    }
+    result2 += str[i];
+    i++;
+  }
+  return result2;
+}
+function getGraphemeCellRange(line, column) {
+  let currentCol = 0;
+  let i = 0;
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const width = graphemeWidth(segment);
+      if (width > 0 && column >= currentCol && column < currentCol + width) {
+        return { start: currentCol, end: currentCol + width };
+      }
+      currentCol += width;
+    }
+    i = textEnd;
+  }
+  return void 0;
+}
+function getOsc8LinkAtColumn(line, column) {
+  let activeUrl;
+  let currentCol = 0;
+  let i = 0;
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      const hyperlink2 = /^\x1b\]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)$/.exec(ansi.code);
+      if (hyperlink2)
+        activeUrl = hyperlink2[1] || void 0;
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const width = segment === "	" ? 3 : graphemeWidth(segment);
+      if (column >= currentCol && column < currentCol + width)
+        return activeUrl;
+      currentCol += width;
+    }
+    i = textEnd;
+  }
+  return void 0;
+}
+var THAI_LAO_AM_REGEX = /[\u0e33\u0eb3]/;
+var THAI_LAO_AM_GLOBAL_REGEX = /[\u0e33\u0eb3]/g;
+function normalizeTerminalOutput(str) {
+  let normalized = str;
+  if (THAI_LAO_AM_REGEX.test(normalized)) {
+    normalized = normalized.replace(THAI_LAO_AM_GLOBAL_REGEX, (char) => char === "\u0E33" ? "\u0E4D\u0E32" : "\u0ECD\u0EB2");
+  }
+  if (!normalized.includes("	"))
+    return normalized;
+  let result2 = "";
+  let i = 0;
+  while (i < normalized.length) {
+    const ansi = extractAnsiCode(normalized, i);
+    if (ansi) {
+      result2 += ansi.code;
+      i += ansi.length;
+      continue;
+    }
+    result2 += normalized[i] === "	" ? "   " : normalized[i];
+    i++;
+  }
+  return result2;
+}
+function extractAnsiCode(str, pos) {
+  const length = ansiCodeLength(str, pos);
+  return length > 0 ? { code: str.substring(pos, pos + length), length } : null;
+}
+function asciiVisibleWidth(str) {
+  let width = 0;
+  let i = 0;
+  while (i < str.length) {
+    const code = str.charCodeAt(i);
+    if (code >= 32 && code <= 126) {
+      width++;
+      i++;
+    } else if (code === 9) {
+      width += 3;
+      i++;
+    } else if (code === 27) {
+      const length = ansiCodeLength(str, i);
+      if (length === 0)
+        return -1;
+      i += length;
+    } else {
+      return -1;
+    }
+  }
+  return width;
+}
+function ansiCodeLength(str, pos) {
+  if (pos >= str.length || str.charCodeAt(pos) !== 27)
+    return 0;
+  const next = str[pos + 1];
+  if (next === "[") {
+    for (let j2 = pos + 2; j2 < str.length; j2++) {
+      const c = str.charCodeAt(j2);
+      if (c === 109 || c === 71 || c === 75 || c === 72 || c === 74)
+        return j2 + 1 - pos;
+    }
+    return 0;
+  }
+  if (next === "]" || next === "_") {
+    for (let j2 = pos + 2; j2 < str.length; j2++) {
+      const c = str.charCodeAt(j2);
+      if (c === 7)
+        return j2 + 1 - pos;
+      if (c === 27 && str[j2 + 1] === "\\")
+        return j2 + 2 - pos;
+    }
+    return 0;
+  }
+  return 0;
+}
+function parseOsc8Hyperlink(ansiCode) {
+  if (!ansiCode.startsWith("\x1B]8;")) {
+    return void 0;
+  }
+  const terminator = ansiCode.endsWith("\x07") ? "\x07" : "\x1B\\";
+  const body = ansiCode.slice(4, terminator === "\x07" ? -1 : -2);
+  const separatorIndex = body.indexOf(";");
+  if (separatorIndex === -1) {
+    return void 0;
+  }
+  const params = body.slice(0, separatorIndex);
+  const url = body.slice(separatorIndex + 1);
+  if (!url) {
+    return null;
+  }
+  return { params, url, terminator };
+}
+function formatOsc8Hyperlink(hyperlink2) {
+  return `\x1B]8;${hyperlink2.params};${hyperlink2.url}${hyperlink2.terminator}`;
+}
+function formatOsc8Close(terminator) {
+  return `\x1B]8;;${terminator}`;
+}
+function getActiveOsc8Close(prefix) {
+  if (!prefix.includes("\x1B]8;")) {
+    return "";
+  }
+  let activeHyperlink = null;
+  let i = 0;
+  while (i < prefix.length) {
+    const ansi = extractAnsiCode(prefix, i);
+    if (ansi) {
+      const hyperlink2 = parseOsc8Hyperlink(ansi.code);
+      if (hyperlink2 !== void 0) {
+        activeHyperlink = hyperlink2;
+      }
+      i += ansi.length;
+    } else {
+      i++;
+    }
+  }
+  return activeHyperlink ? formatOsc8Close(activeHyperlink.terminator) : "";
+}
+var AnsiCodeTracker = class {
+  // Track individual attributes separately so we can reset them specifically
+  bold = false;
+  dim = false;
+  italic = false;
+  underline = false;
+  blink = false;
+  inverse = false;
+  hidden = false;
+  strikethrough = false;
+  fgColor = null;
+  // Stores the full code like "31" or "38;5;240"
+  bgColor = null;
+  // Stores the full code like "41" or "48;5;240"
+  activeHyperlink = null;
+  process(ansiCode) {
+    const hyperlink2 = parseOsc8Hyperlink(ansiCode);
+    if (hyperlink2 !== void 0) {
+      this.activeHyperlink = hyperlink2;
+      return;
+    }
+    if (!ansiCode.endsWith("m")) {
+      return;
+    }
+    const match = ansiCode.match(/\x1b\[([\d;]*)m/);
+    if (!match)
+      return;
+    const params = match[1];
+    if (params === "" || params === "0") {
+      this.reset();
+      return;
+    }
+    const parts = params.split(";");
+    let i = 0;
+    while (i < parts.length) {
+      const code = Number.parseInt(parts[i], 10);
+      if (code === 38 || code === 48) {
+        if (parts[i + 1] === "5" && parts[i + 2] !== void 0) {
+          const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]}`;
+          if (code === 38) {
+            this.fgColor = colorCode;
+          } else {
+            this.bgColor = colorCode;
+          }
+          i += 3;
+          continue;
+        } else if (parts[i + 1] === "2" && parts[i + 4] !== void 0) {
+          const colorCode = `${parts[i]};${parts[i + 1]};${parts[i + 2]};${parts[i + 3]};${parts[i + 4]}`;
+          if (code === 38) {
+            this.fgColor = colorCode;
+          } else {
+            this.bgColor = colorCode;
+          }
+          i += 5;
+          continue;
+        }
+      }
+      switch (code) {
+        case 0:
+          this.reset();
+          break;
+        case 1:
+          this.bold = true;
+          break;
+        case 2:
+          this.dim = true;
+          break;
+        case 3:
+          this.italic = true;
+          break;
+        case 4:
+          this.underline = true;
+          break;
+        case 5:
+          this.blink = true;
+          break;
+        case 7:
+          this.inverse = true;
+          break;
+        case 8:
+          this.hidden = true;
+          break;
+        case 9:
+          this.strikethrough = true;
+          break;
+        case 21:
+          this.bold = false;
+          break;
+        // Some terminals
+        case 22:
+          this.bold = false;
+          this.dim = false;
+          break;
+        case 23:
+          this.italic = false;
+          break;
+        case 24:
+          this.underline = false;
+          break;
+        case 25:
+          this.blink = false;
+          break;
+        case 27:
+          this.inverse = false;
+          break;
+        case 28:
+          this.hidden = false;
+          break;
+        case 29:
+          this.strikethrough = false;
+          break;
+        case 39:
+          this.fgColor = null;
+          break;
+        // Default fg
+        case 49:
+          this.bgColor = null;
+          break;
+        // Default bg
+        default:
+          if (code >= 30 && code <= 37 || code >= 90 && code <= 97) {
+            this.fgColor = String(code);
+          } else if (code >= 40 && code <= 47 || code >= 100 && code <= 107) {
+            this.bgColor = String(code);
+          }
+          break;
+      }
+      i++;
+    }
+  }
+  reset() {
+    this.bold = false;
+    this.dim = false;
+    this.italic = false;
+    this.underline = false;
+    this.blink = false;
+    this.inverse = false;
+    this.hidden = false;
+    this.strikethrough = false;
+    this.fgColor = null;
+    this.bgColor = null;
+  }
+  /** Clear all state for reuse. */
+  clear() {
+    this.reset();
+    this.activeHyperlink = null;
+  }
+  getActiveCodes() {
+    const codes = [];
+    if (this.bold)
+      codes.push("1");
+    if (this.dim)
+      codes.push("2");
+    if (this.italic)
+      codes.push("3");
+    if (this.underline)
+      codes.push("4");
+    if (this.blink)
+      codes.push("5");
+    if (this.inverse)
+      codes.push("7");
+    if (this.hidden)
+      codes.push("8");
+    if (this.strikethrough)
+      codes.push("9");
+    if (this.fgColor)
+      codes.push(this.fgColor);
+    if (this.bgColor)
+      codes.push(this.bgColor);
+    let result2 = codes.length > 0 ? `\x1B[${codes.join(";")}m` : "";
+    if (this.activeHyperlink) {
+      result2 += formatOsc8Hyperlink(this.activeHyperlink);
+    }
+    return result2;
+  }
+  getActiveBackgroundCode() {
+    return this.bgColor ? `\x1B[${this.bgColor}m` : "";
+  }
+  hasActiveCodes() {
+    return this.bold || this.dim || this.italic || this.underline || this.blink || this.inverse || this.hidden || this.strikethrough || this.fgColor !== null || this.bgColor !== null || this.activeHyperlink !== null;
+  }
+  /**
+   * Get reset codes for attributes that need to be turned off at line end.
+   * Underline must be closed to prevent bleeding into padding.
+   * Active OSC 8 hyperlinks must be closed and re-opened on the next line.
+   * Returns empty string if no attributes need closing.
+   */
+  getLineEndReset() {
+    let result2 = "";
+    if (this.underline) {
+      result2 += "\x1B[24m";
+    }
+    if (this.activeHyperlink) {
+      result2 += formatOsc8Close(this.activeHyperlink.terminator);
+    }
+    return result2;
+  }
+};
+function updateTrackerFromText(text, tracker) {
+  let i = text.indexOf("\x1B");
+  while (i !== -1) {
+    const length = ansiCodeLength(text, i);
+    if (length > 0) {
+      tracker.process(text.substring(i, i + length));
+      i += length;
+    } else {
+      i++;
+    }
+    i = text.indexOf("\x1B", i);
+  }
+}
+function getActiveBackgroundAnsi(text) {
+  const tracker = new AnsiCodeTracker();
+  updateTrackerFromText(text, tracker);
+  return tracker.getActiveBackgroundCode();
+}
+function* graphemeSegments(text) {
+  for (const { segment } of graphemeSegmenter.segment(text))
+    yield segment;
+}
+function splitIntoTokensWithAnsi(text) {
+  const tokens = [];
+  let current = "";
+  let pendingAnsi = "";
+  let currentKind = null;
+  let i = 0;
+  const flushCurrent = () => {
+    if (!current) {
+      return;
+    }
+    tokens.push(current);
+    current = "";
+    currentKind = null;
+  };
+  while (i < text.length) {
+    const ansiResult = extractAnsiCode(text, i);
+    if (ansiResult) {
+      pendingAnsi += ansiResult.code;
+      i += ansiResult.length;
+      continue;
+    }
+    let end = text.indexOf("\x1B", i + 1);
+    while (end !== -1 && ansiCodeLength(text, end) === 0) {
+      end = text.indexOf("\x1B", end + 1);
+    }
+    if (end === -1)
+      end = text.length;
+    const chunk = text.slice(i, end);
+    const ascii = isPrintableAscii(chunk);
+    for (const segment of ascii ? chunk : graphemeSegments(chunk)) {
+      const segmentIsSpace = segment === " ";
+      if (!ascii && !segmentIsSpace && cjkBreakRegex.test(segment)) {
+        flushCurrent();
+        const token = pendingAnsi + segment;
+        pendingAnsi = "";
+        tokens.push(token);
+        continue;
+      }
+      const segmentKind = segmentIsSpace ? "space" : "word";
+      if (current && currentKind !== segmentKind) {
+        flushCurrent();
+      }
+      if (pendingAnsi) {
+        current += pendingAnsi;
+        pendingAnsi = "";
+      }
+      currentKind = segmentKind;
+      current += segment;
+    }
+    i = end;
+  }
+  if (pendingAnsi) {
+    if (current) {
+      current += pendingAnsi;
+    } else if (tokens.length > 0) {
+      tokens[tokens.length - 1] += pendingAnsi;
+    } else {
+      current = pendingAnsi;
+    }
+  }
+  if (current) {
+    tokens.push(current);
+  }
+  return tokens;
+}
+function flattenLines(lines) {
+  for (const line of lines)
+    Number(line);
+}
+function wrapTextWithAnsi(text, width) {
+  if (!text) {
+    return [""];
+  }
+  const inputLines = text.split(/\r\n|\r|\n/);
+  const result2 = [];
+  const tracker = new AnsiCodeTracker();
+  for (const inputLine of inputLines) {
+    const prefix = result2.length > 0 ? tracker.getActiveCodes() : "";
+    const wrappedLines = wrapSingleLine(prefix + inputLine, width);
+    for (const wrappedLine of wrappedLines) {
+      result2.push(wrappedLine);
+    }
+    updateTrackerFromText(inputLine, tracker);
+  }
+  return result2.length > 0 ? result2 : [""];
+}
+function wrapSingleLine(line, width) {
+  if (!line) {
+    return [""];
+  }
+  const visibleLength = visibleWidth(line);
+  if (visibleLength <= width) {
+    return [line];
+  }
+  const wrapped = [];
+  const tracker = new AnsiCodeTracker();
+  const tokens = splitIntoTokensWithAnsi(line);
+  let currentLine = "";
+  let currentVisibleLength = 0;
+  for (const token of tokens) {
+    const tokenVisibleLength = visibleWidth(token);
+    const isWhitespace = token.trim() === "";
+    if (tokenVisibleLength > width && !isWhitespace) {
+      if (currentLine) {
+        const lineEndReset = tracker.getLineEndReset();
+        if (lineEndReset) {
+          currentLine += lineEndReset;
+        }
+        wrapped.push(currentLine);
+        currentLine = "";
+        currentVisibleLength = 0;
+      }
+      const broken = breakLongWord(token, width, tracker);
+      for (let i = 0; i < broken.length - 1; i++) {
+        wrapped.push(broken[i]);
+      }
+      currentLine = broken[broken.length - 1];
+      currentVisibleLength = visibleWidth(currentLine);
+      continue;
+    }
+    const totalNeeded = currentVisibleLength + tokenVisibleLength;
+    if (totalNeeded > width && currentVisibleLength > 0) {
+      let lineToWrap = currentLine.trimEnd();
+      const lineEndReset = tracker.getLineEndReset();
+      if (lineEndReset) {
+        lineToWrap += lineEndReset;
+      }
+      wrapped.push(lineToWrap);
+      if (isWhitespace) {
+        currentLine = tracker.getActiveCodes();
+        currentVisibleLength = 0;
+      } else {
+        currentLine = tracker.getActiveCodes() + token;
+        currentVisibleLength = tokenVisibleLength;
+      }
+    } else {
+      currentLine += token;
+      currentVisibleLength += tokenVisibleLength;
+    }
+    updateTrackerFromText(token, tracker);
+  }
+  if (currentLine) {
+    wrapped.push(currentLine);
+  }
+  return wrapped.length > 0 ? wrapped.map((line2) => line2.trimEnd()) : [""];
+}
+var PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
+function isWhitespaceChar(char) {
+  return /\s/.test(char);
+}
+function breakLongWord(word, width, tracker) {
+  const lines = [];
+  let currentLine = tracker.getActiveCodes();
+  let currentWidth = 0;
+  let i = 0;
+  const segments = [];
+  while (i < word.length) {
+    const ansiResult = extractAnsiCode(word, i);
+    if (ansiResult) {
+      segments.push({ type: "ansi", value: ansiResult.code });
+      i += ansiResult.length;
+    } else {
+      let end = i;
+      while (end < word.length) {
+        const nextAnsi = extractAnsiCode(word, end);
+        if (nextAnsi)
+          break;
+        end++;
+      }
+      const textPortion = word.slice(i, end);
+      for (const seg of graphemeSegmenter.segment(textPortion)) {
+        segments.push({ type: "grapheme", value: seg.segment });
+      }
+      i = end;
+    }
+  }
+  for (const seg of segments) {
+    if (seg.type === "ansi") {
+      currentLine += seg.value;
+      tracker.process(seg.value);
+      continue;
+    }
+    const grapheme = seg.value;
+    if (!grapheme)
+      continue;
+    const graphemeWidth2 = visibleWidth(grapheme);
+    if (currentWidth + graphemeWidth2 > width) {
+      const lineEndReset = tracker.getLineEndReset();
+      if (lineEndReset) {
+        currentLine += lineEndReset;
+      }
+      lines.push(currentLine);
+      currentLine = tracker.getActiveCodes();
+      currentWidth = 0;
+    }
+    currentLine += grapheme;
+    currentWidth += graphemeWidth2;
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  return lines.length > 0 ? lines : [""];
+}
+function applyBackgroundToLine(line, width, bgFn) {
+  const visibleLen = visibleWidth(line);
+  const paddingNeeded = Math.max(0, width - visibleLen);
+  const padding = " ".repeat(paddingNeeded);
+  const withPadding = line + padding;
+  return bgFn(withPadding);
+}
+function truncateToWidth(text, maxWidth, ellipsis = "...", pad = false) {
+  if (maxWidth <= 0) {
+    return "";
+  }
+  if (text.length === 0) {
+    return pad ? " ".repeat(maxWidth) : "";
+  }
+  const ellipsisWidth = visibleWidth(ellipsis);
+  if (ellipsisWidth >= maxWidth) {
+    const textWidth = visibleWidth(text);
+    if (textWidth <= maxWidth) {
+      return pad ? text + " ".repeat(maxWidth - textWidth) : text;
+    }
+    const clippedEllipsis = truncateFragmentToWidth(ellipsis, maxWidth);
+    if (clippedEllipsis.width === 0) {
+      return pad ? " ".repeat(maxWidth) : "";
+    }
+    return finalizeTruncatedResult("", 0, clippedEllipsis.text, clippedEllipsis.width, maxWidth, pad);
+  }
+  if (isPrintableAscii(text)) {
+    if (text.length <= maxWidth) {
+      return pad ? text + " ".repeat(maxWidth - text.length) : text;
+    }
+    const targetWidth2 = maxWidth - ellipsisWidth;
+    return finalizeTruncatedResult(text.slice(0, targetWidth2), targetWidth2, ellipsis, ellipsisWidth, maxWidth, pad);
+  }
+  const targetWidth = maxWidth - ellipsisWidth;
+  let result2 = "";
+  let pendingAnsi = "";
+  let visibleSoFar = 0;
+  let keptWidth = 0;
+  let keepContiguousPrefix = true;
+  let overflowed = false;
+  let exhaustedInput = false;
+  const hasAnsi = text.includes("\x1B");
+  const hasTabs = text.includes("	");
+  if (!hasAnsi && !hasTabs) {
+    for (const { segment } of graphemeSegmenter.segment(text)) {
+      const width = graphemeWidth(segment);
+      if (keepContiguousPrefix && keptWidth + width <= targetWidth) {
+        result2 += segment;
+        keptWidth += width;
+      } else {
+        keepContiguousPrefix = false;
+      }
+      visibleSoFar += width;
+      if (visibleSoFar > maxWidth) {
+        overflowed = true;
+        break;
+      }
+    }
+    exhaustedInput = !overflowed;
+  } else {
+    let i = 0;
+    while (i < text.length) {
+      const ansi = extractAnsiCode(text, i);
+      if (ansi) {
+        pendingAnsi += ansi.code;
+        i += ansi.length;
+        continue;
+      }
+      if (text[i] === "	") {
+        if (keepContiguousPrefix && keptWidth + 3 <= targetWidth) {
+          if (pendingAnsi) {
+            result2 += pendingAnsi;
+            pendingAnsi = "";
+          }
+          result2 += "	";
+          keptWidth += 3;
+        } else {
+          keepContiguousPrefix = false;
+          pendingAnsi = "";
+        }
+        visibleSoFar += 3;
+        if (visibleSoFar > maxWidth) {
+          overflowed = true;
+          break;
+        }
+        i++;
+        continue;
+      }
+      let end = i;
+      while (end < text.length && text[end] !== "	") {
+        const nextAnsi = extractAnsiCode(text, end);
+        if (nextAnsi) {
+          break;
+        }
+        end++;
+      }
+      for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+        const width = graphemeWidth(segment);
+        if (keepContiguousPrefix && keptWidth + width <= targetWidth) {
+          if (pendingAnsi) {
+            result2 += pendingAnsi;
+            pendingAnsi = "";
+          }
+          result2 += segment;
+          keptWidth += width;
+        } else {
+          keepContiguousPrefix = false;
+          pendingAnsi = "";
+        }
+        visibleSoFar += width;
+        if (visibleSoFar > maxWidth) {
+          overflowed = true;
+          break;
+        }
+      }
+      if (overflowed) {
+        break;
+      }
+      i = end;
+    }
+    exhaustedInput = i >= text.length;
+  }
+  if (!overflowed && exhaustedInput) {
+    return pad ? text + " ".repeat(Math.max(0, maxWidth - visibleSoFar)) : text;
+  }
+  return finalizeTruncatedResult(result2, keptWidth, ellipsis, ellipsisWidth, maxWidth, pad);
+}
+function sliceByColumn(line, startCol, length, strict = false) {
+  return sliceWithWidth(line, startCol, length, strict).text;
+}
+function sliceWithWidth(line, startCol, length, strict = false) {
+  if (length <= 0)
+    return { text: "", width: 0 };
+  const endCol = startCol + length;
+  let result2 = "", resultWidth = 0, currentCol = 0, i = 0, pendingAnsi = "";
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      if (currentCol >= startCol && currentCol < endCol) {
+        result2 += pendingAnsi + ansi.code;
+        pendingAnsi = "";
+      } else if (currentCol < startCol)
+        pendingAnsi += ansi.code;
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const w = graphemeWidth(segment);
+      const inRange = currentCol >= startCol && currentCol < endCol;
+      const fits = !strict || currentCol + w <= endCol;
+      if (inRange && fits) {
+        if (pendingAnsi) {
+          result2 += pendingAnsi;
+          pendingAnsi = "";
+        }
+        result2 += segment;
+        resultWidth += w;
+      }
+      currentCol += w;
+      if (currentCol >= endCol)
+        break;
+    }
+    i = textEnd;
+    if (currentCol >= endCol)
+      break;
+  }
+  return { text: result2, width: resultWidth };
+}
+var pooledStyleTracker = new AnsiCodeTracker();
+function extractSegments(line, beforeEnd, afterStart, afterLen, strictAfter = false) {
+  let before = "", beforeWidth = 0, after = "", afterWidth = 0;
+  let currentCol = 0, i = 0;
+  let pendingAnsiBefore = "";
+  let afterStarted = false;
+  const afterEnd = afterStart + afterLen;
+  pooledStyleTracker.clear();
+  while (i < line.length) {
+    const ansi = extractAnsiCode(line, i);
+    if (ansi) {
+      pooledStyleTracker.process(ansi.code);
+      if (currentCol < beforeEnd) {
+        pendingAnsiBefore += ansi.code;
+      } else if (currentCol >= afterStart && currentCol < afterEnd && afterStarted) {
+        after += ansi.code;
+      }
+      i += ansi.length;
+      continue;
+    }
+    let textEnd = i;
+    while (textEnd < line.length && !extractAnsiCode(line, textEnd))
+      textEnd++;
+    for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
+      const w = graphemeWidth(segment);
+      if (currentCol < beforeEnd && currentCol + w <= beforeEnd) {
+        if (pendingAnsiBefore) {
+          before += pendingAnsiBefore;
+          pendingAnsiBefore = "";
+        }
+        before += segment;
+        beforeWidth += w;
+      } else if (currentCol >= afterStart && currentCol < afterEnd) {
+        const fits = !strictAfter || currentCol + w <= afterEnd;
+        if (fits) {
+          if (!afterStarted) {
+            after += pooledStyleTracker.getActiveCodes();
+            afterStarted = true;
+          }
+          after += segment;
+          afterWidth += w;
+        }
+      }
+      currentCol += w;
+      if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd)
+        break;
+    }
+    i = textEnd;
+    if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd)
+      break;
+  }
+  return { before, beforeWidth, after, afterWidth };
+}
+
+// node_modules/@earendil-works/pi-tui/dist/autocomplete.js
+var tokenStartRegex = new RegExp(`${autocompleteBoundaryRegex.source}$`, "u");
+
+// node_modules/@earendil-works/pi-tui/dist/oklab.js
+var K1 = 0.206;
+var K2 = 0.03;
+var K3 = (1 + K1) / (1 + K2);
+
+// node_modules/@earendil-works/pi-tui/dist/colors.js
+var NUMBER_PATTERN = String.raw`[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?`;
+var OKLCH_PATTERN = new RegExp(`^oklch\\(\\s*(${NUMBER_PATTERN})(%)?\\s+(${NUMBER_PATTERN})\\s+(${NUMBER_PATTERN})(?:deg)?\\s*\\)$`, "i");
+var OKHSL_PATTERN = new RegExp(`^okhsl\\(\\s*(${NUMBER_PATTERN})(?:deg)?\\s+(${NUMBER_PATTERN})(%)?\\s+(${NUMBER_PATTERN})(%)?\\s*\\)$`, "i");
+var GRAY_VALUES = Array.from({ length: 24 }, (_2, index) => 8 + index * 10);
+
+// node_modules/@earendil-works/pi-tui/dist/tui.js
+import { performance as performance2 } from "node:perf_hooks";
+
+// node_modules/@earendil-works/pi-tui/dist/keys.js
+var _kittyProtocolActive = false;
+var Key = {
+  // Special keys
+  escape: "escape",
+  esc: "esc",
+  enter: "enter",
+  return: "return",
+  tab: "tab",
+  space: "space",
+  backspace: "backspace",
+  delete: "delete",
+  insert: "insert",
+  clear: "clear",
+  home: "home",
+  end: "end",
+  pageUp: "pageUp",
+  pageDown: "pageDown",
+  up: "up",
+  down: "down",
+  left: "left",
+  right: "right",
+  f1: "f1",
+  f2: "f2",
+  f3: "f3",
+  f4: "f4",
+  f5: "f5",
+  f6: "f6",
+  f7: "f7",
+  f8: "f8",
+  f9: "f9",
+  f10: "f10",
+  f11: "f11",
+  f12: "f12",
+  // Symbol keys
+  backtick: "`",
+  hyphen: "-",
+  equals: "=",
+  leftbracket: "[",
+  rightbracket: "]",
+  backslash: "\\",
+  semicolon: ";",
+  quote: "'",
+  comma: ",",
+  period: ".",
+  slash: "/",
+  exclamation: "!",
+  at: "@",
+  hash: "#",
+  dollar: "$",
+  percent: "%",
+  caret: "^",
+  ampersand: "&",
+  asterisk: "*",
+  leftparen: "(",
+  rightparen: ")",
+  underscore: "_",
+  plus: "+",
+  pipe: "|",
+  tilde: "~",
+  leftbrace: "{",
+  rightbrace: "}",
+  colon: ":",
+  lessthan: "<",
+  greaterthan: ">",
+  question: "?",
+  // Single modifiers
+  ctrl: (key) => `ctrl+${key}`,
+  shift: (key) => `shift+${key}`,
+  alt: (key) => `alt+${key}`,
+  super: (key) => `super+${key}`,
+  // Combined modifiers
+  ctrlShift: (key) => `ctrl+shift+${key}`,
+  shiftCtrl: (key) => `shift+ctrl+${key}`,
+  ctrlAlt: (key) => `ctrl+alt+${key}`,
+  altCtrl: (key) => `alt+ctrl+${key}`,
+  shiftAlt: (key) => `shift+alt+${key}`,
+  altShift: (key) => `alt+shift+${key}`,
+  ctrlSuper: (key) => `ctrl+super+${key}`,
+  superCtrl: (key) => `super+ctrl+${key}`,
+  shiftSuper: (key) => `shift+super+${key}`,
+  superShift: (key) => `super+shift+${key}`,
+  altSuper: (key) => `alt+super+${key}`,
+  superAlt: (key) => `super+alt+${key}`,
+  // Triple modifiers
+  ctrlShiftAlt: (key) => `ctrl+shift+alt+${key}`,
+  ctrlShiftSuper: (key) => `ctrl+shift+super+${key}`
+};
+var SYMBOL_KEYS = /* @__PURE__ */ new Set([
+  "`",
+  "-",
+  "=",
+  "[",
+  "]",
+  "\\",
+  ";",
+  "'",
+  ",",
+  ".",
+  "/",
+  "!",
+  "@",
+  "#",
+  "$",
+  "%",
+  "^",
+  "&",
+  "*",
+  "(",
+  ")",
+  "_",
+  "+",
+  "|",
+  "~",
+  "{",
+  "}",
+  ":",
+  "<",
+  ">",
+  "?"
+]);
+var MODIFIERS = {
+  shift: 1,
+  alt: 2,
+  ctrl: 4,
+  super: 8
+};
+var LOCK_MASK = 64 + 128;
+var CODEPOINTS = {
+  escape: 27,
+  tab: 9,
+  enter: 13,
+  space: 32,
+  backspace: 127,
+  kpEnter: 57414
+  // Numpad Enter (Kitty protocol)
+};
+var ARROW_CODEPOINTS = {
+  up: -1,
+  down: -2,
+  right: -3,
+  left: -4
+};
+var FUNCTIONAL_CODEPOINTS = {
+  delete: -10,
+  insert: -11,
+  pageUp: -12,
+  pageDown: -13,
+  home: -14,
+  end: -15
+};
+var KITTY_FUNCTIONAL_KEY_EQUIVALENTS = /* @__PURE__ */ new Map([
+  [57399, 48],
+  // KP_0 -> 0
+  [57400, 49],
+  // KP_1 -> 1
+  [57401, 50],
+  // KP_2 -> 2
+  [57402, 51],
+  // KP_3 -> 3
+  [57403, 52],
+  // KP_4 -> 4
+  [57404, 53],
+  // KP_5 -> 5
+  [57405, 54],
+  // KP_6 -> 6
+  [57406, 55],
+  // KP_7 -> 7
+  [57407, 56],
+  // KP_8 -> 8
+  [57408, 57],
+  // KP_9 -> 9
+  [57409, 46],
+  // KP_DECIMAL -> .
+  [57410, 47],
+  // KP_DIVIDE -> /
+  [57411, 42],
+  // KP_MULTIPLY -> *
+  [57412, 45],
+  // KP_SUBTRACT -> -
+  [57413, 43],
+  // KP_ADD -> +
+  [57415, 61],
+  // KP_EQUAL -> =
+  [57416, 44],
+  // KP_SEPARATOR -> ,
+  [57417, ARROW_CODEPOINTS.left],
+  [57418, ARROW_CODEPOINTS.right],
+  [57419, ARROW_CODEPOINTS.up],
+  [57420, ARROW_CODEPOINTS.down],
+  [57421, FUNCTIONAL_CODEPOINTS.pageUp],
+  [57422, FUNCTIONAL_CODEPOINTS.pageDown],
+  [57423, FUNCTIONAL_CODEPOINTS.home],
+  [57424, FUNCTIONAL_CODEPOINTS.end],
+  [57425, FUNCTIONAL_CODEPOINTS.insert],
+  [57426, FUNCTIONAL_CODEPOINTS.delete]
+]);
+function normalizeKittyFunctionalCodepoint(codepoint) {
+  return KITTY_FUNCTIONAL_KEY_EQUIVALENTS.get(codepoint) ?? codepoint;
+}
+function normalizeShiftedLetterIdentityCodepoint(codepoint, modifier) {
+  const effectiveModifier = modifier & ~LOCK_MASK;
+  if ((effectiveModifier & MODIFIERS.shift) !== 0 && codepoint >= 65 && codepoint <= 90) {
+    return codepoint + 32;
+  }
+  return codepoint;
+}
+var LEGACY_KEY_SEQUENCES = {
+  up: ["\x1B[A", "\x1BOA"],
+  down: ["\x1B[B", "\x1BOB"],
+  right: ["\x1B[C", "\x1BOC"],
+  left: ["\x1B[D", "\x1BOD"],
+  home: ["\x1B[H", "\x1BOH", "\x1B[1~", "\x1B[7~"],
+  end: ["\x1B[F", "\x1BOF", "\x1B[4~", "\x1B[8~"],
+  insert: ["\x1B[2~"],
+  delete: ["\x1B[3~"],
+  pageUp: ["\x1B[5~", "\x1B[[5~"],
+  pageDown: ["\x1B[6~", "\x1B[[6~"],
+  clear: ["\x1B[E", "\x1BOE"],
+  f1: ["\x1BOP", "\x1B[11~", "\x1B[[A"],
+  f2: ["\x1BOQ", "\x1B[12~", "\x1B[[B"],
+  f3: ["\x1BOR", "\x1B[13~", "\x1B[[C"],
+  f4: ["\x1BOS", "\x1B[14~", "\x1B[[D"],
+  f5: ["\x1B[15~", "\x1B[[E"],
+  f6: ["\x1B[17~"],
+  f7: ["\x1B[18~"],
+  f8: ["\x1B[19~"],
+  f9: ["\x1B[20~"],
+  f10: ["\x1B[21~"],
+  f11: ["\x1B[23~"],
+  f12: ["\x1B[24~"]
+};
+var LEGACY_SHIFT_SEQUENCES = {
+  up: ["\x1B[a"],
+  down: ["\x1B[b"],
+  right: ["\x1B[c"],
+  left: ["\x1B[d"],
+  clear: ["\x1B[e"],
+  insert: ["\x1B[2$"],
+  delete: ["\x1B[3$"],
+  pageUp: ["\x1B[5$"],
+  pageDown: ["\x1B[6$"],
+  home: ["\x1B[7$"],
+  end: ["\x1B[8$"]
+};
+var LEGACY_CTRL_SEQUENCES = {
+  up: ["\x1BOa"],
+  down: ["\x1BOb"],
+  right: ["\x1BOc"],
+  left: ["\x1BOd"],
+  clear: ["\x1BOe"],
+  insert: ["\x1B[2^"],
+  delete: ["\x1B[3^"],
+  pageUp: ["\x1B[5^"],
+  pageDown: ["\x1B[6^"],
+  home: ["\x1B[7^"],
+  end: ["\x1B[8^"]
+};
+var LEGACY_SEQUENCE_KEY_IDS = {
+  "\x1BOA": "up",
+  "\x1BOB": "down",
+  "\x1BOC": "right",
+  "\x1BOD": "left",
+  "\x1BOH": "home",
+  "\x1BOF": "end",
+  "\x1B[E": "clear",
+  "\x1BOE": "clear",
+  "\x1BOe": "ctrl+clear",
+  "\x1B[e": "shift+clear",
+  "\x1B[2~": "insert",
+  "\x1B[2$": "shift+insert",
+  "\x1B[2^": "ctrl+insert",
+  "\x1B[3$": "shift+delete",
+  "\x1B[3^": "ctrl+delete",
+  "\x1B[[5~": "pageUp",
+  "\x1B[[6~": "pageDown",
+  "\x1B[a": "shift+up",
+  "\x1B[b": "shift+down",
+  "\x1B[c": "shift+right",
+  "\x1B[d": "shift+left",
+  "\x1BOa": "ctrl+up",
+  "\x1BOb": "ctrl+down",
+  "\x1BOc": "ctrl+right",
+  "\x1BOd": "ctrl+left",
+  "\x1B[5$": "shift+pageUp",
+  "\x1B[6$": "shift+pageDown",
+  "\x1B[7$": "shift+home",
+  "\x1B[8$": "shift+end",
+  "\x1B[5^": "ctrl+pageUp",
+  "\x1B[6^": "ctrl+pageDown",
+  "\x1B[7^": "ctrl+home",
+  "\x1B[8^": "ctrl+end",
+  "\x1BOP": "f1",
+  "\x1BOQ": "f2",
+  "\x1BOR": "f3",
+  "\x1BOS": "f4",
+  "\x1B[11~": "f1",
+  "\x1B[12~": "f2",
+  "\x1B[13~": "f3",
+  "\x1B[14~": "f4",
+  "\x1B[[A": "f1",
+  "\x1B[[B": "f2",
+  "\x1B[[C": "f3",
+  "\x1B[[D": "f4",
+  "\x1B[[E": "f5",
+  "\x1B[15~": "f5",
+  "\x1B[17~": "f6",
+  "\x1B[18~": "f7",
+  "\x1B[19~": "f8",
+  "\x1B[20~": "f9",
+  "\x1B[21~": "f10",
+  "\x1B[23~": "f11",
+  "\x1B[24~": "f12",
+  "\x1Bb": "alt+left",
+  "\x1Bf": "alt+right",
+  "\x1Bp": "alt+up",
+  "\x1Bn": "alt+down"
+};
+var matchesLegacySequence = (data, sequences) => sequences.includes(data);
+var matchesLegacyModifierSequence = (data, key, modifier) => {
+  if (modifier === MODIFIERS.shift) {
+    return matchesLegacySequence(data, LEGACY_SHIFT_SEQUENCES[key]);
+  }
+  if (modifier === MODIFIERS.ctrl) {
+    return matchesLegacySequence(data, LEGACY_CTRL_SEQUENCES[key]);
+  }
+  return false;
+};
+var _lastEventType = "press";
+function isKeyRelease(data) {
+  if (data.includes("\x1B[200~")) {
+    return false;
+  }
+  if (data.includes(":3u") || data.includes(":3~") || data.includes(":3A") || data.includes(":3B") || data.includes(":3C") || data.includes(":3D") || data.includes(":3H") || data.includes(":3F")) {
+    return true;
+  }
+  return false;
+}
+function parseEventType(eventTypeStr) {
+  if (!eventTypeStr)
+    return "press";
+  const eventType = parseInt(eventTypeStr, 10);
+  if (eventType === 2)
+    return "repeat";
+  if (eventType === 3)
+    return "release";
+  return "press";
+}
+function parseKittySequence(data) {
+  const csiUMatch = data.match(/^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/);
+  if (csiUMatch) {
+    const codepoint = parseInt(csiUMatch[1], 10);
+    const shiftedKey = csiUMatch[2] && csiUMatch[2].length > 0 ? parseInt(csiUMatch[2], 10) : void 0;
+    const baseLayoutKey = csiUMatch[3] ? parseInt(csiUMatch[3], 10) : void 0;
+    const modValue = csiUMatch[4] ? parseInt(csiUMatch[4], 10) : 1;
+    const eventType = parseEventType(csiUMatch[5]);
+    _lastEventType = eventType;
+    return { codepoint, shiftedKey, baseLayoutKey, modifier: modValue - 1, eventType };
+  }
+  const arrowMatch = data.match(/^\x1b\[1;(\d+)(?::(\d+))?([ABCD])$/);
+  if (arrowMatch) {
+    const modValue = parseInt(arrowMatch[1], 10);
+    const eventType = parseEventType(arrowMatch[2]);
+    const arrowCodes = { A: -1, B: -2, C: -3, D: -4 };
+    _lastEventType = eventType;
+    return { codepoint: arrowCodes[arrowMatch[3]], modifier: modValue - 1, eventType };
+  }
+  const funcMatch = data.match(/^\x1b\[(\d+)(?:;(\d+))?(?::(\d+))?~$/);
+  if (funcMatch) {
+    const keyNum = parseInt(funcMatch[1], 10);
+    const modValue = funcMatch[2] ? parseInt(funcMatch[2], 10) : 1;
+    const eventType = parseEventType(funcMatch[3]);
+    const funcCodes = {
+      2: FUNCTIONAL_CODEPOINTS.insert,
+      3: FUNCTIONAL_CODEPOINTS.delete,
+      5: FUNCTIONAL_CODEPOINTS.pageUp,
+      6: FUNCTIONAL_CODEPOINTS.pageDown,
+      7: FUNCTIONAL_CODEPOINTS.home,
+      8: FUNCTIONAL_CODEPOINTS.end
+    };
+    const codepoint = funcCodes[keyNum];
+    if (codepoint !== void 0) {
+      _lastEventType = eventType;
+      return { codepoint, modifier: modValue - 1, eventType };
+    }
+  }
+  const homeEndMatch = data.match(/^\x1b\[1;(\d+)(?::(\d+))?([HF])$/);
+  if (homeEndMatch) {
+    const modValue = parseInt(homeEndMatch[1], 10);
+    const eventType = parseEventType(homeEndMatch[2]);
+    const codepoint = homeEndMatch[3] === "H" ? FUNCTIONAL_CODEPOINTS.home : FUNCTIONAL_CODEPOINTS.end;
+    _lastEventType = eventType;
+    return { codepoint, modifier: modValue - 1, eventType };
+  }
+  return null;
+}
+function matchesKittySequence(data, expectedCodepoint, expectedModifier) {
+  const parsed = parseKittySequence(data);
+  if (!parsed)
+    return false;
+  const actualMod = parsed.modifier & ~LOCK_MASK;
+  const expectedMod = expectedModifier & ~LOCK_MASK;
+  if (actualMod !== expectedMod)
+    return false;
+  const normalizedCodepoint = normalizeShiftedLetterIdentityCodepoint(normalizeKittyFunctionalCodepoint(parsed.codepoint), parsed.modifier);
+  const normalizedExpectedCodepoint = normalizeShiftedLetterIdentityCodepoint(normalizeKittyFunctionalCodepoint(expectedCodepoint), expectedModifier);
+  if (normalizedCodepoint === normalizedExpectedCodepoint)
+    return true;
+  if (parsed.baseLayoutKey !== void 0 && parsed.baseLayoutKey === expectedCodepoint) {
+    const cp = normalizedCodepoint;
+    const isLatinLetter = cp >= 97 && cp <= 122;
+    const isKnownSymbol = SYMBOL_KEYS.has(String.fromCharCode(cp));
+    if (!isLatinLetter && !isKnownSymbol)
+      return true;
+  }
+  return false;
+}
+function parseModifyOtherKeysSequence(data) {
+  const match = data.match(/^\x1b\[27;(\d+);(\d+)~$/);
+  if (!match)
+    return null;
+  const modValue = parseInt(match[1], 10);
+  const codepoint = parseInt(match[2], 10);
+  return { codepoint, modifier: modValue - 1 };
+}
+function matchesModifyOtherKeys(data, expectedKeycode, expectedModifier) {
+  const parsed = parseModifyOtherKeysSequence(data);
+  if (!parsed)
+    return false;
+  return parsed.codepoint === expectedKeycode && parsed.modifier === expectedModifier;
+}
+function isWindowsTerminalSession() {
+  return Boolean(process.env.WT_SESSION) && !process.env.SSH_CONNECTION && !process.env.SSH_CLIENT && !process.env.SSH_TTY;
+}
+function matchesRawBackspace(data, expectedModifier) {
+  if (data === "\x7F")
+    return expectedModifier === 0;
+  if (data !== "\b")
+    return false;
+  return isWindowsTerminalSession() ? expectedModifier === MODIFIERS.ctrl : expectedModifier === 0;
+}
+function rawCtrlChar(key) {
+  const char = key.toLowerCase();
+  const code = char.charCodeAt(0);
+  if (code >= 97 && code <= 122 || char === "[" || char === "\\" || char === "]" || char === "_") {
+    return String.fromCharCode(code & 31);
+  }
+  if (char === "-") {
+    return String.fromCharCode(31);
+  }
+  return null;
+}
+function isDigitKey(key) {
+  return key >= "0" && key <= "9";
+}
+function matchesPrintableModifyOtherKeys(data, expectedKeycode, expectedModifier) {
+  if (expectedModifier === 0)
+    return false;
+  const parsed = parseModifyOtherKeysSequence(data);
+  if (!parsed || parsed.modifier !== expectedModifier)
+    return false;
+  return normalizeShiftedLetterIdentityCodepoint(parsed.codepoint, parsed.modifier) === normalizeShiftedLetterIdentityCodepoint(expectedKeycode, expectedModifier);
+}
+function formatKeyNameWithModifiers(keyName, modifier) {
+  const mods = [];
+  const effectiveMod = modifier & ~LOCK_MASK;
+  const supportedModifierMask = MODIFIERS.shift | MODIFIERS.ctrl | MODIFIERS.alt | MODIFIERS.super;
+  if ((effectiveMod & ~supportedModifierMask) !== 0)
+    return void 0;
+  if (effectiveMod & MODIFIERS.shift)
+    mods.push("shift");
+  if (effectiveMod & MODIFIERS.ctrl)
+    mods.push("ctrl");
+  if (effectiveMod & MODIFIERS.alt)
+    mods.push("alt");
+  if (effectiveMod & MODIFIERS.super)
+    mods.push("super");
+  return mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName;
+}
+function parseKeyId(keyId) {
+  const parts = keyId.toLowerCase().split("+");
+  const key = parts[parts.length - 1];
+  if (!key)
+    return null;
+  return {
+    key,
+    ctrl: parts.includes("ctrl"),
+    shift: parts.includes("shift"),
+    alt: parts.includes("alt"),
+    super: parts.includes("super")
+  };
+}
+function matchesKey(data, keyId) {
+  const parsed = parseKeyId(keyId);
+  if (!parsed)
+    return false;
+  const { key, ctrl, shift, alt, super: superModifier } = parsed;
+  let modifier = 0;
+  if (shift)
+    modifier |= MODIFIERS.shift;
+  if (alt)
+    modifier |= MODIFIERS.alt;
+  if (ctrl)
+    modifier |= MODIFIERS.ctrl;
+  if (superModifier)
+    modifier |= MODIFIERS.super;
+  switch (key) {
+    case "escape":
+    case "esc":
+      if (modifier !== 0)
+        return false;
+      return data === "\x1B" || matchesKittySequence(data, CODEPOINTS.escape, 0) || matchesModifyOtherKeys(data, CODEPOINTS.escape, 0);
+    case "space":
+      if (!_kittyProtocolActive) {
+        if (modifier === MODIFIERS.ctrl && data === "\0") {
+          return true;
+        }
+        if (modifier === MODIFIERS.alt && data === "\x1B ") {
+          return true;
+        }
+      }
+      if (modifier === 0) {
+        return data === " " || matchesKittySequence(data, CODEPOINTS.space, 0) || matchesModifyOtherKeys(data, CODEPOINTS.space, 0);
+      }
+      return matchesKittySequence(data, CODEPOINTS.space, modifier) || matchesModifyOtherKeys(data, CODEPOINTS.space, modifier);
+    case "tab":
+      if (modifier === MODIFIERS.shift) {
+        return data === "\x1B[Z" || matchesKittySequence(data, CODEPOINTS.tab, MODIFIERS.shift) || matchesModifyOtherKeys(data, CODEPOINTS.tab, MODIFIERS.shift);
+      }
+      if (modifier === 0) {
+        return data === "	" || matchesKittySequence(data, CODEPOINTS.tab, 0);
+      }
+      return matchesKittySequence(data, CODEPOINTS.tab, modifier) || matchesModifyOtherKeys(data, CODEPOINTS.tab, modifier);
+    case "enter":
+    case "return":
+      if (modifier === MODIFIERS.shift) {
+        if (matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.shift) || matchesKittySequence(data, CODEPOINTS.kpEnter, MODIFIERS.shift)) {
+          return true;
+        }
+        if (matchesModifyOtherKeys(data, CODEPOINTS.enter, MODIFIERS.shift)) {
+          return true;
+        }
+        if (_kittyProtocolActive) {
+          return data === "\x1B\r" || data === "\n";
+        }
+        return false;
+      }
+      if (modifier === MODIFIERS.alt) {
+        if (matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.alt) || matchesKittySequence(data, CODEPOINTS.kpEnter, MODIFIERS.alt)) {
+          return true;
+        }
+        if (matchesModifyOtherKeys(data, CODEPOINTS.enter, MODIFIERS.alt)) {
+          return true;
+        }
+        if (!_kittyProtocolActive) {
+          return data === "\x1B\r";
+        }
+        return false;
+      }
+      if (modifier === 0) {
+        return data === "\r" || !_kittyProtocolActive && data === "\n" || data === "\x1BOM" || // SS3 M (numpad enter in some terminals)
+        matchesKittySequence(data, CODEPOINTS.enter, 0) || matchesKittySequence(data, CODEPOINTS.kpEnter, 0);
+      }
+      return matchesKittySequence(data, CODEPOINTS.enter, modifier) || matchesKittySequence(data, CODEPOINTS.kpEnter, modifier) || matchesModifyOtherKeys(data, CODEPOINTS.enter, modifier);
+    case "backspace":
+      if (modifier === MODIFIERS.alt) {
+        if (data === "\x1B\x7F" || data === "\x1B\b") {
+          return true;
+        }
+        return matchesKittySequence(data, CODEPOINTS.backspace, MODIFIERS.alt) || matchesModifyOtherKeys(data, CODEPOINTS.backspace, MODIFIERS.alt);
+      }
+      if (modifier === MODIFIERS.ctrl) {
+        if (matchesRawBackspace(data, MODIFIERS.ctrl))
+          return true;
+        return matchesKittySequence(data, CODEPOINTS.backspace, MODIFIERS.ctrl) || matchesModifyOtherKeys(data, CODEPOINTS.backspace, MODIFIERS.ctrl);
+      }
+      if (modifier === 0) {
+        return matchesRawBackspace(data, 0) || matchesKittySequence(data, CODEPOINTS.backspace, 0) || matchesModifyOtherKeys(data, CODEPOINTS.backspace, 0);
+      }
+      return matchesKittySequence(data, CODEPOINTS.backspace, modifier) || matchesModifyOtherKeys(data, CODEPOINTS.backspace, modifier);
+    case "insert":
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.insert) || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.insert, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "insert", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.insert, modifier);
+    case "delete":
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.delete) || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.delete, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "delete", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.delete, modifier);
+    case "clear":
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.clear);
+      }
+      return matchesLegacyModifierSequence(data, "clear", modifier);
+    case "home":
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.home) || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.home, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "home", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.home, modifier);
+    case "end":
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.end) || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.end, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "end", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.end, modifier);
+    case "pageup":
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.pageUp) || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageUp, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "pageUp", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageUp, modifier);
+    case "pagedown":
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.pageDown) || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageDown, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "pageDown", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageDown, modifier);
+    case "up":
+      if (modifier === MODIFIERS.alt) {
+        return data === "\x1Bp" || matchesKittySequence(data, ARROW_CODEPOINTS.up, MODIFIERS.alt);
+      }
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.up) || matchesKittySequence(data, ARROW_CODEPOINTS.up, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "up", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, ARROW_CODEPOINTS.up, modifier);
+    case "down":
+      if (modifier === MODIFIERS.alt) {
+        return data === "\x1Bn" || matchesKittySequence(data, ARROW_CODEPOINTS.down, MODIFIERS.alt);
+      }
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.down) || matchesKittySequence(data, ARROW_CODEPOINTS.down, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "down", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, ARROW_CODEPOINTS.down, modifier);
+    case "left":
+      if (modifier === MODIFIERS.alt) {
+        return data === "\x1B[1;3D" || !_kittyProtocolActive && data === "\x1BB" || data === "\x1Bb" || matchesKittySequence(data, ARROW_CODEPOINTS.left, MODIFIERS.alt);
+      }
+      if (modifier === MODIFIERS.ctrl) {
+        return data === "\x1B[1;5D" || matchesLegacyModifierSequence(data, "left", MODIFIERS.ctrl) || matchesKittySequence(data, ARROW_CODEPOINTS.left, MODIFIERS.ctrl);
+      }
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.left) || matchesKittySequence(data, ARROW_CODEPOINTS.left, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "left", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, ARROW_CODEPOINTS.left, modifier);
+    case "right":
+      if (modifier === MODIFIERS.alt) {
+        return data === "\x1B[1;3C" || !_kittyProtocolActive && data === "\x1BF" || data === "\x1Bf" || matchesKittySequence(data, ARROW_CODEPOINTS.right, MODIFIERS.alt);
+      }
+      if (modifier === MODIFIERS.ctrl) {
+        return data === "\x1B[1;5C" || matchesLegacyModifierSequence(data, "right", MODIFIERS.ctrl) || matchesKittySequence(data, ARROW_CODEPOINTS.right, MODIFIERS.ctrl);
+      }
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.right) || matchesKittySequence(data, ARROW_CODEPOINTS.right, 0);
+      }
+      if (matchesLegacyModifierSequence(data, "right", modifier)) {
+        return true;
+      }
+      return matchesKittySequence(data, ARROW_CODEPOINTS.right, modifier);
+    case "f1":
+    case "f2":
+    case "f3":
+    case "f4":
+    case "f5":
+    case "f6":
+    case "f7":
+    case "f8":
+    case "f9":
+    case "f10":
+    case "f11":
+    case "f12": {
+      if (modifier !== 0) {
+        return false;
+      }
+      const functionKey = key;
+      return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES[functionKey]);
+    }
+  }
+  if (key.length === 1 && (key >= "a" && key <= "z" || isDigitKey(key) || SYMBOL_KEYS.has(key))) {
+    const codepoint = key.charCodeAt(0);
+    const rawCtrl = rawCtrlChar(key);
+    const isLetter = key >= "a" && key <= "z";
+    const isDigit = isDigitKey(key);
+    if (modifier === MODIFIERS.ctrl + MODIFIERS.alt && !_kittyProtocolActive && rawCtrl) {
+      if (data === `\x1B${rawCtrl}`)
+        return true;
+    }
+    if (modifier === MODIFIERS.alt && !_kittyProtocolActive && (isLetter || isDigit || SYMBOL_KEYS.has(key))) {
+      if (data === `\x1B${key}`)
+        return true;
+    }
+    if (modifier === MODIFIERS.ctrl) {
+      if (rawCtrl && data === rawCtrl)
+        return true;
+      return matchesKittySequence(data, codepoint, MODIFIERS.ctrl) || matchesPrintableModifyOtherKeys(data, codepoint, MODIFIERS.ctrl);
+    }
+    if (modifier === MODIFIERS.shift + MODIFIERS.ctrl) {
+      return matchesKittySequence(data, codepoint, MODIFIERS.shift + MODIFIERS.ctrl) || matchesPrintableModifyOtherKeys(data, codepoint, MODIFIERS.shift + MODIFIERS.ctrl);
+    }
+    if (modifier === MODIFIERS.shift) {
+      if (isLetter && data === key.toUpperCase())
+        return true;
+      return matchesKittySequence(data, codepoint, MODIFIERS.shift) || matchesPrintableModifyOtherKeys(data, codepoint, MODIFIERS.shift);
+    }
+    if (modifier !== 0) {
+      return matchesKittySequence(data, codepoint, modifier) || matchesPrintableModifyOtherKeys(data, codepoint, modifier);
+    }
+    return data === key || matchesKittySequence(data, codepoint, 0);
+  }
+  return false;
+}
+function formatParsedKey(codepoint, modifier, baseLayoutKey) {
+  const normalizedCodepoint = normalizeKittyFunctionalCodepoint(codepoint);
+  const identityCodepoint = normalizeShiftedLetterIdentityCodepoint(normalizedCodepoint, modifier);
+  const isLatinLetter = identityCodepoint >= 97 && identityCodepoint <= 122;
+  const isDigit = identityCodepoint >= 48 && identityCodepoint <= 57;
+  const isKnownSymbol = SYMBOL_KEYS.has(String.fromCharCode(identityCodepoint));
+  const effectiveCodepoint = isLatinLetter || isDigit || isKnownSymbol ? identityCodepoint : baseLayoutKey ?? identityCodepoint;
+  let keyName;
+  if (effectiveCodepoint === CODEPOINTS.escape)
+    keyName = "escape";
+  else if (effectiveCodepoint === CODEPOINTS.tab)
+    keyName = "tab";
+  else if (effectiveCodepoint === CODEPOINTS.enter || effectiveCodepoint === CODEPOINTS.kpEnter)
+    keyName = "enter";
+  else if (effectiveCodepoint === CODEPOINTS.space)
+    keyName = "space";
+  else if (effectiveCodepoint === CODEPOINTS.backspace)
+    keyName = "backspace";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.delete)
+    keyName = "delete";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.insert)
+    keyName = "insert";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.home)
+    keyName = "home";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.end)
+    keyName = "end";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.pageUp)
+    keyName = "pageUp";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.pageDown)
+    keyName = "pageDown";
+  else if (effectiveCodepoint === ARROW_CODEPOINTS.up)
+    keyName = "up";
+  else if (effectiveCodepoint === ARROW_CODEPOINTS.down)
+    keyName = "down";
+  else if (effectiveCodepoint === ARROW_CODEPOINTS.left)
+    keyName = "left";
+  else if (effectiveCodepoint === ARROW_CODEPOINTS.right)
+    keyName = "right";
+  else if (effectiveCodepoint >= 48 && effectiveCodepoint <= 57)
+    keyName = String.fromCharCode(effectiveCodepoint);
+  else if (effectiveCodepoint >= 97 && effectiveCodepoint <= 122)
+    keyName = String.fromCharCode(effectiveCodepoint);
+  else if (SYMBOL_KEYS.has(String.fromCharCode(effectiveCodepoint)))
+    keyName = String.fromCharCode(effectiveCodepoint);
+  if (!keyName)
+    return void 0;
+  return formatKeyNameWithModifiers(keyName, modifier);
+}
+function parseKey(data) {
+  const kitty = parseKittySequence(data);
+  if (kitty) {
+    return formatParsedKey(kitty.codepoint, kitty.modifier, kitty.baseLayoutKey);
+  }
+  const modifyOtherKeys = parseModifyOtherKeysSequence(data);
+  if (modifyOtherKeys) {
+    return formatParsedKey(modifyOtherKeys.codepoint, modifyOtherKeys.modifier);
+  }
+  if (_kittyProtocolActive) {
+    if (data === "\x1B\r" || data === "\n")
+      return "shift+enter";
+  }
+  const legacySequenceKeyId = LEGACY_SEQUENCE_KEY_IDS[data];
+  if (legacySequenceKeyId)
+    return legacySequenceKeyId;
+  if (data === "\x1B")
+    return "escape";
+  if (data === "")
+    return "ctrl+\\";
+  if (data === "")
+    return "ctrl+]";
+  if (data === "")
+    return "ctrl+-";
+  if (data === "\x1B\x1B")
+    return "ctrl+alt+[";
+  if (data === "\x1B")
+    return "ctrl+alt+\\";
+  if (data === "\x1B")
+    return "ctrl+alt+]";
+  if (data === "\x1B")
+    return "ctrl+alt+-";
+  if (data === "	")
+    return "tab";
+  if (data === "\r" || !_kittyProtocolActive && data === "\n" || data === "\x1BOM")
+    return "enter";
+  if (data === "\0")
+    return "ctrl+space";
+  if (data === " ")
+    return "space";
+  if (data === "\x7F")
+    return "backspace";
+  if (data === "\b")
+    return isWindowsTerminalSession() ? "ctrl+backspace" : "backspace";
+  if (data === "\x1B[Z")
+    return "shift+tab";
+  if (!_kittyProtocolActive && data === "\x1B\r")
+    return "alt+enter";
+  if (!_kittyProtocolActive && data === "\x1B ")
+    return "alt+space";
+  if (data === "\x1B\x7F" || data === "\x1B\b")
+    return "alt+backspace";
+  if (!_kittyProtocolActive && data === "\x1BB")
+    return "alt+left";
+  if (!_kittyProtocolActive && data === "\x1BF")
+    return "alt+right";
+  if (!_kittyProtocolActive && data.length === 2 && data[0] === "\x1B") {
+    const code = data.charCodeAt(1);
+    if (code >= 1 && code <= 26) {
+      return `ctrl+alt+${String.fromCharCode(code + 96)}`;
+    }
+    const key = String.fromCharCode(code);
+    if (code >= 97 && code <= 122 || code >= 48 && code <= 57 || SYMBOL_KEYS.has(key)) {
+      return `alt+${key}`;
+    }
+  }
+  if (data === "\x1B[A")
+    return "up";
+  if (data === "\x1B[B")
+    return "down";
+  if (data === "\x1B[C")
+    return "right";
+  if (data === "\x1B[D")
+    return "left";
+  if (data === "\x1B[H" || data === "\x1BOH")
+    return "home";
+  if (data === "\x1B[F" || data === "\x1BOF")
+    return "end";
+  if (data === "\x1B[3~")
+    return "delete";
+  if (data === "\x1B[5~")
+    return "pageUp";
+  if (data === "\x1B[6~")
+    return "pageDown";
+  if (data.length === 1) {
+    const code = data.charCodeAt(0);
+    if (code >= 1 && code <= 26) {
+      return `ctrl+${String.fromCharCode(code + 96)}`;
+    }
+    if (code >= 32 && code <= 126) {
+      return data;
+    }
+  }
+  return void 0;
+}
+var KITTY_CSI_U_REGEX = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
+var KITTY_PRINTABLE_ALLOWED_MODIFIERS = MODIFIERS.shift | LOCK_MASK;
+function decodeKittyPrintable(data) {
+  const match = data.match(KITTY_CSI_U_REGEX);
+  if (!match)
+    return void 0;
+  const codepoint = Number.parseInt(match[1] ?? "", 10);
+  if (!Number.isFinite(codepoint))
+    return void 0;
+  const shiftedKey = match[2] && match[2].length > 0 ? Number.parseInt(match[2], 10) : void 0;
+  const modValue = match[4] ? Number.parseInt(match[4], 10) : 1;
+  const modifier = Number.isFinite(modValue) ? modValue - 1 : 0;
+  if ((modifier & ~KITTY_PRINTABLE_ALLOWED_MODIFIERS) !== 0)
+    return void 0;
+  if (modifier & (MODIFIERS.alt | MODIFIERS.ctrl))
+    return void 0;
+  let effectiveCodepoint = codepoint;
+  if (modifier & MODIFIERS.shift && typeof shiftedKey === "number") {
+    effectiveCodepoint = shiftedKey;
+  }
+  effectiveCodepoint = normalizeKittyFunctionalCodepoint(effectiveCodepoint);
+  if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32)
+    return void 0;
+  try {
+    return String.fromCodePoint(effectiveCodepoint);
+  } catch {
+    return void 0;
+  }
+}
+
+// node_modules/@earendil-works/pi-tui/dist/terminal-colors.js
+function hexToRgb(hex) {
+  const normalized = hex.startsWith("#") ? hex.slice(1) : hex;
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b2 = parseInt(normalized.slice(4, 6), 16);
+  return { r, g, b: b2 };
+}
+function parseOscHexChannel(channel) {
+  if (!/^[0-9a-f]+$/i.test(channel)) {
+    return void 0;
+  }
+  const max = 16 ** channel.length - 1;
+  if (max <= 0) {
+    return void 0;
+  }
+  return Math.round(parseInt(channel, 16) / max * 255);
+}
+var OSC_COLOR_RESPONSE_PATTERN = /^\x1b\](?:(1[01])|4;(\d{1,3}));([^\x07\x1b]*)(?:\x07|\x1b\\)$/i;
+var COLOR_SCHEME_REPORT_PATTERN = /^(?:\x1b\[\?997;(1|2)n)+$/;
+function parseOscColorResponse(data) {
+  const match = data.match(OSC_COLOR_RESPONSE_PATTERN);
+  if (!match) {
+    return void 0;
+  }
+  const target = match[1] === "10" ? "foreground" : match[1] === "11" ? "background" : Number.parseInt(match[2], 10);
+  return { target, rgb: parseOscColorValue(match[3]) };
+}
+function parseOscColorValue(rawValue) {
+  const value = rawValue.trim();
+  if (value.startsWith("#")) {
+    const hex = value.slice(1);
+    if (/^[0-9a-f]{6}$/i.test(hex)) {
+      return hexToRgb(value);
+    }
+    if (/^[0-9a-f]{12}$/i.test(hex)) {
+      const r2 = parseOscHexChannel(hex.slice(0, 4));
+      const g2 = parseOscHexChannel(hex.slice(4, 8));
+      const b3 = parseOscHexChannel(hex.slice(8, 12));
+      return r2 !== void 0 && g2 !== void 0 && b3 !== void 0 ? { r: r2, g: g2, b: b3 } : void 0;
+    }
+    return void 0;
+  }
+  const rgbValue = value.replace(/^rgba?:/i, "");
+  const [red, green, blue] = rgbValue.split("/");
+  if (red === void 0 || green === void 0 || blue === void 0) {
+    return void 0;
+  }
+  const r = parseOscHexChannel(red);
+  const g = parseOscHexChannel(green);
+  const b2 = parseOscHexChannel(blue);
+  return r !== void 0 && g !== void 0 && b2 !== void 0 ? { r, g, b: b2 } : void 0;
+}
+function parseTerminalColorSchemeReport(data) {
+  const match = data.match(COLOR_SCHEME_REPORT_PATTERN);
+  if (!match) {
+    return void 0;
+  }
+  return match[1] === "2" ? "light" : "dark";
+}
+
+// node_modules/@earendil-works/pi-tui/dist/terminal-image.js
+import { execSync } from "node:child_process";
+var cachedCapabilities = null;
+var capabilityOverrides = {};
+var cellDimensions = { widthPx: 9, heightPx: 18 };
+function setCellDimensions(dims) {
+  cellDimensions = dims;
+}
+function probeTmuxHyperlinks() {
+  try {
+    const termfeatures = execSync("tmux display-message -p '#{client_termfeatures}'", {
+      encoding: "utf8",
+      timeout: 250,
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return termfeatures.split(",").map((feature) => feature.trim()).includes("hyperlinks");
+  } catch {
+    return false;
+  }
+}
+function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
+  const termProgram = process.env.TERM_PROGRAM?.toLowerCase() || "";
+  const terminalEmulator = process.env.TERMINAL_EMULATOR?.toLowerCase() || "";
+  const term = process.env.TERM?.toLowerCase() || "";
+  const colorTerm = process.env.COLORTERM?.toLowerCase() || "";
+  const hasTrueColorHint = colorTerm === "truecolor" || colorTerm === "24bit" || term.endsWith("-direct");
+  const isWindowsConsole = process.platform === "win32";
+  if (process.env.TMUX || term.startsWith("tmux")) {
+    return { images: null, trueColor: hasTrueColorHint, hyperlinks: tmuxForwardsHyperlink() };
+  }
+  if (term.startsWith("screen")) {
+    return { images: null, trueColor: hasTrueColorHint, hyperlinks: false };
+  }
+  if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
+    return { images: "kitty", trueColor: true, hyperlinks: true };
+  }
+  if (termProgram === "ghostty" || term.includes("ghostty") || process.env.GHOSTTY_RESOURCES_DIR) {
+    return { images: "kitty", trueColor: true, hyperlinks: true };
+  }
+  if (process.env.WEZTERM_PANE || termProgram === "wezterm") {
+    return { images: "kitty", trueColor: true, hyperlinks: true };
+  }
+  if (termProgram === "warpterminal" || process.env.WARP_SESSION_ID || process.env.WARP_TERMINAL_SESSION_UUID) {
+    return { images: "kitty", trueColor: true, hyperlinks: true };
+  }
+  if (process.env.ITERM_SESSION_ID || termProgram === "iterm.app") {
+    return { images: "iterm2", trueColor: true, hyperlinks: true };
+  }
+  if (process.env.WT_SESSION) {
+    return { images: null, trueColor: true, hyperlinks: true };
+  }
+  if (termProgram === "alacritty" || termProgram === "vscode" || termProgram === "zed") {
+    return { images: null, trueColor: true, hyperlinks: true };
+  }
+  if (terminalEmulator === "jetbrains-jediterm") {
+    return { images: null, trueColor: true, hyperlinks: false };
+  }
+  if (isWindowsConsole) {
+    return { images: null, trueColor: true, hyperlinks: false };
+  }
+  return { images: null, trueColor: hasTrueColorHint, hyperlinks: false };
+}
+function parseBooleanCapabilityOverride(value) {
+  return value === "1" ? true : value === "0" ? false : void 0;
+}
+function detectCapabilities(tmuxForwardsHyperlink = probeTmuxHyperlinks) {
+  const hyperlinks = parseBooleanCapabilityOverride(process.env.PI_HYPERLINKS);
+  const detected = detectCapabilitiesFromEnvironment(hyperlinks === void 0 ? tmuxForwardsHyperlink : () => hyperlinks);
+  const imageProtocol = process.env.PI_IMAGE_PROTOCOL?.toLowerCase();
+  const images = imageProtocol === "kitty" || imageProtocol === "iterm2" ? imageProtocol : imageProtocol === "none" || imageProtocol === "0" ? null : void 0;
+  const trueColor = parseBooleanCapabilityOverride(process.env.PI_TRUE_COLOR);
+  return {
+    ...detected,
+    ...images !== void 0 ? { images } : {},
+    ...trueColor !== void 0 ? { trueColor } : {},
+    ...hyperlinks !== void 0 ? { hyperlinks } : {}
+  };
+}
+function getCapabilities() {
+  if (!cachedCapabilities) {
+    const hyperlinks = capabilityOverrides.hyperlinks;
+    cachedCapabilities = {
+      ...detectCapabilities(hyperlinks === void 0 ? void 0 : () => hyperlinks),
+      ...capabilityOverrides
+    };
+  }
+  return cachedCapabilities;
+}
+function setCapabilities(caps) {
+  cachedCapabilities = caps;
+}
+var KITTY_PREFIX = "\x1B_G";
+var ITERM2_PREFIX = "\x1B]1337;File=";
+function isImageLine(line) {
+  if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
+    return true;
+  }
+  return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX);
+}
+function deleteKittyImage(imageId) {
+  return `\x1B_Ga=d,d=I,i=${imageId},q=2\x1B\\`;
+}
+function deleteAllKittyImages() {
+  return "\x1B_Ga=d,d=A,q=2\x1B\\";
+}
+function deleteAllKittyPlacements() {
+  return "\x1B_Ga=d,d=a,q=2\x1B\\";
+}
+var kittyImageMetadata = /* @__PURE__ */ new Map();
+function getRegisteredKittyImageMetadataFromControls(controls) {
+  const imageId = /(?:^|,)i=(\d+)(?:,|$)/.exec(controls)?.[1];
+  return imageId === void 0 ? void 0 : kittyImageMetadata.get(Number.parseInt(imageId, 10));
+}
+function getRegisteredKittyImageMetadata(line) {
+  const controls = /\x1b_G([^;]*);/.exec(line)?.[1];
+  return controls === void 0 ? void 0 : getRegisteredKittyImageMetadataFromControls(controls);
+}
+function getExplicitKittyImageRows(controls) {
+  const value = /(?:^|,)r=(\d+)(?:,|$)/.exec(controls)?.[1];
+  if (value === void 0)
+    return void 0;
+  const rows = Number.parseInt(value, 10);
+  return rows > 0 ? rows : void 0;
+}
+function getKittyImageRowsFromControls(controls, fallbackRows) {
+  return getExplicitKittyImageRows(controls) ?? fallbackRows;
+}
+function getKittyImageMetadata(line) {
+  const metadata = getRegisteredKittyImageMetadata(line);
+  if (!metadata)
+    return void 0;
+  return {
+    imageId: metadata.imageId,
+    columns: metadata.columns,
+    rows: metadata.rows,
+    widthPx: metadata.widthPx,
+    heightPx: metadata.heightPx
+  };
+}
+var KITTY_PLACEMENT_CONTROL_KEYS = /* @__PURE__ */ new Set([
+  "i",
+  "p",
+  "x",
+  "y",
+  "w",
+  "h",
+  "X",
+  "Y",
+  "c",
+  "r",
+  "C",
+  "U",
+  "z",
+  "P",
+  "Q",
+  "H",
+  "V"
+]);
+function getKittyImagePlacementRows(line) {
+  const controls = /\x1b_G([^;]*);/.exec(line)?.[1];
+  if (controls === void 0)
+    return void 0;
+  const explicitRows = getExplicitKittyImageRows(controls);
+  if (explicitRows !== void 0)
+    return explicitRows;
+  return getRegisteredKittyImageMetadataFromControls(controls)?.rows;
+}
+function getKittyImagePlacement(line) {
+  const match = /\x1b_G([^;]*);/.exec(line);
+  if (!match)
+    return void 0;
+  const metadata = getRegisteredKittyImageMetadataFromControls(match[1]);
+  if (!metadata)
+    return void 0;
+  let commandStart = match.index;
+  let commandControls = match[1];
+  let transmissionEnd;
+  while (true) {
+    const terminator = line.indexOf("\x1B\\", commandStart + KITTY_PREFIX.length);
+    if (terminator === -1)
+      return void 0;
+    transmissionEnd = terminator + 2;
+    if (!/(?:^|,)m=1(?:,|$)/.test(commandControls))
+      break;
+    commandStart = transmissionEnd;
+    if (!line.startsWith(KITTY_PREFIX, commandStart))
+      return void 0;
+    const controlsEnd = line.indexOf(";", commandStart + KITTY_PREFIX.length);
+    if (controlsEnd === -1)
+      return void 0;
+    commandControls = line.slice(commandStart + KITTY_PREFIX.length, controlsEnd);
+  }
+  const controls = match[1].split(",").filter((control) => KITTY_PLACEMENT_CONTROL_KEYS.has(control.split("=", 1)[0] ?? ""));
+  const sequence = `\x1B_Ga=p,q=2,${controls.join(",")}\x1B\\`;
+  return {
+    imageId: metadata.imageId,
+    transmissionGeneration: metadata.transmissionGeneration,
+    transmissionBytes: transmissionEnd - match.index,
+    estimatedDecodedBytes: metadata.widthPx * metadata.heightPx * 4,
+    rows: getKittyImageRowsFromControls(match[1], metadata.rows),
+    sequence,
+    replacementLine: `${line.slice(0, match.index)}${sequence}${line.slice(transmissionEnd)}`
+  };
+}
+function cropKittyImageLine(line, hiddenRows, visibleRows) {
+  const metadata = getKittyImageMetadata(line);
+  const match = /\x1b_G([^;]*);/.exec(line);
+  if (!metadata || !match || hiddenRows < 0 || hiddenRows >= metadata.rows || visibleRows <= 0)
+    return line;
+  const croppedRows = Math.min(visibleRows, metadata.rows - hiddenRows);
+  if (hiddenRows === 0 && croppedRows === metadata.rows)
+    return line;
+  const sourceY = Math.floor(metadata.heightPx * hiddenRows / metadata.rows);
+  const sourceEnd = Math.ceil(metadata.heightPx * (hiddenRows + croppedRows) / metadata.rows);
+  const sourceHeight = Math.max(1, Math.min(metadata.heightPx, sourceEnd) - sourceY);
+  const controls = match[1].split(",").filter((control) => !/^[yhr]=/.test(control));
+  controls.push(`y=${sourceY}`, `h=${sourceHeight}`, `r=${croppedRows}`);
+  return `${line.slice(0, match.index)}\x1B_G${controls.join(",")};${line.slice(match.index + match[0].length)}`;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/tui.js
+function dispatchMouseEvent(component, event) {
+  const result2 = component.handleMouse?.(event);
+  if (!result2)
+    return void 0;
+  if ("target" in result2) {
+    const forwarded = result2;
+    return forwarded.focus && component.handleInput ? { ...forwarded, focusTarget: component } : forwarded;
+  }
+  if (!result2.handled && !result2.capture && !result2.focus)
+    return void 0;
+  return {
+    ...result2,
+    handled: true,
+    ...result2.focus ? { focusTarget: component } : {},
+    target: {
+      component,
+      originX: event.screenX - event.x,
+      originY: event.screenY - event.y,
+      width: event.width,
+      height: event.height
+    }
+  };
+}
+function retargetMouseEvent(event, target) {
+  return {
+    ...event,
+    x: event.screenX - target.originX,
+    y: event.screenY - target.originY,
+    width: target.width,
+    height: target.height
+  };
+}
+var TERMINAL_PALETTE_SIZE = 16;
+var TERMINAL_COLOR_REPLY_COUNT = 2 + TERMINAL_PALETTE_SIZE;
+var TERMINAL_COLOR_QUERY = `\x1B]10;?\x07\x1B]11;?\x07${Array.from({ length: TERMINAL_PALETTE_SIZE }, (_2, index) => `\x1B]4;${index};?\x07`).join("")}\x1B[c`;
+var DEVICE_ATTRIBUTES_RESPONSE_PATTERN = /^\x1b\[\?[\d;]*c$/;
+function isFocusable(component) {
+  return component !== null && "focused" in component;
+}
+var CURSOR_MARKER = "\x1B_pi:c\x07";
+function parseSizeValue(value, referenceSize) {
+  if (value === void 0)
+    return void 0;
+  if (typeof value === "number")
+    return value;
+  const match = value.match(/^(\d+(?:\.\d+)?)%$/);
+  if (match) {
+    return Math.floor(referenceSize * parseFloat(match[1]) / 100);
+  }
+  return void 0;
+}
+var Container = class {
+  children = [];
+  mouseLayout;
+  addChild(component) {
+    this.children.push(component);
+  }
+  removeChild(component) {
+    const index = this.children.indexOf(component);
+    if (index !== -1) {
+      this.children.splice(index, 1);
+    }
+  }
+  clear() {
+    this.children = [];
+  }
+  invalidate() {
+    for (const child of this.children) {
+      child.invalidate?.();
+    }
+  }
+  handleMouse(event) {
+    if (event.y < 0 || event.y >= event.height)
+      return void 0;
+    const mouseChildren = this.mouseLayout?.width === event.width ? this.mouseLayout.children : this.children.map((component) => ({ component, height: component.render(event.width).length }));
+    let childY = 0;
+    for (const { component: child, height: childHeight } of mouseChildren) {
+      if (event.y >= childY && event.y < childY + childHeight) {
+        const result2 = dispatchMouseEvent(child, {
+          ...event,
+          y: event.y - childY,
+          height: childHeight
+        });
+        if (result2?.focus && this.handleInput)
+          return { ...result2, focusTarget: this };
+        return result2;
+      }
+      childY += childHeight;
+    }
+    return void 0;
+  }
+  render(width) {
+    const lines = [];
+    const mouseChildren = [];
+    for (const child of this.children) {
+      const childLines = child.render(width);
+      mouseChildren.push({ component: child, height: childLines.length });
+      for (const line of childLines) {
+        lines.push(line);
+      }
+    }
+    this.mouseLayout = { width, children: mouseChildren };
+    return lines;
+  }
+};
+var SEGMENT_RESET = "\x1B[0m\x1B]8;;\x07";
+function compositeTuiLine(baseLine, overlayLine, startCol, overlayWidth, totalWidth) {
+  if (isImageLine(baseLine))
+    return baseLine;
+  const afterStart = startCol + overlayWidth;
+  const base = extractSegments(baseLine, startCol, afterStart, totalWidth - afterStart, true);
+  const overlay = sliceWithWidth(overlayLine, 0, overlayWidth, true);
+  const beforePad = Math.max(0, startCol - base.beforeWidth);
+  const overlayPad = Math.max(0, overlayWidth - overlay.width);
+  const actualBeforeWidth = Math.max(startCol, base.beforeWidth);
+  const actualOverlayWidth = Math.max(overlayWidth, overlay.width);
+  const afterTarget = Math.max(0, totalWidth - actualBeforeWidth - actualOverlayWidth);
+  const afterPad = Math.max(0, afterTarget - base.afterWidth);
+  const result2 = base.before + " ".repeat(beforePad) + SEGMENT_RESET + overlay.text + " ".repeat(overlayPad) + SEGMENT_RESET + base.after + " ".repeat(afterPad);
+  return visibleWidth(result2) <= totalWidth ? result2 : sliceByColumn(result2, 0, totalWidth, true);
+}
+var VIEWPORT_TUI = /* @__PURE__ */ Symbol.for("@earendil-works/pi-tui/viewport");
+var TuiBase = class _TuiBase extends Container {
+  terminal;
+  focusedComponent = null;
+  inputListeners = /* @__PURE__ */ new Set();
+  /** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
+  onDebug;
+  renderRequested = false;
+  immediateRenderScheduled = false;
+  renderTimer;
+  lastRenderAt = 0;
+  static MIN_RENDER_INTERVAL_MS = 16;
+  showHardwareCursor = false;
+  clearOnShrink = false;
+  fullRedrawCount = 0;
+  stopped = false;
+  /**
+   * Color queries waiting for their DA1 reply, oldest first. Terminals answer in order, so color
+   * replies belong to the oldest one. Queries stay here after a timeout to collect late replies.
+   */
+  pendingTerminalColorQueries = [];
+  terminalColorSchemeListeners = /* @__PURE__ */ new Set();
+  terminalColorSchemeNotificationsEnabled = false;
+  /** Directory for debug/crash logs. When undefined, debug logging is disabled and crash dumps fall back to the OS temp directory. */
+  logDirectory;
+  // Overlay stack for modal components rendered on top of base content
+  focusOrderCounter = 0;
+  overlayStack = [];
+  renderedOverlayLayouts = [];
+  get hasOverlayEntries() {
+    return this.overlayStack.length > 0;
+  }
+  overlayFocusRestore = { status: "inactive" };
+  constructor(terminal, showHardwareCursor, logDirectory) {
+    super();
+    this.terminal = terminal;
+    this.logDirectory = logDirectory;
+    if (showHardwareCursor !== void 0) {
+      this.showHardwareCursor = showHardwareCursor;
+    }
+  }
+  resetRenderState() {
+  }
+  beforeTerminalStart() {
+  }
+  afterTerminalStart() {
+  }
+  beforeTerminalStop(_options) {
+  }
+  afterTerminalStop(_options) {
+  }
+  get fullRedraws() {
+    return this.fullRedrawCount;
+  }
+  getShowHardwareCursor() {
+    return this.showHardwareCursor;
+  }
+  setShowHardwareCursor(enabled) {
+    if (this.showHardwareCursor === enabled)
+      return;
+    this.showHardwareCursor = enabled;
+    if (!enabled) {
+      this.hideTerminalCursor();
+    }
+    this.requestRender();
+  }
+  getClearOnShrink() {
+    return this.clearOnShrink;
+  }
+  /**
+   * Set whether to trigger full re-render when content shrinks.
+   * When true, empty rows are cleared when content shrinks.
+   * When false (default), empty rows remain (reduces redraws on slower terminals).
+   */
+  setClearOnShrink(enabled) {
+    this.clearOnShrink = enabled;
+  }
+  getFocusedComponent() {
+    return this.focusedComponent;
+  }
+  setFocus(component) {
+    this.setFocusInternal({ component, overlayFocusRestore: "clear" });
+  }
+  setFocusInternal({ component, overlayFocusRestore }) {
+    const previousFocus = this.focusedComponent;
+    let nextFocus = component;
+    const previousFocusedOverlay = previousFocus ? this.overlayStack.find((entry) => entry.component === previousFocus && this.isOverlayVisible(entry)) : void 0;
+    const nextFocusIsOverlay = nextFocus ? this.overlayStack.some((entry) => entry.component === nextFocus) : false;
+    const restoreState = this.getVisibleOverlayFocusRestore();
+    if (nextFocus && !nextFocusIsOverlay) {
+      if (restoreState.status === "blocked" && restoreState.blockedBy === previousFocus) {
+        if (restoreState.resume.status === "focus-target" || !this.isComponentMounted(restoreState.blockedBy)) {
+          nextFocus = this.resolveBlockedOverlayFocusResume(restoreState);
+        } else {
+          this.overlayFocusRestore = {
+            status: "blocked",
+            overlay: restoreState.overlay,
+            blockedBy: nextFocus,
+            resume: restoreState.resume
+          };
+        }
+      } else if (previousFocusedOverlay && restoreState.status !== "inactive" && restoreState.overlay === previousFocusedOverlay && !this.isOverlayFocusAncestor(previousFocusedOverlay, nextFocus)) {
+        this.overlayFocusRestore = {
+          status: "blocked",
+          overlay: previousFocusedOverlay,
+          blockedBy: nextFocus,
+          resume: { status: "restore-overlay" }
+        };
+      }
+    } else if (nextFocus === null) {
+      if (restoreState.status === "blocked" && restoreState.blockedBy === previousFocus) {
+        nextFocus = this.resolveBlockedOverlayFocusResume(restoreState);
+      } else if (overlayFocusRestore === "clear") {
+        this.clearOverlayFocusRestore();
+      }
+    }
+    if (isFocusable(this.focusedComponent)) {
+      this.focusedComponent.focused = false;
+    }
+    this.focusedComponent = nextFocus;
+    if (isFocusable(nextFocus)) {
+      nextFocus.focused = true;
+    }
+    const focusedOverlay = nextFocus ? this.overlayStack.find((entry) => entry.component === nextFocus && this.isOverlayVisible(entry)) : void 0;
+    if (focusedOverlay) {
+      this.overlayFocusRestore = { status: "eligible", overlay: focusedOverlay };
+    }
+  }
+  clearOverlayFocusRestore() {
+    this.overlayFocusRestore = { status: "inactive" };
+  }
+  clearOverlayFocusRestoreFor(overlay) {
+    if (this.overlayFocusRestore.status !== "inactive" && this.overlayFocusRestore.overlay === overlay) {
+      this.clearOverlayFocusRestore();
+    }
+  }
+  resolveBlockedOverlayFocusResume(restoreState) {
+    if (restoreState.resume.status === "restore-overlay")
+      return restoreState.overlay.component;
+    this.clearOverlayFocusRestore();
+    return restoreState.resume.target;
+  }
+  getVisibleOverlayFocusRestore() {
+    const restoreState = this.overlayFocusRestore;
+    if (restoreState.status === "inactive")
+      return restoreState;
+    if (!this.overlayStack.includes(restoreState.overlay) || !this.isOverlayVisible(restoreState.overlay)) {
+      return { status: "inactive" };
+    }
+    return restoreState;
+  }
+  isOverlayFocusAncestor(entry, component) {
+    const visited = /* @__PURE__ */ new Set();
+    let current = entry.preFocus;
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      if (current === component)
+        return true;
+      current = this.overlayStack.find((overlay) => overlay.component === current)?.preFocus ?? null;
+    }
+    return false;
+  }
+  retargetOverlayPreFocus(removed) {
+    for (const overlay of this.overlayStack) {
+      if (overlay !== removed && overlay.preFocus === removed.component) {
+        overlay.preFocus = removed.preFocus;
+      }
+    }
+  }
+  getMountedRoots() {
+    return this.children;
+  }
+  isComponentMounted(component) {
+    return this.getMountedRoots().some((child) => this.containsComponent(child, component));
+  }
+  containsComponent(root, target) {
+    if (root === target)
+      return true;
+    if (!(root instanceof Container))
+      return false;
+    return root.children.some((child) => this.containsComponent(child, target));
+  }
+  /**
+   * Show an overlay component with configurable positioning and sizing.
+   * Returns a handle to control the overlay's visibility.
+   */
+  showOverlay(component, options) {
+    const entry = {
+      component,
+      ...options === void 0 ? {} : { options },
+      preFocus: this.focusedComponent,
+      hidden: false,
+      focusOrder: ++this.focusOrderCounter
+    };
+    this.overlayStack.push(entry);
+    if (!options?.nonCapturing && this.isOverlayVisible(entry)) {
+      this.setFocus(component);
+    }
+    this.hideTerminalCursor();
+    this.requestRender();
+    return {
+      hide: () => {
+        const index = this.overlayStack.indexOf(entry);
+        if (index !== -1) {
+          this.clearOverlayFocusRestoreFor(entry);
+          this.retargetOverlayPreFocus(entry);
+          this.overlayStack.splice(index, 1);
+          if (this.focusedComponent === component) {
+            const topVisible = this.getTopmostVisibleOverlay();
+            this.setFocus(topVisible?.component ?? entry.preFocus);
+          }
+          if (this.overlayStack.length === 0)
+            this.hideTerminalCursor();
+          this.requestRender();
+        }
+      },
+      setHidden: (hidden) => {
+        if (entry.hidden === hidden)
+          return;
+        entry.hidden = hidden;
+        if (hidden) {
+          this.clearOverlayFocusRestoreFor(entry);
+          if (this.focusedComponent === component) {
+            const topVisible = this.getTopmostVisibleOverlay();
+            this.setFocus(topVisible?.component ?? entry.preFocus);
+          }
+        } else {
+          if (!options?.nonCapturing && this.isOverlayVisible(entry)) {
+            entry.focusOrder = ++this.focusOrderCounter;
+            this.setFocus(component);
+          }
+        }
+        this.requestRender();
+      },
+      isHidden: () => entry.hidden,
+      focus: () => {
+        if (!this.overlayStack.includes(entry) || !this.isOverlayVisible(entry))
+          return;
+        entry.focusOrder = ++this.focusOrderCounter;
+        this.setFocus(component);
+        this.requestRender();
+      },
+      unfocus: (unfocusOptions) => {
+        const isFocused = this.focusedComponent === component;
+        const restoreState = this.overlayFocusRestore;
+        const hasPendingRestore = restoreState.status !== "inactive" && restoreState.overlay === entry;
+        if (!isFocused && !hasPendingRestore)
+          return;
+        if (restoreState.status === "blocked" && restoreState.overlay === entry && this.focusedComponent === restoreState.blockedBy) {
+          if (unfocusOptions) {
+            this.overlayFocusRestore = {
+              status: "blocked",
+              overlay: entry,
+              blockedBy: restoreState.blockedBy,
+              resume: { status: "focus-target", target: unfocusOptions.target }
+            };
+          } else {
+            this.clearOverlayFocusRestore();
+          }
+          this.requestRender();
+          return;
+        }
+        this.clearOverlayFocusRestoreFor(entry);
+        if (isFocused || unfocusOptions) {
+          const topVisible = this.getTopmostVisibleOverlay();
+          const fallbackTarget = topVisible && topVisible !== entry ? topVisible.component : entry.preFocus;
+          this.setFocus(unfocusOptions ? unfocusOptions.target : fallbackTarget);
+        }
+        this.requestRender();
+      },
+      isFocused: () => this.focusedComponent === component,
+      getBounds: () => {
+        if (!this.overlayStack.includes(entry) || !this.isOverlayVisible(entry) || !entry.bounds)
+          return void 0;
+        return { ...entry.bounds };
+      }
+    };
+  }
+  /** Hide the topmost overlay and restore previous focus. */
+  hideOverlay() {
+    const overlay = this.overlayStack[this.overlayStack.length - 1];
+    if (!overlay)
+      return;
+    this.clearOverlayFocusRestoreFor(overlay);
+    this.retargetOverlayPreFocus(overlay);
+    this.overlayStack.pop();
+    if (this.focusedComponent === overlay.component) {
+      const topVisible = this.getTopmostVisibleOverlay();
+      this.setFocus(topVisible?.component ?? overlay.preFocus);
+    }
+    if (this.overlayStack.length === 0)
+      this.hideTerminalCursor();
+    this.requestRender();
+  }
+  /** Hide the cursor while running. After stop(), the shell owns the cursor and it must stay visible. */
+  hideTerminalCursor() {
+    if (!this.stopped)
+      this.terminal.hideCursor();
+  }
+  /** Check if there are any visible overlays */
+  hasOverlay() {
+    return this.overlayStack.some((o) => this.isOverlayVisible(o));
+  }
+  /** Check if the focused component is a visible overlay */
+  isOverlayFocused() {
+    return this.overlayStack.some((entry) => entry.component === this.focusedComponent && this.isOverlayVisible(entry));
+  }
+  /** Keep overlay containers as keyboard focus owners when a nested control is clicked. */
+  resolveMouseFocusTarget(component) {
+    for (let index = this.overlayStack.length - 1; index >= 0; index--) {
+      const overlay = this.overlayStack[index];
+      if (this.isOverlayVisible(overlay) && this.containsComponent(overlay.component, component)) {
+        return overlay.component;
+      }
+    }
+    return component;
+  }
+  /** Dispatch to the visually topmost overlay under the pointer. */
+  dispatchMouseToOverlay(event) {
+    for (let index = this.renderedOverlayLayouts.length - 1; index >= 0; index--) {
+      const layout = this.renderedOverlayLayouts[index];
+      if (event.screenX < layout.col || event.screenX >= layout.col + layout.width || event.screenY < layout.row || event.screenY >= layout.row + layout.height) {
+        continue;
+      }
+      const result2 = dispatchMouseEvent(layout.entry.component, {
+        ...event,
+        x: event.screenX - layout.col,
+        y: event.screenY - layout.row,
+        width: layout.width,
+        height: layout.height
+      });
+      return result2 ? {
+        hit: true,
+        result: result2.focus ? { ...result2, focusTarget: layout.entry.component } : result2
+      } : { hit: true };
+    }
+    return { hit: false };
+  }
+  /** Check if an overlay entry is currently visible */
+  isOverlayVisible(entry) {
+    if (entry.hidden)
+      return false;
+    if (entry.options?.visible) {
+      return entry.options.visible(this.terminal.columns, this.terminal.rows);
+    }
+    return true;
+  }
+  /** Find the visual-frontmost visible capturing overlay, if any */
+  getTopmostVisibleOverlay() {
+    let topmost;
+    for (const overlay of this.overlayStack) {
+      if (overlay.options?.nonCapturing || !this.isOverlayVisible(overlay))
+        continue;
+      if (!topmost || overlay.focusOrder > topmost.focusOrder) {
+        topmost = overlay;
+      }
+    }
+    return topmost;
+  }
+  invalidate() {
+    for (const root of this.getMountedRoots())
+      root.invalidate();
+    for (const overlay of this.overlayStack)
+      overlay.component.invalidate();
+  }
+  start() {
+    this.stopped = false;
+    this.beforeTerminalStart();
+    this.terminal.start((data) => this.handleTerminalInput(data), () => this.requestRender());
+    this.afterTerminalStart();
+    this.terminal.hideCursor();
+    if (this.terminalColorSchemeNotificationsEnabled) {
+      this.terminal.write("\x1B[?2031h");
+    }
+    this.queryCellSize();
+    this.requestRender();
+  }
+  addInputListener(listener) {
+    this.inputListeners.add(listener);
+    return () => {
+      this.inputListeners.delete(listener);
+    };
+  }
+  removeInputListener(listener) {
+    this.inputListeners.delete(listener);
+  }
+  onTerminalColorSchemeChange(listener) {
+    this.terminalColorSchemeListeners.add(listener);
+    return () => {
+      this.terminalColorSchemeListeners.delete(listener);
+    };
+  }
+  setTerminalColorSchemeNotifications(enabled) {
+    if (this.terminalColorSchemeNotificationsEnabled === enabled) {
+      return;
+    }
+    this.terminalColorSchemeNotificationsEnabled = enabled;
+    if (!this.stopped) {
+      this.terminal.write(enabled ? "\x1B[?2031h" : "\x1B[?2031l");
+    }
+  }
+  queryCellSize() {
+    if (!getCapabilities().images) {
+      return;
+    }
+    this.terminal.write("\x1B[16t");
+  }
+  stop(options = {}) {
+    this.stopped = true;
+    this.cancelRenderTimer();
+    if (this.terminalColorSchemeNotificationsEnabled) {
+      this.terminal.write("\x1B[?2031l");
+    }
+    this.beforeTerminalStop(options);
+    this.terminal.showCursor();
+    this.terminal.stop();
+    this.afterTerminalStop(options);
+  }
+  renderNow(force = false) {
+    if (force)
+      this.resetRenderState();
+    this.renderRequested = false;
+    this.cancelRenderTimer();
+    this.lastRenderAt = performance2.now();
+    this.doRender();
+  }
+  requestRender(force = false) {
+    if (force) {
+      this.resetRenderState();
+      this.requestImmediateRender();
+      return;
+    }
+    if (this.renderRequested)
+      return;
+    this.renderRequested = true;
+    process.nextTick(() => this.scheduleRender());
+  }
+  requestImmediateRender() {
+    this.cancelRenderTimer();
+    this.renderRequested = true;
+    if (this.immediateRenderScheduled)
+      return;
+    this.immediateRenderScheduled = true;
+    process.nextTick(() => {
+      this.immediateRenderScheduled = false;
+      if (this.stopped || !this.renderRequested)
+        return;
+      this.cancelRenderTimer();
+      this.renderRequested = false;
+      this.lastRenderAt = performance2.now();
+      this.doRender();
+    });
+  }
+  cancelRenderTimer() {
+    if (!this.renderTimer)
+      return;
+    clearTimeout(this.renderTimer);
+    this.renderTimer = void 0;
+  }
+  scheduleRender() {
+    if (this.stopped || this.renderTimer || !this.renderRequested) {
+      return;
+    }
+    const elapsed = performance2.now() - this.lastRenderAt;
+    const delay = Math.max(0, _TuiBase.MIN_RENDER_INTERVAL_MS - elapsed);
+    this.renderTimer = setTimeout(() => {
+      this.renderTimer = void 0;
+      if (this.stopped || !this.renderRequested) {
+        return;
+      }
+      this.renderRequested = false;
+      this.lastRenderAt = performance2.now();
+      this.doRender();
+      if (this.renderRequested) {
+        this.scheduleRender();
+      }
+    }, delay);
+  }
+  handleTerminalInput(data) {
+    if (this.consumeTerminalColorResponse(data)) {
+      return;
+    }
+    if (this.consumeTerminalColorSchemeReport(data)) {
+      return;
+    }
+    if (this.inputListeners.size > 0) {
+      let current = data;
+      for (const listener of this.inputListeners) {
+        const result2 = listener(current);
+        if (result2?.consume) {
+          return;
+        }
+        if (result2?.data !== void 0) {
+          current = result2.data;
+        }
+      }
+      if (current.length === 0) {
+        return;
+      }
+      data = current;
+    }
+    if (this.consumeCellSizeResponse(data)) {
+      return;
+    }
+    if (matchesKey(data, "shift+ctrl+d") && this.onDebug) {
+      this.onDebug();
+      return;
+    }
+    const focusedOverlay = this.overlayStack.find((o) => o.component === this.focusedComponent);
+    if (focusedOverlay && !this.isOverlayVisible(focusedOverlay)) {
+      const topVisible = this.getTopmostVisibleOverlay();
+      if (topVisible) {
+        this.setFocus(topVisible.component);
+      } else {
+        this.setFocusInternal({ component: focusedOverlay.preFocus, overlayFocusRestore: "preserve" });
+      }
+    }
+    const focusIsOverlay = this.overlayStack.some((o) => o.component === this.focusedComponent);
+    if (!focusIsOverlay) {
+      const restoreState = this.getVisibleOverlayFocusRestore();
+      if (restoreState.status === "eligible") {
+        this.setFocus(restoreState.overlay.component);
+      } else if (restoreState.status === "blocked" && restoreState.blockedBy !== this.focusedComponent) {
+        if (restoreState.resume.status === "restore-overlay") {
+          this.setFocus(restoreState.overlay.component);
+        } else {
+          this.clearOverlayFocusRestore();
+          this.setFocus(restoreState.resume.target);
+        }
+      }
+    }
+    if (this.focusedComponent?.handleInput) {
+      if (isKeyRelease(data) && !this.focusedComponent.wantsKeyRelease) {
+        return;
+      }
+      this.focusedComponent.handleInput(data);
+      this.requestImmediateRender();
+    }
+  }
+  consumeTerminalColorResponse(data) {
+    const query = this.pendingTerminalColorQueries[0];
+    if (!query) {
+      return false;
+    }
+    if (DEVICE_ATTRIBUTES_RESPONSE_PATTERN.test(data)) {
+      this.pendingTerminalColorQueries.shift();
+      this.completeTerminalColorQuery(query);
+      return true;
+    }
+    const response = parseOscColorResponse(data);
+    if (!response) {
+      return false;
+    }
+    const { target, rgb } = response;
+    const key = String(target);
+    if (!query.deliver || query.replied.has(key)) {
+      return true;
+    }
+    query.replied.add(key);
+    if (target === "foreground") {
+      query.foreground = rgb;
+    } else if (target === "background") {
+      query.background = rgb;
+    } else if (target < TERMINAL_PALETTE_SIZE) {
+      query.palette[target] = rgb;
+    }
+    if (query.replied.size === TERMINAL_COLOR_REPLY_COUNT) {
+      this.completeTerminalColorQuery(query);
+    }
+    return true;
+  }
+  terminalColorQueryResult(query) {
+    const palette = query.palette.every((color) => color !== void 0) ? query.palette : void 0;
+    return { foreground: query.foreground, background: query.background, palette };
+  }
+  completeTerminalColorQuery(query) {
+    const deliver = query.deliver;
+    query.deliver = void 0;
+    clearTimeout(query.timer);
+    deliver?.(this.terminalColorQueryResult(query));
+  }
+  consumeTerminalColorSchemeReport(data) {
+    const scheme = parseTerminalColorSchemeReport(data);
+    if (!scheme) {
+      return false;
+    }
+    for (const listener of this.terminalColorSchemeListeners) {
+      listener(scheme);
+    }
+    return true;
+  }
+  consumeCellSizeResponse(data) {
+    const match = data.match(/^\x1b\[6;(\d+);(\d+)t$/);
+    if (!match) {
+      return false;
+    }
+    const heightPx = parseInt(match[1], 10);
+    const widthPx = parseInt(match[2], 10);
+    if (heightPx <= 0 || widthPx <= 0) {
+      return true;
+    }
+    setCellDimensions({ widthPx, heightPx });
+    this.invalidate();
+    this.requestRender();
+    return true;
+  }
+  /**
+   * Resolve overlay layout from options.
+   * Returns { width, row, col, maxHeight } for rendering.
+   */
+  resolveOverlayLayout(options, overlayHeight, termWidth, termHeight) {
+    const opt = options ?? {};
+    const margin = typeof opt.margin === "number" ? { top: opt.margin, right: opt.margin, bottom: opt.margin, left: opt.margin } : opt.margin ?? {};
+    const marginTop = Math.max(0, margin.top ?? 0);
+    const marginRight = Math.max(0, margin.right ?? 0);
+    const marginBottom = Math.max(0, margin.bottom ?? 0);
+    const marginLeft = Math.max(0, margin.left ?? 0);
+    const availWidth = Math.max(1, termWidth - marginLeft - marginRight);
+    const availHeight = Math.max(1, termHeight - marginTop - marginBottom);
+    let width = parseSizeValue(opt.width, termWidth) ?? Math.min(80, availWidth);
+    if (opt.minWidth !== void 0) {
+      width = Math.max(width, opt.minWidth);
+    }
+    width = Math.max(1, Math.min(width, availWidth));
+    let maxHeight = parseSizeValue(opt.maxHeight, termHeight);
+    if (maxHeight !== void 0) {
+      maxHeight = Math.max(1, Math.min(maxHeight, availHeight));
+    }
+    const effectiveHeight = maxHeight !== void 0 ? Math.min(overlayHeight, maxHeight) : overlayHeight;
+    let row;
+    let col;
+    if (opt.row !== void 0) {
+      if (typeof opt.row === "string") {
+        const match = opt.row.match(/^(\d+(?:\.\d+)?)%$/);
+        if (match) {
+          const maxRow = Math.max(0, availHeight - effectiveHeight);
+          const percent = parseFloat(match[1]) / 100;
+          row = marginTop + Math.floor(maxRow * percent);
+        } else {
+          row = this.resolveAnchorRow("center", effectiveHeight, availHeight, marginTop);
+        }
+      } else {
+        row = opt.row;
+      }
+    } else {
+      const anchor = opt.anchor ?? "center";
+      row = this.resolveAnchorRow(anchor, effectiveHeight, availHeight, marginTop);
+    }
+    if (opt.col !== void 0) {
+      if (typeof opt.col === "string") {
+        const match = opt.col.match(/^(\d+(?:\.\d+)?)%$/);
+        if (match) {
+          const maxCol = Math.max(0, availWidth - width);
+          const percent = parseFloat(match[1]) / 100;
+          col = marginLeft + Math.floor(maxCol * percent);
+        } else {
+          col = this.resolveAnchorCol("center", width, availWidth, marginLeft);
+        }
+      } else {
+        col = opt.col;
+      }
+    } else {
+      const anchor = opt.anchor ?? "center";
+      col = this.resolveAnchorCol(anchor, width, availWidth, marginLeft);
+    }
+    if (opt.offsetY !== void 0)
+      row += opt.offsetY;
+    if (opt.offsetX !== void 0)
+      col += opt.offsetX;
+    row = Math.max(marginTop, Math.min(row, termHeight - marginBottom - effectiveHeight));
+    col = Math.max(marginLeft, Math.min(col, termWidth - marginRight - width));
+    return { width, row, col, maxHeight };
+  }
+  resolveAnchorRow(anchor, height, availHeight, marginTop) {
+    switch (anchor) {
+      case "top-left":
+      case "top-center":
+      case "top-right":
+        return marginTop;
+      case "bottom-left":
+      case "bottom-center":
+      case "bottom-right":
+        return marginTop + availHeight - height;
+      case "left-center":
+      case "center":
+      case "right-center":
+        return marginTop + Math.floor((availHeight - height) / 2);
+    }
+  }
+  resolveAnchorCol(anchor, width, availWidth, marginLeft) {
+    switch (anchor) {
+      case "top-left":
+      case "left-center":
+      case "bottom-left":
+        return marginLeft;
+      case "top-right":
+      case "right-center":
+      case "bottom-right":
+        return marginLeft + availWidth - width;
+      case "top-center":
+      case "center":
+      case "bottom-center":
+        return marginLeft + Math.floor((availWidth - width) / 2);
+    }
+  }
+  /** Composite all overlays into content lines (sorted by focusOrder, higher = on top). */
+  compositeOverlays(lines, termWidth, termHeight) {
+    if (this.overlayStack.length === 0) {
+      this.renderedOverlayLayouts = [];
+      return lines;
+    }
+    const result2 = [...lines];
+    for (const entry of this.overlayStack)
+      entry.bounds = void 0;
+    const rendered = [];
+    let minLinesNeeded = result2.length;
+    const visibleEntries = this.overlayStack.filter((e) => this.isOverlayVisible(e));
+    visibleEntries.sort((a, b2) => a.focusOrder - b2.focusOrder);
+    for (const entry of visibleEntries) {
+      const { component, options } = entry;
+      const { width, maxHeight } = this.resolveOverlayLayout(options, 0, termWidth, termHeight);
+      let overlayLines = component.render(width);
+      if (maxHeight !== void 0 && overlayLines.length > maxHeight) {
+        overlayLines = overlayLines.slice(0, maxHeight);
+      }
+      const { row, col } = this.resolveOverlayLayout(options, overlayLines.length, termWidth, termHeight);
+      entry.bounds = { row, col, width, height: overlayLines.length };
+      rendered.push({ entry, overlayLines, row, col, w: width });
+      minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);
+    }
+    this.renderedOverlayLayouts = rendered.map(({ entry, row, col, w, overlayLines }) => ({
+      entry,
+      row,
+      col,
+      width: w,
+      height: overlayLines.length
+    }));
+    const workingHeight = Math.max(result2.length, termHeight, minLinesNeeded);
+    while (result2.length < workingHeight) {
+      result2.push("");
+    }
+    const viewportStart = Math.max(0, workingHeight - termHeight);
+    for (const { overlayLines, row, col, w } of rendered) {
+      for (let i = 0; i < overlayLines.length; i++) {
+        const idx = viewportStart + row + i;
+        if (idx >= 0 && idx < result2.length) {
+          const truncatedOverlayLine = visibleWidth(overlayLines[i]) > w ? sliceByColumn(overlayLines[i], 0, w, true) : overlayLines[i];
+          result2[idx] = this.compositeLineAt(result2[idx], truncatedOverlayLine, col, w, termWidth);
+        }
+      }
+    }
+    return result2;
+  }
+  applyLineResets(lines) {
+    const reset = SEGMENT_RESET;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!isImageLine(line)) {
+        lines[i] = normalizeTerminalOutput(line) + reset;
+      }
+    }
+    return lines;
+  }
+  compositeLineAt(baseLine, overlayLine, startCol, overlayWidth, totalWidth) {
+    return compositeTuiLine(baseLine, overlayLine, startCol, overlayWidth, totalWidth);
+  }
+  /**
+   * Find and extract cursor position from rendered lines.
+   * Searches for CURSOR_MARKER, calculates its position, and strips it from the output.
+   * Only scans the bottom terminal height lines (visible viewport).
+   * @param lines - Rendered lines to search
+   * @param height - Terminal height (visible viewport size)
+   * @returns Cursor position { row, col } or null if no marker found
+   */
+  extractCursorPosition(lines, height) {
+    const viewportTop = Math.max(0, lines.length - height);
+    for (let row = lines.length - 1; row >= viewportTop; row--) {
+      const line = lines[row];
+      const markerIndex = line.indexOf(CURSOR_MARKER);
+      if (markerIndex !== -1) {
+        const beforeMarker = line.slice(0, markerIndex);
+        const col = visibleWidth(beforeMarker);
+        lines[row] = line.slice(0, markerIndex) + line.slice(markerIndex + CURSOR_MARKER.length);
+        return { row, col };
+      }
+    }
+    return null;
+  }
+  /**
+   * Query the terminal's theme colors: the default foreground (OSC 10), the default background
+   * (OSC 11), and ANSI colors 0-15 (OSC 4), followed by a DA1 request that marks the end of the
+   * replies. Resolves when the DA1 reply or all color replies arrive, or when the timeout expires.
+   * Colors the terminal did not report are undefined; the palette is only set when all 16 arrived.
+   * @param timeoutMs Query timeout in milliseconds, for terminals that do not answer DA1 either.
+   * @param onLateReply Receives the replies if the query completes after the timeout, e.g. over slow links.
+   */
+  queryTerminalColors({ timeoutMs, onLateReply }) {
+    return new Promise((resolve9) => {
+      const query = {
+        palette: Array.from({ length: TERMINAL_PALETTE_SIZE }, () => void 0),
+        replied: /* @__PURE__ */ new Set(),
+        deliver: resolve9,
+        timer: void 0
+      };
+      query.timer = setTimeout(() => {
+        query.deliver = onLateReply;
+        resolve9(this.terminalColorQueryResult(query));
+      }, timeoutMs);
+      this.pendingTerminalColorQueries.push(query);
+      this.terminal.write(TERMINAL_COLOR_QUERY);
+    });
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/components/box.js
+var Box = class {
+  children = [];
+  paddingX;
+  paddingY;
+  bgFn;
+  // Cache for rendered output
+  cache;
+  mouseLayout;
+  constructor(paddingX = 1, paddingY = 1, bgFn) {
+    this.paddingX = paddingX;
+    this.paddingY = paddingY;
+    this.bgFn = bgFn;
+  }
+  addChild(component) {
+    this.children.push(component);
+    this.invalidateCache();
+  }
+  removeChild(component) {
+    const index = this.children.indexOf(component);
+    if (index !== -1) {
+      this.children.splice(index, 1);
+      this.invalidateCache();
+    }
+  }
+  clear() {
+    this.children = [];
+    this.invalidateCache();
+  }
+  setBgFn(bgFn) {
+    this.bgFn = bgFn;
+  }
+  invalidateCache() {
+    this.cache = void 0;
+  }
+  matchCache(width, childLines, bgSample) {
+    const cache = this.cache;
+    return !!cache && cache.width === width && cache.bgSample === bgSample && cache.childLines.length === childLines.length && cache.childLines.every((line, i) => line === childLines[i]);
+  }
+  invalidate() {
+    this.invalidateCache();
+    for (const child of this.children) {
+      child.invalidate?.();
+    }
+  }
+  handleMouse(event) {
+    const contentWidth = Math.max(1, event.width - this.paddingX * 2);
+    const contentY = event.y - this.paddingY;
+    const contentX = event.x - this.paddingX;
+    if (contentY < 0 || contentX < 0 || contentX >= contentWidth)
+      return void 0;
+    const mouseChildren = this.mouseLayout?.width === contentWidth ? this.mouseLayout.children : this.children.map((component) => ({ component, height: component.render(contentWidth).length }));
+    let childY = 0;
+    for (const { component: child, height: childHeight } of mouseChildren) {
+      if (contentY >= childY && contentY < childY + childHeight) {
+        return dispatchMouseEvent(child, {
+          ...event,
+          x: contentX,
+          y: contentY - childY,
+          width: contentWidth,
+          height: childHeight
+        });
+      }
+      childY += childHeight;
+    }
+    return void 0;
+  }
+  render(width) {
+    if (this.children.length === 0) {
+      return [];
+    }
+    const contentWidth = Math.max(1, width - this.paddingX * 2);
+    const leftPad = " ".repeat(this.paddingX);
+    const childLines = [];
+    const mouseChildren = [];
+    for (const child of this.children) {
+      const lines = child.render(contentWidth);
+      mouseChildren.push({ component: child, height: lines.length });
+      for (const line of lines) {
+        childLines.push(line);
+      }
+    }
+    this.mouseLayout = { width: contentWidth, children: mouseChildren };
+    if (childLines.length === 0) {
+      return [];
+    }
+    const bgSample = this.bgFn ? this.bgFn("test") : void 0;
+    if (this.matchCache(width, childLines, bgSample)) {
+      return this.cache.lines;
+    }
+    const result2 = [];
+    for (let i = 0; i < this.paddingY; i++) {
+      result2.push(this.applyBg("", width));
+    }
+    for (const line of childLines) {
+      result2.push(this.applyBg(leftPad + line, width));
+    }
+    for (let i = 0; i < this.paddingY; i++) {
+      result2.push(this.applyBg("", width));
+    }
+    flattenLines(result2);
+    this.cache = { childLines, width, bgSample, lines: result2 };
+    return result2;
+  }
+  applyBg(line, width) {
+    const visLen = visibleWidth(line);
+    const padNeeded = Math.max(0, width - visLen);
+    const padded = line + " ".repeat(padNeeded);
+    return this.bgFn ? this.bgFn(padded) : padded;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/keybindings.js
+var TUI_KEYBINDINGS = {
+  "tui.editor.cursorUp": { defaultKeys: "up", description: "Move cursor up" },
+  "tui.editor.cursorDown": { defaultKeys: "down", description: "Move cursor down" },
+  "tui.editor.historyPrevious": {
+    defaultKeys: [],
+    description: "Select previous prompt history entry"
+  },
+  "tui.editor.historyNext": {
+    defaultKeys: [],
+    description: "Select next prompt history entry"
+  },
+  "tui.editor.cursorLeft": {
+    defaultKeys: ["left", "ctrl+b"],
+    description: "Move cursor left"
+  },
+  "tui.editor.cursorRight": {
+    defaultKeys: ["right", "ctrl+f"],
+    description: "Move cursor right"
+  },
+  "tui.editor.cursorWordLeft": {
+    defaultKeys: ["alt+left", "ctrl+left", "alt+b"],
+    description: "Move cursor word left"
+  },
+  "tui.editor.cursorWordRight": {
+    defaultKeys: ["alt+right", "ctrl+right", "alt+f"],
+    description: "Move cursor word right"
+  },
+  "tui.editor.cursorLineStart": {
+    defaultKeys: ["home", "ctrl+home", "ctrl+a"],
+    description: "Move to line start"
+  },
+  "tui.editor.cursorLineEnd": {
+    defaultKeys: ["end", "ctrl+end", "ctrl+e"],
+    description: "Move to line end"
+  },
+  "tui.editor.jumpForward": {
+    defaultKeys: "ctrl+]",
+    description: "Jump forward to character"
+  },
+  "tui.editor.jumpBackward": {
+    defaultKeys: "ctrl+alt+]",
+    description: "Jump backward to character"
+  },
+  "tui.editor.pageUp": { defaultKeys: ["pageUp", "ctrl+pageUp"], description: "Page up" },
+  "tui.editor.pageDown": { defaultKeys: ["pageDown", "ctrl+pageDown"], description: "Page down" },
+  "tui.editor.deleteCharBackward": {
+    defaultKeys: "backspace",
+    description: "Delete character backward"
+  },
+  "tui.editor.deleteCharForward": {
+    defaultKeys: ["delete", "ctrl+d"],
+    description: "Delete character forward"
+  },
+  "tui.editor.deleteWordBackward": {
+    defaultKeys: ["ctrl+w", "alt+backspace"],
+    description: "Delete word backward"
+  },
+  "tui.editor.deleteWordForward": {
+    defaultKeys: ["alt+d", "alt+delete"],
+    description: "Delete word forward"
+  },
+  "tui.editor.deleteToLineStart": {
+    defaultKeys: "ctrl+u",
+    description: "Delete to line start"
+  },
+  "tui.editor.deleteToLineEnd": {
+    defaultKeys: "ctrl+k",
+    description: "Delete to line end"
+  },
+  "tui.editor.yank": { defaultKeys: "ctrl+y", description: "Yank" },
+  "tui.editor.yankPop": { defaultKeys: "alt+y", description: "Yank pop" },
+  "tui.editor.undo": { defaultKeys: "ctrl+-", description: "Undo" },
+  "tui.input.newLine": { defaultKeys: ["shift+enter", "ctrl+j"], description: "Insert newline" },
+  "tui.input.submit": { defaultKeys: "enter", description: "Submit input" },
+  "tui.input.tab": { defaultKeys: "tab", description: "Tab / autocomplete" },
+  "tui.input.copy": { defaultKeys: "ctrl+c", description: "Copy selection" },
+  "tui.select.up": { defaultKeys: "up", description: "Move selection up" },
+  "tui.select.down": { defaultKeys: "down", description: "Move selection down" },
+  "tui.select.pageUp": { defaultKeys: "pageUp", description: "Selection page up" },
+  "tui.select.pageDown": {
+    defaultKeys: "pageDown",
+    description: "Selection page down"
+  },
+  "tui.select.confirm": { defaultKeys: "enter", description: "Confirm selection" },
+  "tui.select.cancel": {
+    defaultKeys: ["escape", "ctrl+c"],
+    description: "Cancel selection"
+  },
+  // These intentionally shadow the unmodified editor bindings in fullscreen mode.
+  "tui.altScreen.pageUp": {
+    defaultKeys: "pageUp",
+    description: "Scroll viewport up one page"
+  },
+  "tui.altScreen.pageDown": {
+    defaultKeys: "pageDown",
+    description: "Scroll viewport down one page"
+  },
+  "tui.altScreen.halfPageUp": {
+    defaultKeys: [],
+    description: "Scroll viewport up half a page"
+  },
+  "tui.altScreen.halfPageDown": {
+    defaultKeys: [],
+    description: "Scroll viewport down half a page"
+  },
+  "tui.altScreen.lineUp": {
+    defaultKeys: [],
+    description: "Scroll viewport up one line"
+  },
+  "tui.altScreen.lineDown": {
+    defaultKeys: [],
+    description: "Scroll viewport down one line"
+  },
+  "tui.altScreen.previousPrompt": {
+    defaultKeys: ["ctrl+shift+up", "ctrl+up"],
+    description: "Jump to previous semantic prompt"
+  },
+  "tui.altScreen.nextPrompt": {
+    defaultKeys: ["ctrl+shift+down", "ctrl+down"],
+    description: "Jump to next semantic prompt"
+  },
+  "tui.altScreen.search": {
+    defaultKeys: "ctrl+shift+f",
+    description: "Search the primary scroll view"
+  },
+  "tui.altScreen.searchNext": {
+    defaultKeys: ["enter", "ctrl+g"],
+    description: "Select the next search match"
+  },
+  "tui.altScreen.searchPrevious": {
+    defaultKeys: ["shift+enter", "ctrl+shift+g"],
+    description: "Select the previous search match"
+  },
+  "tui.altScreen.searchClose": {
+    defaultKeys: "escape",
+    description: "Close transcript search"
+  },
+  "tui.altScreen.top": { defaultKeys: "home", description: "Scroll viewport to top" },
+  "tui.altScreen.bottom": { defaultKeys: "end", description: "Scroll viewport to bottom" }
+};
+function normalizeKeys(keys) {
+  if (keys === void 0)
+    return [];
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  const seen = /* @__PURE__ */ new Set();
+  const result2 = [];
+  for (const key of keyList) {
+    if (!seen.has(key)) {
+      seen.add(key);
+      result2.push(key);
+    }
+  }
+  return result2;
+}
+var KeybindingsManager = class {
+  definitions;
+  userBindings;
+  keysById = /* @__PURE__ */ new Map();
+  conflicts = [];
+  constructor(definitions, userBindings = {}) {
+    this.definitions = definitions;
+    this.userBindings = userBindings;
+    this.rebuild();
+  }
+  rebuild() {
+    this.keysById.clear();
+    this.conflicts = [];
+    const userClaims = /* @__PURE__ */ new Map();
+    for (const [keybinding, keys] of Object.entries(this.userBindings)) {
+      if (!(keybinding in this.definitions))
+        continue;
+      for (const key of normalizeKeys(keys)) {
+        const claimants = userClaims.get(key) ?? /* @__PURE__ */ new Set();
+        claimants.add(keybinding);
+        userClaims.set(key, claimants);
+      }
+    }
+    for (const [key, keybindings] of userClaims) {
+      if (keybindings.size > 1) {
+        this.conflicts.push({ key, keybindings: [...keybindings] });
+      }
+    }
+    for (const [id, definition] of Object.entries(this.definitions)) {
+      const userKeys = this.userBindings[id];
+      const keys = userKeys === void 0 ? normalizeKeys(definition.defaultKeys) : normalizeKeys(userKeys);
+      this.keysById.set(id, keys);
+    }
+  }
+  matches(data, keybinding) {
+    const keys = this.keysById.get(keybinding) ?? [];
+    for (const key of keys) {
+      if (matchesKey(data, key))
+        return true;
+    }
+    return false;
+  }
+  getKeys(keybinding) {
+    return [...this.keysById.get(keybinding) ?? []];
+  }
+  getDefinition(keybinding) {
+    return this.definitions[keybinding];
+  }
+  getConflicts() {
+    return this.conflicts.map((conflict) => ({ ...conflict, keybindings: [...conflict.keybindings] }));
+  }
+  setUserBindings(userBindings) {
+    this.userBindings = userBindings;
+    this.rebuild();
+  }
+  getUserBindings() {
+    return { ...this.userBindings };
+  }
+  getResolvedBindings() {
+    const resolved = {};
+    for (const id of Object.keys(this.definitions)) {
+      const keys = this.keysById.get(id) ?? [];
+      resolved[id] = keys.length === 1 ? keys[0] : [...keys];
+    }
+    return resolved;
+  }
+};
+var globalKeybindings = null;
+function getKeybindings() {
+  if (!globalKeybindings) {
+    globalKeybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+  }
+  return globalKeybindings;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/components/text.js
+var Text = class {
+  text;
+  paddingX;
+  // Left/right padding
+  paddingY;
+  // Top/bottom padding
+  customBgFn;
+  // Cache for rendered output
+  cachedText;
+  cachedWidth;
+  cachedLines;
+  constructor(text = "", paddingX = 1, paddingY = 1, customBgFn) {
+    this.text = text;
+    this.paddingX = paddingX;
+    this.paddingY = paddingY;
+    this.customBgFn = customBgFn;
+  }
+  setText(text) {
+    this.text = text;
+    this.cachedText = void 0;
+    this.cachedWidth = void 0;
+    this.cachedLines = void 0;
+  }
+  setCustomBgFn(customBgFn) {
+    this.customBgFn = customBgFn;
+    this.cachedText = void 0;
+    this.cachedWidth = void 0;
+    this.cachedLines = void 0;
+  }
+  invalidate() {
+    this.cachedText = void 0;
+    this.cachedWidth = void 0;
+    this.cachedLines = void 0;
+  }
+  render(width) {
+    if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
+      return this.cachedLines;
+    }
+    if (!this.text || this.text.trim() === "") {
+      const result3 = [];
+      this.cachedText = this.text;
+      this.cachedWidth = width;
+      this.cachedLines = result3;
+      return result3;
+    }
+    const normalizedText = this.text.replace(/\t/g, "   ");
+    const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((width - 1) / 2)));
+    const contentWidth = Math.max(1, width - paddingX * 2);
+    const wrappedLines = wrapTextWithAnsi(normalizedText, contentWidth);
+    const leftMargin = " ".repeat(paddingX);
+    const rightMargin = " ".repeat(paddingX);
+    const contentLines = [];
+    for (const line of wrappedLines) {
+      const lineWithMargins = leftMargin + line + rightMargin;
+      if (this.customBgFn) {
+        contentLines.push(applyBackgroundToLine(lineWithMargins, width, this.customBgFn));
+      } else {
+        const visibleLen = visibleWidth(lineWithMargins);
+        const paddingNeeded = Math.max(0, width - visibleLen);
+        contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
+      }
+    }
+    const emptyLine = " ".repeat(width);
+    const emptyLines = [];
+    for (let i = 0; i < this.paddingY; i++) {
+      const line = this.customBgFn ? applyBackgroundToLine(emptyLine, width, this.customBgFn) : emptyLine;
+      emptyLines.push(line);
+    }
+    const result2 = [...emptyLines, ...contentLines, ...emptyLines];
+    flattenLines(result2);
+    this.cachedText = this.text;
+    this.cachedWidth = width;
+    this.cachedLines = result2;
+    return result2.length > 0 ? result2 : [""];
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/kill-ring.js
+var KillRing = class {
+  ring = [];
+  /**
+   * Add text to the kill ring.
+   *
+   * @param text - The killed text to add
+   * @param opts - Push options
+   * @param opts.prepend - If accumulating, prepend (backward deletion) or append (forward deletion)
+   * @param opts.accumulate - Merge with the most recent entry instead of creating a new one
+   */
+  push(text, opts) {
+    if (!text)
+      return;
+    if (opts.accumulate && this.ring.length > 0) {
+      const last = this.ring.pop();
+      this.ring.push(opts.prepend ? text + last : last + text);
+    } else {
+      this.ring.push(text);
+    }
+  }
+  /** Get most recent entry without modifying the ring. */
+  peek() {
+    return this.ring.length > 0 ? this.ring[this.ring.length - 1] : void 0;
+  }
+  /** Move last entry to front (for yank-pop cycling). */
+  rotate() {
+    if (this.ring.length > 1) {
+      const last = this.ring.pop();
+      this.ring.unshift(last);
+    }
+  }
+  get length() {
+    return this.ring.length;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/undo-stack.js
+var UndoStack = class {
+  stack = [];
+  /** Push a deep clone of the given state onto the stack. */
+  push(state) {
+    this.stack.push(structuredClone(state));
+  }
+  /** Pop and return the most recent snapshot, or undefined if empty. */
+  pop() {
+    return this.stack.pop();
+  }
+  /** Remove all snapshots. */
+  clear() {
+    this.stack.length = 0;
+  }
+  get length() {
+    return this.stack.length;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/word-navigation.js
+var wordSegmenter2 = getWordSegmenter();
+function findWordBackward(text, cursor, options) {
+  if (cursor <= 0)
+    return 0;
+  const textBeforeCursor = text.slice(0, cursor);
+  const segmentFn = options?.segment;
+  const isAtomic = options?.isAtomicSegment;
+  const segments = segmentFn ? [...segmentFn(textBeforeCursor)] : [...wordSegmenter2.segment(textBeforeCursor)];
+  let newCursor = cursor;
+  while (segments.length > 0 && !isAtomic?.(segments[segments.length - 1]?.segment || "") && isWhitespaceChar(segments[segments.length - 1]?.segment || "")) {
+    newCursor -= segments.pop()?.segment.length || 0;
+  }
+  if (segments.length === 0)
+    return newCursor;
+  const last = segments[segments.length - 1];
+  if (isAtomic?.(last.segment)) {
+    newCursor -= last.segment.length;
+  } else if (last.isWordLike) {
+    const segment = last.segment;
+    const matches = [...segment.matchAll(new RegExp(PUNCTUATION_REGEX, "g"))];
+    if (matches.length <= 0) {
+      newCursor -= segment.length;
+    } else {
+      const lastMatch = matches[matches.length - 1];
+      newCursor -= segment.length - (lastMatch.index + lastMatch[0].length);
+    }
+  } else {
+    while (segments.length > 0 && !isAtomic?.(segments[segments.length - 1]?.segment || "") && !segments[segments.length - 1]?.isWordLike && !isWhitespaceChar(segments[segments.length - 1]?.segment || "")) {
+      newCursor -= segments.pop()?.segment.length || 0;
+    }
+  }
+  return newCursor;
+}
+function findWordForward(text, cursor, options) {
+  if (cursor >= text.length)
+    return text.length;
+  const textAfterCursor = text.slice(cursor);
+  const segmentFn = options?.segment;
+  const isAtomic = options?.isAtomicSegment;
+  const segments = segmentFn ? segmentFn(textAfterCursor) : wordSegmenter2.segment(textAfterCursor);
+  const iterator = segments[Symbol.iterator]();
+  let next = iterator.next();
+  let newCursor = cursor;
+  while (!next.done && !isAtomic?.(next.value.segment) && isWhitespaceChar(next.value.segment)) {
+    newCursor += next.value.segment.length;
+    next = iterator.next();
+  }
+  if (next.done)
+    return newCursor;
+  if (isAtomic?.(next.value.segment)) {
+    newCursor += next.value.segment.length;
+  } else if (next.value.isWordLike) {
+    newCursor += PUNCTUATION_REGEX.exec(next.value.segment)?.index ?? next.value.segment.length;
+  } else {
+    while (!next.done && !isAtomic?.(next.value.segment) && !next.value.isWordLike && !isWhitespaceChar(next.value.segment)) {
+      newCursor += next.value.segment.length;
+      next = iterator.next();
+    }
+  }
+  return newCursor;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/components/editor.js
+var graphemeSegmenter2 = getGraphemeSegmenter();
+var wordSegmenter3 = getWordSegmenter();
+var unquotedAutocompleteSuffixRegex = new RegExp(`(?:(?!${autocompleteSeparatorRegex.source}).)*`, "u");
+var autocompleteTokenStartSource = `${autocompleteBoundaryRegex.source}[([{<\`]*`;
+
+// node_modules/@earendil-works/pi-tui/dist/layout-node.js
+var LAYOUT_NODE = /* @__PURE__ */ Symbol.for("@earendil-works/pi-tui/layout-node");
+function getLayoutNode(component) {
+  const candidate = component;
+  return typeof candidate[LAYOUT_NODE] === "function" ? candidate[LAYOUT_NODE]() : void 0;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/components/stack.js
+function isStackEntry(child) {
+  return !("render" in child);
+}
+function normalizeSize(value, fallback) {
+  return value === void 0 || !Number.isFinite(value) ? fallback : Math.max(0, Math.floor(value));
+}
+var Stack = class extends Container {
+  entries = [];
+  gap;
+  align;
+  constructor(children = [], options = {}) {
+    super();
+    this.gap = normalizeSize(options.gap, 0);
+    this.align = options.align ?? "stretch";
+    for (const child of children) {
+      if (isStackEntry(child))
+        this.addChild(child.component, child);
+      else
+        this.addChild(child);
+    }
+  }
+  addChild(component, options = {}) {
+    super.addChild(component);
+    this.entries.push({
+      component,
+      ...options.basis === void 0 ? {} : { basis: options.basis },
+      ...options.grow === void 0 ? {} : { grow: normalizeSize(options.grow, 0) },
+      ...options.shrink === void 0 ? {} : { shrink: normalizeSize(options.shrink, 1) },
+      ...options.minSize === void 0 ? {} : { minSize: normalizeSize(options.minSize, 0) },
+      ...options.maxSize === void 0 ? {} : { maxSize: normalizeSize(options.maxSize, Number.MAX_SAFE_INTEGER) },
+      ...options.visible === void 0 ? {} : { visible: options.visible }
+    });
+  }
+  removeChild(component) {
+    super.removeChild(component);
+    const index = this.entries.findIndex((entry) => entry.component === component);
+    if (index !== -1)
+      this.entries.splice(index, 1);
+  }
+  clear() {
+    super.clear();
+    this.entries.length = 0;
+  }
+  [LAYOUT_NODE]() {
+    return {
+      type: this.layoutType,
+      entries: this.entries,
+      gap: this.gap,
+      align: this.align
+    };
+  }
+};
+function visibleStackEntries(entries, viewport) {
+  return entries.filter((entry) => entry.visible?.(viewport) ?? true);
+}
+function clampSize(size, entry) {
+  const min = Math.max(0, Math.floor(entry.minSize ?? 0));
+  const max = Math.max(min, Math.floor(entry.maxSize ?? Number.MAX_SAFE_INTEGER));
+  return Math.max(min, Math.min(max, Math.max(0, Math.floor(size))));
+}
+function distribute(sizes, entries, amount, mode) {
+  let remaining = amount;
+  while (remaining > 0) {
+    const candidates = entries.map((entry, index) => ({ entry, index })).filter(({ entry, index }) => {
+      if (mode === "grow") {
+        return (entry.grow ?? 0) > 0 && sizes[index] < (entry.maxSize ?? Number.MAX_SAFE_INTEGER);
+      }
+      return (entry.shrink ?? 1) > 0 && sizes[index] > (entry.minSize ?? 0);
+    });
+    if (candidates.length === 0)
+      return;
+    const totalWeight = candidates.reduce((sum, { entry, index }) => {
+      return sum + (mode === "grow" ? entry.grow ?? 0 : (entry.shrink ?? 1) * Math.max(1, sizes[index]));
+    }, 0);
+    let distributed = 0;
+    for (const { entry, index } of candidates) {
+      if (remaining <= 0)
+        break;
+      const weight = mode === "grow" ? entry.grow ?? 0 : (entry.shrink ?? 1) * Math.max(1, sizes[index]);
+      const proposed = Math.max(1, Math.floor(remaining * weight / totalWeight));
+      const capacity = mode === "grow" ? (entry.maxSize ?? Number.MAX_SAFE_INTEGER) - sizes[index] : sizes[index] - (entry.minSize ?? 0);
+      const delta = Math.min(remaining, proposed, capacity);
+      if (delta <= 0)
+        continue;
+      sizes[index] = sizes[index] + (mode === "grow" ? delta : -delta);
+      remaining -= delta;
+      distributed += delta;
+    }
+    if (distributed === 0)
+      return;
+  }
+}
+function allocateStackSizes(entries, intrinsicSizes, availableSize, gap) {
+  const sizes = entries.map((entry, index) => clampSize(entry.basis === void 0 || entry.basis === "auto" ? intrinsicSizes[index] ?? 0 : entry.basis, entry));
+  if (availableSize === void 0)
+    return sizes;
+  const contentSize = Math.max(0, Math.floor(availableSize) - Math.max(0, entries.length - 1) * gap);
+  const total = sizes.reduce((sum, size) => sum + size, 0);
+  if (total < contentSize)
+    distribute(sizes, entries, contentSize - total, "grow");
+  else if (total > contentSize)
+    distribute(sizes, entries, total - contentSize, "shrink");
+  return sizes;
+}
+
+// node_modules/@earendil-works/pi-tui/dist/components/h-stack.js
+var HStack = class extends Stack {
+  layoutType = "hstack";
+  constructor(children = [], options = {}) {
+    super(children, options);
+  }
+  render(width) {
+    const safeWidth = Math.max(1, width);
+    const viewport = { width: safeWidth, height: Number.MAX_SAFE_INTEGER };
+    const entries = visibleStackEntries(this.entries, viewport);
+    if (entries.length === 0)
+      return [];
+    const intrinsicWidths = entries.map((entry) => {
+      const lines = entry.component.render(safeWidth);
+      return lines.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+    });
+    const widths = allocateStackSizes(entries, intrinsicWidths, safeWidth, this.gap);
+    const rendered = entries.map((entry, index) => widths[index] === 0 ? [] : entry.component.render(widths[index]));
+    const height = rendered.reduce((max, lines) => Math.max(max, lines.length), 0);
+    const result2 = Array.from({ length: height }, () => "");
+    let x2 = 0;
+    for (let index = 0; index < rendered.length; index++) {
+      const lines = rendered[index];
+      const childWidth = widths[index];
+      let offset = 0;
+      if (this.align === "center")
+        offset = Math.floor((height - lines.length) / 2);
+      else if (this.align === "end")
+        offset = height - lines.length;
+      for (let row = 0; row < lines.length; row++) {
+        const target = row + offset;
+        if (target < 0 || target >= result2.length)
+          continue;
+        result2[target] = compositeTuiLine(result2[target], lines[row], x2, childWidth, safeWidth);
+      }
+      x2 += childWidth + this.gap;
+    }
+    return result2;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/components/input.js
+var segmenter = getGraphemeSegmenter();
+var Input = class {
+  value = "";
+  cursor = 0;
+  // Cursor position in the value
+  prompt;
+  placeholder;
+  placeholderStyle;
+  renderedStartColumn = 0;
+  onSubmit;
+  onEscape;
+  /** Focusable interface - set by TUI when focus changes */
+  focused = false;
+  // Bracketed paste mode buffering
+  pasteBuffer = "";
+  isInPaste = false;
+  // Kill ring for Emacs-style kill/yank operations
+  killRing = new KillRing();
+  lastAction = null;
+  // Undo support
+  undoStack = new UndoStack();
+  constructor(options = {}) {
+    this.prompt = options.prompt ?? "> ";
+    this.placeholder = options.placeholder ?? "";
+    this.placeholderStyle = options.placeholderStyle ?? ((text) => text);
+  }
+  getValue() {
+    return this.value;
+  }
+  setValue(value) {
+    this.value = value;
+    this.cursor = Math.min(this.cursor, value.length);
+  }
+  handleInput(data) {
+    if (data.includes("\x1B[200~")) {
+      this.isInPaste = true;
+      this.pasteBuffer = "";
+      data = data.replace("\x1B[200~", "");
+    }
+    if (this.isInPaste) {
+      this.pasteBuffer += data;
+      const endIndex = this.pasteBuffer.indexOf("\x1B[201~");
+      if (endIndex !== -1) {
+        const pasteContent = this.pasteBuffer.substring(0, endIndex);
+        this.handlePaste(pasteContent);
+        this.isInPaste = false;
+        const remaining = this.pasteBuffer.substring(endIndex + 6);
+        this.pasteBuffer = "";
+        if (remaining) {
+          this.handleInput(remaining);
+        }
+      }
+      return;
+    }
+    const kb = getKeybindings();
+    if (kb.matches(data, "tui.select.cancel")) {
+      if (this.onEscape)
+        this.onEscape();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.undo")) {
+      this.undo();
+      return;
+    }
+    if (kb.matches(data, "tui.input.submit") || data === "\n") {
+      if (this.onSubmit)
+        this.onSubmit(this.value);
+      return;
+    }
+    if (kb.matches(data, "tui.editor.deleteCharBackward")) {
+      this.handleBackspace();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.deleteCharForward")) {
+      this.handleForwardDelete();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.deleteWordBackward")) {
+      this.deleteWordBackwards();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.deleteWordForward")) {
+      this.deleteWordForward();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.deleteToLineStart")) {
+      this.deleteToLineStart();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.deleteToLineEnd")) {
+      this.deleteToLineEnd();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.yank")) {
+      this.yank();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.yankPop")) {
+      this.yankPop();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.cursorLeft")) {
+      this.lastAction = null;
+      if (this.cursor > 0) {
+        const beforeCursor = this.value.slice(0, this.cursor);
+        const graphemes = [...segmenter.segment(beforeCursor)];
+        const lastGrapheme = graphemes[graphemes.length - 1];
+        this.cursor -= lastGrapheme ? lastGrapheme.segment.length : 1;
+      }
+      return;
+    }
+    if (kb.matches(data, "tui.editor.cursorRight")) {
+      this.lastAction = null;
+      if (this.cursor < this.value.length) {
+        const afterCursor = this.value.slice(this.cursor);
+        const graphemes = [...segmenter.segment(afterCursor)];
+        const firstGrapheme = graphemes[0];
+        this.cursor += firstGrapheme ? firstGrapheme.segment.length : 1;
+      }
+      return;
+    }
+    if (kb.matches(data, "tui.editor.cursorLineStart")) {
+      this.lastAction = null;
+      this.cursor = 0;
+      return;
+    }
+    if (kb.matches(data, "tui.editor.cursorLineEnd")) {
+      this.lastAction = null;
+      this.cursor = this.value.length;
+      return;
+    }
+    if (kb.matches(data, "tui.editor.cursorWordLeft")) {
+      this.moveWordBackwards();
+      return;
+    }
+    if (kb.matches(data, "tui.editor.cursorWordRight")) {
+      this.moveWordForwards();
+      return;
+    }
+    const kittyPrintable = decodeKittyPrintable(data);
+    if (kittyPrintable !== void 0) {
+      this.insertCharacter(kittyPrintable);
+      return;
+    }
+    const hasControlChars = [...data].some((ch) => {
+      const code = ch.charCodeAt(0);
+      return code < 32 || code === 127 || code >= 128 && code <= 159;
+    });
+    if (!hasControlChars) {
+      this.insertCharacter(data);
+    }
+  }
+  handleMouse(event) {
+    if (event.type !== "press" || event.button !== "left" || event.y !== 0)
+      return void 0;
+    const visibleColumn = Math.max(0, event.x - 2);
+    const targetColumn = this.renderedStartColumn + visibleColumn;
+    let currentColumn = 0;
+    this.cursor = this.value.length;
+    for (const grapheme of segmenter.segment(this.value)) {
+      const nextColumn = currentColumn + visibleWidth(grapheme.segment);
+      if (targetColumn < nextColumn) {
+        this.cursor = grapheme.index;
+        break;
+      }
+      currentColumn = nextColumn;
+    }
+    this.lastAction = null;
+    return { handled: true, focus: true };
+  }
+  insertCharacter(char) {
+    if (isWhitespaceChar(char) || this.lastAction !== "type-word") {
+      this.pushUndo();
+    }
+    this.lastAction = "type-word";
+    this.value = this.value.slice(0, this.cursor) + char + this.value.slice(this.cursor);
+    this.cursor += char.length;
+  }
+  handleBackspace() {
+    this.lastAction = null;
+    if (this.cursor > 0) {
+      this.pushUndo();
+      const beforeCursor = this.value.slice(0, this.cursor);
+      const graphemes = [...segmenter.segment(beforeCursor)];
+      const lastGrapheme = graphemes[graphemes.length - 1];
+      const graphemeLength = lastGrapheme ? lastGrapheme.segment.length : 1;
+      this.value = this.value.slice(0, this.cursor - graphemeLength) + this.value.slice(this.cursor);
+      this.cursor -= graphemeLength;
+    }
+  }
+  handleForwardDelete() {
+    this.lastAction = null;
+    if (this.cursor < this.value.length) {
+      this.pushUndo();
+      const afterCursor = this.value.slice(this.cursor);
+      const graphemes = [...segmenter.segment(afterCursor)];
+      const firstGrapheme = graphemes[0];
+      const graphemeLength = firstGrapheme ? firstGrapheme.segment.length : 1;
+      this.value = this.value.slice(0, this.cursor) + this.value.slice(this.cursor + graphemeLength);
+    }
+  }
+  deleteToLineStart() {
+    if (this.cursor === 0)
+      return;
+    this.pushUndo();
+    const deletedText = this.value.slice(0, this.cursor);
+    this.killRing.push(deletedText, { prepend: true, accumulate: this.lastAction === "kill" });
+    this.lastAction = "kill";
+    this.value = this.value.slice(this.cursor);
+    this.cursor = 0;
+  }
+  deleteToLineEnd() {
+    if (this.cursor >= this.value.length)
+      return;
+    this.pushUndo();
+    const deletedText = this.value.slice(this.cursor);
+    this.killRing.push(deletedText, { prepend: false, accumulate: this.lastAction === "kill" });
+    this.lastAction = "kill";
+    this.value = this.value.slice(0, this.cursor);
+  }
+  deleteWordBackwards() {
+    if (this.cursor === 0)
+      return;
+    const wasKill = this.lastAction === "kill";
+    this.pushUndo();
+    const oldCursor = this.cursor;
+    this.moveWordBackwards();
+    const deleteFrom = this.cursor;
+    this.cursor = oldCursor;
+    const deletedText = this.value.slice(deleteFrom, this.cursor);
+    this.killRing.push(deletedText, { prepend: true, accumulate: wasKill });
+    this.lastAction = "kill";
+    this.value = this.value.slice(0, deleteFrom) + this.value.slice(this.cursor);
+    this.cursor = deleteFrom;
+  }
+  deleteWordForward() {
+    if (this.cursor >= this.value.length)
+      return;
+    const wasKill = this.lastAction === "kill";
+    this.pushUndo();
+    const oldCursor = this.cursor;
+    this.moveWordForwards();
+    const deleteTo = this.cursor;
+    this.cursor = oldCursor;
+    const deletedText = this.value.slice(this.cursor, deleteTo);
+    this.killRing.push(deletedText, { prepend: false, accumulate: wasKill });
+    this.lastAction = "kill";
+    this.value = this.value.slice(0, this.cursor) + this.value.slice(deleteTo);
+  }
+  yank() {
+    const text = this.killRing.peek();
+    if (!text)
+      return;
+    this.pushUndo();
+    this.value = this.value.slice(0, this.cursor) + text + this.value.slice(this.cursor);
+    this.cursor += text.length;
+    this.lastAction = "yank";
+  }
+  yankPop() {
+    if (this.lastAction !== "yank" || this.killRing.length <= 1)
+      return;
+    this.pushUndo();
+    const prevText = this.killRing.peek() || "";
+    this.value = this.value.slice(0, this.cursor - prevText.length) + this.value.slice(this.cursor);
+    this.cursor -= prevText.length;
+    this.killRing.rotate();
+    const text = this.killRing.peek() || "";
+    this.value = this.value.slice(0, this.cursor) + text + this.value.slice(this.cursor);
+    this.cursor += text.length;
+    this.lastAction = "yank";
+  }
+  pushUndo() {
+    this.undoStack.push({ value: this.value, cursor: this.cursor });
+  }
+  undo() {
+    const snapshot = this.undoStack.pop();
+    if (!snapshot)
+      return;
+    this.value = snapshot.value;
+    this.cursor = snapshot.cursor;
+    this.lastAction = null;
+  }
+  moveWordBackwards() {
+    if (this.cursor === 0)
+      return;
+    this.lastAction = null;
+    this.cursor = findWordBackward(this.value, this.cursor);
+  }
+  moveWordForwards() {
+    if (this.cursor >= this.value.length)
+      return;
+    this.lastAction = null;
+    this.cursor = findWordForward(this.value, this.cursor);
+  }
+  handlePaste(pastedText) {
+    this.lastAction = null;
+    this.pushUndo();
+    const cleanText = pastedText.replace(/\r\n/g, "").replace(/\r/g, "").replace(/\n/g, "").replace(/\t/g, "    ");
+    this.value = this.value.slice(0, this.cursor) + cleanText + this.value.slice(this.cursor);
+    this.cursor += cleanText.length;
+  }
+  invalidate() {
+  }
+  render(width) {
+    const availableWidth = width - visibleWidth(this.prompt);
+    if (availableWidth <= 0) {
+      return [truncateToWidth(this.prompt, width, "")];
+    }
+    if (this.value.length === 0 && this.placeholder) {
+      const placeholder = truncateToWidth(this.placeholder, availableWidth, "");
+      const graphemes2 = [...segmenter.segment(placeholder)];
+      const atCursor2 = graphemes2[0]?.segment ?? " ";
+      const afterCursor2 = placeholder.slice(atCursor2.length);
+      const marker2 = this.focused ? CURSOR_MARKER : "";
+      const cursorChar2 = `\x1B[7m${this.placeholderStyle(atCursor2)}\x1B[27m`;
+      const textWithCursor2 = marker2 + cursorChar2 + this.placeholderStyle(afterCursor2);
+      const padding2 = " ".repeat(Math.max(0, availableWidth - visibleWidth(textWithCursor2)));
+      return [this.prompt + textWithCursor2 + padding2];
+    }
+    let visibleText = "";
+    let cursorDisplay = this.cursor;
+    this.renderedStartColumn = 0;
+    const totalWidth = visibleWidth(this.value);
+    if (totalWidth < availableWidth) {
+      visibleText = this.value;
+    } else {
+      const scrollWidth = this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
+      const cursorCol = visibleWidth(this.value.slice(0, this.cursor));
+      if (scrollWidth > 0) {
+        const halfWidth = Math.floor(scrollWidth / 2);
+        let startCol = 0;
+        if (cursorCol < halfWidth) {
+          startCol = 0;
+        } else if (cursorCol > totalWidth - halfWidth) {
+          startCol = Math.max(0, totalWidth - scrollWidth);
+        } else {
+          startCol = Math.max(0, cursorCol - halfWidth);
+        }
+        this.renderedStartColumn = startCol;
+        visibleText = sliceByColumn(this.value, startCol, scrollWidth, true);
+        const beforeCursor2 = sliceByColumn(this.value, startCol, Math.max(0, cursorCol - startCol), true);
+        cursorDisplay = beforeCursor2.length;
+      } else {
+        visibleText = "";
+        cursorDisplay = 0;
+      }
+    }
+    const graphemes = [...segmenter.segment(visibleText.slice(cursorDisplay))];
+    const cursorGrapheme = graphemes[0];
+    const beforeCursor = visibleText.slice(0, cursorDisplay);
+    const atCursor = cursorGrapheme?.segment ?? " ";
+    const afterCursor = visibleText.slice(cursorDisplay + atCursor.length);
+    const marker = this.focused ? CURSOR_MARKER : "";
+    const cursorChar = `\x1B[7m${atCursor}\x1B[27m`;
+    const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
+    const visualLength = visibleWidth(textWithCursor);
+    const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
+    const line = this.prompt + textWithCursor + padding;
+    return [line];
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/components/markdown.js
+var STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
+var StrictStrikethroughTokenizer = class extends y {
+  del(src) {
+    const match = STRICT_STRIKETHROUGH_REGEX.exec(src);
+    if (!match) {
+      return void 0;
+    }
+    const text = match[2];
+    return {
+      type: "del",
+      raw: match[0],
+      text,
+      tokens: this.lexer.inlineTokens(text)
+    };
+  }
+};
+function isEscaped(source, index) {
+  let backslashes = 0;
+  for (let position = index - 1; position >= 0 && source[position] === "\\"; position--) {
+    backslashes++;
+  }
+  return backslashes % 2 === 1;
+}
+function findClosingDelimiter(source, closing, start) {
+  let index = source.indexOf(closing, start);
+  while (index >= 0 && isEscaped(source, index)) {
+    index = source.indexOf(closing, index + closing.length);
+  }
+  return index;
+}
+function looksLikePendingDollarMath(source) {
+  return /\\[A-Za-z]+|[_^=+*/<>()[\]|±≤≥≠≈∈→⇒∞∫∑√-]/.test(source);
+}
+function tokenizeInlineLatex(source) {
+  let opening = "";
+  let closing = "";
+  if (source.startsWith("$$")) {
+    opening = "$$";
+    closing = "$$";
+  } else if (source.startsWith("\\(")) {
+    opening = "\\(";
+    closing = "\\)";
+  } else if (source.startsWith("\\[")) {
+    opening = "\\[";
+    closing = "\\]";
+  } else if (source.startsWith("$") && !/^\$\s/.test(source)) {
+    opening = "$";
+    closing = "$";
+  } else {
+    return void 0;
+  }
+  const closingIndex = findClosingDelimiter(source, closing, opening.length);
+  if (closingIndex >= 0 && opening === "$" && (/\s$/.test(source.slice(opening.length, closingIndex)) || /^\d/.test(source.slice(closingIndex + 1)) || /^[A-Z_][A-Z0-9_]*(?:[^A-Za-z0-9_\s])?$/.test(source.slice(opening.length, closingIndex)) && /^[A-Za-z_][A-Za-z0-9_]*/.test(source.slice(closingIndex + 1)) || source.slice(opening.length, closingIndex).includes("`"))) {
+    return void 0;
+  }
+  if (closingIndex < 0) {
+    const pendingSource = source.slice(opening.length);
+    if (opening.startsWith("\\") || looksLikePendingDollarMath(pendingSource)) {
+      return { type: "latex", raw: source, text: pendingSource, pending: true };
+    }
+    return void 0;
+  }
+  const text = source.slice(opening.length, closingIndex);
+  if (!text || text.includes("\n")) {
+    return void 0;
+  }
+  const raw = source.slice(0, closingIndex + closing.length);
+  return { type: "latex", raw, text };
+}
+function tokenizeBlockLatex(source) {
+  const dollarMatch = /^ {0,3}\$\$[ \t]*(?:\n)?([\s\S]*?)\$\$[ \t]*(?:\n|$)/.exec(source);
+  if (dollarMatch?.[1]) {
+    return { type: "latexBlock", raw: dollarMatch[0], text: dollarMatch[1].trim() };
+  }
+  const bracketMatch = /^ {0,3}\\\[[ \t]*(?:\n)?([\s\S]*?)\\\][ \t]*(?:\n|$)/.exec(source);
+  if (bracketMatch?.[1]) {
+    return { type: "latexBlock", raw: bracketMatch[0], text: bracketMatch[1].trim() };
+  }
+  const pendingBracket = /^ {0,3}\\\[[ \t]*(?:\n)?([\s\S]*)$/.exec(source);
+  if (pendingBracket) {
+    return { type: "latexBlock", raw: pendingBracket[0], text: pendingBracket[1], pending: true };
+  }
+  const pendingDollar = /^ {0,3}\$\$[ \t]*(?:\n)?([\s\S]*)$/.exec(source);
+  if (pendingDollar?.[1] && looksLikePendingDollarMath(pendingDollar[1])) {
+    return { type: "latexBlock", raw: pendingDollar[0], text: pendingDollar[1], pending: true };
+  }
+  return void 0;
+}
+var LATEX_MARKDOWN_EXTENSIONS = [
+  {
+    name: "latexBlock",
+    level: "block",
+    start(source) {
+      const match = /(?:^|\n) {0,3}(?:\$\$|\\\[)/.exec(source);
+      return match ? match.index + (match[0].startsWith("\n") ? 1 : 0) : void 0;
+    },
+    tokenizer: tokenizeBlockLatex
+  },
+  {
+    name: "latex",
+    level: "inline",
+    start(source) {
+      const indices = [source.indexOf("$"), source.indexOf("\\("), source.indexOf("\\[")].filter((index) => index >= 0);
+      return indices.length > 0 ? Math.min(...indices) : void 0;
+    },
+    tokenizer: tokenizeInlineLatex
+  }
+];
+var markdownParser = new Z();
+markdownParser.setOptions({
+  tokenizer: new StrictStrikethroughTokenizer()
+});
+markdownParser.use({ extensions: [...LATEX_MARKDOWN_EXTENSIONS] });
+
+// node_modules/@earendil-works/pi-tui/dist/components/scroll-view.js
+var ScrollView = class extends Container {
+  child;
+  followEnd;
+  primary;
+  overscroll;
+  scrollbarTrackStyle;
+  scrollbarThumbStyle;
+  currentScrollbar;
+  scrollbarHideDelayMs;
+  currentScrollTop = 0;
+  contentHeight = 0;
+  currentViewportHeight = 0;
+  followingEnd;
+  followSuppressedAtEnd = false;
+  requestRenderCallback;
+  transientScrollbarVisible = false;
+  scrollbarActive = false;
+  scrollbarHideTimer;
+  constructor(component, options = {}) {
+    super();
+    if (options.axis !== void 0 && options.axis !== "vertical") {
+      throw new Error(`Unsupported ScrollView axis: ${options.axis}`);
+    }
+    this.child = component;
+    this.children.push(component);
+    this.followEnd = (options.follow ?? "none") === "end";
+    this.followingEnd = this.followEnd;
+    this.primary = options.primary ?? false;
+    this.overscroll = options.overscroll ?? "chain";
+    this.currentScrollbar = options.scrollbar ?? "hidden";
+    this.scrollbarTrackStyle = options.scrollbarTrackStyle ?? ((text) => `\x1B[90m${text}\x1B[39m`);
+    this.scrollbarThumbStyle = options.scrollbarThumbStyle ?? ((text) => `\x1B[37m${text}\x1B[39m`);
+    this.scrollbarHideDelayMs = Math.max(0, Math.floor(options.scrollbarHideDelayMs ?? 1e3));
+  }
+  get scrollTop() {
+    return this.currentScrollTop;
+  }
+  get isFollowingEnd() {
+    return this.followingEnd;
+  }
+  get viewportHeight() {
+    return this.currentViewportHeight;
+  }
+  get scrollbar() {
+    return this.currentScrollbar;
+  }
+  get isScrollbarVisible() {
+    if (this.scrollbar === "always")
+      return this.currentViewportHeight > 0;
+    return this.scrollbar === "auto" && this.contentHeight > this.currentViewportHeight && this.transientScrollbarVisible;
+  }
+  get isScrollbarActive() {
+    return this.scrollbarActive;
+  }
+  setScrollbar(scrollbar) {
+    if (scrollbar === this.currentScrollbar)
+      return;
+    this.currentScrollbar = scrollbar;
+    if (scrollbar !== "auto")
+      this.hideTransientScrollbar();
+    else if (this.scrollbarActive)
+      this.markScrollbarActivity();
+    this.requestRenderCallback?.();
+  }
+  getContentWidth(width) {
+    return this.scrollbar === "always" && width > 1 ? width - 1 : width;
+  }
+  markScrollbarActivity() {
+    if (this.scrollbar !== "auto" || this.contentHeight <= this.currentViewportHeight)
+      return;
+    this.transientScrollbarVisible = true;
+    if (this.scrollbarHideTimer) {
+      clearTimeout(this.scrollbarHideTimer);
+      this.scrollbarHideTimer = void 0;
+    }
+    if (this.scrollbarActive)
+      return;
+    this.scrollbarHideTimer = setTimeout(() => {
+      this.scrollbarHideTimer = void 0;
+      this.transientScrollbarVisible = false;
+      this.requestRenderCallback?.();
+    }, this.scrollbarHideDelayMs);
+    this.scrollbarHideTimer.unref();
+  }
+  hideTransientScrollbar() {
+    this.transientScrollbarVisible = false;
+    if (!this.scrollbarHideTimer)
+      return;
+    clearTimeout(this.scrollbarHideTimer);
+    this.scrollbarHideTimer = void 0;
+  }
+  setScrollbarActive(active) {
+    if (active === this.scrollbarActive)
+      return;
+    this.scrollbarActive = active;
+    this.markScrollbarActivity();
+    this.requestRenderCallback?.();
+  }
+  scrollTo(scrollTop, options = {}) {
+    const requested = Number.isFinite(scrollTop) ? Math.trunc(scrollTop) : this.currentScrollTop;
+    const maxScrollTop = Math.max(0, this.contentHeight - this.currentViewportHeight);
+    const next = Math.max(0, Math.min(maxScrollTop, requested));
+    const nextFollowSuppressedAtEnd = options.disableFollow === true && next === maxScrollTop;
+    const nextFollowingEnd = !nextFollowSuppressedAtEnd && this.followEnd && next === maxScrollTop;
+    if (next === this.currentScrollTop && nextFollowingEnd === this.followingEnd && nextFollowSuppressedAtEnd === this.followSuppressedAtEnd) {
+      return;
+    }
+    const moved = next !== this.currentScrollTop;
+    this.currentScrollTop = next;
+    this.followingEnd = nextFollowingEnd;
+    this.followSuppressedAtEnd = nextFollowSuppressedAtEnd;
+    if (moved)
+      this.markScrollbarActivity();
+    this.requestRenderCallback?.();
+  }
+  scrollBy(lines) {
+    const requested = Number.isFinite(lines) ? Math.trunc(lines) : 0;
+    if (requested === 0)
+      return 0;
+    const maxScrollTop = Math.max(0, this.contentHeight - this.currentViewportHeight);
+    const start = this.followingEnd ? maxScrollTop : this.currentScrollTop;
+    const next = Math.max(0, Math.min(maxScrollTop, start + requested));
+    const moved = next - start;
+    const wasFollowingEnd = this.followingEnd;
+    this.currentScrollTop = next;
+    this.followingEnd = this.followEnd && next === maxScrollTop;
+    this.followSuppressedAtEnd = false;
+    if (moved !== 0)
+      this.markScrollbarActivity();
+    if (moved !== 0 || this.followingEnd !== wasFollowingEnd)
+      this.requestRenderCallback?.();
+    return requested - moved;
+  }
+  scrollToStart() {
+    const changed = this.currentScrollTop !== 0 || this.followingEnd !== (this.followEnd && this.contentHeight <= this.currentViewportHeight);
+    this.currentScrollTop = 0;
+    this.followingEnd = this.followEnd && this.contentHeight <= this.currentViewportHeight;
+    this.followSuppressedAtEnd = false;
+    if (changed) {
+      this.markScrollbarActivity();
+      this.requestRenderCallback?.();
+    }
+  }
+  scrollToEnd() {
+    const next = Math.max(0, this.contentHeight - this.currentViewportHeight);
+    const changed = this.currentScrollTop !== next || this.followingEnd !== this.followEnd;
+    this.currentScrollTop = next;
+    this.followingEnd = this.followEnd;
+    this.followSuppressedAtEnd = false;
+    if (changed) {
+      this.markScrollbarActivity();
+      this.requestRenderCallback?.();
+    }
+  }
+  updateLayout(contentHeight, viewportHeight, requestRender) {
+    this.contentHeight = Math.max(0, Math.floor(contentHeight));
+    this.currentViewportHeight = Math.max(0, Math.floor(viewportHeight));
+    this.requestRenderCallback = requestRender;
+    const maxScrollTop = Math.max(0, this.contentHeight - this.currentViewportHeight);
+    if (this.followingEnd)
+      this.currentScrollTop = maxScrollTop;
+    else
+      this.currentScrollTop = Math.max(0, Math.min(this.currentScrollTop, maxScrollTop));
+    if (this.currentScrollTop < maxScrollTop)
+      this.followSuppressedAtEnd = false;
+    if (this.followEnd && this.currentScrollTop === maxScrollTop && !this.followSuppressedAtEnd) {
+      this.followingEnd = true;
+    }
+    if (this.contentHeight <= this.currentViewportHeight)
+      this.hideTransientScrollbar();
+  }
+  addChild(_component) {
+    throw new Error("ScrollView has exactly one child");
+  }
+  removeChild(_component) {
+    throw new Error("ScrollView child cannot be removed");
+  }
+  clear() {
+    throw new Error("ScrollView child cannot be cleared");
+  }
+  render(width) {
+    const contentWidth = this.getContentWidth(width);
+    const lines = this.child.render(contentWidth);
+    return contentWidth === width ? lines : lines.map((line) => `${line} `);
+  }
+  [LAYOUT_NODE]() {
+    return { type: "scroll", component: this.child, state: this };
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/components/truncated-text.js
+var TruncatedText = class {
+  text;
+  paddingX;
+  paddingY;
+  constructor(text, paddingX = 0, paddingY = 0) {
+    this.text = text;
+    this.paddingX = paddingX;
+    this.paddingY = paddingY;
+  }
+  invalidate() {
+  }
+  render(width) {
+    const result2 = [];
+    const emptyLine = " ".repeat(width);
+    for (let i = 0; i < this.paddingY; i++) {
+      result2.push(emptyLine);
+    }
+    const availableWidth = Math.max(1, width - this.paddingX * 2);
+    let singleLineText = this.text;
+    const newlineIndex = this.text.indexOf("\n");
+    if (newlineIndex !== -1) {
+      singleLineText = this.text.substring(0, newlineIndex);
+    }
+    const displayText = truncateToWidth(singleLineText, availableWidth);
+    const leftPadding = " ".repeat(this.paddingX);
+    const rightPadding = " ".repeat(this.paddingX);
+    const lineWithPadding = leftPadding + displayText + rightPadding;
+    const lineVisibleWidth = visibleWidth(lineWithPadding);
+    const paddingNeeded = Math.max(0, width - lineVisibleWidth);
+    const finalLine = lineWithPadding + " ".repeat(paddingNeeded);
+    result2.push(finalLine);
+    for (let i = 0; i < this.paddingY; i++) {
+      result2.push(emptyLine);
+    }
+    return result2;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/components/v-stack.js
+var VStack = class extends Stack {
+  layoutType = "vstack";
+  constructor(children = [], options = {}) {
+    super(children, options);
+  }
+  render(width) {
+    const viewport = { width: Math.max(1, width), height: Number.MAX_SAFE_INTEGER };
+    const entries = visibleStackEntries(this.entries, viewport);
+    const rendered = entries.map((entry) => entry.component.render(viewport.width));
+    const sizes = allocateStackSizes(entries, rendered.map((lines2) => lines2.length), void 0, this.gap);
+    const lines = [];
+    for (let index = 0; index < entries.length; index++) {
+      if (index > 0) {
+        for (let gap = 0; gap < this.gap; gap++)
+          lines.push("");
+      }
+      const childLines = rendered[index].slice(0, sizes[index]);
+      lines.push(...childLines);
+      for (let padding = childLines.length; padding < sizes[index]; padding++)
+        lines.push("");
+    }
+    return lines;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/native-platform.js
+import { createRequire as createRequire4 } from "node:module";
+
+// node_modules/@earendil-works/pi-tui/dist/native-module-path.js
+import { createRequire as createRequire3 } from "node:module";
+var moduleRequire = createRequire3(import.meta.url);
+
+// node_modules/@earendil-works/pi-tui/dist/native-platform.js
+var cjsRequire = createRequire4(import.meta.url);
+
+// node_modules/@earendil-works/pi-tui/dist/terminal.js
+var DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS = 7;
+var KITTY_KEYBOARD_PROTOCOL_QUERY = `\x1B[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u\x1B[?u\x1B[c`;
+
+// node_modules/@earendil-works/pi-tui/dist/alt-screen-search.js
+var segmenter2 = getGraphemeSegmenter();
+var PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+function buildSearchCorpus(lines) {
+  const chunks = [];
+  const spans = [];
+  let textLength = 0;
+  let pendingSeparator = false;
+  const appendSeparator = () => {
+    if (!pendingSeparator)
+      return;
+    chunks.push(" ");
+    textLength += 1;
+    pendingSeparator = false;
+  };
+  for (let row = 0; row < lines.length; row++) {
+    const line = stripTerminalSequences(lines[row] ?? "");
+    let column = 0;
+    if (PRINTABLE_ASCII.test(line)) {
+      let index = 0;
+      while (index < line.length) {
+        if (line.charCodeAt(index) === 32) {
+          if (textLength > 0)
+            pendingSeparator = true;
+          column += 1;
+          index += 1;
+          continue;
+        }
+        let end = index + 1;
+        while (end < line.length && line.charCodeAt(end) !== 32)
+          end += 1;
+        appendSeparator();
+        const text = line.slice(index, end);
+        chunks.push(text);
+        spans.push({
+          textStart: textLength,
+          textEnd: textLength + text.length,
+          row,
+          startCol: column,
+          endCol: column + text.length,
+          linearColumns: true
+        });
+        textLength += text.length;
+        column += text.length;
+        index = end;
+      }
+    } else {
+      for (const grapheme of segmenter2.segment(line)) {
+        const text = grapheme.segment;
+        const width = visibleWidth(text);
+        if (/^\s+$/u.test(text)) {
+          if (textLength > 0)
+            pendingSeparator = true;
+          column += width;
+          continue;
+        }
+        appendSeparator();
+        chunks.push(text);
+        spans.push({
+          textStart: textLength,
+          textEnd: textLength + text.length,
+          row,
+          startCol: column,
+          endCol: column + width,
+          linearColumns: false
+        });
+        textLength += text.length;
+        column += width;
+      }
+    }
+    if (textLength > 0)
+      pendingSeparator = true;
+  }
+  return { text: chunks.join(""), spans };
+}
+function normalizeQuery(query) {
+  return query.replace(/\s+/gu, " ").trim();
+}
+function escapeRegExp2(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function findSearchCorpusMatches(corpus, normalizedQuery) {
+  if (!normalizedQuery)
+    return [];
+  const expression = new RegExp(escapeRegExp2(normalizedQuery), "giu");
+  const matches = [];
+  let spanIndex = 0;
+  for (const match of corpus.text.matchAll(expression)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    while (spanIndex < corpus.spans.length && corpus.spans[spanIndex].textEnd <= start)
+      spanIndex += 1;
+    const segments = [];
+    for (let index = spanIndex; index < corpus.spans.length; index++) {
+      const span = corpus.spans[index];
+      if (span.textStart >= end)
+        break;
+      if (span.textEnd <= start)
+        continue;
+      const startCol = span.linearColumns ? span.startCol + Math.max(start, span.textStart) - span.textStart : span.startCol;
+      const endCol = span.linearColumns ? span.startCol + Math.min(end, span.textEnd) - span.textStart : span.endCol;
+      const previous = segments[segments.length - 1];
+      if (previous && previous.row === span.row && startCol <= previous.endCol) {
+        previous.endCol = Math.max(previous.endCol, endCol);
+      } else {
+        segments.push({ row: span.row, startCol, endCol });
+      }
+    }
+    while (spanIndex < corpus.spans.length && corpus.spans[spanIndex].textEnd <= end)
+      spanIndex += 1;
+    if (segments.length > 0)
+      matches.push({ segments });
+  }
+  return matches;
+}
+var AltScreenSearchIndex = class {
+  sourceLines;
+  corpus;
+  normalizedQuery;
+  matches = [];
+  search(lines, query) {
+    let sourceChanged = this.sourceLines?.length !== lines.length;
+    if (!sourceChanged && this.sourceLines) {
+      for (let index = 0; index < lines.length; index++) {
+        if (this.sourceLines[index] === lines[index])
+          continue;
+        sourceChanged = true;
+        break;
+      }
+    }
+    if (sourceChanged || !this.corpus) {
+      this.sourceLines = Array.from(lines);
+      this.corpus = buildSearchCorpus(lines);
+    }
+    const normalizedQuery = normalizeQuery(query);
+    const changed = sourceChanged || normalizedQuery !== this.normalizedQuery;
+    if (changed) {
+      this.normalizedQuery = normalizedQuery;
+      this.matches = findSearchCorpusMatches(this.corpus, normalizedQuery);
+    }
+    return { matches: this.matches, changed };
+  }
+};
+function getAltScreenSearchMatchKey(match) {
+  const first = match.segments[0];
+  const last = match.segments[match.segments.length - 1];
+  return first && last ? `${first.row}:${first.startCol}:${last.row}:${last.endCol}` : "";
+}
+var AltScreenSearchComponent = class {
+  input = new Input({
+    prompt: " ",
+    placeholder: "Find in transcript",
+    placeholderStyle: (text) => `\x1B[2m${text}\x1B[22m`
+  });
+  onQueryChange;
+  navigationButtonStyle;
+  resultCount = 0;
+  resultIndex = -1;
+  previousButtonStart = -1;
+  previousButtonEnd = -1;
+  nextButtonStart = -1;
+  nextButtonEnd = -1;
+  hoveredNavigationDirection;
+  _focused = false;
+  constructor(onQueryChange, navigationButtonStyle = (text) => text) {
+    this.onQueryChange = onQueryChange;
+    this.navigationButtonStyle = navigationButtonStyle;
+  }
+  get focused() {
+    return this._focused;
+  }
+  set focused(value) {
+    this._focused = value;
+    this.input.focused = value;
+  }
+  setResult(index, count) {
+    this.resultIndex = index;
+    this.resultCount = count;
+  }
+  getNavigationDirectionAt(row, column) {
+    if (row !== 2)
+      return void 0;
+    if (column >= this.previousButtonStart && column < this.previousButtonEnd)
+      return -1;
+    if (column >= this.nextButtonStart && column < this.nextButtonEnd)
+      return 1;
+    return void 0;
+  }
+  setHoveredNavigationDirection(direction) {
+    if (direction === this.hoveredNavigationDirection)
+      return false;
+    this.hoveredNavigationDirection = direction;
+    return true;
+  }
+  handleInput(data) {
+    const previous = this.input.getValue();
+    this.input.handleInput(data);
+    const query = this.input.getValue();
+    if (query !== previous)
+      this.onQueryChange(query);
+  }
+  invalidate() {
+    this.input.invalidate();
+  }
+  render(width) {
+    const safeWidth = Math.max(1, width);
+    const innerWidth = Math.max(0, safeWidth - 2);
+    const formatKey = (key) => key ? key.split("+").map((part) => {
+      if (process.platform === "darwin" && part.toLowerCase() === "alt")
+        return "Option";
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    }).join("+") : "Unbound";
+    const keybindings = getKeybindings();
+    const previousKey = formatKey(keybindings.getKeys("tui.altScreen.searchPrevious")[0]);
+    const nextKey = formatKey(keybindings.getKeys("tui.altScreen.searchNext")[0]);
+    const query = this.input.getValue();
+    const result2 = !query ? "" : this.resultCount === 0 ? "No matches" : `${this.resultIndex + 1}/${this.resultCount}`;
+    const resultSpace = Math.max(0, innerWidth - 3);
+    const visibleResult = truncateToWidth(result2, resultSpace, "");
+    const resultText = visibleResult ? `\x1B[2m ${visibleResult} \x1B[22m` : "";
+    const inputWidth = Math.max(0, innerWidth - visibleWidth(resultText));
+    const inputLine = truncateToWidth(this.input.render(Math.max(1, inputWidth))[0] ?? "", inputWidth, "");
+    const inputPadding = " ".repeat(Math.max(0, inputWidth - visibleWidth(inputLine)));
+    const content = `${inputLine}${inputPadding}${resultText}`;
+    let previousButton = `\u2191 ${previousKey}`;
+    let nextButton = `\u2193 ${nextKey}`;
+    let separator = " \xB7 ";
+    const outerGapWidth = 1;
+    const availableControlsWidth = Math.max(0, innerWidth - outerGapWidth * 2 - 1);
+    let controlsWidth = visibleWidth(previousButton) + visibleWidth(separator) + visibleWidth(nextButton);
+    if (controlsWidth > availableControlsWidth) {
+      previousButton = "\u2191";
+      nextButton = "\u2193";
+      separator = " ";
+      controlsWidth = visibleWidth(previousButton) + visibleWidth(separator) + visibleWidth(nextButton);
+    }
+    const showButtons = controlsWidth <= availableControlsWidth;
+    const renderedButtons = showButtons ? this.navigationButtonStyle(previousButton, this.hoveredNavigationDirection === -1) + separator + this.navigationButtonStyle(nextButton, this.hoveredNavigationDirection === 1) : "";
+    const outerGapsWidth = showButtons ? outerGapWidth * 2 : 0;
+    const rightRuleWidth = renderedButtons && innerWidth > controlsWidth + outerGapsWidth ? 1 : 0;
+    const leftRuleWidth = Math.max(0, innerWidth - (showButtons ? controlsWidth : 0) - outerGapsWidth - rightRuleWidth);
+    const previousStart = 1 + leftRuleWidth + outerGapWidth;
+    this.previousButtonStart = showButtons ? previousStart : -1;
+    this.previousButtonEnd = showButtons ? previousStart + visibleWidth(previousButton) : -1;
+    this.nextButtonStart = showButtons ? this.previousButtonEnd + visibleWidth(separator) : -1;
+    this.nextButtonEnd = showButtons ? this.nextButtonStart + visibleWidth(nextButton) : -1;
+    if (safeWidth === 1)
+      return ["\u250C", "\u2502", "\u2514"];
+    return [
+      `\u250C${"\u2500".repeat(innerWidth)}\u2510`,
+      `\u2502${content}\u2502`,
+      `\u2514${"\u2500".repeat(leftRuleWidth)}${renderedButtons ? " " : ""}${renderedButtons}${renderedButtons ? " " : ""}${"\u2500".repeat(rightRuleWidth)}\u2518`
+    ];
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/components/alt-screen-flash.js
+var DEFAULT_DURATION_MS = 1e3;
+var AltScreenFlashContainer = class {
+  entries = [];
+  nextId = 0;
+  requestRender;
+  constructor(requestRender) {
+    this.requestRender = requestRender;
+  }
+  flash(message, durationMs = DEFAULT_DURATION_MS) {
+    const id = this.nextId++;
+    const timer = setTimeout(() => {
+      const index = this.entries.findIndex((entry) => entry.id === id);
+      if (index === -1)
+        return;
+      this.entries.splice(index, 1);
+      this.requestRender();
+    }, Math.max(0, durationMs));
+    timer.unref();
+    this.entries.push({ id, message, timer });
+    this.requestRender();
+  }
+  dispose() {
+    for (const entry of this.entries)
+      clearTimeout(entry.timer);
+    this.entries.length = 0;
+  }
+  invalidate() {
+  }
+  render(width) {
+    return this.entries.map((entry) => {
+      const message = truncateToWidth(` ${entry.message} `, width, "");
+      return `\x1B[7m${message}\x1B[27m`;
+    });
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/layout.js
+var OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
+function intersect(a, b2) {
+  const x2 = Math.max(a.x, b2.x);
+  const y2 = Math.max(a.y, b2.y);
+  const right = Math.min(a.x + a.width, b2.x + b2.width);
+  const bottom = Math.min(a.y + a.height, b2.y + b2.height);
+  return { x: x2, y: y2, width: Math.max(0, right - x2), height: Math.max(0, bottom - y2) };
+}
+function renderCached(context, component, width) {
+  const safeWidth = Math.max(1, Math.floor(width));
+  let widths = context.renderCache.get(component);
+  if (!widths) {
+    widths = /* @__PURE__ */ new Map();
+    context.renderCache.set(component, widths);
+  }
+  let lines = widths.get(safeWidth);
+  if (!lines) {
+    lines = component.render(safeWidth);
+    widths.set(safeWidth, lines);
+  }
+  return lines;
+}
+function measureHeight(context, component, width) {
+  return renderCached(context, component, width).length;
+}
+function measureWidth(context, component, width) {
+  return renderCached(context, component, width).reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
+}
+function withParent(box, parent) {
+  box.parent = parent;
+  return box;
+}
+function translateBox(box, deltaY) {
+  box.rect.y += deltaY;
+  for (const child of box.children)
+    translateBox(child, deltaY);
+}
+function updateClips(box, parentClip) {
+  box.clip = intersect(parentClip, box.rect);
+  for (const child of box.children)
+    updateClips(child, box.clip);
+}
+function layoutComponent(context, component, x2, y2, width, height, clip) {
+  const safeWidth = Math.max(1, Math.floor(width));
+  const node = getLayoutNode(component);
+  if (!node) {
+    const lines = renderCached(context, component, safeWidth);
+    const allocatedHeight2 = height === void 0 ? lines.length : Math.max(0, Math.floor(height));
+    let lineOffset = 0;
+    if (lines.length > allocatedHeight2 && allocatedHeight2 > 0) {
+      const cursorLine = lines.findIndex((line) => line.includes(CURSOR_MARKER));
+      if (cursorLine >= allocatedHeight2)
+        lineOffset = cursorLine - allocatedHeight2 + 1;
+    }
+    return {
+      component,
+      rect: { x: x2, y: y2, width: safeWidth, height: allocatedHeight2 },
+      clip: intersect(clip, { x: x2, y: y2, width: safeWidth, height: allocatedHeight2 }),
+      children: [],
+      lines,
+      lineOffset,
+      layer: 0
+    };
+  }
+  if (node.type === "scroll") {
+    const previousScrollTop = node.state.scrollTop;
+    const contentWidth = node.state.getContentWidth(safeWidth);
+    const childBox = layoutComponent(context, node.component, x2, y2 - previousScrollTop, contentWidth, void 0, clip);
+    const contentHeight = childBox.rect.height;
+    const viewportHeight = height === void 0 ? contentHeight : Math.max(0, Math.floor(height));
+    node.state.updateLayout(contentHeight, viewportHeight, context.requestRender);
+    translateBox(childBox, previousScrollTop - node.state.scrollTop);
+    const scrollView = node.state;
+    if (node.state.primary || !context.primaryScrollView)
+      context.primaryScrollView = scrollView;
+    const rect2 = { x: x2, y: y2, width: safeWidth, height: viewportHeight };
+    const childClip = intersect(clip, rect2);
+    const box2 = {
+      component,
+      rect: rect2,
+      clip: childClip,
+      children: [childBox],
+      scrollView,
+      scrollContentLines: renderCached(context, node.component, contentWidth),
+      layer: 0
+    };
+    childBox.parent = box2;
+    updateClips(childBox, childClip);
+    return box2;
+  }
+  const entries = visibleStackEntries(node.entries, context.viewport);
+  const gapTotal = Math.max(0, entries.length - 1) * node.gap;
+  if (node.type === "vstack") {
+    const intrinsicHeights2 = entries.map((entry) => typeof entry.basis === "number" ? entry.basis : measureHeight(context, entry.component, safeWidth));
+    const sizes = allocateStackSizes(entries, intrinsicHeights2, height, node.gap);
+    const naturalHeight = sizes.reduce((sum, size) => sum + size, 0) + gapTotal;
+    const allocatedHeight2 = height === void 0 ? naturalHeight : Math.max(0, Math.floor(height));
+    const rect2 = { x: x2, y: y2, width: safeWidth, height: allocatedHeight2 };
+    const box2 = {
+      component,
+      rect: rect2,
+      clip: intersect(clip, rect2),
+      children: [],
+      layer: 0
+    };
+    let childY = y2;
+    for (let index = 0; index < entries.length; index++) {
+      box2.children.push(withParent(layoutComponent(context, entries[index].component, x2, childY, safeWidth, sizes[index], box2.clip), box2));
+      childY += sizes[index] + node.gap;
+    }
+    return box2;
+  }
+  const intrinsicWidths = entries.map((entry) => typeof entry.basis === "number" ? entry.basis : measureWidth(context, entry.component, safeWidth));
+  const widths = allocateStackSizes(entries, intrinsicWidths, safeWidth, node.gap);
+  const intrinsicHeights = entries.map((entry, index) => measureHeight(context, entry.component, Math.max(1, widths[index])));
+  const allocatedHeight = height === void 0 ? intrinsicHeights.reduce((max, childHeight) => Math.max(max, childHeight), 0) : Math.max(0, height);
+  const rect = { x: x2, y: y2, width: safeWidth, height: allocatedHeight };
+  const box = {
+    component,
+    rect,
+    clip: intersect(clip, rect),
+    children: [],
+    layer: 0
+  };
+  let childX = x2;
+  for (let index = 0; index < entries.length; index++) {
+    const naturalChildHeight = intrinsicHeights[index];
+    const childHeight = node.align === "stretch" ? allocatedHeight : Math.min(allocatedHeight, naturalChildHeight);
+    let childY = y2;
+    if (node.align === "center")
+      childY += Math.floor((allocatedHeight - childHeight) / 2);
+    else if (node.align === "end")
+      childY += allocatedHeight - childHeight;
+    const childWidth = widths[index];
+    if (childWidth === 0) {
+      box.children.push({
+        component: entries[index].component,
+        rect: { x: childX, y: childY, width: 0, height: childHeight },
+        clip: { x: childX, y: childY, width: 0, height: 0 },
+        children: [],
+        parent: box,
+        layer: 0
+      });
+    } else {
+      box.children.push(withParent(layoutComponent(context, entries[index].component, childX, childY, childWidth, childHeight, box.clip), box));
+    }
+    childX += childWidth + node.gap;
+  }
+  return box;
+}
+function replaceScrollbarCell(line, column, totalWidth, replacement, preserveTargetBackground) {
+  if (isImageLine(line))
+    return line;
+  const graphemeRange = getGraphemeCellRange(line, column);
+  const start = graphemeRange?.start ?? column;
+  const end = graphemeRange?.end ?? column + 1;
+  const before = sliceByColumn(line, 0, start, true);
+  const target = sliceByColumn(line, start, end - start, true);
+  const after = sliceByColumn(line, end, Math.max(0, totalWidth - end), true);
+  let targetPrefix = "";
+  let targetIndex = 0;
+  while (targetIndex < target.length) {
+    const ansi = extractAnsiCode(target, targetIndex);
+    if (!ansi)
+      break;
+    targetPrefix += ansi.code;
+    targetIndex += ansi.length;
+  }
+  const beforePadding = " ".repeat(Math.max(0, start - visibleWidth(before)));
+  const cellPaddingBefore = " ".repeat(Math.max(0, column - start));
+  const cellPaddingAfter = " ".repeat(Math.max(0, end - column - 1));
+  const targetStyle = `\x1B[0m\x1B]8;;\x07${preserveTargetBackground ? getActiveBackgroundAnsi(targetPrefix) : ""}`;
+  return `${before}${beforePadding}${targetStyle}${cellPaddingBefore}${replacement}${cellPaddingAfter}${after}`;
+}
+function getScrollbarGeometry(box, includeHiddenAuto = false) {
+  if (!box.scrollView || box.rect.width <= 0 || box.rect.height <= 0)
+    return void 0;
+  const contentHeight = box.children[0]?.rect.height ?? box.scrollContentLines?.length ?? 0;
+  const trackHeight = box.rect.height;
+  const canRevealHiddenAuto = includeHiddenAuto && box.scrollView.scrollbar === "auto" && contentHeight > trackHeight;
+  if (!box.scrollView.isScrollbarVisible && !canRevealHiddenAuto)
+    return void 0;
+  const minThumbHeight = Math.min(2, trackHeight);
+  const thumbHeight = Math.max(minThumbHeight, Math.min(trackHeight, Math.round(trackHeight * trackHeight / contentHeight)));
+  const maxScrollTop = Math.max(0, contentHeight - trackHeight);
+  const maxThumbTop = trackHeight - thumbHeight;
+  const thumbOffset = maxScrollTop === 0 ? 0 : Math.round(box.scrollView.scrollTop / maxScrollTop * maxThumbTop);
+  const column = box.rect.x + box.rect.width - 1;
+  if (column < box.clip.x || column >= box.clip.x + box.clip.width)
+    return void 0;
+  return {
+    column,
+    trackTop: box.rect.y,
+    trackHeight,
+    thumbTop: box.rect.y + thumbOffset,
+    thumbHeight,
+    maxScrollTop
+  };
+}
+function paintScrollbar(box, screen, totalWidth) {
+  const geometry = getScrollbarGeometry(box);
+  if (!geometry || !box.scrollView)
+    return;
+  for (let offset = 0; offset < geometry.trackHeight; offset++) {
+    const row = geometry.trackTop + offset;
+    if (row < box.clip.y || row >= box.clip.y + box.clip.height || row < 0 || row >= screen.length)
+      continue;
+    const isThumb = row >= geometry.thumbTop && row < geometry.thumbTop + geometry.thumbHeight;
+    const replacement = isThumb ? box.scrollView.scrollbarThumbStyle(box.scrollView.isScrollbarActive ? "\u2588" : "\u2503") : box.scrollView.scrollbarTrackStyle("\u2502");
+    screen[row] = replaceScrollbarCell(screen[row] ?? "", geometry.column, totalWidth, replacement, box.scrollView.scrollbar !== "always");
+  }
+}
+function paintBox(box, screen, totalWidth) {
+  if (box.lines) {
+    const offset = box.lineOffset ?? 0;
+    const firstRow = Math.max(box.rect.y, box.clip.y, 0);
+    const lastRow = Math.min(box.rect.y + box.rect.height, box.clip.y + box.clip.height, screen.length);
+    for (let row = firstRow; row < lastRow; row++) {
+      const sourceLine = box.lines[offset + row - box.rect.y];
+      if (sourceLine === void 0)
+        continue;
+      let line = sourceLine.replace(OSC133_ZONE_PREFIX, "");
+      const imageMetadata = getKittyImageMetadata(line);
+      if (imageMetadata) {
+        const clipBottom = Math.min(screen.length, box.clip.y + box.clip.height);
+        const visibleRows = Math.min(imageMetadata.rows, clipBottom - row);
+        if (visibleRows < imageMetadata.rows)
+          line = cropKittyImageLine(line, 0, visibleRows);
+      }
+      if (box.rect.x === 0 && box.rect.width >= totalWidth && (isImageLine(line) || !screen[row])) {
+        screen[row] = line;
+      } else {
+        screen[row] = compositeTuiLine(screen[row] ?? "", line, box.rect.x, box.rect.width, totalWidth);
+      }
+    }
+  }
+  for (const child of box.children)
+    paintBox(child, screen, totalWidth);
+  if (box.scrollView && box.scrollContentLines && box.scrollView.scrollTop > 0 && box.rect.height > 0) {
+    for (let imageRow = box.scrollView.scrollTop - 1; imageRow >= 0; imageRow--) {
+      const imageLine = box.scrollContentLines[imageRow] ?? "";
+      const metadata = getKittyImageMetadata(imageLine);
+      if (metadata) {
+        const hiddenRows = box.scrollView.scrollTop - imageRow;
+        if (hiddenRows < metadata.rows) {
+          const visibleRows = Math.min(box.rect.height, metadata.rows - hiddenRows);
+          const cropped = cropKittyImageLine(imageLine, hiddenRows, visibleRows);
+          if (box.rect.x === 0 && box.rect.width >= totalWidth)
+            screen[box.rect.y] = cropped;
+        }
+        break;
+      }
+      if (imageLine !== "")
+        break;
+    }
+  }
+  paintScrollbar(box, screen, totalWidth);
+}
+function renderLayoutFrame(root, width, height, requestRender) {
+  const safeWidth = Math.max(1, Math.floor(width));
+  const safeHeight = Math.max(1, Math.floor(height));
+  const context = {
+    viewport: { width: safeWidth, height: safeHeight },
+    renderCache: /* @__PURE__ */ new Map(),
+    requestRender,
+    primaryScrollView: void 0
+  };
+  const rootBox = layoutComponent(context, root, 0, 0, safeWidth, safeHeight, {
+    x: 0,
+    y: 0,
+    width: safeWidth,
+    height: safeHeight
+  });
+  const lines = Array.from({ length: safeHeight }, () => "");
+  paintBox(rootBox, lines, safeWidth);
+  return {
+    root: rootBox,
+    width: safeWidth,
+    height: safeHeight,
+    lines,
+    ...context.primaryScrollView === void 0 ? {} : { primaryScrollView: context.primaryScrollView }
+  };
+}
+function containsPoint(rect, x2, y2) {
+  return x2 >= rect.x && x2 < rect.x + rect.width && y2 >= rect.y && y2 < rect.y + rect.height;
+}
+function getLayoutBoxesAt(frame, x2, y2) {
+  const result2 = [];
+  const visit = (box, depth) => {
+    if (!containsPoint(box.clip, x2, y2))
+      return;
+    result2.push({ box, depth });
+    for (const child of box.children)
+      visit(child, depth + 1);
+  };
+  visit(frame.root, 0);
+  result2.sort((a, b2) => b2.box.layer - a.box.layer || b2.depth - a.depth);
+  return result2.map(({ box }) => box);
+}
+function getScrollViewBox(frame, scrollView) {
+  const visit = (box) => {
+    if (box.scrollView === scrollView)
+      return box;
+    for (const child of box.children) {
+      const match = visit(child);
+      if (match)
+        return match;
+    }
+    return void 0;
+  };
+  return visit(frame.root);
+}
+function getScrollViewsAt(frame, x2, y2) {
+  const result2 = [];
+  const visit = (box, depth) => {
+    if (!containsPoint(box.clip, x2, y2))
+      return;
+    if (box.scrollView && containsPoint(box.rect, x2, y2))
+      result2.push({ scrollView: box.scrollView, depth });
+    for (const child of box.children)
+      visit(child, depth + 1);
+  };
+  visit(frame.root, 0);
+  result2.sort((a, b2) => b2.depth - a.depth);
+  return result2.map((entry) => entry.scrollView);
+}
+
+// node_modules/@earendil-works/pi-tui/dist/wheel-scroll.js
+var BURST_GAP_MS = 5;
+var GESTURE_GAP_MS = 200;
+var REFERENCE_GAP_MS = 100;
+var MAX_AUTO_LINES = 6;
+function terminalAcceleratesWheel() {
+  const env = process.env;
+  return process.platform === "darwin" && env.SSH_CONNECTION === void 0 && env.SSH_CLIENT === void 0 && env.SSH_TTY === void 0;
+}
+var WheelScrollAccelerator = class {
+  lines;
+  accelerate;
+  lastTime = Number.NEGATIVE_INFINITY;
+  lastDirection = 0;
+  averageGap;
+  carry = 0;
+  constructor(lines = "auto", accelerate = !terminalAcceleratesWheel()) {
+    this.lines = lines;
+    this.accelerate = accelerate;
+  }
+  setLines(lines) {
+    this.lines = lines;
+    this.reset();
+  }
+  /** Return the positive line count for a wheel event in `direction` at time `now` (milliseconds). */
+  next(direction, now) {
+    if (this.lines !== "auto")
+      return Number.isFinite(this.lines) ? Math.max(1, Math.floor(this.lines)) : 1;
+    if (!this.accelerate)
+      return 1;
+    const gap = now - this.lastTime;
+    const sameGesture = direction === this.lastDirection && gap <= GESTURE_GAP_MS;
+    this.lastTime = now;
+    this.lastDirection = direction;
+    if (!sameGesture) {
+      this.averageGap = void 0;
+      this.carry = 0;
+      return 1;
+    }
+    if (gap < BURST_GAP_MS)
+      return 1;
+    this.averageGap = this.averageGap === void 0 ? gap : (this.averageGap + gap) / 2;
+    const lines = Math.min(MAX_AUTO_LINES, Math.max(1, REFERENCE_GAP_MS / this.averageGap)) + this.carry;
+    const whole = Math.floor(lines);
+    this.carry = lines - whole;
+    return whole;
+  }
+  reset() {
+    this.lastTime = Number.NEGATIVE_INFINITY;
+    this.lastDirection = 0;
+    this.averageGap = void 0;
+    this.carry = 0;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js
+var ENTER_ALT_SCREEN = "\x1B[?1049h";
+var EXIT_ALT_SCREEN = "\x1B[?1049l";
+var DISABLE_AUTOWRAP = "\x1B[?7l";
+var ENABLE_AUTOWRAP = "\x1B[?7h";
+var ENABLE_BUTTON_MOTION_MOUSE = "\x1B[?1000h\x1B[?1002h\x1B[?1004h\x1B[?1006h";
+var ENABLE_ALL_MOTION_MOUSE = "\x1B[?1000h\x1B[?1002h\x1B[?1003h\x1B[?1004h\x1B[?1006h";
+var DISABLE_MOUSE = "\x1B[?1006l\x1B[?1004l\x1B[?1003l\x1B[?1002l\x1B[?1000l";
+var FOCUS_IN = "\x1B[I";
+var FOCUS_OUT = "\x1B[O";
+var BEGIN_SYNCHRONIZED_OUTPUT = "\x1B[?2026h";
+var END_SYNCHRONIZED_OUTPUT = "\x1B[?2026l";
+var OSC133_ZONE_PREFIX2 = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
+var OSC133_PROMPT_START = /^\x1b\]133;A(?:\x07|\x1b\\)/;
+var PAGE_SCROLL_OVERLAP = 4;
+var ALT_WHEEL_SCROLL_MULTIPLIER = 5;
+var MAX_CACHED_OFFSCREEN_KITTY_IMAGES = 16;
+var MAX_CACHED_OFFSCREEN_KITTY_TRANSMISSION_BYTES = 32 * 1024 * 1024;
+var MAX_CACHED_OFFSCREEN_KITTY_DECODED_BYTES = 64 * 1024 * 1024;
+var DOUBLE_CLICK_INTERVAL_MS = 500;
+var COPY_ERROR_FLASH_DURATION_MS = 5e3;
+var TERMINAL_WORD_SELECTION_JOINERS = /* @__PURE__ */ new Set(["/", "-"]);
+var wordSegmenter4 = getWordSegmenter();
+var TuiAltScreen = class extends TuiBase {
+  mode = "fullscreen";
+  [VIEWPORT_TUI] = true;
+  previousScreen = [];
+  lastDocument = [];
+  previousScreenWidth = 0;
+  previousScreenHeight = 0;
+  layoutRoot;
+  currentLayout;
+  implicitDocument;
+  implicitScrollView;
+  flashes;
+  altScreenActive = false;
+  imageProtocol = null;
+  savedCapabilities;
+  uploadedKittyImages = /* @__PURE__ */ new Map();
+  selectionAnchor;
+  selectionFocus;
+  selectionGranularity = "character";
+  selectionInitialRange;
+  lastClick;
+  selectionDragPointer;
+  selectionAutoScrollDirection = 0;
+  selectionAutoScrollTimer;
+  selectionPressActive = false;
+  scrollbarDrag;
+  scrollbarHover;
+  scrollToEndIndicatorRect;
+  activeSearch;
+  pressedUrl;
+  selectionDragged = false;
+  mouseCapture;
+  mousePressTarget;
+  mousePressPoint;
+  mousePressMoved = false;
+  lastComponentClick;
+  wheelScroll;
+  mouseEnabled;
+  searchMatchStyle;
+  searchCurrentMatchStyle;
+  searchNavigationButtonStyle;
+  scrollToEndIndicator;
+  openUrl;
+  onRightClickPaste;
+  copyOnSelect;
+  copySelection;
+  constructor(terminal, showHardwareCursor, logDirectory, options = {}) {
+    super(terminal, showHardwareCursor, logDirectory);
+    this.implicitDocument = {
+      render: (width) => super.render(width),
+      handleMouse: (event) => super.handleMouse(event),
+      invalidate: () => {
+        for (const child of this.children)
+          child.invalidate();
+      }
+    };
+    this.implicitScrollView = new ScrollView(this.implicitDocument, { follow: "end", primary: true });
+    this.flashes = new AltScreenFlashContainer(() => this.requestRender());
+    this.wheelScroll = new WheelScrollAccelerator(options.wheelScrollLines ?? 1);
+    this.mouseEnabled = options.mouse ?? true;
+    this.searchMatchStyle = options.searchMatchStyle ?? ((text) => `\x1B[4m${text}\x1B[24m`);
+    this.searchCurrentMatchStyle = options.searchCurrentMatchStyle ?? ((text) => `\x1B[1;7m${text}\x1B[22;27m`);
+    this.searchNavigationButtonStyle = options.searchNavigationButtonStyle ?? ((text) => text);
+    this.scrollToEndIndicator = options.scrollToEndIndicator;
+    this.openUrl = options.openUrl;
+    this.onRightClickPaste = options.onRightClickPaste;
+    this.copyOnSelect = options.copyOnSelect ?? true;
+    this.copySelection = options.copySelection;
+    this.addInputListener((data) => this.handleViewportInput(data));
+  }
+  get viewportTop() {
+    return this.getPrimaryScrollView().scrollTop;
+  }
+  get isFollowingOutput() {
+    return this.getPrimaryScrollView().isFollowingEnd;
+  }
+  setWheelScrollLines(lines) {
+    this.wheelScroll.setLines(lines);
+  }
+  getCopyOnSelect() {
+    return this.copyOnSelect;
+  }
+  setCopyOnSelect(enabled) {
+    this.copyOnSelect = enabled;
+  }
+  /** Whether the fullscreen viewport has a non-empty active text selection. */
+  hasActiveSelection() {
+    return this.getActiveSelectionText() !== void 0;
+  }
+  /** Copy the active fullscreen text selection, if any, using the configured selection clipboard path. */
+  async copyActiveSelectionToClipboard() {
+    const text = this.getActiveSelectionText();
+    if (!text)
+      return false;
+    return this.copyTextToClipboard(text);
+  }
+  /** The lines of the last rendered frame, one per terminal row, as written to the terminal. */
+  getScreenLines() {
+    return [...this.previousScreen];
+  }
+  setLayoutRoot(component) {
+    if (this.layoutRoot === component)
+      return;
+    this.layoutRoot = component;
+    this.currentLayout = void 0;
+    this.requestRender();
+  }
+  render(width) {
+    return this.layoutRoot?.render(width) ?? super.render(width);
+  }
+  getMountedRoots() {
+    return this.layoutRoot ? [this.layoutRoot] : this.children;
+  }
+  getPrimaryScrollView() {
+    return this.currentLayout?.primaryScrollView ?? this.implicitScrollView;
+  }
+  beforeTerminalStart() {
+    this.stopSelectionAutoScroll();
+    this.selectionPressActive = false;
+    this.stopScrollbarHover();
+    this.stopScrollbarDrag();
+    this.flashes.dispose();
+    this.altScreenActive = true;
+    const capabilities = getCapabilities();
+    this.imageProtocol = capabilities.images;
+    this.uploadedKittyImages.clear();
+    if (capabilities.images === "iterm2") {
+      this.savedCapabilities = capabilities;
+      setCapabilities({ ...capabilities, images: null });
+      this.invalidate();
+    }
+    this.lastDocument = [];
+    this.selectionAnchor = void 0;
+    this.selectionFocus = void 0;
+    this.selectionGranularity = "character";
+    this.selectionInitialRange = void 0;
+    this.lastClick = void 0;
+    this.pressedUrl = void 0;
+    this.selectionDragged = false;
+    this.clearComponentMouseGesture();
+    this.lastComponentClick = void 0;
+    this.resetRenderState();
+    const term = process.env.TERM?.toLowerCase() ?? "";
+    const mouseSequence = process.env.TMUX !== void 0 || process.env.ZELLIJ !== void 0 || process.env.STY !== void 0 || term.startsWith("tmux") || term.startsWith("screen") ? ENABLE_BUTTON_MOTION_MOUSE : ENABLE_ALL_MOTION_MOUSE;
+    this.terminal.write(`${ENTER_ALT_SCREEN}${DISABLE_AUTOWRAP}${this.mouseEnabled ? mouseSequence : ""}\x1B[2J\x1B[H\x1B[?25l`);
+  }
+  beforeTerminalStop(_options) {
+    this.closeSearch();
+    this.stopSelectionAutoScroll();
+    this.selectionPressActive = false;
+    this.stopScrollbarHover();
+    this.stopScrollbarDrag();
+    this.clearComponentMouseGesture();
+    this.flashes.dispose();
+    if (!this.altScreenActive)
+      return;
+    this.terminal.write(`${BEGIN_SYNCHRONIZED_OUTPUT}${this.deleteKittyImages()}${this.mouseEnabled ? DISABLE_MOUSE : ""}${ENABLE_AUTOWRAP}${END_SYNCHRONIZED_OUTPUT}`);
+    this.uploadedKittyImages.clear();
+  }
+  afterTerminalStop(options) {
+    if (!this.altScreenActive)
+      return;
+    this.altScreenActive = false;
+    if (options.preserveScreen) {
+      this.terminal.write(`${BEGIN_SYNCHRONIZED_OUTPUT}${EXIT_ALT_SCREEN}\x1B[?25h${END_SYNCHRONIZED_OUTPUT}`);
+    } else {
+      const width = Math.max(1, this.terminal.columns);
+      const documentLines = this.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX2, ""));
+      this.lastDocument = this.applyLineResets(documentLines.map((line) => line.replaceAll(CURSOR_MARKER, ""))).map((line) => isImageLine(line) || visibleWidth(line) <= width ? line : sliceByColumn(line, 0, width, true));
+      let buffer = `${BEGIN_SYNCHRONIZED_OUTPUT}${EXIT_ALT_SCREEN}${DISABLE_AUTOWRAP}`;
+      for (let row = 0; row < this.lastDocument.length; row++) {
+        if (row > 0)
+          buffer += "\r\n";
+        buffer += `\r\x1B[2K${this.lastDocument[row] ?? ""}`;
+      }
+      buffer += `\x1B[0m${ENABLE_AUTOWRAP}\r
+\x1B[?25h${END_SYNCHRONIZED_OUTPUT}`;
+      this.terminal.write(buffer);
+    }
+    if (this.savedCapabilities) {
+      setCapabilities(this.savedCapabilities);
+      this.savedCapabilities = void 0;
+    }
+  }
+  deleteKittyImages() {
+    return this.imageProtocol === "kitty" ? deleteAllKittyImages() : "";
+  }
+  prepareKittyScreen(screen) {
+    const visibleImageIds = /* @__PURE__ */ new Set();
+    const lines = screen.map((line) => {
+      const placement = getKittyImagePlacement(line);
+      if (!placement)
+        return line;
+      visibleImageIds.add(placement.imageId);
+      const cachedImage = this.uploadedKittyImages.get(placement.imageId);
+      const nextCachedImage = {
+        transmissionGeneration: placement.transmissionGeneration,
+        transmissionBytes: placement.transmissionBytes,
+        estimatedDecodedBytes: placement.estimatedDecodedBytes
+      };
+      if (cachedImage)
+        this.uploadedKittyImages.delete(placement.imageId);
+      this.uploadedKittyImages.set(placement.imageId, nextCachedImage);
+      return cachedImage?.transmissionGeneration === placement.transmissionGeneration ? placement.replacementLine : line;
+    });
+    let cachedOffscreenImageCount = 0;
+    let cachedOffscreenTransmissionBytes = 0;
+    let cachedOffscreenDecodedBytes = 0;
+    for (const [imageId, cachedImage] of this.uploadedKittyImages) {
+      if (visibleImageIds.has(imageId))
+        continue;
+      cachedOffscreenImageCount += 1;
+      cachedOffscreenTransmissionBytes += cachedImage.transmissionBytes;
+      cachedOffscreenDecodedBytes += cachedImage.estimatedDecodedBytes;
+    }
+    let evictedImageDeletion = "";
+    for (const [imageId, cachedImage] of this.uploadedKittyImages) {
+      if (cachedOffscreenImageCount <= MAX_CACHED_OFFSCREEN_KITTY_IMAGES && cachedOffscreenTransmissionBytes <= MAX_CACHED_OFFSCREEN_KITTY_TRANSMISSION_BYTES && cachedOffscreenDecodedBytes <= MAX_CACHED_OFFSCREEN_KITTY_DECODED_BYTES) {
+        break;
+      }
+      if (visibleImageIds.has(imageId))
+        continue;
+      evictedImageDeletion += deleteKittyImage(imageId);
+      this.uploadedKittyImages.delete(imageId);
+      cachedOffscreenImageCount -= 1;
+      cachedOffscreenTransmissionBytes -= cachedImage.transmissionBytes;
+      cachedOffscreenDecodedBytes -= cachedImage.estimatedDecodedBytes;
+    }
+    return { lines, evictedImageDeletion };
+  }
+  resetRenderState() {
+    this.previousScreen = [];
+    this.previousScreenWidth = 0;
+    this.previousScreenHeight = 0;
+    this.currentLayout = void 0;
+  }
+  scrollBy(lines) {
+    this.getPrimaryScrollView().scrollBy(lines);
+    this.requestRender();
+  }
+  scrollToTop() {
+    this.getPrimaryScrollView().scrollToStart();
+    this.requestRender();
+  }
+  scrollToBottom() {
+    this.getPrimaryScrollView().scrollToEnd();
+    this.requestRender();
+  }
+  scrollToPrompt(direction) {
+    if (!this.currentLayout)
+      return;
+    const scrollView = this.getPrimaryScrollView();
+    const lines = getScrollViewBox(this.currentLayout, scrollView)?.scrollContentLines;
+    if (!lines)
+      return;
+    for (let row = scrollView.scrollTop + direction; row >= 0 && row < lines.length; row += direction) {
+      if (!OSC133_PROMPT_START.test(lines[row] ?? ""))
+        continue;
+      scrollView.scrollTo(row);
+      this.requestRender();
+      return;
+    }
+  }
+  toggleSearch() {
+    if (this.activeSearch) {
+      this.closeSearch();
+      return;
+    }
+    const component = new AltScreenSearchComponent((query) => this.updateSearchQuery(query), this.searchNavigationButtonStyle);
+    const search = {
+      component,
+      index: new AltScreenSearchIndex(),
+      query: "",
+      matches: [],
+      selectedIndex: -1,
+      anchorRow: this.getPrimaryScrollView().scrollTop,
+      selectionMode: "query"
+    };
+    this.activeSearch = search;
+    search.overlay = this.showOverlay(component, {
+      anchor: "top-right",
+      width: "40%",
+      minWidth: 32,
+      margin: 1
+    });
+  }
+  closeSearch() {
+    const search = this.activeSearch;
+    if (!search)
+      return;
+    this.activeSearch = void 0;
+    search.overlay?.hide();
+    this.requestRender();
+  }
+  updateSearchQuery(query) {
+    const search = this.activeSearch;
+    if (!search || query === search.query)
+      return;
+    const selected = search.matches[search.selectedIndex];
+    search.anchorRow = selected?.segments[0]?.row ?? this.getPrimaryScrollView().scrollTop;
+    search.query = query;
+    search.selectionMode = "query";
+    search.component.setResult(-1, 0);
+    this.requestRender();
+  }
+  navigateSearch(direction) {
+    const search = this.activeSearch;
+    if (!search?.query)
+      return;
+    search.selectionMode = direction < 0 ? "previous" : "next";
+    this.requestRender();
+  }
+  getSearchNavigationDirectionAt(x2, y2) {
+    const search = this.activeSearch;
+    const bounds = search?.overlay?.getBounds();
+    if (!search || !bounds)
+      return void 0;
+    if (x2 < bounds.col || x2 >= bounds.col + bounds.width || y2 < bounds.row || y2 >= bounds.row + bounds.height) {
+      return void 0;
+    }
+    return search.component.getNavigationDirectionAt(y2 - bounds.row, x2 - bounds.col);
+  }
+  handleSearchMouseEvent(event) {
+    const search = this.activeSearch;
+    if (!search)
+      return false;
+    const direction = this.getSearchNavigationDirectionAt(event.x, event.y);
+    if (search.component.setHoveredNavigationDirection(direction))
+      this.requestRender();
+    if (direction === void 0 || event.release || (event.button & 32) !== 0 || (event.button & 3) !== 0) {
+      return false;
+    }
+    this.navigateSearch(direction);
+    return true;
+  }
+  refreshSearch(layout) {
+    const search = this.activeSearch;
+    if (!search)
+      return false;
+    const scrollView = layout.primaryScrollView ?? this.implicitScrollView;
+    const box = getScrollViewBox(layout, scrollView);
+    const lines = box?.scrollContentLines;
+    if (!lines || !search.query.trim()) {
+      search.matches = [];
+      search.selectedIndex = -1;
+      search.selectedKey = void 0;
+      search.selectionMode = "retain";
+      search.component.setResult(-1, 0);
+      return false;
+    }
+    const shouldRevealSelection = search.selectionMode !== "retain";
+    const result2 = search.index.search(lines, search.query);
+    const matches = result2.matches;
+    search.matches = matches;
+    if (!result2.changed && search.selectionMode === "retain")
+      return false;
+    const exactIndex = result2.changed ? search.selectedKey ? matches.findIndex((match) => getAltScreenSearchMatchKey(match) === search.selectedKey) : -1 : search.selectedIndex;
+    let selectedIndex = -1;
+    if (matches.length > 0) {
+      if (search.selectionMode === "query") {
+        let low = 0;
+        let high = matches.length;
+        while (low < high) {
+          const middle = low + Math.floor((high - low) / 2);
+          if ((matches[middle].segments[0]?.row ?? 0) < search.anchorRow)
+            low = middle + 1;
+          else
+            high = middle;
+        }
+        selectedIndex = low < matches.length ? low : 0;
+      } else if (search.selectionMode === "next") {
+        const baseIndex = exactIndex >= 0 ? exactIndex : Math.min(search.selectedIndex, matches.length - 1);
+        selectedIndex = baseIndex < 0 ? 0 : (baseIndex + 1) % matches.length;
+      } else if (search.selectionMode === "previous") {
+        const baseIndex = exactIndex >= 0 ? exactIndex : Math.min(search.selectedIndex, matches.length - 1);
+        selectedIndex = baseIndex < 0 ? matches.length - 1 : (baseIndex - 1 + matches.length) % matches.length;
+      } else {
+        selectedIndex = exactIndex >= 0 ? exactIndex : Math.min(Math.max(0, search.selectedIndex), matches.length - 1);
+      }
+    }
+    search.selectedIndex = selectedIndex;
+    search.selectedKey = selectedIndex >= 0 ? getAltScreenSearchMatchKey(matches[selectedIndex]) : void 0;
+    search.selectionMode = "retain";
+    search.component.setResult(selectedIndex, matches.length);
+    if (!shouldRevealSelection)
+      return false;
+    const selected = matches[selectedIndex];
+    const firstSegment = selected?.segments[0];
+    const lastSegment = selected?.segments[selected.segments.length - 1];
+    if (!box || !firstSegment || !lastSegment || scrollView.viewportHeight <= 0)
+      return false;
+    const before = scrollView.scrollTop;
+    const visibleBottom = before + scrollView.viewportHeight - 1;
+    let target = before;
+    if (firstSegment.row < before || lastSegment.row > visibleBottom) {
+      target = firstSegment.row - Math.floor(scrollView.viewportHeight / 3);
+    }
+    scrollView.scrollTo(target, { disableFollow: true });
+    return scrollView.scrollTop !== before;
+  }
+  /** Show a transient message in the alternate-screen flash stack. */
+  flash(message, durationMs) {
+    this.flashes.flash(message, durationMs);
+  }
+  shouldDeferViewportInputToOverlay() {
+    return this.isOverlayFocused() && this.activeSearch?.overlay?.isFocused() !== true;
+  }
+  clearComponentMouseGesture() {
+    this.mouseCapture = void 0;
+    this.mousePressTarget = void 0;
+    this.mousePressPoint = void 0;
+    this.mousePressMoved = false;
+  }
+  handleViewportInput(data) {
+    if (data === FOCUS_OUT) {
+      const hadActiveSelection = this.selectionPressActive;
+      const hadNonEmptyActiveSelection = hadActiveSelection && this.getSelectionBounds() !== void 0;
+      this.selectionPressActive = false;
+      this.stopSelectionAutoScroll();
+      this.stopScrollbarHover();
+      if (this.activeSearch?.component.setHoveredNavigationDirection(void 0))
+        this.requestRender();
+      this.stopScrollbarDrag();
+      this.pressedUrl = void 0;
+      this.selectionDragged = false;
+      this.clearComponentMouseGesture();
+      this.lastComponentClick = void 0;
+      if (hadActiveSelection) {
+        this.selectionAnchor = void 0;
+        this.selectionFocus = void 0;
+        this.selectionGranularity = "character";
+        this.selectionInitialRange = void 0;
+        if (hadNonEmptyActiveSelection)
+          this.requestRender();
+      }
+      this.lastClick = void 0;
+      return { consume: true };
+    }
+    if (data === FOCUS_IN)
+      return { consume: true };
+    const wheelEvent = this.parseWheelEvent(data);
+    if (wheelEvent) {
+      const lines = this.wheelScroll.next(wheelEvent.direction, performance.now());
+      const wheelDelta = wheelEvent.direction * ((wheelEvent.button & 8) !== 0 ? lines * ALT_WHEEL_SCROLL_MULTIPLIER : lines);
+      const event = this.createMouseEvent("wheel", wheelEvent.button, wheelEvent.x, wheelEvent.y, { wheelDelta });
+      const overlay = this.dispatchMouseToOverlay(event);
+      const result2 = overlay.result ?? (overlay.hit ? void 0 : this.dispatchMouseToLayout(event));
+      if (result2) {
+        if (this.applyMouseDispatchResult(event, result2))
+          this.requestRender();
+        return { consume: true };
+      }
+      if (this.shouldDeferViewportInputToOverlay())
+        return void 0;
+      this.routeWheel(wheelEvent, wheelDelta);
+      return { consume: true };
+    }
+    const mouseEvent = this.parseSgrMouseEvent(data);
+    if (mouseEvent) {
+      this.handleMouseEvent(mouseEvent);
+      return { consume: true };
+    }
+    if (this.isMouseSequence(data))
+      return { consume: true };
+    const keybindings = getKeybindings();
+    const isRelease = isKeyRelease(data);
+    if (keybindings.matches(data, "tui.altScreen.search")) {
+      if (!isRelease)
+        this.toggleSearch();
+      return { consume: true };
+    }
+    if (this.activeSearch?.overlay?.isFocused()) {
+      if (keybindings.matches(data, "tui.altScreen.searchNext")) {
+        if (!isRelease)
+          this.navigateSearch(1);
+        return { consume: true };
+      }
+      if (keybindings.matches(data, "tui.altScreen.searchPrevious")) {
+        if (!isRelease)
+          this.navigateSearch(-1);
+        return { consume: true };
+      }
+      if (keybindings.matches(data, "tui.altScreen.searchClose")) {
+        if (!isRelease)
+          this.closeSearch();
+        return { consume: true };
+      }
+    }
+    if (this.shouldDeferViewportInputToOverlay())
+      return void 0;
+    if (keybindings.matches(data, "tui.altScreen.pageUp")) {
+      if (!isRelease) {
+        this.scrollBy(-Math.max(1, this.getPrimaryScrollView().viewportHeight - PAGE_SCROLL_OVERLAP));
+      }
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.pageDown")) {
+      if (!isRelease) {
+        this.scrollBy(Math.max(1, this.getPrimaryScrollView().viewportHeight - PAGE_SCROLL_OVERLAP));
+      }
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.halfPageUp")) {
+      if (!isRelease)
+        this.scrollBy(-Math.max(1, Math.floor(this.getPrimaryScrollView().viewportHeight / 2)));
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.halfPageDown")) {
+      if (!isRelease)
+        this.scrollBy(Math.max(1, Math.floor(this.getPrimaryScrollView().viewportHeight / 2)));
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.lineUp")) {
+      if (!isRelease)
+        this.scrollBy(-1);
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.lineDown")) {
+      if (!isRelease)
+        this.scrollBy(1);
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.previousPrompt")) {
+      if (!isRelease)
+        this.scrollToPrompt(-1);
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.nextPrompt")) {
+      if (!isRelease)
+        this.scrollToPrompt(1);
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.top")) {
+      if (!isRelease)
+        this.scrollToTop();
+      return { consume: true };
+    }
+    if (keybindings.matches(data, "tui.altScreen.bottom")) {
+      if (!isRelease)
+        this.scrollToBottom();
+      return { consume: true };
+    }
+    return void 0;
+  }
+  decodeMouseButton(button) {
+    switch (button & 3) {
+      case 0:
+        return "left";
+      case 1:
+        return "middle";
+      case 2:
+        return "right";
+      default:
+        return "none";
+    }
+  }
+  createMouseEvent(type, button, x2, y2, extra = {}) {
+    return {
+      type,
+      button: type === "wheel" ? "none" : this.decodeMouseButton(button),
+      x: x2,
+      y: y2,
+      screenX: x2,
+      screenY: y2,
+      width: Math.max(1, this.terminal.columns),
+      height: Math.max(1, this.terminal.rows),
+      shift: (button & 4) !== 0,
+      alt: (button & 8) !== 0,
+      ctrl: (button & 16) !== 0,
+      ...extra.wheelDelta === void 0 ? {} : { wheelDelta: extra.wheelDelta },
+      ...extra.clickCount === void 0 ? {} : { clickCount: extra.clickCount }
+    };
+  }
+  dispatchMouseToLayout(event) {
+    if (!this.currentLayout)
+      return void 0;
+    const visited = /* @__PURE__ */ new Set();
+    const boxes = getLayoutBoxesAt(this.currentLayout, event.screenX, event.screenY);
+    for (const box of boxes) {
+      if (visited.has(box.component))
+        continue;
+      if (getLayoutNode(box.component) && box.component.handleMouse === Container.prototype.handleMouse)
+        continue;
+      visited.add(box.component);
+      const result2 = dispatchMouseEvent(box.component, {
+        ...event,
+        x: event.screenX - box.rect.x,
+        y: event.screenY - box.rect.y,
+        width: box.rect.width,
+        height: box.rect.height
+      });
+      if (result2)
+        return result2;
+    }
+    return void 0;
+  }
+  applyMouseDispatchResult(event, result2) {
+    const focusTarget = this.resolveMouseFocusTarget(result2.focusTarget ?? result2.target.component);
+    const focusChanged = result2.focus === true && this.getFocusedComponent() !== focusTarget;
+    if (result2.focus)
+      this.setFocus(focusTarget);
+    if (result2.capture)
+      this.mouseCapture = result2.target;
+    return result2.render ?? (focusChanged || event.type === "press" || event.type === "click" || event.type === "drag" || event.type === "wheel");
+  }
+  dispatchMouseToTarget(event, target) {
+    return dispatchMouseEvent(target.component, retargetMouseEvent(event, target));
+  }
+  getComponentClickCount(target, x2, y2) {
+    const now = Date.now();
+    const previous = this.lastComponentClick;
+    const count = previous && now - previous.timestamp <= DOUBLE_CLICK_INTERVAL_MS && previous.component === target.component && previous.x === x2 && previous.y === y2 ? previous.count % 3 + 1 : 1;
+    this.lastComponentClick = { timestamp: now, count, component: target.component, x: x2, y: y2 };
+    return count;
+  }
+  clearTextSelection() {
+    this.stopSelectionAutoScroll();
+    this.selectionPressActive = false;
+    this.selectionAnchor = void 0;
+    this.selectionFocus = void 0;
+    this.selectionGranularity = "character";
+    this.selectionInitialRange = void 0;
+    this.pressedUrl = void 0;
+    this.selectionDragged = false;
+  }
+  handleMouseEvent(raw) {
+    const isMotion = (raw.button & 32) !== 0;
+    const type = raw.release ? "release" : isMotion ? this.decodeMouseButton(raw.button) === "none" ? "move" : "drag" : "press";
+    const event = this.createMouseEvent(type, raw.button, raw.x, raw.y);
+    if (this.mouseCapture || this.mousePressTarget) {
+      const target = this.mouseCapture ?? this.mousePressTarget;
+      if (this.mousePressPoint && (raw.x !== this.mousePressPoint.x || raw.y !== this.mousePressPoint.y)) {
+        this.mousePressMoved = true;
+        this.lastComponentClick = void 0;
+      }
+      let render = false;
+      const targetResult = this.dispatchMouseToTarget(event, target);
+      if (targetResult)
+        render = this.applyMouseDispatchResult(event, targetResult);
+      if (raw.release) {
+        if (!this.mousePressMoved && this.mousePressPoint?.x === raw.x && this.mousePressPoint.y === raw.y) {
+          const clickEvent = this.createMouseEvent("click", raw.button, raw.x, raw.y, {
+            clickCount: this.getComponentClickCount(target, raw.x, raw.y)
+          });
+          const clickResult = this.dispatchMouseToTarget(clickEvent, target);
+          if (clickResult)
+            render = this.applyMouseDispatchResult(clickEvent, clickResult) || render;
+        }
+        this.clearComponentMouseGesture();
+      }
+      if (render)
+        this.requestRender();
+      return;
+    }
+    if (this.handleSearchMouseEvent(raw))
+      return;
+    const overlay = this.dispatchMouseToOverlay(event);
+    if (!overlay.hit) {
+      if (this.handleScrollToEndIndicatorMouseEvent(raw))
+        return;
+      const scrollbarHandled = this.handleScrollbarMouseEvent(raw);
+      if (!this.scrollbarDrag)
+        this.updateScrollbarHover(raw.x, raw.y);
+      if (scrollbarHandled)
+        return;
+    } else {
+      this.stopScrollbarHover();
+    }
+    const result2 = overlay.result ?? (overlay.hit ? void 0 : this.dispatchMouseToLayout(event));
+    if (result2) {
+      const render = this.applyMouseDispatchResult(event, result2);
+      if (type === "press") {
+        this.clearTextSelection();
+        this.mousePressTarget = result2.target;
+        this.mousePressPoint = { x: raw.x, y: raw.y };
+        this.mousePressMoved = false;
+      }
+      if (render)
+        this.requestRender();
+      return;
+    }
+    if (this.handleRightClickPaste(raw))
+      return;
+    this.handleSelectionMouseEvent(raw);
+  }
+  parseWheelEvent(data) {
+    const sgr = /^\x1b\[<(\d+);(\d+);(\d+)[Mm]$/.exec(data);
+    if (sgr) {
+      const button = Number.parseInt(sgr[1], 10);
+      if ((button & 64) === 0)
+        return void 0;
+      const direction = button & 3;
+      if (direction !== 0 && direction !== 1)
+        return void 0;
+      return {
+        direction: direction === 0 ? -1 : 1,
+        x: Number.parseInt(sgr[2], 10) - 1,
+        y: Number.parseInt(sgr[3], 10) - 1,
+        button
+      };
+    }
+    if (data.length === 6 && data.startsWith("\x1B[M")) {
+      const button = data.charCodeAt(3) - 32;
+      if ((button & 64) === 0)
+        return void 0;
+      const direction = button & 3;
+      if (direction !== 0 && direction !== 1)
+        return void 0;
+      return {
+        direction: direction === 0 ? -1 : 1,
+        x: data.charCodeAt(4) - 33,
+        y: data.charCodeAt(5) - 33,
+        button
+      };
+    }
+    return void 0;
+  }
+  routeWheel(event, delta) {
+    let remaining = delta;
+    const seen = /* @__PURE__ */ new Set();
+    for (const scrollView of this.currentLayout ? getScrollViewsAt(this.currentLayout, event.x, event.y) : []) {
+      seen.add(scrollView);
+      remaining = scrollView.scrollBy(remaining);
+      if (remaining === 0 || scrollView.overscroll === "contain")
+        break;
+    }
+    const primary = this.getPrimaryScrollView();
+    if (remaining !== 0 && !seen.has(primary))
+      primary.scrollBy(remaining);
+    this.updateScrollbarHover(event.x, event.y);
+    this.requestRender();
+  }
+  parseSgrMouseEvent(data) {
+    const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
+    if (!match)
+      return void 0;
+    return {
+      button: Number.parseInt(match[1], 10),
+      x: Number.parseInt(match[2], 10) - 1,
+      y: Number.parseInt(match[3], 10) - 1,
+      release: match[4] === "m"
+    };
+  }
+  handleRightClickPaste(event) {
+    if (!this.onRightClickPaste || process.platform !== "win32" || process.env.TERM_PROGRAM?.toLowerCase() === "vscode" || event.release || event.button !== 2) {
+      return false;
+    }
+    try {
+      this.onRightClickPaste();
+    } catch {
+    }
+    return true;
+  }
+  handleScrollToEndIndicatorMouseEvent(event) {
+    const rect = this.scrollToEndIndicatorRect;
+    if (!rect || event.release || (event.button & 32) !== 0 || (event.button & 3) !== 0)
+      return false;
+    if (event.y !== rect.row || event.x < rect.column || event.x >= rect.column + rect.width)
+      return false;
+    this.scrollToBottom();
+    return true;
+  }
+  getScrollbarTargetAt(x2, y2, includeHiddenAuto = false) {
+    if (this.hasOverlay() || !this.currentLayout)
+      return void 0;
+    for (const scrollView of getScrollViewsAt(this.currentLayout, x2, y2)) {
+      const box = getScrollViewBox(this.currentLayout, scrollView);
+      const geometry = box ? getScrollbarGeometry(box, includeHiddenAuto) : void 0;
+      if (geometry && x2 === geometry.column && y2 >= geometry.trackTop && y2 < geometry.trackTop + geometry.trackHeight) {
+        return { scrollView, geometry };
+      }
+    }
+    return void 0;
+  }
+  setScrollbarHover(scrollView) {
+    if (scrollView === this.scrollbarHover)
+      return;
+    this.scrollbarHover?.setScrollbarActive(false);
+    this.scrollbarHover = scrollView;
+    this.scrollbarHover?.setScrollbarActive(true);
+  }
+  updateScrollbarHover(x2, y2) {
+    this.setScrollbarHover(this.getScrollbarTargetAt(x2, y2, true)?.scrollView);
+  }
+  stopScrollbarHover() {
+    this.setScrollbarHover(void 0);
+  }
+  scrollScrollbarToPointer(scrollView, geometry, pointerY, grabOffset) {
+    const maxThumbOffset = geometry.trackHeight - geometry.thumbHeight;
+    const thumbOffset = Math.max(0, Math.min(maxThumbOffset, pointerY - geometry.trackTop - grabOffset));
+    const scrollTop = maxThumbOffset === 0 ? 0 : Math.round(thumbOffset / maxThumbOffset * geometry.maxScrollTop);
+    scrollView.scrollTo(scrollTop);
+  }
+  handleScrollbarMouseEvent(event) {
+    if (this.scrollbarDrag) {
+      if (event.release) {
+        this.stopScrollbarDrag();
+        return true;
+      }
+      const box = this.currentLayout ? getScrollViewBox(this.currentLayout, this.scrollbarDrag.scrollView) : void 0;
+      const geometry = box ? getScrollbarGeometry(box) : void 0;
+      if (geometry) {
+        this.scrollScrollbarToPointer(this.scrollbarDrag.scrollView, geometry, event.y, this.scrollbarDrag.grabOffset);
+      }
+      return true;
+    }
+    if (event.release || (event.button & 32) !== 0 || (event.button & 3) !== 0)
+      return false;
+    const target = this.getScrollbarTargetAt(event.x, event.y);
+    if (!target)
+      return false;
+    this.stopSelectionAutoScroll();
+    this.selectionPressActive = false;
+    this.selectionAnchor = void 0;
+    this.selectionFocus = void 0;
+    this.selectionGranularity = "character";
+    this.selectionInitialRange = void 0;
+    this.lastClick = void 0;
+    this.pressedUrl = void 0;
+    this.selectionDragged = false;
+    this.setScrollbarHover(target.scrollView);
+    const onThumb = event.y >= target.geometry.thumbTop && event.y < target.geometry.thumbTop + target.geometry.thumbHeight;
+    const grabOffset = onThumb ? event.y - target.geometry.thumbTop : Math.floor(target.geometry.thumbHeight / 2);
+    if (!onThumb)
+      this.scrollScrollbarToPointer(target.scrollView, target.geometry, event.y, grabOffset);
+    this.scrollbarDrag = {
+      scrollView: target.scrollView,
+      grabOffset
+    };
+    return true;
+  }
+  stopScrollbarDrag() {
+    this.scrollbarDrag = void 0;
+  }
+  getScrollSelectionPoint(scrollView, x2, y2) {
+    if (!this.currentLayout)
+      return void 0;
+    const box = getScrollViewBox(this.currentLayout, scrollView);
+    if (!box || box.rect.height <= 0 || box.clip.height <= 0)
+      return void 0;
+    const visibleTop = Math.max(0, box.rect.y, box.clip.y);
+    const visibleBottom = Math.min(this.terminal.rows - 1, box.rect.y + box.rect.height - 1, box.clip.y + box.clip.height - 1);
+    if (visibleBottom < visibleTop)
+      return void 0;
+    const pointerRow = Math.max(visibleTop, Math.min(visibleBottom, y2));
+    const maxContentRow = Math.max(0, (box.scrollContentLines?.length ?? 1) - 1);
+    return {
+      row: Math.max(0, Math.min(maxContentRow, scrollView.scrollTop + pointerRow - box.rect.y)),
+      col: Math.max(0, Math.min(box.rect.width - 1, x2 - box.rect.x)),
+      scrollView
+    };
+  }
+  getSelectionPoint(event, scrollView) {
+    if (scrollView) {
+      const point = this.getScrollSelectionPoint(scrollView, event.x, event.y);
+      if (point)
+        return point;
+    }
+    return {
+      row: Math.max(0, Math.min(this.terminal.rows - 1, event.y)),
+      col: Math.max(0, Math.min(this.terminal.columns - 1, event.x))
+    };
+  }
+  getSelectionSourceLine(point) {
+    if (point.scrollView && this.currentLayout) {
+      const lines = getScrollViewBox(this.currentLayout, point.scrollView)?.scrollContentLines;
+      if (lines)
+        return lines[point.row] ?? "";
+    }
+    return this.previousScreen[point.row] ?? "";
+  }
+  getWordSelection(point) {
+    const line = stripTerminalSequences(this.getSelectionSourceLine(point));
+    const segments = [];
+    let start = 0;
+    for (const segment of wordSegmenter4.segment(line)) {
+      const end = start + visibleWidth(segment.segment);
+      const joiner = TERMINAL_WORD_SELECTION_JOINERS.has(segment.segment);
+      segments.push({ start, end, selectable: segment.isWordLike === true || joiner, joiner });
+      start = end;
+    }
+    const clickedSegmentIndex = segments.findIndex((segment) => point.col >= segment.start && point.col < segment.end);
+    if (clickedSegmentIndex < 0)
+      return void 0;
+    const canJoin = (left, right) => left.selectable && right.selectable && (left.joiner || right.joiner);
+    let selectionStart = segments[clickedSegmentIndex].start;
+    let selectionEnd = segments[clickedSegmentIndex].end;
+    for (let index = clickedSegmentIndex; index > 0 && canJoin(segments[index - 1], segments[index]); index--) {
+      selectionStart = segments[index - 1].start;
+    }
+    for (let index = clickedSegmentIndex; index < segments.length - 1 && canJoin(segments[index], segments[index + 1]); index++) {
+      selectionEnd = segments[index + 1].end;
+    }
+    return {
+      start: { ...point, col: selectionStart },
+      end: { ...point, col: selectionEnd, boundary: true }
+    };
+  }
+  getLineSelection(point) {
+    return {
+      start: { ...point, col: 0 },
+      end: { ...point, col: visibleWidth(this.getSelectionSourceLine(point)), boundary: true }
+    };
+  }
+  updateSelectionFocus(point) {
+    if (this.selectionGranularity === "character" || !this.selectionInitialRange) {
+      this.selectionFocus = point;
+      return;
+    }
+    const range = this.selectionGranularity === "word" ? this.getWordSelection(point) : this.getLineSelection(point);
+    if (!range)
+      return;
+    const initial = this.selectionInitialRange;
+    const targetBeforeInitial = range.start.row < initial.start.row || range.start.row === initial.start.row && range.start.col < initial.start.col;
+    if (targetBeforeInitial) {
+      this.selectionAnchor = initial.end;
+      this.selectionFocus = range.start;
+    } else {
+      this.selectionAnchor = initial.start;
+      this.selectionFocus = range.end;
+    }
+  }
+  getClickCount(point, word) {
+    const now = Date.now();
+    const previous = this.lastClick;
+    const count = word && previous && now - previous.timestamp <= DOUBLE_CLICK_INTERVAL_MS && previous.row === point.row && previous.scrollView === point.scrollView && previous.wordStart === word.start.col && previous.wordEnd === word.end.col ? previous.count % 3 + 1 : 1;
+    this.lastClick = word ? {
+      timestamp: now,
+      count,
+      row: point.row,
+      scrollView: point.scrollView,
+      wordStart: word.start.col,
+      wordEnd: word.end.col
+    } : void 0;
+    return count;
+  }
+  updateSelectionAutoScroll(event) {
+    const scrollView = this.selectionAnchor?.scrollView;
+    if (!scrollView || !this.currentLayout) {
+      this.stopSelectionAutoScroll();
+      return;
+    }
+    const box = getScrollViewBox(this.currentLayout, scrollView);
+    if (!box || box.rect.height <= 0 || box.clip.height <= 0) {
+      this.stopSelectionAutoScroll();
+      return;
+    }
+    const visibleTop = Math.max(0, box.rect.y, box.clip.y);
+    const visibleBottom = Math.min(this.terminal.rows - 1, box.rect.y + box.rect.height - 1, box.clip.y + box.clip.height - 1);
+    this.selectionDragPointer = { x: event.x, y: event.y };
+    this.selectionAutoScrollDirection = event.y <= visibleTop ? -1 : event.y >= visibleBottom ? 1 : 0;
+    if (this.selectionAutoScrollDirection === 0) {
+      this.stopSelectionAutoScroll();
+      return;
+    }
+    if (this.selectionAutoScrollTimer)
+      return;
+    this.selectionAutoScrollTimer = setInterval(() => this.autoScrollSelection(), 50);
+    this.selectionAutoScrollTimer.unref();
+  }
+  autoScrollSelection() {
+    const scrollView = this.selectionAnchor?.scrollView;
+    const pointer = this.selectionDragPointer;
+    const direction = this.selectionAutoScrollDirection;
+    if (!scrollView || !pointer || direction === 0) {
+      this.stopSelectionAutoScroll();
+      return;
+    }
+    const remaining = scrollView.scrollBy(direction);
+    if (remaining === direction) {
+      this.stopSelectionAutoScroll();
+      return;
+    }
+    const point = this.getScrollSelectionPoint(scrollView, pointer.x, pointer.y);
+    if (point)
+      this.updateSelectionFocus(point);
+    this.requestRender();
+  }
+  stopSelectionAutoScroll() {
+    if (this.selectionAutoScrollTimer) {
+      clearInterval(this.selectionAutoScrollTimer);
+      this.selectionAutoScrollTimer = void 0;
+    }
+    this.selectionAutoScrollDirection = 0;
+    this.selectionDragPointer = void 0;
+  }
+  handleSelectionMouseEvent(event) {
+    const button = event.button & 3;
+    if (button !== 0 && !(event.release && button === 3))
+      return;
+    const anchorScrollView = this.selectionAnchor?.scrollView;
+    const point = this.getSelectionPoint(event, anchorScrollView);
+    if (event.release) {
+      if (!this.selectionPressActive)
+        return;
+      this.selectionPressActive = false;
+      this.stopSelectionAutoScroll();
+      if (!this.selectionAnchor)
+        return;
+      this.updateSelectionFocus(point);
+      const isClick = !this.selectionDragged && this.selectionAnchor.scrollView === point.scrollView && this.selectionAnchor.row === point.row && this.selectionAnchor.col === point.col;
+      const clickedUrl = isClick ? this.pressedUrl : void 0;
+      this.pressedUrl = void 0;
+      if (clickedUrl && this.openUrl) {
+        this.selectionAnchor = void 0;
+        this.selectionFocus = void 0;
+        try {
+          this.openUrl(clickedUrl);
+        } catch {
+        }
+        this.requestRender();
+        return;
+      }
+      if (isClick) {
+        const clickEvent = this.createMouseEvent("click", event.button, event.x, event.y, {
+          clickCount: this.lastClick?.count ?? 1
+        });
+        const overlay = this.dispatchMouseToOverlay(clickEvent);
+        const result2 = overlay.result ?? (overlay.hit ? void 0 : this.dispatchMouseToLayout(clickEvent));
+        if (result2) {
+          const render = this.applyMouseDispatchResult(clickEvent, result2);
+          this.clearTextSelection();
+          if (render)
+            this.requestRender();
+          return;
+        }
+      }
+      if (this.copyOnSelect)
+        void this.copySelectionToClipboard();
+      this.requestRender();
+      return;
+    }
+    if ((event.button & 32) !== 0) {
+      if (!this.selectionPressActive || !this.selectionAnchor)
+        return;
+      this.selectionDragged = true;
+      this.lastClick = void 0;
+      this.pressedUrl = void 0;
+      this.updateSelectionFocus(point);
+      this.updateSelectionAutoScroll(event);
+      this.requestRender();
+      return;
+    }
+    this.stopSelectionAutoScroll();
+    this.selectionPressActive = true;
+    const scrollView = !this.hasOverlay() && this.currentLayout ? getScrollViewsAt(this.currentLayout, event.x, event.y)[0] : void 0;
+    const anchor = this.getSelectionPoint(event, scrollView);
+    const word = this.getWordSelection(anchor);
+    const clickCount = this.getClickCount(anchor, word);
+    const range = clickCount === 2 ? word : clickCount === 3 ? this.getLineSelection(anchor) : void 0;
+    this.selectionGranularity = range ? clickCount === 2 ? "word" : "line" : "character";
+    this.selectionInitialRange = range;
+    this.selectionAnchor = range?.start ?? anchor;
+    this.selectionFocus = range?.end ?? anchor;
+    this.selectionDragged = false;
+    this.pressedUrl = range ? void 0 : getOsc8LinkAtColumn(this.previousScreen[Math.max(0, Math.min(this.terminal.rows - 1, event.y))] ?? "", Math.max(0, Math.min(this.terminal.columns - 1, event.x)));
+    this.requestRender();
+  }
+  getSelectionBounds() {
+    if (!this.selectionAnchor || !this.selectionFocus)
+      return void 0;
+    if (this.selectionAnchor.scrollView !== this.selectionFocus.scrollView)
+      return void 0;
+    const anchorBeforeFocus = this.selectionAnchor.row < this.selectionFocus.row || this.selectionAnchor.row === this.selectionFocus.row && this.selectionAnchor.col < this.selectionFocus.col;
+    if (this.selectionAnchor.row === this.selectionFocus.row && this.selectionAnchor.col === this.selectionFocus.col) {
+      return void 0;
+    }
+    return anchorBeforeFocus ? { start: this.selectionAnchor, end: this.selectionFocus } : { start: this.selectionFocus, end: this.selectionAnchor };
+  }
+  getSelectionColumns(line, row, selection, minColumn = 0, maxColumn = visibleWidth(line)) {
+    const lineWidth = visibleWidth(line);
+    let start = Math.max(0, minColumn);
+    let end = Math.min(lineWidth, maxColumn);
+    if (row === selection.start.row) {
+      start = getGraphemeCellRange(line, selection.start.col)?.start ?? Math.min(selection.start.col, lineWidth);
+    }
+    if (row === selection.end.row) {
+      end = selection.end.boundary ? Math.min(selection.end.col, lineWidth) : getGraphemeCellRange(line, selection.end.col)?.end ?? Math.min(selection.end.col + 1, lineWidth);
+    }
+    return { start: Math.max(minColumn, start), end: Math.min(maxColumn, end) };
+  }
+  getActiveSelectionText() {
+    const selection = this.getSelectionBounds();
+    if (!selection)
+      return void 0;
+    let sourceLines = this.previousScreen;
+    if (selection.start.scrollView) {
+      if (!this.currentLayout)
+        return void 0;
+      const box = getScrollViewBox(this.currentLayout, selection.start.scrollView);
+      if (!box?.scrollContentLines)
+        return void 0;
+      sourceLines = box.scrollContentLines;
+    }
+    const lines = [];
+    for (let row = selection.start.row; row <= selection.end.row; row++) {
+      const line = sourceLines[row] ?? "";
+      const columns = this.getSelectionColumns(line, row, selection);
+      lines.push(stripTerminalSequences(sliceByColumn(line, columns.start, Math.max(0, columns.end - columns.start), true)).trimEnd());
+    }
+    const text = lines.join("\n");
+    return text.length === 0 ? void 0 : text;
+  }
+  async copySelectionToClipboard() {
+    const text = this.getActiveSelectionText();
+    if (!text)
+      return false;
+    return this.copyTextToClipboard(text);
+  }
+  async copyTextToClipboard(text) {
+    if (this.copySelection) {
+      const result2 = await this.copySelection(text);
+      const ok = result2 === true;
+      this.flash(ok ? "Copied!" : typeof result2 === "string" ? result2 : "Copy failed", ok ? void 0 : COPY_ERROR_FLASH_DURATION_MS);
+      return ok;
+    }
+    this.terminal.write(`\x1B]52;c;${Buffer.from(text).toString("base64")}\x07`);
+    this.flash("Copied!");
+    return true;
+  }
+  applySearchTextHighlight(text, current) {
+    const style = current ? this.searchCurrentMatchStyle : this.searchMatchStyle;
+    let result2 = "";
+    let plainStart = 0;
+    let index = 0;
+    while (index < text.length) {
+      const ansi = extractAnsiCode(text, index);
+      if (!ansi) {
+        index += 1;
+        continue;
+      }
+      if (index > plainStart)
+        result2 += style(text.slice(plainStart, index));
+      result2 += ansi.code;
+      index += ansi.length;
+      plainStart = index;
+    }
+    if (plainStart < text.length)
+      result2 += style(text.slice(plainStart));
+    return result2;
+  }
+  applySearchHighlights(screen, layout) {
+    const search = this.activeSearch;
+    if (!search || search.selectedIndex < 0 || search.matches.length === 0)
+      return screen;
+    const scrollView = layout.primaryScrollView ?? this.implicitScrollView;
+    const box = getScrollViewBox(layout, scrollView);
+    if (!box)
+      return screen;
+    const rangesByRow = /* @__PURE__ */ new Map();
+    const scrollbarColumn = getScrollbarGeometry(box)?.column;
+    const minRow = Math.max(0, box.rect.y, box.clip.y);
+    const maxRow = Math.min(screen.length, box.rect.y + box.rect.height, box.clip.y + box.clip.height);
+    const minColumn = Math.max(0, box.rect.x, box.clip.x);
+    const maxColumn = Math.min(this.terminal.columns, box.rect.x + box.rect.width, box.clip.x + box.clip.width, scrollbarColumn ?? Number.POSITIVE_INFINITY);
+    const minContentRow = scrollView.scrollTop + minRow - box.rect.y;
+    const maxContentRow = scrollView.scrollTop + maxRow - box.rect.y - 1;
+    let low = 0;
+    let high = search.matches.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      const match = search.matches[middle];
+      const lastRow = match.segments[match.segments.length - 1]?.row ?? -1;
+      if (lastRow < minContentRow)
+        low = middle + 1;
+      else
+        high = middle;
+    }
+    for (let matchIndex = low; matchIndex < search.matches.length; matchIndex++) {
+      const match = search.matches[matchIndex];
+      if ((match.segments[0]?.row ?? 0) > maxContentRow)
+        break;
+      for (const segment of match.segments) {
+        const row = box.rect.y + segment.row - scrollView.scrollTop;
+        if (row < minRow || row >= maxRow)
+          continue;
+        const startCol = Math.max(minColumn, box.rect.x + segment.startCol);
+        const endCol = Math.min(maxColumn, box.rect.x + segment.endCol);
+        if (endCol <= startCol)
+          continue;
+        const ranges = rangesByRow.get(row) ?? [];
+        ranges.push({ startCol, endCol, current: matchIndex === search.selectedIndex });
+        rangesByRow.set(row, ranges);
+      }
+    }
+    const result2 = [...screen];
+    for (const [row, ranges] of rangesByRow) {
+      let line = result2[row] ?? "";
+      if (isImageLine(line))
+        continue;
+      const lineWidth = visibleWidth(line);
+      for (const range of ranges.sort((a, b2) => b2.startCol - a.startCol)) {
+        const startCol = Math.min(range.startCol, lineWidth);
+        const endCol = Math.min(range.endCol, lineWidth);
+        if (endCol <= startCol)
+          continue;
+        const before = sliceByColumn(line, 0, startCol, true);
+        const highlighted = sliceByColumn(line, startCol, endCol - startCol, true);
+        const after = sliceByColumn(line, endCol, Math.max(0, lineWidth - endCol), true);
+        line = `${before}${this.applySearchTextHighlight(highlighted, range.current)}${after}`;
+      }
+      result2[row] = line;
+    }
+    return result2;
+  }
+  applySelectionHighlight(text) {
+    let result2 = "\x1B[7m";
+    let index = 0;
+    while (index < text.length) {
+      const ansi = extractAnsiCode(text, index);
+      if (!ansi) {
+        result2 += text[index];
+        index += 1;
+        continue;
+      }
+      result2 += ansi.code;
+      if (ansi.code.endsWith("m"))
+        result2 += "\x1B[7m";
+      index += ansi.length;
+    }
+    return `${result2}\x1B[27m`;
+  }
+  applySelection(screen, layout = this.currentLayout) {
+    const selection = this.getSelectionBounds();
+    if (!selection)
+      return screen;
+    let screenSelection = selection;
+    let minRow = 0;
+    let maxRow = screen.length - 1;
+    let minColumn = 0;
+    let maxColumn = this.terminal.columns;
+    if (selection.start.scrollView) {
+      if (!layout)
+        return screen;
+      const box = getScrollViewBox(layout, selection.start.scrollView);
+      if (!box)
+        return screen;
+      minRow = Math.max(0, box.rect.y, box.clip.y);
+      maxRow = Math.min(screen.length - 1, box.rect.y + box.rect.height - 1, box.clip.y + box.clip.height - 1);
+      minColumn = Math.max(0, box.rect.x, box.clip.x);
+      maxColumn = Math.min(this.terminal.columns, box.rect.x + box.rect.width, box.clip.x + box.clip.width);
+      screenSelection = {
+        start: {
+          ...selection.start,
+          row: box.rect.y + selection.start.row - selection.start.scrollView.scrollTop,
+          col: box.rect.x + selection.start.col
+        },
+        end: {
+          ...selection.end,
+          row: box.rect.y + selection.end.row - selection.start.scrollView.scrollTop,
+          col: box.rect.x + selection.end.col
+        }
+      };
+    }
+    return screen.map((line, row) => {
+      if (row < minRow || row > maxRow || row < screenSelection.start.row || row > screenSelection.end.row || isImageLine(line)) {
+        return line;
+      }
+      const lineWidth = visibleWidth(line);
+      const columns = this.getSelectionColumns(line, row, screenSelection, minColumn, maxColumn);
+      if (columns.end <= columns.start)
+        return line;
+      const before = sliceByColumn(line, 0, columns.start, true);
+      const selected = sliceByColumn(line, columns.start, columns.end - columns.start, true);
+      const after = sliceByColumn(line, columns.end, Math.max(0, lineWidth - columns.end), true);
+      return `${before}${this.applySelectionHighlight(selected)}${after}`;
+    });
+  }
+  isMouseSequence(data) {
+    return /^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data) || data.length === 6 && data.startsWith("\x1B[M");
+  }
+  compositeScrollToEndIndicator(screen, layout, width) {
+    this.scrollToEndIndicatorRect = void 0;
+    const scrollView = layout.primaryScrollView ?? this.implicitScrollView;
+    if (!this.scrollToEndIndicator || !scrollView.followEnd || scrollView.isFollowingEnd)
+      return screen;
+    const box = getScrollViewBox(layout, scrollView);
+    const clip = box?.clip;
+    if (!clip || clip.width <= 0 || clip.height <= 0)
+      return screen;
+    const row = clip.y + clip.height - 1;
+    if (row >= screen.length || isImageLine(screen[row] ?? ""))
+      return screen;
+    const scrollbarColumn = box ? getScrollbarGeometry(box)?.column : void 0;
+    const label = truncateToWidth(this.scrollToEndIndicator(), clip.width, "");
+    const labelWidth = visibleWidth(label);
+    const column = clip.x + Math.floor((clip.width - labelWidth) / 2);
+    const rightEdge = scrollbarColumn ?? clip.x + clip.width;
+    const availableWidth = Math.max(0, rightEdge - column);
+    const text = truncateToWidth(label, availableWidth, "");
+    const textWidth = visibleWidth(text);
+    if (textWidth === 0)
+      return screen;
+    const result2 = [...screen];
+    result2[row] = compositeTuiLine(result2[row] ?? "", text, column, textWidth, width);
+    this.scrollToEndIndicatorRect = { row, column, width: textWidth };
+    return result2;
+  }
+  compositeFlashes(screen, width, height) {
+    const flashLines = this.flashes.render(width).slice(-height);
+    if (flashLines.length === 0)
+      return screen;
+    const result2 = [...screen];
+    while (result2.length < height)
+      result2.push("");
+    for (let row = 0; row < flashLines.length; row++) {
+      const line = flashLines[row];
+      const flashWidth = visibleWidth(line);
+      if (flashWidth === 0)
+        continue;
+      result2[row] = compositeTuiLine(result2[row] ?? "", line, width - flashWidth, flashWidth, width);
+    }
+    return result2;
+  }
+  doRender() {
+    if (this.stopped || !this.altScreenActive)
+      return;
+    const width = Math.max(1, this.terminal.columns);
+    const height = Math.max(1, this.terminal.rows);
+    const root = this.layoutRoot ?? this.implicitScrollView;
+    let nextLayout = renderLayoutFrame(root, width, height, () => this.requestRender());
+    if (this.refreshSearch(nextLayout)) {
+      nextLayout = renderLayoutFrame(root, width, height, () => this.requestRender());
+    }
+    let screen = nextLayout.lines.map((line) => line.replace(OSC133_ZONE_PREFIX2, ""));
+    screen = this.applySearchHighlights(screen, nextLayout);
+    screen = this.compositeScrollToEndIndicator(screen, nextLayout, width);
+    screen = this.compositeOverlays(screen, width, height);
+    if (screen.length > height)
+      screen = screen.slice(screen.length - height);
+    screen = this.applySelection(screen, nextLayout);
+    screen = this.compositeFlashes(screen, width, height);
+    const cursorPos = this.extractCursorPosition(screen, height);
+    screen = this.applyLineResets(screen).map((line) => {
+      if (isImageLine(line) || visibleWidth(line) <= width)
+        return line;
+      return sliceByColumn(line, 0, width, true);
+    });
+    const fullRedraw = this.previousScreen.length === 0 || this.previousScreenWidth !== width || this.previousScreenHeight !== height;
+    const changedRows = screen.map((line, row) => line !== this.previousScreen[row]);
+    const imageAnchorsNeedRedraw = screen.some((line, row) => changedRows[row] && (isImageLine(line) || isImageLine(this.previousScreen[row] ?? "")));
+    const isWezTerm = Boolean(process.env.WEZTERM_PANE) || process.env.TERM_PROGRAM?.toLowerCase() === "wezterm";
+    const imageCellsNeedRedraw = !imageAnchorsNeedRedraw && isWezTerm && this.imageProtocol === "kitty" && changedRows.some(Boolean) && screen.some((line, row) => {
+      const placementRows = getKittyImagePlacementRows(line);
+      if (placementRows === void 0)
+        return false;
+      for (let coveredRow = row; coveredRow < row + placementRows; coveredRow++) {
+        if (changedRows[coveredRow])
+          return true;
+      }
+      return false;
+    });
+    const imagesNeedRedraw = imageAnchorsNeedRedraw || imageCellsNeedRedraw;
+    const redrawImages = fullRedraw || imagesNeedRedraw;
+    const hadUploadedKittyImages = this.uploadedKittyImages.size > 0;
+    const preparedKittyScreen = redrawImages && this.imageProtocol === "kitty" ? this.prepareKittyScreen(screen) : { lines: screen, evictedImageDeletion: "" };
+    let buffer = BEGIN_SYNCHRONIZED_OUTPUT;
+    if (fullRedraw) {
+      this.fullRedrawCount += 1;
+      const clearImages = this.imageProtocol === "kitty" && hadUploadedKittyImages ? deleteAllKittyPlacements() : this.deleteKittyImages();
+      buffer += `${clearImages}\x1B[2J`;
+    } else if (imagesNeedRedraw) {
+      if (this.imageProtocol === "iterm2")
+        buffer += "\x1B[2J";
+      else if (this.imageProtocol === "kitty")
+        buffer += deleteAllKittyPlacements();
+    }
+    buffer += preparedKittyScreen.evictedImageDeletion;
+    const drawKittyImagesLast = redrawImages && this.imageProtocol === "kitty" && screen.some(isImageLine) && isWezTerm;
+    if (drawKittyImagesLast) {
+      for (let row = 0; row < height; row++) {
+        if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
+          continue;
+        buffer += `\x1B[${row + 1};1H\x1B[2K`;
+      }
+      for (let row = 0; row < height; row++) {
+        if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
+          continue;
+        if (isImageLine(preparedKittyScreen.lines[row] ?? ""))
+          continue;
+        buffer += `\x1B[${row + 1};1H${preparedKittyScreen.lines[row] ?? ""}`;
+      }
+      for (let row = 0; row < height; row++) {
+        if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
+          continue;
+        if (!isImageLine(preparedKittyScreen.lines[row] ?? ""))
+          continue;
+        buffer += `\x1B[${row + 1};1H${preparedKittyScreen.lines[row] ?? ""}`;
+      }
+    } else {
+      for (let row = 0; row < height; row++) {
+        if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
+          continue;
+        buffer += `\x1B[${row + 1};1H\x1B[2K${preparedKittyScreen.lines[row] ?? ""}`;
+      }
+    }
+    if (cursorPos) {
+      buffer += `\x1B[${cursorPos.row + 1};${Math.min(width, cursorPos.col) + 1}H`;
+      buffer += this.getShowHardwareCursor() ? "\x1B[?25h" : "\x1B[?25l";
+    } else {
+      buffer += "\x1B[?25l";
+    }
+    buffer += END_SYNCHRONIZED_OUTPUT;
+    this.terminal.write(buffer);
+    this.previousScreen = screen;
+    this.previousScreenWidth = width;
+    this.previousScreenHeight = height;
+    this.currentLayout = nextLayout;
+  }
+};
+
+// node_modules/@earendil-works/pi-tui/dist/tui-main-screen.js
+var MAX_RENDER_WRITE_CHARS = 1024 * 1024;
+
+// packages/core/tui/src/tui/keys.ts
+var KXM_TUI_INPUT_MAX_LENGTH = 4096;
+var CONTROL_BYTES = /[\u0000-\u0008\u000a-\u001f\u007f\u0080-\u009f]/u;
+var NAMED_KEYS = Object.freeze({
+  up: "up",
+  down: "down",
+  left: "left",
+  right: "right",
+  home: "home",
+  end: "end",
+  pageup: "pageUp",
+  pagedown: "pageDown",
+  enter: "enter",
+  return: "enter",
+  escape: "escape",
+  esc: "escape",
+  tab: "tab",
+  backspace: "backspace",
+  delete: "delete"
+});
+var CONTROL_BYTES_GLOBAL = /[\u0000-\u0008\u000a-\u001f\u007f\u0080-\u009f]/gu;
+function normalizeInputText(value) {
+  return value.replace(CONTROL_BYTES_GLOBAL, " ").replace(/ {2,}/gu, " ").trim().slice(0, KXM_TUI_INPUT_MAX_LENGTH);
+}
+function decodeKxmTuiInput(data) {
+  if (typeof data !== "string" || data.length === 0) return { kind: "ignored" };
+  const named = parseKey(data);
+  if (named === "ctrl+c") return { kind: "ctrlC" };
+  if (named) {
+    const kind = NAMED_KEYS[named.toLowerCase()];
+    if (kind) return { kind };
+    if (named === "space") return { kind: "text", text: " " };
+    if (Array.from(named).length === 1 && !CONTROL_BYTES.test(named)) {
+      return { kind: "text", text: named };
+    }
+    return { kind: "ignored" };
+  }
+  const kitty = decodeKittyPrintable(data);
+  if (kitty) {
+    const text = normalizeInputText(kitty);
+    return text ? { kind: "text", text } : { kind: "ignored" };
+  }
+  if (data.startsWith("\x1B")) return { kind: "ignored" };
+  const pasted = normalizeInputText(data);
+  return pasted ? { kind: "text", text: pasted } : { kind: "ignored" };
+}
+function deleteBackward(text) {
+  const units = Array.from(text);
+  units.pop();
+  return units.join("");
+}
+function insertAt(text, caret, insert, maxLength = KXM_TUI_INPUT_MAX_LENGTH) {
+  const units = Array.from(text);
+  const at2 = Math.max(0, Math.min(caret, units.length));
+  const added = Array.from(insert);
+  const merged = [...units.slice(0, at2), ...added, ...units.slice(at2)].join("");
+  const next = merged.length > maxLength ? merged.slice(0, maxLength) : merged;
+  return { text: next, caret: Math.min(next.length, at2 + added.length) };
+}
+
+// packages/core/tui/src/tui/layout.ts
+var KXM_TUI_ELLIPSIS = "\u2026";
+function fitText(text, width) {
+  if (width <= 0) return "";
+  if (visibleWidth(text) <= width) return text;
+  if (!text.includes("\x1B")) {
+    let out = "";
+    for (const unit of Array.from(text)) {
+      if (visibleWidth(out) + visibleWidth(unit) > width - KXM_TUI_ELLIPSIS.length) break;
+      out += unit;
+    }
+    return out + KXM_TUI_ELLIPSIS;
+  }
+  return truncateToWidth(text, width, KXM_TUI_ELLIPSIS);
+}
+function alignRight(left, right, width) {
+  if (width <= 0) return "";
+  const detail = fitText(right, Math.max(0, width - 2));
+  const detailWidth = visibleWidth(detail);
+  const leftWidth = Math.max(1, width - detailWidth - 1);
+  const fitted = fitText(left, leftWidth);
+  const filler = Math.max(1, width - visibleWidth(fitted) - detailWidth);
+  return `${fitted}${" ".repeat(filler)}${detail}`;
+}
+function padRight(text, width) {
+  const missing = width - visibleWidth(text);
+  return missing > 0 ? text + " ".repeat(missing) : text;
+}
+function wrapPlain(text, width) {
+  if (width <= 0) return [];
+  const lines = [];
+  let current = "";
+  for (const word of text.split(/\s+/u).filter(Boolean)) {
+    if (!current.length) current = word;
+    else if (visibleWidth(current) + 1 + visibleWidth(word) <= width) current = `${current} ${word}`;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current.length) lines.push(current);
+  return lines.length ? lines : [];
+}
+function formatAge(iso, nowMs) {
+  if (!iso) return "\u2014";
+  const at2 = Date.parse(iso);
+  if (!Number.isFinite(at2)) return "\u2014";
+  const seconds = Math.floor((nowMs - at2) / 1e3);
+  if (seconds < 0) return "\u2014";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m${String(seconds % 60).padStart(2, "0")}s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h${String(minutes % 60).padStart(2, "0")}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d${String(hours % 24).padStart(2, "0")}h`;
+}
+function progressBar(ratio, width = 10) {
+  const cells = Math.max(1, width);
+  if (ratio === void 0 || !Number.isFinite(ratio)) return "\u2591".repeat(cells);
+  const filled = Math.round(Math.max(0, Math.min(1, ratio)) * cells);
+  return "\u2588".repeat(filled) + "\u2591".repeat(Math.max(0, cells - filled));
+}
+var KXM_TUI_MARKS = Object.freeze({
+  pending: "\u25CB",
+  active: "\u25B6",
+  waiting: "\u29D7",
+  passed: "\u2714",
+  failed: "\u2716",
+  cancelled: "\u2298",
+  blocked: "\u2717",
+  ready: "\u25CF",
+  available: "\u25D0",
+  cursor: "\u25B8",
+  blankCursor: " "
+});
+
+// packages/core/tui/src/tui/theme.ts
+var SGR = Object.freeze({
+  text: "37",
+  accent: "1;36",
+  muted: "2",
+  dim: "2",
+  success: "1;32",
+  error: "1;31",
+  warning: "1;33",
+  border: "90"
+});
+function createPlainKxmTuiTheme() {
+  const passthrough = (text) => text;
+  return {
+    colored: false,
+    fg: (_token, text) => text,
+    accent: passthrough,
+    success: passthrough,
+    error: passthrough,
+    warning: passthrough,
+    muted: passthrough,
+    dim: passthrough,
+    label: passthrough,
+    value: passthrough,
+    key: passthrough,
+    cursor: passthrough,
+    headerBg: passthrough,
+    panelBg: passthrough
+  };
+}
+function createKxmTuiThemeFromPi(theme, colored = true) {
+  if (!colored) return createPlainKxmTuiTheme();
+  const fg = (token, text) => theme.fg(token === "dim" ? "muted" : token, text);
+  return {
+    colored: true,
+    fg,
+    accent: (text) => fg("accent", text),
+    success: (text) => fg("success", text),
+    error: (text) => fg("error", text),
+    warning: (text) => fg("warning", text),
+    muted: (text) => fg("muted", text),
+    dim: (text) => fg("dim", text),
+    label: (text) => fg("text", text),
+    value: (text) => fg("accent", text),
+    key: (text) => fg("muted", text),
+    cursor: (text) => fg("accent", text),
+    headerBg: (text) => theme.bg("selectedBg", text),
+    panelBg: (text) => theme.bg("selectedBg", text)
+  };
+}
+
+// packages/core/tui/src/tui/panel.ts
+var PANE_KEYS = /* @__PURE__ */ new Set(["j", "k", "h", "l"]);
+function initialKxmTuiPanelState(sections) {
+  return {
+    pane: "sections",
+    mode: "browse",
+    sectionIndex: 0,
+    fieldIndex: firstSelectableFieldIndex(sections[0]?.fields ?? []),
+    choiceIndex: 0,
+    draft: "",
+    caret: 0,
+    filter: "",
+    filtering: false,
+    help: false,
+    pending: []
+  };
+}
+function pendingKey(invocation) {
+  return `${invocation.source}\0${invocation.sectionId}\0${invocation.fieldId}`;
+}
+function firstSelectableFieldIndex(fields) {
+  const index = fields.findIndex(isSelectableField);
+  return index < 0 ? 0 : index;
+}
+function visibleChoices(field, filter) {
+  const choices = field?.choices ?? [];
+  const needle = filter.trim().toLowerCase();
+  if (!needle) return [...choices];
+  return choices.filter(
+    (choice) => `${choice.group ?? ""} ${choice.label} ${choice.id} ${choice.detail ?? ""}`.toLowerCase().includes(needle)
+  );
+}
+function currentSection(sections, state) {
+  return sections[state.sectionIndex];
+}
+function currentField(sections, state) {
+  return currentSection(sections, state)?.fields[state.fieldIndex];
+}
+function reconcileKxmTuiPanelState(state, sections) {
+  const sectionIndex = Math.min(state.sectionIndex, Math.max(0, sections.length - 1));
+  const fields = sections[sectionIndex]?.fields ?? [];
+  let fieldIndex = Math.min(state.fieldIndex, Math.max(0, fields.length - 1));
+  if (!isSelectableField(fields[fieldIndex])) fieldIndex = firstSelectableFieldIndex(fields);
+  const field = fields[fieldIndex];
+  const keepsEdit = state.mode === "edit" && (field?.statusText !== void 0 || field?.awaitingInput === true);
+  return {
+    ...state,
+    sectionIndex,
+    fieldIndex,
+    mode: keepsEdit ? "edit" : "browse",
+    choiceIndex: 0,
+    pending: []
+  };
+}
+function reduceKxmTuiInput(state, sections, input) {
+  return reduceDecoded(state, sections, decodeKxmTuiInput(input));
+}
+function invokeEffect(state, section, field, action, value) {
+  const invocation = {
+    source: section.source,
+    sectionId: section.id,
+    fieldId: field.id,
+    action,
+    ...value === void 0 ? {} : { value }
+  };
+  const key = pendingKey(invocation);
+  return {
+    state: { ...state, pending: state.pending.includes(key) ? state.pending : [...state.pending, key] },
+    effects: [{ type: "invoke", invocation }]
+  };
+}
+function moveSection(state, sections, delta) {
+  if (sections.length === 0) return state;
+  const next = Math.max(0, Math.min(state.sectionIndex + delta, sections.length - 1));
+  if (next === state.sectionIndex) return state;
+  return {
+    ...state,
+    sectionIndex: next,
+    fieldIndex: firstSelectableFieldIndex(sections[next]?.fields ?? []),
+    mode: "browse",
+    choiceIndex: 0,
+    draft: "",
+    caret: 0,
+    filter: "",
+    filtering: false
+  };
+}
+function moveField(state, fields, delta) {
+  const step = delta < 0 ? -1 : 1;
+  let next = state.fieldIndex + step;
+  while (next >= 0 && next < fields.length && !isSelectableField(fields[next])) next += step;
+  if (next < 0 || next >= fields.length) return state;
+  return {
+    ...state,
+    fieldIndex: next,
+    mode: "browse",
+    choiceIndex: 0,
+    draft: "",
+    caret: 0,
+    filter: "",
+    filtering: false
+  };
+}
+function moveChoice(state, count, delta) {
+  if (count === 0) return state;
+  return { ...state, choiceIndex: Math.max(0, Math.min(state.choiceIndex + delta, count - 1)) };
+}
+function choiceAt(field, state) {
+  const choices = visibleChoices(field, state.filter);
+  return choices[Math.max(0, Math.min(state.choiceIndex, choices.length - 1))];
+}
+function enterField(state, section, field) {
+  if (!field) return { state, effects: [] };
+  if (field.kind === "choice") {
+    if ((field.choices?.length ?? 0) === 0) {
+      return { state, effects: [{ type: "notice", message: `${field.label} has nothing to offer yet` }] };
+    }
+    return { state: { ...state, mode: "choices", choiceIndex: 0 }, effects: [] };
+  }
+  if (field.kind === "enum") {
+    const choices = field.choices ?? [];
+    if (choices.length === 0) {
+      return { state, effects: [{ type: "notice", message: `${field.label} has no values published` }] };
+    }
+    const current = choices.findIndex((choice) => choice.id === field.value);
+    const next = choices[(current + 1) % choices.length];
+    if (next.status === "blocked") {
+      return { state, effects: [{ type: "notice", message: next.statusText ?? `${next.label} is unavailable` }] };
+    }
+    return invokeEffect(state, section, field, next.action ?? KXM_TUI_SET_ACTION, next.id);
+  }
+  if (field.kind !== "text") return { state, effects: [] };
+  return { state: { ...state, mode: "edit", draft: field.value ?? "", caret: (field.value ?? "").length }, effects: [] };
+}
+function reduceDecoded(state, sections, decoded) {
+  const section = sections[state.sectionIndex];
+  const field = currentField(sections, state);
+  if (decoded.kind === "ctrlC") {
+    if (field?.busy && section) {
+      return invokeEffect(state, section, field, KXM_TUI_ABORT_ACTION);
+    }
+    return { state, effects: [{ type: "quit" }] };
+  }
+  if (!section) return { state, effects: [{ type: "quit" }] };
+  if (state.mode === "edit") return reduceEdit(state, section, field, decoded);
+  if (state.mode === "choices") return reduceChoices(state, section, field, decoded);
+  return reduceBrowse(state, sections, section, field, decoded);
+}
+function caretSource(text, caret) {
+  return Array.from(text).slice(0, caret).join("").length;
+}
+function reduceEdit(state, section, field, decoded) {
+  if (!field) return { state: { ...state, mode: "browse" }, effects: [] };
+  switch (decoded.kind) {
+    case "escape":
+      return { state: { ...state, mode: "browse", draft: "", caret: 0 }, effects: [] };
+    case "enter": {
+      const value = normalizeInputText(state.draft).trim();
+      if (!value) return { state: { ...state, mode: "browse", draft: "", caret: 0 }, effects: [] };
+      const step = invokeEffect(state, section, field, KXM_TUI_SET_ACTION, value);
+      return { state: { ...step.state, mode: "browse", draft: "", caret: 0 }, effects: step.effects };
+    }
+    case "backspace": {
+      if (state.caret === 0) return { state, effects: [] };
+      const cut = caretSource(state.draft, state.caret);
+      const before = deleteBackward(state.draft.slice(0, cut));
+      const draft = `${before}${state.draft.slice(cut)}`;
+      return { state: { ...state, draft, caret: Array.from(before).length }, effects: [] };
+    }
+    case "delete": {
+      const units = Array.from(state.draft);
+      const text = [...units.slice(0, state.caret), ...units.slice(state.caret + 1)].join("");
+      return { state: { ...state, draft: text }, effects: [] };
+    }
+    case "left":
+      return { state: { ...state, caret: Math.max(0, state.caret - 1) }, effects: [] };
+    case "right":
+      return { state: { ...state, caret: Math.min(Array.from(state.draft).length, state.caret + 1) }, effects: [] };
+    case "home":
+      return { state: { ...state, caret: 0 }, effects: [] };
+    case "end":
+      return { state: { ...state, caret: Array.from(state.draft).length }, effects: [] };
+    case "text": {
+      const text = decoded.text ?? "";
+      if (!text) return { state, effects: [] };
+      const inserted = insertAt(state.draft, state.caret, text);
+      return { state: { ...state, draft: inserted.text, caret: inserted.caret }, effects: [] };
+    }
+    default:
+      return { state, effects: [] };
+  }
+}
+function reduceChoices(state, section, field, decoded) {
+  if (!field) return { state: { ...state, mode: "browse" }, effects: [] };
+  const choices = visibleChoices(field, state.filter);
+  switch (decoded.kind) {
+    case "escape":
+      return { state: { ...state, mode: "browse", filter: "", filtering: false, choiceIndex: 0 }, effects: [] };
+    case "up":
+      return { state: moveChoice(state, choices.length, -1), effects: [] };
+    case "down":
+      return { state: moveChoice(state, choices.length, 1), effects: [] };
+    case "pageUp":
+      return { state: moveChoice(state, choices.length, -8), effects: [] };
+    case "pageDown":
+      return { state: moveChoice(state, choices.length, 8), effects: [] };
+    case "enter": {
+      const choice = choiceAt(field, state);
+      if (!choice) return { state, effects: [] };
+      if (choice.status === "blocked") {
+        return { state, effects: [{ type: "notice", message: choice.statusText ?? `${choice.label} is unavailable` }] };
+      }
+      const clearing = (choice.action ?? KXM_TUI_SET_ACTION) === KXM_TUI_CLEAR_ACTION;
+      const step = invokeEffect(
+        state,
+        section,
+        field,
+        choice.action ?? KXM_TUI_SET_ACTION,
+        clearing ? void 0 : choice.id
+      );
+      return { state: { ...step.state, mode: "browse", filter: "", filtering: false }, effects: step.effects };
+    }
+    case "backspace": {
+      if (state.filter.length === 0) return { state: { ...state, filtering: false }, effects: [] };
+      return { state: { ...state, filter: deleteBackward(state.filter), choiceIndex: 0 }, effects: [] };
+    }
+    case "text": {
+      const text = normalizeInputText(decoded.text ?? "");
+      if (!text) return { state, effects: [] };
+      return { state: { ...state, filtering: true, filter: `${state.filter}${text}`, choiceIndex: 0 }, effects: [] };
+    }
+    default:
+      return { state, effects: [] };
+  }
+}
+function reduceBrowse(state, sections, section, field, decoded) {
+  if (state.help && (decoded.kind === "escape" || decoded.kind === "enter")) {
+    return { state: { ...state, help: false }, effects: [] };
+  }
+  if (state.help) return { state, effects: [] };
+  if (decoded.kind === "text") {
+    const key = decoded.text ?? "";
+    if (key === "q") return { state, effects: [{ type: "quit" }] };
+    if (key === "h" || key === "?") return { state: { ...state, help: true }, effects: [] };
+    const action = field?.actions?.find((candidate) => candidate.key === key);
+    if (action && field) return invokeEffect(state, section, field, action.action);
+    if ((key === "x" || key === "d") && field && field.value !== void 0 && field.kind !== "info") {
+      return invokeEffect(state, section, field, KXM_TUI_CLEAR_ACTION);
+    }
+    if (PANE_KEYS.has(key)) {
+      if (key === "h") return { state: { ...state, pane: "sections" }, effects: [] };
+      if (key === "l") return { state: { ...state, pane: "fields" }, effects: [] };
+      const delta = key === "k" ? -1 : 1;
+      return {
+        state: state.pane === "fields" ? moveField(state, section.fields, delta) : moveSection(state, sections, delta),
+        effects: []
+      };
+    }
+    return { state, effects: [] };
+  }
+  switch (decoded.kind) {
+    case "escape":
+      return state.pane === "fields" ? { state: { ...state, pane: "sections", mode: "browse" }, effects: [] } : { state, effects: [{ type: "quit" }] };
+    case "tab":
+      return { state: { ...state, pane: state.pane === "fields" ? "sections" : "fields" }, effects: [] };
+    case "right":
+      return { state: { ...state, pane: "fields" }, effects: [] };
+    case "left":
+      return { state: { ...state, pane: "sections" }, effects: [] };
+    case "up":
+      return { state: state.pane === "fields" ? moveField(state, section.fields, -1) : moveSection(state, sections, -1), effects: [] };
+    case "down":
+      return { state: state.pane === "fields" ? moveField(state, section.fields, 1) : moveSection(state, sections, 1), effects: [] };
+    case "pageUp":
+      return { state: moveSection(state, sections, -1), effects: [] };
+    case "pageDown":
+      return { state: moveSection(state, sections, 1), effects: [] };
+    case "enter":
+      return state.pane === "fields" ? enterField(state, section, field) : { state: { ...state, pane: "fields" }, effects: [] };
+    default:
+      return { state, effects: [] };
+  }
+}
+
+// packages/core/tui/src/tui/render.ts
+var SECTION_PANE_RATIO = 1 / 3;
+var MIN_PANE_WIDTH = 16;
+var PROGRESS_WIDTH = 20;
+var OUTPUT_TAIL = 6;
+var SPLIT_MIN_WIDTH = 76;
+function statusMark(status, theme, fallback) {
+  switch (status) {
+    case "ready":
+      return theme.fg("success", KXM_TUI_MARKS.ready);
+    case "available":
+      return theme.fg("accent", KXM_TUI_MARKS.available);
+    case "blocked":
+      return theme.fg("error", KXM_TUI_MARKS.blocked);
+    default:
+      return theme.dim(fallback);
+  }
+}
+function cursorMark(active, theme) {
+  return active ? theme.cursor(KXM_TUI_MARKS.cursor) : KXM_TUI_MARKS.blankCursor;
+}
+function paneSplit(width) {
+  const third = Math.max(MIN_PANE_WIDTH, Math.floor(width * SECTION_PANE_RATIO));
+  const sections = Math.min(third, Math.max(MIN_PANE_WIDTH, Math.floor(width / 2)));
+  return { sections, fields: Math.max(MIN_PANE_WIDTH, width - sections - 1) };
+}
+function fieldIsPending(state, section, field) {
+  return state.pending.includes(pendingKey({ source: section.source, sectionId: section.id, fieldId: field.id }));
+}
+function sectionRow(section, focused, pane, theme, width) {
+  const cursor = cursorMark(focused && pane === "sections", theme);
+  const flag = section.notice ? theme.fg(section.noticeLevel === "error" ? "error" : "warning", "!") : " ";
+  const count = section.fields.length;
+  const unset = section.fields.filter((field) => field.kind !== "info" && field.value === void 0).length;
+  const right = unset > 0 ? `${unset} unset / ${count}` : `${count} field${count === 1 ? "" : "s"}`;
+  return fitText(alignRight(`${cursor} ${flag} ${section.title}`, right, width), width);
+}
+function choiceSuffix(choice) {
+  const parts = [];
+  if (choice.detail) parts.push(choice.detail);
+  if (choice.statusText) parts.push(choice.statusText);
+  return parts.join(" \xB7 ");
+}
+function choiceRows(field, state, theme, width) {
+  const shown = visibleChoices(field, state.filter);
+  const lines = [];
+  if (state.filtering) {
+    lines.push(fitText(`   ${theme.dim(`filter: ${state.filter || "(type to filter \xB7 esc clears)"}`)}`, width));
+  }
+  if (shown.length === 0) {
+    lines.push(fitText(`   ${theme.dim("no match")}`, width));
+    return lines;
+  }
+  let position = -1;
+  for (const group of groupedKxmTuiChoices(field)) {
+    const filtered = shown.filter((choice) => (choice.group ?? "") === group.group);
+    if (filtered.length === 0) continue;
+    if (group.group) lines.push(fitText(`   ${theme.key(group.group.toUpperCase())}`, width));
+    for (const choice of filtered) {
+      position += 1;
+      lines.push(
+        fitText(
+          alignRight(
+            `${cursorMark(position === state.choiceIndex, theme)} ${statusMark(choice.status, theme, KXM_TUI_MARKS.pending)} ${choice.label}`,
+            choiceSuffix(choice),
+            width
+          ),
+          width
+        )
+      );
+    }
+  }
+  return lines;
+}
+var STEP_MARKS = {
+  pending: "\xB7",
+  satisfied: KXM_TUI_MARKS.passed,
+  running: KXM_TUI_MARKS.active,
+  done: KXM_TUI_MARKS.passed,
+  failed: KXM_TUI_MARKS.failed
+};
+function stepColor(state, theme) {
+  switch (state) {
+    case "running":
+      return (text) => theme.fg("accent", text);
+    case "done":
+      return (text) => theme.fg("success", text);
+    case "failed":
+      return (text) => theme.fg("error", text);
+    default:
+      return theme.dim;
+  }
+}
+function stepRows(steps, theme, width) {
+  return steps.map((step) => {
+    const paint = stepColor(step.state, theme);
+    return fitText(alignRight(`   ${paint(STEP_MARKS[step.state])} ${step.label}`, step.detail ?? "", width), width);
+  });
+}
+function progressRow(field, theme, width) {
+  const progress = field.progress;
+  if (!progress) return "";
+  const ratio = progress.ratio;
+  const right = ratio === void 0 ? "working" : `${Math.round(ratio * 100)}%`;
+  return fitText(alignRight(`   ${progress.label}`, `${progressBar(ratio, PROGRESS_WIDTH)} ${right}`, width), width);
+}
+function focusedFieldDetail(field, state, theme, width) {
+  const lines = [];
+  if (field.keyPath) lines.push(fitText(`   ${theme.dim(`key: ${field.keyPath}`)}`, width));
+  for (const line of wrapPlain(field.detail ?? "", width - 3)) {
+    if (line) lines.push(fitText(`   ${theme.dim(line)}`, width));
+  }
+  for (const line of wrapPlain(field.statusText ?? "", width - 3)) {
+    if (line) lines.push(fitText(`   ${theme.fg("error", line)}`, width));
+  }
+  const progress = progressRow(field, theme, width);
+  if (progress) lines.push(progress);
+  if (field.steps?.length) lines.push(...stepRows(field.steps, theme, width));
+  if (field.output?.length) {
+    lines.push(...field.output.slice(-OUTPUT_TAIL).map((line) => fitText(`   ${theme.dim(line)}`, width)));
+  }
+  if (field.actions?.length) {
+    lines.push(fitText(`   ${theme.key(field.actions.map((action) => `${action.key} ${action.label}`).join(" \xB7 "))}`, width));
+  }
+  if (state.mode === "choices") lines.push(...choiceRows(field, state, theme, width));
+  if (state.mode === "edit" || field.awaitingInput) {
+    const draft = state.mode === "edit" ? `${state.draft.slice(0, state.caret)}|${state.draft.slice(state.caret)}` : "|";
+    lines.push(fitText(`   ${theme.dim("\u203A")} ${draft}`, width));
+  }
+  return lines;
+}
+function fieldRows(section, state, theme, width, nowMs) {
+  const lines = [];
+  section.fields.forEach((field, index) => {
+    const focused = state.pane === "fields" && state.fieldIndex === index;
+    if (field.kind === "info") {
+      lines.push(fitText(`   ${theme.dim(field.label)}  ${theme.dim(field.value ?? field.placeholder ?? "")}`, width));
+      return;
+    }
+    const pending = fieldIsPending(state, section, field);
+    const mark = statusMark(field.status, theme, pending ? "\u25CC" : KXM_TUI_MARKS.pending);
+    const value = pending && field.value === void 0 ? theme.dim("saving\u2026") : field.value;
+    const shown = value ?? theme.dim(field.placeholder ?? "not set");
+    const age = field.updatedAt ? theme.dim(` (${formatAge(field.updatedAt, nowMs)})`) : "";
+    lines.push(fitText(`${cursorMark(focused, theme)} ${mark} ${alignRight(field.label, `${shown}${age}`, width - 4)}`, width));
+    if (focused) lines.push(...focusedFieldDetail(field, state, theme, width));
+  });
+  return lines;
+}
+function noticeRows(section, theme, width) {
+  if (!section?.notice) return [];
+  const token = section.noticeLevel === "error" ? "error" : "warning";
+  return wrapPlain(section.notice, width - 2).map((line) => fitText(theme.fg(token, line), width));
+}
+function singlePaneLines(sections, state, theme, width, nowMs) {
+  const section = sections[state.sectionIndex];
+  if (state.pane === "fields" && section) {
+    return [
+      fitText(theme.headerBg(alignRight(` ${section.title}`, section.source, width)), width),
+      ...noticeRows(section, theme, width),
+      ...fieldRows(section, state, theme, width, nowMs)
+    ];
+  }
+  return [
+    fitText(theme.headerBg(alignRight(" SECTIONS", `${sections.length}`, width)), width),
+    ...sections.map((candidate, index) => sectionRow(candidate, index === state.sectionIndex, state.pane, theme, width))
+  ];
+}
+function twoPaneLines(sections, state, theme, width, nowMs) {
+  const split = paneSplit(width);
+  const left = [fitText(theme.key(" SECTIONS"), split.sections)];
+  sections.forEach(
+    (candidate, index) => left.push(sectionRow(candidate, index === state.sectionIndex, state.pane, theme, split.sections))
+  );
+  const right = [];
+  const section = sections[state.sectionIndex];
+  if (section) {
+    right.push(fitText(alignRight(` ${section.title}`, section.source, split.fields), split.fields));
+    if (section.detail) right.push(fitText(` ${theme.dim(section.detail)}`, split.fields));
+    right.push(...noticeRows(section, theme, split.fields));
+    right.push(...fieldRows(section, state, theme, split.fields, nowMs));
+  } else {
+    right.push(fitText(theme.dim("no surface is published"), split.fields));
+  }
+  const rows = [];
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    rows.push(fitText(`${padRight(left[index] ?? "", split.sections)} ${right[index] ?? ""}`, width));
+  }
+  return rows;
+}
+function renderKxmTuiPanel(sections, state, theme, options, width = 120) {
+  const nowMs = options.nowMs ?? Date.now();
+  const title = `${theme.cursor(options.title)}${options.breadcrumb ? `  ${theme.dim(options.breadcrumb)}` : ""}`;
+  const header = [fitText(title, width)];
+  if (state.help) {
+    const help = (options.helpLines ?? ["no help published"]).flatMap((line) => wrapPlain(line, Math.max(1, width - 2)));
+    return [...header, ...help.map((line) => fitText(line, width)), fitText(theme.dim("esc close help"), width)];
+  }
+  const body = width < SPLIT_MIN_WIDTH ? singlePaneLines(sections, state, theme, width, nowMs) : twoPaneLines(sections, state, theme, width, nowMs);
+  const footer = options.footer ? [fitText(theme.dim(options.footer), width)] : [];
+  return [...header, ...body, ...footer];
+}
+
+// packages/core/tui/src/tui/panelComponent.ts
+var KXM_TUI_PANEL_HELP = Object.freeze([
+  "\u2191\u2193 move \xB7 \u2190\u2192 or Tab panes \xB7 PgUp/PgDn section \xB7 enter edit or open list",
+  "type to filter a list \xB7 x clears a value \xB7 esc backs out \xB7 q quit \xB7 h help"
+]);
+function rowsComponent() {
+  const stack = new VStack([], { gap: 0 });
+  const scroll = new ScrollView(stack, { primary: true, overscroll: "contain", scrollbar: "auto" });
+  const fill = (rows) => {
+    stack.clear();
+    for (const row of rows) stack.addChild(new TruncatedText(row, 0, 0));
+  };
+  return { stack, scroll, fill };
+}
+var KxmTuiPanelComponent = class {
+  root = new VStack([], { gap: 0 });
+  options;
+  body = rowsComponent();
+  sections;
+  state;
+  notice;
+  unsubscribe;
+  constructor(options) {
+    this.options = options;
+    this.sections = options.registry.getSections();
+    this.state = initialKxmTuiPanelState(this.sections);
+    this.unsubscribe = options.registry.subscribe(() => this.refresh());
+    this.rebuild();
+  }
+  getState() {
+    return this.state;
+  }
+  getSections() {
+    return this.sections;
+  }
+  /** Point the cursor at a field, e.g. after opening a named section. */
+  focus(sectionId, fieldId) {
+    const sectionIndex = this.sections.findIndex((section) => section.id === sectionId);
+    if (sectionIndex < 0) return;
+    const fields = this.sections[sectionIndex]?.fields ?? [];
+    const fieldIndex = fieldId ? Math.max(0, fields.findIndex((field) => field.id === fieldId)) : this.state.fieldIndex;
+    this.state = { ...this.state, pane: "fields", sectionIndex, fieldIndex };
+    this.rebuild();
+    this.options.requestRender();
+  }
+  setStatus(message) {
+    this.notice = message;
+    this.rebuild();
+    this.options.requestRender();
+  }
+  refresh() {
+    const next = this.options.registry.getSections();
+    this.sections = next;
+    this.state = reconcileKxmTuiPanelState(this.state, next);
+    this.rebuild();
+    this.options.requestRender();
+  }
+  handleInput(data) {
+    if (matchesKey(data, Key.pageUp) || matchesKey(data, Key.ctrl("u"))) {
+      this.body.scroll.scrollBy(-(this.viewport() - 2));
+      this.options.requestRender();
+      return;
+    }
+    if (matchesKey(data, Key.pageDown) || matchesKey(data, Key.ctrl("d"))) {
+      this.body.scroll.scrollBy(this.viewport() - 2);
+      this.options.requestRender();
+      return;
+    }
+    const step = reduceKxmTuiInput(this.state, this.sections, data);
+    this.state = step.state;
+    for (const effect of step.effects) this.run(effect);
+    this.rebuild();
+    this.options.requestRender();
+  }
+  viewport() {
+    const height = this.body.scroll.viewportHeight;
+    return height > 3 ? height : 10;
+  }
+  run(effect) {
+    if (effect.type === "quit") {
+      this.options.onQuit();
+      return;
+    }
+    if (effect.type === "notice") {
+      this.notice = effect.message;
+      return;
+    }
+    this.notice = void 0;
+    void this.options.registry.invoke(effect.invocation).then((result2) => {
+      if (!result2.ok) this.setStatus(result2.message ?? "the owner refused that change");
+      else if (this.notice === void 0) this.setStatus(void 0);
+    });
+  }
+  footer() {
+    const status = this.notice ?? this.options.statusText?.();
+    const base = "\u2191\u2193 \xB7 \u2190\u2192 panes \xB7 enter edit \xB7 x clear \xB7 esc back \xB7 h help \xB7 q quit";
+    return status ? `${base}  ${status}` : base;
+  }
+  rebuild() {
+    const theme = this.options.theme;
+    const width = this.options.getWidth?.() ?? 120;
+    const title = new Box(1, 0, theme.headerBg);
+    title.addChild(new HStack([
+      { component: new Text(theme.cursor(this.options.title), 0, 0), basis: 12, shrink: 1, minSize: 6 },
+      {
+        component: new Text(
+          this.options.breadcrumb ? theme.dim(fitText(this.options.breadcrumb, Math.max(4, width - 16))) : "",
+          0,
+          0
+        ),
+        grow: 1,
+        shrink: 1,
+        minSize: 8
+      }
+    ], { gap: 2 }));
+    this.body.fill(
+      renderKxmTuiPanel(this.sections, this.state, theme, {
+        title: this.options.title,
+        ...this.options.breadcrumb ? { breadcrumb: this.options.breadcrumb } : {},
+        helpLines: this.options.helpLines ?? KXM_TUI_PANEL_HELP,
+        footer: this.footer()
+      }, width)
+    );
+    const panel = new Box(0, 0, theme.panelBg);
+    panel.addChild(this.body.scroll);
+    this.root.clear();
+    this.root.addChild(title, { basis: "auto", shrink: 0 });
+    this.root.addChild(panel, { basis: "auto", grow: 1, shrink: 1, minSize: 1 });
+  }
+  handleMouse(event) {
+    return this.root.handleMouse?.(event);
+  }
+  invalidate() {
+    this.root.invalidate();
+  }
+  render(width) {
+    return this.root.render(width);
+  }
+  dispose() {
+    this.unsubscribe();
+    this.unsubscribe = () => void 0;
+  }
+};
+
+// packages/core/tui/src/services/registry.ts
+function describe2(error2) {
+  if (error2 instanceof Error && error2.message) return error2.message.split(/\r?\n/u)[0].slice(0, KXM_TUI_LIMITS.detailMax);
+  return String(error2).split(/\r?\n/u)[0].slice(0, KXM_TUI_LIMITS.detailMax);
+}
+function normalizeSource(source) {
+  if (!/^[A-Za-z0-9@][A-Za-z0-9@/._:-]*$/u.test(source) || source.length > KXM_TUI_LIMITS.sourceMax) {
+    throw new Error(`invalid kxm tui surface source: ${source.slice(0, 64)}`);
+  }
+  return source;
+}
+function createKxmTuiRegistry(options = {}) {
+  const contributions = /* @__PURE__ */ new Map();
+  const notices = /* @__PURE__ */ new Map();
+  const listeners = /* @__PURE__ */ new Set();
+  const published = /* @__PURE__ */ new Map();
+  const issues = /* @__PURE__ */ new Map();
+  let generation = 0;
+  let disposed = false;
+  let epoch = 0;
+  const report = (error2, context) => {
+    if (options.onInternalError) options.onInternalError(error2, context);
+  };
+  const emit = (event) => {
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener(event);
+      } catch (error2) {
+        report(error2, "listener");
+      }
+    }
+  };
+  function readOwner(source, force) {
+    if (!force) {
+      const cached2 = published.get(source);
+      if (cached2) return cached2;
+    }
+    const contribution = contributions.get(source);
+    if (!contribution) {
+      published.set(source, []);
+      return [];
+    }
+    let sections;
+    try {
+      const raw = contribution.listSections();
+      const ownerIssues = validateKxmTuiSurface(raw);
+      if (ownerIssues.length > 0) {
+        issues.set(source, ownerIssues);
+        sections = raw.filter((section) => Boolean(section) && typeof section === "object").map((section) => ({
+          ...section,
+          notice: section.notice ?? `published surface was refused: ${ownerIssues[0].code} at ${ownerIssues[0].path}`,
+          noticeLevel: "error"
+        }));
+      } else {
+        issues.delete(source);
+        sections = raw;
+      }
+    } catch (error2) {
+      issues.set(source, [{ path: source, code: "list_sections_failed", message: describe2(error2) }]);
+      report(error2, `listSections:${source}`);
+      sections = [{ source, id: "error", title: source, order: 900, notice: describe2(error2), noticeLevel: "error", fields: [] }];
+    }
+    const pending = notices.get(source);
+    const withNotice = pending !== void 0 && sections.length > 0 ? sections.map((section, index) => index === 0 ? { ...section, notice: pending, noticeLevel: "error" } : section) : sections;
+    published.set(source, withNotice);
+    return withNotice;
+  }
+  function merged() {
+    const all = [];
+    for (const source of contributions.keys()) all.push(...readOwner(source, false));
+    return all.slice().sort((a, b2) => a.order - b2.order || a.source.localeCompare(b2.source) || a.title.localeCompare(b2.title));
+  }
+  return {
+    register(contribution) {
+      if (disposed) throw new Error("kxm tui registry is disposed");
+      const source = normalizeSource(contribution.source);
+      notices.delete(source);
+      published.delete(source);
+      issues.delete(source);
+      contributions.set(source, { ...contribution, source });
+      emit({ reason: "publish", source });
+    },
+    unregister(source) {
+      contributions.delete(source);
+      published.delete(source);
+      issues.delete(source);
+      notices.delete(source);
+      emit({ reason: "publish", source });
+    },
+    getSections() {
+      return merged();
+    },
+    getIssues() {
+      return [...issues.values()].flat();
+    },
+    async invoke(invocation) {
+      if (disposed) return { ok: false, message: "kxm tui registry is disposed" };
+      const contribution = contributions.get(invocation.source);
+      if (!contribution) {
+        emit({ reason: "refused", source: invocation.source, message: "unknown owner" });
+        return { ok: false, message: `${invocation.source} does not own a surface here` };
+      }
+      const handler = contribution.handlers[invocation.action];
+      if (!handler) {
+        const message = `${invocation.source} does not accept "${invocation.action}"`;
+        emit({ reason: "refused", source: invocation.source, message });
+        return { ok: false, message };
+      }
+      const currentEpoch = epoch;
+      try {
+        await handler({
+          sectionId: invocation.sectionId,
+          fieldId: invocation.fieldId,
+          action: invocation.action,
+          ...invocation.value === void 0 ? {} : { value: invocation.value }
+        });
+      } catch (error2) {
+        const failure = contribution.describeError?.(error2, invocation.action) ?? describe2(error2);
+        notices.set(invocation.source, failure);
+        emit({ reason: "failed", source: invocation.source, message: failure });
+        readOwner(invocation.source, true);
+        generation += 1;
+        return { ok: false, message: failure };
+      }
+      if (currentEpoch !== epoch) {
+        readOwner(invocation.source, true);
+        return { ok: false, message: "stale write result was discarded" };
+      }
+      notices.delete(invocation.source);
+      readOwner(invocation.source, true);
+      generation += 1;
+      emit({ reason: "publish", source: invocation.source });
+      return { ok: true };
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getGeneration() {
+      return generation;
+    },
+    hasSource(source) {
+      return contributions.has(source);
+    },
+    listSources() {
+      return [...contributions.keys()];
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      epoch += 1;
+      listeners.clear();
+      contributions.clear();
+      published.clear();
+      issues.clear();
+      notices.clear();
+    }
+  };
+}
+
+// packages/core/tui/src/adapters/pi.ts
+function createKxmTuiPiPanel(options) {
+  let closed = false;
+  const panel = new KxmTuiPanelComponent({
+    registry: options.registry,
+    theme: createKxmTuiThemeFromPi(options.theme),
+    title: options.title,
+    ...options.breadcrumb === void 0 ? {} : { breadcrumb: options.breadcrumb },
+    ...options.helpLines === void 0 ? {} : { helpLines: options.helpLines },
+    requestRender: () => options.tui.requestRender(),
+    onQuit: () => {
+      if (closed) return;
+      closed = true;
+      panel.dispose();
+      options.done?.(true);
+    },
+    ...options.width === void 0 ? {} : { getWidth: options.width }
+  });
+  return {
+    render: (width) => panel.render(width),
+    handleInput: (data) => {
+      if (closed) return;
+      panel.handleInput(data);
+      options.tui.requestRender();
+    },
+    invalidate: () => panel.invalidate()
+  };
+}
+
+// plugins/kxm/src/config-editor.ts
+var KXM_CONFIG_EDITOR_SOURCE = "kxm/config";
+var INTEGER_TEXT = /^(0|[1-9][0-9]*)$/;
+var DECIMAL_TEXT = /^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$/;
+var TEXT_VALUE = /^[A-Za-z0-9@][A-Za-z0-9@._:/-]{0,127}$/;
+var SCREEN_CHOICES = ["agents", "tasks", "workflows", "plans", "inbox", "procs", "spend"];
+var SECTIONS = [
+  {
+    id: "user",
+    title: "User",
+    order: 10,
+    fields: [
+      { id: "user-theme", label: "Theme", keyPath: "user.theme", spec: { kind: "enum", choices: ["dark", "light", "minimal"] } },
+      { id: "user-token-budget", label: "Token budget", keyPath: "user.tokenBudget", spec: { kind: "number", integer: true, min: 1, max: 2e6 } }
+    ]
+  },
+  {
+    id: "defaults",
+    title: "Defaults",
+    order: 20,
+    fields: [
+      { id: "defaults-workflow", label: "Workflow", keyPath: "defaults.workflow", spec: { kind: "text" } },
+      { id: "defaults-harness", label: "Harness", keyPath: "defaults.harness", spec: { kind: "text" } }
+    ]
+  },
+  {
+    id: "dash",
+    title: "Dashboard",
+    order: 30,
+    fields: [
+      { id: "dash-screen", label: "Default screen", keyPath: "dash.defaultScreen", spec: { kind: "enum", choices: SCREEN_CHOICES } },
+      { id: "dash-refresh", label: "Refresh interval", keyPath: "dash.refreshIntervalMs", spec: { kind: "number", integer: true, min: 250, max: 36e5 } },
+      { id: "dash-auto-open", label: "Auto-open", keyPath: "dash.autoOpen", spec: { kind: "enum", choices: ["true", "false"] } }
+    ]
+  },
+  {
+    id: "sync",
+    title: "Sync",
+    order: 40,
+    fields: [
+      { id: "sync-tracker", label: "Default tracker", keyPath: "sync.defaultTracker", spec: { kind: "enum", choices: ["github", "jira", "none"] } }
+    ]
+  },
+  {
+    id: "hub",
+    title: "Hub",
+    order: 50,
+    fields: [
+      {
+        id: "hub-auto-start",
+        label: "Auto-start",
+        keyPath: "hub.autoStart",
+        spec: { kind: "enum", choices: ["background", "off"] },
+        note: "Hub URLs and key references stay out of this panel."
+      }
+    ]
+  },
+  {
+    id: "improvement",
+    title: "Improvement",
+    order: 60,
+    fields: [
+      { id: "improvement-policy", label: "Promotion policy", keyPath: "improvement.promotionPolicy", spec: { kind: "enum", choices: ["manual_pr", "critic_quorum", "auto_threshold"] } },
+      { id: "improvement-half-life", label: "Telemetry half-life", keyPath: "improvement.telemetryHalfLifeDays", spec: { kind: "number", integer: false, min: 1e-6, max: 3650 } },
+      { id: "improvement-min-runs", label: "Minimum runs", keyPath: "improvement.autoThreshold.minRuns", spec: { kind: "number", integer: true, min: 1, max: 1e6 } },
+      { id: "improvement-min-pass-rate", label: "Minimum pass rate", keyPath: "improvement.autoThreshold.minPassRate", spec: { kind: "number", integer: false, min: 0, max: 1 } },
+      { id: "improvement-min-cost-savings", label: "Minimum cost savings", keyPath: "improvement.autoThreshold.minCostSavings", spec: { kind: "number", integer: false, min: 0, max: 1e6 } }
+    ]
+  },
+  {
+    id: "routing",
+    title: "Routing",
+    order: 70,
+    fields: [
+      {
+        id: "routing-shadow",
+        label: "Shadow execution",
+        keyPath: "routing.shadowExecution.enabled",
+        spec: { kind: "enum", choices: ["true", "false"] },
+        note: "Strategy, fallback, and context limits stay in role and route files."
+      },
+      { id: "routing-sample-rate", label: "Sample rate", keyPath: "routing.shadowExecution.sampleRate", spec: { kind: "number", integer: false, min: 0, max: 1 } },
+      { id: "routing-breaker-mode", label: "Breaker mode", keyPath: "routing.circuitBreaker.mode", spec: { kind: "enum", choices: ["soft_demotion", "quarantine"] } },
+      { id: "routing-failure-threshold", label: "Failure threshold", keyPath: "routing.circuitBreaker.failureThreshold", spec: { kind: "number", integer: true, min: 1, max: 1e4 } },
+      { id: "routing-window-seconds", label: "Window seconds", keyPath: "routing.circuitBreaker.windowSeconds", spec: { kind: "number", integer: true, min: 1, max: 31536e3 } },
+      { id: "routing-cooldown-seconds", label: "Cooldown seconds", keyPath: "routing.circuitBreaker.cooldownSeconds", spec: { kind: "number", integer: true, min: 0, max: 31536e3 } },
+      { id: "routing-penalty", label: "Penalty multiplier", keyPath: "routing.circuitBreaker.penaltyMultiplier", spec: { kind: "number", integer: false, min: 1e-6, max: 1e3 } }
+    ]
+  },
+  {
+    id: "telemetry",
+    title: "Telemetry",
+    order: 80,
+    fields: [
+      { id: "telemetry-federated", label: "Federated", keyPath: "telemetry.federated", spec: { kind: "enum", choices: ["true", "false"] } },
+      { id: "telemetry-anonymize", label: "Anonymize", keyPath: "telemetry.anonymize", spec: { kind: "enum", choices: ["true", "false"] } }
+    ]
+  }
+];
+var KxmConfigEditorError = class extends Error {
+  code = "config_edit_refused";
+  constructor(message) {
+    super(message);
+    this.name = "KxmConfigEditorError";
+  }
+};
+function createKxmConfigEditorContribution(target) {
+  return {
+    source: KXM_CONFIG_EDITOR_SOURCE,
+    republishAfterWrite: true,
+    listSections: () => listConfigEditorSections(target),
+    handlers: {
+      [KXM_TUI_SET_ACTION]: (input) => {
+        writeConfigEditorValue(target, input.sectionId, input.fieldId, input.value);
+      },
+      [KXM_TUI_CLEAR_ACTION]: (input) => {
+        clearConfigEditorValue(target, input.sectionId, input.fieldId);
+      }
+    },
+    describeError: (error2) => error2 instanceof Error && error2.message ? error2.message : "config edit failed"
+  };
+}
+function scopeFile(target) {
+  return kxmConfigFileForScope(target.cwd, target.scope, target.userConfigDir);
+}
+function scopePhrase(scope) {
+  return scope === "project" ? "the project file .kxm/config.yaml" : "the user file config.yaml";
+}
+function listConfigEditorSections(target) {
+  const config2 = loadKxmConfig(target.cwd, {
+    ...target.userConfigDir === void 0 ? {} : { userConfigDir: target.userConfigDir },
+    layers: target.scope === "user" ? "user" : "all"
+  });
+  const owned = readScopeDocument(scopeFile(target));
+  const where = scopePhrase(target.scope);
+  return SECTIONS.map((section) => {
+    const fields = section.fields.map((field) => publishField(field, config2, owned, where));
+    const diagnosis = fields.find((field) => field.statusText)?.statusText;
+    return {
+      source: KXM_CONFIG_EDITOR_SOURCE,
+      id: section.id,
+      title: section.title,
+      order: section.order,
+      detail: `kxm.config.v1 \xB7 ${target.scope} scope. Re-read from disk after each write.`,
+      ...diagnosis === void 0 ? {} : { notice: diagnosis, noticeLevel: "error" },
+      fields
+    };
+  });
+}
+function publishField(field, config2, owned, where) {
+  const effective = getKxmConfigValue(config2, field.keyPath);
+  const stored = ownValue(owned, field.keyPath);
+  const shown = displayScalar(effective);
+  const inherited = !stored.present;
+  const diagnosis = storedDiagnosis(field, stored, effective);
+  const detail = [
+    `Writes ${where}.`,
+    inherited ? "Inherited." : "Set in this scope.",
+    "Clear removes only this override.",
+    field.note ?? "",
+    diagnosis ?? ""
+  ].filter((part) => part.length > 0).join(" ");
+  const choices = field.spec.kind === "enum" ? field.spec.choices.map((choice) => ({ id: choice, label: choice })) : void 0;
+  return {
+    id: field.id,
+    label: field.label,
+    kind: field.spec.kind === "enum" ? "enum" : "text",
+    keyPath: field.keyPath,
+    detail,
+    status: "ready",
+    ...shown === void 0 ? {} : { value: shown },
+    ...choices === void 0 ? {} : { choices },
+    ...diagnosis === void 0 ? {} : { statusText: diagnosis }
+  };
+}
+function displayScalar(value) {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return void 0;
+}
+function isBooleanEnum(spec) {
+  return spec.kind === "enum" && spec.choices.length === 2 && spec.choices.every((choice) => choice === "true" || choice === "false");
+}
+function storedTypeMatches(field, value) {
+  if (field.spec.kind === "number") {
+    return typeof value === "number" && Number.isFinite(value) && (!field.spec.integer || Number.isInteger(value));
+  }
+  if (isBooleanEnum(field.spec)) return typeof value === "boolean";
+  return typeof value === "string";
+}
+function storedDiagnosis(field, stored, effective) {
+  if (!stored.present) return void 0;
+  if (!storedTypeMatches(field, stored.value)) return "stored type does not match this field";
+  if (field.spec.kind === "enum" && !isBooleanEnum(field.spec) && !field.spec.choices.includes(stored.value)) {
+    return "stored value is not a supported scalar";
+  }
+  if (field.spec.kind === "number") {
+    const value = stored.value;
+    if (value < field.spec.min || value > field.spec.max) return "stored value is not a supported scalar";
+  }
+  if (stored.value !== effective) return "stored value is not a supported scalar";
+  return void 0;
+}
+function writeConfigEditorValue(target, sectionId, fieldId, raw) {
+  const field = requireField(sectionId, fieldId);
+  const value = parseEditorValue(field, raw);
+  setKxmConfigValue(target.cwd, field.keyPath, value, {
+    scope: target.scope,
+    ...target.userConfigDir === void 0 ? {} : { userConfigDir: target.userConfigDir }
+  });
+}
+function clearConfigEditorValue(target, sectionId, fieldId) {
+  const field = requireField(sectionId, fieldId);
+  deleteKxmConfigValue(target.cwd, field.keyPath, {
+    scope: target.scope,
+    ...target.userConfigDir === void 0 ? {} : { userConfigDir: target.userConfigDir }
+  });
+}
+function requireField(sectionId, fieldId) {
+  const section = SECTIONS.find((item) => item.id === sectionId);
+  const field = section?.fields.find((item) => item.id === fieldId);
+  if (!field) throw new KxmConfigEditorError("unknown configuration field");
+  return field;
+}
+function parseEditorValue(field, raw) {
+  if (raw === void 0) throw new KxmConfigEditorError("a value is required");
+  if (raw.length === 0 || raw.length > 128 || /[\u0000-\u001f\u007f]/u.test(raw)) {
+    throw new KxmConfigEditorError("value must be a single bounded line");
+  }
+  if (field.spec.kind === "enum") {
+    if (!field.spec.choices.includes(raw)) throw new KxmConfigEditorError("value is not a supported choice");
+    if (isBooleanEnum(field.spec)) return raw === "true";
+    return raw;
+  }
+  if (field.spec.kind === "text") {
+    if (!TEXT_VALUE.test(raw)) throw new KxmConfigEditorError("value must be a single bounded line");
+    return raw;
+  }
+  if (!(field.spec.integer ? INTEGER_TEXT : DECIMAL_TEXT).test(raw)) {
+    throw new KxmConfigEditorError("value must be a finite number in range");
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || field.spec.integer && !Number.isInteger(parsed) || parsed < field.spec.min || parsed > field.spec.max) {
+    throw new KxmConfigEditorError("value must be a finite number in range");
+  }
+  return parsed;
+}
+function readScopeDocument(file) {
+  if (!existsSync12(file)) return void 0;
+  const parsed = (0, import_yaml3.parse)(readFileSync13(file, "utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new KxmConfigEditorError(`config file ${file} must be a mapping`);
+  }
+  return parsed;
+}
+function ownValue(root, keyPath) {
+  if (!root) return { present: false, value: void 0 };
+  let cursor = root;
+  for (const part of keyPath.split(".")) {
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) return { present: false, value: void 0 };
+    const record2 = cursor;
+    if (!Object.prototype.hasOwnProperty.call(record2, part)) return { present: false, value: void 0 };
+    cursor = record2[part];
+  }
+  return { present: true, value: cursor };
+}
+var EDITOR_HELP = [
+  "\u2191\u2193 move \xB7 enter edits \xB7 x clears this scope's override \xB7 q quits",
+  "Writes are checked, saved, then re-read. A refused edit leaves the file unchanged."
+];
+var FRAME_NOW_MS = Date.UTC(2026, 9, 11);
+async function openKxmProjectConfigPanel(ui, cwd, env = process.env, mode) {
+  if (mode !== "tui") {
+    ui.notify?.(
+      "kxm: /kxm config opens only in the Pi TUI. Nothing was written. Run kxm config edit --scope project",
+      "warning"
+    );
+    return;
+  }
+  if (typeof ui.custom !== "function") {
+    ui.notify?.(
+      "kxm: /kxm config needs Pi's custom panel. Open the repository in the Pi TUI, or run kxm config edit --scope project",
+      "warning"
+    );
+    return;
+  }
+  const custom2 = ui.custom;
+  const registry2 = createKxmTuiRegistry();
+  const userConfigDir = userConfigDirForEnv(env);
+  try {
+    registry2.register(createKxmConfigEditorContribution({
+      cwd,
+      scope: "project",
+      ...userConfigDir === void 0 ? {} : { userConfigDir }
+    }));
+    await custom2(
+      (tui, theme, _keybindings, done) => createKxmTuiPiPanel({
+        registry: registry2,
+        tui,
+        theme,
+        title: "KXM configuration",
+        breadcrumb: "kxm.config.v1 \xB7 project scope",
+        helpLines: EDITOR_HELP,
+        done: () => {
+          registry2.dispose();
+          done(void 0);
+        }
+      }),
+      { overlay: true }
+    );
+  } finally {
+    registry2.dispose();
+  }
+}
+
+// plugins/kxm/src/workflow-tui.ts
+import { existsSync as existsSync13, readFileSync as readFileSync14 } from "node:fs";
 import { join as join14 } from "node:path";
 function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
   const dbPath = join14(repoConfigDirectory(repoRoot), "state", "kxm.db");
-  if (!existsSync12(dbPath)) return void 0;
+  if (!existsSync13(dbPath)) return void 0;
   let db;
   try {
     db = new DatabaseSync(dbPath, { readOnly: true });
@@ -38149,19 +47911,19 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
     try {
       const logsDir = join14(repoConfigDirectory(repoRoot), "logs");
       const telemFile = telemetryPath(logsDir);
-      if (existsSync12(telemFile)) {
+      if (existsSync13(telemFile)) {
         const records = readRoutingRecords(telemFile);
         const routingRunId = (routing) => "runId" in routing ? routing.runId : routing.workflowRunId;
         let matching = records.filter((r) => routingRunId(r.routing) === runId);
         if (matching.length === 0) {
-          const rawLines = readFileSync13(telemFile, "utf8").split(/\r?\n/);
+          const rawLines = readFileSync14(telemFile, "utf8").split(/\r?\n/);
           for (const line of rawLines) {
             if (!line.trim()) continue;
             try {
               const p = JSON.parse(line);
-              const rt = p.routing || p;
-              if (rt && (routingRunId(rt) === runId || p.runId === runId)) {
-                matching.push({ recordedAt: p.timestamp || (/* @__PURE__ */ new Date()).toISOString(), routing: rt });
+              const rt2 = p.routing || p;
+              if (rt2 && (routingRunId(rt2) === runId || p.runId === runId)) {
+                matching.push({ recordedAt: p.timestamp || (/* @__PURE__ */ new Date()).toISOString(), routing: rt2 });
               }
             } catch {
             }
@@ -38174,16 +47936,16 @@ function loadActiveWorkflowProgress(repoRoot = process.cwd(), targetRunId) {
           let totalOut = 0;
           let totalCache = 0;
           let totalLatency = 0;
-          for (const m of matching) {
-            const rt = m.routing;
-            if (typeof rt.costUsd === "number") totalSpend += rt.costUsd;
-            if ("tokensIn" in rt && typeof rt.tokensIn === "number") totalIn += rt.tokensIn;
-            else if ("tokens" in rt && rt.tokens && typeof rt.tokens.input === "number") totalIn += rt.tokens.input;
-            if ("tokensOut" in rt && typeof rt.tokensOut === "number") totalOut += rt.tokensOut;
-            else if ("tokens" in rt && rt.tokens && typeof rt.tokens.output === "number") totalOut += rt.tokens.output;
-            if ("cacheReadTokens" in rt && typeof rt.cacheReadTokens === "number") totalCache += rt.cacheReadTokens;
-            else if ("tokens" in rt && rt.tokens && typeof rt.tokens.cacheRead === "number") totalCache += rt.tokens.cacheRead;
-            if ("latencyMs" in rt && typeof rt.latencyMs === "number") totalLatency += rt.latencyMs;
+          for (const m2 of matching) {
+            const rt2 = m2.routing;
+            if (typeof rt2.costUsd === "number") totalSpend += rt2.costUsd;
+            if ("tokensIn" in rt2 && typeof rt2.tokensIn === "number") totalIn += rt2.tokensIn;
+            else if ("tokens" in rt2 && rt2.tokens && typeof rt2.tokens.input === "number") totalIn += rt2.tokens.input;
+            if ("tokensOut" in rt2 && typeof rt2.tokensOut === "number") totalOut += rt2.tokensOut;
+            else if ("tokens" in rt2 && rt2.tokens && typeof rt2.tokens.output === "number") totalOut += rt2.tokens.output;
+            if ("cacheReadTokens" in rt2 && typeof rt2.cacheReadTokens === "number") totalCache += rt2.cacheReadTokens;
+            else if ("tokens" in rt2 && rt2.tokens && typeof rt2.tokens.cacheRead === "number") totalCache += rt2.tokens.cacheRead;
+            if ("latencyMs" in rt2 && typeof rt2.latencyMs === "number") totalLatency += rt2.latencyMs;
           }
           const latestRecord = latest;
           const latestMetadata = latestRecord.providerMetadata && typeof latestRecord.providerMetadata === "object" ? latestRecord.providerMetadata : void 0;
@@ -38453,7 +48215,7 @@ function piMeshExtension(pi) {
     const legacy = join15(stateDir, `worker-context-${agentName.replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
     if (legacy === recoveryContextPath()) return;
     try {
-      const candidate = JSON.parse(readFileSync14(legacy, "utf8"));
+      const candidate = JSON.parse(readFileSync15(legacy, "utf8"));
       if (candidate.version === 1 && candidate.agentName === agentName && candidate.project === projectName) {
         rmSync4(legacy, { force: true });
       }
@@ -39023,7 +48785,7 @@ function piMeshExtension(pi) {
     });
   }
   pi.registerCommand("kxm", {
-    description: "Hub session brief, status line, and hub view",
+    description: "KXM session, workflow, hub, and configuration surfaces",
     getArgumentCompletions: (prefix) => {
       const items = kxmSlashCompletions(prefix);
       return items.length > 0 ? items : null;
@@ -39055,8 +48817,14 @@ function piMeshExtension(pi) {
         }
         return;
       }
+      if (command === "config") {
+        const cwd = typeof ctx2.cwd === "string" && ctx2.cwd.trim().length > 0 ? ctx2.cwd : process.cwd();
+        const mode = typeof ctx2.mode === "string" ? ctx2.mode : void 0;
+        await openKxmProjectConfigPanel(ctx2.ui, cwd, process.env, mode);
+        return;
+      }
       if (command === "help") {
-        ctx2.ui.notify("kxm: /kxm | /kxm status | /kxm progress | /kxm workflow | /kxm hub | /kxm memory | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief", "info");
+        ctx2.ui.notify("kxm: /kxm | /kxm status | /kxm progress | /kxm workflow | /kxm hub | /kxm memory | /kxm config | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief, kxm config edit --scope project|user", "info");
         return;
       }
       if (command === "memory") {
@@ -39066,7 +48834,7 @@ function piMeshExtension(pi) {
         let memText = res.status === 0 && res.stdout ? res.stdout.trim() : "";
         if (!memText) {
           const script = join15(cwd, "scripts", "kxm.mjs");
-          if (existsSync13(script)) {
+          if (existsSync14(script)) {
             const scriptRes = spawnSync4(process.execPath, [script, "memory", "brief"], { cwd, encoding: "utf8", windowsHide: true });
             if (scriptRes.status === 0 && scriptRes.stdout) memText = scriptRes.stdout.trim();
           }

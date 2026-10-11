@@ -137,13 +137,15 @@ test("verifyReleaseAssetDigest matches, mismatches, and treats missing as false"
   }
 });
 
-test("Pi extension load graph only uses declared runtime modules", () => {
+test("Pi extension source graph uses declared externals or bundled workspace modules", () => {
   const srcRoot = resolve("plugins/kxm/src");
   const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
     dependencies?: Record<string, string>;
     peerDependencies?: Record<string, string>;
   };
+  const tuiPackage = JSON.parse(readFileSync("packages/core/tui/package.json", "utf8")) as { name: string };
   const runtime = new Set([
+    tuiPackage.name,
     ...Object.keys(pkg.dependencies ?? {}),
     ...Object.keys(pkg.peerDependencies ?? {}),
   ]);

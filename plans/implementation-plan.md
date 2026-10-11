@@ -2000,10 +2000,28 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `test/core/package-layers.test.ts` (mutation-checked), version parity for the
   new package and its lock entry in `scripts/check-versions.mjs`, and the new
   export seam in `test/core/import-boundary.test.ts`. Documented in
-  [`docs/packages.md`](../docs/contributing/packages.md). This is a component library, not a
-  configuration editor: no `kxm` verb writes roster, routes, gates, roles, or
-  workflow YAML through it yet, writer admission is unchanged, and the
-  `kxm.config.v1` surface plus its editor command are the next slice.
+  [`docs/packages.md`](../docs/contributing/packages.md). The package landed as a
+  component library; its first production owner is the `kxm.config.v1` editor
+  in the next entry. It still does not make roster, routes, gates, roles, or
+  workflow YAML editable, and writer admission is unchanged.
+
+- **Owner-validated `kxm.config.v1` terminal editor (2026-10-11):**
+  `plugins/kxm/src/config-editor.ts` publishes one bounded `kxm/config`
+  contribution used by `kxm config edit --scope project|user` and OMP/Pi
+  `/kxm config`. Every set or clear validates the exact section/field pair,
+  writes through the existing config owner, then republishes from disk; a
+  refusal leaves file bytes unchanged. Project scope resolves Base → User →
+  Project, while user scope resolves Base → User so a project override cannot
+  hide the edit. Non-TTY and dry-run CLI calls render one plain frame;
+  unsupported scope, JSON editing, and non-TUI slash-command use fail closed.
+  The surface exposes only fixed non-secret scalar preferences. Endpoints, key
+  references, credentials, arrays, dynamic maps, roster, routes, gates, roles,
+  and workflow definitions remain outside it. Pi/OMP package discovery now
+  loads the tracked extension bundle, which contains the private TUI workspace
+  instead of requiring it as a published runtime dependency. Covered by
+  `test/core/config-editor.test.ts`; CLI/config/TUI references and the
+  architecture inventory name the same boundary. The broader package
+  restructure queue remains open.
 
 - **Hub background auto-start and package.json project naming (2026-09-15):**
   Added `plugins/kxm/src/hub-autostart.ts`: on Pi extension load, `hub.autoStart`
@@ -2556,8 +2574,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   type re-export from `workflow.ts` (not a product alias). Package `exports`
   are exactly `./core`, `./runtime`, `./client`, `./extension`, `./mcp`, and
   `./package.json`, all compiled `plugins/kxm/dist` JS except `./package.json`.
-  No bare `"."` entry. `./mcp` is the executable path. `pi.extensions` stays
-  on source. Four library bundles are in `check:generated`. The durable pack
+  No bare `"."` entry. `./mcp` is the executable path. `pi.extensions` loads
+  the tracked compiled extension bundle; explicit development loads may still
+  use source. Four library bundles are in `check:generated`. The durable pack
   guard asserts those four library bundles plus the two barrel sources are
   present in `npm pack`, and that `package.json` `files` still includes
   `plugins/kxm/dist` and `plugins/kxm/src`. One-time six-file delta versus
@@ -2984,8 +3003,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   floors remain the suite, esbuild still produces the bundles that
   `scripts/check-generated.mjs` and CI re-verify, nx drives per-package
   `build`/`test`/`typecheck` through `packages/*/project.json`, and the published
-  artifact stays one `@kontextmind/kxm` tarball (`npm pack`, Pi loads
-  `plugins/kxm/src/extension.ts`) with `packages/core/*` as internal workspaces.
+  artifact stays one `@kontextmind/kxm` tarball (`npm pack`, Pi loads the
+  tracked `plugins/kxm/dist/extension.js` bundle) with `packages/core/*` as
+  internal workspaces.
   Remaining work, slice by slice, not in one sweep: move the flat
   `plugins/kxm/src/*.ts` tree into `packages/<tier>/<name>` in the decided layer
   shape as each slice is picked up (`packages/core/tui` is the only package

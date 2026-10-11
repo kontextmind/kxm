@@ -101,7 +101,7 @@ kxm -V
 `--dry-run` changes nothing: no file is written, deleted, or moved, no request that changes hub or Runtime state is sent, no process is started, and no remote command runs. A command that cannot say what it would do without doing some of it refuses the flag instead of acting.
 
 - Plan with `planned`: `backup`, `restore`, `config set`, `role add|remove|modify|resume`, `workflow add|remove|modify`, `goal create`, `task create|run|sync`, `memory note|sync`, `skills evaluate|promote|reject`, `context promote`, `context wiki-compile --out`, `auth token`, `session token`, `session brief`, and `ssh run|file|close`. Each prints its normal result plus `dryRun: true` and `planned`, a list of `{action, target}` entries whose `action` is `write`, `delete`, `move`, `request`, or `ssh`. Text mode prints `dry run: <summary>` and one indented `would <action> <target>` line per entry (`session brief` appends `dry run: would write <file>` lines to the brief instead).
-- Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `docs build|serve`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, and `improve report`. `gate github watch --dry-run` still polls GitHub but does not post the signal.
+- Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `docs build|serve`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, `improve report`, and `config edit`. `config edit --dry-run` prints one plain frame and writes nothing. `gate github watch --dry-run` still polls GitHub but does not post the signal.
 - Read-only commands run as usual, without leaving a trace: a local SQLite store is opened without creating `-wal` or `-shm` files, and `runs status|list|receipt` only attach to a running Runtime supervisor. With no supervisor running they exit 2 with `dry_run_unsupported` instead of starting one. `context wiki-compile --dry-run` still asks the hub to compile, which is a read.
 - Refused: `kxm models` (the interactive screen) and `kxm prices acknowledge` exit 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
 
@@ -337,6 +337,34 @@ Stop harness extensions from starting a hub (Not run):
 
 ```bash
 kxm config set hub.autoStart off --scope user
+```
+
+### `kxm config edit`
+
+```text
+kxm config edit --scope project|user
+```
+
+Opens the terminal editor for one fixed list of scalar `kxm.config.v1` preferences. The same editor is `/kxm config` inside the OMP/Pi TUI, and that command mounts only when the session mode is `tui`.
+
+| Option | Argument | Default | Description |
+|---|---|---|---|
+| `--scope` | `project` or `user` | none | Which file a write or clear changes. Required |
+
+- `--scope project` writes `.kxm/config.yaml` and shows built-in, then user, then project. `--scope user` writes `$KXM_USER_CONFIG_DIR/config.yaml` (default `~/.config/kxm/config.yaml`) and shows built-in, then user. The project file does not mask the user view.
+- A write checks the section and field together, then checks the value. A refusal leaves that file's bytes unchanged. Clear deletes only that scope's key.
+- The editor accepts workflow and harness ids that contain `@`. Whitespace and control characters are refused.
+- A stored scalar whose runtime type does not match the field is shown with `stored type does not match this field`. The text `true` is not a boolean.
+- It does not edit hub URLs, key references, credentials, arrays, dynamic maps, roster, routes, gates, roles, or workflow YAML. `kxm config get`, `set`, and `list` are unchanged and still accept keys this editor does not.
+- No TTY, and `--dry-run`, each print one plain frame and write nothing. `--json`, or a scope other than `project` or `user`, exits 2 and writes nothing.
+
+```bash
+kxm config edit --scope project --dry-run
+```
+
+```text
+KXM configuration
+...
 ```
 
 ## `kxm completion`

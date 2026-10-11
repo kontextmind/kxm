@@ -383,7 +383,7 @@ test("package seams export compiled dist targets without a bare root or types co
   }
   assert.ok(pkg.files?.includes("plugins/kxm/dist"));
   assert.ok(pkg.files?.includes("plugins/kxm/src"));
-  assert.deepEqual(pkg.pi?.extensions, ["./plugins/kxm/src/extension.ts"]);
+  assert.deepEqual(pkg.pi?.extensions, ["./plugins/kxm/dist/extension.js"]);
   for (const artifact of LIBRARY_BUNDLES) {
     assert.ok(GENERATED_ARTIFACTS.includes(artifact), `${artifact} missing from GENERATED_ARTIFACTS`);
     assert.equal(existsSync(artifact), true, `${artifact} was not built`);

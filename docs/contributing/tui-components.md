@@ -8,10 +8,10 @@ The kit is the workspace package
 [`packages/core/tui`](../../packages/core/tui) (`@kontextmind/tui`), also
 published on the product as `@kontextmind/kxm/tui`. It is one declarative
 surface model, one renderer, one input decoder, one contribution registry, and
-thin host adapters. Today `kxm dash` uses only its ANSI theme; the panel,
-registry and adapters are exported for integrators, and no shipped `kxm` command
-draws a panel yet. See [Packages and workspaces](packages.md) for the layout
-convention it follows.
+thin host adapters. `kxm config edit --scope project|user` and OMP/Pi
+`/kxm config` ship the first production panel on this kit. `kxm dash` uses its
+ANSI theme but keeps its existing hub and SSE loop. See
+[Packages and workspaces](packages.md) for the layout convention the kit follows.
 
 ## Package layout
 
@@ -98,6 +98,24 @@ The reducer is pure
 ([`reduceKxmTuiInput`](../../packages/core/tui/src/tui/panel.ts)) and returns
 effects; the component layer runs them. That is the same contract that keeps
 `kxm dash` navigation testable, and it is why no key handling needs a terminal.
+
+## Shipped configuration editor
+
+The `kxm/config` contribution in
+[`config-editor.ts`](../../plugins/kxm/src/config-editor.ts) owns the supported
+`kxm.config.v1` fields. Both `kxm config edit` and `/kxm config` register that
+same contribution; the CLI uses the standalone adapter, while the OMP/Pi
+extension uses the generic Pi custom panel.
+
+Project scope shows built-in, user, then project values. User scope deliberately
+shows only built-in and user values, so a project override cannot make a
+successful user edit look unchanged. Clear deletes the selected scope's key;
+the registry then re-reads the inherited value from disk.
+
+The descriptor exposes only bounded scalar preferences. It does not expose hub
+URLs, key references, credentials, arrays, dynamic maps, roster, routes, gates,
+roles, or workflow definitions. Unknown section/field pairs and invalid values
+are rejected before the config writer runs.
 
 ## Adding a surface
 

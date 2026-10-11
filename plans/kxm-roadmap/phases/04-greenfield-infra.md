@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/plan-greenfield-infra.md`.
 
-Updated: 2026-09-28.
+Updated: 2026-10-11.
 
 Record only what the tracker says about the greenfield first move. The plan file is observed in this checkout as a kxm.doc.v1 stub; canonical facts live in the implementation-plan greenfield bullets.
 
