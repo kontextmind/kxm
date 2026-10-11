@@ -189,17 +189,6 @@ All notable user-facing changes are documented here. The project follows [Semant
   [role fallback](docs/reference/config-reference.md#kxmrolesroleyaml-kxmrolev2)
   and [mid-attempt fallback](docs/reference/harness-routing.md#mid-attempt-fallback).
 
-### Fixed
-
-- **`kxm improve report` and `kxm routing report` include attempts settled in a registered lane.**
-  Inside a KXM project, a present user-state `registry.db` is opened read-only at schema version 2. One query loads the home row and every lane row for that project id. Event-store paths come from the stored project keys, so a stale checkout path cannot hide a lane. A missing store stays a zero-record source. An absent registry, or a checkout that is not registered, still reads only that checkout's own store. `--file` still reads only the named file. See
-  [kxm improve report](docs/reference/cli-reference.md#kxm-improve-report).
-
-- **Browser integration tests isolate the Steel credential environment.**
-  Each test restores the operator's variables afterward, so ambient Authentik
-  credentials cannot override a case that deliberately exercises the legacy
-  API-key path.
-
 ### Changed
 
 - **`kxm update --kxm` defaults to npm.** Missing or source-less `update.yaml` now
@@ -650,6 +639,15 @@ All notable user-facing changes are documented here. The project follows [Semant
   ready.
 
 ### Fixed
+
+- **`kxm improve report` and `kxm routing report` include attempts settled in a registered lane.**
+  Inside a KXM project, a present user-state `registry.db` is opened read-only at schema version 2. One query loads the home row and every lane row for that project id. Event-store paths come from the stored project keys, so a stale checkout path cannot hide a lane. A missing store stays a zero-record source. An absent registry, or a checkout that is not registered, still reads only that checkout's own store. `--file` still reads only the named file. See
+  [kxm improve report](docs/reference/cli-reference.md#kxm-improve-report).
+
+- **Browser integration tests isolate the Steel credential environment.**
+  Each test restores the operator's variables afterward, so ambient Authentik
+  credentials cannot override a case that deliberately exercises the legacy
+  API-key path.
 
 - **`kxm supervise` keeps supervisor state across a restart.**
   `status`, `record`, and `tick` store in-flight lanes, the last-seen pull
