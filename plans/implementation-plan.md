@@ -698,7 +698,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `test/core/config-editor.test.ts`; CLI/config/TUI references and the
   architecture inventory name the same boundary. The broader package
   restructure queue remains open.
-
 - **OMP subscription status band and concise session chrome (2026-10-11).**
   `kxm plugin install --omp --status-band` explicitly selects a focused OMP
   custom layout that uses OMP's native active-account quota segment; ordinary
