@@ -474,11 +474,11 @@ test("hub bind refuses a remote hub with no credential and labels the binding sc
     assert.equal(await runCli(["session", "brief", "--status"],
       { KXM_STATE_HOME: override.dir, KXM_SERVER_URL: "http://10.255.255.1:7331" },
       { ...remoteBrief, fetchImpl: replyingFetch }), 0);
-    assert.match(remoteBrief.read().stdout, /hub:on\/remote/);
+    assert.match(remoteBrief.read().stdout, /hub:remote/);
     const localBrief = capture();
     assert.equal(await runCli(["session", "brief", "--status"], { KXM_STATE_HOME: override.dir },
       { ...localBrief, fetchImpl: replyingFetch }), 0);
-    assert.match(localBrief.read().stdout, /hub:on(?!\/remote)/);
+    assert.doesNotMatch(localBrief.read().stdout, /hub:/);
   } finally {
     for (const dir of cleanup) rmSync(dir, { recursive: true, force: true });
   }
@@ -1538,7 +1538,7 @@ test("init and validate work in an isolated workspace", async () => {
     const briefTextStatus = capture();
     assert.equal(await runCli(["session", "--workspace", isolated, "brief", "--status"], {}, briefTextStatus, cwd), 0);
     const statusText = briefTextStatus.read().stdout.trim();
-    assert.match(statusText, /^kxm hub:off/);
+    assert.match(statusText, /^kxm · hub:off/);
     assert.ok(statusText.length <= 80);
 
     const tokenIo = capture();
@@ -2219,6 +2219,21 @@ test("kxm plugin install installs for discovered harnesses and honors flags in d
     assert.equal(isPluginHarnessCommand(ompParsed.results[0]?.command, "omp"), true);
     assert.deepEqual(ompParsed.results[0]?.args?.slice(0, 2), ["plugin", "install"]);
 
+    const dryRunStatusBand = capture();
+    assert.equal(await runCli(["plugin", "install", "--omp", "--status-band", "--dry-run", "--json"], allEnv, dryRunStatusBand), 0);
+    const statusBandPlan = JSON.parse(dryRunStatusBand.read().stdout) as {
+      results: Array<{ detail?: string }>;
+    };
+    assert.match(statusBandPlan.results[0]?.detail ?? "", /subscription status band/);
+
+    const invalidStatusBand = capture();
+    assert.equal(await runCli(["plugin", "install", "--pi", "--status-band", "--json"], allEnv, invalidStatusBand), 1);
+    const invalidStatusBandPayload = JSON.parse(invalidStatusBand.read().stderr) as { error: string };
+    assert.equal(
+      invalidStatusBandPayload.error,
+      "omp_status_band_requires_omp",
+    );
+
     const dryRunClaude = capture();
     assert.equal(await runCli(["plugin", "install", "--claude", "--dry-run"], allEnv, dryRunClaude), 0);
     assert.match(dryRunClaude.read().stdout, /claude: would/);
@@ -2241,6 +2256,19 @@ test("kxm plugin install installs for discovered harnesses and honors flags in d
     assert.equal(missingParsed.results[0]?.status, "failed");
     assert.equal(missingParsed.results[0]?.error, "harness_not_detected");
 
+    const implicitMissingOmp = capture();
+    assert.equal(
+      await runCli(["plugin", "install", "--status-band", "--dry-run", "--json"], pluginInstallProbeEnv(partialBin), implicitMissingOmp),
+      1,
+    );
+    const implicitMissingOmpPayload = JSON.parse(implicitMissingOmp.read().stderr) as {
+      results: Array<{ harness: string; error?: string }>;
+    };
+    assert.equal(
+      implicitMissingOmpPayload.results.some((result) => result.harness === "omp" && result.error === "harness_not_detected"),
+      true,
+    );
+
     const none = capture();
     assert.equal(await runCli(["plugin", "install", "--dry-run", "--json"], pluginInstallProbeEnv(emptyBin), none), 1);
     const noneParsed = JSON.parse(none.read().stderr) as { ok: boolean; error: string; results: unknown[] };
@@ -2249,18 +2277,221 @@ test("kxm plugin install installs for discovered harnesses and honors flags in d
     assert.deepEqual(noneParsed.results, []);
 
     // Mock spawnSync to test execution paths. Detection still uses the stub PATH.
+    const ompConfigDir = join(root, "omp-agent");
+    mkdirSync(ompConfigDir, { recursive: true });
+    writeFileSync(
+      join(ompConfigDir, "config.yaml"),
+      "statusLine:\n  leftSegments:\n    - cwd\n    - git\n  rightSegments: null\n  preset: default\n",
+    );
     const spawned: Array<{ command: string; args: readonly string[] }> = [];
+    const config: Record<string, unknown> = {
+      "statusLine.leftSegments": ["cwd", "git"],
+      "statusLine.rightSegments": ["context_pct"],
+      "statusLine.preset": "default",
+    };
     const mockIo: CliIo = {
       stdout: () => {},
       stderr: () => {},
       spawnSync: (command, args) => {
         spawned.push({ command, args });
+        if (args[0] === "config" && args[1] === "path") {
+          return { status: 0, stdout: `${ompConfigDir}\n`, stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "get") {
+          return { status: 0, stdout: JSON.stringify({ key: args[2], value: config[args[2] ?? ""] }), stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "set") {
+          const value = args[3] ?? "";
+          config[args[2] ?? ""] = value.startsWith("[") ? JSON.parse(value) : value;
+          return { status: 0, stdout: JSON.stringify({ key: args[2], value: config[args[2] ?? ""] }), stderr: "" };
+        }
         return { status: 0, stdout: "ok", stderr: "" };
       },
     };
     const executed = await runCli(["plugin", "install", "--omp"], allEnv, mockIo);
     assert.equal(executed, 0);
     assert.ok(spawned.some((s) => isPluginHarnessCommand(s.command, "omp") && s.args[0] === "plugin" && s.args[1] === "install"));
+
+    spawned.length = 0;
+    assert.equal(await runCli(["plugin", "install", "--omp", "--status-band"], allEnv, mockIo), 0);
+    assert.equal(spawned.length, 8);
+    assert.deepEqual(spawned[0]?.args.slice(0, 2), ["plugin", "install"]);
+    assert.equal(typeof spawned[0]?.args[2], "string");
+    assert.deepEqual(spawned[1]?.args, ["config", "path"]);
+    assert.deepEqual(spawned.slice(2, 5).map(({ args }) => args), [
+      ["config", "set", "statusLine.leftSegments", "[\"model\",\"mode\",\"git\",\"pr\",\"subagents\"]", "--json"],
+      ["config", "set", "statusLine.rightSegments", "[\"usage\",\"cost\",\"context_pct\"]", "--json"],
+      ["config", "set", "statusLine.preset", "custom", "--json"],
+    ]);
+    assert.deepEqual(spawned.slice(5).map(({ args }) => args), [
+      ["config", "get", "statusLine.leftSegments", "--json"],
+      ["config", "get", "statusLine.rightSegments", "--json"],
+      ["config", "get", "statusLine.preset", "--json"],
+    ]);
+    assert.deepEqual(config, {
+      "statusLine.leftSegments": ["model", "mode", "git", "pr", "subagents"],
+      "statusLine.rightSegments": ["usage", "cost", "context_pct"],
+      "statusLine.preset": "custom",
+    });
+
+    const priorConfig: Record<string, unknown> = {
+      "statusLine.leftSegments": ["cwd", "git"],
+      "statusLine.rightSegments": ["context_pct"],
+      "statusLine.preset": "default",
+    };
+    let invocation = 0;
+    const failedSpawned: string[][] = [];
+    const failedConfigOutput = capture();
+    const failedConfigIo: CliIo = {
+      ...failedConfigOutput,
+      spawnSync: (_command, args) => {
+        invocation++;
+        failedSpawned.push([...args]);
+        if (args[0] === "config" && args[1] === "path") {
+          return { status: 0, stdout: `${ompConfigDir}\n`, stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "get") {
+          return { status: 0, stdout: JSON.stringify({ key: args[2], value: priorConfig[args[2] ?? ""] }), stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "set") {
+          if (invocation === 4) return { status: null, stdout: "", stderr: "configuration interrupted" };
+          const value = args[3] ?? "";
+          priorConfig[args[2] ?? ""] = value.startsWith("[") ? JSON.parse(value) : value;
+          return { status: 0, stdout: JSON.stringify({ key: args[2], value: priorConfig[args[2] ?? ""] }), stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "reset") {
+          priorConfig[args[2] ?? ""] = ["context_pct"];
+          return { status: 0, stdout: JSON.stringify({ key: args[2], value: priorConfig[args[2] ?? ""] }), stderr: "" };
+        }
+        return { status: 0, stdout: "ok", stderr: "" };
+      },
+    };
+    assert.equal(await runCli(["plugin", "install", "--omp", "--status-band", "--json"], allEnv, failedConfigIo), 1);
+    const failedConfig = JSON.parse(failedConfigOutput.read().stderr) as {
+      results: Array<{ status: string; error?: string; args?: string[]; detail?: string }>;
+    };
+    assert.equal(failedConfig.results[0]?.status, "failed");
+    assert.equal(failedConfig.results[0]?.error, "status_band_config_failed");
+    assert.deepEqual(failedConfig.results[0]?.args?.slice(0, 3), ["config", "set", "statusLine.rightSegments"]);
+    assert.match(failedConfig.results[0]?.detail ?? "", /configuration interrupted; previous settings restored/);
+    assert.equal(
+      failedSpawned.some((args) => args[0] === "config" && args[1] === "reset" && args[2] === "statusLine.rightSegments"),
+      true,
+    );
+    assert.deepEqual(priorConfig, {
+      "statusLine.leftSegments": ["cwd", "git"],
+      "statusLine.rightSegments": ["context_pct"],
+      "statusLine.preset": "default",
+    });
+
+    const shadowedConfig: Record<string, unknown> = {
+      "statusLine.leftSegments": ["cwd", "git"],
+      "statusLine.rightSegments": ["context_pct"],
+      "statusLine.preset": "default",
+    };
+    let shadowRight = true;
+    const shadowedOutput = capture();
+    const shadowedIo: CliIo = {
+      ...shadowedOutput,
+      spawnSync: (_command, args) => {
+        if (args[0] === "config" && args[1] === "path") {
+          return { status: 0, stdout: `${ompConfigDir}\n`, stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "get") {
+          return { status: 0, stdout: JSON.stringify({ key: args[2], value: shadowedConfig[args[2] ?? ""] }), stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "set") {
+          const key = args[2] ?? "";
+          const value = args[3] ?? "";
+          if (key !== "statusLine.rightSegments" || !shadowRight) {
+            shadowedConfig[key] = value.startsWith("[") ? JSON.parse(value) : value;
+          }
+          if (key === "statusLine.rightSegments" && value === "[\"context_pct\"]") shadowRight = false;
+          return { status: 0, stdout: JSON.stringify({ key, value: shadowedConfig[key] }), stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "reset") {
+          shadowRight = false;
+          shadowedConfig[args[2] ?? ""] = ["context_pct"];
+          return { status: 0, stdout: JSON.stringify({ key: args[2], value: shadowedConfig[args[2] ?? ""] }), stderr: "" };
+        }
+        return { status: 0, stdout: "ok", stderr: "" };
+      },
+    };
+    assert.equal(await runCli(["plugin", "install", "--omp", "--status-band", "--json"], allEnv, shadowedIo), 1);
+    const shadowed = JSON.parse(shadowedOutput.read().stderr) as {
+      results: Array<{ args?: string[]; detail?: string }>;
+    };
+    assert.deepEqual(shadowed.results[0]?.args, ["config", "get", "statusLine.rightSegments", "--json"]);
+    assert.match(shadowed.results[0]?.detail ?? "", /shadowed or did not persist; previous settings restored/);
+    assert.deepEqual(shadowedConfig, {
+      "statusLine.leftSegments": ["cwd", "git"],
+      "statusLine.rightSegments": ["context_pct"],
+      "statusLine.preset": "default",
+    });
+
+    const rollbackFailureOutput = capture();
+    let rollbackFailureInvocation = 0;
+    const rollbackFailureIo: CliIo = {
+      ...rollbackFailureOutput,
+      spawnSync: (_command, args) => {
+        rollbackFailureInvocation++;
+        if (args[0] === "config" && args[1] === "path") {
+          return { status: 0, stdout: `${ompConfigDir}\n`, stderr: "" };
+        }
+        if (args[0] === "config" && args[1] === "set" && rollbackFailureInvocation === 4) {
+          return { status: null, stdout: "", stderr: "configuration interrupted" };
+        }
+        if (args[0] === "config" && args[1] === "reset") {
+          return { status: 1, stdout: "", stderr: "reset denied" };
+        }
+        return { status: 0, stdout: "{}", stderr: "" };
+      },
+    };
+    assert.equal(await runCli(["plugin", "install", "--omp", "--status-band", "--json"], allEnv, rollbackFailureIo), 1);
+    const rollbackFailure = JSON.parse(rollbackFailureOutput.read().stderr) as {
+      results: Array<{ detail?: string }>;
+    };
+    assert.match(rollbackFailure.results[0]?.detail ?? "", /previous settings could not be fully restored/);
+
+    const pathFailureSpawn = (_command: string, args: readonly string[]) =>
+      args[0] === "config" && args[1] === "path"
+        ? { status: 1, stdout: "", stderr: "config path unavailable" }
+        : { status: 0, stdout: "ok", stderr: "" };
+    const pathFailureOutput = capture();
+    assert.equal(
+      await runCli(
+        ["plugin", "install", "--omp", "--status-band", "--json"],
+        allEnv,
+        { ...pathFailureOutput, spawnSync: pathFailureSpawn },
+      ),
+      1,
+    );
+    const pathFailure = JSON.parse(pathFailureOutput.read().stderr) as {
+      results: Array<{ detail?: string }>;
+    };
+    assert.match(pathFailure.results[0]?.detail ?? "", /config path unavailable$/);
+
+    const textSuccessOutput = capture();
+    assert.equal(
+      await runCli(
+        ["plugin", "install", "--omp", "--status-band"],
+        allEnv,
+        { ...textSuccessOutput, spawnSync: mockIo.spawnSync! },
+      ),
+      0,
+    );
+    assert.match(textSuccessOutput.read().stdout, /omp: passed.*focused subscription status band/);
+
+    const textFailureOutput = capture();
+    assert.equal(
+      await runCli(
+        ["plugin", "install", "--omp", "--status-band"],
+        allEnv,
+        { ...textFailureOutput, spawnSync: pathFailureSpawn },
+      ),
+      1,
+    );
+    assert.match(textFailureOutput.read().stderr, /omp: failed.*config path unavailable/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
