@@ -20760,8 +20760,8 @@ function validateWorkflow(workflow, agents, models, repositories, gates, issues)
       const writable = Object.values(objectValue(step.repositories) ?? {}).filter((access) => access === "write").length;
       if (maxWriteRepositories > writable) issues.push(issue3("semantic", "write_repository_bound_invalid", file, `${stepId} maxWriteRepositories exceeds writable repository scope`));
     }
-    const join60 = objectValue(step.join);
-    const minimumPassed = join60 && typeof join60.minimumPassed === "number" ? join60.minimumPassed : void 0;
+    const join61 = objectValue(step.join);
+    const minimumPassed = join61 && typeof join61.minimumPassed === "number" ? join61.minimumPassed : void 0;
     if (minimumPassed !== void 0 && minimumPassed > maximum) issues.push(issue3("semantic", "join_impossible", file, `${stepId} minimumPassed exceeds assignment maximum`));
     const distinctBy = names(assignment?.distinctBy);
     if (distinctBy.length > 0) {
@@ -25101,7 +25101,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
   const maxAttempts = compileCountField(step.maxAttempts, 1, `${id}.maxAttempts`, id, sink);
   const timeoutMs = compileOptionalDuration(step.timeoutMs, `${id}.timeoutMs`, id, sink);
   const assignments = compileAssignments(step, id, agent, sink);
-  const join60 = compileJoin(step, id, sink);
+  const join61 = compileJoin(step, id, sink);
   const requiredEvidence = compileEvidence(step, id, sink);
   const transitions = compileTransitions(step, id, index, stepIndex, sink);
   const outcomes = Object.keys(transitions).sort(compareCodeUnits5);
@@ -25129,7 +25129,7 @@ function compileStep(step, index, stepIndex, requirePlanHash, sink) {
     transitions: orderedTransitions,
     requiresPlanHash: requirePlanHash.includes(id),
     assignments,
-    join: join60
+    join: join61
   };
   if (kind === "agent" || kind === "moa") {
     if (!agent) return void 0;
@@ -25179,15 +25179,15 @@ function compileAssignments(step, stepId, primaryAgentId, sink) {
   };
 }
 function compileJoin(step, stepId, sink) {
-  const join60 = objectValue2(step.join);
-  if (!join60) return { strategy: "all" };
-  const declared = stringValue2(join60.strategy);
+  const join61 = objectValue2(step.join);
+  if (!join61) return { strategy: "all" };
+  const declared = stringValue2(join61.strategy);
   const strategy = declared && JOIN_STRATEGIES.has(declared) ? declared : "all";
-  const minimumPassed = compileOptionalCount(join60.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
+  const minimumPassed = compileOptionalCount(join61.minimumPassed, `${stepId}.join.minimumPassed`, stepId, sink);
   const compiled = {
     strategy,
     ...minimumPassed !== void 0 ? { minimumPassed } : {},
-    ...typeof join60.cancelRemaining === "boolean" ? { cancelRemaining: join60.cancelRemaining } : {}
+    ...typeof join61.cancelRemaining === "boolean" ? { cancelRemaining: join61.cancelRemaining } : {}
   };
   return compiled;
 }
@@ -54567,7 +54567,7 @@ import { spawnSync as spawnSync15 } from "node:child_process";
 import { createHash as createHash19 } from "node:crypto";
 import { existsSync as existsSync50, mkdtempSync as mkdtempSync3, readFileSync as readFileSync44, rmSync as rmSync13 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
-import { basename as basename11, extname as extname3, join as join58, resolve as resolve33 } from "node:path";
+import { basename as basename11, extname as extname3, join as join59, resolve as resolve33 } from "node:path";
 import { createInterface as createInterface3 } from "node:readline";
 
 // plugins/kxm/src/improve.ts
@@ -54992,13 +54992,15 @@ function evaluatePromotionPolicy(candidate, policy = "manual_pr", options = {}) 
 // plugins/kxm/src/improve-sources.ts
 init_sqlite();
 init_project_config();
-init_runtime_store();
+init_runtime_paths();
 init_route_switch();
 init_routing();
 init_telemetry();
-import { existsSync as existsSync44 } from "node:fs";
-import { resolve as resolve30 } from "node:path";
+import { existsSync as existsSync44, lstatSync as lstatSync8 } from "node:fs";
+import { join as join54, resolve as resolve30 } from "node:path";
 var ENGINE_EVENTS_SQL = "SELECT run_id, sequence, event_type, payload FROM events WHERE event_type IN ('routing.attempt.recorded','routing.route_switched','step.entered','run.status_changed') ORDER BY run_id, sequence";
+var REGISTRY_SIBLING_SQL = "SELECT sibling.project_key AS project_key, sibling.lane_of AS lane_of FROM projects AS current JOIN projects AS sibling ON sibling.project_id = current.project_id WHERE current.project_key = ? ORDER BY CASE WHEN sibling.lane_of IS NULL THEN 0 ELSE 1 END, sibling.registered_at, sibling.project_key";
+var PROJECT_KEY = /^[0-9a-f]{24}$/;
 var SIMULATED_HARNESS = "driver-simulated";
 function parsePayload(text) {
   try {
@@ -55104,6 +55106,61 @@ function readEngineRoutingRecords(path4) {
     source: { ...source, records: records.length, skippedInvalid, excludedSimulated, undecided }
   };
 }
+function registryUnreadable(registryDb, detail) {
+  return new Error(`improve_source_unreadable: ${registryDb}: ${detail}`);
+}
+function discoverProjectEventStores(projectRoot, env) {
+  const paths = kxmRuntimePaths({ env });
+  const ownStore = join54(paths.projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
+  const registryDb = paths.registryDb;
+  const info = lstatSync8(registryDb, { throwIfNoEntry: false });
+  if (!info) return [ownStore];
+  if (!info.isFile()) throw registryUnreadable(registryDb, "runtime registry must be a regular database file");
+  for (const suffix of ["-wal", "-shm"]) {
+    const sidecar = lstatSync8(`${registryDb}${suffix}`, { throwIfNoEntry: false });
+    if (sidecar?.isSymbolicLink()) throw registryUnreadable(registryDb, "runtime registry sidecar must not be a link");
+  }
+  let database;
+  try {
+    database = openReadOnlyDatabase(registryDb);
+    database.exec("PRAGMA busy_timeout = 5000");
+    const versionRow = database.prepare("PRAGMA user_version").get();
+    const version = versionRow?.user_version ?? 0;
+    if (version !== 2) throw registryUnreadable(registryDb, `registry schema version ${version}; this reader requires 2`);
+    const rows = database.prepare(REGISTRY_SIBLING_SQL).all(projectRuntimeKey(projectRoot));
+    if (rows.length === 0) return [ownStore];
+    return eventStoresFromRegistryRows(registryDb, paths.projectsDir, rows);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("improve_source_unreadable:")) throw error;
+    throw new Error(`improve_source_unreadable: ${registryDb}: ${message}`, { cause: error });
+  } finally {
+    try {
+      database?.close();
+    } catch {
+    }
+  }
+}
+function eventStoresFromRegistryRows(registryDb, projectsDir, rows) {
+  const seen = /* @__PURE__ */ new Set();
+  const parsed = [];
+  for (const row of rows) {
+    const projectKey = typeof row.project_key === "string" ? row.project_key : "";
+    const laneRaw = row.lane_of;
+    const laneOf = laneRaw === null || laneRaw === void 0 ? null : typeof laneRaw === "string" ? laneRaw : "";
+    if (!PROJECT_KEY.test(projectKey) || seen.has(projectKey) || laneOf !== null && !PROJECT_KEY.test(laneOf)) {
+      throw registryUnreadable(registryDb, "registry identity is corrupt");
+    }
+    seen.add(projectKey);
+    parsed.push({ projectKey, laneOf });
+  }
+  const homes = parsed.filter((row) => row.laneOf === null);
+  const homeKey = homes[0]?.projectKey;
+  if (homes.length !== 1 || homeKey === void 0 || parsed.some((row) => row.laneOf !== null && row.laneOf !== homeKey)) {
+    throw registryUnreadable(registryDb, "registry identity is corrupt");
+  }
+  return parsed.map((row) => join54(projectsDir, row.projectKey, "run-events.db"));
+}
 function readJsonlSource(kind, path4) {
   const exists = existsSync44(path4);
   const records = exists ? readRoutingRecords(path4).map((entry) => entry.routing) : [];
@@ -55120,7 +55177,11 @@ function loadRoutingSources(options) {
   if (options.file !== void 0) {
     reads.push(readJsonlSource("file", resolve30(options.cwd, options.file)));
   } else {
-    if (projectRoot !== void 0) reads.push(readEngineRoutingRecords(kxmProjectRunEventsPath(projectRoot, options.env)));
+    if (projectRoot !== void 0) {
+      for (const path4 of discoverProjectEventStores(projectRoot, options.env)) {
+        reads.push(readEngineRoutingRecords(path4));
+      }
+    }
     reads.push(readJsonlSource("telemetry", telemetryPath(options.logsDir)));
   }
   const seen = /* @__PURE__ */ new Set();
@@ -55152,7 +55213,7 @@ function loadRoutingSources(options) {
 var import_yaml21 = __toESM(require_dist(), 1);
 init_prices();
 import { existsSync as existsSync45, readFileSync as readFileSync40 } from "node:fs";
-import { join as join54 } from "node:path";
+import { join as join55 } from "node:path";
 var DEFAULT_MODES_CONFIG = Object.freeze({
   schema: "kxm.modes.v1",
   majorModes: {
@@ -55215,7 +55276,7 @@ function loadModesConfig(projectRoot) {
   if (!projectRoot) {
     return DEFAULT_MODES_CONFIG;
   }
-  const modesPath = join54(projectRoot, ".kxm", "modes.yaml");
+  const modesPath = join55(projectRoot, ".kxm", "modes.yaml");
   if (!existsSync45(modesPath)) {
     return DEFAULT_MODES_CONFIG;
   }
@@ -55306,7 +55367,7 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
     estimatedTokens: estimateTokens(baseSystemPromptChars)
   });
   for (const relPath of resolved.contextFiles) {
-    const fullPath = join54(projectRoot, relPath);
+    const fullPath = join55(projectRoot, relPath);
     let chars = 0;
     if (existsSync45(fullPath)) {
       try {
@@ -55445,7 +55506,7 @@ init_safety_integrity();
 import { spawnSync as spawnSync14 } from "node:child_process";
 import { existsSync as existsSync46, mkdirSync as mkdirSync32, readFileSync as readFileSync41, readdirSync as readdirSync14, rmSync as rmSync12, statSync as statSync7 } from "node:fs";
 import { homedir as homedir8 } from "node:os";
-import { join as join55, resolve as resolve31 } from "node:path";
+import { join as join56, resolve as resolve31 } from "node:path";
 var MAX_SSH_OUTPUT_BYTES = 50 * 1024;
 var MAX_SSH_OUTPUT_LINES = 2e3;
 var DEFAULT_SOCKET_DIR = ".kxm/run/ssh-sockets";
@@ -55471,7 +55532,7 @@ function truncateSshOutput(raw) {
   return { text, truncated };
 }
 function parseSshConfig(configPath) {
-  const targetPath = configPath ?? join55(homedir8(), ".ssh", "config");
+  const targetPath = configPath ?? join56(homedir8(), ".ssh", "config");
   if (!existsSync46(targetPath)) {
     return [];
   }
@@ -55561,7 +55622,7 @@ function ensureSocketDir(socketDir = DEFAULT_SOCKET_DIR) {
 }
 function buildSshArgs(options) {
   const socketDir = ensureSocketDir(options.socketDir ?? DEFAULT_SOCKET_DIR);
-  const controlPath = join55(socketDir, "%C");
+  const controlPath = join56(socketDir, "%C");
   const persist = options.controlPersist ?? DEFAULT_CONTROL_PERSIST;
   const args = [
     "-o",
@@ -55586,7 +55647,7 @@ function buildSshArgs(options) {
 }
 function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync14) {
   const resolvedDir = ensureSocketDir(socketDir);
-  const controlPath = join55(resolvedDir, "%C");
+  const controlPath = join56(resolvedDir, "%C");
   try {
     const result = execFn("ssh", ["-O", "check", "-o", `ControlPath=${controlPath}`, host], {
       encoding: "utf-8"
@@ -55598,7 +55659,7 @@ function checkControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawn
 }
 function closeControlSocket(host, socketDir = DEFAULT_SOCKET_DIR, execFn = spawnSync14) {
   const resolvedDir = ensureSocketDir(socketDir);
-  const controlPath = join55(resolvedDir, "%C");
+  const controlPath = join56(resolvedDir, "%C");
   try {
     const result = execFn("ssh", ["-O", "stop", "-o", `ControlPath=${controlPath}`, host], {
       encoding: "utf-8"
@@ -56349,7 +56410,7 @@ complete -c kxm -n "__fish_seen_subcommand_from goal" -a "create list get"
 // plugins/kxm/src/completion-install.ts
 import { existsSync as existsSync48, mkdirSync as mkdirSync33, readFileSync as readFileSync43, writeFileSync as writeFileSync28 } from "node:fs";
 import { homedir as homedir9 } from "node:os";
-import { basename as basename10, delimiter, dirname as dirname24, isAbsolute as isAbsolute12, join as join56, resolve as resolve32 } from "node:path";
+import { basename as basename10, delimiter, dirname as dirname24, isAbsolute as isAbsolute12, join as join57, resolve as resolve32 } from "node:path";
 var COMPLETION_MARKER = "# kxm completion";
 var PATH_MARKER = "# kxm path";
 function detectShell(env = process.env, platform = process.platform) {
@@ -56371,25 +56432,25 @@ function completionScriptPath(shell, options = {}) {
   const env = options.env ?? process.env;
   const explicit = options.configDir ?? env.KXM_USER_CONFIG_DIR?.trim();
   const base = explicit && explicit.length > 0 ? resolve32(explicit) : resolve32(effectiveHome(options), ".config", "kxm");
-  return join56(base, "completions", `kxm.${shell}`);
+  return join57(base, "completions", `kxm.${shell}`);
 }
 function bashRcCandidate(options) {
   const home = effectiveHome(options);
-  const candidates = [join56(home, ".bashrc"), join56(home, ".bash_profile")];
+  const candidates = [join57(home, ".bashrc"), join57(home, ".bash_profile")];
   const existing = candidates.find((candidate) => existsSync48(candidate));
   return existing ?? candidates[0];
 }
 function zshRcCandidate(options) {
   const env = options.env ?? process.env;
   const home = effectiveHome(options);
-  if (env.ZDOTDIR?.trim()) return join56(resolve32(env.ZDOTDIR.trim()), ".zshrc");
-  return join56(home, ".zshrc");
+  if (env.ZDOTDIR?.trim()) return join57(resolve32(env.ZDOTDIR.trim()), ".zshrc");
+  return join57(home, ".zshrc");
 }
 function fishCompletionTarget(shell, options) {
   const env = options.env ?? process.env;
   const home = effectiveHome(options);
-  if (env.XDG_CONFIG_HOME?.trim()) return join56(resolve32(env.XDG_CONFIG_HOME.trim()), "fish", "completions", "kxm.fish");
-  return join56(home, ".config", "fish", "completions", "kxm.fish");
+  if (env.XDG_CONFIG_HOME?.trim()) return join57(resolve32(env.XDG_CONFIG_HOME.trim()), "fish", "completions", "kxm.fish");
+  return join57(home, ".config", "fish", "completions", "kxm.fish");
 }
 function completionRcTarget(shell, options = {}) {
   if (shell === "fish") {
@@ -56477,7 +56538,7 @@ function kxmBinDir(env = process.env) {
   const argv1 = env.KXM_ENTRY ?? process.argv[1];
   if (argv1 && isAbsolute12(argv1)) {
     const dir = dirname24(argv1);
-    if (existsSync48(join56(dir, process.platform === "win32" ? "kxm.cmd" : "kxm"))) return dir;
+    if (existsSync48(join57(dir, process.platform === "win32" ? "kxm.cmd" : "kxm"))) return dir;
   }
   const pathEnv = env.PATH ?? "";
   for (const part of pathEnv.split(delimiter)) {
@@ -56517,7 +56578,7 @@ ${line}
 var import_yaml23 = __toESM(require_dist(), 1);
 init_routes();
 import { existsSync as existsSync49, mkdirSync as mkdirSync34, writeFileSync as writeFileSync29 } from "node:fs";
-import { dirname as dirname25, join as join57 } from "node:path";
+import { dirname as dirname25, join as join58 } from "node:path";
 var ADMITTED_GUIDE_BINDINGS = Object.freeze({
   "anthropic/claude-fable-5.1": { harness: "claude", provider: "anthropic", model: "fable" },
   "anthropic/fable": { harness: "claude", provider: "anthropic", model: "fable" },
@@ -56948,7 +57009,7 @@ function renderGuideSetupFiles(projectRoot, plan) {
     const piMatch = binding.harness === "pi" && guidePiNoteMatches(binding);
     if (binding.harness === "pi" && !piMatch) {
       files.push({
-        path: join57(projectRoot, ".kxm", "agents", `${role}.yaml`),
+        path: join58(projectRoot, ".kxm", "agents", `${role}.yaml`),
         content: (0, import_yaml23.stringify)(agentDocument(role, stage))
       });
       continue;
@@ -56966,22 +57027,22 @@ function renderGuideSetupFiles(projectRoot, plan) {
       modelDocument.origin = { source: GUIDE_PI_EVIDENCE_SOURCE, sha256: GUIDE_PI_EVIDENCE_SHA256 };
       if (!evidenceQueued) {
         files.push({
-          path: join57(projectRoot, GUIDE_PI_EVIDENCE_SOURCE),
+          path: join58(projectRoot, GUIDE_PI_EVIDENCE_SOURCE),
           content: GUIDE_PI_EVIDENCE_NOTE
         });
         evidenceQueued = true;
       }
     }
     files.push({
-      path: join57(projectRoot, ".kxm", "agents", `${role}.yaml`),
+      path: join58(projectRoot, ".kxm", "agents", `${role}.yaml`),
       content: (0, import_yaml23.stringify)(agentDocument(role, stage))
     });
     files.push({
-      path: join57(projectRoot, ".kxm", "models", `${routeId2}.yaml`),
+      path: join58(projectRoot, ".kxm", "models", `${routeId2}.yaml`),
       content: (0, import_yaml23.stringify)(modelDocument)
     });
     files.push({
-      path: join57(projectRoot, ".kxm", "roles", `${role}.yaml`),
+      path: join58(projectRoot, ".kxm", "roles", `${role}.yaml`),
       content: (0, import_yaml23.stringify)({
         schema: "kxm.role.v2",
         id: role,
@@ -56994,7 +57055,7 @@ function renderGuideSetupFiles(projectRoot, plan) {
   }
   for (const workflow of plan.workflows) {
     files.push({
-      path: join57(projectRoot, ".kxm", "workflows", `${workflow.slug}.yaml`),
+      path: join58(projectRoot, ".kxm", "workflows", `${workflow.slug}.yaml`),
       content: (0, import_yaml23.stringify)(workflowDocument(workflow))
     });
   }
@@ -57011,7 +57072,7 @@ function mergeGuideRouteAdmission(projectRoot, plan) {
   }
   if (added.length === 0) return added;
   policy.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  const path4 = join57(projectRoot, ".kxm", "routes.yaml");
+  const path4 = join58(projectRoot, ".kxm", "routes.yaml");
   mkdirSync34(dirname25(path4), { recursive: true });
   writeFileSync29(path4, (0, import_yaml23.stringify)(policy), "utf8");
   return added;
@@ -57091,7 +57152,7 @@ function applyKxmPackageUpdate(runtime, notice) {
       detail: `release v${notice.latest} has no sha256 digest for ${name}; refusing to install`
     };
   }
-  const releaseDir = mkdtempSync3(join58(tmpdir3(), "kxm-pkg-update-"));
+  const releaseDir = mkdtempSync3(join59(tmpdir3(), "kxm-pkg-update-"));
   try {
     const downloader = notice.source === "github" && !ghReleaseDownloadAvailable(runtime.env) ? "curl" : "gh";
     const planned = planKxmPackageUpdate(notice.source, notice.latest, releaseDir, notice.asset, downloader, notice.localRoot);
@@ -57529,7 +57590,7 @@ async function cmdImprove(runtime, options = {}) {
     print(runtime.io, runtime.json, { ok: false, command: "improve", error: "config_invalid", detail: message }, `config_invalid: ${message}`);
     return 1;
   }
-  const candidatesDir = options.outDir ? resolve33(runtime.cwd, options.outDir) : join58(root, ".kxm", "candidates");
+  const candidatesDir = options.outDir ? resolve33(runtime.cwd, options.outDir) : join59(root, ".kxm", "candidates");
   const report2 = buildImprovementReport(loaded2.records, {
     candidatesDir,
     projectRoot: root,
@@ -57539,7 +57600,7 @@ async function cmdImprove(runtime, options = {}) {
     halfLifeDays: config.improvement.telemetryHalfLifeDays,
     routeSwitches: loaded2.routeSwitches
   });
-  const reportDir = join58(runtime.dirs.assets, "improvements");
+  const reportDir = join59(runtime.dirs.assets, "improvements");
   const reportPath = writeImprovementReport(reportDir, report2, runtime.dryRun);
   const text = [
     "Sources:",
@@ -57881,7 +57942,7 @@ async function cmdRoutingReport(runtime, options) {
   let catalog;
   if (includeEquivalentListCost) {
     try {
-      const pricesPath = options.prices ? resolve33(runtime.cwd, options.prices) : join58(runtime.dirs.workspace, "prices.yaml");
+      const pricesPath = options.prices ? resolve33(runtime.cwd, options.prices) : join59(runtime.dirs.workspace, "prices.yaml");
       catalog = loadPriceCatalog(pricesPath);
     } catch {
     }

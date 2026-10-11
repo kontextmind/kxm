@@ -1,0 +1,57 @@
+{
+  "schema": "kxm.loop-dispatch-evidence.v1",
+  "observedAt": "2026-10-11",
+  "unit": "loop-dispatch",
+  "projectId": "prj_kxm_project",
+  "workflowRuns": [
+    {
+      "role": "writer",
+      "workflowId": "writer-only",
+      "runId": "run_12f94c193828453ba14b5b7709f08065",
+      "driveId": "drv_6ef93228f847372cfb68f66a",
+      "attemptId": "att_8ec738a928b346e49a9dee2e78c2f38c",
+      "runStatus": "completed",
+      "driveVerified": true,
+      "settlementStatus": "completed",
+      "reportOutcome": "accepted"
+    },
+    {
+      "role": "architecture-critic",
+      "workflowId": "reviewer-arch-only",
+      "runId": "run_974827e612cd43f991201a1560c12d61",
+      "driveId": "drv_620a65d8a6bf9908384bec01",
+      "attemptId": "att_b7ed131ded9844b499ca911b5448d9a4",
+      "runStatus": "completed",
+      "driveVerified": true,
+      "settlementStatus": "completed",
+      "reportOutcome": "accepted"
+    },
+    {
+      "role": "cli-critic",
+      "workflowId": "reviewer-cli-only",
+      "runId": "run_caf5dd5906424f81bd63b2d44ff5f505",
+      "driveId": "drv_73f4f959626140fbf01d8a49",
+      "attemptId": "att_73ad74579a914fd1a28249ce740abb92",
+      "runStatus": "completed",
+      "driveVerified": true,
+      "settlementStatus": "completed",
+      "reportOutcome": "accepted"
+    }
+  ],
+  "parentReport": {
+    "command": "kxm improve report --json",
+    "checkout": "parent checkout used to create the loop-dispatch lane",
+    "recordsCount": 33,
+    "engineSources": 6,
+    "unitLaneRecords": 3,
+    "unitWorkflowGroups": 3,
+    "duplicatesDroppedFromUnitLane": 0
+  },
+  "routingReport": {
+    "command": "kxm routing report --json",
+    "totalAttempts": 33,
+    "unitLaneRecords": 3,
+    "duplicatesDroppedFromUnitLane": 0
+  },
+  "privacy": "Absolute paths, prompts, model output, host identity, and tokens are intentionally omitted."
+}

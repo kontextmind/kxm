@@ -84,6 +84,7 @@ to run one file is in [Develop KXM](development.md#run-one-file-or-one-test).
 | Promotion needs the configured admin token with no loopback bypass; proposed items never reach a packet | `e5-memory-floor.test.ts` |
 | `kxm memory`: candidates, marker-delimited sync blocks, and one brief across CLI, Pi and the Claude hook | `e5b-harness-agnostic-memory.test.ts` |
 | `kxm improve report` reads Runtime-settled attempts, drops simulated and duplicate ones, and flags only same-ask repeats | `improve.test.ts` ("kxm improve report resolves Runtime-settled attempts from the event log and flags only same-ask cross-run repeats"), `cli.test.ts`, `cli-experience.test.ts`, `commands-policy.test.ts` |
+| A registered lane's attempt appears in `kxm improve report` and `kxm routing report` run from the primary checkout; a duplicate still drops and `--file` stays isolated | `improve.test.ts` ("kxm improve report and kxm routing report from the primary include an attempt recorded only in a registered lane") |
 | Improvement candidates exclude write steps; promotion readiness never authorizes | `improve.test.ts` |
 | Telemetry classification and JSONL recovery | `telemetry.test.ts`, `cli.test.ts` |
 
@@ -100,7 +101,7 @@ The context suites in detail:
 | `wiki.test.ts` | Wiki compilation determinism, lifecycle preservation, contradiction visibility, lint |
 | `skills.test.ts` | Skill candidate lifecycle, quarantine, immutability, CLI |
 | `routing.test.ts` | Behavioral hash, record parsing, comparisons, `kxm routing report` |
-| `improve.test.ts` | Routing-record sources, event-log outcomes, same-ask candidacy, candidate files, promotion readiness |
+| `improve.test.ts` | Routing-record sources, registered lane stores, event-log outcomes, same-ask candidacy, candidate files, promotion readiness |
 
 ## Claude Code plugin and MCP
 
