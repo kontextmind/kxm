@@ -135,6 +135,7 @@ The context suites in detail:
 |---|---|
 | `init`, `validate`, `export` and `watch` in isolated workspaces | `cli.test.ts`, `github-watch.test.ts` |
 | Every mutating command under `--dry-run` leaves the workspace, state root and hub untouched | `cli-experience.test.ts` ("every mutating command under --dry-run leaves the workspace, state root, and hub untouched") |
+| Owner-validated config editor: persisted writes, exact-byte refusals, scope inheritance, scalar-only publication, CLI frames, and OMP/Pi lifecycle | `config-editor.test.ts` |
 | Hub auto-start reuses a healthy or claimed hub, persists one admin key, and fails closed on bad claims | `hub-autostart.test.ts` |
 | Hub-local session brief from SQLite without message bodies; `hub bind` reports on, off or unknown | `session-work.test.ts`, `cli.test.ts` |
 | Session manifests, fail-closed rosters, worker and result envelopes, hub-owned envelope fields | `session.test.ts`, `cli.test.ts`, `envelope.test.ts`, `envelope-contract.test.ts` |

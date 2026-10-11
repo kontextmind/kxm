@@ -48,7 +48,9 @@ import {
   setKxmConfigValue,
   getKxmConfigValue,
   formatKxmConfig,
+  userConfigDirForEnv,
 } from "../config.ts";
+import { runKxmConfigEditor } from "../config-editor.ts";
 import { generateShellCompletion, type SupportedShell } from "../autocomplete.ts";
 import {
   completionRcTarget,
@@ -732,6 +734,41 @@ export async function cmdConfigSet(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     runtime.io.stderr(`config set failed: ${message}\n`);
+    return 1;
+  }
+}
+
+export async function cmdConfigEdit(
+  runtime: Runtime,
+  options: { scope?: string },
+  isTty = Boolean(process.stdin.isTTY && process.stdout.isTTY),
+): Promise<number> {
+  const scope = options.scope;
+  if (scope !== "project" && scope !== "user") {
+    const detail = "config edit requires --scope project or --scope user";
+    print(runtime.io, runtime.json, { ok: false, command: "config edit", error: "config_edit_unsupported", detail }, detail);
+    return 2;
+  }
+  if (runtime.json) {
+    const detail = "config edit does not print machine-readable output";
+    print(runtime.io, runtime.json, { ok: false, command: "config edit", error: "config_edit_unsupported", detail }, detail);
+    return 2;
+  }
+  try {
+    const userConfigDir = userConfigDirForEnv(runtime.env);
+    return await runKxmConfigEditor({
+      target: {
+        cwd: runtime.cwd,
+        scope,
+        ...(userConfigDir === undefined ? {} : { userConfigDir }),
+      },
+      stdout: (text) => runtime.io.stdout(text),
+      isTty,
+      dryRun: runtime.dryRun,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.io.stderr(`config edit failed: ${message}\n`);
     return 1;
   }
 }

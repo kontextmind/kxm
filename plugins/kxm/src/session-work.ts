@@ -564,7 +564,7 @@ export function sessionBriefPickerEnabled(input: { env?: NodeJS.ProcessEnv; mode
   return reason === "startup" || reason === "new" || reason === "fork";
 }
 
-export const KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "progress", "workflow", "help"] as const;
+export const KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "progress", "workflow", "config", "help"] as const;
 export type KxmSlashCommand = "brief" | typeof KXM_SLASH_SUBCOMMANDS[number];
 
 export function parseKxmSlashArgs(args: string | undefined): KxmSlashCommand {
@@ -576,6 +576,7 @@ export function parseKxmSlashArgs(args: string | undefined): KxmSlashCommand {
     || raw === "memory"
     || raw === "progress"
     || raw === "workflow"
+    || raw === "config"
     || raw === "help"
   ) return raw;
   return "help";

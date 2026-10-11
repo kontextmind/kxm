@@ -1275,7 +1275,7 @@ function sessionBriefPickerEnabled(input) {
 function parseKxmSlashArgs(args) {
   const raw = String(args ?? "").trim().toLowerCase();
   if (raw === "" || raw === "brief") return "brief";
-  if (raw === "status" || raw === "hub" || raw === "memory" || raw === "progress" || raw === "workflow" || raw === "help") return raw;
+  if (raw === "status" || raw === "hub" || raw === "memory" || raw === "progress" || raw === "workflow" || raw === "config" || raw === "help") return raw;
   return "help";
 }
 function kxmSlashCompletions(prefix) {
@@ -1295,7 +1295,7 @@ var init_session_work = __esm({
     MAX_SESSION_BRIEF_PLANS = 5;
     SESSION_BRIEF_SCHEMA = "kxm.session-brief.v1";
     DEFAULT_SESSION_BRIEF_STALE_SECONDS = 5;
-    KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "progress", "workflow", "help"];
+    KXM_SLASH_SUBCOMMANDS = ["status", "hub", "memory", "progress", "workflow", "config", "help"];
   }
 });
 
@@ -9182,6 +9182,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   const userConfigFile = join6(userDir, "config.yaml");
   const repoDir = repoConfigDirectory(repoRoot);
   const repoConfigFile = join6(repoDir, "config.yaml");
+  const includeProject = options.layers !== "user";
   let userRaw = {};
   let userLoadedPath;
   if (existsSync7(userConfigFile)) {
@@ -9195,7 +9196,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   }
   let repoRaw = {};
   let repoLoadedPath;
-  if (existsSync7(repoConfigFile)) {
+  if (includeProject && existsSync7(repoConfigFile)) {
     try {
       const text = readFileSync7(repoConfigFile, "utf8");
       repoRaw = (0, import_yaml2.parse)(text) ?? {};

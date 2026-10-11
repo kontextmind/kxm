@@ -1,15 +1,17 @@
 # Surfaces
 
-Read from `plugins/kxm/src/cli.ts`, `scripts/kxm-hub.mjs`, `plugins/kxm/src/hub.ts`,
-`plugins/kxm/src/runtime-supervisor.ts`, `plugins/kxm/src/runtime-paths.ts`,
-`plugins/kxm/src/mcp-server.ts`, `plugins/kxm/src/oneshot-producer.ts`,
-`plugins/kxm/src/studio-layout.ts`, `plugins/kxm/src/cli/types.ts`
-(`workspaceDirs`), `plugins/kxm/src/local-snapshot.ts`, and
-`scripts/kxm-worker.mjs`.
+Read from `plugins/kxm/src/cli.ts`, `plugins/kxm/src/config-editor.ts`,
+`plugins/kxm/src/extension.ts`, `scripts/kxm-hub.mjs`,
+`plugins/kxm/src/hub.ts`, `plugins/kxm/src/runtime-supervisor.ts`,
+`plugins/kxm/src/runtime-paths.ts`, `plugins/kxm/src/mcp-server.ts`,
+`plugins/kxm/src/oneshot-producer.ts`, `plugins/kxm/src/studio-layout.ts`,
+`plugins/kxm/src/cli/types.ts` (`workspaceDirs`),
+`plugins/kxm/src/local-snapshot.ts`, and `scripts/kxm-worker.mjs`.
 
 | Surface | Started by | Listener or path | Store it owns | Defining file |
 | --- | --- | --- | --- | --- |
 | `kxm` CLI | `node scripts/kxm.mjs` or the installed bin | no listener | none | `plugins/kxm/src/cli.ts` |
+| Configuration editor | `kxm config edit --scope project\|user`; OMP/Pi `/kxm config` uses project scope | `.kxm/config.yaml` or the user `config.yaml` | the selected config file; only bounded non-secret scalar fields | `plugins/kxm/src/config-editor.ts` |
 | Hub | `kxm hub start` via `scripts/kxm-hub.mjs` | `127.0.0.1:7331` | `.kxm/state/kxm.db` under the workspace state dir | `plugins/kxm/src/hub.ts` |
 | Hub credentials | written when the hub starts | `hub-env.json` under the user state root | that JSON file, not SQLite | `plugins/kxm/src/hub-env.ts` |
 | Hub cloud binding | `kxm hub bind <url> --cloud --token-env/--token-command` | no listener; writes the binding record and never stores the token | binding record; token stays in the named env or command | `plugins/kxm/src/cli/hub.ts` |

@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated: 2026-09-28.
+Updated: 2026-10-11.
 
 Active blockers: 4. Active questions: 11. Later phases are excluded from both counts.
 
@@ -313,7 +313,7 @@ None recorded.
 
 ## Architecture drift
 
-Verified: 2026-09-28.
+Verified: 2026-10-11.
 
 | Claim | Page | Status |
 | --- | --- | --- |
@@ -334,7 +334,6 @@ No confirmed contacts.
 
 ## History
 
-- 2026-09-26: First deep review: planner loop and role-authority phases added ahead of the Python proposal.
 - 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-26: Lanes register under their project and the test suite is bounded (#339).
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
@@ -346,3 +345,4 @@ No confirmed contacts.
 - 2026-09-28: P3 tool policy landed (#378, v0.7.169). Cross-host P0 bind unblocked (#348, #375, #376). MG1 is off-repo. CI pause text retired.
 - 2026-09-28: Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves.
 - 2026-09-28: kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart.
+- 2026-10-11: The kxm.config.v1 terminal editor now shares one owner-validated surface across the CLI and OMP/Pi.

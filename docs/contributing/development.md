@@ -170,8 +170,10 @@ see the [plugin README](../../plugins/kxm/README.md).
 ### Pi package
 
 The root `package.json` carries the `pi-package` keyword and a `pi` block:
-`pi.extensions` lists `./plugins/kxm/src/extension.ts` and `pi.skills` lists
-`./plugins/kxm/skills`. Pi loads the TypeScript source itself.
+`pi.extensions` lists the tracked `./plugins/kxm/dist/extension.js` bundle and
+`pi.skills` lists `./plugins/kxm/skills`. Development can still load
+`plugins/kxm/src/extension.ts` explicitly; published installs use the bundle so
+private workspace packages are never unresolved runtime dependencies.
 
 ### Agent Skills
 

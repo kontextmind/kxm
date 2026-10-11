@@ -6,6 +6,16 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **KXM configuration now has one owner-validated terminal editor.**
+  `kxm config edit --scope project|user` and OMP/Pi `/kxm config` publish the
+  same `kxm.config.v1` surface. Accepted writes are saved and re-read; rejected
+  values leave file bytes unchanged; clear removes only the selected scope's
+  override. Non-TTY and dry-run calls render one plain frame without writing.
+  The editor excludes endpoints, key references, credentials, arrays, dynamic
+  maps, roster, routes, gates, roles, and workflow definitions. Pi/OMP package
+  discovery now loads the tracked extension bundle, so the private TUI
+  workspace is bundled rather than becoming an unresolved runtime dependency.
+
 - **Hub project identity and its access key live in `.kxm/config.yaml`.**
   `hub.local` and `hub.cloud` hold the URL, the project id to present, and a
   key reference (`key.op` is an `op://` reference, `key.env` is an environment

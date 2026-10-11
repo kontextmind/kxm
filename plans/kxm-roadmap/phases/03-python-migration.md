@@ -4,7 +4,7 @@ Status: open. Horizon: soon.
 
 Source: `plans/plan-python-migration.md`.
 
-Updated: 2026-09-28.
+Updated: 2026-10-11.
 
 Waves MG0 through MG8 from plans/plan-python-migration.md, with status taken from the tracker where the two disagree.
 

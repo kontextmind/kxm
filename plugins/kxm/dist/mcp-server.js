@@ -23948,6 +23948,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   const userConfigFile = join(userDir, "config.yaml");
   const repoDir = repoConfigDirectory(repoRoot);
   const repoConfigFile = join(repoDir, "config.yaml");
+  const includeProject = options.layers !== "user";
   let userRaw = {};
   let userLoadedPath;
   if (existsSync(userConfigFile)) {
@@ -23961,7 +23962,7 @@ function loadKxmConfig(repoRoot = process.cwd(), options = {}) {
   }
   let repoRaw = {};
   let repoLoadedPath;
-  if (existsSync(repoConfigFile)) {
+  if (includeProject && existsSync(repoConfigFile)) {
     try {
       const text = readFileSync(repoConfigFile, "utf8");
       repoRaw = (0, import_yaml.parse)(text) ?? {};

@@ -2,7 +2,8 @@
 
 Read from `plans/kxm-roadmap/state.json` and the pages linked below.
 
-Verified date: null. A review pass has not set `architecture.verified`.
+Verified date: 2026-10-11. The roadmap review checked every page listed here
+against the current checkout.
 
 | Page | What it covers |
 | --- | --- |

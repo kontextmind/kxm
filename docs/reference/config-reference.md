@@ -1315,6 +1315,14 @@ every reader found in `plugins/kxm/src`, `scripts/`, and `packages/`; the
 | `telemetry.anonymize` | Boolean | `true` | Not read by any code path yet |
 | `telemetry.userTelemetryDir` | Path | none | Not read by any code path yet |
 
+The terminal editor exposes a fixed non-secret scalar subset of this table:
+theme and token budget; default workflow and harness; dashboard settings;
+default tracker; hub auto-start; improvement policy and thresholds; shadow
+execution and circuit-breaker scalars; and federated/anonymized telemetry
+flags. It deliberately excludes arrays, dynamic maps, paths, sync-provider
+details, hub endpoints and key references, credentials, and trusted roster,
+route, gate, role, or workflow-definition files.
+
 Under `auto_threshold`, `minRuns`, `minPassRate` and `minCostSavings` are the
 distinct runs, the accepted share, and the mean recorded cost per attempt a
 candidate needs before `kxm improve` reports it ready for review. A group with
@@ -1376,9 +1384,15 @@ Commands:
 - `kxm config list` prints `user`, `defaults`, `dash`, `sync`, and
   `loadedFrom`; `--json` prints every section. An empty `loadedFrom` means no
   file was found.
+- `kxm config edit --scope project|user` opens the owner-validated terminal
+  editor. Project scope shows Base → User → Project; user scope shows Base →
+  User so a project override cannot mask the edit. Clear deletes that scope's
+  leaf and re-reads the inherited value. Non-TTY and `--dry-run` calls print one
+  plain frame without writing. Invalid scope and `--json` are refused.
 
-There is no `kxm config unset`. Delete the key from the file to fall back to
-the next layer; setting `null` stores `null`.
+There is no standalone `kxm config unset` command. The editor's clear action
+deletes its supported key from the selected scope; for other keys, delete the
+key from the file. Setting `null` stores `null` and does not mean inherit.
 
 ### Configuration layers
 
