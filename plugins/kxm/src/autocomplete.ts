@@ -53,7 +53,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   memory: ["brief", "note", "sync"],
   routing: ["report", "benchmark"],
   hub: ["view", "start", "stop", "bind", "unbind"],
-  config: ["get", "set", "list"],
+  config: ["get", "set", "edit", "list"],
   goal: ["create", "list", "get"],
   task: ["create", "list", "get", "run", "sync"],
   studio: ["layout", "serve"],
@@ -179,7 +179,7 @@ _kxm() {
           _arguments '1:shell:(bash zsh fish)'
           ;;
         config)
-          _arguments '1:action:(get set list)'
+          _arguments '1:action:(get set edit list)'
           ;;
         runs)
           _arguments '1:subcommand:(status cancel list)'
@@ -224,7 +224,7 @@ complete -c kxm -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 complete -c kxm -n "__fish_seen_subcommand_from dash" -l screen -a "agents tasks workflows plans inbox procs spend"
 
 # Config subcommand
-complete -c kxm -n "__fish_seen_subcommand_from config" -a "get set list"
+complete -c kxm -n "__fish_seen_subcommand_from config" -a "get set edit list"
 
 # Runs subcommand
 complete -c kxm -n "__fish_seen_subcommand_from runs" -a "status cancel list"

@@ -165,6 +165,7 @@ import {
   cmdImprove,
   cmdConfigGet,
   cmdConfigSet,
+  cmdConfigEdit,
   cmdConfigList,
   cmdCompletion,
   cmdCompletionInstall,
@@ -228,7 +229,7 @@ const DRY_RUN_COMMANDS: ReadonlySet<string> = new Set([
   "routing report", "routing benchmark",
   "ssh info", "ssh run", "ssh file", "ssh close",
   "hub view", "hub start", "hub stop", "hub bind", "hub unbind",
-  "config get", "config set", "config list",
+  "config get", "config set", "config edit", "config list",
   "goal create", "goal list",
   "task create", "task list", "task get", "task run", "task sync",
   "studio layout", "studio serve",
@@ -1429,6 +1430,11 @@ function createProgram(ctx: CliContext, result: { code: number }, argv: readonly
     .option("--scope <scope>", "Configuration scope: user or project (default: project)", "project")
     .action(async function configSetAction(this: Command, key: string, value: string, options: { scope: string }) {
       result.code = await cmdConfigSet(runtimeFrom(ctx, this), key, value, options);
+    });
+  addGlobalOptions(configCmd.command("edit").description("Edit supported non-secret settings in the terminal panel"))
+    .option("--scope <scope>", "Write scope: project or user")
+    .action(async function configEditAction(this: Command, options: { scope?: string }) {
+      result.code = await cmdConfigEdit(runtimeFrom(ctx, this), options);
     });
   addGlobalOptions(configCmd.command("list", { isDefault: true }).description("List resolved configuration values"))
     .action(async function configListAction(this: Command) {

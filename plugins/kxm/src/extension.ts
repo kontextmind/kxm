@@ -39,6 +39,7 @@ import {
   type SessionHubStatus,
   type SessionWorkItem,
 } from "./session-work.ts";
+import { openKxmProjectConfigPanel } from "./config-editor.ts";
 import {
   loadActiveWorkflowProgress,
   renderWorkflowTuiText,
@@ -949,8 +950,13 @@ export default function piMeshExtension(pi: ExtensionAPI): void | Promise<void> 
         }
         return;
       }
+      if (command === "config") {
+        const cwd = typeof ctx.cwd === "string" && ctx.cwd.trim().length > 0 ? ctx.cwd : process.cwd();
+        await openKxmProjectConfigPanel(ctx.ui, cwd);
+        return;
+      }
       if (command === "help") {
-        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm progress | /kxm workflow | /kxm hub | /kxm memory | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief", "info");
+        ctx.ui.notify("kxm: /kxm | /kxm status | /kxm progress | /kxm workflow | /kxm hub | /kxm memory | /kxm config | /kxm help. CLI: kxm session brief, kxm hub view, kxm memory brief, kxm config edit --scope project|user", "info");
         return;
       }
       if (command === "memory") {
