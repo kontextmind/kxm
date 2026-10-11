@@ -350,55 +350,63 @@ describe("KXM Browser & Steel Integration", () => {
   });
 
   it("manages session lifecycle with all options (proxy, dimensions, custom userAgent)", async () => {
-    const client = new SteelClient({
-      apiUrl: serverUrl,
-      apiKey: "test_key",
-      timeoutMs: 60000,
-    });
+    const saved = snapshotSteelEnv();
+    try {
+      for (const name of steelAuthEnv) delete process.env[name];
+      process.env.USE_PASS_CLI = "false";
 
-    assert.strictEqual(client.getConfig().apiKey, "test_key");
+      const client = new SteelClient({
+        apiUrl: serverUrl,
+        apiKey: "test_key",
+        timeoutMs: 60000,
+      });
 
-    const session = await client.createSession({
-      userAgent: "CustomAgent/2.0",
-      proxy: "http://proxy.example.com:8080",
-      dimensions: { width: 1280, height: 800 },
-    });
+      assert.strictEqual(client.getConfig().apiKey, "test_key");
 
-    assert.ok(session.id);
-    assert.strictEqual(session.status, "live");
-    assert.strictEqual(session.state, "AGENT_CONTROL");
-    assert.strictEqual(session.activeController, "agent");
-    assert.strictEqual(session.timeoutMs, 60000);
+      const session = await client.createSession({
+        userAgent: "CustomAgent/2.0",
+        proxy: "http://proxy.example.com:8080",
+        dimensions: { width: 1280, height: 800 },
+      });
 
-    const fetched = await client.getSession(session.id);
-    assert.ok(fetched);
-    assert.strictEqual(fetched?.id, session.id);
+      assert.ok(session.id);
+      assert.strictEqual(session.status, "live");
+      assert.strictEqual(session.state, "AGENT_CONTROL");
+      assert.strictEqual(session.activeController, "agent");
+      assert.strictEqual(session.timeoutMs, 60000);
 
-    // Test 404 on unknown session
-    const notFound = await client.getSession("unknown-id-404");
-    assert.strictEqual(notFound, null);
+      const fetched = await client.getSession(session.id);
+      assert.ok(fetched);
+      assert.strictEqual(fetched?.id, session.id);
 
-    // Test 404 on a previously cached session that was removed from server
-    const cachedSession = await client.createSession();
-    mockSessions.delete(cachedSession.id);
-    const expiredFetched = await client.getSession(cachedSession.id);
-    assert.strictEqual(expiredFetched, null);
-    assert.strictEqual(cachedSession.state, "EXPIRED");
+      // Test 404 on unknown session
+      const notFound = await client.getSession("unknown-id-404");
+      assert.strictEqual(notFound, null);
 
-    // Test takeover on expired session throws state error
-    assert.throws(() => {
-      client.requestHumanTakeover(cachedSession.id, "MFA on expired");
-    }, /Cannot initiate takeover on session in state EXPIRED/);
+      // Test 404 on a previously cached session that was removed from server
+      const cachedSession = await client.createSession();
+      mockSessions.delete(cachedSession.id);
+      const expiredFetched = await client.getSession(cachedSession.id);
+      assert.strictEqual(expiredFetched, null);
+      assert.strictEqual(cachedSession.state, "EXPIRED");
 
-    // Test releaseSession on session not currently in activeSessions
-    const releaseUntracked = await client.releaseSession("untracked-session-999");
-    assert.strictEqual(releaseUntracked, true);
+      // Test takeover on expired session throws state error
+      assert.throws(() => {
+        client.requestHumanTakeover(cachedSession.id, "MFA on expired");
+      }, /Cannot initiate takeover on session in state EXPIRED/);
 
-    const released = await client.releaseSession(session.id);
-    assert.strictEqual(released, true);
+      // Test releaseSession on session not currently in activeSessions
+      const releaseUntracked = await client.releaseSession("untracked-session-999");
+      assert.strictEqual(releaseUntracked, true);
 
-    const afterRelease = await client.getSession(session.id);
-    assert.strictEqual(afterRelease?.status, "released");
+      const released = await client.releaseSession(session.id);
+      assert.strictEqual(released, true);
+
+      const afterRelease = await client.getSession(session.id);
+      assert.strictEqual(afterRelease?.status, "released");
+    } finally {
+      restoreSteelEnv(saved);
+    }
   });
 
   it("handles server failure branches gracefully", async () => {

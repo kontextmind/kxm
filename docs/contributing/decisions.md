@@ -2,7 +2,7 @@
 title: "Decisions"
 description: "Decisions of medium significance or higher made by automated KXM work in this repository. One entry per decision: the options evaluated with their weights, and why the selected option won. Recorded the turn the decision is taken."
 audience: "agents and maintainers"
-updated: "2026-10-02"
+updated: "2026-10-11"
 ---
 
 # Decisions
@@ -172,3 +172,29 @@ Evidence: Evidence: merge-base 77beda4 predates the CLI restructure; merge-tree 
 - Selected: stash-apply onto a fresh lane off `origin/main`, take upstream
   for claude-bridge, `dist`, and `package.json`, and merge the rest.
 Evidence: Evidence: `git diff HEAD origin/main` on the stale branch showed upstream's claude-bridge fix and curl downloader already landed; the lane port keeps both those and the npm/`--all` behavior.
+
+## 2026-10-11 — OMP subscription status integration (extension)
+
+- Context: KXM's extension already owns a hook status line while OMP can
+  render OAuth subscription quota through its native cached `usage`
+  segment. Adding quota to KXM's line would duplicate OMP data; changing
+  the OMP layout during every plugin install would unexpectedly overwrite
+  an operator's chosen status line.
+- Options:
+  - Run `omp usage` from the KXM extension — weight 0.1. Direct, but adds
+    process work to refreshes, duplicates OMP's cache and rendering, and
+    expands the credential-bearing boundary.
+  - Configure the native OMP segment on every install — weight 0.3.
+    Discoverable, but silently mutates unrelated user configuration.
+  - Add explicit `kxm plugin install --omp --status-band` opt-in and use
+    OMP's native `usage` segment — weight 0.9. No duplicate quota
+    implementation; configuration mutation is deliberate and verifiable.
+- Selected: explicit opt-in. The installer snapshots the three global
+  status-line entries, writes the focused layout, verifies effective
+  values in the current working directory, restores prior values, and
+  resets entries that were previously absent or `null`.
+- Solid recommendation: keep subscription quota in OMP's native `usage`
+  segment and KXM workflow state in the separate hook status line.
+- Interim recommendation: use the opt-in installer until OMP exposes a
+  first-class transactional status-preset API.
+Evidence: `plugins/kxm/src/cli/plugins.ts`, `plugins/kxm/src/session-work.ts`, and `test/core/cli.test.ts`.

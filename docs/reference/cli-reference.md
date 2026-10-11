@@ -13,7 +13,7 @@ Output shown under examples was captured from a source checkout, inside a throwa
 - [Task to command](#task-to-command)
 - Setup: [`init`](#kxm-init), [`config`](#kxm-config), [`completion`](#kxm-completion), [`trust`](#kxm-trust)
 - Hub and sessions: [`hub`](#kxm-hub-view), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
-- Harnesses, models, and roles: [`harness`](#kxm-harness), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
+- Harnesses, models, and roles: [`harness`](#kxm-harness), [`plugin`](#kxm-plugin), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
 - Running work: [`lane`](#kxm-lane), [`land`](#kxm-land), [`assign`](#kxm-assign), [`run`](#kxm-run), [`runs`](#kxm-runs), [`docs`](#kxm-docs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
 - Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing), [`prices`](#kxm-prices)
 - Operations: [`backup`](#kxm-backup), [`restore`](#kxm-restore), [`tenant`](#kxm-tenant), [`ssh`](#kxm-ssh), [`help`](#kxm-help)
@@ -699,13 +699,14 @@ Prints recent tasks (workflow runs) and plans (journal entries) from the local h
 - Side effects: on first use it mints a 24-hour operator session token and writes it to `<KXM_USER_CONFIG_DIR>/session.token` (mode 0600), and it caches the brief in `.kxm/state/session-brief.json`. Under `--dry-run` it still probes the hub and prints the brief, but it mints no token, writes neither file, and appends a `dry run: would write <file>` line for each (JSON: `dryRun` and `planned`); with no saved token the output carries no token. `--token --dry-run` plans only the token file.
 - The default text output ends with the session token, and `--token` prints only the token. Treat the output as a credential.
 - JSON (`kxm.session-brief.v1`) keys: `generatedAt`, `staleSeconds`, `source`, `hub` (`state`, `evidence`, `online`, `url`, `scope`), `stats`, `tasks`, `plans`, `statusLine`, `widgetLines`, `sessionToken`.
+- The status line omits cost because harness-native bands already own that signal. The work widget includes known metered cost and suppresses unknown cost.
 
 ```bash
 kxm session brief
 ```
 
 ```text
-kxm hub:on · idle · dirty
+kxm · dirty
 
 No recent tasks or plans.
 
@@ -717,7 +718,7 @@ kxm session brief --status
 ```
 
 ```text
-kxm hub:on · idle
+kxm
 ```
 
 ```bash
@@ -725,7 +726,7 @@ kxm session brief --json
 ```
 
 ```text
-{"schema":"kxm.session-brief.v1","generatedAt":"2026-09-23T13:49:55.253Z","staleSeconds":5,"source":"legacy","hub":{"state":"off","evidence":"probed","online":false,"url":"http://127.0.0.1:59998","scope":"loopback"},"stats":{"activeTasks":0,"waitingTasks":0,"planCount":0,"inbox":0,"runTotal":0},"tasks":[],"plans":[],"statusLine":"kxm hub:off · idle",...,"sessionToken":"<token>"}
+{"schema":"kxm.session-brief.v1","generatedAt":"2026-09-23T13:49:55.253Z","staleSeconds":5,"source":"legacy","hub":{"state":"off","evidence":"probed","online":false,"url":"http://127.0.0.1:59998","scope":"loopback"},"stats":{"activeTasks":0,"waitingTasks":0,"planCount":0,"inbox":0,"runTotal":0},"tasks":[],"plans":[],"statusLine":"kxm · hub:off",...,"sessionToken":"<token>"}
 ```
 
 Before the first token exists:
@@ -735,7 +736,7 @@ kxm session brief --status --dry-run
 ```
 
 ```text
-kxm hub:on · idle · dirty
+kxm · dirty
 dry run: would write ~/.config/kxm/session.token
 dry run: would write /work/proj/.kxm/state/session-brief.json
 ```
@@ -951,6 +952,34 @@ kxm harness list --json
 ```text
 {"schema":"kxm.cli-result.v1","ok":true,"command":"harness list","defaultHarness":"pi","harnesses":[{"id":"pi","label":"Pi","default":true,"mode":"headless","detected":false,"authenticated":false,"dispatch":{"status":"no","supported":false,"reason":"not_detected"},"canUpdate":{"self":true,"extensions":true,"models":true},"issues":[]},...]}
 ```
+
+## `kxm plugin`
+
+### `kxm plugin install`
+
+```text
+kxm plugin install [--all | --pi | --omp | --claude] [--status-band]
+```
+
+Installs the KXM extension into every discovered supported harness, or only the explicitly selected harnesses. `--status-band` is an explicit OMP-only opt-in: after installing the extension, it switches OMP to a focused custom status layout with model, mode, branch, pull request, subagent, active-subscription usage, metered cost, and context signals. It uses OMP's native background usage fetch and does not call `omp usage`. To support safe rollback, KXM parses OMP's global config file and retains only the three existing `statusLine` entries for the duration of the command; it does not use credential values.
+
+| Option | Argument | Default | Description |
+|---|---|---|---|
+| `--all` | none | on when no harness flag is present | Install into every discovered supported harness |
+| `--pi` | none | off | Install into Pi |
+| `--omp` | none | off | Install into OMP |
+| `--claude` | none | off | Install into Claude Code |
+| `--status-band` | none | off | Replace OMP's status layout with the focused subscription layout |
+
+- Mutates the selected harness installations. `--status-band` asks OMP for its global config directory, snapshots the three global status-line entries from `config.yml` or `config.yaml`, writes through `omp config set`, and verifies the effective values in the current working directory. On failure it restores prior values and resets entries that were previously absent or `null`. Restart OMP afterward.
+- `--dry-run` reports the install and status-band intent without invoking a harness command.
+- `--status-band` fails when OMP is not selected or detected. A failed or locally shadowed OMP configuration is reported as a failed OMP result rather than a successful install; verification covers the directory where the command runs, not every other project's OMP overrides.
+
+```bash
+kxm plugin install --omp --status-band
+```
+
+Not run in this reference: installs a plugin and changes OMP user configuration.
 
 ## `kxm auth`
 

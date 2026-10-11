@@ -15,6 +15,17 @@ All notable user-facing changes are documented here. The project follows [Semant
   maps, roster, routes, gates, roles, and workflow definitions. Pi/OMP package
   discovery now loads the tracked extension bundle, so the private TUI
   workspace is bundled rather than becoming an unresolved runtime dependency.
+- **OMP can opt into a focused KXM status band with live subscription limits.**
+  `kxm plugin install --omp --status-band` installs the shared extension and
+  selects an OMP custom layout with native active-subscription usage, metered
+  cost, context, model, mode, branch, pull request, and subagent signals. The KXM hook line
+  omits idle, zero-count, clean-ship, cost, and normal local-hub noise while
+  retaining degraded hub, active work, inbox, waiting, dirty/ahead, and update
+  signals. The work widget retains known metered cost and suppresses unknown
+  cost. The flag is explicit because it changes OMP user configuration; restart
+  OMP after applying it.
+- Plugin installation now treats an interrupted harness process with no exit
+  status as a failure for Pi, OMP, and Claude Code instead of reporting success.
 
 - **Hub project identity and its access key live in `.kxm/config.yaml`.**
   `hub.local` and `hub.cloud` hold the URL, the project id to present, and a

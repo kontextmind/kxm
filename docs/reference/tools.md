@@ -323,11 +323,11 @@ Proposes a change to one authoritative state key. Despite its name, it only prop
 
 Returns `{ "proposalId" }`. Blocked by the `read-only` preset; under an attempt token it needs an explicit grant.
 
-## Pi extension commands
+## Pi and OMP extension commands
 
-The Pi extension connects the session to the hub at start, registers the 19 tools, and adds two slash commands. It also keeps a `kxm` status line and `kxm-work` and `kxm-progress` widgets, refreshed after every turn.
+The shared Pi-compatible extension connects the session to the hub at start, registers the 19 tools, and adds two slash commands. It also keeps a concise `kxm` status line and `kxm-work` and `kxm-progress` widgets, refreshed after every turn.
 
-In Pi:
+In Pi or OMP:
 
 ```text
 /kxm
@@ -344,7 +344,9 @@ In Pi:
 | `/kxm memory` | Shows the project memory brief by running `kxm memory brief` (or `$KXM_BIN`) |
 | `/kxm help` | Lists the subcommands. Any unknown subcommand shows the same help |
 
-The task picker, `Continue KXM work?`, lists recent tasks and plans and puts the chosen prompt in the editor. It also appears when a Pi TUI session starts, begins a new session or forks, unless `KXM_SESSION_BRIEF=off`.
+The task picker, `Continue KXM work?`, lists recent tasks and plans and puts the chosen prompt in the editor. It also appears when a Pi or OMP TUI session starts, begins a new session or forks, unless `KXM_SESSION_BRIEF=off`.
+
+OMP can also show the active OAuth subscription's quota windows in its native status band. Install the extension and opt into KXM's focused layout with `kxm plugin install --omp --status-band`, then restart OMP. The layout keeps model, mode, branch, pull request, subagent, subscription usage, metered cost, and context signals; it does not add OMP's inline `status` segment because OMP already renders the KXM hook status on its own line. If `statusLine.showHookStatus` is disabled, the native usage and cost segments remain but the separate KXM line stays hidden.
 
 Inbound requests arrive as a displayed message that starts a model turn: `steer` at the next decision boundary, `followUp` (and `nextTurn`, which an unattended worker cannot wait on) after the current work. The final response is returned as the reply. If the model provider fails, the request stays `delivered` so a supervised worker can recover it. The extension also registers model providers; see [Harness routing](harness-routing.md) and [Nous providers](../guides/nous-providers.md).
 

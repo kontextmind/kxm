@@ -37827,12 +37827,12 @@ var MAX_SESSION_BRIEF_TASKS = 5;
 var MAX_SESSION_BRIEF_PLANS = 5;
 var SESSION_BRIEF_SCHEMA = "kxm.session-brief.v1";
 var DEFAULT_SESSION_BRIEF_STALE_SECONDS = 5;
-function hubPrefix(hub) {
+function hubStatusPart(hub) {
   const suffix = hub?.scope === "remote" ? "/remote" : "";
-  if (hub?.state === "on" || hub?.state === void 0 && hub?.online === true) return `kxm hub:on${suffix}`;
-  if (hub?.state === "off" || hub?.state === void 0 && hub?.online === false) return `kxm hub:off${suffix}`;
-  if (hub?.state === "unknown") return `kxm hub:unknown${suffix}`;
-  return "kxm";
+  if (hub?.state === "off" || hub?.state === void 0 && hub?.online === false) return `hub:off${suffix}`;
+  if (hub?.state === "unknown") return `hub:unknown${suffix}`;
+  if (hub?.scope === "remote") return "hub:remote";
+  return void 0;
 }
 function truncate(value, width) {
   const text = value.replace(/\s+/g, " ").trim();
@@ -37908,40 +37908,34 @@ function readGitShip(cwd) {
     return void 0;
   }
 }
-function formatSessionStatusLine(stats, current, hub, ship, updateLatest, cost) {
-  const head = hubPrefix(hub);
-  if (!current && stats.activeTasks === 0 && stats.planCount === 0 && stats.inbox === 0) {
-    const idle = hub?.online === void 0 && hub?.state === void 0 ? "kxm idle" : `${head} \xB7 idle`;
-    const withShip = ship?.dirty ? `${idle} \xB7 dirty` : ship && ship.ahead > 0 ? `${idle} \xB7 ${ship.ahead} local` : idle;
-    const withCost = cost ? `${withShip} \xB7 ${cost}` : withShip;
-    const finalLine = updateLatest ? `${withCost} \xB7 upd ${updateLatest}` : withCost;
-    return finalLine.length <= 80 ? finalLine : `${finalLine.slice(0, 79)}\u2026`;
-  }
-  const parts = [];
-  if (current?.kind === "task") parts.push(`${head} ${current.detail}`);
-  else if (current?.kind === "plan") parts.push(`${head} plan ${truncate(current.detail, 36)}`);
-  else parts.push(head);
-  parts.push(`${stats.activeTasks} task${stats.activeTasks === 1 ? "" : "s"}`);
+function formatSessionStatusLine(stats, current, hub, ship, updateLatest) {
+  const parts = ["kxm"];
+  const hubPart = hubStatusPart(hub);
+  if (hubPart) parts.push(hubPart);
+  if (current?.kind === "task") parts.push(current.detail);
+  else if (current?.kind === "plan") parts.push(`plan ${truncate(current.detail, 36)}`);
+  if (stats.activeTasks > 0) parts.push(`${stats.activeTasks} task${stats.activeTasks === 1 ? "" : "s"}`);
   if (stats.waitingTasks > 0) parts.push(`${stats.waitingTasks} waiting`);
-  parts.push(`${stats.planCount} plan${stats.planCount === 1 ? "" : "s"}`);
+  if (stats.planCount > 0) parts.push(`${stats.planCount} plan${stats.planCount === 1 ? "" : "s"}`);
   if (stats.inbox > 0) parts.push(`inbox ${stats.inbox}`);
   if (ship?.dirty) parts.push("dirty");
   else if (ship && ship.ahead > 0) parts.push(`${ship.ahead} local`);
-  if (cost) parts.push(cost);
   if (updateLatest) parts.push(`upd ${updateLatest}`);
-  const line = parts.join(" \xB7 ");
-  return line.length <= 80 ? line : `${line.slice(0, 79)}\u2026`;
+  return truncate(parts.join(" \xB7 "), 80);
 }
 function formatSessionWidget(stats, current, hub, ship, updateLatest, cost) {
-  const hubMark = hub?.state === "on" || hub?.online === true ? "hub:on  " : hub?.state === "off" || hub?.online === false ? "hub:off  " : hub?.state === "unknown" ? "hub:unknown  " : "";
-  const lines = [
-    `KXM  ${hubMark}${stats.activeTasks} tasks  ${stats.waitingTasks} waiting  ${stats.planCount} plans  inbox ${stats.inbox}`
-  ];
+  const suffix = hub?.scope === "remote" ? "/remote" : "";
+  const hubMark = hub?.state === "on" || hub?.state === void 0 && hub?.online === true ? `hub:on${suffix}` : hub?.state === "off" || hub?.state === void 0 && hub?.online === false ? `hub:off${suffix}` : hub?.state === "unknown" ? `hub:unknown${suffix}` : void 0;
+  const summary = ["KXM", hubMark];
+  if (stats.activeTasks > 0) summary.push(`${stats.activeTasks} task${stats.activeTasks === 1 ? "" : "s"}`);
+  if (stats.waitingTasks > 0) summary.push(`${stats.waitingTasks} waiting`);
+  if (stats.planCount > 0) summary.push(`${stats.planCount} plan${stats.planCount === 1 ? "" : "s"}`);
+  if (stats.inbox > 0) summary.push(`inbox ${stats.inbox}`);
+  const lines = [summary.filter(Boolean).join(" \xB7 ")];
   if (current) lines.push(`now  ${current.kind}  ${truncate(current.detail, 56)}`);
-  else if (stats.latestPlan) lines.push(`plan ${truncate(stats.latestPlan, 60)}`);
-  else lines.push("now  no selected work");
-  lines.push(formatShipLine(ship));
-  if (cost) lines.push(`cost  ${cost}`);
+  else if (stats.latestPlan) lines.push(`plan  ${truncate(stats.latestPlan, 60)}`);
+  if (ship?.dirty || ship && ship.ahead > 0) lines.push(formatShipLine(ship));
+  if (cost && cost !== "unknown") lines.push(`cost  ${cost}`);
   if (updateLatest) lines.push(`update  ${updateLatest} available \xB7 kxm update --kxm`);
   return lines;
 }
@@ -37961,7 +37955,7 @@ function buildSessionBrief(snapshot, current, hub, ship, updateLatest, cost, ses
   const tasks = uniqueLabels(recentTasks(snapshot.runs).map(taskItem));
   const plans = uniqueLabels(snapshot.plans.slice(0, MAX_SESSION_BRIEF_PLANS).map(planItem));
   const resolvedHub = hub ?? { state: "off", evidence: "unconfigured", online: false };
-  const statusLine = formatSessionStatusLine(stats, current, resolvedHub, ship, updateLatest, cost);
+  const statusLine = formatSessionStatusLine(stats, current, resolvedHub, ship, updateLatest);
   const widgetLines = formatSessionWidget(stats, current, resolvedHub, ship, updateLatest, cost);
   return {
     schema: SESSION_BRIEF_SCHEMA,
@@ -38025,7 +38019,7 @@ function estimateSessionCost(stateDir) {
       latestModel = r.effectiveModel ?? r.requestedModel ?? latestModel;
       latestHarness = r.harness ?? latestHarness;
     }
-    if (!hasMetered) return "unknown";
+    if (!hasMetered) return void 0;
     const route = latestHarness && latestModel ? `${latestHarness}/${latestModel}` : latestModel;
     return `$${totalCost.toFixed(2)} sess${route ? ` \xB7 ${route}` : ""}`;
   } catch {
@@ -38062,8 +38056,7 @@ function loadSessionBrief(cwd, env = process.env, current, hub, options = {}) {
           current,
           effectiveHub,
           options.ship,
-          options.updateLatest,
-          effectiveCost
+          options.updateLatest
         );
         const widgetLines = formatSessionWidget(
           cached2.stats,
@@ -38128,8 +38121,7 @@ async function loadSessionBriefAsync(cwd, env = process.env, current, hub, optio
           current,
           effectiveHub,
           options.ship,
-          void 0,
-          effectiveCost
+          void 0
         );
         const widgetLines = formatSessionWidget(
           cached2.stats,
