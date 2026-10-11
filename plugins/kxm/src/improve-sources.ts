@@ -1,8 +1,8 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { DatabaseSync } from "./sqlite.ts";
+import { existsSync, lstatSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { DatabaseSync, openReadOnlyDatabase } from "./sqlite.ts";
 import { discoverKxmProjectRoot } from "./project-config.ts";
-import { kxmProjectRunEventsPath } from "./runtime-store.ts";
+import { kxmRuntimePaths, projectRuntimeKey } from "./runtime-paths.ts";
 import { parseRouteSwitchRecord, type RouteSwitchRecord } from "./route-switch.ts";
 import { parseRoutingRecordV2, ROUTING_RECORD_V2_SCHEMA, type RoutingRecord, type RoutingRecordV2 } from "./routing.ts";
 import { readRoutingRecords, telemetryPath } from "./telemetry.ts";
@@ -10,10 +10,14 @@ import { readRoutingRecords, telemetryPath } from "./telemetry.ts";
 /**
  * Routing-record sources for `kxm improve` and `kxm routing report`.
  *
- * The project's Runtime event store is read read-only: one SELECT over the
- * events table, never the runs table, the run plans, or the prompts sidecar,
- * and never a write or a migration. Each settled attempt's outcome is resolved
- * in memory from the event log; nothing resolved here is stored.
+ * Each Runtime event store is read read-only: one SELECT over the events
+ * table, never the runs table, the run plans, or the prompts sidecar, and
+ * never a write or a migration. When the user-state registry is present and
+ * this checkout is registered, the home store and every lane store for that
+ * project id are read. The registry itself is opened read-only at schema
+ * version 2: no constructor, migration, write lock, directory, or sidecar.
+ * Each settled attempt's outcome is resolved in memory from the event log;
+ * nothing resolved here is stored.
  */
 
 export interface RoutingSourceSummary {
@@ -44,6 +48,15 @@ export interface LoadedRoutingSources {
 const ENGINE_EVENTS_SQL = "SELECT run_id, sequence, event_type, payload FROM events"
   + " WHERE event_type IN ('routing.attempt.recorded','routing.route_switched','step.entered','run.status_changed')"
   + " ORDER BY run_id, sequence";
+
+/** Home row first, then lanes by registration time and project key. One query. */
+const REGISTRY_SIBLING_SQL = "SELECT sibling.project_key AS project_key, sibling.lane_of AS lane_of"
+  + " FROM projects AS current"
+  + " JOIN projects AS sibling ON sibling.project_id = current.project_id"
+  + " WHERE current.project_key = ?"
+  + " ORDER BY CASE WHEN sibling.lane_of IS NULL THEN 0 ELSE 1 END, sibling.registered_at, sibling.project_key";
+
+const PROJECT_KEY = /^[0-9a-f]{24}$/;
 
 /** The simulated producer's harness label; its attempts measure nothing. */
 const SIMULATED_HARNESS = "driver-simulated";
@@ -175,6 +188,75 @@ export function readEngineRoutingRecords(path: string): EngineRoutingRead {
   };
 }
 
+function registryUnreadable(registryDb: string, detail: string): Error {
+  return new Error(`improve_source_unreadable: ${registryDb}: ${detail}`);
+}
+
+/**
+ * Event stores for this checkout.
+ *
+ * An absent registry, or a registry that has no row for this checkout's
+ * project key, keeps the single store derived from the checkout path. A
+ * present registry must be a regular schema-v2 database. Paths then come
+ * from the stored keys and the Runtime projects directory, so a stale
+ * checkout path in the registry cannot choose the store.
+ */
+function discoverProjectEventStores(projectRoot: string, env: NodeJS.ProcessEnv): string[] {
+  const paths = kxmRuntimePaths({ env });
+  const ownStore = join(paths.projectsDir, projectRuntimeKey(projectRoot), "run-events.db");
+  const registryDb = paths.registryDb;
+  const info = lstatSync(registryDb, { throwIfNoEntry: false });
+  if (!info) return [ownStore];
+  if (!info.isFile()) throw registryUnreadable(registryDb, "runtime registry must be a regular database file");
+  for (const suffix of ["-wal", "-shm"]) {
+    const sidecar = lstatSync(`${registryDb}${suffix}`, { throwIfNoEntry: false });
+    if (sidecar?.isSymbolicLink()) throw registryUnreadable(registryDb, "runtime registry sidecar must not be a link");
+  }
+
+  let database: DatabaseSync | undefined;
+  try {
+    database = openReadOnlyDatabase(registryDb);
+    database.exec("PRAGMA busy_timeout = 5000");
+    const versionRow = database.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
+    const version = versionRow?.user_version ?? 0;
+    if (version !== 2) throw registryUnreadable(registryDb, `registry schema version ${version}; this reader requires 2`);
+    const rows = database.prepare(REGISTRY_SIBLING_SQL).all(projectRuntimeKey(projectRoot));
+    if (rows.length === 0) return [ownStore];
+    return eventStoresFromRegistryRows(registryDb, paths.projectsDir, rows);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("improve_source_unreadable:")) throw error;
+    throw new Error(`improve_source_unreadable: ${registryDb}: ${message}`, { cause: error });
+  } finally {
+    try {
+      database?.close();
+    } catch {
+      // Closing a read-only handle has nothing to flush.
+    }
+  }
+}
+
+function eventStoresFromRegistryRows(registryDb: string, projectsDir: string, rows: Array<Record<string, unknown>>): string[] {
+  const seen = new Set<string>();
+  const parsed: Array<{ projectKey: string; laneOf: string | null }> = [];
+  for (const row of rows) {
+    const projectKey = typeof row.project_key === "string" ? row.project_key : "";
+    const laneRaw = row.lane_of;
+    const laneOf = laneRaw === null || laneRaw === undefined ? null : typeof laneRaw === "string" ? laneRaw : "";
+    if (!PROJECT_KEY.test(projectKey) || seen.has(projectKey) || (laneOf !== null && !PROJECT_KEY.test(laneOf))) {
+      throw registryUnreadable(registryDb, "registry identity is corrupt");
+    }
+    seen.add(projectKey);
+    parsed.push({ projectKey, laneOf });
+  }
+  const homes = parsed.filter((row) => row.laneOf === null);
+  const homeKey = homes[0]?.projectKey;
+  if (homes.length !== 1 || homeKey === undefined || parsed.some((row) => row.laneOf !== null && row.laneOf !== homeKey)) {
+    throw registryUnreadable(registryDb, "registry identity is corrupt");
+  }
+  return parsed.map((row) => join(projectsDir, row.projectKey, "run-events.db"));
+}
+
 function readJsonlSource(kind: "telemetry" | "file", path: string): { records: Array<RoutingRecord | RoutingRecordV2>; source: RoutingSourceSummary } {
   const exists = existsSync(path);
   const records = exists ? readRoutingRecords(path).map((entry) => entry.routing) : [];
@@ -190,10 +272,10 @@ function attemptKey(record: RoutingRecord | RoutingRecordV2): string | undefined
 /**
  * Load routing records for improvement and routing reports.
  *
- * With `file`, only that file is read. Otherwise the project's Runtime event
- * store (when cwd is inside a KXM project) comes first, then telemetry.jsonl.
- * v2 records are de-duplicated by attemptId: the first occurrence wins and the
- * later source counts the drop.
+ * With `file`, only that file is read. Otherwise every discovered Runtime
+ * event store (when cwd is inside a KXM project) comes first, then
+ * telemetry.jsonl. v2 records are de-duplicated by attemptId: the first
+ * occurrence wins and the later source counts the drop.
  */
 export function loadRoutingSources(options: {
   cwd: string;
@@ -206,7 +288,11 @@ export function loadRoutingSources(options: {
   if (options.file !== undefined) {
     reads.push(readJsonlSource("file", resolve(options.cwd, options.file)));
   } else {
-    if (projectRoot !== undefined) reads.push(readEngineRoutingRecords(kxmProjectRunEventsPath(projectRoot, options.env)));
+    if (projectRoot !== undefined) {
+      for (const path of discoverProjectEventStores(projectRoot, options.env)) {
+        reads.push(readEngineRoutingRecords(path));
+      }
+    }
     reads.push(readJsonlSource("telemetry", telemetryPath(options.logsDir)));
   }
 

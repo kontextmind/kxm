@@ -6,33 +6,9 @@ Active blockers: 4. Active questions: 11. Later phases are excluded from both co
 
 ## Next
 
-### Planner loop and lanes
-
-Status: open. Horizon: next.
-
-Source: `plans/plan-lane-cli.md`.
-
-Goal: The kxm verbs that let the planner dispatch a writer into a worktree lane and land its branch without just recipes: lane, land, assign, docs, and bounded one-shot steps.
-
-#### Open tasks
-
-- `loop-dispatch` Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes.
-
-#### Blockers
-
-None.
-
-#### Questions
-
-- The proof model behind kxm assign (backlog S11) is still an operator decision.
-
-[Phase page](phases/01-planner-loop.md)
-
-## Active phases
-
 ### Role authority from the v2 policy draft
 
-Status: open. Horizon: soon.
+Status: open. Horizon: next.
 
 Source: `plans/plan-omp-config-alignment.md`.
 
@@ -53,6 +29,8 @@ None.
 - P2 landed in #343, P4 ships the error classifier with the walk, and P3 tool policy landed in #378 (v0.7.169). Section 7 still asks whether kxm plugin install --omp should write modelRoles from the role files. The engine can settle a real reviewer outcome (#363, #368). Backlog S33 records one truthful critic BLOCK on the vision lane. That settlement is not loop-dispatch.
 
 [Phase page](phases/02-role-authority.md)
+
+## Active phases
 
 ### Python migration
 
@@ -291,8 +269,8 @@ Goal: Studio shows the seven dash panels, a first-run wizard, and live workflow 
 
 | Phase | Status | Horizon | Page |
 | --- | --- | --- | --- |
-| Planner loop and lanes | open | next | [page](phases/01-planner-loop.md) |
-| Role authority from the v2 policy draft | open | soon | [page](phases/02-role-authority.md) |
+| Planner loop and lanes | done | soon | [page](phases/01-planner-loop.md) |
+| Role authority from the v2 policy draft | open | next | [page](phases/02-role-authority.md) |
 | Python migration | open | soon | [page](phases/03-python-migration.md) |
 | Greenfield infra | open | soon | [page](phases/04-greenfield-infra.md) |
 | Per-tenant hosting | open | soon | [page](phases/05-per-tenant-hosting.md) |
@@ -334,7 +312,6 @@ No confirmed contacts.
 
 ## History
 
-- 2026-09-26: P1 role authority landed (#337): v2 role and model files are live.
 - 2026-09-26: Lanes register under their project and the test suite is bounded (#339).
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
 - 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.
@@ -346,3 +323,4 @@ No confirmed contacts.
 - 2026-09-28: Land follow-up: verify names the failing check, and UNKNOWN merge state is polled until it resolves.
 - 2026-09-28: kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart.
 - 2026-10-11: The kxm.config.v1 terminal editor now shares one owner-validated surface across the CLI and OMP/Pi.
+- 2026-10-11: loop-dispatch completed: a live writer and both critics settled from verified drives, and the parent improvement report included all three lane attempts.

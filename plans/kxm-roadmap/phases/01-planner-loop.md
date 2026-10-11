@@ -1,6 +1,6 @@
 # Planner loop and lanes
 
-Status: open. Horizon: next.
+Status: done. Horizon: soon.
 
 Source: `plans/plan-lane-cli.md`.
 
@@ -76,15 +76,17 @@ Plan section: plans/plan-lane-cli.md#4-found-during-the-first-dispatch-2026-09-2
 
 Evidence: `test/core/engine.test.ts`.
 
-### Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes
+### Dispatch the writer and both critics through one-step workflows and surface their lane attempts in the parent report
 
-`loop-dispatch`. Status: open. Detail: scoped.
+`loop-dispatch`. Status: done. Detail: scoped.
 
 Template: `feature`.
 
-Done criterion: One real unit runs the writer and both critics through the one-step workflows, and kxm improve report shows those three attempt rows, each settled from a verified drive receipt. Transport recipes are already retired (#343). #378 enforces tool presets and does not supply this record. #356, #363, and #368 let an engine-driven step settle a real reviewer outcome. Backlog S33 records one truthful critic BLOCK on the vision lane. That is one critic, not a writer plus both critics. A report from the parent checkout still misses lane stores (backlog S30).
+Done criterion: One real unit ran the writer and both critics through the one-step workflows. Each attempt settled from a verified drive receipt, and kxm improve report from the parent checkout included all three lane attempt rows. Transport recipes were already retired in #343.
 
-Evidence needed: The run-events store for this project with the attempt rows for the writer and both critics, each settled from a verified drive receipt, visible from kxm improve report on the parent checkout.
+Evidence needed: Satisfied by plans/evidence/loop-dispatch-2026-10-11.json: three verified workflow drive receipts and parent report counts.
+
+Evidence: `plans/evidence/loop-dispatch-2026-10-11.json`.
 
 ### kxm land follow-up: verify failure detail (S19) and UNKNOWN merge state (S22)
 

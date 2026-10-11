@@ -1,6 +1,6 @@
 # Role authority from the v2 policy draft
 
-Status: open. Horizon: soon.
+Status: open. Horizon: next.
 
 Source: `plans/plan-omp-config-alignment.md`.
 

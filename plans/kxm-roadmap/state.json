@@ -13,14 +13,6 @@
   "history": [
     {
       "date": "2026-09-26",
-      "line": "First deep review: planner loop and role-authority phases added ahead of the Python proposal."
-    },
-    {
-      "date": "2026-09-26",
-      "line": "P1 role authority landed (#337): v2 role and model files are live."
-    },
-    {
-      "date": "2026-09-26",
       "line": "Lanes register under their project and the test suite is bounded (#339)."
     },
     {
@@ -62,6 +54,10 @@
     {
       "date": "2026-10-11",
       "line": "The kxm.config.v1 terminal editor now shares one owner-validated surface across the CLI and OMP/Pi."
+    },
+    {
+      "date": "2026-10-11",
+      "line": "loop-dispatch completed: a live writer and both critics settled from verified drives, and the parent improvement report included all three lane attempts."
     }
   ],
   "architecture": {
@@ -151,11 +147,11 @@
         },
         {
           "id": "loop-dispatch",
-          "title": "Dispatch the next writer through kxm lane run --workflow implement-only and retire the transport just recipes",
-          "status": "open",
-          "evidence": "",
-          "doneCriterion": "One real unit runs the writer and both critics through the one-step workflows, and kxm improve report shows those three attempt rows, each settled from a verified drive receipt. Transport recipes are already retired (#343). #378 enforces tool presets and does not supply this record. #356, #363, and #368 let an engine-driven step settle a real reviewer outcome. Backlog S33 records one truthful critic BLOCK on the vision lane. That is one critic, not a writer plus both critics. A report from the parent checkout still misses lane stores (backlog S30).",
-          "evidenceNeeded": "The run-events store for this project with the attempt rows for the writer and both critics, each settled from a verified drive receipt, visible from kxm improve report on the parent checkout.",
+          "title": "Dispatch the writer and both critics through one-step workflows and surface their lane attempts in the parent report",
+          "status": "done",
+          "evidence": "plans/evidence/loop-dispatch-2026-10-11.json",
+          "doneCriterion": "One real unit ran the writer and both critics through the one-step workflows. Each attempt settled from a verified drive receipt, and kxm improve report from the parent checkout included all three lane attempt rows. Transport recipes were already retired in #343.",
+          "evidenceNeeded": "Satisfied by plans/evidence/loop-dispatch-2026-10-11.json: three verified workflow drive receipts and parent report counts.",
           "template": "feature",
           "detail": "scoped"
         },

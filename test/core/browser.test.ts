@@ -32,6 +32,7 @@ describe("KXM Browser & Steel Integration", () => {
   let serverUrl: string;
   let serverPort: number;
 
+  let savedSteelEnv: Record<string, string | undefined>;
   const mockSessions = new Map<string, any>();
   let shouldFailNext = false;
   let shouldReturn500 = false;
@@ -78,6 +79,8 @@ describe("KXM Browser & Steel Integration", () => {
   }
 
   beforeEach(async () => {
+    savedSteelEnv = snapshotSteelEnv();
+    for (const name of steelAuthEnv) delete process.env[name];
     mockSessions.clear();
     shouldFailNext = false;
     shouldReturn500 = false;
@@ -195,9 +198,13 @@ describe("KXM Browser & Steel Integration", () => {
   });
 
   afterEach(async () => {
-    await new Promise<void>((resolve) => {
-      server.close(() => resolve());
-    });
+    try {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    } finally {
+      restoreSteelEnv(savedSteelEnv);
+    }
   });
 
   it("resolves steel config with secure defaults, env vars, and pass-cli disable", () => {
