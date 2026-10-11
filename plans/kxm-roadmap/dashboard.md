@@ -2,7 +2,7 @@
 
 Updated: 2026-10-11.
 
-Active blockers: 4. Active questions: 11. Later phases are excluded from both counts.
+Active blockers: 4. Active questions: 10. Later phases are excluded from both counts.
 
 ## Next
 
@@ -56,7 +56,7 @@ None.
 
 #### Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. MG0's witness is recorded in the implementation plan; its evidence JSON is not in this checkout. MG1's code gate is done off-repo and not on main: this checkout has no python/ tree.
+None.
 
 [Phase page](phases/03-python-migration.md)
 
@@ -296,8 +296,6 @@ Verified: 2026-10-11.
 | Claim | Page | Status |
 | --- | --- | --- |
 | the S3 test title in the tracker matches a test title in this checkout | `docs/roadmap/phases/05-per-tenant-hosting.md` | mismatch |
-| plans/evidence/python-migration-mg0.json is in this checkout | `docs/roadmap/phases/03-python-migration.md` | missing |
-| a python/ tree is in this checkout | `docs/roadmap/phases/03-python-migration.md` | missing |
 
 ## Constraints
 
@@ -312,7 +310,6 @@ No confirmed contacts.
 
 ## History
 
-- 2026-09-26: Lanes register under their project and the test suite is bounded (#339).
 - 2026-09-27: Draft plan for bare kxm first-run, sequenced after role-authority P3-P7.
 - 2026-09-27: Companion draft for Studio hub screens, sharing the first-run sequence gate.
 - 2026-09-27: P2 role authority landed (#343, published 0.7.131): the v2 files are the only dispatch source, roster.yaml and the transport recipes are gone.
@@ -324,3 +321,4 @@ No confirmed contacts.
 - 2026-09-28: kxm supervise stores lane, pull request, CI, and backoff state and resumes it after a restart.
 - 2026-10-11: The kxm.config.v1 terminal editor now shares one owner-validated surface across the CLI and OMP/Pi.
 - 2026-10-11: loop-dispatch completed: a live writer and both critics settled from verified drives, and the parent improvement report included all three lane attempts.
+- 2026-10-11: MG1 Python control-plane source is checked in without host or guest install changes. OpenAPI and the Studio path inventory come from FastAPI, and PostgreSQL-backed CI is required. Node and SQLite remain authoritative.

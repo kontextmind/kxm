@@ -1,0 +1,63 @@
+{
+  "schema": "kxm.parity-corpus.v1",
+  "id": "python-migration-mg0-corpus",
+  "observedAt": "2026-09-25T18:00:00Z",
+  "redaction": "No live event payloads, prompt sidecar bytes, tokens, or message bodies. Hub messages were 0. Event payloads were counted by type only.",
+  "wire": [
+    {
+      "contract": "backup result",
+      "schema": "kxm.cli-result.v1",
+      "command": "backup",
+      "fields": ["ok", "command", "backupId", "outDir", "manifest"]
+    },
+    {
+      "contract": "backup manifest",
+      "schema": "kxm.backup-manifest.v1",
+      "fields": ["backupId", "createdAt", "projectRoot", "scope", "stateRoot", "runtimeProjectKey", "stores", "files"]
+    },
+    {
+      "contract": "restore result",
+      "schema": "kxm.cli-result.v1",
+      "command": "restore",
+      "fields": ["ok", "command", "backupId", "scope", "restoredStores"]
+    },
+    {
+      "contract": "control account",
+      "method": "GET",
+      "path": "/v1/account",
+      "body": {"account": "kxmd", "database": "kxmd", "namespace": "kxmd", "role": "kxmd"}
+    },
+    {
+      "contract": "control revision publish",
+      "method": "POST",
+      "path": "/v1/tenants/{tenantId}/projects/{projectId}/revisions",
+      "request": {"document": {"schema": "kxm.definition.v1"}},
+      "responseFields": ["revisionId", "sha256", "canonical"]
+    },
+    {
+      "contract": "control denial",
+      "status": 403,
+      "body": {"code": "tenant_membership_missing", "message": "caller is not a member of this tenant"}
+    }
+  ],
+  "subprocess": [
+    {"contract": "role packet", "test": "arbitrate assembles role-aware packets deterministically", "file": "test/core/arbiter.test.ts"},
+    {"contract": "route ceiling", "test": "policy-draft fixtures admit grok-4.7 and reject grok-4.6", "file": "test/core/policy-draft.test.ts"},
+    {"contract": "gate refusal", "test": "a gate outcome the step can never produce is refused", "file": "test/core/cli-experience.test.ts"},
+    {"contract": "drive receipt", "test": "openDriveSession records run.drive_opened and a verified terminal receipt", "file": "test/core/engine.test.ts"},
+    {"contract": "CLI envelope", "test": "error payloads carry a schema and land on stderr", "file": "test/core/cli.test.ts"},
+    {"contract": "restore ceiling", "test": "restore ceilings track every store's own schema version", "file": "test/core/e6-backup-restore-migrations.test.ts"}
+  ],
+  "liveCounts": {
+    "hubMessages": 0,
+    "hubAgents": 0,
+    "hubWorkflowRuns": 0,
+    "runs": 3,
+    "runStatus": {"created": 3},
+    "driveReceipts": 0,
+    "commands": 3,
+    "events": {"run.created": 3},
+    "outbox": 3,
+    "waitsTable": false
+  }
+}

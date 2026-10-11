@@ -10,29 +10,29 @@ Waves MG0 through MG8 from plans/plan-python-migration.md, with status taken fro
 
 ## Tasks
 
-### MG0 baseline and recovery witness recorded by the tracker
+### MG0 baseline, recovery witness, and redacted corpus checked in
 
 `py-mg0`. Status: done. Detail: ready.
 
 Template: [test-report](../../templates/test-report.md).
 
-Done criterion: None.
+Done criterion: The baseline, restore witness, and redacted corpus are reproducible from checked-in evidence without exposing live credentials.
 
-Evidence needed: None.
+Evidence needed: plans/evidence/python-migration-mg0.json and plans/evidence/python-migration-mg0-corpus.json
 
-Evidence: `plans/implementation-plan.md`.
+Evidence: `plans/evidence/python-migration-mg0.json`.
 
-### MG1 code gate done off-repo, not on main
+### MG1 Python foundation, registry, identity, and Studio contract checked in
 
 `py-mg1`. Status: done. Detail: ready.
 
 Template: [test-report](../../templates/test-report.md).
 
-Done criterion: None.
+Done criterion: Wrong-tenant and caller-selected infrastructure are denied; a published revision round-trips; OpenAPI and the Studio path inventory match the FastAPI app and the checked generator emits the revision helper; only an owner or admin can rename a tenant; tokens require exp; registration removal leaves source state untouched and later registry calls return registration_unavailable. Host and guest install changes are outside this slice.
 
-Evidence needed: None.
+Evidence needed: python/kxm-control/tests/test_mg1.py, test/core/studio-layout.test.ts, and the Python/PostgreSQL lane in .github/workflows/ci.yml
 
-Evidence: `plans/implementation-plan.md`.
+Evidence: `python/kxm-control/tests/test_mg1.py`.
 
 ### MG2 Python importers and read-only Studio
 
@@ -110,6 +110,6 @@ None.
 
 ## Questions
 
-- Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. MG0's witness is recorded in the implementation plan; its evidence JSON is not in this checkout. MG1's code gate is done off-repo and not on main: this checkout has no python/ tree.
+None.
 
 [Dashboard](../dashboard.md)

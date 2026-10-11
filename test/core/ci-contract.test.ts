@@ -106,6 +106,8 @@ type CiJobs = Record<
     "runs-on"?: unknown;
     "timeout-minutes"?: unknown;
     steps?: Array<{ name?: string; if?: unknown; run?: string }>;
+    needs?: unknown;
+    services?: Record<string, { image?: string }>;
     strategy?: {
       "fail-fast"?: boolean;
       matrix?: {
@@ -128,7 +130,7 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
     };
   };
   assert.deepEqual(Object.keys(doc.jobs ?? {}), [
-    "changes", "docs", "engine", "unit", "unit-windows", "validate", "plugin", "required",
+    "changes", "docs", "engine", "unit", "unit-windows", "validate", "python", "plugin", "required",
   ]);
   assert.equal(doc.jobs?.generated, undefined);
   assert.equal(doc.jobs?.changes?.if, undefined);
@@ -140,6 +142,7 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.equal(doc.jobs?.changes?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.docs?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.plugin?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.python?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.required?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.engine?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.engine?.if, "${{ needs.changes.outputs.code == 'true' }}");
@@ -157,6 +160,10 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.match(String(doc.jobs?.["unit-windows"]?.if), /pull_request/);
   assert.match(String(doc.jobs?.["unit-windows"]?.if), /needs\.changes\.outputs\.platform == 'true'/);
   assert.deepEqual(doc.jobs?.["unit-windows"]?.strategy?.matrix?.lane, ["engine-1", "engine-2", "serial", "light-1", "light-2"]);
+  assert.equal(doc.jobs?.python?.name, "Python MG1 (linux, Python 3.13)");
+  assert.equal(doc.jobs?.python?.["timeout-minutes"], 10);
+  assert.equal(doc.jobs?.python?.if, "${{ needs.changes.outputs.code == 'true' }}");
+  assert.equal(doc.jobs?.python?.services?.postgres?.image, "postgres:17");
   assert.equal(doc.jobs?.plugin?.if, "${{ needs.changes.outputs.code == 'true' }}");
   assert.match(String(doc.jobs?.validate?.if), /github\.event_name != 'pull_request'/);
   assert.match(String(doc.jobs?.validate?.if), /needs\.changes\.outputs\.code == 'true'/);
@@ -188,6 +195,9 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   ]));
   assert.equal(expanded.length, 4);
   assert.equal(doc.jobs?.plugin?.name, "Plugin validation");
+  assert.deepEqual(doc.jobs?.required?.needs, [
+    "changes", "docs", "engine", "unit", "unit-windows", "validate", "python", "plugin",
+  ]);
 
   const validateSteps = doc.jobs?.validate?.steps ?? [];
   assert.equal(validateSteps.some((step) => step.name === "Inspect package (main only)"), false);
@@ -199,6 +209,11 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.match(unitRuns, /npm run test:ci-shard -- \$\{\{ matrix\.lane \}\}/);
   assert.match(unitRuns, /npm run typecheck/);
   assert.match(engineRuns, /npm run test:ci-shard -- engine \$\{\{ matrix\.shard \}\} 2/);
+  const pythonSteps = doc.jobs?.python?.steps ?? [];
+  const pythonRuns = pythonSteps.map((step) => step.run).join("\n");
+  assert.equal(pythonSteps.some((step) => step.name === "Use Python 3.13"), true);
+  assert.equal(pythonSteps.some((step) => step.name === "Install uv"), true);
+  assert.match(pythonRuns, /uv run --project python --frozen python -m unittest discover -s python\/kxm-control\/tests/);
   assert.equal(SHARD_TOTAL, 2);
   assert.equal(LIGHT_SHARD_TOTAL, 2);
 

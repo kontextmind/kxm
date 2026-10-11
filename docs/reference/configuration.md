@@ -30,6 +30,7 @@ Names that start with `KXM_` are not all operator settings. This map covers ever
 | Agents | `KXM_SERVER_URL`, `KXM_AUTH_TOKEN`, `KXM_PROJECT`, `KXM_AGENT_NAME`, `KXM_AGENT_PURPOSE` | [Agent settings](#agent-settings) |
 | Long-lived Pi workers | `KXM_PI_COMMAND`, `KXM_WORKER_*` (operator settings), `KXM_AGENT_LOG_PATH` | [Long-lived worker settings](#long-lived-worker-settings) |
 | Runtime supervisor | `KXM_STATE_HOME`, `KXM_RUNTIME_SYNC_INTERVAL_MS`, `KXM_RUNTIME_STOP_GRACE_MS` | [Runtime supervisor settings](#runtime-supervisor-settings) |
+| Studio and Python control plane | `KXM_CONTROL_URL`, `KXM_KXMD_*`, `KXM_AUTHENTIK_*`, `KXM_POSTGRES_*`, `KXM_DATABASE`, `KXM_DB_USER`, `KXM_TEMPORAL_*` | [Studio and Python control-plane settings](#studio-and-python-control-plane-settings) |
 | Operator CLI and sessions | `KXM_USER_CONFIG_DIR`, `KXM_USER_TELEMETRY_DIR`, `KXM_SESSION_TOKEN`, `KXM_SESSION_BRIEF`, `KXM_WORKFLOW_*`, `GITHUB_TOKEN`, and others | [CLI and session settings](#cli-and-session-settings) |
 | Nous model providers | `KXM_NOUS_PROVIDERS`, `KXM_NOUS_PROXY_URL`, `KXM_NOUS_DISCOVERY_TIMEOUT_MS`, `KXM_NOUS_CATALOG_FILE`, `NOUS_API_KEY` | [Nous providers](../guides/nous-providers.md) |
 | Browser automation | `KXM_BROWSER`, `OBSCURA_CDP_URL`, `OBSCURA_PORT`, `STEEL_API_URL`, `STEEL_UI_URL`, `STEEL_AUTH_HEADER`, `STEEL_AUTH_BASIC`, `STEEL_AUTH_USER`, `STEEL_AUTH_TOKEN`, `STEEL_API_KEY` (legacy), `USE_PASS_CLI` | [Browser settings](#browser-automation) |
@@ -186,6 +187,27 @@ The Runtime supervisor runs `kxm run` workflows and syncs their summaries to the
 | `KXM_STATE_HOME` | macOS `~/Library/Application Support/KXM`; Windows `%LOCALAPPDATA%\KXM`; Linux `$XDG_STATE_HOME/kxm`, else `~/.local/state/kxm` | User state root: Runtime event stores, supervisor token, `hub-env.json`, `hub-binding.json`, `update.yaml`. Must be absolute (`local_state_root_not_absolute`) |
 | `KXM_RUNTIME_SYNC_INTERVAL_MS` | `10000` | How often the supervisor heartbeats and pushes its outbox, clamped to `250` through `60000` |
 | `KXM_RUNTIME_STOP_GRACE_MS` | `30000` | How long a stopping supervisor waits for open drives, `0` to `600000`; an invalid value warns and uses the default |
+
+## Studio and Python control-plane settings
+
+The MG1 Python service is additive: these values do not redirect the Node hub
+or Runtime from SQLite. Requests cannot override its database host, database,
+role, Temporal target, or namespace.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `KXM_CONTROL_URL` | Unset | Python control API base URL used by Studio's `GET /api/control/account` relay. The relay returns `control_unconfigured` when absent, and aborts a nonresponding upstream after three seconds with `control_unreachable` |
+| `KXM_KXMD_PASSWORD` | None; required | PostgreSQL password for the fixed `kxmd` role. Keep it in the deployment secret manager |
+| `KXM_POSTGRES_HOST` | `127.0.0.1` | PostgreSQL host selected by the service deployment, including an operator-owned tunnel |
+| `KXM_POSTGRES_PORT` | `5432` | PostgreSQL port, from 1 through 65535 |
+| `KXM_DATABASE` | `kxmd` | Fixed database assertion. Any other value refuses startup-time account resolution |
+| `KXM_DB_USER` | `kxmd` | Fixed PostgreSQL role assertion. Any other value is refused |
+| `KXM_TEMPORAL_TARGET` | `127.0.0.1:7233` | Temporal endpoint selected by the service deployment |
+| `KXM_TEMPORAL_NAMESPACE` | `kxmd` | Fixed Temporal namespace assertion. Any other value is refused |
+| `KXM_KXMD_ARTIFACTS` | `/var/lib/kxm/artifacts/kxmd` | Root for bounded per-tenant artifacts |
+| `KXM_AUTHENTIK_ISSUER` | None; required for authenticated routes | Exact token issuer |
+| `KXM_AUTHENTIK_AUDIENCE` | None; required for authenticated routes | Exact token audience |
+| `KXM_AUTHENTIK_JWKS_URL` | None; required for authenticated routes | JWKS endpoint used to verify RS256 user and runner tokens |
 
 ## CLI and session settings
 

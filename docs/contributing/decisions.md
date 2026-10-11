@@ -198,3 +198,34 @@ Evidence: Evidence: `git diff HEAD origin/main` on the stale branch showed upstr
 - Interim recommendation: use the opt-in installer until OMP exposes a
   first-class transactional status-preset API.
 Evidence: `plugins/kxm/src/cli/plugins.ts`, `plugins/kxm/src/session-work.ts`, and `test/core/cli.test.ts`.
+
+## 2026-10-11 — Bring the witnessed MG1 Python foundation onto main (migration)
+
+- Context: the tracker records MG1 as passed off-repo while the operator's
+  primary checkout holds the matching untracked Python workspace, MG0 evidence,
+  and Studio control-account proxy. Leaving the implementation outside Git
+  makes the recorded gate irreproducible and blocks MG2 from a reviewed base.
+- Options:
+  - Keep MG1 off-repo and start the roadmap's role-authority work — weight 0.2.
+    Avoids a CI change, but preserves the tracker/source contradiction and risks
+    losing the only implementation matching the deployed witness.
+  - Import MG1 at `python/kxm-control`, keep Node as the current product owner,
+    and add a required Python/PostgreSQL contract lane — weight 0.9. Makes the
+    accepted foundation reproducible without claiming a Python cutover.
+  - Replace the Node CLI and Runtime with the Python package now — weight 0.1.
+    MG2 through MG8 are still open, so this would skip import, bridge, runner,
+    parity, and retirement gates.
+- Selected: import the bounded MG1 foundation and its evidence, harden the
+  Studio proxy, and make the Python unit/contract suite part of `CI / required`.
+  SQLite and the Node Runtime remain authoritative. OpenAPI and the Studio
+  path inventory are derived from the FastAPI app; the checked generator emits
+  the revision helper. The package does not change host or guest installs.
+  After registration removal, registry routes return `registration_unavailable`
+  until the schema is installed again.
+- Solid recommendation: keep every accepted migration wave in Git with its
+  generated contracts and a required service-backed test lane.
+- Interim recommendation: if the service lane is unavailable, do not merge the
+  Python source; retain the off-repo tracker wording rather than claiming an
+  unverified gate.
+Evidence: `plans/implementation-plan.md`, `plans/plan-python-migration.md`,
+`python/kxm-control/tests/test_mg1.py`, and `.github/workflows/ci.yml`.

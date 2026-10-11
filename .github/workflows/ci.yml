@@ -15,15 +15,15 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Pull requests run lint, typecheck, and the unit suite on Linux Node 24.
-# engine.test.ts is split by test name. permission, runtime, and
-# package-install run serially in their own job. The other unit files are
-# split across two light shards. Pushes to main and workflow_dispatch also
-# run validate:pr on Linux and Windows for Node 22.19.0 and Node 24. A pull
-# request that touches path, process, shell, spawn, package, or workflow
-# files also runs the unit lanes on Windows.
-# `required` is the status check to mark required: it fails when a lane
-# fails or is cancelled, and succeeds when a lane was skipped on purpose.
+# Pull requests run lint, typecheck, the unit suite on Linux Node 24, and the
+# Python control-plane contracts against PostgreSQL 17. engine.test.ts is split
+# by test name. permission, runtime, and package-install run serially in their
+# own job. The other unit files are split across two light shards. Pushes to
+# main and workflow_dispatch also run validate:pr on Linux and Windows for Node
+# 22.19.0 and Node 24. A pull request that touches path, process, shell, spawn,
+# package, or workflow files also runs the unit lanes on Windows.
+# `required` is the status check to mark required: it fails when a lane fails
+# or is cancelled, and succeeds when a lane was skipped on purpose.
 jobs:
   changes:
     name: Classify changes
@@ -234,6 +234,50 @@ jobs:
       - name: Run the three-minute validation gate
         run: npm run validate:pr
 
+  python:
+    name: Python MG1 (linux, Python 3.13)
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: kontextmind-doks
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Use Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: python/.python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+
+      - name: Run Python control-plane contracts
+        env:
+          KXM_MG1_ADMIN_DSN: host=127.0.0.1 port=5432 dbname=postgres user=postgres password=postgres
+          KXM_MG1_TEST_DSN: host=127.0.0.1 port=5432 dbname=kxm_mg1_test user=postgres password=postgres
+        run: uv run --project python --frozen python -m unittest discover -s python/kxm-control/tests
+
   plugin:
     name: Plugin validation
     needs: changes
@@ -271,7 +315,7 @@ jobs:
 
   required:
     name: required
-    needs: [changes, docs, engine, unit, unit-windows, validate, plugin]
+    needs: [changes, docs, engine, unit, unit-windows, validate, python, plugin]
     if: ${{ always() }}
     runs-on: kontextmind-doks
     timeout-minutes: 5
@@ -307,10 +351,12 @@ jobs:
                   failed.append(f"engine={needs['engine']['result']}")
               if needs["unit"]["result"] != "success":
                   failed.append(f"unit={needs['unit']['result']}")
+              if needs["python"]["result"] != "success":
+                  failed.append(f"python={needs['python']['result']}")
               if needs["plugin"]["result"] != "success":
                   failed.append(f"plugin={needs['plugin']['result']}")
           else:
-              for name in ("engine", "unit", "unit-windows", "validate", "plugin"):
+              for name in ("engine", "unit", "unit-windows", "validate", "python", "plugin"):
                   if needs[name]["result"] != "skipped":
                       failed.append(f"{name} should be skipped, got {needs[name]['result']}")
           if event == "pull_request" and code and platform:

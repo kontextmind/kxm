@@ -6,7 +6,8 @@ Read from `plugins/kxm/src/cli.ts`, `plugins/kxm/src/config-editor.ts`,
 `plugins/kxm/src/runtime-paths.ts`, `plugins/kxm/src/mcp-server.ts`,
 `plugins/kxm/src/oneshot-producer.ts`, `plugins/kxm/src/studio-layout.ts`,
 `plugins/kxm/src/cli/types.ts` (`workspaceDirs`),
-`plugins/kxm/src/local-snapshot.ts`, and `scripts/kxm-worker.mjs`.
+`plugins/kxm/src/local-snapshot.ts`, `scripts/kxm-worker.mjs`, and
+`python/kxm-control/src/kxm_control/{api,registry}.py`.
 
 | Surface | Started by | Listener or path | Store it owns | Defining file |
 | --- | --- | --- | --- | --- |
@@ -21,7 +22,8 @@ Read from `plugins/kxm/src/cli.ts`, `plugins/kxm/src/config-editor.ts`,
 | MCP server | Claude plugin or stdio launch | stdio | none | `plugins/kxm/src/mcp-server.ts` |
 | One-shot harness | supervisor producer | child process, no listener | none | `plugins/kxm/src/oneshot-producer.ts` |
 | Pi worker | `kxm agent worker` | no HTTP listener in `scripts/kxm-worker.mjs` | none of its own | `scripts/kxm-worker.mjs` |
-| Studio | `kxm studio serve` | `127.0.0.1:4242` | none | `plugins/kxm/src/studio-layout.ts` |
+| Studio | `kxm studio serve` | `127.0.0.1:4242` | none; `/api/control/account` is a bounded relay to the configured control API | `plugins/kxm/src/studio-layout.ts` |
+| Python control API | ASGI server loading `kxm_control.api:app` | deployment-selected; the package declares no network default | `kxm_registry` in the fixed `kxmd` PostgreSQL database and the configured tenant artifact root | `python/kxm-control/src/kxm_control/api.py` |
 | Workspace config | `workspaceDirs` | `.kxm/config`, or `KXM_CONFIG_DIR` | files in that directory | `plugins/kxm/src/cli/types.ts` |
 | Workspace logs | `workspaceDirs` | `.kxm/logs`, or `KXM_LOGS_DIR` | log files | `plugins/kxm/src/cli/types.ts` |
 | Workspace assets | `workspaceDirs` | `.kxm/assets`, or `KXM_ASSETS_DIR` | asset files | `plugins/kxm/src/cli/types.ts` |

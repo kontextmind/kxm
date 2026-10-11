@@ -38995,6 +38995,11 @@ function generateStudioLayout(plan, state) {
   };
 }
 var DEFAULT_STUDIO_PORT = 4242;
+function isKxmdAccountView(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const account = value;
+  return account.account === "kxmd" && account.database === "kxmd" && account.namespace === "kxmd" && account.role === "kxmd";
+}
 function createStudioServer(options = {}) {
   const targetPort = options.port ?? DEFAULT_STUDIO_PORT;
   const host = options.host ?? "127.0.0.1";
@@ -39011,6 +39016,46 @@ function createStudioServer(options = {}) {
     if (url.pathname === "/health" || url.pathname === "/api/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, studio: true, port: targetPort }));
+      return;
+    }
+    if (url.pathname === "/api/control/account" && req.method === "GET") {
+      const base = options.controlUrl ?? process.env.KXM_CONTROL_URL;
+      if (!base) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_unconfigured" }));
+        return;
+      }
+      let upstream;
+      try {
+        upstream = await fetch(new URL("/v1/account", base), {
+          signal: AbortSignal.timeout(3e3)
+        });
+      } catch {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_unreachable" }));
+        return;
+      }
+      const contentType = upstream.headers.get("content-type");
+      if (!contentType?.toLowerCase().startsWith("application/json")) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_response_invalid" }));
+        return;
+      }
+      let body;
+      try {
+        body = await upstream.json();
+      } catch {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_response_invalid" }));
+        return;
+      }
+      if (upstream.ok && !isKxmdAccountView(body)) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_response_invalid" }));
+        return;
+      }
+      res.writeHead(upstream.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
       return;
     }
     if (url.pathname === "/api/layout" && req.method === "GET") {

@@ -52,11 +52,13 @@ roadmap question. The tracker wins.
 proposal is not in this repository. Its delivery position is unchanged:
 none of the delivery is scheduled there.
 
-The tracker names that file. The sentences that can be repeated without a
-hostname, an account name, or a secret are: a first move is recorded as
-installed, Postgres and Temporal are described as loopback only, KXM does not
-write those stores, Redis Streams, NATS, raw WebSockets, and the A2A Python
-SDK stay backlog, there is no S3, and the SQLite write path is unchanged.
+Today the Node hub and Runtime still write local SQLite and local files. The
+checked-in MG1 Python control API is the narrow exception: it owns only central
+registration and bounded tenant artifacts in the fixed `kxmd` PostgreSQL
+account. Temporal is provisioned for `kxmd`, but no production workflow cutover
+is selected. Redis Streams, NATS, raw WebSockets, the A2A Python SDK, and S3
+remain backlog. The rest of this page remains a target, not a live deployment
+description.
 
 ## Related
 

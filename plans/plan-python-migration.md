@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-29"
+updated: "2026-10-11"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Proposed TypeScript-to-Python migration, central platform target, parity gates and project cutover; delivery authority stays in the active implementation tracker."
@@ -16,6 +16,7 @@ related:
   - implementation-plan.md
   - research-runtime-language-choices.md
   - plan-per-tenant-hosting.md
+  - evidence/python-migration-mg0.json
   - plan-greenfield-infra.md
 depends_on: []
 blocked_by: []
@@ -152,7 +153,7 @@ Work ownership lanes: **A platform/import**, **B runner/routing**, **C Studio/id
 | Wave | Work items | Dependencies | Owner | Completion gate / rollback |
 | --- | --- | --- | --- | --- |
 | MG0 Baseline and recovery | Record exact deployed versions/config; inspect portal/VM repos; enumerate six state roots; inventory account routes, native plugin consumers and open runs; encrypted archive and restore witness; build redacted TS/Python parity corpus | — | A + C | Restored clone yields matching IDs/receipts/config hashes; corpus captures the current wire and subprocess contracts. Stop if completeness is unknown. |
-| MG1 Python foundation, registry and identity | Create uv Python workspace, schema/OpenAPI contract, Python API/auth layer, personal/org tenants, memberships, project/repo mapping, Authentik user/runner login; deploy isolated PostgreSQL/Temporal/object storage | MG0 | A + C | Python API denies cross-tenant/VM requests; published revision round trip and regenerated Studio client pass. Central registration can be removed without touching source state. |
+| MG1 Python foundation, registry and identity | Create uv Python workspace, schema/OpenAPI contract, Python API/auth layer, personal/org tenants, memberships, project/repo mapping, Authentik user/runner login; deploy isolated PostgreSQL/Temporal/object storage | MG0 | A + C | Python API denies cross-tenant/VM requests; a published revision round-trips; OpenAPI and the Studio path inventory match the FastAPI app and the checked generator emits the revision helper. Central registration can be removed without touching source state. Host and guest install changes are outside this slice. |
 | MG2 Python importers and read-only Studio | Versioned Python SQLite importers, manifests, legacy engine-qualified timeline, definition previews, sync lag/refusal states, artifact links | MG1 | A + C | Counts/hashes reconcile per table and source; duplicate/conflict handling matches fixtures; source fields retain provenance. Roll back rebuildable projections. |
 | MG3 TypeScript bridge and Python runner | Constrained TypeScript adapter to existing hub/Runtime; Python outbound runner, harness subprocess adapters, host/SSH enrollment; Python CLI and MCP client commands use the same Studio API contract | MG1–MG2 | B + C | Duplicate ticket produces one legacy action; auth refusal, stream/cancel, process cleanup and CLI output match parity corpus. Drain bridge commands before disabling it. |
 | MG4 Python Temporal pilot and role routing | Python interpreter: convert one read-only guide then bounded write guide; role/agent split; frozen graph parity; quotas/fallbacks; required gates; model/run outcome receipts | MG3 | A + B | Python worker restart/replay, effect/fallback and read-only shadow comparisons pass. Stop new admissions and drain pilot to return to old start path. |
@@ -214,6 +215,21 @@ CA evaluation witness: Authentik user obtains an allowed certificate; wrong tena
 The target features and a genuine TypeScript-to-Python port must still be built. Prior **24–40 engineering-week** planning allowance assumed a TypeScript target and does not apply unchanged. Allow **18–30 engineering-weeks** for the central product and **12–20 additional engineering-weeks** for Python contract ports, native integrations, data conversion, dual operation, cutover and retirement: **30–50 engineering-weeks** total, with overlap and substantial uncertainty. This is a capacity estimate, not a delivery date or promised saving from Python. Re-estimate after MG0's parity inventory and MG4's pilot; source ownership, history volume, platform support and unsupported harness recovery can dominate.
 
 Remaining discovery is explicit: actual VM/portal source and deployed versions; customer/tenant/account ownership; retained data volumes; shared-memory provenance; live provider quota signals; real custom state paths; fleet platform mix; Python runtime compatibility with native harnesses and Pi extension entry points; CA/secret-service availability; active schedules and unresolved effects. No passwords, SSH keys or live customer records were read during this planning task.
+
+**MG0 witness passed (2026-09-25).** Facts are in
+[evidence/python-migration-mg0.json](evidence/python-migration-mg0.json).
+The restore clone matched ids and config hashes. The redacted corpus is
+[evidence/python-migration-mg0-corpus.json](evidence/python-migration-mg0-corpus.json).
+The live service checkout was not switched to `main`.
+
+**MG1 foundation checked in (2026-10-11).** The witnessed Python API,
+registry, identity boundary, OpenAPI document, Studio path inventory, emitted
+revision helper, and control-account proxy are under `python/kxm-control` and
+`plugins/kxm/src/studio-layout.ts`. The package does not change host or guest
+installs.
+The required CI aggregate runs their Python/Postgres and Node contract tests.
+This records the accepted foundation only; MG2–MG8 and the runtime cutover
+remain proposed.
 
 ## Source references
 

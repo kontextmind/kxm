@@ -38,3 +38,6 @@ blob-report/
 .venv-docs/
 __pycache__/
 *.pyc
+# Python control-plane caller
+python/.venv/
+python/kxm-control/.tmp-artifacts/
