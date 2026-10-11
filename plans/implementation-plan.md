@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-10-01"
+updated: "2026-10-11"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -681,23 +681,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   report and kxm routing report from the primary include an attempt recorded
   only in a registered lane` in `test/core/improve.test.ts`.
 
-- **Owner-validated `kxm.config.v1` terminal editor (2026-10-11):**
-  `plugins/kxm/src/config-editor.ts` publishes one bounded `kxm/config`
-  contribution used by `kxm config edit --scope project|user` and OMP/Pi
-  `/kxm config`. Every set or clear validates the exact section/field pair,
-  writes through the existing config owner, then republishes from disk; a
-  refusal leaves file bytes unchanged. Project scope resolves Base → User →
-  Project, while user scope resolves Base → User so a project override cannot
-  hide the edit. Non-TTY and dry-run CLI calls render one plain frame;
-  unsupported scope, JSON editing, and non-TUI slash-command use fail closed.
-  The surface exposes only fixed non-secret scalar preferences. Endpoints, key
-  references, credentials, arrays, dynamic maps, roster, routes, gates, roles,
-  and workflow definitions remain outside it. Pi/OMP package discovery now
-  loads the tracked extension bundle, which contains the private TUI workspace
-  instead of requiring it as a published runtime dependency. Covered by
-  `test/core/config-editor.test.ts`; CLI/config/TUI references and the
-  architecture inventory name the same boundary. The broader package
-  restructure queue remains open.
 - **OMP subscription status band and concise session chrome (2026-10-11).**
   `kxm plugin install --omp --status-band` explicitly selects a focused OMP
   custom layout that uses OMP's native active-account quota segment; ordinary
@@ -1451,139 +1434,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   valid project workflow (`id` and `role` are rejected), so one local `workflow add` makes
   the project loader refuse every `kxm run` until the file is removed.
 
-- **E5b harness-agnostic memory (issue #101):** KXM owns project memory in Git
-  (`.kxm/memory/`) with schema `kxm.memory.v1` and YAML frontmatter (`id`, `scope`,
-  `kind`, `summary`, `provenance`, `authority`, `confidence`, `lifecycle`,
-  `evidenceRefs`). Unreviewed memory candidates live under `.kxm/memory/candidates/`
-  with `authority: "evidence"` and are promoted only via merged PR/commit. Commands:
-  `kxm memory brief [--json]`, `kxm memory note "<fact>" [--scope <scope>] [--kind <kind>]`,
-  and `kxm memory sync`. `syncHarnessMemory` regenerates marker-delimited blocks in
-  `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`, and drift is fail-closed in
-  `scripts/check-generated.mjs`. Claude session-start hook in
-  `plugins/kxm/.claude-plugin/plugin.json` and Pi extension `/kxm memory` slash command
-  call the brief; no mirrored copy exists in Claude's memory directory. Verified with
-  `test/core/e5b-harness-agnostic-memory.test.ts` proving: no fact in any harness view is
-  absent from the authored set; identical facts returned across CLI, Pi, and Claude hook;
-  check-generated fails on harness block drift; candidates are excluded from authored set
-  and memoryRevision until promoted; control plane fields are rejected; secrets in summary
-  and provenance are redacted.
-  **Corrected 2026-09-23:** sync also *created* a missing `CLAUDE.md`/`GEMINI.md` from
-  headers copied out of this repository's own instruction files, so any project that ran
-  `kxm memory sync` inherited KXM's planner role, Grok writer rotation and Tracking
-  admission rules (observed on main `ac08d95` in an isolated sandbox). Sync now updates
-  only the instruction files a project already has, rewrites nothing outside the memory
-  markers, appends the block at the end rather than before this repo's `## Do not`
-  heading, and refuses when none of the three exist — creating a harness file is the
-  project's decision, not a side effect. This repository's own `CLAUDE.md`/`GEMINI.md`
-  prose is now hand-maintained; only their marked blocks are generated. Named test:
-  `E5b: memory sync into a fresh project creates no harness file and rewrites only its own block`.
-  **Corrected 2026-09-23 (markers):** sync replaced from the first start marker to the
-  first end marker whenever both strings appeared anywhere in the file. An orphan start
-  got a fresh block appended, and the next sync then deleted the project's text between
-  the orphan and that block's end; an end before its start duplicated text; a second
-  block stayed stale. Sync now checks every present file before writing any: a file
-  without exactly one start followed by exactly one end marker (or neither, which
-  appends) fails the whole sync, naming the file and the problem, and no file is
-  written. Named test:
-  `E5b: memory sync refuses malformed memory markers, naming the file, and writes no file`.
-
-- **D5 routing records v2 and price catalog (issue #91):** defined
-  `kxm.routing-record.v2` contract in `plugins/kxm/src/routing.ts` and updated
-  schemas `schemas/common.schema.json` and
-  `schemas/run-event.schema.json`; created price catalog schema
-  `schemas/prices.schema.json` (`kxm.prices.v1`) and price catalog loader/calculator
-  `plugins/kxm/src/prices.ts`; added dated, hashed price catalog
-  `.kxm/prices.yaml` (Claude, Codex, Grok, GLM, Kimi, Qwen); engine settlement
-  requires `costBasis` and records `routing.attempt.recorded` event on every member
-  settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch
-  (`budget_model_cost`) *(inert on live runs as of 2026-09-23: no producer records `metered`
-  cost — see Still open, routing and cost policy questions)*; fold handles routing records and
-  terminal failure reasons.
-
-- **Three-minute merge gate (2026-09-23):** CI `Validate` legs run the same bounded `validate:pr` gate for pull requests and pushes to main: build, typecheck, a compact contract/smoke set, version parity, and generated-dist currency. Each Node 22.19.0/24 leg has a hard three-minute started-job budget. The exhaustive core/simulation/package suite, 93/80/93 coverage floors, full docs check, generated rebuild, and package dry-run stay in `nightly.yml`; they no longer delay merging. Documentation-only changes run Classify and Docs lint while the required Validate and Plugin jobs preserve their pinned names with explicit no-op steps. Job names and the two-Node matrix remain unchanged for ruleset `22251971`. AGENTS.md and the CI contract test enforce the split.
-
-- **Phase 4 harness/model assignment validation & Pi auth probe (implemented, unreleased):**
-  `validateHarnessModelPair` enforces unhosted harness/model pair rejection at
-  assignment, rejecting models not hosted by the selected harness (Claude ≠ Grok,
-  Codex ≠ Gemini, etc.) and enforcing native Pi brake rules (blocking direct
-  native-provider impersonation through Pi without allowlisted aggregator prefixes
-  `openrouter/*`, `nous-portal/*`, `nous/*`, `nous-proxy/*`) *(corrected 2026-09-23: the brake
-  never read that allowlist and checked only the first id segment; it now refuses by model
-  vendor — see Landed, routing rules checked against the code)*. `probeHarnessAssignment`
-  and `probeHarnessesForModel` supply exact requested provider/model context to
-  Pi (`pi auth check [--provider <p>] [--model <m>] --json`) before claiming Pi
-  readiness, enabling `eligibleHarnesses` to dynamically filter authenticated
-  harnesses for a specific assignment candidate without static YAML matrices.
-
-- **E3: routing report, logger, metrics (issue #96):** `kxm routing report` groups attempts by `(harness, model, thinking, role)`, reporting attempts, verifyPassRate, reworkRate (back-edge re-entries only: transitions > 0), p50 and p95 latency (linear interpolation), medianContextTokens, meteredCostUsd, costPerAcceptedUsd, and separate counts for unmetered, unknown, and quotaExhausted. Quality-first sorting (verifyPassRate desc, reworkRate asc) then cost per accepted attempt; routes with unknown cost are flagged (`*`) and never ranked cheapest. Equivalent list cost column supported via `--equivalent-list-cost` / `--list-prices`. Unified `logger.ts` with structured JSONL formatting, level priority filtering, child loggers, size-capped file rotation, redaction on write (secrets and sensitive keys), and daemonized stdout suppression. Prometheus metrics renamed to `kxm_*`, exported orphaned `kxm_context_requests_total`, added `kxm_attempt_latency_seconds_total` and `kxm_metered_cost_usd_total`. Zero `pi_mesh_*` or `pi_kxm_*` metric names remain. *Corrected 2026-09-23:* until PR #298 the report read `telemetry.jsonl` only and engine records carried no `finalOutcome`, so Runtime attempts never reached it and would have scored a 0 pass rate. Since slice 4 its default input is the Runtime event store plus telemetry, with acceptance resolved from the event log. The rework column still reads `transitions`, which engine records never set.
-
-- **E8: improvement report and candidates (issue #97):** `kxm improve report` reads routing records and emits candidates grouped by `(workflowHash, step, agentRole, promptHash)`. Rows carry recurrence, mean cost, mean latency, verify-pass rate, and rework; high recurrence with high pass rate emits coded-repeat candidates. Single candidate format `kxm.candidate.v1` in tracked `.kxm/candidates/`: `kind` (`gate`, `skill`, `workflow-step`), `evidenceRefs`, `baselineMetrics`, `declaredOutcome`, `measure`, `proposedDiffPath`. Skill candidates carry standard YAML frontmatter (`name`, `description`). `skills promote` emits a unified diff patch (`.patch`) instead of moving a directory. Workflow `examples/project/.kxm/workflows/improve.yaml` runs and completes on the KXM driver. Retrospective exports are un-gitignored. *Corrected 2026-09-23 against what the code does:* no Runtime record ever reached this report, because it read only `telemetry.jsonl`; the prompt key it grouped by (`rolePromptSha256`) is a `providerMetadata` key the routing parser refuses, so engine records could not carry it; `workflowHash` fell back to the run id, so recurrence was counted per run; engine records had no outcome, so the pass rate was 0; and `evaluatePromotionPolicy` could report a promotion as authorized. PR #298 slice 4 (above) replaced all five: the report reads the Runtime event store plus telemetry, keys on `(workflowId, step, agent role, askSha256)`, needs the same ask decided in at least two runs, and reports promotion readiness that never authorizes. The `improve.yaml` example still runs as before and is not a coded gate step.
-
-- **`kxm improve` and `kxm routing report` resolve Runtime attempts from the event log;
-  coded-repeat candidates need a repeated ask; promotion reports readiness only
-  (2026-09-23; PR #298 slice 4, `bee1fac`; the operator decisions it implements are
-  pending, see Still open):** `kxm improve` read only `.kxm/logs/telemetry.jsonl`, whose one
-  writer is the CLI worker envelope, so it never saw a Runtime agent step, and
-  `kxm routing report` had the same single input. On engine records it could not group
-  across runs either: the workflow key fell back to the run id; the prompt key was
-  `rolePromptSha256`, which an engine record could not carry because the routing parser
-  refuses any `providerMetadata` key containing `prompt`, `body`, `content` or `message`;
-  and none of the 27 engine records in the operator's store had a `finalOutcome`, so every
-  pass rate was 0. `evaluatePromotionPolicy` could return `authorized: true` under
-  `critic_quorum` or `auto_threshold`, the `improvement.*` settings were accepted by
-  `kxm config` and never read, and `--target` was accepted and never applied.
-  **Changed:** new `improve-sources.ts` reads the current checkout's Runtime event store
-  (`<state>/runtime/projects/<key>/run-events.db`) read-only — one `SELECT` over `events`,
-  never the runs table, the run plans or the prompt sidecar, never a write or a migration —
-  then `telemetry.jsonl`, dropping a v2 record whose `attemptId` an earlier source already
-  supplied; `--file` reads only the named file. Each engine attempt's outcome is resolved
-  in memory and never stored: a record-time `blocked`/`failed` stands, a later
-  `step.entered` for the same step makes it `reworked`, a completed run makes it
-  `accepted`, a failed run `failed`, and anything else (cancelled, still running) is
-  undecided and left out of the pass rate. Simulated attempts are dropped and counted. An
-  unreadable store exits 1 with `improve_source_unreadable` naming the path. Groups key on
-  `(workflowId, step, agent role, askSha256)`; a group is a coded-repeat candidate only
-  when the same objective (`objectiveSha256`) was decided in at least 2 runs, at least 0.75
-  of decided records were accepted (a retry superseded in the same run never passes), and
-  the step writes no repository; a passing group that misses reports `excludedReason`
-  `writes-repository` or `ask-not-repeated`. `improvement.telemetryHalfLifeDays` now
-  orders rows through `weightedRecurrence` and never decides candidacy; `config.ts`
-  normalizes every `improvement.*` value field by field (an unknown policy is `manual_pr`,
-  a half-life outside (0, 3650] days is 14, out-of-range thresholds are 10, 0.95 and 0.5).
-  Promotion is `promotion[]` readiness per candidate (`readyForReview`, `reason`);
-  `PromotionDecision` and its `authorized` field are gone and no policy authorizes.
-  Workflow-step candidates propose a `kind: gate` step plus a `gates.yaml` hunk with a
-  placeholder command; skill candidates are labelled consolidation. `kxm routing report`
-  without `--file` reads the same sources and adds `sources` to its JSON. `--target` is
-  removed, and `kxm workflow record` gained `--stage-id`, the ten categories and an
-  optional area. **Gate:** existing `npm run verify`, no new npm script or CI job, and one
-  new named test, `kxm improve report resolves Runtime-settled attempts from the event log
-  and flags only same-ask cross-run repeats` in `test/core/improve.test.ts` (five driven
-  runs read through the real CLI: two with the same ask, one simulated, one reworked inside
-  the run, one with a different objective, plus a telemetry copy of an engine attempt).
-  Modified: five existing
-  `improve.test.ts` tests (grouping, candidate emission, the telemetry CLI path, federated
-  export, promotion policy), `stop, signal, status, and help cover the remaining command
-  contract` (`cli.test.ts`, no `--target`), `config: loads defaults and resolves user/repo
-  overrides` (`cli-experience.test.ts`, normalization) and `CLI subcommands and options parse
-  thoroughly in dry-run mode` (`commands-policy.test.ts`, `--stage-id` and the
-  three-positional form). Zero schema change: no schema file, SQLite table, column or store
-  version; `kxm.candidate.v1` is unchanged (cost 0 still means unknown, and the report
-  exposes `costSamples`), and `kxm.improvement-report.v2` gains additive fields only.
-  **Not done here:** no backfill of engine records written before this change (they resolve
-  outcomes but group per run, so they never become candidates); the report covers one
-  checkout because `projectRuntimeKey` is realpath based (no `--project-root`, no
-  cross-worktree aggregation); the routing report's ranking code is untouched, its rework
-  column still reads `transitions`, which engine records never set, and its text output
-  does not list the sources (JSON only); `critic_quorum` readiness is never met from the
-  CLI because `kxm improve` passes no critic receipts; the session-brief and local-snapshot
-  spend readers read `telemetry.jsonl` from the state directory while the writer writes the
-  logs directory (`session-work.ts`, `local-snapshot.ts`); `routing.shadowExecution`,
-  `routing.circuitBreaker` and `telemetry.federated` stay unconsumed; the
-  `examples/project` `improve.yaml` workflow is not converted into a coded gate step; and
-  developer assignment-runner records did not group in that change; `routing-export` later supplies the read-side grouping.
-  Candidate diffs are never applied: activation stays a reviewed Git change.
-
 - **S0: plan authority reconciled, and the queue replaced the two competing
   “first product” sequences (2026-09-20; design record
   [reviews/plan-set-reprioritization-astra.md](reviews/plan-set-reprioritization-astra.md)):**
@@ -1701,35 +1551,30 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   the literals is the difference between a test that names its cases and one that merely
   passes.
 
-- **D3 S1 registry foundation:** `.kxm/gates.yaml` uses the closed
-  `kxm.gate-registry.v1` schema. Gate ids resolve only through that file;
-  obsolete caller allowlists and old schema/outcome names fail closed.
-  Command `argv[0]` must be a bare executable or absolute POSIX path;
-  relative paths with separators and directory names `.` and `..` refuse.
-  Gate-only `expect: pass|fail` compiles, defaulting to `pass`. Registry
-  changes affect configuration and tool-policy hashes; timeout-only
-  decreases narrow permission budgets. The current `v4-registry` template
-  declares `npm test`; historical template bytes and provenance are retained.
-  Execution and attempt-bound evidence were still open at that slice, and #89 was open —
-  *(historical: the driver entry under Landed fulfils the Phase 3 gate sentence and issue #89
-  is closed as of 2026-09-20)*.
-
-- **D3 S3 artifacts-exist dispatch and orphan-visible preflight:** drive, step,
-  and scheduler admit once and evaluate `artifacts-exist` under control
-  `.kxm/assets` with lexical+realpath containment. Every pinned path is
-  checked; missing root is a complete failed observation. Command gates still
-  refuse before intent/spawn. Recovery enumerates project `gate_attempts`
-  without a row limit and unions orphan-visible issued/revoked capabilities,
-  then fold/replays exact identity before excluding evaluated settled and
-  proof-only no-start/cancelled terminals. Simulated producers are skipped
-  only when no gate row exists; an unfinished gate requires an issued or
-  revoked `kxm-gate` capability. Settlement revalidates the prepared attempt;
-  a revoked capability keeps the complete observation as proof-only cancel.
-  Evaluation errors after checks begin keep T1 unresolved. S4 command
-  execution is implemented in this tree (unreleased). *(Historical at that slice:
-  a later entry in this phase states the Gate sentence is fulfilled, and issue #89,
-  "D3: engine: gate registry and evidence", is **closed** as of 2026-09-20.)*
-  D4 recovery and #89 were then open *(historical; #89 is closed)*.
+  Gate: existing `npm run verify`, no new npm script or CI job, and **one** named test
+  (`hub bind refuses a remote hub with no credential and labels the binding scope`, in the
+  existing CLI suite) — which also had to update the neighbouring bind test to carry a token,
+  since that test was exercising probe timing against a LAN address the new rule now refuses.
+  Mutation-checked: dropping the guard, hard-coding the reported scope, and mislabelling
+  `localhost`/`::1` each turn the new test red; zero schema change, zero new dependency.
+  Rounds three and four then attacked the documentation rather than the code, and it did not
+  survive: the copy step said "both roots" while the table above it defined four; the
+  rewrite had dropped `roster.yaml`, `routes.yaml` and `prices.yaml`, which are the route
+  and price authorities — a tenant restored without them comes back with different
+  admission and cost behaviour and reports itself healthy; and the federated telemetry row
+  invented path resolution (`KXM_USER_TELEMETRY_DIR`, a fallback to local
+  `logs/telemetry.jsonl`) that the exporter does not implement. Telemetry therefore got its
+  **own root** (`$T`), resolved from an explicit global directory else
+  `XDG_CONFIG_HOME`/`HOME` — **not** from `KXM_USER_CONFIG_DIR`, so it can sit outside
+  `$C` — with its no-production-caller status stated, and `KXM_WORKSPACE_DIR` was added as
+  the override that relocates the workspace directories **but not the fixed checkout tree**.
+  Final count: **six** roots (`$R`, `$D`, `$W`, `$S`, `$C`, `$T`), and the wording is
+  "snapshots replace the database copies, not the file copy", which is exactly what
+  `VACUUM INTO` can and cannot do. The
+  same round narrowed my claim that "loopback never consults a credential": true of the
+  bind guard, false of `kxm peer list` and every other path that calls
+  `resolveClientHubAuthToken` — a scoped claim is checkable, an unscoped one is the same
+  overstatement from a different sentence.
 
 - **The documented `just` entry points existed only in the docs (2026-09-19):**
   `just assign|witness|accept|attribute|observe-cost|change-report|plan-current`
@@ -1787,6 +1632,50 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
     whitespace and one leading `@`) is exactly the seven proof bodies. A call assembled at
     runtime, or a filename built from pieces, is outside any text gate including this one.
     Further parser hardening was declined after round 7 rather than accepted as finished.
+
+  - *Docs-to-justfile parity.* `just <verb>` in **command form** — inline code, or a
+    fenced line with an optional `#` — must exist as a recipe. The scan is token-level:
+    leading interpreter options and their path-like values are skipped
+    (`just --quiet witness …` and `just --dotenv-path /abs/.env witness …` both name
+    `witness`), alternations are read per token so `just impl|plan brief.md` keeps
+    `plan`, a glob alternative (`review-*`) is skipped rather than demanding a recipe
+    called `review-`, and a pipeline further along the line is not an alternation. Prose,
+    headings and captured `just --list` output are not parsed: a document that names a
+    recipe only in prose is not gated, and a backticked adverbial phrase — "just in
+    case" inside code spans — would ask for a recipe called `in`. Both edges are
+    deliberate and both are fixture-tested, as are the accepted shapes above.
+  - *No auto-loaded `.env`.* `set dotenv-load` is **removed**, after review found it let
+    a gitignored `.env` in whatever directory `just` ran in set `NODE_OPTIONS`, whose
+    value the interpreter executes *before any script body* — ahead of the runner's
+    identity, tree, roster and critic validation, and ahead of the `shell: false` on the
+    spawns that follow (auth probes synchronously, harness execution asynchronously).
+    Gated twice. The textual brake rejects **any** `set dotenv*` spelling — bare,
+    `:= true`, with a trailing comment, and the filename/required/override variants —
+    while still allowing a comment that merely mentions the removed setting. The
+    real-`just` probe no longer reads an environment string: the preload module **writes
+    a marker file itself**, so the assertion is that injected code ran, and every
+    negative is paired with a control on the same entry point — explicit
+    `--dotenv-path` applies and executes; a justfile with the setting re-added executes;
+    and the real `witness` recipe is run **both ways**, refusing a missing record
+    directory without a marker and *with* a marker once dotenv is re-enabled. That last
+    control is what the first version of this probe lacked: only the probe script wrote
+    the marker, so the witness arm could not have detected a preload at all.
+    Opt-in is `just --dotenv-path /abs/.env assign …`; `--dotenv` is not a separate flag
+    in the installed 1.58, and the earlier note here published a command that exits 2. An
+    explicit opt-in **executes what it points at** — including `--dotenv-path
+    /dev/stdin`, which a reviewer used to run a preload through the real `witness` recipe.
+    That is the point of "explicit": the gate is about a file nobody chose.
+    Explicitly **out of scope**, because it is an operator trust decision rather than a
+    gate: an inherited `NODE_OPTIONS`, `PATH`, `KXM_*` or `JUST_DOTENV_COMMAND` in the
+    parent environment, and whatever a reviewed helper script chooses to do.
+  - The smoke recipe is pinned to the command it advertises, not merely to its name.
+  **Not done here:** `observe --record-dir` is a real `assignment-run.mjs` subcommand
+  with no documented recipe, so none was invented; `accept` writes JSON by default but
+  has no `--json` **flag**, and its optional `--observed-pr`/`--observed-ci` still
+  require the direct script call, as `docs/contracts/routing.md` already says; nothing
+  pins *argument order* between the justfile and that document, only verbs, flags and
+  arity; and inherited-environment hardening past dotenv (what a witness hands to a
+  harness) is its own trust decision.
 
 - **Runtime intake contract: coordinator identity, idempotent ingress and the
   pause rule (unified plan M1 + M6, the durable half of M2; 2026-09-18):** the
@@ -2149,7 +2038,23 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   in the next entry. It still does not make roster, routes, gates, roles, or
   workflow YAML editable, and writer admission is unchanged.
 
-- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/contributing/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Dispatch and accept load trusted roster policy from control Git; the witness verifies the bound candidate and does not itself call the policy loader today. Raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. **Unified YAML roster cutover landed (2026-09-16):** trusted developer roster policy moved `.kxm/roster.json` → `.kxm/roster.yaml` (schema `kxm.developer-roster.v1`, routes/lineup/origins content-identical); the loader parses YAML and **brakes fail-closed** on the retired `.kxm/roster.json` name; docs, skills, and policy-draft tests updated to the live format. Remaining role-configuration consolidation (role-hosts seat mapping, runner guide sweep) stays open under task_d3e634858295.
+- **Owner-validated `kxm.config.v1` terminal editor (2026-10-11):**
+  `plugins/kxm/src/config-editor.ts` publishes one bounded `kxm/config`
+  contribution used by `kxm config edit --scope project|user` and OMP/Pi
+  `/kxm config`. Every set or clear validates the exact section/field pair,
+  writes through the existing config owner, then republishes from disk; a
+  refusal leaves file bytes unchanged. Project scope resolves Base → User →
+  Project, while user scope resolves Base → User so a project override cannot
+  hide the edit. Non-TTY and dry-run CLI calls render one plain frame;
+  unsupported scope, JSON editing, and non-TUI slash-command use fail closed.
+  The surface exposes only fixed non-secret scalar preferences. Endpoints, key
+  references, credentials, arrays, dynamic maps, roster, routes, gates, roles,
+  and workflow definitions remain outside it. Pi/OMP package discovery now
+  loads the tracked extension bundle, which contains the private TUI workspace
+  instead of requiring it as a published runtime dependency. Covered by
+  `test/core/config-editor.test.ts`; CLI/config/TUI references and the
+  architecture inventory name the same boundary. The broader package
+  restructure queue remains open.
 
 - **Hub background auto-start and package.json project naming (2026-09-15):**
   Added `plugins/kxm/src/hub-autostart.ts`: on Pi extension load, `hub.autoStart`
@@ -2169,7 +2074,14 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `test/core/hub-autostart.test.ts` and `test/core/project-name.test.ts`
   (13 new tests); docs updated in `docs/configuration.md`,
   `docs/kxm-handbook.md`, and `docs/getting-started.md`.
-
+- **Modular Role Configuration and Workflow CRUD Management (2026-09-08):**
+  - Designed and implemented `kxm.role.v1` schema (`schemas/role.schema.json`) supporting modular per-role YAML files with descriptions, skills, tools permissions (allow/deny lists and presets), produced/consumed asset template contracts, harness/model rosters with fallback priority, and policy rules (`vendorIndependenceRequired`).
+  - Added `plugins/kxm/src/role.ts` and `plugins/kxm/src/workflow-manager.ts` implementing global (`~/.config/kxm/roles/`, `~/.config/kxm/workflows/`) and local (`.kxm/roles/`, `.kxm/workflows/`) inheritance with local repo overrides and default role seeding (`writer`, `planner`, `critic-arch`, `critic-cli`, `verifier`) and workflow templates (`implement-and-verify`, `dual-critic-review`, `spec-and-plan`).
+  - Added CLI commands `kxm role list`, `kxm role get <roleId>`, `kxm role add [roleId]`, `kxm role remove [roleId]`, `kxm role modify [roleId]`, `kxm workflow definitions`, `kxm workflow add [workflowId]`, `kxm workflow remove [workflowId]`, `kxm workflow modify [workflowId]`.
+  - Added interactive and flag-driven pick lists (`--pick`) for adding, removing, and modifying global and local configurations.
+  - Verified with 100% line coverage in `test/core/role-and-workflow-manager.test.ts` and updated CLI help assertions in `test/core/cli.test.ts`. All 1,049 tests pass; coverage floors met (Lines 92.07%, Branches 80.28%, Functions 93.12%).
+- **Public npm publishing unlatched & configured (2026-09-08):** Configured the `npm-publish` deployment environment in GitHub with `NPM_TOKEN` secret. Added `scripts/kxm-publish-npm.mjs` to enforce fail-closed verification (requires GitHub release with `draft: false`, validates asset presence and SHA-256 digest, and runs `npm publish --access public`). Unlatched `publish-npm` job in `.github/workflows/release.yml`, added `test/core/kxm-publish-npm.test.ts`, updated `test/core/ci-contract.test.ts`, and set `publishConfig.access: "public"` in `package.json`.
+- **0.6.0 release cut and release automation unlatched (2026-09-08):** Version bumped to `0.6.0` across all seven package surfaces (root package, package lock, plugin package, Claude manifest, marketplace entry, MCP server, and dist bundle). Removed the `if: false` job latch on the draft release job in `.github/workflows/release.yml` and updated `test/core/ci-contract.test.ts`; `publish-npm` stays `if: false` until a published release and `npm-publish` environment exist. CHANGELOG promoted.
 - **Workflow progress TUI and Web Studio dashboard (2026-09-10):** Added active
   workflow progress loading from legacy SQLite records, JSON-safe status
   extraction, stage stepper/token telemetry rendering, `/kxm progress` and
@@ -2189,7 +2101,124 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   below is wrong — Studio is Phase 10. Hosted admin uses the portal integration
   (Tracking queue S2/S4), and no unavailable action may report success. Fixing
   standalone Studio is post-MVP unless we actually select it for use.
-
+- **Control plane, 5-layer memory, and external idempotency (2026-09-08):**
+  - **Memory Arbiter & `_shared` scope:** Updated `plugins/kxm/src/context.ts` to allow `_shared` defaults alongside project identifiers without tripping `context_isolation_violation`; updated `plugins/kxm/src/arbiter.ts` to rank project-specific knowledge ahead of shared defaults; added `memoryRecordToContextItem()` and connected `.kxm/memory/` into `plugins/kxm/src/hub.ts:projectContextPool()`. Verified in `test/core/arbiter.test.ts`.
+  - **Formal Context Packet & Structured Handoffs:** Added schemas `schemas/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`). Added builder and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`. Integrated formal packets and antecedent handoffs directly into `plugins/kxm/src/engine.ts:birthMember`. Verified in `test/core/context-packet.test.ts`. *Corrected 2026-09-23 against what the code does:* the packet carried no arbitrated items until PR #298 slice 3; `birthMember` built it without `arbitratedItems`, so no project memory or skill reached a Runtime agent.
+  - **External Side-Effect Idempotency & Branch Determinism:** Implemented `plugins/kxm/src/external-effects.ts` with deterministic branch generation (`kxm/run-<id>`), preflight Check-And-Set (CAS) leasing (`claimEffect`), commit/abort lifecycle, and SQLite `external_effects` receipts store via Node 22 native `DatabaseSync` (`node:sqlite`). Verified in `test/core/external-effects.test.ts`.
+  - **Interactive TUI Access Control (`kxm dash`):** Extended `plugins/kxm/src/tui.ts` with interactive Blessed/Blessings control actions (`a` approve, `r` reject, `d` degrade, `s` signal, `c` cancel) dispatching authenticated callbacks to hub endpoints `/v1/runs/:id/signal` and `/cancel`. Verified in `test/core/tui.test.ts`.
+  - **Web Studio Layout Engine & Embedded Server (Decision D14 & Q8; Phase 10, not Phase 6):** Created `plugins/kxm/src/studio-layout.ts` providing form/stepper stage derivation, ELK/React Flow DAG node/edge positioning, and Temporal activity Gantt swimlanes without manual YAML coordinates; exposed via `kxm studio layout <workflowPath>` and embedded HTTP server `kxm studio serve` on `http://localhost:4242`. **The "strict audit parity / 1:1 CLI command mapping on `/api/mutate`" claim in this entry was never true of the standalone server:** the CLI supplies no `onMutation` handler and the fallback answers `ok: true, mappedToCli: true` without executing (`studio-layout.ts:423`, `cli/tasks.ts:302`). Layout generation and an embedded shell exist; live state and command execution do not. Corrected in place on 2026-09-20 rather than left for an adjacent rebuttal to contradict. Verified in `test/core/studio-layout.test.ts`, which covers layout and rendering, not execution parity.
+  - **Developer Workflow Tooling & Alignment Config:** Created `plugins/kxm/src/config.ts` (`kxm.config.v1` loader/writer), `plugins/kxm/src/autocomplete.ts` (bash/zsh/fish shell completion scripts), `plugins/kxm/src/suggest.ts` (keyword & skill workflow matching mapped to `docs/workflow-guide.md` and authenticated harnesses), and `plugins/kxm/src/task-manager.ts` (`kxm goal` / `kxm task` with GitHub and Jira tracker synchronization). Settled all 15 architectural questions with operator in [`plans/history/control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md), including configurable promotion policies (`manual_pr` default), shadow execution sampling (`routing.shadowExecution`), soft demotion penalty weighting (`routing.circuitBreaker`), 14-day telemetry exponential decay (`improvement.telemetryHalfLifeDays`), and anonymized federated metrics (`telemetry.federated`). Verified in `test/core/cli-experience.test.ts`.
+  - **Self-Improving & Recommendation Telemetry:** Clustered 152 historical attempts from `.kxm/logs/telemetry.jsonl` ($26.58 spend, 24.11M tokens), validating native Grok 4.6 low-thinking ($0.17/attempt, 84% pass rate) vs medium-thinking ($0.60/attempt, 86.7% pass rate) with 72% cost savings and 4.5x speedup; Pi wrapper suffered 100% rework. Implemented `plugins/kxm/src/improve.ts` clustering by `(workflowId, stepId, role, intent)` for automated gate promotion and dynamic effort stepping. Verified in `test/core/improve.test.ts`. *Corrected 2026-09-23:* `improve.ts` grouped by `(workflowHash, stepId, agentRole, promptHash)` and read only telemetry; it performs no promotion and no effort stepping (the engine's attempt-based `thinking` default is separate code in `engine.ts`), and the `routing.*` settings named above are not consumed. Since PR #298 the key is `(workflowId, step, agent role, askSha256)` and promotion is reported as readiness only.
+  - **Optimized Execution Roadmap:** Re-ordered implementation into 6 dependency-stratified phases in [`plans/history/control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md): Phase 1 Security & Config Foundation $\rightarrow$ Phase 2 Context Substrate & 5-Layer Memory $\rightarrow$ Phase 3 Execution Determinism & Side-Effects $\rightarrow$ Phase 4 Operator Control & CLI Tools $\rightarrow$ Phase 5 Spend Protection & Self-Improvement $\rightarrow$ Phase 6 Web Studio & DAG Visualization.
+- **B3 three failing rule tests and auth probes (issue #84):** Three failing-first
+  loop rule tests in `test/core/loop-rules.test.ts` (unhosted harness/model
+  pair rejected with `harness_unhosted_model`; pure inventory eligibility fails
+  closed on empty/unknown; `verify_must_precede_ready` enforced in workflow
+  validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating
+  stdout parser without `--json`); `gemini` and `deepseek` remain `unknown`
+  (`null`) without secret leakage; `kxm harness list` reports status for pi,
+  claude, codex, kimi. All 990 unit/simulation tests passed; coverage floors met
+  (Lines 92.09%, Branches 80.87%, Functions 93.23%).
+- **E6 backup, restore, migrations (issue #102):** Implemented database rules and
+  lifecycle commands per Decision D11. Created `plugins/kxm/src/database.ts` providing
+  a shared `openDatabase` helper enforcing WAL journal mode with retry, `busy_timeout`
+  (5000ms), `synchronous = NORMAL`, `foreign_keys = ON`, `BEGIN IMMEDIATE` serialization,
+  and fail-closed `user_version` inspection across all SQLite stores (`MeshStore`,
+  `KxmRuntimeRegistry`, `KxmRunEventStore`). Implemented `withDatabaseTransaction`
+  featuring an active-transaction nesting guard. Implemented stepwise legacy migrations
+  (v1 -> v2, v2 -> v3) replacing the unconditional version stamp, ensuring a v2 fixture
+  migrates to v3 or is refused without ever being silently relabelled. Implemented
+  `kxm backup [--out <dir>]` and `kxm restore <manifest>` using SQLite's backup API
+  (`VACUUM INTO`) with WAL checkpoint (`TRUNCATE`), PRAGMA integrity checks before and
+  after backup/restore, schema version stamping, and hashed manifest generation
+  (`kxm.backup-manifest.v1` schema). Verified with `test/core/e6-backup-restore-migrations.test.ts`.
+- **E5b harness-agnostic memory (issue #101):** KXM owns project memory in Git
+  (`.kxm/memory/`) with schema `kxm.memory.v1` and YAML frontmatter (`id`, `scope`,
+  `kind`, `summary`, `provenance`, `authority`, `confidence`, `lifecycle`,
+  `evidenceRefs`). Unreviewed memory candidates live under `.kxm/memory/candidates/`
+  with `authority: "evidence"` and are promoted only via merged PR/commit. Commands:
+  `kxm memory brief [--json]`, `kxm memory note "<fact>" [--scope <scope>] [--kind <kind>]`,
+  and `kxm memory sync`. `syncHarnessMemory` regenerates marker-delimited blocks in
+  `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`, and drift is fail-closed in
+  `scripts/check-generated.mjs`. Claude session-start hook in
+  `plugins/kxm/.claude-plugin/plugin.json` and Pi extension `/kxm memory` slash command
+  call the brief; no mirrored copy exists in Claude's memory directory. Verified with
+  `test/core/e5b-harness-agnostic-memory.test.ts` proving: no fact in any harness view is
+  absent from the authored set; identical facts returned across CLI, Pi, and Claude hook;
+  check-generated fails on harness block drift; candidates are excluded from authored set
+  and memoryRevision until promoted; control plane fields are rejected; secrets in summary
+  and provenance are redacted.
+  **Corrected 2026-09-23:** sync also *created* a missing `CLAUDE.md`/`GEMINI.md` from
+  headers copied out of this repository's own instruction files, so any project that ran
+  `kxm memory sync` inherited KXM's planner role, Grok writer rotation and Tracking
+  admission rules (observed on main `ac08d95` in an isolated sandbox). Sync now updates
+  only the instruction files a project already has, rewrites nothing outside the memory
+  markers, appends the block at the end rather than before this repo's `## Do not`
+  heading, and refuses when none of the three exist — creating a harness file is the
+  project's decision, not a side effect. This repository's own `CLAUDE.md`/`GEMINI.md`
+  prose is now hand-maintained; only their marked blocks are generated. Named test:
+  `E5b: memory sync into a fresh project creates no harness file and rewrites only its own block`.
+  **Corrected 2026-09-23 (markers):** sync replaced from the first start marker to the
+  first end marker whenever both strings appeared anywhere in the file. An orphan start
+  got a fresh block appended, and the next sync then deleted the project's text between
+  the orphan and that block's end; an end before its start duplicated text; a second
+  block stayed stale. Sync now checks every present file before writing any: a file
+  without exactly one start followed by exactly one end marker (or neither, which
+  appends) fails the whole sync, naming the file and the problem, and no file is
+  written. Named test:
+  `E5b: memory sync refuses malformed memory markers, naming the file, and writes no file`.
+- **E5 memory floor fixes (issue #100):** Turned three prose memory rules into
+  enforceable code per Decision D12. Rule 1: state promotion requires a configured
+  admin token with no loopback bypass and records the real caller, rejecting
+  self-promotion where author equals promoter (`state_promotion_invalid`). Rule 2:
+  proposed items never reach a packet's skills or current state; the arbiter reads
+  promoted skills from the governed store by content SHA-256 hash. Rule 3: context
+  items reject control-plane fields (`permissions`, `tools`, `allow`, `deny`,
+  `grants`, `approval`, `policy`, `scopes`, `credentials`, `secrets`, `token`,
+  `apiKey`, `password`), secrets in summary and provenance sourceRef are redacted
+  at parse, `scope` field (`agent | project | run | operator`) is validated on the
+  record, and dead shallow `lineageOf` is deleted. Memory revision is computed at
+  run creation (`computeKxmMemoryRevision`) from the SHA-256 hash of the
+  Git-authored set (`.kxm/memory` excluding `candidates`; `.kxm/skills/promoted`)
+  plus the promoted-state snapshot and written to `run.memoryRevision` and
+  `event.memoryRevision` with canonical prefix `ctxrev_`. Optimized test coverage
+  and execution speed: reorganized test suites into `test/core/` (essential PR unit/contract
+  suites) and `test/simulations/` (heavy subprocess/signal/timeout suites); added
+  `--test-concurrency=4` for parallel test coverage; established tiered gates with
+  `test:core` (essential PR gate) and `test:coverage:core` (92/80/93 floors) alongside
+  `test:complete` and `test:coverage:complete` (93/80/93 floors). Verified with
+  `test/core/e5-memory-floor.test.ts` and updated `test/core/ci-contract.test.ts`.
+- **E4c Kimi CLI and agy verification (issue #95):** Verified Kimi CLI and
+  Antigravity CLI (`agy`) as one-shot adapter members. Added `HarnessDispatchStatus`
+  (`status: "yes" | "no"`, `supported: boolean`, `reason?: string`) across
+  `HarnessStatus` and formatted table output in `kxm harness list` (and `--json`),
+  transparently reporting dispatchability and reason per harness. Implemented
+  `parseKimiOneShotUsage` handling stream-json NDJSON assistant/meta chunks with
+  null tokens and `costBasis: "unknown"`. Implemented `parseAgyOneShotUsage`
+  handling Antigravity JSON payloads (`status`, `response`, `error`, `usage: {
+  input_tokens, output_tokens, cache_read_tokens, total_tokens }`), mapping
+  unmetered runs to `subscription:agy`. AGY is the sole Google harness and
+  owns the Google model route.
+  Exported harness definitions in `plugins/kxm/src/runtime.ts` and verified with
+  mock spawn tests, fake dispatch, auth refusal, and comprehensive inventory
+  dispatch reporting (`test/harness.test.ts`, `test/oneshot-producer.test.ts`).
+- **E4b one-shot adapter: Claude and Codex (issue #94):** Implemented generic
+  one-shot CLI producer in `plugins/kxm/src/oneshot-producer.ts` driving
+  planner, reviewer, and other roles through Claude, Codex, and catalog-configured
+  CLIs. Extended `HarnessCatalogEntry` with `oneShot` config and added usage parsers
+  (`parseClaudeOneShotUsage`, `parseCodexOneShotUsage`, `parseGenericOneShotUsage`)
+  in `plugins/kxm/src/harness.ts`. Enforces fail-closed auth preflight
+  (`<harness>_not_authenticated`), prompt delivery via stdin or arguments, process
+  cancellation via AbortSignal and usage parsing. The initial implementation's
+  catalog-as-bill and absent-catalog-as-subscription classifications were wrong:
+  billing is now `unmetered` only with observed subscription auth, otherwise
+  `unknown`, with null billed cost. Provider-reported amounts and eligible list
+  estimates are separate metadata; cumulative input is not context occupancy.
+  Lifecycle/permission acceptance remains blocked below. Emits `.agents/skills` and marker-delimited
+  `AGENTS.md` block (`scripts/emit-codex-artifacts.mjs`) so Codex discovers KXM
+  commands, protected by `scripts/check-generated.mjs`. Exported in
+  `plugins/kxm/src/runtime.ts` and verified with mock spawn tests, auth failure,
+  and end-to-end KXM engine drive (`test/oneshot-producer.test.ts`).
 - **Codex launch-flag repair (2026-09-10, Phase 11 partial slice):** Audited
   official CLI, noninteractive, approval/security, and config references against
   installed Codex 0.153.4. Product/catalog/helper launches explicitly request
@@ -2201,28 +2230,133 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   PASS for flags only; Fable's additional catalog/native-critic argv coverage
   is now present. These are private bootstrap artifacts, not exact-commit
   acceptance, effective Codex model identity, or proof of MCP/plugin isolation.
+- **E4 Pi dispatch (issue #93):** Implemented Pi RPC producer in
+  `plugins/kxm/src/pi-producer.ts` running implementer (and other agent
+  roles) through the KXM engine driver over Pi RPC protocol (`--mode rpc`).
+  Maintains per-run coordinator sessions (`coordinator:${runId}`) and keys
+  agent sessions by `{runId, agentId, instance, scopeEpoch}`
+  (`${agentId}@${shortRun}#${instance}.${scopeEpoch}`). Enforces fail-closed
+  auth preflight (`checkPiAuth` requiring `detected: true` and
+  `authenticated: true`, failing closed with `pi_not_authenticated`). Binds
+  harness `pi`, extracts token and context stats (`tokensIn`, `tokensOut`,
+  `cacheReadTokens`, `cacheWriteTokens`, `contextTokens`, `latencyMs`), and
+  calculates metered costs via `.kxm/prices.yaml` price catalog (with Grok and
+  GLM catalog rows, setting `costBasis: metered` or `unknown`). Propagates
+  abort signals to Pi RPC abort commands and cancellation outcomes. Exported in
+  `plugins/kxm/src/runtime.ts` and verified with comprehensive mock RPC tests,
+  fail-closed auth, and end-to-end KXM engine drive
+  (`test/pi-producer.test.ts`).
+- **D6 agent CLI surface (issue #92):** Centralized 19 agent commands in
+  `plugins/kxm/src/commands.ts` as the single source of truth for parameter
+  schemas, command metadata, and execution over `HubClient`; eliminated
+  duplicated TypeBox definitions in `plugins/kxm/src/extension.ts` and tool tables
+  in `plugins/kxm/src/mcp-server.ts`; generated `kxm peer` subcommands (`list`,
+  `send`, `get`, `await`, `cancel`, `fanout`, `inbox`, `reply`) and `kxm workflow`
+  subcommands (`checkpoint`, `record`, `wait`, `signal`) with `--json` outputs;
+  enforced tool policy via engine-issued `KXM_ATTEMPT_TOKEN` and session-issued
+  `KXM_SESSION_TOKEN`, failing closed on denied commands with
+  `tool_policy_denied`; strictly capped `peer await` at 60s in both parameter
+  schema and execution; bound `workflow wait` and `signal` to KXM runs and
+  supervisor; added drift assertions across CLI, MCP, and Pi surfaces
+  (`test/commands-drift.test.ts`), policy tests (`test/commands-policy.test.ts`),
+  and rewrote `plugins/kxm/skills/kxm/SKILL.md` to teach CLI commands with zero
+  `mesh_` and zero MCP-only instructions.
+- **D5 routing records v2 and price catalog (issue #91):** defined
+  `kxm.routing-record.v2` contract in `plugins/kxm/src/routing.ts` and updated
+  schemas `schemas/common.schema.json` and
+  `schemas/run-event.schema.json`; created price catalog schema
+  `schemas/prices.schema.json` (`kxm.prices.v1`) and price catalog loader/calculator
+  `plugins/kxm/src/prices.ts`; added dated, hashed price catalog
+  `.kxm/prices.yaml` (Claude, Codex, Grok, GLM, Kimi, Qwen); engine settlement
+  requires `costBasis` and records `routing.attempt.recorded` event on every member
+  settlement; run plan enforces metered `limits.maxModelCost` cap before dispatch
+  (`budget_model_cost`) *(inert on live runs as of 2026-09-23: no producer records `metered`
+  cost — see Still open, routing and cost policy questions)*; fold handles routing records and
+  terminal failure reasons.
+- **Workflow guide loop & maintain-documentation (issue #145):** documented developer runner loop (`plan` → `implement` → fixed witness gate `npm run verify` → dual critics Fable + Sol → `accept` → PR with auto-merge) and repair back-edge (`rework_of`, fresh dual review, attempts-and-relief failover); reclassified `semantic-equivalence-verifier` as critic-with-gate (deterministic checks are the witness; model role reviews contracts and does not replace tests); added `maintain-documentation` workflow to Slug Registry and Software Engineering; noted `agy` native subscription harness for Gemini candidates; rebound `.kxm/roster.json` sha256 hash.
+- **agy (Antigravity CLI) helper admission:** `scripts/harness-run.mjs`
+  `ROUTES.agy` is a writer/experiment **edit** route (provider `google`,
+  Gemini kebab ids only) with argv `-p` prompt transport (no `--prompt-file`,
+  no stdin), JSON `status` parsing (never the exit code), unmetered
+  subscription cost, and non-empty `denied_actions` as `turn_failed`. Catalog
+  `id: agy` is observational (`mode: either`, `authArgs: ["models"]`,
+  `update.self: ["update"]`). Auth success is a non-empty models list from
+  `agy models` (method `antigravity-oauth`). Not a Pi-style RPC worker;
+  starting writer rotation is unchanged. AGY is the sole Google harness;
+  read-only agy roles and agy-hosted non-Google models remain deferred.
+- **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
+- **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/contributing/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Dispatch and accept load trusted roster policy from control Git; the witness verifies the bound candidate and does not itself call the policy loader today. Raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. **Unified YAML roster cutover landed (2026-09-16):** trusted developer roster policy moved `.kxm/roster.json` → `.kxm/roster.yaml` (schema `kxm.developer-roster.v1`, routes/lineup/origins content-identical); the loader parses YAML and **brakes fail-closed** on the retired `.kxm/roster.json` name; docs, skills, and policy-draft tests updated to the live format. Remaining role-configuration consolidation (role-hosts seat mapping, runner guide sweep) stays open under task_d3e634858295.
+- **Three-minute merge gate (2026-09-23):** CI `Validate` legs run the same bounded `validate:pr` gate for pull requests and pushes to main: build, typecheck, a compact contract/smoke set, version parity, and generated-dist currency. Each Node 22.19.0/24 leg has a hard three-minute started-job budget. The exhaustive core/simulation/package suite, 93/80/93 coverage floors, full docs check, generated rebuild, and package dry-run stay in `nightly.yml`; they no longer delay merging. Documentation-only changes run Classify and Docs lint while the required Validate and Plugin jobs preserve their pinned names with explicit no-op steps. Job names and the two-Node matrix remain unchanged for ruleset `22251971`. AGENTS.md and the CI contract test enforce the split.
 
-- **Modular Role Configuration and Workflow CRUD Management (2026-09-08):**
-  - Designed and implemented `kxm.role.v1` schema (`schemas/role.schema.json`) supporting modular per-role YAML files with descriptions, skills, tools permissions (allow/deny lists and presets), produced/consumed asset template contracts, harness/model rosters with fallback priority, and policy rules (`vendorIndependenceRequired`).
-  - Added `plugins/kxm/src/role.ts` and `plugins/kxm/src/workflow-manager.ts` implementing global (`~/.config/kxm/roles/`, `~/.config/kxm/workflows/`) and local (`.kxm/roles/`, `.kxm/workflows/`) inheritance with local repo overrides and default role seeding (`writer`, `planner`, `critic-arch`, `critic-cli`, `verifier`) and workflow templates (`implement-and-verify`, `dual-critic-review`, `spec-and-plan`).
-  - Added CLI commands `kxm role list`, `kxm role get <roleId>`, `kxm role add [roleId]`, `kxm role remove [roleId]`, `kxm role modify [roleId]`, `kxm workflow definitions`, `kxm workflow add [workflowId]`, `kxm workflow remove [workflowId]`, `kxm workflow modify [workflowId]`.
-  - Added interactive and flag-driven pick lists (`--pick`) for adding, removing, and modifying global and local configurations.
-  - Verified with 100% line coverage in `test/core/role-and-workflow-manager.test.ts` and updated CLI help assertions in `test/core/cli.test.ts`. All 1,049 tests pass; coverage floors met (Lines 92.07%, Branches 80.28%, Functions 93.12%).
+- **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
+  `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
+  previous `[self-hosted, Linux, X64, doks]` label tuple selected singleton
+  `km-gh-rn01` and queued. Manual smoke is equality-gated on
+  `KXM_SMOKE_RUNNER == 'kontextmind-doks'` and stays disabled until Pi
+  credentials are provisioned into ephemeral pods and pass `pi auth check`.
+  Release/npm remain `if: false` and the Windows pause is unchanged.
+  Ruleset `22251971` required contexts are unchanged.
 
-- **Public npm publishing unlatched & configured (2026-09-08):** Configured the `npm-publish` deployment environment in GitHub with `NPM_TOKEN` secret. Added `scripts/kxm-publish-npm.mjs` to enforce fail-closed verification (requires GitHub release with `draft: false`, validates asset presence and SHA-256 digest, and runs `npm publish --access public`). Unlatched `publish-npm` job in `.github/workflows/release.yml`, added `test/core/kxm-publish-npm.test.ts`, updated `test/core/ci-contract.test.ts`, and set `publishConfig.access: "public"` in `package.json`.
+  **Live ARC routing and capacity (2026-09-23):** the scale set is isolated in
+  the selected-repository runner group `KontextMind DOKS ARC`, with public
+  repository access enabled only for `kontextmind/kxm`. The legacy
+  `km-gh-rn01` repository runner intentionally does not carry the
+  `kontextmind-doks` label. DOKS keeps one warm ephemeral runner and bursts to
+  four; each runner requests three CPUs so the autoscaling node pool (two to
+  three 8-vCPU nodes) adds capacity under load. Live workflow jobs were
+  verified on `kontextmind-doks-*` ephemeral runners in that runner group.
 
-- **0.6.0 release cut and release automation unlatched (2026-09-08):** Version bumped to `0.6.0` across all seven package surfaces (root package, package lock, plugin package, Claude manifest, marketplace entry, MCP server, and dist bundle). Removed the `if: false` job latch on the draft release job in `.github/workflows/release.yml` and updated `test/core/ci-contract.test.ts`; `publish-npm` stays `if: false` until a published release and `npm-publish` environment exist. CHANGELOG promoted.
+  The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
 
-- **Control plane, 5-layer memory, and external idempotency (2026-09-08):**
-  - **Memory Arbiter & `_shared` scope:** Updated `plugins/kxm/src/context.ts` to allow `_shared` defaults alongside project identifiers without tripping `context_isolation_violation`; updated `plugins/kxm/src/arbiter.ts` to rank project-specific knowledge ahead of shared defaults; added `memoryRecordToContextItem()` and connected `.kxm/memory/` into `plugins/kxm/src/hub.ts:projectContextPool()`. Verified in `test/core/arbiter.test.ts`.
-  - **Formal Context Packet & Structured Handoffs:** Added schemas `schemas/context-packet.schema.json` (`kxm.context-packet.v2`) and `schemas/handoff-manifest.schema.json` (`kxm.handoff-manifest.v1`). Added builder and clean markdown prompt formatting in `plugins/kxm/src/context-packet.ts`. Integrated formal packets and antecedent handoffs directly into `plugins/kxm/src/engine.ts:birthMember`. Verified in `test/core/context-packet.test.ts`. *Corrected 2026-09-23 against what the code does:* the packet carried no arbitrated items until PR #298 slice 3; `birthMember` built it without `arbitratedItems`, so no project memory or skill reached a Runtime agent.
-  - **External Side-Effect Idempotency & Branch Determinism:** Implemented `plugins/kxm/src/external-effects.ts` with deterministic branch generation (`kxm/run-<id>`), preflight Check-And-Set (CAS) leasing (`claimEffect`), commit/abort lifecycle, and SQLite `external_effects` receipts store via Node 22 native `DatabaseSync` (`node:sqlite`). Verified in `test/core/external-effects.test.ts`.
-  - **Interactive TUI Access Control (`kxm dash`):** Extended `plugins/kxm/src/tui.ts` with interactive Blessed/Blessings control actions (`a` approve, `r` reject, `d` degrade, `s` signal, `c` cancel) dispatching authenticated callbacks to hub endpoints `/v1/runs/:id/signal` and `/cancel`. Verified in `test/core/tui.test.ts`.
-  - **Web Studio Layout Engine & Embedded Server (Decision D14 & Q8; Phase 10, not Phase 6):** Created `plugins/kxm/src/studio-layout.ts` providing form/stepper stage derivation, ELK/React Flow DAG node/edge positioning, and Temporal activity Gantt swimlanes without manual YAML coordinates; exposed via `kxm studio layout <workflowPath>` and embedded HTTP server `kxm studio serve` on `http://localhost:4242`. **The "strict audit parity / 1:1 CLI command mapping on `/api/mutate`" claim in this entry was never true of the standalone server:** the CLI supplies no `onMutation` handler and the fallback answers `ok: true, mappedToCli: true` without executing (`studio-layout.ts:423`, `cli/tasks.ts:302`). Layout generation and an embedded shell exist; live state and command execution do not. Corrected in place on 2026-09-20 rather than left for an adjacent rebuttal to contradict. Verified in `test/core/studio-layout.test.ts`, which covers layout and rendering, not execution parity.
-  - **Developer Workflow Tooling & Alignment Config:** Created `plugins/kxm/src/config.ts` (`kxm.config.v1` loader/writer), `plugins/kxm/src/autocomplete.ts` (bash/zsh/fish shell completion scripts), `plugins/kxm/src/suggest.ts` (keyword & skill workflow matching mapped to `docs/workflow-guide.md` and authenticated harnesses), and `plugins/kxm/src/task-manager.ts` (`kxm goal` / `kxm task` with GitHub and Jira tracker synchronization). Settled all 15 architectural questions with operator in [`plans/history/control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md), including configurable promotion policies (`manual_pr` default), shadow execution sampling (`routing.shadowExecution`), soft demotion penalty weighting (`routing.circuitBreaker`), 14-day telemetry exponential decay (`improvement.telemetryHalfLifeDays`), and anonymized federated metrics (`telemetry.federated`). Verified in `test/core/cli-experience.test.ts`.
-  - **Self-Improving & Recommendation Telemetry:** Clustered 152 historical attempts from `.kxm/logs/telemetry.jsonl` ($26.58 spend, 24.11M tokens), validating native Grok 4.6 low-thinking ($0.17/attempt, 84% pass rate) vs medium-thinking ($0.60/attempt, 86.7% pass rate) with 72% cost savings and 4.5x speedup; Pi wrapper suffered 100% rework. Implemented `plugins/kxm/src/improve.ts` clustering by `(workflowId, stepId, role, intent)` for automated gate promotion and dynamic effort stepping. Verified in `test/core/improve.test.ts`. *Corrected 2026-09-23:* `improve.ts` grouped by `(workflowHash, stepId, agentRole, promptHash)` and read only telemetry; it performs no promotion and no effort stepping (the engine's attempt-based `thinking` default is separate code in `engine.ts`), and the `routing.*` settings named above are not consumed. Since PR #298 the key is `(workflowId, step, agent role, askSha256)` and promotion is reported as readiness only.
-  - **Optimized Execution Roadmap:** Re-ordered implementation into 6 dependency-stratified phases in [`plans/history/control-plane-memory-questionnaire.md`](history/control-plane-memory-questionnaire.md): Phase 1 Security & Config Foundation $\rightarrow$ Phase 2 Context Substrate & 5-Layer Memory $\rightarrow$ Phase 3 Execution Determinism & Side-Effects $\rightarrow$ Phase 4 Operator Control & CLI Tools $\rightarrow$ Phase 5 Spend Protection & Self-Improvement $\rightarrow$ Phase 6 Web Studio & DAG Visualization.
-
+- **Pi helper Nous Portal prefix (dev helper, not Phase 11):**
+  `scripts/harness-run.mjs` allowlists `openrouter/*` and `nous-portal/*`.
+  Auth is `pi auth check --provider openrouter|nous-portal`. Native-provider
+  Pi brake is unchanged. Writer remains exact
+  `openrouter/qwen/qwen3-coder-plus` with edit and JSON readiness proof.
+  `nous-portal/tencent/hy4-preview` is experiment/read-only (experiment may
+  edit); it is not a second writer. Install
+  `npm:@jayteelabs/pi-nous-portal-provider`; there is no Nous harness CLI.
+- **D3 S1 registry foundation:** `.kxm/gates.yaml` uses the closed
+  `kxm.gate-registry.v1` schema. Gate ids resolve only through that file;
+  obsolete caller allowlists and old schema/outcome names fail closed.
+  Command `argv[0]` must be a bare executable or absolute POSIX path;
+  relative paths with separators and directory names `.` and `..` refuse.
+  Gate-only `expect: pass|fail` compiles, defaulting to `pass`. Registry
+  changes affect configuration and tool-policy hashes; timeout-only
+  decreases narrow permission budgets. The current `v4-registry` template
+  declares `npm test`; historical template bytes and provenance are retained.
+  Execution and attempt-bound evidence were still open at that slice, and #89 was open —
+  *(historical: the driver entry under Landed fulfils the Phase 3 gate sentence and issue #89
+  is closed as of 2026-09-20)*.
+- **D3 S2 pins/store/replay:** run plans pin `kxm.run-plan.v2` with the exact
+  registry hash, referenced gate definitions and control-root key. Event store
+  schema 3 adds immutable `gate_attempts`, `gate_observations` and
+  `gate_evidence` rows bound to the full run/owner/step/assignment/attempt/effect
+  identity; events are appended before the rows they reference under immediate
+  foreign keys, and every production fold (status, cancel, dispatch, settlement,
+  rebuild) verifies events against rows and rows against events. Closed
+  complete/no-start observation facts are shared on insert and replay;
+  evaluated settlement keeps the observation and fails the run when a
+  transition budget is exhausted. Proven no-start settles truthfully without
+  an executing event; uncertain observations freeze without evidence. The
+  engine then refused gate dispatch and #89 was open *(historical; see the two lines
+  above)*.
+- **D3 S3 artifacts-exist dispatch and orphan-visible preflight:** drive, step,
+  and scheduler admit once and evaluate `artifacts-exist` under control
+  `.kxm/assets` with lexical+realpath containment. Every pinned path is
+  checked; missing root is a complete failed observation. Command gates still
+  refuse before intent/spawn. Recovery enumerates project `gate_attempts`
+  without a row limit and unions orphan-visible issued/revoked capabilities,
+  then fold/replays exact identity before excluding evaluated settled and
+  proof-only no-start/cancelled terminals. Simulated producers are skipped
+  only when no gate row exists; an unfinished gate requires an issued or
+  revoked `kxm-gate` capability. Settlement revalidates the prepared attempt;
+  a revoked capability keeps the complete observation as proof-only cancel.
+  Evaluation errors after checks begin keep T1 unresolved. S4 command
+  execution is implemented in this tree (unreleased). *(Historical at that slice:
+  a later entry in this phase states the Gate sentence is fulfilled, and issue #89,
+  "D3: engine: gate registry and evidence", is **closed** as of 2026-09-20.)*
+  D4 recovery and #89 were then open *(historical; #89 is closed)*.
 - **D3 S4 command execution (implemented, unreleased):** POSIX command gates
   spawn with `shell: false` and detached process groups, arm exact admission
   holds through evaluated settlement, and record immutable hashed
@@ -2243,38 +2377,61 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   duration/cost budgets, and the full Phase 3 driver were then open, and issue #89 was
   open *(historical at that slice; the driver record under Landed fulfils the Phase 3 gate
   sentence and #89 closed on 2026-09-08)*.
-
-- **D2 engine run loop (agent-only, model-free; unreleased):** `engine.ts`
-  pins the D1 compiled plan in an immutable content-addressed `run_plans`
-  envelope and advances `created → preparing → running →
-  completed|failed|cancelled` with a driver-simulated producer only. The fold
-  requires `run.created` first, binds assignment/result/terminal events, and
-  rejects `waiting` / `blocked_uncertain` in this slice. Operator `cancelled`
-  from `created`/`preparing` requires recorded `run.cancel_requested`; a
-  compiled selected `terminalStatus=cancelled` remains valid without that
-  operator event. Pin rehydration validates the full envelope from `unknown`
-  (row and pin-event hash). D2 event payloads are closed. Public
-  `drive`/`step`/scheduler share one per-store admission map: same-run
-  exclusion for the whole drive, duplicate queue ids rejected as `run_busy`
-  before admission, bound oversubscription as `run_admission_exceeded`, stale
-  handles as `scheduler_policy_conflict`, and cross-project bundles as
-  `run_owner_mismatch`. Direct
-  drive uses the same bound and cannot widen it. Executing commit precedes
-  in-process invoke with no await gap; sync throw and async rejection both
-  settle `producer_rejected` with no capability leak. A real child-process
-  restart of an executing attempt is `attempt_unreconciled` (cancel then
-  `cancel_pending_foreign`); there is no live-owner reset and no D4
-  adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
-  pins and stops fail-closed at start because it declares run duration
-  limits. D3/D4 and the rest of Phase 3 were then open *(historical at that slice — the
-  later driver record fulfils the gate; #89 closed 2026-09-08)*. The developer runner
-  prerequisite merged in PR #129; it does not satisfy this engine gate.
-  Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
-  classify/docs/plugin) before the pause; the post-merge main Windows Node 24
-  package-cleanup failure in run `34006194862` is unresolved and deferred.
-
-- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Matching dated pins supply rates/capacity when live pricing is incomplete. Context tiers emit a labeled componentwise upper bound without a Pi `cost.tiers` schedule. **Verified 2026-09-07:** tests verified one streamed tool call plus usage on `qwen/qwen3-coder-plus` for the direct API and an OAuth-backed Hermes proxy, with exact model auth. Other models, automatic auth refresh, exact quota, and extra charges remain unverified. Routing v2 and persisted catalog deferrals remain.
-
+- **D4 U2a-2 model-free join-all panel dispatch (implemented, unreleased):**
+  agent/moa `join: all` steps birth exactly `assignments.target` members
+  through a `maxParallel` window, settle each owner separately, and join
+  once. Membership and attempt start freeze after a recorded outcome,
+  terminal step, or durable `cancelRequested`. Exact capability lookup
+  binds the executing owner at starting, executing, pre-invoke, and
+  settlement to the minted hash plus run/step/stepAttempt/assignment/attempt/
+  driver producer/state; a tampered hash is rejected before invoke.
+  Pending cleanup locates `owned.get(item.attemptId)`, never a positional
+  `owned` index. `executing_unrecorded` stays the singleton exception only.
+  Uninvoked starting agents and failed durable settlement
+  stay unresolved with `attempt_unreconciled` rather than a fabricated
+  terminal run. *(Status at that slice; the driver entry under Landed supersedes it.)*
+  Full D4, default/fix driver gate, evidence, retries,
+  approvals, waits, budgets, and recovery remain open. Operator-prioritized
+  roster/routing planning is next after this slice is accepted; it is not
+  implemented here and does not pass a product Phase 4 gate.
+- **Phase 3 engine & model-free driver complete (implemented, unreleased):**
+  D4 `blocked_uncertain` recovery after S4 command execution (`recoverKxmRun`
+  supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
+  incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
+  expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
+  `all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
+  `maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
+  types. The model-free driver in `test/core/driver.test.ts` completes and
+  recovers `examples/project/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
+  rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
+  (all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
+  critics rework back-edge to plan; approval rework back-edge to plan; command gates;
+  wait signal step) without illegal transitions or evidence reuse. Caller-authored
+  replies fail closed. Fulfills the Phase 3 Gate sentence.
+- **Phase 4 harness/model assignment validation & Pi auth probe (implemented, unreleased):**
+  `validateHarnessModelPair` enforces unhosted harness/model pair rejection at
+  assignment, rejecting models not hosted by the selected harness (Claude ≠ Grok,
+  Codex ≠ Gemini, etc.) and enforcing native Pi brake rules (blocking direct
+  native-provider impersonation through Pi without allowlisted aggregator prefixes
+  `openrouter/*`, `nous-portal/*`, `nous/*`, `nous-proxy/*`) *(corrected 2026-09-23: the brake
+  never read that allowlist and checked only the first id segment; it now refuses by model
+  vendor — see Landed, routing rules checked against the code)*. `probeHarnessAssignment`
+  and `probeHarnessesForModel` supply exact requested provider/model context to
+  Pi (`pi auth check [--provider <p>] [--model <m>] --json`) before claiming Pi
+  readiness, enabling `eligibleHarnesses` to dynamically filter authenticated
+  harnesses for a specific assignment candidate without static YAML matrices.
+- **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
+  independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
+  The parent-alias regression owns its temporary symlink on Mac/Linux;
+  the earlier CI failure remains in private history. This developer runner
+  prerequisite does not complete any product phase gate.
+- **Runtime initialization CI repair (PR #130, operator bootstrap exception):**
+  concurrent first-open callers inspect
+  schema versions and tables under the same write transaction that initializes
+  the registry or event store. Deterministic two-process regressions cover both;
+  newer, outdated, and malformed schemas still fail closed. Acceptance follows
+  the single-repair operator exception above; the two unsuccessful native
+  attempts remain in private history. Phase gates are unchanged.
 - **Platform pause (2026-09-05), historical.** At that date the active PR
   gate was two Linux `validate:ci` + `check:generated` legs (Node 22.19.0
   and 24) plus Docs lint and Plugin validation, and Windows CI legs, hosted
@@ -2284,12 +2441,50 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   smoke`, and the Win Node24 probe workflow stay disabled. `Release` and
   `Auto-Release` are active. No Windows source was removed. No new paid
   macOS runner.
-
 - PR CI no longer skips Validate or Plugin validation for docs-only diffs,
   restoring the ruleset’s required contexts (four expanded Validate names plus
   Plugin validation). That seven-job PR surface (four Validate legs plus
   classify/docs/plugin) is historical as of the 2026-09-05 platform pause.
-
+- Plugin/package/skill/MCP rename toward `kxm`; tools `kxm_list` / `kxm_send` / …;
+  env prefix `KXM_*`.
+- `kxm dash` tabbed dashboard; hub ops snapshot carries run progress and plan
+  summaries (no message bodies).
+- `defaultHarness` / agent `harness` schema fields; unknown harness fail-closed;
+  omitted harness equals `pi` in permission projection.
+- Harness catalog + `kxm harness list` + `kxm update`.
+- Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
+  projections, crash recovery. Runs stay `created` until Phase 3.
+- `kxm update --check` / `--kxm`: default source is npm. GitHub release tarballs
+  remain when `update.yaml` sets `source: github`. A working directory that is
+  this repository installs the local files. `auto` only from per-user host-state
+  `update.yaml`. Install-kind detection: only npm-global applies off-repo; source
+  checkouts neither fetch nor nag unless the cwd is this repo; other kinds refuse
+  and explain, including explicit `--kxm` when already current or the release
+  check fails. GitHub installs verify the `kxm-<v>.tgz` sha256 digest (absent is fatal).
+  Notice on hub start (skipped for source) and session widget (cached). Does
+  not block session start on the network. Without `gh`, a `source: github`
+  install downloads with curl and keeps the digest check.
+- Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
+  on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
+  skill `kxm-session`, `kxm hub bind <url>` / `kxm hub unbind`.
+  `/kxm hub` wraps hub view + online agents. `/mesh-status` is removed (brakes).
+  Slash inspects via the same brief snapshot as the CLI. No message bodies.
+- `kxm hub bind <url>` / `unbind` persist a host-level `hub-binding.json`.
+  `kxm init --hub` / `--hub-url` are unknown options. Hub start prints a cached
+  update notice, refreshes in the background, and warns (does not exit 2) on a
+  malformed per-user `update.yaml`. Source
+  checkouts skip the notice. A project `.kxm/update.yaml` is ignored with a
+  warning. Startup reports `auth=token|none`.
+- Tri-state auth probes: Codex distinguishes ChatGPT subscription, API key,
+  and unparsed. Pi inventory without a named provider/model is `unknown` with
+  `auth_context_required` (no global auth; missing-context, not a provider
+  stand-in). Claude parses JSON `loggedIn`. Grok catalog entry observational
+  (`mode: either`), probe parses the confirmed login line. Kimi, Gemini, and
+  DeepSeek report `unknown`. `eligibleHarnesses` fail-closed pure selection.
+  Rule tests: no static harness/model matrix; eligibility excludes unknown and
+  false; `default.yaml` declared graph routes `ready` only through `verify`.
+  This is inventory filtering only (issue 84 auth/eligibility sub-slice), not
+  a supervised-worker claim or live assignment.
 - Headless `scripts/harness-run.mjs` helper (2026-09-05, M1 transport
   2026-09-06 merged in PR #129, unreleased): native auth preflight, verified
   grok/claude/codex/OpenRouter-Pi pairs, no native-provider Pi fallback,
@@ -2400,291 +2595,11 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   every fixed-gate exit 0, identical HEAD/index_tree, and a clean
   unstaged/unignored worktree before and after. Staged `dist` is a valid
   candidate. Model claims cannot set verification.
-
-- **protect-main applied:** ruleset `22251971` keeps all live rules and the
-  four Validate contexts; `Plugin validation` is now required.
-  `delete_branch_on_merge` is true. Evidence: B2 artifacts
-  `ruleset-applied.json` and `repository-applied.json`.
-  Amended 2026-09-05: Windows contexts removed; Linux contexts and Plugin
-  validation remain required.
-
-- **#112 fixture repair landed** (test-only, not a claimed Windows crash
-  mechanism): the integrated pre-ack child awaits real `session_shutdown`,
-  clears its keepalive, sets `process.exitCode`, and does not call
-  `process.exit`. Failed cleanup does not force 7. Controlled hosted
-  regression proof (not the underlying crash mechanism): GitHub Actions
-  run `33998022233`, `windows-latest-l`, Node `24.19.0`, `npm test` with
-  coverage absent. Baseline exact `79b5862` 3/3 known pre-ack failures
-  (`actual: 3221226505` vs `expected: 7`), no unrelated failures. Fixed
-  exact `c499cb2` 3/3 full suite pass, pre-ack ran, exit 0. Both commits
-  immutable. Temporary probe workflow/branch/worktree deleted and never
-  merged. All four normal `validate:ci` coverage legs remain required.
-  Not a general Windows cure; no extra permanent npm gate.
-  Windows legs were paused as of 2026-09-05. That pause is superseded by
-  #358 to #364, which run Windows Validate on `main`. The four-leg statement
-  above is historical. The pre-ack shutdown fixture fix remains landed.
-
-- **Docs audit slice (issue #144):** planning docs moved to `plans/` (implementation plan, v05 design record, v04/provenance history and 2026-09-04 reviews); `docs/workflow-guide.md` renamed and retitled; docs brake widened (`docs/**`, plugin READMEs, skills, AGENTS.md, CLAUDE.md, `.claude/**/*.md`; `plans/` exempt); stale copy, env-var classification, context OS coverage including `kxm context explain`, README workflow-slug index, and phase-neutral `kxm run` help. No product behavior change beyond CLI help wording.
-
-- **B3 three failing rule tests and auth probes (issue #84):** Three failing-first
-  loop rule tests in `test/core/loop-rules.test.ts` (unhosted harness/model
-  pair rejected with `harness_unhosted_model`; pure inventory eligibility fails
-  closed on empty/unknown; `verify_must_precede_ready` enforced in workflow
-  validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating
-  stdout parser without `--json`); `gemini` and `deepseek` remain `unknown`
-  (`null`) without secret leakage; `kxm harness list` reports status for pi,
-  claude, codex, kimi. All 990 unit/simulation tests passed; coverage floors met
-  (Lines 92.09%, Branches 80.87%, Functions 93.23%).
-
-- **E6 backup, restore, migrations (issue #102):** Implemented database rules and
-  lifecycle commands per Decision D11. Created `plugins/kxm/src/database.ts` providing
-  a shared `openDatabase` helper enforcing WAL journal mode with retry, `busy_timeout`
-  (5000ms), `synchronous = NORMAL`, `foreign_keys = ON`, `BEGIN IMMEDIATE` serialization,
-  and fail-closed `user_version` inspection across all SQLite stores (`MeshStore`,
-  `KxmRuntimeRegistry`, `KxmRunEventStore`). Implemented `withDatabaseTransaction`
-  featuring an active-transaction nesting guard. Implemented stepwise legacy migrations
-  (v1 -> v2, v2 -> v3) replacing the unconditional version stamp, ensuring a v2 fixture
-  migrates to v3 or is refused without ever being silently relabelled. Implemented
-  `kxm backup [--out <dir>]` and `kxm restore <manifest>` using SQLite's backup API
-  (`VACUUM INTO`) with WAL checkpoint (`TRUNCATE`), PRAGMA integrity checks before and
-  after backup/restore, schema version stamping, and hashed manifest generation
-  (`kxm.backup-manifest.v1` schema). Verified with `test/core/e6-backup-restore-migrations.test.ts`.
-
-- **E5 memory floor fixes (issue #100):** Turned three prose memory rules into
-  enforceable code per Decision D12. Rule 1: state promotion requires a configured
-  admin token with no loopback bypass and records the real caller, rejecting
-  self-promotion where author equals promoter (`state_promotion_invalid`). Rule 2:
-  proposed items never reach a packet's skills or current state; the arbiter reads
-  promoted skills from the governed store by content SHA-256 hash. Rule 3: context
-  items reject control-plane fields (`permissions`, `tools`, `allow`, `deny`,
-  `grants`, `approval`, `policy`, `scopes`, `credentials`, `secrets`, `token`,
-  `apiKey`, `password`), secrets in summary and provenance sourceRef are redacted
-  at parse, `scope` field (`agent | project | run | operator`) is validated on the
-  record, and dead shallow `lineageOf` is deleted. Memory revision is computed at
-  run creation (`computeKxmMemoryRevision`) from the SHA-256 hash of the
-  Git-authored set (`.kxm/memory` excluding `candidates`; `.kxm/skills/promoted`)
-  plus the promoted-state snapshot and written to `run.memoryRevision` and
-  `event.memoryRevision` with canonical prefix `ctxrev_`. Optimized test coverage
-  and execution speed: reorganized test suites into `test/core/` (essential PR unit/contract
-  suites) and `test/simulations/` (heavy subprocess/signal/timeout suites); added
-  `--test-concurrency=4` for parallel test coverage; established tiered gates with
-  `test:core` (essential PR gate) and `test:coverage:core` (92/80/93 floors) alongside
-  `test:complete` and `test:coverage:complete` (93/80/93 floors). Verified with
-  `test/core/e5-memory-floor.test.ts` and updated `test/core/ci-contract.test.ts`.
-
-- **E4c Kimi CLI and agy verification (issue #95):** Verified Kimi CLI and
-  Antigravity CLI (`agy`) as one-shot adapter members. Added `HarnessDispatchStatus`
-  (`status: "yes" | "no"`, `supported: boolean`, `reason?: string`) across
-  `HarnessStatus` and formatted table output in `kxm harness list` (and `--json`),
-  transparently reporting dispatchability and reason per harness. Implemented
-  `parseKimiOneShotUsage` handling stream-json NDJSON assistant/meta chunks with
-  null tokens and `costBasis: "unknown"`. Implemented `parseAgyOneShotUsage`
-  handling Antigravity JSON payloads (`status`, `response`, `error`, `usage: {
-  input_tokens, output_tokens, cache_read_tokens, total_tokens }`), mapping
-  unmetered runs to `subscription:agy`. AGY is the sole Google harness and
-  owns the Google model route.
-  Exported harness definitions in `plugins/kxm/src/runtime.ts` and verified with
-  mock spawn tests, fake dispatch, auth refusal, and comprehensive inventory
-  dispatch reporting (`test/harness.test.ts`, `test/oneshot-producer.test.ts`).
-
-- **E4b one-shot adapter: Claude and Codex (issue #94):** Implemented generic
-  one-shot CLI producer in `plugins/kxm/src/oneshot-producer.ts` driving
-  planner, reviewer, and other roles through Claude, Codex, and catalog-configured
-  CLIs. Extended `HarnessCatalogEntry` with `oneShot` config and added usage parsers
-  (`parseClaudeOneShotUsage`, `parseCodexOneShotUsage`, `parseGenericOneShotUsage`)
-  in `plugins/kxm/src/harness.ts`. Enforces fail-closed auth preflight
-  (`<harness>_not_authenticated`), prompt delivery via stdin or arguments, process
-  cancellation via AbortSignal and usage parsing. The initial implementation's
-  catalog-as-bill and absent-catalog-as-subscription classifications were wrong:
-  billing is now `unmetered` only with observed subscription auth, otherwise
-  `unknown`, with null billed cost. Provider-reported amounts and eligible list
-  estimates are separate metadata; cumulative input is not context occupancy.
-  Lifecycle/permission acceptance remains blocked below. Emits `.agents/skills` and marker-delimited
-  `AGENTS.md` block (`scripts/emit-codex-artifacts.mjs`) so Codex discovers KXM
-  commands, protected by `scripts/check-generated.mjs`. Exported in
-  `plugins/kxm/src/runtime.ts` and verified with mock spawn tests, auth failure,
-  and end-to-end KXM engine drive (`test/oneshot-producer.test.ts`).
-
-- **E4 Pi dispatch (issue #93):** Implemented Pi RPC producer in
-  `plugins/kxm/src/pi-producer.ts` running implementer (and other agent
-  roles) through the KXM engine driver over Pi RPC protocol (`--mode rpc`).
-  Maintains per-run coordinator sessions (`coordinator:${runId}`) and keys
-  agent sessions by `{runId, agentId, instance, scopeEpoch}`
-  (`${agentId}@${shortRun}#${instance}.${scopeEpoch}`). Enforces fail-closed
-  auth preflight (`checkPiAuth` requiring `detected: true` and
-  `authenticated: true`, failing closed with `pi_not_authenticated`). Binds
-  harness `pi`, extracts token and context stats (`tokensIn`, `tokensOut`,
-  `cacheReadTokens`, `cacheWriteTokens`, `contextTokens`, `latencyMs`), and
-  calculates metered costs via `.kxm/prices.yaml` price catalog (with Grok and
-  GLM catalog rows, setting `costBasis: metered` or `unknown`). Propagates
-  abort signals to Pi RPC abort commands and cancellation outcomes. Exported in
-  `plugins/kxm/src/runtime.ts` and verified with comprehensive mock RPC tests,
-  fail-closed auth, and end-to-end KXM engine drive
-  (`test/pi-producer.test.ts`).
-
-- **D6 agent CLI surface (issue #92):** Centralized 19 agent commands in
-  `plugins/kxm/src/commands.ts` as the single source of truth for parameter
-  schemas, command metadata, and execution over `HubClient`; eliminated
-  duplicated TypeBox definitions in `plugins/kxm/src/extension.ts` and tool tables
-  in `plugins/kxm/src/mcp-server.ts`; generated `kxm peer` subcommands (`list`,
-  `send`, `get`, `await`, `cancel`, `fanout`, `inbox`, `reply`) and `kxm workflow`
-  subcommands (`checkpoint`, `record`, `wait`, `signal`) with `--json` outputs;
-  enforced tool policy via engine-issued `KXM_ATTEMPT_TOKEN` and session-issued
-  `KXM_SESSION_TOKEN`, failing closed on denied commands with
-  `tool_policy_denied`; strictly capped `peer await` at 60s in both parameter
-  schema and execution; bound `workflow wait` and `signal` to KXM runs and
-  supervisor; added drift assertions across CLI, MCP, and Pi surfaces
-  (`test/commands-drift.test.ts`), policy tests (`test/commands-policy.test.ts`),
-  and rewrote `plugins/kxm/skills/kxm/SKILL.md` to teach CLI commands with zero
-  `mesh_` and zero MCP-only instructions.
-
-- **Workflow guide loop & maintain-documentation (issue #145):** documented developer runner loop (`plan` → `implement` → fixed witness gate `npm run verify` → dual critics Fable + Sol → `accept` → PR with auto-merge) and repair back-edge (`rework_of`, fresh dual review, attempts-and-relief failover); reclassified `semantic-equivalence-verifier` as critic-with-gate (deterministic checks are the witness; model role reviews contracts and does not replace tests); added `maintain-documentation` workflow to Slug Registry and Software Engineering; noted `agy` native subscription harness for Gemini candidates; rebound `.kxm/roster.json` sha256 hash.
-
-- **agy (Antigravity CLI) helper admission:** `scripts/harness-run.mjs`
-  `ROUTES.agy` is a writer/experiment **edit** route (provider `google`,
-  Gemini kebab ids only) with argv `-p` prompt transport (no `--prompt-file`,
-  no stdin), JSON `status` parsing (never the exit code), unmetered
-  subscription cost, and non-empty `denied_actions` as `turn_failed`. Catalog
-  `id: agy` is observational (`mode: either`, `authArgs: ["models"]`,
-  `update.self: ["update"]`). Auth success is a non-empty models list from
-  `agy models` (method `antigravity-oauth`). Not a Pi-style RPC worker;
-  starting writer rotation is unchanged. AGY is the sole Google harness;
-  read-only agy roles and agy-hosted non-Google models remain deferred.
-
-- **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
-  `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
-  previous `[self-hosted, Linux, X64, doks]` label tuple selected singleton
-  `km-gh-rn01` and queued. Manual smoke is equality-gated on
-  `KXM_SMOKE_RUNNER == 'kontextmind-doks'` and stays disabled until Pi
-  credentials are provisioned into ephemeral pods and pass `pi auth check`.
-  Release/npm remain `if: false` and the Windows pause is unchanged.
-  Ruleset `22251971` required contexts are unchanged.
-
-- **Pi helper Nous Portal prefix (dev helper, not Phase 11):**
-  `scripts/harness-run.mjs` allowlists `openrouter/*` and `nous-portal/*`.
-  Auth is `pi auth check --provider openrouter|nous-portal`. Native-provider
-  Pi brake is unchanged. Writer remains exact
-  `openrouter/qwen/qwen3-coder-plus` with edit and JSON readiness proof.
-  `nous-portal/tencent/hy4-preview` is experiment/read-only (experiment may
-  edit); it is not a second writer. Install
-  `npm:@jayteelabs/pi-nous-portal-provider`; there is no Nous harness CLI.
-
-- **D3 S2 pins/store/replay:** run plans pin `kxm.run-plan.v2` with the exact
-  registry hash, referenced gate definitions and control-root key. Event store
-  schema 3 adds immutable `gate_attempts`, `gate_observations` and
-  `gate_evidence` rows bound to the full run/owner/step/assignment/attempt/effect
-  identity; events are appended before the rows they reference under immediate
-  foreign keys, and every production fold (status, cancel, dispatch, settlement,
-  rebuild) verifies events against rows and rows against events. Closed
-  complete/no-start observation facts are shared on insert and replay;
-  evaluated settlement keeps the observation and fails the run when a
-  transition budget is exhausted. Proven no-start settles truthfully without
-  an executing event; uncertain observations freeze without evidence. The
-  engine then refused gate dispatch and #89 was open *(historical; see the two lines
-  above)*.
-
-- **D4 U2a-2 model-free join-all panel dispatch (implemented, unreleased):**
-  agent/moa `join: all` steps birth exactly `assignments.target` members
-  through a `maxParallel` window, settle each owner separately, and join
-  once. Membership and attempt start freeze after a recorded outcome,
-  terminal step, or durable `cancelRequested`. Exact capability lookup
-  binds the executing owner at starting, executing, pre-invoke, and
-  settlement to the minted hash plus run/step/stepAttempt/assignment/attempt/
-  driver producer/state; a tampered hash is rejected before invoke.
-  Pending cleanup locates `owned.get(item.attemptId)`, never a positional
-  `owned` index. `executing_unrecorded` stays the singleton exception only.
-  Uninvoked starting agents and failed durable settlement
-  stay unresolved with `attempt_unreconciled` rather than a fabricated
-  terminal run. *(Status at that slice; the driver entry under Landed supersedes it.)*
-  Full D4, default/fix driver gate, evidence, retries,
-  approvals, waits, budgets, and recovery remain open. Operator-prioritized
-  roster/routing planning is next after this slice is accepted; it is not
-  implemented here and does not pass a product Phase 4 gate.
-
-- **Phase 3 engine & model-free driver complete (implemented, unreleased):**
-  D4 `blocked_uncertain` recovery after S4 command execution (`recoverKxmRun`
-  supporting `retry`, `fail`, `cancel`, `unblock`), gate hold resolution, and
-  incomplete attempt exclusion in `gateRecoveryPreflight`. Step admission
-  expanded for declared workflow kinds (`agent`, `moa`, `approval`, `wait`, `gate`),
-  `all-settled` join evaluation with `minimumPassed`, `distinctBy: [provider]`,
-  `maxAttemptsPerAssignment <= 2`, repository write declarations, and evidence
-  types. The model-free driver in `test/core/driver.test.ts` completes and
-  recovers `examples/project/.kxm/workflows/default.yaml` (plan → implement → verify → ready → completed;
-  rework loop; gate uncertainty recovery via retry, fail, cancel) and `fix.yaml`
-  (all 13 stages; approval pass/rejection rework; two-producer MOA `all-settled` joins;
-  critics rework back-edge to plan; approval rework back-edge to plan; command gates;
-  wait signal step) without illegal transitions or evidence reuse. Caller-authored
-  replies fail closed. Fulfills the Phase 3 Gate sentence.
-
-- **Issue 127 complete (PR #129, `50c8482`):** native writer, fixed witness,
-  independent Fable/Sol reviews, acceptance, and all five PR CI jobs passed.
-  The parent-alias regression owns its temporary symlink on Mac/Linux;
-  the earlier CI failure remains in private history. This developer runner
-  prerequisite does not complete any product phase gate.
-
-- **Runtime initialization CI repair (PR #130, operator bootstrap exception):**
-  concurrent first-open callers inspect
-  schema versions and tables under the same write transaction that initializes
-  the registry or event store. Deterministic two-process regressions cover both;
-  newer, outdated, and malformed schemas still fail closed. Acceptance follows
-  the single-repair operator exception above; the two unsuccessful native
-  attempts remain in private history. Phase gates are unchanged.
-
-- Plugin/package/skill/MCP rename toward `kxm`; tools `kxm_list` / `kxm_send` / …;
-  env prefix `KXM_*`.
-
-- `kxm dash` tabbed dashboard; hub ops snapshot carries run progress and plan
-  summaries (no message bodies).
-
-- `defaultHarness` / agent `harness` schema fields; unknown harness fail-closed;
-  omitted harness equals `pi` in permission projection.
-
-- Harness catalog + `kxm harness list` + `kxm update`.
-
-- Phase 2 Runtime create/recover (PR #75) is in tree: supervisor, event store,
-  projections, crash recovery. Runs stay `created` until Phase 3.
-
-- `kxm update --check` / `--kxm`: default source is npm. GitHub release tarballs
-  remain when `update.yaml` sets `source: github`. A working directory that is
-  this repository installs the local files. `auto` only from per-user host-state
-  `update.yaml`. Install-kind detection: only npm-global applies off-repo; source
-  checkouts neither fetch nor nag unless the cwd is this repo; other kinds refuse
-  and explain, including explicit `--kxm` when already current or the release
-  check fails. GitHub installs verify the `kxm-<v>.tgz` sha256 digest (absent is fatal).
-  Notice on hub start (skipped for source) and session widget (cached). Does
-  not block session start on the network. Without `gh`, a `source: github`
-  install downloads with curl and keeps the digest check.
-
-- Hub-local session brief: `kxm session brief`, Pi TUI picker + status/widget
-  on `startup`/`new`/`fork`, `/kxm` (`status`/`hub`/`help` completions),
-  skill `kxm-session`, `kxm hub bind <url>` / `kxm hub unbind`.
-  `/kxm hub` wraps hub view + online agents. `/mesh-status` is removed (brakes).
-  Slash inspects via the same brief snapshot as the CLI. No message bodies.
-
-- `kxm hub bind <url>` / `unbind` persist a host-level `hub-binding.json`.
-  `kxm init --hub` / `--hub-url` are unknown options. Hub start prints a cached
-  update notice, refreshes in the background, and warns (does not exit 2) on a
-  malformed per-user `update.yaml`. Source
-  checkouts skip the notice. A project `.kxm/update.yaml` is ignored with a
-  warning. Startup reports `auth=token|none`.
-
-- Tri-state auth probes: Codex distinguishes ChatGPT subscription, API key,
-  and unparsed. Pi inventory without a named provider/model is `unknown` with
-  `auth_context_required` (no global auth; missing-context, not a provider
-  stand-in). Claude parses JSON `loggedIn`. Grok catalog entry observational
-  (`mode: either`), probe parses the confirmed login line. Kimi, Gemini, and
-  DeepSeek report `unknown`. `eligibleHarnesses` fail-closed pure selection.
-  Rule tests: no static harness/model matrix; eligibility excludes unknown and
-  false; `default.yaml` declared graph routes `ready` only through `verify`.
-  This is inventory filtering only (issue 84 auth/eligibility sub-slice), not
-  a supervised-worker claim or live assignment.
-
 - Coverage include inverted to `plugins/kxm/src/**/*.ts`; excludes are only
   `server.ts` and `mcp-server.ts` (spawned bundles attribute to `dist`).
   Thresholds are measured whole-tree values and may only ratchet up.
   `npm run verify` includes `check:generated`, which diffs built `dist` against
   the staged copy. `check:generated` also runs on every CI validate leg.
-
 - **B4 issue 85 (unreleased):** five-layer import boundary held by
   `test/import-boundary.test.ts`. Direct imports from `extension.ts` and
   `mcp-server.ts` to hub, store, or workflow are banned including type-only;
@@ -2705,7 +2620,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   local AST. Family seeds include `kxm-runtime*` plus harness, routing,
   envelope, and redact. The packed install still runs the CLI, hub, and the
   three library subpaths.
-
 - `release.yml` on `v*` tags asserts the tag equals `package.json` version
   before install, runs `validate:ci` + `check:generated`, and packs
   `kxm-<v>.tgz` (`kxmReleaseAssetName`). Release lookup: GET-by-tag is the
@@ -2732,7 +2646,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   that adds a published-release prerequisite (release lookup returns
   `draft: false` for the tag) and the `npm-publish` environment. Not
   activated by B2.
-
 - **B2 live draft proof (temporary, cleaned; not a published asset):**
   mismatch tag `v0.0.0-b2mismatch.20260905.1` run `33995663476` failed closed
   before install (no draft). Correct tag `v0.5.20260905` at proof commit
@@ -2744,7 +2657,12 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   deleted the temporary draft plus remote/local tags and the proof
   branch/worktree; absence verified via release list and `ls-remote`.
   Published `v0.5.1` unchanged; tree version remains `0.5.1`.
-
+- **protect-main applied:** ruleset `22251971` keeps all live rules and the
+  four Validate contexts; `Plugin validation` is now required.
+  `delete_branch_on_merge` is true. Evidence: B2 artifacts
+  `ruleset-applied.json` and `repository-applied.json`.
+  Amended 2026-09-05: Windows contexts removed; Linux contexts and Plugin
+  validation remain required.
 - `kxm mesh` fails closed with a stderr brake naming `kxm init`, `kxm hub`, and
   `scripts/smoke-multi-pi.mjs`. `MeshClient`/`MeshHttpError` are `HubClient`/
   `HubHttpError`; `MeshDashboard` is `KxmDashboard`. Operator copy says `hub:off`;
@@ -2753,7 +2671,6 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   (status line, widget, online and offline hub, TUI picker skip/select, RPC and
   opt-out, single registration) is a deterministic extension test. Pi install is
   pinned `@main`.
-
 - Queue test (#119) and worker PID readiness (#120) **landed** (test-only;
   production worker unchanged): on failure the queue test stops the
   extension in `try/finally` with bounded `shutdownExtension` before hub
@@ -2765,7 +2682,21 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   removing the temp dir. Deadline-as-success is rejected; bounded exit
   protocol is asserted. Partial JSON identity-readiness is covered by a
   deterministic helper test.
-
+- **#112 fixture repair landed** (test-only, not a claimed Windows crash
+  mechanism): the integrated pre-ack child awaits real `session_shutdown`,
+  clears its keepalive, sets `process.exitCode`, and does not call
+  `process.exit`. Failed cleanup does not force 7. Controlled hosted
+  regression proof (not the underlying crash mechanism): GitHub Actions
+  run `33998022233`, `windows-latest-l`, Node `24.19.0`, `npm test` with
+  coverage absent. Baseline exact `79b5862` 3/3 known pre-ack failures
+  (`actual: 3221226505` vs `expected: 7`), no unrelated failures. Fixed
+  exact `c499cb2` 3/3 full suite pass, pre-ack ran, exit 0. Both commits
+  immutable. Temporary probe workflow/branch/worktree deleted and never
+  merged. All four normal `validate:ci` coverage legs remain required.
+  Not a general Windows cure; no extra permanent npm gate.
+  Windows legs were paused as of 2026-09-05. That pause is superseded by
+  #358 to #364, which run Windows Validate on `main`. The four-leg statement
+  above is historical. The pre-ack shutdown fixture fix remains landed.
 - **D1 engine compile (pure):** `engine-compile.ts` compiles a validated
   `kxm.workflow.v1` into a deep-frozen, JSON-serializable plan keyed by step id
   with typed transitions, per-edge and global transition budgets, step
@@ -2774,10 +2705,42 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   evidence declarations, oracles, and plan-hash requirements. Both
   `default.yaml` and `fix.yaml` compile. `kind: workflow` is reserved and
   rejected at compile. No execution, no I/O, no events.
+- **D2 engine run loop (agent-only, model-free; unreleased):** `engine.ts`
+  pins the D1 compiled plan in an immutable content-addressed `run_plans`
+  envelope and advances `created → preparing → running →
+  completed|failed|cancelled` with a driver-simulated producer only. The fold
+  requires `run.created` first, binds assignment/result/terminal events, and
+  rejects `waiting` / `blocked_uncertain` in this slice. Operator `cancelled`
+  from `created`/`preparing` requires recorded `run.cancel_requested`; a
+  compiled selected `terminalStatus=cancelled` remains valid without that
+  operator event. Pin rehydration validates the full envelope from `unknown`
+  (row and pin-event hash). D2 event payloads are closed. Public
+  `drive`/`step`/scheduler share one per-store admission map: same-run
+  exclusion for the whole drive, duplicate queue ids rejected as `run_busy`
+  before admission, bound oversubscription as `run_admission_exceeded`, stale
+  handles as `scheduler_policy_conflict`, and cross-project bundles as
+  `run_owner_mismatch`. Direct
+  drive uses the same bound and cannot widen it. Executing commit precedes
+  in-process invoke with no await gap; sync throw and async rejection both
+  settle `producer_rejected` with no capability leak. A real child-process
+  restart of an executing attempt is `attempt_unreconciled` (cancel then
+  `cancel_pending_foreign`); there is no live-owner reset and no D4
+  adoption/remint. Proven on a synthetic agent-only fixture; `default.yaml`
+  pins and stops fail-closed at start because it declares run duration
+  limits. D3/D4 and the rest of Phase 3 were then open *(historical at that slice — the
+  later driver record fulfils the gate; #89 closed 2026-09-08)*. The developer runner
+  prerequisite merged in PR #129; it does not satisfy this engine gate.
+  Issue #88 / D2 closed on all seven PR CI jobs (four Validate legs plus
+  classify/docs/plugin) before the pause; the post-merge main Windows Node 24
+  package-cleanup failure in run `34006194862` is unresolved and deferred.
 
 - **KXM Agent Skills Suite plus trusted-policy brakes (candidate, not YAML cutover):** One authored suite under `plugins/kxm/skills/` with generated `.agents/skills` mirror and `plugins/kxm/skill-suite.json`. Skills document current CLI verbs only; they do not claim runtime YAML authority or new writer admission. `emit-codex-artifacts` / `check-generated` require a valid manifest, refuse path/symlink escape, copy owned skills recursively, and preserve unrelated `.agents/skills` entries. **Prerequisite repair:** `getRosterPolicy` no longer reads raw working-tree `.kxm/roster.json` after a trusted-loader error; missing, empty, or malformed policy is `route_invalid`. Acceptance no longer catch-to-nulls policy; required critic specs come from loaded policy, not a null-policy default. Unified YAML role/project/workflow authority remains open.
 
 - **Unified YAML foundation (parser + passive draft validation only):** Shared restricted parser `plugins/kxm/src/restricted-yaml.mjs` (with `.d.mts`) preserves public `parseRestrictedYaml` behavior through a `kxm-config` `KxmConfigError` wrapper. Passive `schemas/policy-draft` (`kxm.model.v2` / `kxm.role.v2`) and pure `validatePolicyDraft` accept explicit draft documents, evidence bytes, and code-owned ceilings. This is not live YAML policy cutover, not `.kxm/roster.json` removal, not global-role migration, not mandatory bindings, not runtime admission, and not new writer admission. Draft routes labeled admitted in tests are not activated. Phase 4/11 product gates are not claimed.
+
+- **Nous opt-in Pi providers:** opt-in `nous/*` (direct API) and `nous-proxy/*` (Hermes subscription proxy) via `KXM_NOUS_PROVIDERS`, with fail-closed catalog/price boundary, bounded factory-time discovery, and env-only direct auth (`NOUS_API_KEY`). No router, no writer admission. Public `/v1/models` catalog fields are observed (`context_length`, `top_provider.max_completion_tokens`, `architecture.input_modalities`, `supported_parameters`, per-token `pricing` plus `overrides`); convert once to USD/M and never apply `original` or a blanket discount. Matching dated pins supply rates/capacity when live pricing is incomplete. Context tiers emit a labeled componentwise upper bound without a Pi `cost.tiers` schedule. **Verified 2026-09-07:** tests verified one streamed tool call plus usage on `qwen/qwen3-coder-plus` for the direct API and an OAuth-backed Hermes proxy, with exact model auth. Other models, automatic auth refresh, exact quota, and extra charges remain unverified. Routing v2 and persisted catalog deferrals remain.
+
+- **E3: routing report, logger, metrics (issue #96):** `kxm routing report` groups attempts by `(harness, model, thinking, role)`, reporting attempts, verifyPassRate, reworkRate (back-edge re-entries only: transitions > 0), p50 and p95 latency (linear interpolation), medianContextTokens, meteredCostUsd, costPerAcceptedUsd, and separate counts for unmetered, unknown, and quotaExhausted. Quality-first sorting (verifyPassRate desc, reworkRate asc) then cost per accepted attempt; routes with unknown cost are flagged (`*`) and never ranked cheapest. Equivalent list cost column supported via `--equivalent-list-cost` / `--list-prices`. Unified `logger.ts` with structured JSONL formatting, level priority filtering, child loggers, size-capped file rotation, redaction on write (secrets and sensitive keys), and daemonized stdout suppression. Prometheus metrics renamed to `kxm_*`, exported orphaned `kxm_context_requests_total`, added `kxm_attempt_latency_seconds_total` and `kxm_metered_cost_usd_total`. Zero `pi_mesh_*` or `pi_kxm_*` metric names remain. *Corrected 2026-09-23:* until PR #298 the report read `telemetry.jsonl` only and engine records carried no `finalOutcome`, so Runtime attempts never reached it and would have scored a 0 pass rate. Since slice 4 its default input is the Runtime event store plus telemetry, with acceptance resolved from the event log. The rework column still reads `transitions`, which engine records never set.
 
 - **SQLite sidecar symlink TOCTOU race (issue #115):** Replaced two-call `existsSync` + `lstatSync` checks on SQLite database files and `-wal`/`-shm` sidecars in `plugins/kxm/src/runtime-store.ts` and supervisor token/error files in `plugins/kxm/src/runtime-supervisor.ts` with atomic `lstatSync(..., { throwIfNoEntry: false })`. Closes TOCTOU race where SQLite deletes ephemeral sidecars on connection close, crashing with `ENOENT` during concurrent status reads. Verified symlink rejections on main database, sidecars, and token files.
 
@@ -2786,6 +2749,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - **E2: dash and brief read KXM runs, messaging cursor (issue #99):** Union reader in `local-snapshot.ts` over legacy SQLite (`kxm.db`) and KXM registry (`registry.db`) + per-project event stores (`run-events.db`) with `PRAGMA busy_timeout = 5000` on read handles. Determines `source: "both" | "runtime" | "legacy"` and merges deduplicated runs and counts. Spend tab in TUI (`MESH_TUI_PANELS` key 7 and `kxm dash --screen spend`) populated from `telemetry.jsonl` routing records via `readRoutingRecords`. In legacy store: `consumer_cursors` and `agent_sequences` tables, `UNIQUE(from, idempotency_key)` partial index, monotonic per-agent `seq`, ack advances cursor (`POST /v1/messages/:id/ack`), reconnect resumes from cursor (`seq > cursor`), query-on-demand replaces boot-time full table scan, and separate run vs message retention sweeps. Gates verified: KXM runs appear in snapshot and brief counts; reconnect after 5 messages redelivers only unacked ones; hub boots without loading message table.
 
 - **E6: backup, restore, migrations (issue #102):** Unified SQLite lifecycle via `openDatabase` with fail-closed schema checks, WAL journal mode with retry loop, busy timeout, and transaction helper with nesting guard. Stepwise legacy migrations for `MeshStore` (v1 -> v2, v2 -> v3) replace unconditional version stamping. Added `kxm backup [--out <dir>]` and `kxm restore <manifest>` utilizing SQLite's backup API (`VACUUM INTO`), WAL checkpoint, PRAGMA integrity checks, and hashed manifest generation (`kxm.backup-manifest.v1`).
+
+- **E8: improvement report and candidates (issue #97):** `kxm improve report` reads routing records and emits candidates grouped by `(workflowHash, step, agentRole, promptHash)`. Rows carry recurrence, mean cost, mean latency, verify-pass rate, and rework; high recurrence with high pass rate emits coded-repeat candidates. Single candidate format `kxm.candidate.v1` in tracked `.kxm/candidates/`: `kind` (`gate`, `skill`, `workflow-step`), `evidenceRefs`, `baselineMetrics`, `declaredOutcome`, `measure`, `proposedDiffPath`. Skill candidates carry standard YAML frontmatter (`name`, `description`). `skills promote` emits a unified diff patch (`.patch`) instead of moving a directory. Workflow `examples/project/.kxm/workflows/improve.yaml` runs and completes on the KXM driver. Retrospective exports are un-gitignored. *Corrected 2026-09-23 against what the code does:* no Runtime record ever reached this report, because it read only `telemetry.jsonl`; the prompt key it grouped by (`rolePromptSha256`) is a `providerMetadata` key the routing parser refuses, so engine records could not carry it; `workflowHash` fell back to the run id, so recurrence was counted per run; engine records had no outcome, so the pass rate was 0; and `evaluatePromotionPolicy` could report a promotion as authorized. PR #298 slice 4 (above) replaced all five: the report reads the Runtime event store plus telemetry, keys on `(workflowId, step, agent role, askSha256)`, needs the same ask decided in at least two runs, and reports promotion readiness that never authorizes. The `improve.yaml` example still runs as before and is not a coded gate step.
 
 - **B3: three failing rule tests and auth probes (issue #84):** Three failing-first loop rule tests in `test/core/loop-rules.test.ts` (unhosted harness/model pair rejected with `harness_unhosted_model`; pure inventory eligibility fails closed on empty/unknown; `verify_must_precede_ready` enforced in workflow validation). Official CLI auth probe for Kimi (`kimi provider list` non-mutating stdout parser without `--json`); `gemini` and `deepseek` remain `unknown` (`null`) without secret leakage; `kxm harness list` reports status for pi, claude, codex, kimi.
 
