@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-09-28"
+updated: "2026-10-12"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Draft plan, decisions taken. KXM already carries a passive kxm.role.v2 and kxm.model.v2 draft (schemas/policy-draft, validatePolicyDraft) whose shape matches what omp does well: roles hold an ordered roster of route ids, routes hold harness, model, vendor, status, permissions, priority and fallbacks. This plan promotes that draft to the live authority, retires kxm.role.v1, routes.yaml roles, roster.yaml and the code defaults, gives agents a role: reference, then adds an opt-in in-flight fallback walk, role tool-policy enforcement, provenance, role aliases, and effort validation. No legacy read paths: old files are deleted and re-created per the single-operator rule. Execution tracking stays in implementation-plan.md."
@@ -24,6 +24,7 @@ related:
   - plan-usage-cost-quota-tracking.md
   - plan-workflow-modes-selective-loading.md
   - history/plan-role-configuration-governance.md
+  - kxm-roadmap/phases/02-role-authority.md
 depends_on:
   - research-omp-config-schema.md
 blocked_by: []
@@ -37,7 +38,9 @@ details:
 # Activate the role and model v2 draft as the single role authority
 
 Read [the execution tracker](implementation-plan.md) first. This file is
-proposed work, not scheduled work. Facts about omp are in
+proposed work, not scheduled work. The open roadmap phase is
+[`kxm-roadmap/phases/02-role-authority.md`](kxm-roadmap/phases/02-role-authority.md).
+Facts about omp are in
 [`research-omp-config-schema.md`](research-omp-config-schema.md); worked
 examples in [`research-omp-config-examples.md`](research-omp-config-examples.md).
 Facts about KXM below were observed on 2026-09-25 against `kxm` 0.7.115.

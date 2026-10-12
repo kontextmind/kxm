@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-10-11"
+updated: "2026-10-12"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -45,6 +45,7 @@ related:
   - research-omp-config-examples.md
   - plan-kxm-harness-first-run.md
   - plan-studio-cloud-host.md
+  - kxm-roadmap/phases/11-still-open.md
 depends_on: []
 blocked_by: []
 details:
@@ -67,6 +68,9 @@ It does not replace the phase gates below.
 
 This file remains the only execution tracker and the authority for accepted
 decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
+
+The open roadmap phase is
+[`kxm-roadmap/phases/11-still-open.md`](kxm-roadmap/phases/11-still-open.md).
 
 - **Python successor proposal (2026-09-25; MG1 source checked in 2026-10-11):**
   [plan-python-migration.md](plan-python-migration.md) records the operator-requested

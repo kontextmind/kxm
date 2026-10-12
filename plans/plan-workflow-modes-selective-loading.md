@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-28"
+updated: "2026-10-12"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Technical reference for actual mode activation and selective loading over existing mode parsing and kxm explain."
@@ -19,6 +19,7 @@ related:
   - plan-token-reduction-rtk-ai.md
   - plan-omp-config-alignment.md
   - research-omp-config-schema.md
+  - kxm-roadmap/phases/07-workflow-modes.md
 depends_on: []
 blocked_by: []
 details:
@@ -38,6 +39,9 @@ archived [`plan-role-configuration-governance.md`](history/plan-role-configurati
 (role-seat tool scoping);
 [`plan-token-reduction-rtk-ai.md`](plan-token-reduction-rtk-ai.md)
 (shell-output compression).
+
+The roadmap phase is
+[`kxm-roadmap/phases/07-workflow-modes.md`](kxm-roadmap/phases/07-workflow-modes.md).
 
 ## 1. Objective
 

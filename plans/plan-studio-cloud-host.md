@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-27"
-updated: "2026-09-28"
+updated: "2026-10-12"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Draft companion to plan-kxm-harness-first-run.md. KXM Studio on the kxmd host should set up and show the shared hub: the seven dash TUI screens, the setup wizard, policy editors that open pull requests, and a live workflow view. Humans authenticate with Authentik at the edge. The browser never holds a hub token. Policy files stay on origin/main. Hub bind --cloud (#348), the naming validator, omp P3 (#378), and P4 are on main. The shared gate that remains is omp-alignment P5 through P7. Execution tracking stays in implementation-plan.md."
@@ -18,6 +18,7 @@ related:
   - plan-omp-config-alignment.md
   - plan-per-tenant-hosting.md
   - implementation-plan.md
+  - kxm-roadmap/phases/10-studio-cloud-host.md
 depends_on:
   - plan-kxm-harness-first-run.md
 blocked_by: []
@@ -34,6 +35,9 @@ proposed work, not scheduled work. It is the web companion to
 [`plan-kxm-harness-first-run.md`](plan-kxm-harness-first-run.md). That plan
 owns the CLI and TTY wizard. This plan owns the same jobs on Studio. Neither
 plan starts until section 6 of the first-run plan is true.
+
+The roadmap phase is
+[`kxm-roadmap/phases/10-studio-cloud-host.md`](kxm-roadmap/phases/10-studio-cloud-host.md).
 
 Operator request, 2026-09-27: Studio, the web UI, should support setup and
 configuration of the cloud host, the shared kxmd hub.

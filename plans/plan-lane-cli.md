@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-10-01"
+updated: "2026-10-12"
 authority: "hypothesis"
 confidence: "high"
 summary: "Small slice. Add a kxm lane command group (create, list, status, drop, run) that manages one git worktree per unit of work, records the lane in the project state directory, and lets kxm run and kxm runs target a lane by name. Add --brief <file> to kxm run so a prompt is never passed inline. The just worktree recipes become wrappers. Lands before P1 of plan-omp-config-alignment.md, which is the first run that uses it. No push, merge, or PR behavior; no change to admission or the trusted roster read."
@@ -19,6 +19,7 @@ related:
   - plan-landing-gates.md
   - reviews/lane-cli-review-arch.md
   - reviews/docs-site-review-arch.md
+  - kxm-roadmap/phases/01-planner-loop.md
 depends_on: []
 blocked_by: []
 details:
@@ -31,6 +32,9 @@ details:
 
 Read [the execution tracker](implementation-plan.md) first. This file is
 proposed work, not scheduled work.
+
+The roadmap phase is
+[`kxm-roadmap/phases/01-planner-loop.md`](kxm-roadmap/phases/01-planner-loop.md).
 
 ## 1. Problem
 
