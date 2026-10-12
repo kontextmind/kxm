@@ -290,6 +290,7 @@ export interface StudioServerOptions {
   planProvider?: (() => KxmCompiledPlan | undefined) | undefined;
   stateProvider?: (() => KxmRunState | undefined) | undefined;
   onMutation?: ((command: string, args: Record<string, unknown>) => Promise<{ ok: boolean; result?: unknown; error?: string }> | { ok: boolean; result?: unknown; error?: string }) | undefined;
+  controlUrl?: string | undefined;
 }
 
 export interface StudioServerHandle {
@@ -297,6 +298,15 @@ export interface StudioServerHandle {
   port: number;
   listen: () => Promise<number>;
   close: () => Promise<void>;
+}
+
+function isKxmdAccountView(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const account = value as Record<string, unknown>;
+  return account.account === "kxmd"
+    && account.database === "kxmd"
+    && account.namespace === "kxmd"
+    && account.role === "kxmd";
 }
 
 /**
@@ -328,6 +338,46 @@ export function createStudioServer(options: StudioServerOptions = {}): StudioSer
       return;
     }
 
+    if (url.pathname === "/api/control/account" && req.method === "GET") {
+      const base = options.controlUrl ?? process.env.KXM_CONTROL_URL;
+      if (!base) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_unconfigured" }));
+        return;
+      }
+      let upstream: Response;
+      try {
+        upstream = await fetch(new URL("/v1/account", base), {
+          signal: AbortSignal.timeout(3_000),
+        });
+      } catch {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_unreachable" }));
+        return;
+      }
+      const contentType = upstream.headers.get("content-type");
+      if (!contentType?.toLowerCase().startsWith("application/json")) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_response_invalid" }));
+        return;
+      }
+      let body: unknown;
+      try {
+        body = await upstream.json();
+      } catch {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_response_invalid" }));
+        return;
+      }
+      if (upstream.ok && !isKxmdAccountView(body)) {
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "control_response_invalid" }));
+        return;
+      }
+      res.writeHead(upstream.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
+      return;
+    }
     if (url.pathname === "/api/layout" && req.method === "GET") {
       const plan = options.planProvider?.();
       if (!plan) {

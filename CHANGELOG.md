@@ -6,6 +6,20 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **The witnessed MG1 Python control-plane foundation is now reproducible from this repository.**
+  `python/kxm-control` provides the pinned Python 3.13 uv workspace, fixed
+  `kxmd` Postgres/Temporal caller, Authentik user and runner verification
+  that requires token expiry, tenant/project/repository registration,
+  owner/admin tenant rename, revision and artifact APIs, and a probe entry
+  point. OpenAPI and the Studio path inventory are derived from the FastAPI
+  app. The checked generator emits the revision helper. Studio exposes the
+  bounded `/api/control/account` relay with a three-second bound and explicit
+  failure states. Removing registration leaves source state untouched and
+  later registry calls return `registration_unavailable` until the schema is
+  installed again. The package does not change host or guest installs. The
+  required CI aggregate runs the Python contracts against PostgreSQL 17. This
+  does not move the hub or Runtime from their existing Node and SQLite owners.
+
 - **KXM configuration now has one owner-validated terminal editor.**
   `kxm config edit --scope project|user` and OMP/Pi `/kxm config` publish the
   same `kxm.config.v1` surface. Accepted writes are saved and re-read; rejected

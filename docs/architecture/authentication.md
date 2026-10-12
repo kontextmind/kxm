@@ -1,7 +1,7 @@
 # Authentication
 
-Read from `plugins/kxm/src/harness.ts` and `plugins/kxm/src/cli.ts`.
-
+Read from `plugins/kxm/src/harness.ts`, `plugins/kxm/src/cli.ts`, and
+`python/kxm-control/src/kxm_control/auth.py`.
 `kxm harness list` runs `probeHarnesses` (`cmdHarnessList` in
 `plugins/kxm/src/cli/project.ts`). For each detected harness that has
 `authArgs`, `probeEntry` runs that command and `interpretAuth` reads the
@@ -22,6 +22,15 @@ the harness command's own stdout.
 `kxm auth` in `plugins/kxm/src/cli.ts` is `kxm auth token`. It inspects,
 issues, or clears the local session token file. That token is a KXM session
 token, not a provider key. Provider logins stay in each harness.
+
+The MG1 Python control API uses a separate Authentik boundary. It accepts only
+RS256 tokens whose issuer and audience match its configured values, whose
+`exp` is present and unexpired, and whose `kxm_actor` is `user` or `runner`.
+A token without `exp` is rejected.
+The signed subject and actor kind must match
+an explicit tenant membership; a user membership never authorizes a runner
+token with the same subject. Only a user can create a tenant. The API does not
+store the bearer token.
 
 ## Related
 

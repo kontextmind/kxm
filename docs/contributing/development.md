@@ -23,7 +23,10 @@ extension, the Claude Code plugin, or the bundled skills.
     `kxm lane run <unit> --brief <file> --workflow implement-only`.
     The read-only critic workflows on the same command are
     `review-arch-only` and `review-cli-only`.
-  - Docker for the clean-container install smoke.
+  - Docker for the clean-container install smoke and the Python control-plane
+    contract suite.
+  - Python 3.13 and [`uv`](https://docs.astral.sh/uv/) for the Python
+    control-plane contract suite.
 
 ## Set up a checkout
 
@@ -254,6 +257,41 @@ It runs three scripts in order:
 | 1 | `npm test` | Build, then `test/core/*.test.ts` and `packages/core/*/tests/unit/*.test.ts`. The script passes `--test-force-exit` so a finished run leaves the process even if a handle is still open; a failing test is still reported before that exit |
 | 2 | `npm run check` | `tsc --noEmit`, `markdownlint-cli2`, and version surfaces |
 | 3 | `npm run check:generated` | Generated artifacts are tracked and match the staged copy |
+
+Changes to the Python control plane also run its frozen-workspace contract
+suite before the npm gate. The suite drops and recreates `kxm_mg1_test`, so
+the admin DSN account needs database create and drop privilege. The `postgres`
+superuser in the container below is that account. Run PostgreSQL 17 in a
+disposable container published only on loopback `127.0.0.1:5432`, with
+`POSTGRES_PASSWORD=postgres`. Leave port `5432` on loopback free. Wait until
+`pg_isready` succeeds, export the two DSNs CI uses, run the frozen suite, and
+remove the container afterward:
+
+```bash
+docker rm -f kxm-mg1-pg >/dev/null 2>&1 || true
+docker run --detach --name kxm-mg1-pg \
+  --publish 127.0.0.1:5432:5432 \
+  --env POSTGRES_PASSWORD=postgres \
+  postgres:17
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  docker exec kxm-mg1-pg pg_isready -U postgres && break
+  sleep 1
+done
+docker exec kxm-mg1-pg pg_isready -U postgres
+export KXM_MG1_ADMIN_DSN='host=127.0.0.1 port=5432 dbname=postgres user=postgres password=postgres'
+export KXM_MG1_TEST_DSN='host=127.0.0.1 port=5432 dbname=kxm_mg1_test user=postgres password=postgres'
+uv run --project python --frozen python -m unittest discover -s python/kxm-control/tests
+suite_status=$?
+docker rm -f kxm-mg1-pg
+(exit "$suite_status")
+```
+
+The required CI aggregate repeats that suite against PostgreSQL 17 with the
+same two DSNs and the same `postgres` superuser. On the `kontextmind-doks`
+runners, `scripts/ci-postgres-17.sh` starts that server on `127.0.0.1:5432`
+from a pinned PostgreSQL 17 binary. Contributors use the `postgres:17`
+container procedure above, which publishes the same port and DSNs. The suite
+remains a CI lane rather than a third root gate script.
 
 Every suite script passes `--test-force-exit`, and `scripts/run-bounded.mjs` stops the run if the suite is still going after its wall-clock limit (20 minutes, or 40 for the complete and coverage suites). The bound is that wall clock per script. A per-test timeout is not used because under `node --test` each file is itself a test, so a per-test timeout also bounds each file.
 

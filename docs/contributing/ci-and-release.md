@@ -1,7 +1,8 @@
 # CI and release
 
-Pull requests run lint, typecheck, and the unit suite on Linux Node 24.
-Pushes to `main` also run that suite and the full OS × Node matrix.
+Pull requests run lint, typecheck, the Node unit suite on Linux Node 24, and
+the Python control-plane suite against PostgreSQL 17. Pushes to `main` also run
+the Node suite and the full OS × Node matrix.
 The complete suite with coverage floors runs nightly, every merge to `main`
 cuts a patch release, and every release is verified before it reaches npm.
 This page explains which checks run where, how a merge becomes a published
@@ -15,7 +16,7 @@ release and an npm publish; the nightly job adds the slower suites.
 
 ```mermaid
 flowchart LR
-  PR[Pull request] -->|"unit shards, docs lint, plugin validation"| REQ["CI / required"]
+  PR[Pull request] -->|"Node shards, Python/Postgres, docs lint, plugin validation"| REQ["CI / required"]
   REQ --> MERGE{Merged?}
   MERGE -->|yes| MAIN[main]
   MAIN -->|"unit shards plus validate:pr matrix"| PUSH[Push CI]
@@ -40,6 +41,7 @@ together.
 | Pull request, push to `main`, or manual | `ci.yml` (`required`) | Aggregates the lanes below into one pass/fail check named `CI / required` |
 | Pull request and push | `ci.yml` (Docs lint) | `lint:docs` and `check:versions`, always |
 | Code pull request and code push | `ci.yml` (Unit engine and Unit, Linux Node 24) | `engine.test.ts` split by test name; `permission.test.ts`, `runtime.test.ts`, and `package-install.test.ts` one file at a time; every other unit file in two light shards. Typecheck and `check-generated` run on `light-1` |
+| Code pull request and code push | `ci.yml` (Python control plane) | Python 3.13 `unittest` contracts from the frozen uv workspace against PostgreSQL 17 started by `scripts/ci-postgres-17.sh` |
 | Platform-sensitive pull request | `ci.yml` (Unit, Windows Node 24) | The same unit lanes on `windows-latest` |
 | Push to `main`, or manual | `ci.yml` (Validate matrix) | `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24; not on a pull request |
 | Code pull request and code push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin |
@@ -73,7 +75,8 @@ What moved off the pull-request lane, and what did not:
   runs `validate:pr` on Windows.
 - Coverage, `test/simulations`, and `npm pack --dry-run` stay in the nightly
   complete suite. They were not part of pull-request CI before this split.
-- Plugin validation still runs on code pull requests and code pushes.
+- Python control-plane validation and Plugin validation still run on code pull
+  requests and code pushes.
 
 Run `npm run verify` locally before every push. A nightly failure is a release
 blocker: it is the only place the simulation suite and coverage floors run.
@@ -82,8 +85,13 @@ blocker: it is the only place the simulation suite and coverage floors run.
 
 Code pull requests run Docs lint, two Linux Node 24 engine shards, a serial
 lane (`permission.test.ts`, then `runtime.test.ts`, then
-`package-install.test.ts`), two light shards for every other unit file, and
-Plugin validation. `light-1` typechecks and checks generated bundles.
+`package-install.test.ts`), two light shards for every other Node unit file,
+the Python 3.13 control-plane suite against PostgreSQL 17, and Plugin
+validation. The Python lane stays on `kontextmind-doks`. That scale set has
+no container-engine socket, so the job starts PostgreSQL 17 with
+`scripts/ci-postgres-17.sh` on `127.0.0.1:5432` and uses the same admin and
+test DSNs as the contributor procedure in [Develop KXM](development.md).
+`light-1` typechecks and checks generated bundles.
 `engine.test.ts` is split by test name because that file alone was 174
 seconds; the serial lane keeps the next longest files off the light pool,
 which was 268 seconds when every non-engine file shared one job.
@@ -165,9 +173,10 @@ workaround.
 The first job, Classify changes, lists the changed paths and sets `code=false`
 when every path matches `*.md` (including `plans/**/*.md`), `docs/**`,
 `.kxm/assets/**`, `LICENSE`, the issue and PR templates, or `dependabot.yml`.
-A non-markdown file under `plans/` is code. Unit lanes, Plugin validation,
-and the Validate matrix are skipped. Docs lint runs, and `CI / required`
-passes. `scripts/ci-classify.mjs` and `ci-contract.test.ts` pin this behavior.
+A non-markdown file under `plans/` is code. Unit lanes, the Python control-plane
+lane, Plugin validation, and the Validate matrix are skipped. Docs lint runs,
+and `CI / required` passes. `scripts/ci-classify.mjs` and
+`ci-contract.test.ts` pin this behavior.
 
 `platform=true` when a path is a package manifest, the lockfile, a file under
 `scripts/` or `.github/workflows/`, or a filename that names path, process,

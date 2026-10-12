@@ -1,0 +1,367 @@
+{
+  "schema": "kxm.evidence.v1",
+  "id": "python-migration-mg0",
+  "observedAt": "2026-09-25T18:00:00Z",
+  "gate": "MG0",
+  "gatePassed": true,
+  "sliceSelected": false,
+  "productionMutated": false,
+  "secretsRead": false,
+  "reason": "Restore into a temp clone matched run, command, and project ids and config hashes. Encrypted archive decrypts to the manifest digests. Live payloads were not copied.",
+  "sourceRevision": {
+    "repo": "kontextmind/kxm",
+    "head": "d90afc13cf13c87ac42482ab4dd23007b19bbe55",
+    "packageVersionField": "0.7.1",
+    "npmLatest": "0.7.115",
+    "npmLatestPublishedAt": "2026-09-25T07:33:15.898Z",
+    "githubTag": "v0.7.115",
+    "note": "Expected. release.yml runs kxm-bump-version.mjs from the tag in the publish job and does not commit that bump back. Git on main stays 0.7.1; the published CLI is the tag. The live box running 0.7.94 is behind npm latest 0.7.115, which is deploy lag, not a second version surface."
+  },
+  "deployment": {
+    "host": "kxm-dev-svr",
+    "reached": true,
+    "services": {
+      "kxm-hub.service": "active",
+      "kxm-runtime.service": "active",
+      "kxm-studio.service": "active",
+      "kxm-hub-nft.service": "active",
+      "kxm-hub-return-route.service": "inactive"
+    },
+    "systemdTimersMatchingKxm": [],
+    "installedCli": {
+      "version": "0.7.94",
+      "node": "v22.23.2",
+      "path": "/home/sysadmin/.local/share/pi-node/node-v22.23.2-linux-x64/lib/node_modules/@kontextmind/kxm",
+      "publishedAt": "2026-09-23T20:26:43.866Z"
+    },
+    "checkout": {
+      "path": "/home/sysadmin/source/kxm",
+      "branch": "ci/restore-windows-validate",
+      "head": "b95289e3171253920cd8537a3a2db6029cd8ce53",
+      "subject": "ci: restore Windows Validate legs on windows-latest",
+      "committedPackageVersion": "0.7.1",
+      "dirtyUntracked": [
+        ".kxm/agents/s5-witness.yaml",
+        ".kxm/backups/",
+        ".kxm/workflows/p0-wait.yaml",
+        ".kxm/workflows/s5-witness.yaml"
+      ],
+      "serverOriginMain": "07557e1ee8e67b5c06a94eab2a5b6f538a5802c0",
+      "commitsBehindServerOriginMain": 7,
+      "fetched": false,
+      "isGithubMain": false
+    },
+    "listen": {
+      "KXM_HOST_class": "wildcard",
+      "KXM_STATE_HOME_is_default": true,
+      "health": {
+        "ok": true,
+        "agents": 0
+      },
+      "readyHttp": 200
+    },
+    "python": "3.13.5",
+    "uv": "absent",
+    "correction": "The 2026-09-23 S5 note that this box is at current main does not hold on 2026-09-25."
+  },
+  "schemaVersions": {
+    "source": {
+      "hubStore": 5,
+      "registry": 1,
+      "eventStore": 7,
+      "externalEffects": 2,
+      "backupCeilings": {
+        "hub-store": 5,
+        "registry": 1,
+        "events": 7,
+        "binding-store": 1
+      }
+    },
+    "liveReadonlyUserVersion": {
+      "hubStore": 5,
+      "registry": 1,
+      "eventStore": 7,
+      "runtimeProjectCount": 1,
+      "projectKeyLength": 24,
+      "promptSidecarPresent": true
+    }
+  },
+  "sixRoots": {
+    "R": {
+      "path": "/home/sysadmin/source/kxm",
+      "present": true
+    },
+    "D": {
+      "path": "/home/sysadmin/source/kxm/.kxm",
+      "present": true
+    },
+    "W": {
+      "path": "/home/sysadmin/source/kxm/.kxm/state",
+      "present": true,
+      "hubDbPresent": true,
+      "workerFiles": 1,
+      "piSessions": false
+    },
+    "S": {
+      "path": "/home/sysadmin/.local/state/kxm",
+      "present": true,
+      "children": [
+        "hub-binding.json",
+        "hub-env.json",
+        "runtime"
+      ],
+      "updateYaml": false,
+      "projectsDir": false
+    },
+    "C": {
+      "path": "/home/sysadmin/.config/kxm",
+      "present": true,
+      "children": [
+        "session.token"
+      ]
+    },
+    "T": {
+      "path": "/home/sysadmin/.config/kxm/telemetry",
+      "present": false
+    }
+  },
+  "definitionPresence": {
+    "project.yaml": "present",
+    "config.yaml": "absent",
+    "gates.yaml": "present",
+    "prices.yaml": "present",
+    "roster.yaml": "present",
+    "routes.yaml": "present",
+    "role-hosts.yaml": "absent",
+    "memory": "absent",
+    "skills": "absent",
+    "goals": "absent",
+    "tasks": "dir",
+    "candidates": "absent",
+    "agents": "dir",
+    "models": "dir",
+    "workflows": "dir",
+    "roles": "dir",
+    "repo": "dir",
+    "contentsRead": false
+  },
+  "backup": {
+    "command": "kxm backup --dry-run --json",
+    "cliVersion": "0.7.115",
+    "wroteNothing": true,
+    "helpHasAllProjects": false,
+    "plannedBasenames": [
+      "kxm.db",
+      "manifest.json"
+    ],
+    "eventStoreInPlan": true,
+    "promptSidecarInPlan": false,
+    "registryInPlan": false,
+    "restoreWitness": true,
+    "servicesStopped": false
+  },
+  "consumers": {
+    "cli": {
+      "entry": "scripts/kxm.mjs",
+      "launches": "plugins/kxm/dist/cli.js via process.execPath"
+    },
+    "piExtension": {
+      "entry": "plugins/kxm/src/extension.ts",
+      "declaredIn": "package.json pi.extensions"
+    },
+    "mcp": {
+      "export": "./mcp",
+      "file": "plugins/kxm/dist/mcp-server.js",
+      "versionField": "plugins/kxm/src/mcp-server.ts VERSION 0.7.1"
+    },
+    "claudePlugin": {
+      "manifest": "plugins/kxm/.claude-plugin/plugin.json",
+      "version": "0.7.1",
+      "hook": "node ${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js session-start",
+      "mcpManifest": "plugins/kxm/.mcp.json"
+    },
+    "portal": {
+      "clone": "/Users/eddieflores/source/clients/kxmd-portal",
+      "head": "65a7772ac814a016d6c839b9af3a33df7ef0bfdd",
+      "branch": "main",
+      "invokesKxmBinary": false,
+      "calls": "HTTP /api/workspaces/<slug>/kxm*"
+    },
+    "vmPlatform": {
+      "clone": "/Users/eddieflores/source/clients/dev-vm-platform",
+      "head": "385bcc38405f8510d131973dfd69713ac09b37b5",
+      "branch": "feat/host-tenant",
+      "shallow": true,
+      "liveCaller": "ops/pilot/ws-api.py",
+      "guest": "qm guest exec, unqualified kxm",
+      "hostSlug": "sudo as sysadmin, cwd /home/sysadmin/source/kxm, pi-node PATH",
+      "drive": "always --simulated",
+      "runAndCancel": "live CLI",
+      "kxmVersionPin": null,
+      "deployedCopyVerified": false
+    }
+  },
+  "committedRoutes": {
+    "source": ".kxm/roster.yaml",
+    "liveFileRead": false,
+    "note": "Developer roster only. Product admission is routes.yaml and is wider. Live box files were not read.",
+    "routes": [
+      {
+        "id": "grok-native",
+        "harness": "grok",
+        "model": "grok-4.7",
+        "roles": [
+          "writer"
+        ],
+        "permission": "edit"
+      },
+      {
+        "id": "qwen-openrouter-pi",
+        "harness": "pi",
+        "model": "openrouter/qwen/qwen3-coder-plus",
+        "roles": [
+          "writer"
+        ],
+        "permission": "edit"
+      },
+      {
+        "id": "opus-claude",
+        "harness": "claude",
+        "model": "opus",
+        "roles": [
+          "planner",
+          "reviewer-arch"
+        ],
+        "permission": "read-only"
+      },
+      {
+        "id": "fable-claude",
+        "harness": "claude",
+        "model": "fable",
+        "roles": [
+          "planner",
+          "reviewer-arch"
+        ],
+        "permission": "read-only"
+      },
+      {
+        "id": "sol-codex",
+        "harness": "codex",
+        "model": "gpt-5.6-sol",
+        "roles": [
+          "reviewer-cli"
+        ],
+        "permission": "read-only"
+      }
+    ]
+  },
+  "productRoutes": {
+    "source": ".kxm/routes.yaml",
+    "schema": "kxm.routes.v2",
+    "liveFileRead": false,
+    "admitted": [
+      "anthropic/fable",
+      "google/gemini-3.8-flash-high",
+      "google/gemini-3.8-flash-medium",
+      "openai/gpt-5.6-sol",
+      "openrouter/qwen/qwen3-coder-plus",
+      "openrouter/qwen/qwen3.8-flash",
+      "openrouter/z-ai/glm-5.3-flash",
+      "qwen-token-plan/deepseek-v4.1-flash",
+      "qwen-token-plan/qwen3.8-flash",
+      "qwen-token-plan/qwen3.8-max",
+      "xai/grok-4.7",
+      "zai-coding-cn/glm-5.3",
+      "zai-coding-cn/glm-5.3-flash"
+    ],
+    "roles": {
+      "implementer": [
+        "xai/grok-4.7",
+        "openrouter/qwen/qwen3-coder-plus"
+      ],
+      "critic-arch": [
+        "anthropic/fable"
+      ],
+      "critic-cli": [
+        "openai/gpt-5.6-sol"
+      ]
+    }
+  },
+  "parityCorpus": {
+    "built": true,
+    "liveRequestsRead": false,
+    "reusableTests": [
+      {
+        "contract": "role packet",
+        "test": "arbitrate assembles role-aware packets deterministically",
+        "file": "test/core/arbiter.test.ts"
+      },
+      {
+        "contract": "route ceiling",
+        "test": "policy-draft fixtures admit grok-4.7 and reject grok-4.6",
+        "file": "test/core/policy-draft.test.ts"
+      },
+      {
+        "contract": "gate refusal",
+        "test": "workflow add templates validate and plan a run, and a gate outcome the step can never produce is refused",
+        "file": "test/core/cli-experience.test.ts"
+      },
+      {
+        "contract": "drive receipt",
+        "test": "openDriveSession records run.drive_opened and a verified terminal receipt before settled",
+        "file": "test/core/engine.test.ts"
+      },
+      {
+        "contract": "CLI exit and envelope",
+        "test": "error payloads carry a schema and land on stderr in JSON and text modes",
+        "file": "test/core/cli.test.ts"
+      },
+      {
+        "contract": "hub restart",
+        "test": "event loop automatically re-registers after an in-memory hub restart",
+        "file": "test/core/client.test.ts"
+      },
+      {
+        "contract": "SSE metadata",
+        "test": "admin ops SSE publishes project-scoped metadata without message bodies",
+        "file": "test/core/hub-api.test.ts"
+      },
+      {
+        "contract": "restore ceiling",
+        "test": "restore ceilings track every store's own schema version",
+        "file": "test/core/e6-backup-restore-migrations.test.ts"
+      }
+    ],
+    "missing": [
+      "redacted live requests",
+      "TypeScript/Python serialized wire fixtures",
+      "Pi RPC process-tree lifecycle corpus",
+      "deployed receipt-byte comparison"
+    ]
+  },
+  "unknown": [],
+  "witness": {
+    "backupId": "bk_2b3baede071420c3",
+    "restoreTarget": "/tmp/kxm-mg0-clone and /tmp/kxm-mg0-state",
+    "productionOverwritten": false,
+    "servicesStopped": false,
+    "runs": 3,
+    "commands": 3,
+    "driveReceipts": 0,
+    "idsMatch": true,
+    "projectsMatch": true,
+    "archive": "/home/sysadmin/kxm-upgrade-backups/mg0-2026-09-25.tar.gz.gpg",
+    "archiveKey": "Proton Pass kxmd / kxm-dev-svr / mg0-archive",
+    "corpus": "plans/evidence/python-migration-mg0-corpus.json"
+  },
+  "knownAbsences": [
+    "second physical box",
+    "host step-ca inactive; dvp-signer VM is running",
+    "telemetry root absent",
+    "config.yaml and role-hosts.yaml absent; not invented",
+    "guest 300 has no kxm on the default PATH",
+    "guest 310 qemu guest agent is not running",
+    "deployed portal checkout not found at the two paths checked",
+    "live service checkout left on ci/restore-windows-validate; origin/main fetched to d90afc1 and not checked out"
+  ]
+}

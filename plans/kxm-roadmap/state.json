@@ -12,10 +12,6 @@
   "contacts_comment": "The operator fills contacts. Do not invent contacts.",
   "history": [
     {
-      "date": "2026-09-26",
-      "line": "Lanes register under their project and the test suite is bounded (#339)."
-    },
-    {
       "date": "2026-09-27",
       "line": "Draft plan for bare kxm first-run, sequenced after role-authority P3-P7."
     },
@@ -58,6 +54,10 @@
     {
       "date": "2026-10-11",
       "line": "loop-dispatch completed: a live writer and both critics settled from verified drives, and the parent improvement report included all three lane attempts."
+    },
+    {
+      "date": "2026-10-11",
+      "line": "MG1 Python control-plane source is checked in without host or guest install changes. OpenAPI and the Studio path inventory come from FastAPI, and PostgreSQL-backed CI is required. Node and SQLite remain authoritative."
     }
   ],
   "architecture": {
@@ -76,16 +76,6 @@
         "claim": "the S3 test title in the tracker matches a test title in this checkout",
         "page": "docs/roadmap/phases/05-per-tenant-hosting.md",
         "status": "mismatch"
-      },
-      {
-        "claim": "plans/evidence/python-migration-mg0.json is in this checkout",
-        "page": "docs/roadmap/phases/03-python-migration.md",
-        "status": "missing"
-      },
-      {
-        "claim": "a python/ tree is in this checkout",
-        "page": "docs/roadmap/phases/03-python-migration.md",
-        "status": "missing"
       }
     ]
   },
@@ -272,23 +262,25 @@
       "goal": "Waves MG0 through MG8 from plans/plan-python-migration.md, with status taken from the tracker where the two disagree.",
       "source": "plans/plan-python-migration.md",
       "blockers": [],
-      "questions": [
-        "Plan frontmatter status is draft and blocked_by is empty. Tracking calls MG0 through MG8 a proposal that does not change deployment. MG0's witness is recorded in the implementation plan; its evidence JSON is not in this checkout. MG1's code gate is done off-repo and not on main: this checkout has no python/ tree."
-      ],
+      "questions": [],
       "tasks": [
         {
           "id": "py-mg0",
-          "title": "MG0 baseline and recovery witness recorded by the tracker",
+          "title": "MG0 baseline, recovery witness, and redacted corpus checked in",
           "status": "done",
-          "evidence": "plans/implementation-plan.md",
+          "evidence": "plans/evidence/python-migration-mg0.json",
+          "doneCriterion": "The baseline, restore witness, and redacted corpus are reproducible from checked-in evidence without exposing live credentials.",
+          "evidenceNeeded": "plans/evidence/python-migration-mg0.json and plans/evidence/python-migration-mg0-corpus.json",
           "template": "test-report",
           "detail": "ready"
         },
         {
           "id": "py-mg1",
-          "title": "MG1 code gate done off-repo, not on main",
+          "title": "MG1 Python foundation, registry, identity, and Studio contract checked in",
           "status": "done",
-          "evidence": "plans/implementation-plan.md",
+          "evidence": "python/kxm-control/tests/test_mg1.py",
+          "doneCriterion": "Wrong-tenant and caller-selected infrastructure are denied; a published revision round-trips; OpenAPI and the Studio path inventory match the FastAPI app and the checked generator emits the revision helper; only an owner or admin can rename a tenant; tokens require exp; registration removal leaves source state untouched and later registry calls return registration_unavailable. Host and guest install changes are outside this slice.",
+          "evidenceNeeded": "python/kxm-control/tests/test_mg1.py, test/core/studio-layout.test.ts, and the Python/PostgreSQL lane in .github/workflows/ci.yml",
           "template": "test-report",
           "detail": "ready"
         },

@@ -68,16 +68,15 @@ It does not replace the phase gates below.
 This file remains the only execution tracker and the authority for accepted
 decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
-- **Python successor proposal (2026-09-25):**
+- **Python successor proposal (2026-09-25; MG1 source checked in 2026-10-11):**
   [plan-python-migration.md](plan-python-migration.md) records the operator-requested
   conversion of KXM product services, runner and CLI to Python, alongside a central
   tenant/project control plane. Its MG0–MG8 waves are a proposal and do not change
-  the existing deployment or authorize a gate bypass. MG0's witness is recorded
-  below; its evidence JSON is not in this checkout. MG1's code gate is done
-  off-repo and not on main: this checkout has no `python/` tree. Select
-  implementation slices here before starting; at each accepted slice update any superseded TypeScript,
-  hosting, automation and package guidance in the same change. Browser Studio and
-  native provider executables retain their own languages.
+  the existing deployment or authorize a gate bypass. MG0 evidence and the bounded
+  MG1 foundation are now in this checkout; MG2–MG8 remain unselected. At each
+  accepted slice update any superseded TypeScript, hosting, automation and package
+  guidance in the same change. Browser Studio and native provider executables
+  retain their own languages, and the Node Runtime remains authoritative.
 
 - **Greenfield infra proposal (2026-09-25; first move installed the same day):**
   [plan-greenfield-infra.md](plan-greenfield-infra.md). One Postgres 17 and one
@@ -176,7 +175,8 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 - **Tool choice (2026-09-25).** Use the best tool for the job. Prefer Python
   when it is the better tool. Prefer Bun over npm when Bun can install or run
-  the package. A missing or stale install is reconciled by `kxm-control`.
+  the package. Host and guest install repair stays with the operator. The
+  checked-in `kxm-control` package does not change those installs.
 
 - **KXM group scopes (2026-09-25).** Every group starts with the tenant
   identifier. Slugs are not used, because they change. The product and
@@ -658,6 +658,23 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   Restoring conversion needs a written decision first (see the doc's closing section).
 
 ### Landed in this tree (unreleased)
+
+- **MG1 Python control-plane foundation is reproducible in this tree (2026-10-11).**
+  `python/kxm-control` is a Python 3.13 uv workspace with a fixed `kxmd`
+  Postgres/Temporal caller, RS256 Authentik user/runner verification, tenant
+  memberships, project/repository registration, revision publication, bounded
+  tenant artifacts, and platform-admin registration removal that does not touch
+  source state. Only a user can create a tenant; a runner needs an explicit
+  runner membership; only an owner or admin can rename a tenant. Authentik
+  tokens must include `exp`. The OpenAPI document and its path inventory are
+  derived from the FastAPI app. The checked generator emits the revision
+  helper. Studio relays `/api/control/account` with a three-second bound and
+  explicit unconfigured, unreachable, and invalid-response failures. After
+  registration removal, registry routes return `registration_unavailable`
+  until the schema is installed again. The package does not change host or
+  guest installs. The required CI aggregate includes the Python suite against
+  Postgres 17. This checks in the witnessed MG1 foundation; it does not select
+  MG2 or move the hub/Runtime write path from SQLite.
 
 - **Improvement reports read registered lane stores (2026-10-11; backlog S30).**
   `kxm improve report` and `kxm routing report` discover Runtime event stores
@@ -2757,10 +2774,9 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 ### Still open
 
 - **Python migration MG0 witness passed (2026-09-25).**
-  Evidence named by the record:
+  Evidence is checked in as
   [python-migration-mg0.json](evidence/python-migration-mg0.json)
   and [python-migration-mg0-corpus.json](evidence/python-migration-mg0-corpus.json).
-  Those JSON files are not in this checkout.
   Local `main` is `d90afc1`, already `origin/main`. Portal `main` was
   fast-forwarded to `0380a5f`. The live checkout on `kxm-dev-svr` was not
   switched; `origin/main` there was fetched to `d90afc1`. `kxm backup
@@ -2777,14 +2793,14 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   on `127.0.0.1:5432`. Temporal 1.32.0 listens on `127.0.0.1:7233`. Account
   `kxmd` has database `kxmd` and namespace `kxmd` (retention 168h). The
   product role cannot open the Temporal databases. KXM still writes SQLite.
-  MG1 code gate is done off-repo, not on main (recorded 2026-09-25). This
-  checkout has no `python/` tree. The off-repo record said `python/kxm-control`
-  was the uv workspace caller and API, that it resolved only database `kxmd`,
-  role `kxmd`, and namespace `kxmd`, that a request naming another account,
-  database, namespace, host, or Temporal target was denied, and that a
-  published-revision round trip and a regenerated Studio client passed.
-  Those paths (`python/kxm-control`, `python/kxm-control/generated/studio-client.ts`,
-  `python/kxm-control/contract/openapi.json`) are not files in this repository.
+  MG1 source and its code gate are now checked in under `python/kxm-control`
+  (2026-10-11). The uv workspace resolves only database `kxmd`, role `kxmd`,
+  and namespace `kxmd`; a request naming another account, database, namespace,
+  host, or Temporal target is denied. The published-revision round trip,
+  cross-tenant refusal, OpenAPI path inventory, emitted revision helper, and
+  registration-removal witness run in the required Python/Postgres CI lane.
+  This source import does not change host or guest installs and does not claim
+  a Python runtime cutover.
   The same record said `DROP SCHEMA kxm_registry` removes registration and
   does not touch source state, and that the schema was installed on the live
   `kxmd` database (tenants, memberships, projects, repositories, revisions). Object storage is the on-host directory

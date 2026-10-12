@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
+import { createServer } from "node:http";
 import { parse } from "yaml";
 import { compileKxmWorkflow } from "../../plugins/kxm/src/engine-compile.ts";
 import { generateStudioLayout, STUDIO_LAYOUT_SCHEMA, createStudioServer } from "../../plugins/kxm/src/studio-layout.ts";
@@ -813,5 +814,105 @@ test("studio mutate without a handler does not report a successful CLI mapping",
     assert.equal(body.error, "mutation_handler_missing");
   } finally {
     await server.close();
+  }
+});
+
+test("studio relays the control account from the configured control API", async () => {
+  let requestedPath: string | undefined;
+  const control = createServer((req, res) => {
+    requestedPath = req.url;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ account: "kxmd", database: "kxmd", namespace: "kxmd", role: "kxmd" }));
+  });
+  await new Promise<void>((resolve) => control.listen(0, "127.0.0.1", resolve));
+  const address = control.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("control test server did not bind a port");
+  }
+  const server = createStudioServer({ port: 0, controlUrl: `http://127.0.0.1:${address.port}` });
+
+  const port = await server.listen();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/control/account`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      account: "kxmd",
+      database: "kxmd",
+      namespace: "kxmd",
+      role: "kxmd",
+    });
+    assert.equal(requestedPath, "/v1/account");
+  } finally {
+    await server.close();
+    await new Promise<void>((resolve, reject) => control.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("studio rejects malformed or schema-invalid control-account responses", async () => {
+  let requestCount = 0;
+  const control = createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(requestCount++ === 0 ? "{" : JSON.stringify({ account: "other" }));
+  });
+  await new Promise<void>((resolve) => control.listen(0, "127.0.0.1", resolve));
+  const address = control.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("control test server did not bind a port");
+  }
+  const server = createStudioServer({ port: 0, controlUrl: `http://127.0.0.1:${address.port}` });
+  const port = await server.listen();
+  try {
+    for (let request = 0; request < 2; request++) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/control/account`);
+      assert.equal(response.status, 502);
+      assert.deepEqual(await response.json(), { ok: false, error: "control_response_invalid" });
+    }
+  } finally {
+    await server.close();
+    await new Promise<void>((resolve, reject) => control.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("studio aborts a nonresponding control account around the three-second deadline", async () => {
+  const control = createServer(() => {});
+  await new Promise<void>((resolve) => control.listen(0, "127.0.0.1", () => resolve()));
+  const address = control.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("control test server did not bind a port");
+  }
+  const server = createStudioServer({ port: 0, controlUrl: `http://127.0.0.1:${address.port}` });
+  const port = await server.listen();
+  const started = Date.now();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/control/account`);
+    const elapsed = Date.now() - started;
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { ok: false, error: "control_unreachable" });
+    assert.ok(elapsed >= 2_500 && elapsed < 5_000, `nonresponding upstream aborted in ${elapsed}ms`);
+  } finally {
+    await server.close();
+    await new Promise<void>((resolve, reject) => control.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("studio reports unavailable control-account sources without hanging", async () => {
+  const unconfigured = createStudioServer({ port: 0 });
+  const unconfiguredPort = await unconfigured.listen();
+  try {
+    const response = await fetch(`http://127.0.0.1:${unconfiguredPort}/api/control/account`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { ok: false, error: "control_unconfigured" });
+  } finally {
+    await unconfigured.close();
+  }
+
+  const unreachable = createStudioServer({ port: 0, controlUrl: "not a URL" });
+  const unreachablePort = await unreachable.listen();
+  try {
+    const response = await fetch(`http://127.0.0.1:${unreachablePort}/api/control/account`);
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { ok: false, error: "control_unreachable" });
+  } finally {
+    await unreachable.close();
   }
 });
