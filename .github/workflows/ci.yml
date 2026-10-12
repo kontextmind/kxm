@@ -240,21 +240,12 @@ jobs:
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: kontextmind-doks
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Start PostgreSQL 17
+        run: bash scripts/ci-postgres-17.sh
 
       - name: Use Node.js 24
         uses: actions/setup-node@v7
@@ -276,7 +267,10 @@ jobs:
         env:
           KXM_MG1_ADMIN_DSN: host=127.0.0.1 port=5432 dbname=postgres user=postgres password=postgres
           KXM_MG1_TEST_DSN: host=127.0.0.1 port=5432 dbname=kxm_mg1_test user=postgres password=postgres
-        run: uv run --project python --frozen python -m unittest discover -s python/kxm-control/tests
+        run: |
+          set -euo pipefail
+          bash scripts/ci-postgres-17.sh
+          uv run --project python --frozen python -m unittest discover -s python/kxm-control/tests
 
   plugin:
     name: Plugin validation

@@ -286,8 +286,12 @@ docker rm -f kxm-mg1-pg
 (exit "$suite_status")
 ```
 
-The required CI aggregate repeats that suite against PostgreSQL 17. It remains
-a CI lane rather than a third root gate script.
+The required CI aggregate repeats that suite against PostgreSQL 17 with the
+same two DSNs and the same `postgres` superuser. On the `kontextmind-doks`
+runners, `scripts/ci-postgres-17.sh` starts that server on `127.0.0.1:5432`
+from a pinned PostgreSQL 17 binary. Contributors use the `postgres:17`
+container procedure above, which publishes the same port and DSNs. The suite
+remains a CI lane rather than a third root gate script.
 
 Every suite script passes `--test-force-exit`, and `scripts/run-bounded.mjs` stops the run if the suite is still going after its wall-clock limit (20 minutes, or 40 for the complete and coverage suites). The bound is that wall clock per script. A per-test timeout is not used because under `node --test` each file is itself a test, so a per-test timeout also bounds each file.
 

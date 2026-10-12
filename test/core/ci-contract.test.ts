@@ -105,7 +105,7 @@ type CiJobs = Record<
     if?: unknown;
     "runs-on"?: unknown;
     "timeout-minutes"?: unknown;
-    steps?: Array<{ name?: string; if?: unknown; run?: string }>;
+    steps?: Array<{ name?: string; if?: unknown; run?: string; env?: Record<string, string> }>;
     needs?: unknown;
     services?: Record<string, { image?: string }>;
     strategy?: {
@@ -163,7 +163,7 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.equal(doc.jobs?.python?.name, "Python MG1 (linux, Python 3.13)");
   assert.equal(doc.jobs?.python?.["timeout-minutes"], 10);
   assert.equal(doc.jobs?.python?.if, "${{ needs.changes.outputs.code == 'true' }}");
-  assert.equal(doc.jobs?.python?.services?.postgres?.image, "postgres:17");
+  assert.equal(doc.jobs?.python?.services, undefined);
   assert.equal(doc.jobs?.plugin?.if, "${{ needs.changes.outputs.code == 'true' }}");
   assert.match(String(doc.jobs?.validate?.if), /github\.event_name != 'pull_request'/);
   assert.match(String(doc.jobs?.validate?.if), /needs\.changes\.outputs\.code == 'true'/);
@@ -211,9 +211,25 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.match(engineRuns, /npm run test:ci-shard -- engine \$\{\{ matrix\.shard \}\} 2/);
   const pythonSteps = doc.jobs?.python?.steps ?? [];
   const pythonRuns = pythonSteps.map((step) => step.run).join("\n");
+  assert.equal(pythonSteps.some((step) => step.name === "Start PostgreSQL 17"), true);
   assert.equal(pythonSteps.some((step) => step.name === "Use Python 3.13"), true);
   assert.equal(pythonSteps.some((step) => step.name === "Install uv"), true);
+  assert.match(pythonRuns, /bash scripts\/ci-postgres-17\.sh/);
   assert.match(pythonRuns, /uv run --project python --frozen python -m unittest discover -s python\/kxm-control\/tests/);
+  const pythonContracts = pythonSteps.find((step) => step.name === "Run Python control-plane contracts");
+  assert.equal(pythonContracts?.env?.KXM_MG1_ADMIN_DSN, "host=127.0.0.1 port=5432 dbname=postgres user=postgres password=postgres");
+  assert.equal(pythonContracts?.env?.KXM_MG1_TEST_DSN, "host=127.0.0.1 port=5432 dbname=kxm_mg1_test user=postgres password=postgres");
+  const postgresScript = readFileSync("scripts/ci-postgres-17.sh", "utf8");
+  assert.match(postgresScript, /version=17\.11\.0/);
+  assert.match(postgresScript, /sha256=b7a1ba6bae6499d8296e3e81b0171eecfd1766ca9aaa0057e41ad3e844e5e2e0/);
+  assert.match(postgresScript, /listen_addresses=127\.0\.0\.1/);
+  assert.match(postgresScript, /--set port=5432/);
+  assert.match(postgresScript, /server_version_num/);
+  assert.doesNotMatch(postgresScript, /\bdocker\b/i);
+  for (const job of Object.values(doc.jobs ?? {})) {
+    assert.equal(job.services, undefined);
+    assert.equal("container" in job, false);
+  }
   assert.equal(SHARD_TOTAL, 2);
   assert.equal(LIGHT_SHARD_TOTAL, 2);
 

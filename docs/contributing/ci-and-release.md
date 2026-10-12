@@ -41,7 +41,7 @@ together.
 | Pull request, push to `main`, or manual | `ci.yml` (`required`) | Aggregates the lanes below into one pass/fail check named `CI / required` |
 | Pull request and push | `ci.yml` (Docs lint) | `lint:docs` and `check:versions`, always |
 | Code pull request and code push | `ci.yml` (Unit engine and Unit, Linux Node 24) | `engine.test.ts` split by test name; `permission.test.ts`, `runtime.test.ts`, and `package-install.test.ts` one file at a time; every other unit file in two light shards. Typecheck and `check-generated` run on `light-1` |
-| Code pull request and code push | `ci.yml` (Python control plane) | Python 3.13 `unittest` contracts from the frozen uv workspace against PostgreSQL 17 |
+| Code pull request and code push | `ci.yml` (Python control plane) | Python 3.13 `unittest` contracts from the frozen uv workspace against PostgreSQL 17 started by `scripts/ci-postgres-17.sh` |
 | Platform-sensitive pull request | `ci.yml` (Unit, Windows Node 24) | The same unit lanes on `windows-latest` |
 | Push to `main`, or manual | `ci.yml` (Validate matrix) | `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24; not on a pull request |
 | Code pull request and code push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin |
@@ -87,7 +87,11 @@ Code pull requests run Docs lint, two Linux Node 24 engine shards, a serial
 lane (`permission.test.ts`, then `runtime.test.ts`, then
 `package-install.test.ts`), two light shards for every other Node unit file,
 the Python 3.13 control-plane suite against PostgreSQL 17, and Plugin
-validation. `light-1` typechecks and checks generated bundles.
+validation. The Python lane stays on `kontextmind-doks`. That scale set has
+no container-engine socket, so the job starts PostgreSQL 17 with
+`scripts/ci-postgres-17.sh` on `127.0.0.1:5432` and uses the same admin and
+test DSNs as the contributor procedure in [Develop KXM](development.md).
+`light-1` typechecks and checks generated bundles.
 `engine.test.ts` is split by test name because that file alone was 174
 seconds; the serial lane keeps the next longest files off the light pool,
 which was 268 seconds when every non-engine file shared one job.
