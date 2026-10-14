@@ -41853,6 +41853,9 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   if (term.startsWith("screen")) {
     return { images: null, trueColor: hasTrueColorHint, hyperlinks: false };
   }
+  if (termProgram === "herdr") {
+    return { images: null, trueColor: hasTrueColorHint, hyperlinks: true };
+  }
   if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
     return { images: "kitty", trueColor: true, hyperlinks: true };
   }
@@ -43008,6 +43011,10 @@ var Box = class {
   setBgFn(bgFn) {
     this.bgFn = bgFn;
   }
+  setPaddingX(paddingX) {
+    this.paddingX = paddingX;
+    this.invalidateCache();
+  }
   invalidateCache() {
     this.cache = void 0;
   }
@@ -43117,11 +43124,11 @@ var TUI_KEYBINDINGS = {
     description: "Move cursor word right"
   },
   "tui.editor.cursorLineStart": {
-    defaultKeys: ["home", "ctrl+home", "ctrl+a"],
+    defaultKeys: ["home", "ctrl+a"],
     description: "Move to line start"
   },
   "tui.editor.cursorLineEnd": {
-    defaultKeys: ["end", "ctrl+end", "ctrl+e"],
+    defaultKeys: ["end", "ctrl+e"],
     description: "Move to line end"
   },
   "tui.editor.jumpForward": {
@@ -43226,8 +43233,8 @@ var TUI_KEYBINDINGS = {
     defaultKeys: "escape",
     description: "Close transcript search"
   },
-  "tui.altScreen.top": { defaultKeys: "home", description: "Scroll viewport to top" },
-  "tui.altScreen.bottom": { defaultKeys: "end", description: "Scroll viewport to bottom" }
+  "tui.altScreen.top": { defaultKeys: "ctrl+home", description: "Scroll viewport to top" },
+  "tui.altScreen.bottom": { defaultKeys: "ctrl+end", description: "Scroll viewport to bottom" }
 };
 function normalizeKeys(keys) {
   if (keys === void 0)
@@ -43347,6 +43354,10 @@ var Text = class {
     this.cachedText = void 0;
     this.cachedWidth = void 0;
     this.cachedLines = void 0;
+  }
+  setPaddingX(paddingX) {
+    this.paddingX = paddingX;
+    this.invalidate();
   }
   invalidate() {
     this.cachedText = void 0;
@@ -44422,7 +44433,7 @@ var cjsRequire = createRequire4(import.meta.url);
 
 // node_modules/@earendil-works/pi-tui/dist/terminal.js
 var DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS = 7;
-var KITTY_KEYBOARD_PROTOCOL_QUERY = `\x1B[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u\x1B[?u\x1B[c`;
+var KITTY_KEYBOARD_PROTOCOL_QUERY = `\x1B[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u\x1B[?u`;
 
 // node_modules/@earendil-works/pi-tui/dist/alt-screen-search.js
 var segmenter2 = getGraphemeSegmenter();
@@ -45218,6 +45229,11 @@ var TuiAltScreen = class extends TuiBase {
     if (!text)
       return false;
     return this.copyTextToClipboard(text);
+  }
+  /** Drop the text selection and multi-click history, e.g. before the host replaces the transcript. */
+  resetTextSelection() {
+    this.clearTextSelection();
+    this.lastClick = void 0;
   }
   /** The lines of the last rendered frame, one per terminal row, as written to the terminal. */
   getScreenLines() {
