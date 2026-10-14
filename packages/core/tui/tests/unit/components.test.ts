@@ -260,6 +260,9 @@ test("mount: a terminal session quits through the panel and stops cleanly", asyn
     setProgress() {
       return undefined;
     },
+    setProgramStatus() {
+      return undefined;
+    },
   };
   const code = await runKxmTuiPanel({
     registry,
