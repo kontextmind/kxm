@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -106,6 +105,77 @@ function runHook(box: Sandbox, env: NodeJS.ProcessEnv, pluginRoot = PLUGIN_DIR, 
       resolveResult({ status, stdout, stderr, elapsedMs: Date.now() - started });
     });
     child.stdin.end(stdin);
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  if (!server.listening) return Promise.resolve();
+  server.closeAllConnections();
+  return new Promise((resolveClose) => {
+    server.close(() => resolveClose());
+  });
+}
+
+/** Another process must receive `/health` before the hook is spawned.
+ * On Windows, listen(0) can report success for a port svchost already holds
+ * with SO_REUSEADDR. Hyper-V excluded blocks sit in that same ephemeral
+ * range. The accept never completes, the hook's 300ms probe aborts, and
+ * the context says hub unknown. The check is a separate Node process,
+ * the same path the hook uses. */
+async function listenReachableStubHub(server: Server): Promise<string> {
+  let lastDetail = "stub hub did not answer";
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await closeServer(server);
+    try {
+      await new Promise<void>((resolveListen, reject) => {
+        const onError = (error: Error): void => {
+          server.off("error", onError);
+          reject(error);
+        };
+        server.once("error", onError);
+        server.listen(0, "127.0.0.1", () => {
+          server.off("error", onError);
+          resolveListen();
+        });
+      });
+    } catch (error) {
+      lastDetail = error instanceof Error ? error.message : String(error);
+      continue;
+    }
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      lastDetail = "stub hub did not bind a TCP port";
+      continue;
+    }
+    const url = `http://127.0.0.1:${address.port}`;
+    if (await stubHubAnswersFromChild(url)) return url;
+    lastDetail = `nothing answered ${url}/health from another process`;
+  }
+  throw new Error(lastDetail);
+}
+
+function stubHubAnswersFromChild(url: string): Promise<boolean> {
+  const probe = [
+    "fetch(process.argv[1] + '/health', { signal: AbortSignal.timeout(250) }).then(async (response) => {",
+    "  const body = await response.json();",
+    "  process.exit(response.ok && body.ok === true && typeof body.agents === 'number' ? 0 : 1);",
+    "}).catch(() => process.exit(1));",
+  ].join("\n");
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ["-e", probe, url], { stdio: "ignore", windowsHide: true });
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(false);
+    }, 800);
+    function finish(ok: boolean): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ok);
+    }
+    child.once("error", () => finish(false));
+    child.once("exit", (code) => finish(code === 0));
   });
 }
 
@@ -295,13 +365,12 @@ test("claude session-start hook probes the plugin server_url option", async () =
     response.writeHead(404).end();
   });
   try {
-    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const url = await listenReachableStubHub(server);
     const context = additionalContext(await runHook(box, hookEnv(box, { CLAUDE_PLUGIN_OPTION_SERVER_URL: url })));
     assert.ok(context.includes(`hub on at ${url}`), context);
     assert.doesNotMatch(context, /The KXM hub is/);
   } finally {
-    await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+    await closeServer(server);
     removeTempDir(box.root);
   }
 });
