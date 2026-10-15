@@ -297,7 +297,10 @@ test("claude session-start hook probes the plugin server_url option", async () =
   try {
     await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const context = additionalContext(await runHook(box, hookEnv(box, { CLAUDE_PLUGIN_OPTION_SERVER_URL: url })));
+    const probe = async () => additionalContext(await runHook(box, hookEnv(box, { CLAUDE_PLUGIN_OPTION_SERVER_URL: url })));
+    // The hook aborts the health probe after 300ms. A cold Windows runner can miss a live loopback server once.
+    let context = await probe();
+    if (!context.includes(`hub on at ${url}`)) context = await probe();
     assert.ok(context.includes(`hub on at ${url}`), context);
     assert.doesNotMatch(context, /The KXM hub is/);
   } finally {
