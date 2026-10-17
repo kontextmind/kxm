@@ -1,0 +1,79 @@
+## Outcome
+Replace writer #2 `pi-qwen3-coder-plus-openrouter` with `pi-qwen3-coder-next-openrouter` (model `openrouter/qwen/qwen3-coder-next`, vendor alibaba, permission edit, harness pi). Writer #1 and #3–#6 stay in their current order. The old route is retired, not deleted.
+
+**Why qwen3-coder-next:**
+- It is a Qwen model, so the OpenRouter route is allowed. Qwen has no native harness.
+- It is the closest successor to a coder-specialised model.
+- At 0.12 / 0.80 it is the cheapest candidate.
+- It has a flat price, so there is no long-context premium like qwen3.7-plus's 0.96 / 3.84 tier at 256000 tokens and above.
+- Its 262144 context is smaller than the alternatives. That is acceptable for edit-sized writer prompts.
+
+**Tool-support assumption (labeled):** the packet does not show `supported_parameters`. I assume `qwen3-coder-next` supports tools because it is a coder model. The writer must verify this against the live OpenRouter models API before admitting the route (see Risks and guards).
+
+**Fallback if tool support is not shown:** `qwen/qwen3.7-plus` is the second choice. It would need the same check, and the premium tier must be recorded.
+
+## Files
+- `.kxm/models/pi-qwen3-coder-next-openrouter.yaml`: schema `kxm.model.v2`, harness pi, vendor alibaba, permissions include edit. Add alias `qwen-next-openrouter-pi`.
+- Model inventory file: add the new id. This must come before the routes change.
+- Routes file: add the new route as admitted. Mark `pi-qwen3-coder-plus-openrouter` retired in a comment, remove it from the admitted list, and remove it from the writer roster so #2 is the new route. Keep the old alias out of the active lists.
+- Inventory: keep the old id with a retired comment. Do not reuse its alias.
+- `.kxm/prices.yaml`: add the `qwen/qwen3-coder-next` row at 0.12 / 0.80. Keep the `qwen/qwen3-coder-plus` row at its last list price. Update the date and sha256 together.
+- Writer roster definition (assignment runner): swap #2 only.
+- `plans/evidence/<date>-writer-2-qwen3-coder-next.md`: evidence note.
+
+## Tests
+- Roster-policy tests: update the hardcoded #2 id. Assert that #1 and #3–#6 are unchanged and in order (Argon high, Argon medium, Flash medium, Flash high).
+- Add a test that the retired route is not admitted and not on the roster.
+- Add a test that the new id exists in inventory before routes admit it. This should fail if the order is wrong.
+- Prices loader test: the sha256 and date match, and the old row is still present.
+- Brake test: no `moonshotai/*` route through Pi/OpenRouter.
+- Model file schema test: `kxm.model.v2`, vendor alibaba, edit permission.
+- Run `npm run verify`.
+
+## Docs
+Update every place that names writer #2 or `qwen3-coder-plus`:
+- harness-routing
+- config reference
+- CLI reference
+- assignment runner doc
+- glossary, only if it names the route
+- changelog
+- `plans/implementation-plan.md` Tracking (Decided and the relevant slice)
+- generated `dist`, only if a grep shows the string embedded. If it is, regenerate rather than hand-edit.
+
+Do not rewrite historical evidence or changelog entries that describe the old route as it was.
+
+## Risks and guards
+- **Tool support is unproven in the packet.** Before admission, the writer must check `supported_parameters` for tools in the live models API. If it is absent, do not admit. Fall back to the next candidate that shows tools, or leave #2 vacant with the gap recorded. Never admit on assumption alone.
+- **Moonshot `kimi-k2.7-code` is refused.** Moonshot has a native kimi harness, and billing a native vendor through Pi/OpenRouter is the brake case. It is the only candidate that falls under the brake.
+- **Meta `muse-spark-open` is not auto-admitted.** It is an admission question, and it is also the most expensive per token.
+- **Price pin:** the loader refuses a date or sha256 mismatch. Update both in the same commit and recompute the hash after the final edit.
+- **Order dependency:** inventory must contain the id before routes admit it.
+- **404 risk repeats:** record the verification date, 2026-10-17, in the evidence note.
+- **No dual names or alias for the retired route.** Old names fail closed.
+
+## Sequence
+1. Verify `qwen3-coder-next` live and tool-capable. Record the result in the evidence note.
+2. Add the model file.
+3. Add the inventory entry, with the retired comment on the old id.
+4. Add the prices row, then update the date and recompute the sha256.
+5. Update routes: admit the new route, retire the old one, update the roster.
+6. Update the tests.
+7. Update the docs, changelog and Tracking.
+8. Regenerate `dist` if needed.
+9. Run `npm run verify`.
+
+## Non-goals
+- Do not change writer #1, the planner, `reviewer-cli`, or `reviewer-arch`.
+- Do not reorder Argon or Flash.
+- Do not add a harness preferences overlay.
+- Do not delete the old price row.
+- Do not add a compatibility alias.
+- Do not run a side-by-side model comparison.
+
+## Open questions
+- Does `qwen/qwen3-coder-next` list tool support? The packet does not show `supported_parameters` for any candidate.
+- What is the exact evidence-note filename convention, and where do the inventory and routes files live?
+- What is the last list price of `qwen3-coder-plus`? It is not in the packet, so keep the row as it is.
+- Does effort stay medium for the new route? I assume yes.
+- Is a 262144 context enough for assignment prompts? This is unmeasured.

@@ -1,0 +1,79 @@
+## Outcome
+
+Status: the Runtime journal and retrospective are **blocked**. S5 is still open because its interactive browser login witness is outstanding. The delivery queue forbids any event-store or hub-store schema change in S0 through S5, and a Runtime journal needs a new store.
+
+Allowed now (no schema change, no new store):
+- A design note for the Runtime journal.
+- Tests that lock the current refusal, so the gap stays honest and cannot be papered over.
+- A tracking entry that names the gap, the trigger, and the owner.
+
+I would **not** land a store before S5 closes. I see no existing store version I can bump without breaking the queue rule. The packet gives no schema version numbers, and any new Runtime journal table is by definition a schema change. So the answer to "which version would I bump" is none.
+
+## Files
+
+- New: `docs/design/runtime-journal.md` (design note, marked "not implemented, blocked on S5").
+- Edit: `plans/implementation-plan.md` (Tracking → Still open). Record the gap, the trigger (S5 closes), and the owner (current writer route, planner planning).
+- Edit: the test file that covers the journal route. I can't name it without reading the repo, so the writer finds the existing `workflow_not_found` and journal-route test file.
+- Edit: the test file for the improvement report, to lock its webhook-only scope.
+- No changes to store, schema, migration, hub-route, or CLI source.
+
+## Tests
+
+Characterization tests only, with no new behavior:
+- `POST /v1/workflows/:id/journal` with a `kxm run` id returns `workflow_not_found`, and no journal row is written anywhere.
+- `kxm workflow record` and `kxm_workflow_record` with a Runtime run id fail closed with the same error, and the CLI exits non-zero.
+- A terminal Runtime run produces no retrospective export. Assert the absence, not a stub.
+- The improvement report's ranked signals include only hub webhook runs. A Runtime run with matching content contributes nothing.
+- A guard test fails if the schema version constants or table list change while S5 is open. Prefer an existing queue-rule check. If none exists, add a narrow snapshot of the schema surface, but only if that is cheap. Otherwise leave it to the open question below.
+- Existing webhook journal behavior is unchanged: all ten categories are accepted and a record is bound to a stage id.
+
+## Docs
+
+The design note covers:
+- The problem: hub and Runtime are different stores.
+- The decision: do not relabel Runtime runs as webhook runs and do not widen the existing route's lookup silently.
+- A proposed shape, kept to non-binding options:
+  - A Runtime-owned journal store, separate from the hub store.
+  - The same ten categories, with each record bound to a stage id.
+  - A retrospective export for terminal Runtime runs, reusing the webhook export format where it fits.
+  - Either a distinct route or an explicit run-kind discriminator, with a typed error for an unknown kind.
+- Promotion rules: no auto-promotion of skills or gates from telemetry, and no schema field for private handoff notes.
+- An explicit statement that the improvement report's scope stays webhook-only until the store exists, and that any extension is a separate, reviewed change.
+- The trigger and owner, copied from the packet.
+
+Update the Tracking text so the "Runtime runs have no journal" line points at the note and the refusal tests.
+
+## Risks and guards
+
+- Schema drift: no store, migration, or version edits. The tests above enforce this.
+- Relabeling: refuse any change that makes a Runtime run resolve through the webhook-run lookup.
+- Silent widening: the improvement report must not start mixing in Runtime runs without a deliberate decision.
+- Stub retrospectives: refuse to emit an empty or fake export for Runtime runs. Absence is the honest state.
+- Doc drift: the note must not say "shipped" or "planned for date X". It says "blocked on S5".
+- Wrong tests: the refusal tests describe today's behavior. When the store lands, the writer must update them deliberately, not delete them.
+- Cost: no model-driven work is needed. Verify with `npm run verify`.
+
+## Sequence
+
+1. Add the refusal and scope characterization tests. Confirm they pass against the current tree.
+2. Write the design note.
+3. Update Tracking in the implementation plan.
+4. Run `npm run verify`, then do the review round with both designated critics, as the process requires.
+5. Hold. When S5 closes, a later task designs the concrete store from the note, starting with a schema-version decision made with the real numbers in hand.
+
+## Non-goals
+
+- Any Runtime journal store, table, or migration.
+- Changes to the hub route, CLI, or MCP tool behavior.
+- Retrospective export for Runtime runs.
+- Improvement-report changes.
+- Auto-promotion of skills or gates.
+- A private-notes field.
+- Closing S5 or changing its witness requirements.
+
+## Open questions
+
+- What are the current event-store and hub-store schema version numbers? The packet does not say. They are needed only after S5 closes.
+- Is there already a test or gate that enforces "zero schema change in S0 through S5"? If so, reuse it instead of adding a snapshot guard.
+- Should the future Runtime journal use a new route or a run-kind discriminator on the existing one? Decide in the later task.
+- Where should the design note live under the repo's docs conventions? The writer should follow the existing docs lint rules.

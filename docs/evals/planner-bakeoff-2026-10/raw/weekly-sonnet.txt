@@ -1,0 +1,66 @@
+## Outcome
+A scheduled GitHub Actions workflow runs weekly. It fetches the public OpenRouter models API, refreshes the price catalog and the model inventory, and opens one pull request only when the bytes changed. A human reviews and merges it. The job never edits `routes.yaml`, never admits or disables routes, and never touches rosters.
+
+## Files
+- `.github/workflows/catalog-refresh.yml` (new).
+  - Triggers: `schedule` and `workflow_dispatch`.
+  - Schedule is a **choice, not a discovered fact**: Monday 06:00 UTC (`0 6 * * 1`).
+  - Permissions: `contents: write` and `pull-requests: write` only.
+  - Steps: checkout, install with `npm ci`, run the refresh script, and open a PR only if the diff is non-empty. There is no token for the OpenRouter fetch. The default `GITHUB_TOKEN` is used only for the PR.
+  - It must not be a required status check and must not call a model.
+- `scripts/catalog-refresh.*` (new). It is a deterministic orchestrator that does the following.
+  1. Fetch the public models endpoint. A 401 or 403 is a hard failure with the message "token required; refusing to proceed".
+  2. Build the new prices file, with the date and sha256 recomputed only when the model bytes differ.
+  3. Run `kxm models inventory-refresh --json`. Use the `--dry-run` result to compute the diff.
+  4. Run the guards.
+  5. Write the PR body from the diff.
+- `.kxm/prices.yaml` and `.kxm/models/inventory.yaml` are the only outputs the job may change.
+- A small, testable module for diffing (added, removed, repriced) and for rendering the PR body, so the logic is not buried in YAML.
+
+## Tests
+Put these under the Node unit suite (`npm test`) so existing PR CI picks them up. They use fixtures, not the network.
+- **Unchanged:** identical API fixture produces an empty diff, so no PR is requested and prices.yaml is byte-identical (date and sha unchanged).
+- **PR body:** added and removed ids appear by name, repriced ids show old and new values, and the body contains no env or secret values.
+- **CLI-only rows:** run with no `pi`, `grok`, or `agy` on PATH. Rows that came from those binaries must survive. Any deletion fails the run.
+- **Routes:** the job fails if `.kxm/routes.yaml` has any diff, and the script never invokes `routes admit` or `routes disable`.
+- **Price hash:** date and sha256 change together or not at all, and the loader still refuses a mismatch.
+- **Auth failure:** a 401 or 403 fixture fails closed.
+- **Workflow lint:** a test asserts the workflow has no secrets reference for the fetch, minimal permissions, and no model-calling step.
+
+## Docs
+- `docs/reference/harness-routing.md`: describe the weekly job, the stale-price behavior (`priceCatalogStale`), and that admission stays an operator action.
+- The contributing CI page: add the new workflow, its schedule marked as a choice, and a note that it is not required.
+- `CHANGELOG.md`: add an entry.
+- Run docs lint, because the repo has a docs brake.
+
+## Risks and guards
+- **CLI-only row loss:** the runner has no local harness binaries. Guard: the script merges refreshed OpenRouter and Nous rows into the existing file and never rewrites absent-source rows. Abort if the row count by source drops without a matching removal in the diff.
+- **Route drift:** after the refresh, assert that `routes.yaml` is unchanged. A new inventory id does not imply a route.
+- **Silent underquoting:** if the fetch fails or returns a suspiciously empty or short list, fail without writing. Never write a partial catalog.
+- **Duplicate PRs:** use a fixed branch name and update the existing PR instead of opening a second one.
+- **Secrets:** the PR body is built from ids and numbers only.
+- **Generated `dist`:** if any CLI source changes, `npm run verify` must stay green.
+- **Refuse to:** add a token, call a model, edit routes or rosters, auto-merge, or add a required check.
+
+## Sequence
+1. Write the diff and body module and its fixture tests first, and see them fail.
+2. Write the orchestrator with the guards.
+3. Add the workflow.
+4. Add the workflow lint test.
+5. Update the docs and the changelog.
+6. Run `npm run verify`, then do a `workflow_dispatch` dry run.
+
+## Non-goals
+- Auto-admission of routes, roster changes, or auto-merge.
+- Nous price fetching beyond what `inventory-refresh` already does.
+- A model-based review of the diff.
+- Changing the loader semantics or the schema.
+- Backfilling CLI harness discovery.
+
+## Open questions
+- Does `kxm models inventory-refresh` already preserve rows by source, or does the script need to enforce that?
+- Which Nous endpoint does the refresh use, and is it public?
+- Is `--dry-run` output stable enough to diff?
+- What is the exact shape of the OpenRouter price fields (units), and how does the `models` map in `prices.yaml` store them?
+- Does the repo's branch-protection setup let `GITHUB_TOKEN`-created PRs trigger CI? If not, a different mechanism is needed.
+- Where do the sha256 inputs come from: the canonical bytes, or the models block only?

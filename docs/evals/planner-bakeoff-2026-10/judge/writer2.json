@@ -1,0 +1,18 @@
+{
+  "planA": {
+    "correctness": 2,
+    "completeness": 4,
+    "risk": 2,
+    "sequencing": 2,
+    "conciseness": 3
+  },
+  "planB": {
+    "correctness": 3,
+    "completeness": 3,
+    "risk": 5,
+    "sequencing": 5,
+    "conciseness": 5
+  },
+  "winner": "B",
+  "rationale": "Both miss the shipped default, but B fails closed, checks tools before admission, and names qwen3.7-plus as the fallback. A is more exhaustive but sequences the critical tool check too late and makes a risky alias assumption."
+}

@@ -1,0 +1,63 @@
+## Outcome
+
+A weekly GitHub Actions job refreshes `.kxm/models/inventory.yaml` and `.kxm/prices.yaml` from the public OpenRouter models API (plus the Nous catalog the existing refresh already reads), and opens exactly one pull request only when the catalog bytes changed. The PR body lists added, removed, and repriced model ids. A human reviews and merges. The job never touches `.kxm/routes.yaml`, never admits or disables routes, never drops CLI-only inventory rows, and never changes writer/planner/reviewer rosters.
+
+## Files
+
+- `.github/workflows/catalog-refresh.yml` (new): weekly `schedule` plus `workflow_dispatch`; no secrets; `permissions: contents: write, pull-requests: write` only.
+- A deterministic refresh entry point reused by CI and locally, in the existing `kxm models` command module (exact path per repo layout): adds a `prices` refresh step beside `inventory-refresh`, computes the diff, and writes a PR-body markdown file.
+- A small diff/PR-body module (new, same package as the prices loader): compares old vs new `prices.yaml` and `inventory.yaml`, emits `added`, `removed`, `repriced` lists, and a boolean `changed`.
+- `.kxm/prices.yaml`, `.kxm/models/inventory.yaml`: changed only by the PR the job opens, never by the workflow definition itself.
+- `docs/reference/harness-routing.md`, the contributing CI page under `docs/contributing/`, `CHANGELOG.md`.
+- `plans/implementation-plan.md` Tracking: one line noting the weekly job exists and that it is not a route-admission path.
+
+## Tests
+
+Unit tests next to the existing prices-loader and inventory-refresh tests (same test runner, no network: fixture JSON for the OpenRouter response):
+
+- Unchanged catalog: refresh produces identical bytes, `changed=false`, `date` and `sha256` untouched, no PR body written.
+- Changed catalog: `date` and `sha256` both update, and only together; a test that mutates one without the other is rejected by the loader.
+- PR body names added ids and removed ids verbatim and lists repriced ids with old/new values; body contains no `OPENROUTER_API_KEY`-style strings (assert against a fixture environment with a planted fake secret).
+- CLI-only rows preserved: run the merge with `pi`, `grok`, and `agy` absent from `PATH`; assert those inventory rows survive byte-for-byte. A refresh that drops them must throw, not warn.
+- routes.yaml refusal: the refresh step is handed a fake filesystem; assert `.kxm/routes.yaml` is never opened for write and no roster field changes.
+- Token guard: if the OpenRouter response is 401/403 or demands auth, the step exits non-zero with a message that says a token would be required, rather than retrying with any env var.
+- Workflow lint: a test or docs-lint rule asserting the workflow file contains no `secrets.` reference other than the default `GITHUB_TOKEN` and no model-calling step.
+
+## Docs
+
+- `docs/reference/harness-routing.md`: new subsection "Weekly catalog refresh": what changes, what does not (routes, rosters), that stale prices still show in the routing report so operators check `date`, and how to run the same refresh locally with `--dry-run`.
+- Contributing CI page: add the job to the workflow table; state it is not a required status check and does not call a model; name the schedule as an operator choice.
+- `CHANGELOG.md`: one entry under unreleased.
+
+## Risks and guards
+
+- **Silent underquote**: if fetch fails or is partial, write nothing and exit non-zero; never write a `prices.yaml` with today's `date` over stale models.
+- **Hash drift**: compute `sha256` over the canonical serialized `models` block, then write `date` and hash in one atomic write; the loader already refuses mismatch.
+- **CLI-only row loss**: merge, do not replace; refuse if the post-merge inventory lacks any row that existed and is not sourced from OpenRouter/Nous.
+- **Accidental admission**: the job's write allowlist is exactly two files; any other diff fails the step.
+- **Token creep**: no `secrets.*` beyond `GITHUB_TOKEN`; fail closed with a clear message if the API ever requires auth.
+- **PR spam**: open one PR on a fixed branch name and update it if it already exists; no PR when `changed=false`.
+- **Auto-merge**: no `gh pr merge`, no `--auto`, no auto-approve.
+- I would refuse to: add a token to work around an auth wall, make the job a required check, let it edit `routes.yaml`, or widen rosters.
+
+## Sequence
+
+1. Diff module and PR-body renderer, with fixtures and tests.
+2. Prices refresh step with atomic date+hash write and CLI-only row preservation guard; tests.
+3. Workflow file; schedule choice: Monday 06:00 UTC (a choice, not a discovered fact); dry-run locally against fixtures.
+4. Docs and CHANGELOG; Tracking line.
+5. `npm run verify`; commit; push; one manual `workflow_dispatch` to confirm "no PR when unchanged".
+
+## Non-goals
+
+- Admitting, disabling, or ranking routes; editing rosters.
+- Nous Portal price fetching if it requires auth (inventory ids only, as today).
+- Changing the routing report's stale-price behavior.
+- Any model call in CI.
+
+## Open questions
+
+- Does the public OpenRouter models endpoint return pricing without a key for all models the inventory lists? If not, which are excluded and how is that surfaced in the PR body?
+- Exact field names in `prices.yaml` `models` entries for repricing comparison.
+- Whether PR creation should use `GITHUB_TOKEN` directly or an existing repo convention; `GITHUB_TOKEN`-opened PRs do not trigger PR CI, so the reviewer may need to re-run checks.
+- Whether the existing `inventory-refresh` already preserves CLI-only rows, or that guard must be added there too.

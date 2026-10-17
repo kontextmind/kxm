@@ -1,0 +1,74 @@
+## Outcome
+
+- `reviewer-cli` roster, permission read-only, becomes:
+  1. `codex-gpt-6-1-sol`, effort low — primary required CLI critic. Native harness `codex`, model `gpt-6.1-sol`, vendor openai, selector `openai/gpt-6.1-sol`.
+  2. `pi-qwen3-8-flash-openrouter`, effort low — different-vendor fallback (unchanged).
+  3. `codex-gpt-5-6-sol`, effort low — kept admitted as last fallback, not deleted.
+- `gpt-6.1-sol` exists in inventory (`kxm.model.v2`) before the routes change; `kxm routes admit` accepts it.
+- `.kxm/prices.yaml` gains one dated, re-pinned row for `gpt-6.1-sol` with `openai/gpt-6.1-sol-pro` as an alias on that row, not a second model.
+- Cost recording: ChatGPT `authMethod` → `costBasis: unmetered`, `priceRef: subscription:codex`; API-key login → `unknown`.
+- Architecture review stays `claude-fable` then a different-vendor Pi fallback. Two critics still required for acceptance.
+
+## Files
+
+- Model inventory file for `gpt-6.1-sol` (schema `kxm.model.v2`): id `gpt-6.1-sol`, vendor openai, harness `codex`, selector `openai/gpt-6.1-sol`, reasoning efforts `low|medium|high|xhigh|max`, ceiling `reviewer-cli`. No `pro` effort value.
+- `.kxm/routes.yaml` (`kxm.routes.v2`): add route `codex-gpt-6-1-sol`; reorder `reviewer-cli` roster as above; move the "required CLI critic" comment to the new primary; writer, planner, reviewer-arch rosters untouched.
+- `.kxm/prices.yaml`: add `gpt-6.1-sol` row — $2 in / $10 out per 1M through 272000 prompt tokens, then $4 / $15; cache read $0.10, cache write $2.50 both tiers; alias `openai/gpt-6.1-sol-pro`; update date and sha256 pin.
+- Any harness-run script hardcoding `gpt-5.6-sol` / `codex-gpt-5-6-sol` as the critic model: switch to the new id (locate by grep; names unknown from packet).
+- Roster policy tests (see below).
+
+## Tests
+
+- Roster policy test: `reviewer-cli` primary is `codex-gpt-6-1-sol`, effort low, permission read-only; `codex-gpt-5-6-sol` still admitted and last; position 2 is a non-openai vendor.
+- Route id derivation: `codex` + `gpt-6.1-sol` → `codex-gpt-6-1-sol` (dots → dashes).
+- Native-vendor brake: `openai-codex/gpt-6.1-sol` (Pi) and `openrouter openai/gpt-6.1-sol` and `openai/gpt-6.1-sol-pro` via OpenRouter are refused.
+- Ceiling: admitting `gpt-6.1-sol` to `reviewer-arch` fails; `reviewer-arch` primary remains `claude-fable`.
+- Effort validation: `pro` is rejected for the role; `low` accepted; one-shot shape resolves to `codex exec --json` with an effort flag.
+- Prices loader: new row loads with pinned hash; hash mismatch refuses; `openai/gpt-6.1-sol-pro` resolves to the same row/price; tier boundary at 272000 prompt tokens.
+- Cost basis: ChatGPT auth → `unmetered` + `subscription:codex`; API-key → `unknown`.
+- Acceptance gate: still requires both critics; single-critic result is triage only.
+- `kxm routes admit` ordering: refuses when the model is absent from inventory.
+- Docs brake test: no remaining `gpt-5.6-sol` described as "primary" CLI critic.
+
+## Docs
+
+Same change: `AGENTS.md` role table (Review row → "Codex gpt-6.1-sol"), `docs/reference/harness-routing.md`, `docs/reference/config-reference.md`, `docs/reference/cli-reference.md`, `docs/contributing/assignment-runner.md`, `docs/contributing/harness-routing-internals.md`, `CHANGELOG.md`, `plans/implementation-plan.md` Tracking → Decided (new admission, 5.6 demoted to last fallback, pro alias note, refused routes).
+
+## Risks and guards
+
+- Billing OpenAI through Pi (`openai-codex`) or OpenRouter: native-vendor brake stays fail-closed; test it.
+- Price hash mismatch silently underquoting: loader refuses mismatch; re-pin exactly once with the date.
+- Adding `gpt-6.1-sol-pro` as a second model: refuse; alias only.
+- Reasoning `pro` leaking into role effort: schema rejects it.
+- Codex logged out or API-key login: no fallback to Pi same vendor; next eligible is the different-vendor Qwen route; cost recorded `unknown` for API key, never `unmetered`.
+- Dropping or weakening the architecture critic: refuse; acceptance keeps both PASS records.
+- Deleting `codex-gpt-5-6-sol`: refuse; demote only.
+- Harness preferences overlay: refuse.
+- Order of operations: inventory before `kxm routes admit`, or admit fails.
+
+## Sequence
+
+1. Add `gpt-6.1-sol` to model inventory; verify with `kxm harness list` / `pi auth check` not needed (native codex).
+2. Add price row + alias; update date and sha256; run loader test.
+3. Add route via `kxm routes admit`; reorder `reviewer-cli`; keep 5.6 last.
+4. Update hardcoded critic model in harness-run scripts.
+5. Update roster policy tests and add new tests above.
+6. Update all listed docs, CHANGELOG, Tracking.
+7. `npm run verify`; confirm dist matches if CLI changed.
+8. Record admission decision in Tracking → Decided.
+
+## Non-goals
+
+- No change to writer, planner, or `reviewer-arch` rosters.
+- No pro architecture-review route; no `gpt-6.1-sol` on `reviewer-arch`.
+- No new model entry for pro; no OpenRouter/Pi OpenAI routes.
+- No effort change (stays low); no preferences overlay; no third verify gate.
+- No deletion of GPT-5.6 Sol.
+
+## Open questions
+
+- Exact filename/path of the model inventory file for `kxm.model.v2`.
+- Which harness-run script(s) hardcode the critic model.
+- Exact codex `exec` effort flag name (packet gives values, not the flag).
+- Whether `kxm routes admit` reorders rosters or ordering must be hand-edited in `routes.yaml`.
+- Whether `plans/kxm-roadmap/state.json` needs a row for this admission.

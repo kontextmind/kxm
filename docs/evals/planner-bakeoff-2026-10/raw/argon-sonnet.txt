@@ -1,0 +1,69 @@
+## Outcome
+- Admit one Argon route on the agy writer roster as a late fallback, using the pinned id `gemini-4-argon-medium`. This matches the roster's medium effort. The writer roster becomes: grok-grok-4-7, pi-qwen3-coder-plus-openrouter, agy-gemini-3-8-flash-high, agy-gemini-3-8-flash-medium, agy-gemini-4-argon-medium.
+- The writer primary stays grok-grok-4-7. Planner and architecture review stay claude-fable. Argon is not placed on those rosters. The docs may name it only as a possible later fallback.
+- `kxm init` defaults stay unchanged (grok-4.6 and fable).
+- Google traffic goes only through native agy. Nothing is routed through OpenRouter or the Pi provider.
+
+## Files
+- `.kxm/models/inventory.yaml`: add an inventory row for `agy-gemini-4-argon-medium`. It uses harness agy, vendor google, and the pinned model string.
+- `.kxm/models/agy-gemini-4-argon-medium.yaml` (kxm.model.v2): fields are harness, model, vendor, status, permissions. Copy the permission shape from the existing agy Flash model files. Do not grant more than those files do.
+- `.kxm/routes.yaml` (kxm.routes.v2): append the writer selector entry at the end, with effort medium. Use `kxm routes admit` for this, not a hand edit. It accepts only ids that are in the inventory.
+- `.kxm/prices.yaml` (kxm.prices.v1): add an Argon row with id, provider, model and tiers (inputPerMillion and outputPerMillion).
+  - Prices are $2 and $10 through 2026-11-30, and $4 and $20 after that.
+  - The row also carries the batch price ($1 and $5) and the context size (1,048,576).
+  - Re-pin the sha256. Bump the date.
+- Workforce roster source (where the writer rotation is declared, so the new model file is not orphaned): add the Argon id to it. The packet doesn't name this file, so the writer must locate it.
+- The inventory-refresh code under `kxm models`: make a refresh merge instead of replace, so CLI-only rows survive.
+- `plans/implementation-plan.md`: update Tracking in the same change. Do not touch earlier phases.
+
+## Tests
+- Roster policy test: assert the exact writer order above, with primary grok-grok-4-7 and effort medium.
+- Workforce lint test: an Argon model file on the roster passes, and an admitted model file on no roster fails.
+- Admit test: `kxm routes admit` rejects an id missing from the inventory and accepts the Argon id.
+- Prices loader test: the new hash loads, a mismatch is refused, and a row missing a required field is refused.
+- Inventory-refresh test: with pi, grok and agy absent, existing CLI-only rows, including the Argon row, are preserved.
+- Fail-closed test: with agy missing or logged out, the Argon route is refused. There is no fall-through to another vendor's key or to OpenRouter.
+- Brake test: no `openrouter/google…` or Google route via Pi is admitted.
+- Planner and review roster tests: Argon is absent from both.
+- Init template test: defaults are unchanged.
+- Run `npm run verify`.
+
+## Docs
+- `docs/reference/harness-routing.md`: update the writer rotation and describe Argon as the last-position agy fallback.
+- Config reference: update the roster listing.
+- Changelog: add an entry.
+- Mention the plan requirement (paid Google AI Pro, Ultra or Enterprise) and that `agy -p` exits when the pinned model is unavailable.
+- `plans/implementation-plan.md` Tracking: record the new roster.
+
+## Risks and guards
+- Argon needs a paid plan. If the account lacks it, `agy -p` exits and does not fall through. Treat that exit as a route failure and hand over to the next eligible authenticated model. Do not retry silently on a different vendor.
+- The price step on 2026-11-30 makes the dated pin stale. Record the effective-until date in the row or in the docs. A stale catalog must not silently underquote.
+- Do not pin a base `gemini-4-argon` plus an effort flag. The packet only supports the three pinned names, so use the pinned name.
+- If the refresh is a naive overwrite, it drops the Argon row on this machine.
+- Do not edit the hash by hand. Regenerate it.
+- Refuse these: a Google route through OpenRouter or Pi, a harness preferences overlay, declaring agy a long-lived worker, dual or alias names, and Argon on the planner or review rosters.
+
+## Sequence
+1. Fix the refresh merge behavior and its test first.
+2. Add the inventory row and the model file.
+3. Admit the route via `kxm routes admit` and place it on the roster.
+4. Add the price row and re-pin the hash.
+5. Update the roster policy and lint tests.
+6. Update the docs, the changelog and Tracking.
+7. Run `npm run verify`.
+8. The fixed witness and the dual critics (Fable and Sol) run afterward.
+
+## Non-goals
+- Adding the high or low Argon variants.
+- Putting Argon on the planner or review rosters.
+- Changing the writer primary or the init defaults.
+- Automatic failover scheduling.
+- Cost or quality ranking work.
+- Changes to the Pi or OpenRouter paths.
+
+## Open questions
+- Which file declares the workforce roster? The packet does not name it.
+- Should the roster use medium only, or also high? The packet fixes effort at medium, so this plan assumes medium only.
+- What permission set do the agy Flash model files use? It is assumed to be the writer permission set.
+- Does the price row have a field for the batch price, the context size and the step-up date? The packet does not say. If not, put them in docs, not in a new schema field.
+- Does this account hold a qualifying Google plan? The route is untested until agy is logged in.

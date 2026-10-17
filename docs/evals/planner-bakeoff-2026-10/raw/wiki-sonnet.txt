@@ -1,0 +1,79 @@
+## Outcome
+
+A small hand-written wiki lives under `.kxm/knowledge/`. It has an `index.md` and about eight short pages. The pages cover architecture, the routing decision, a glossary pointer, the CI pattern, release and failed-release runbooks, a model-route runbook, and a browser runbook. Each page opens with one line saying it is authored Markdown, a reviewable operator view, and not generated or authoritative. Pages link to the authoritative docs. Nothing selects wiki-compile or ingest, and there are no schema, CLI, script, CI, route, roster, or price changes.
+
+## Files
+
+New, under `.kxm/knowledge/`:
+- `index.md`: lists the pages in a table with a one-line purpose each. It states the authored status and that wiki-compile and wiki-lint are unselected.
+- `architecture-overview.md`: hub, local Runtime, SQLite at `.kxm/state/kxm.db`, single node, at-least-once delivery.
+- `decision-native-harness.md`:
+  - A provider's native harness wins when it is installed and logged in.
+  - Claude Fable plans and does architecture review.
+  - Grok writes.
+  - Codex reviews CLI and docs.
+  - Google goes through agy, not OpenRouter.
+  - Pi is for vendors with no native harness.
+  - Admissions live in Tracking and `kxm harness list`, not in this page.
+- `glossary-pointer.md`: a short summary of the key terms plus a link to `docs/glossary.md`. No new definitions.
+- `pattern-ci.md`: pull requests run docs lint, typecheck, Node unit tests, and the Python control-plane suite. `CI / required` is the aggregate check.
+- `runbook-release.md`: npm package `@kontextmind/kxm`, changelog, and pointers to existing release docs.
+- `runbook-failed-release.md`: triage steps at a high level, with no new commands.
+- `runbook-model-routes.md`: `kxm routes list`; admit and disable are reviewed; the `prices.yaml` hash must match.
+- `runbook-browser.md`: Obscura is the default Playwright browser. Steel is only for human takeover. No flags.
+
+Edited, one line each:
+- `docs/README.md`
+- the architecture index in docs
+- the context-and-memory guide
+- the config reference
+
+## Tests
+
+- No new tests. Run `npm run verify`, which includes `lint:docs`, the markdownlint gate.
+- Check that every relative link resolves. Run the existing docs link check if there is one.
+- Confirm the four doc links point only to `.kxm/knowledge/` and that nothing under `docs/` links into `plans/`.
+- Confirm that `.kxm/knowledge/` is not gitignored. Then confirm that markdownlint covers or deliberately excludes it, and that the docs brake against Mesh names passes on it.
+- Run a grep over the new pages for secrets, tokens, private hostnames, and "Mesh".
+
+## Docs
+
+- The four one-line links are the only edits to existing docs.
+- Add a changelog entry only if the changelog convention covers docs-only changes.
+- Do not edit `plans/implementation-plan.md`, since no phase gate changes.
+
+## Risks and guards
+
+- **Authority confusion:** a banner on every page and in the index says the pages are authored and non-authoritative. Link to the source docs rather than restating them.
+- **Drift:** the routing page must not list current admissions. It points to Tracking → Decided and `kxm harness list`, as AGENTS.md does.
+- **Wiki-compile collision:** the compiler writes to `.kxm/knowledge/wiki/`. Keep authored pages at the `.kxm/knowledge/` top level, not in `wiki/`, so a compile run cannot overwrite them. Also check whether any tool treats `.kxm/knowledge/` as generated output or cleans it.
+- **Glossary fork:** summarize only, and use glossary terms exactly.
+- **KontextMind confusion:** never describe the wiki as a KontextMind mind or km_ surface.
+- Refuse to add flags, commands, prices, model ids, or hostnames that are not in the packet or existing docs. Refuse to add `.kxm/memory` files or touch the compiler gaps.
+- Refuse to add dual or legacy product names.
+
+## Sequence
+
+1. Confirm that `.kxm/knowledge/` is tracked and that markdownlint, link checks, and the docs brake cover it. Record the answer.
+2. Write `index.md` and the architecture and glossary pages.
+3. Write the decision and CI pages.
+4. Write the four runbooks, taking details only from existing docs.
+5. Add the four one-line links.
+6. Run the secret and name grep, then `npm run verify`.
+7. Commit.
+
+## Non-goals
+
+- Running or fixing wiki-compile or wiki-lint.
+- Fixing the `.kxm/memory` lookup, the unreviewed-entry inclusion, or the temporal-state index path.
+- Wiki ingest or any hub schema change.
+- New npm scripts, CI jobs, or a release command.
+- Edits to routes, rosters, or prices.
+- Links from docs into plans.
+
+## Open questions
+
+- Are the `.kxm/` paths ignored by git, or by the markdownlint config? If so, which exception is needed?
+- Which existing doc is the architecture index, and which doc is the canonical release source?
+- Does the changelog require entries for docs-only changes?
+- Does the existing release doc have a failed-release procedure to link to, or must the page stay at the level of "stop and escalate to the operator"?

@@ -1,0 +1,30 @@
+# Task packet
+
+Product: KXM. Future work is not backwards-compatible. Brake old names; do not add dual product aliases.
+
+Role: planner. Permission is read-only. You plan; you do not edit routes in this exercise. The plan may say which files a later writer should change.
+
+Request: Plan admission of Gemini 4 Argon onto the agy writer roster. Argon is the only Gemini 4 model. The agy CLI pins it as gemini-4-argon-high, gemini-4-argon-medium, or gemini-4-argon-low (base gemini-4-argon with an effort flag). agy -p exits when a pinned model is not available. It does not fall through by itself. Argon requires a paid Google AI Pro, Ultra, or Enterprise plan.
+
+Current writer roster, in order, effort medium:
+1. grok-grok-4-7 (native grok, vendor xai)
+2. pi-qwen3-coder-plus-openrouter (Pi + OpenRouter, edit)
+3. agy-gemini-3-8-flash-high
+4. agy-gemini-3-8-flash-medium
+
+Routing rules you must keep:
+- Google is never billed through OpenRouter. The native harness for Gemini is agy.
+- If the native harness is missing or logged out, fail closed. Do not silently use another vendor's key.
+- Planner primary stays claude-fable. Architecture review stays claude-fable. This task does not put Argon on those rosters. Argon may be named only as a possible later fallback.
+- Writer primary stays grok-grok-4-7.
+- Product kxm init defaults stay grok-4.6 and fable. This checkout's writer roster is a separate developer roster from the init template.
+- An admitted model file that is on no roster fails workforce lint. A model file uses schema kxm.model.v2 with harness, model, vendor, status, permissions.
+- Route selectors live in .kxm/routes.yaml (schema kxm.routes.v2). kxm routes admit only accepts an id present in .kxm/models/inventory.yaml.
+- .kxm/prices.yaml is schema kxm.prices.v1, dated, sha256-pinned. The loader refuses a hash mismatch. A row needs id, provider, model, tiers with inputPerMillion and outputPerMillion.
+- List price given for this plan: Argon is $2 input and $10 output per 1M tokens through 2026-11-30, then $4 and $20. Batch is $1 and $5. Context is 1,048,576.
+- kxm models inventory-refresh reads OpenRouter and Nous. On this machine pi, grok, and agy may be absent, so a refresh must not drop existing CLI-only inventory rows.
+- When a roster or CLI name changes, update Tracking in plans/implementation-plan.md in the same change. Do not enlarge earlier phases.
+- Same-change docs that hardcode the writer rotation must move together: docs/reference/harness-routing.md, the config reference, changelog, and roster policy tests.
+- Do not add a harness preferences overlay. Do not declare agy a long-lived worker. agy is one-shot headless (agy -p).
+
+Deliver a plan a writer could implement without another architecture pass.

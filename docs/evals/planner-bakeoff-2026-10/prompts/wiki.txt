@@ -1,0 +1,27 @@
+# Task packet
+
+Product: KXM. KontextMind is the organization and a separate knowledge plane. Do not confuse them.
+
+Standing rule, unchanged by this task: wiki compile and wiki ingest stay unselected. `kxm context wiki-compile` and `kxm context wiki-lint` exist. The guide says the wiki is a reviewable Markdown view of the context pool, never the authoritative store, and the project's release policy defers it, so do not build a process on it. Compiled pages land under `.kxm/knowledge/wiki/` with sections architecture, decisions, incidents, patterns, plus temporal state, contradictions, superseded history, and index.md. That compiler is not what this task turns on.
+
+Known compiler gaps, not in scope to fix: the hub looks for `.kxm/memory` two directories above its database and misses authored memory with the default `.kxm/state/kxm.db` layout. The compiler includes unreviewed journal entries and pending proposals. The index links the temporal-state page at the wrong path.
+
+Request: Seed a small hand-written project knowledge wiki in this repository so operators can read current architecture, routing decisions, glossary, CI and release patterns, and a few runbooks. It is authored Markdown, not a run of wiki-compile. It must not select ingest, must not change hub schema, and must not claim the pages are generated authority.
+
+Content the seed should cover, from facts already true:
+- Architecture overview: hub, local Runtime, SQLite at `.kxm/state/kxm.db`, single node, at-least-once.
+- Decision: native harness wins. Claude Fable plans and does architecture review. Grok writes. Codex reviews CLI and docs. Google goes through agy, not OpenRouter. Pi is for vendors with no native harness.
+- Glossary pointers to docs/glossary.md. Do not fork a second conflicting glossary; summarize and link.
+- CI pattern: pull requests run docs lint, typecheck, Node unit tests, and a Python control-plane suite. `CI / required` is the aggregate check.
+- Release and failed-release runbooks at a high level: npm package `@kontextmind/kxm`, changelog, do not invent a new release command.
+- Model-route runbook: `kxm routes list`, admit and disable are reviewed, prices.yaml hash must match.
+- One runbook for the default Playwright browser, Obscura, and the rule that Steel is for human takeover. Do not invent flags.
+
+Constraints:
+- Put pages under `.kxm/knowledge/` and add an index. Link them from docs/README.md, the architecture index, the context-and-memory guide, and the config reference in one line each. Do not link from docs/ into plans/.
+- Pages use the glossary terms. No secrets, no hostnames of private boxes, no tokens.
+- Do not add an npm script or a CI job.
+- Do not edit routes, rosters, or prices.
+- A docs change still has to pass markdownlint. Follow the docs style: sentence-case titles, relative links, no Mesh product names.
+
+Deliver a plan a writer could implement without another architecture pass.

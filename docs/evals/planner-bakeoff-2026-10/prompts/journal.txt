@@ -1,0 +1,22 @@
+# Task packet
+
+Product: KXM. This item is still open. Nothing has shipped. The plan must say what is blocked now and what may be designed now.
+
+Recorded gap: Runtime runs have no journal or retrospective.
+
+Facts:
+- `kxm workflow record` and the tool `kxm_workflow_record` post to POST /v1/workflows/:id/journal.
+- That route looks the id up among the hub's webhook runs. A `kxm run` id answers workflow_not_found.
+- Terminal Runtime runs export no retrospective.
+- Ranked signals in the improvement report cover hub webhook runs only.
+- A Runtime journal needs a new store.
+- The delivery queue forbids a new event-store or hub-store schema change while S5 is open. S5 still has an open interactive browser login witness. Zero event-store or hub-store schema change in S0 through S5.
+- Owner when the trigger fires: the current writer route, with the planner role planning. Trigger: S5 closes and a Runtime journal store may be added.
+- Journal categories that already exist for hub webhook runs: plan, decision, contradiction, error, lesson, observation, hypothesis, experiment, state-change, skill-candidate. A record is bound to a stage id.
+- Do not auto-promote skills or gates from telemetry.
+- Do not add a schema field for private handoff notes.
+- Hub and Runtime are different stores. Do not relabel a Runtime run as a webhook run to make the existing route succeed.
+
+Request: Plan the smallest honest next step. Prefer a design note and tests that lock the current refusal, over a store that the queue forbids. If you believe a store can land before S5 closes, say which existing store version you would bump and why that does not break the queue rule. The packet does not name current schema version numbers; do not invent them.
+
+Deliver a plan a writer could implement without another architecture pass.

@@ -1,0 +1,95 @@
+## Outcome
+- `codex-gpt-6-1-sol` (harness `codex`, model `gpt-6.1-sol`, vendor `openai`, effort `low`, read-only) becomes the reviewer-cli primary.
+- `codex-gpt-5-6-sol` stays admitted as the last fallback. It is not deleted.
+- The Pi different-vendor fallback stays in the middle. It must remain a non-OpenAI vendor.
+- Final reviewer-cli roster:
+  1. `codex-gpt-6-1-sol`, low
+  2. `pi-qwen3-8-flash-openrouter`, low
+  3. `codex-gpt-5-6-sol`, low
+- The architecture reviewer, writer and planner rosters do not change.
+- GPT-6.1 Sol does not go onto `reviewer-arch`.
+
+## Files
+- Model inventory entry for `gpt-6.1-sol` (schema `kxm.model.v2`). It must exist before admission, and the selector is `openai/gpt-6.1-sol`.
+- `.kxm/routes.yaml` (schema `kxm.routes.v2`): admit the `codex-gpt-6-1-sol` route using `kxm routes admit`. Don't hand-edit if the command can do it.
+- `.kxm/prices.yaml`:
+  - Add the price row for `gpt-6.1-sol`.
+  - Use the list prices from the packet: $2 input and $10 output per 1M tokens through 272000 prompt tokens, then $4 and $15. Cache read is $0.10 and cache write is $2.50 on both tiers.
+  - Alias the pro id on the same row. Do not add a second model.
+  - Update the date and the sha256 pin together.
+- Reviewer-cli role definition (roster order and the "required CLI critic" comment).
+- Any harness-run script that hardcodes the critic model. Find it with a search for `gpt-5.6-sol` and `codex-gpt-5-6-sol`, then read the role roster instead of a literal if the script allows it.
+- Roster policy tests.
+
+## Tests
+- Roster policy test:
+  - Primary is `codex-gpt-6-1-sol`.
+  - The read-only permission is unchanged.
+  - Effort is `low`.
+  - Roster order is as above.
+  - A different-vendor Pi fallback is still present.
+  - `codex-gpt-5-6-sol` is still admitted as the last fallback.
+- Test that `reviewer-arch` contains no `gpt-6.1-sol` route, and that `claude-fable` is still its primary.
+- Admission brakes:
+  - `kxm routes admit` is refused when the model is absent from inventory.
+  - `openai-codex` Pi provider routes and `openrouter/openai/gpt-6.1-sol` are refused by the native-vendor brake.
+  - The pro mode is not accepted as a role effort value.
+- Prices:
+  - A hash mismatch is refused.
+  - The pro alias resolves to the same row.
+  - The tier boundary at 272000 prompt tokens prices correctly.
+- Cost basis:
+  - ChatGPT auth records `unmetered` with `priceRef` `subscription:codex`.
+  - API-key auth records `unknown`.
+- Codex one-shot command shape: `codex exec --json` with a mandatory effort, rejecting an empty or invalid value.
+- Docs lint and the version check. Finish with `npm run verify`.
+
+## Docs
+Update these in the same change:
+- `AGENTS.md` role table
+- `docs/reference/harness-routing.md`
+- `docs/reference/config-reference.md`
+- `docs/reference/cli-reference.md`
+- `docs/contributing/assignment-runner.md`
+- `docs/contributing/harness-routing-internals.md`
+- `CHANGELOG.md`
+- The `plans/implementation-plan.md` Tracking section (Decided entry for the admission, and the new primary)
+
+Wording must keep the rule that both critics are required for acceptance and a single critic is triage only.
+
+## Risks and guards
+- Billing through Pi or OpenRouter is refused. Keep the native-vendor brake and add the tests above.
+- A stale price hash must fail the loader. Never edit the row without re-pinning.
+- Pro is a reasoning mode, not a model and not a role effort. Refuse `pro` as an effort and refuse a separate pro route in the codex ceiling.
+- The codex ceiling is reviewer-cli only. Do not widen it.
+- An API-key login must not be recorded as unmetered.
+- Don't leave stale `gpt-5.6-sol` literals in scripts or docs that call it the primary.
+- Don't create dual naming or compatibility aliases for the old route.
+- Refuse to add a harness preferences overlay.
+- Refuse to drop or weaken the architecture critic.
+
+## Sequence
+1. Confirm `gpt-6.1-sol` is in inventory. If it isn't, refresh the inventory through the supported updater.
+2. Add the price row and alias, then re-pin the hash.
+3. Run `kxm routes admit` for the new route.
+4. Reorder the reviewer-cli roster.
+5. Update scripts that hardcode the critic.
+6. Write the tests first or alongside, and confirm they fail against the old roster.
+7. Update the docs, CHANGELOG and Tracking.
+8. Run `npm run verify`.
+9. Run the fixed witness, then get both critic PASS records before acceptance.
+
+## Non-goals
+- No change to the writer, planner or `reviewer-arch` rosters.
+- No pro architecture-review route.
+- No Pi or OpenRouter OpenAI route.
+- No effort change above `low` for this role.
+- No overlay, and no new schema fields.
+- No hosting or provider migration.
+
+## Open questions
+- Is the `gpt-6.1-sol` inventory entry already present, and which updater supplies it?
+- Does the Pi fallback stay second in the roster, or should the order between the Pi fallback and `codex-gpt-5-6-sol` be flipped? I assumed the Pi fallback stays second.
+- Are the packet's list prices complete enough to pin, or does the price feed need a dated source?
+- Which harness-run scripts hardcode the critic? The packet doesn't name them.
+- Is the model's comment text ("required CLI critic") carried over verbatim to the new primary?

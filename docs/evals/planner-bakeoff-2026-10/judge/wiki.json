@@ -1,0 +1,18 @@
+{
+  "planA": {
+    "correctness": 4,
+    "completeness": 3,
+    "risk": 5,
+    "sequencing": 5,
+    "conciseness": 4
+  },
+  "planB": {
+    "correctness": 3,
+    "completeness": 3,
+    "risk": 4,
+    "sequencing": 4,
+    "conciseness": 4
+  },
+  "winner": "A",
+  "rationale": "Plan A matches the shipped root location and avoids scope expansion, with strong safety checks and sequencing. Both plans omit several shipped pages and links, but Plan B adds an unshipped handbook directory and invents a browser flag."
+}

@@ -1,0 +1,73 @@
+## Outcome
+
+- Writer #2 becomes `pi-qwen3-coder-next-openrouter` (model `openrouter/qwen/qwen3-coder-next`, vendor alibaba, harness pi, permission edit, effort medium). Alias `qwen-openrouter-pi` moves to the new route.
+- Why this candidate: it is the direct successor to the retired coder route, the cheapest in the packet (0.12 / 0.80), Qwen is explicitly allowed through OpenRouter, and its 262144 context has no long-context premium tier to misquote. `qwen3.7-plus` is rejected for the 256000-token price step and higher base price; `qwen3-coder-flash` is the fallback if coder-next fails the tool-support check (see Open questions).
+- `pi-qwen3-coder-plus-openrouter` is retired, not deleted: off the admitted list and roster, price row kept, inventory and routes carry a retired comment.
+- Writer #1 and routes 3–6 unchanged, same order.
+
+## Files
+
+- New model file, `kxm.model.v2`, for `pi-qwen3-coder-next-openrouter` (same directory as the existing `pi-qwen3-coder-plus-openrouter` model file).
+- Inventory: add the new id; mark the old id `retired` with a dated comment (404 on 2026-10-17).
+- Routes / admitted list: remove old id, add new id with permission edit; retired comment on the old entry.
+- Writer roster, effort medium: replace position 2 only.
+- `.kxm/prices.yaml`: keep `qwen/qwen3-coder-plus` row at last list price with a retired note; add `qwen/qwen3-coder-next` 0.12 / 0.80, context 262144; bump date to 2026-10-17 and recompute sha256 in the same change.
+- `plans/evidence/` new note: OpenRouter 404 for the old slug, candidate table, price source date, selection rationale, tool-support verification result.
+- `plans/implementation-plan.md` Tracking → Decided: record the writer #2 swap and the brake reasoning.
+- Docs: harness-routing, config reference, CLI reference, assignment runner, glossary (only if it names the route), changelog.
+- `dist/`: regenerate only if a test or grep shows the old route id or slug embedded in a bundle.
+
+## Tests
+
+- Roster-policy tests: writer #2 expectations switch to the new id; assert the old id is absent from admitted and roster but present in inventory as retired.
+- Prices loader test: fixture with the new date/hash passes; a mismatched sha256 is refused.
+- Inventory-before-admit test: admitting an id not in inventory fails closed.
+- Brake test: `openrouter/moonshotai/...` as a writer is refused with the native-harness reason; a meta slug is refused as unadmitted.
+- Model-file schema test for the new file (v2, harness pi, vendor alibaba, edit present).
+- Docs brake / lint:docs: no doc still names `qwen3-coder-plus` as a live writer.
+- `npm run verify` after `npm ci`.
+
+## Docs
+
+- harness-routing: roster table row 2, retired-route note, pricing tier note (none for coder-next).
+- Config reference: prices.yaml example rows and the date/sha pin rule.
+- CLI reference: any example output showing writer #2.
+- Assignment runner: default writer rotation example.
+- Glossary: alias `qwen-openrouter-pi` target, if listed.
+- Changelog: "writer #2 replaced; old route retired, price history kept."
+
+## Risks and guards
+
+- Tool support unverified from this packet. Guard: the writer must run a real `pi auth check --provider openrouter` and a one-shot edit smoke on the new model before admitting; if the model cannot call tools, do not admit, fall back to `qwen3-coder-flash` under the same check.
+- Moonshot via OpenRouter is refused: kimi has a native harness, so this is the native-vendor-through-Pi case the brake exists for. Not selected.
+- Meta via OpenRouter is an admission question, not in scope; not selected.
+- prices.yaml hash drift: date and sha256 updated in the same commit; loader refuses mismatch, so verify runs it.
+- Ordering: inventory edit lands before routes admit, in the same change, so no intermediate state admits an unknown id.
+- History: no deletion of the old price row or inventory entry.
+- Refuse: editing writer #1, planner, reviewer-cli, reviewer-arch; reordering Argon/Flash; adding a harness preferences overlay; inventing supported_parameters or prices.
+
+## Sequence
+
+1. Evidence note under `plans/evidence/` with the 404 and candidate table.
+2. New model file; inventory add + retire old.
+3. prices.yaml rows, date, sha256.
+4. Routes/admitted + roster swap; alias move.
+5. Tests (roster, loader, brake, inventory, schema).
+6. Docs and changelog; Tracking entry.
+7. Tool-support smoke on the new route; fail closed if it cannot edit.
+8. `npm ci && npm run verify`; regenerate `dist` only if embedded strings changed.
+9. One commit per logical change (evidence/model, prices, routes+tests, docs).
+
+## Non-goals
+
+- No change to writer #1, critics, or Gemini positions.
+- No Meta or Moonshot admission.
+- No catalog feed, price refresh tooling, or routing report changes.
+- No alias compatibility shim for the old route id; it brakes.
+
+## Open questions
+
+- Does `qwen/qwen3-coder-next` advertise tool calling on OpenRouter (`supported_parameters` absent from packet)? Assumption labeled: yes; blocking if false.
+- Exact directory names for model files, inventory, routes, and roster-policy tests in this repo.
+- Does `dist` embed the roster or route ids?
+- Should the alias `qwen-openrouter-pi` follow the new route or be retired with the old one? Assumed: follows.
