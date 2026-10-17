@@ -19,6 +19,7 @@ a `default` workflow, `gates.yaml` and `template-provenance.yaml`.
 | `models/inventory.yaml` | The discovered model catalog | Generated; track it for a reviewed snapshot |
 | `config.yaml` | Shared personalization settings | Tracked if the project shares them |
 | `memory/` | Project memory facts that `kxm memory` projects into `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` | Tracked |
+| `knowledge/` | Authored project wiki. The hub-compiled view, when written, is `knowledge/wiki/` | Tracked |
 | `assets/` | Intentional workflow inputs and outputs; `assets/generated/` is for machine output | Tracked intentionally; `generated/` ignored |
 | `tasks/` | Task records from `kxm task` | Your choice |
 | `logs/` | Hub, worker and agent logs | Ignored |

@@ -230,6 +230,8 @@ kxm context wiki-lint demo
 
 Pages land under `.kxm/knowledge/wiki/`: one page per section (`architecture`, `decisions`, `incidents`, `patterns`), a temporal-state page that keeps superseded values visible, a contradictions page, a superseded-history page and `index.md`. Every claim links its record id and source. Compilation never resolves a contradiction. Output is deterministic except the timestamp in `index.md`, so diffs stay small. `wiki-lint` checks for broken references, orphan pages, stale state links and hidden contradictions, and exits 1 on an error.
 
+This repository also keeps an authored project wiki at [`.kxm/knowledge/`](../../.kxm/knowledge/index.md). Those pages are maintainer notes with file-path sources. `kxm context wiki-compile` does not read them. With `--out`, the compiled view is still written under `.kxm/knowledge/wiki/`.
+
 ## Author Git memory
 
 Git memory is the durable, reviewed layer: facts a person has approved, versioned with the code. Each fact is a Markdown file with `kxm.memory.v1` front matter.

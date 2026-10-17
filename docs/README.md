@@ -110,6 +110,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 |---|---|---|
 | [Develop KXM](contributing/development.md) | Contributors | Setup, build and verify, packaging, and the repository layout |
 | [CI and release](contributing/ci-and-release.md) | Maintainers | What CI runs on each change and how releases ship |
+| [Project knowledge wiki](../.kxm/knowledge/index.md) | Maintainers | Authored notes on architecture, routing, release, and CI, with file-path sources |
 | [Write KXM documentation](contributing/writing-docs.md) | Contributors | The style rules, the page template and the docs checks |
 | [Test matrix](contributing/test-matrix.md) | Maintainers | Features and use cases mapped to automated evidence |
 | [Assignment runner](contributing/assignment-runner.md) | Maintainers | Developer assignments, witness verification and dual-critic acceptance |
