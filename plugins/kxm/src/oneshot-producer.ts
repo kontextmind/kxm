@@ -270,7 +270,7 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
   ): { provider: string; model: string; thinking?: string | undefined } {
     if (request.model) {
       // A separate provider field means the model id is bare and may itself be
-      // namespaced (openrouter + qwen/qwen3-coder-plus); reparsing it as a
+      // namespaced (openrouter + qwen/qwen3.7-plus); reparsing it as a
       // provider/model selector strips the namespace — the same defect #262 fixed
       // in the pi producer. Only parse when the provider must come from the string.
       if (request.provider) {
@@ -401,7 +401,7 @@ export function createKxmOneShotProducer(options: KxmOneShotProducerOptions = {}
         // pi's model flag takes the provider-qualified id — exactly the auth probe's
         // rule (#265): prefix with the provider unless the model already starts with it.
         // A bare "contains a slash" test is wrong for provider-local namespaces
-        // (openrouter + qwen/qwen3-coder-plus must spawn as the full three-part id).
+        // (openrouter + qwen/qwen3.7-plus must spawn as the full three-part id).
         const qualified = resolved.provider && resolved.model.startsWith(`${resolved.provider}/`)
           ? resolved.model
           : resolved.provider ? `${resolved.provider}/${resolved.model}` : resolved.model;

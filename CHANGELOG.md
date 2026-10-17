@@ -216,6 +216,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Writer #2 is OpenRouter Qwen3.7 Plus.** `pi-qwen3-7-plus-openrouter`
+  (`openrouter/qwen/qwen3.7-plus`) replaces `pi-qwen3-coder-plus-openrouter`.
+  OpenRouter no longer lists `qwen/qwen3-coder-plus`. The live catalog on
+  2026-10-17 prices Qwen3.7 Plus at $0.32 input and $1.28 output per 1M
+  tokens, with a 1,000,000-token context and tool support. The old model
+  file stays `status: retired`, off every roster, and `qwen-openrouter-pi`
+  no longer resolves. `.kxm/prices.yaml` keeps the last Coder Plus row and
+  adds the Qwen3.7 Plus base tier. The dev helper's only Pi writer is
+  `openrouter/qwen/qwen3.7-plus`.
 - **The CLI critic is Codex GPT-6.1 Sol.** `codex-gpt-6-1-sol` is the
   `reviewer-cli` primary (`codex` / `gpt-6.1-sol`, effort `low`).
   `pi-qwen3-8-flash-openrouter` stays the other-vendor fallback, and

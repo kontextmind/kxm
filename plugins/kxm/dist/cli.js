@@ -18541,9 +18541,14 @@ function lintWorkforce(root) {
     if (!expected || model.id !== expected) {
       push(errors, "error", "route_id_convention", `.kxm/models/${model.id}.yaml`, `route id '${model.id}' must be '${expected ?? "<harness>-<model-slug>[-<provider>]"}'`);
     }
-    if (!used.has(model.id)) {
+    const retired = doc.status === "retired";
+    if (retired && used.has(model.id)) {
+      push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `retired route '${model.id}' is still on a role roster`);
+    }
+    if (!retired && !used.has(model.id)) {
       push(errors, "error", "route_unused", `.kxm/models/${model.id}.yaml`, `route '${model.id}' is not on any role roster`);
     }
+    if (retired) continue;
     const selectorHit = selectorsFor(doc).find((selector) => admitted.includes(selector));
     if (!selectorHit) {
       push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `model '${doc.model ?? ""}' is not an admitted selector`);
@@ -18614,7 +18619,6 @@ var init_workforce_names = __esm({
     ]);
     ROUTE_RENAMES = Object.freeze([
       ["grok-native", "grok-grok-4-7"],
-      ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
       ["gemini-agy", "agy-gemini-4-argon-high"],
       ["fable-claude", "claude-fable"],
       // sol-codex stays the GPT-5.6 route. codex-gpt-6-1-sol is a separate route.
@@ -56721,7 +56725,7 @@ var ADMITTED_GUIDE_BINDINGS = Object.freeze({
   "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
   "x-ai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
   "xai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
-  "qwen/qwen3-coder-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" }
+  "qwen/qwen3.7-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3.7-plus" }
 });
 var GUIDE_WORKFLOWS = [
   {
@@ -56752,7 +56756,7 @@ var GUIDE_WORKFLOWS = [
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-fable-5.1" }
         ]
       },
@@ -56764,7 +56768,7 @@ var GUIDE_WORKFLOWS = [
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
           { vendor: "mistralai", model: "devstral-2512" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" }
         ]
@@ -56776,7 +56780,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Implements domain entities, SQL queries/migrations, ORM persistence, concurrency primitives, and transactional boundaries.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" }
@@ -56803,7 +56807,7 @@ var GUIDE_WORKFLOWS = [
         candidates: [
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" }
         ]
@@ -56930,7 +56934,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Generates declarative Terraform/OpenTofu, Pulumi, Kubernetes CRDs, and VPC networking definitions.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "google", model: "gemini-3.8-flash" },
           { vendor: "mistralai", model: "devstral-2512" }
@@ -56990,7 +56994,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Authors concise, accurate developer and operator documentation with clear terminology, correct command flags, and consistent formatting without marketing drift.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-sonnet-5" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" }
@@ -57095,11 +57099,11 @@ function workflowDocument(workflow) {
   };
 }
 var GUIDE_PI_EVIDENCE_SOURCE = "plans/evidence/route-guide-qwen-pi.md";
-var GUIDE_PI_EVIDENCE_SHA256 = "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759";
+var GUIDE_PI_EVIDENCE_SHA256 = "8a24a7dc6db416df2153cfec7bccf1a4462f838e35c4e6707dc421ca84cf069b";
 var GUIDE_PI_NOTE = {
   harness: "pi",
   vendor: "openrouter",
-  model: "qwen/qwen3-coder-plus",
+  model: "qwen/qwen3.7-plus",
   reason: "Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup.",
   provingCommand: "pi auth check --provider openrouter"
 };
@@ -58101,7 +58105,7 @@ async function cmdRoutingReport(runtime, options) {
 }
 async function cmdRoutingBenchmark(runtime, options) {
   const task = options.task || "Deterministic benchmark task";
-  const armsStr = options.arms || "grok/grok-4.6,claude/fable,pi/qwen3-coder-plus";
+  const armsStr = options.arms || "grok/grok-4.6,claude/fable,pi/qwen3.7-plus";
   const armsList = armsStr.split(",").map((s) => s.trim()).filter(Boolean);
   const runsCount = Math.max(1, parseInt(options.runs || "1", 10) || 1);
   const arms = armsList.map((arm) => {

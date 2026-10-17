@@ -136,6 +136,16 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 
 ### Decided
 
+- **Writer relief route (2026-10-17).** Writer #2 moves from
+  `pi-qwen3-coder-plus-openrouter` (`openrouter/qwen/qwen3-coder-plus`) to
+  `pi-qwen3-7-plus-openrouter` (`openrouter/qwen/qwen3.7-plus`). OpenRouter
+  retired `qwen/qwen3-coder-plus` (the catalog returns 404). The replacement
+  was read from `https://openrouter.ai/api/v1/models` on 2026-10-17: $0.32
+  input and $1.28 output per million tokens, context length 1,000,000, and
+  `tools` in `supported_parameters`. The old model file stays with
+  `status: retired`, off every roster, and its alias `qwen-openrouter-pi` is
+  removed. The last list-price row stays in `.kxm/prices.yaml`.
+  `PI_ADMITTED_WRITER` is `openrouter/qwen/qwen3.7-plus`.
 - **CLI critic is Codex GPT-6.1 Sol (2026-10-17).** Eddie approved the
   switch. `codex-gpt-6-1-sol` (`codex` / `gpt-6.1-sol`, vendor `openai`,
   admitted, read-only, effort `low`) is the `reviewer-cli` primary.
@@ -513,9 +523,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   native completion. Do not declare Codex and Grok interchangeable in
   harness-run role mapping. Operator update (2026-09-07): after failed or
   exhausted attempts, immediately try the next suggested eligible authenticated
-  model. OpenRouter Qwen `qwen/qwen3-coder-plus` is narrowly admitted as a Pi
+  model. OpenRouter Qwen `qwen/qwen3.7-plus` is narrowly admitted as a Pi
   writer with exact model auth and edit permission; it has no supported native
-  route here. Nous Research Portal is a second Pi helper provider
+  route here. `qwen/qwen3-coder-plus` left that role on 2026-10-17 (catalog 404).
+  Nous Research Portal is a second Pi helper provider
   (`nous-portal/*` after `@jayteelabs/pi-nous-portal-provider` and
   `pi auth check --provider nous-portal`); `nous-portal/tencent/hy4-preview`
   is the reviewed experiment example, not a second writer. Other model
@@ -2345,8 +2356,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - **Pi helper Nous Portal prefix (dev helper, not Phase 11):**
   `scripts/harness-run.mjs` allowlists `openrouter/*` and `nous-portal/*`.
   Auth is `pi auth check --provider openrouter|nous-portal`. Native-provider
-  Pi brake is unchanged. Writer remains exact
+  Pi brake is unchanged. At this slice the writer was exact
   `openrouter/qwen/qwen3-coder-plus` with edit and JSON readiness proof.
+  Tracking → Decided (2026-10-17) replaces that selector with
+  `openrouter/qwen/qwen3.7-plus`.
   `nous-portal/tencent/hy4-preview` is experiment/read-only (experiment may
   edit); it is not a second writer. Install
   `npm:@jayteelabs/pi-nous-portal-provider`; there is no Nous harness CLI.

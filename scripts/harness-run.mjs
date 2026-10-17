@@ -88,7 +88,7 @@ export const PI_ANTIGRAVITY_MODEL_ID = /^gemini-[a-z0-9.-]+$/;
 export const PI_NOUS_PORTAL_HY4 = "nous-portal/tencent/hy4-preview";
 
 /** Narrowly admitted Pi writer. Other Pi models need reviewed route admission. */
-export const PI_ADMITTED_WRITER = "openrouter/qwen/qwen3-coder-plus";
+export const PI_ADMITTED_WRITER = "openrouter/qwen/qwen3.7-plus";
 
 const REQUEST_KEYS = Object.freeze([
   "schema",
@@ -1555,7 +1555,7 @@ export function preflightRequest(request) {
       }
     }
     if (request.role === "writer" && (request.model !== PI_ADMITTED_WRITER || request.permission !== "edit")) {
-      throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3-coder-plus with edit permission; other models need reviewed route admission");
+      throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3.7-plus with edit permission; other models need reviewed route admission");
     }
     const segment = piProviderOf(piModelId(request.model));
     const vendor = segment && Object.hasOwn(PI_VENDOR_SEGMENT_ALIASES, segment) ? PI_VENDOR_SEGMENT_ALIASES[segment] : segment;

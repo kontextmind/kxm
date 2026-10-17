@@ -10,7 +10,7 @@ description: Primary implementation agent.
 roster:
   - route: grok-grok-4-7
     effort: medium
-  - route: pi-qwen3-coder-plus-openrouter
+  - route: pi-qwen3-7-plus-openrouter
     effort: medium
   - route: agy-gemini-4-argon-high
     effort: medium

@@ -97,7 +97,7 @@ optional `NOUS_PORTAL_BASE_URL` / `NOUS_INFERENCE_BASE_URL`). Example:
 `pi -p nous-portal -m tencent/hy4-preview`). Verify Hy4 availability and
 list prices on Portal `/models` (publicly cited Portal ~$0.67/$2.00, 20%
 off OpenRouter list ~$0.83/$2.50). Hy4 is experiment-only in this helper;
-the only admitted Pi writer is `openrouter/qwen/qwen3-coder-plus`.
+the only admitted Pi writer is `openrouter/qwen/qwen3.7-plus`.
 Native-lab prefixes (`anthropic`, `openai`, `xai`, `moonshot`, `google`,
 `deepseek`) fail closed on Pi. If the native harness is missing or logged
 out, fail closed — never silently bill a different provider's key. There

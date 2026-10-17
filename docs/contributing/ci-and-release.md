@@ -269,7 +269,7 @@ The real Pi smoke calls paid models, so it never runs by default. Its workflow,
 `KXM_SMOKE_RUNNER` names a runner with Pi credentials. Both smoke models run as
 long-lived Pi workers, so each must pass the Pi native-vendor brake: pick two
 non-native routes such as
-`openrouter/qwen/qwen3-coder-plus,openrouter/z-ai/glm-5.3-flash`, never `xai/…`
+`openrouter/qwen/qwen3.7-plus,openrouter/z-ai/glm-5.3-flash`, never `xai/…`
 or `anthropic/…`. The container smoke needs
 Docker, a `pass-cli` session and a local Pi model store. It keeps secrets in a
 mode-600 file inside a temporary directory; set `KXM_SMOKE_VAULT` to read keys

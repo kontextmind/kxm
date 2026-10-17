@@ -37,7 +37,7 @@ Ids in this checkout follow one convention per kind:
 |---|---|---|
 | Role | The purpose: `planner`, `writer`, `reviewer-arch`, `reviewer-cli` | Unchanged |
 | Agent | The same id as its `role` | `planner`, `writer`, `reviewer-arch`, `reviewer-cli` |
-| Route | `<harness>-<model-slug>[-<provider>]`, with `.` written as `-` | `grok-grok-4-7`, `claude-fable`, `pi-qwen3-coder-plus-openrouter` |
+| Route | `<harness>-<model-slug>[-<provider>]`, with `.` written as `-` | `grok-grok-4-7`, `claude-fable`, `pi-qwen3-7-plus-openrouter` |
 | Workflow | `default`, `land`, or `<role>-only` | `default`, `land`, `writer-only`, `reviewer-arch-only`, `reviewer-cli-only` |
 | Agent step | The agent's role id | `writer`, `reviewer-arch`, `reviewer-cli` |
 
