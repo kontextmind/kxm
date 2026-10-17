@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
 date: "2026-10-17"
-sha256: 37f358f1fa1ce6a68cd4ec0f749875378a5a7d6a8c428c90719fc4c5b959dc03
+sha256: bfed7b8b70ca9ee9a3271f4b16bc7b64c344e6c164cf08311878866d47a3423b
 currency: USD
 models:
   - id: anthropic/fable
@@ -22,6 +22,27 @@ models:
         outputPerMillion: 20
         cacheReadPerMillion: 0.4
         cacheWritePerMillion: 5
+  # GPT-6.1 Sol (released 2026-09-29). API id gpt-6.1-sol. Pro is the same
+  # model with reasoning mode pro; OpenRouter lists that mode as
+  # openai/gpt-6.1-sol-pro at the same per-token price. Above 272000 prompt
+  # tokens, input/output are $4 / $15. The published cache rates apply to
+  # both tiers.
+  - id: openai/gpt-6.1-sol
+    provider: openai
+    model: gpt-6.1-sol
+    aliases:
+      - gpt-6.1-sol-pro
+      - openai/gpt-6.1-sol-pro
+    tiers:
+      - upToContextTokens: 272000
+        inputPerMillion: 2
+        outputPerMillion: 10
+        cacheReadPerMillion: 0.1
+        cacheWritePerMillion: 2.5
+      - inputPerMillion: 4
+        outputPerMillion: 15
+        cacheReadPerMillion: 0.1
+        cacheWritePerMillion: 2.5
   - id: xai/grok-4.6
     provider: xai
     model: grok-4.6

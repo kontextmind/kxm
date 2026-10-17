@@ -15546,6 +15546,7 @@ var ROUTE_RENAMES = Object.freeze([
   ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
   ["gemini-agy", "agy-gemini-4-argon-high"],
   ["fable-claude", "claude-fable"],
+  // sol-codex stays the GPT-5.6 route. codex-gpt-6-1-sol is a separate route.
   ["sol-codex", "codex-gpt-5-6-sol"],
   ["grok-default", "grok-grok-4-6"],
   ["fable-default", "claude-fable"]
