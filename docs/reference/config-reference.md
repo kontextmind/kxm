@@ -686,7 +686,7 @@ Example (validated with `kxm init --json` and compiled with
 the `critic-claude` profile shown above, it needs a `planner` agent (the
 workflow coordinator; `coordinator` still resolves as an alias), a
 `reviewer-cli` agent, and a second profile tagged `critic`, `critic-sol`
-(`openai/gpt-5.6-sol`). Routes, not agent files, name the harness and model.
+(`openai/gpt-6.1-sol`). Routes, not agent files, name the harness and model.
 The two providers among the `critic` candidates satisfy
 `distinctBy: [provider]` with `target: 2`.
 
@@ -1011,6 +1011,7 @@ updatedAt: '2026-09-23T00:00:00.000Z'
 admitted:
   - anthropic/fable
   - openai/gpt-5.6-sol
+  - openai/gpt-6.1-sol
   - xai/grok-4.6
   - openrouter/qwen/qwen3.7-plus
 disabled: []
@@ -1081,6 +1082,13 @@ routes:
     roles: [planner, reviewer-arch]
     permissions: [read-only]
     status: admitted
+  codex-gpt-6-1-sol:
+    harness: codex
+    model: gpt-6.1-sol
+    vendor: openai
+    roles: [reviewer-cli]
+    permissions: [read-only]
+    status: admitted
   codex-gpt-5-6-sol:
     harness: codex
     model: gpt-5.6-sol
@@ -1092,10 +1100,10 @@ lineup:                         # routes admitted for each role, preference orde
   writer: [grok-grok-4-7, pi-qwen3-7-plus-openrouter, agy-gemini-4-argon-high, agy-gemini-4-argon-medium, agy-gemini-3-8-flash-medium, agy-gemini-3-8-flash-high]
   planner: [claude-fable, pi-qwen3-8-flash-openrouter]
   reviewer-arch: [claude-fable, pi-glm-5-3-flash-openrouter]
-  reviewer-cli: [codex-gpt-5-6-sol, pi-qwen3-8-flash-openrouter]
+  reviewer-cli: [codex-gpt-6-1-sol, pi-qwen3-8-flash-openrouter, codex-gpt-5-6-sol]
 required_critics:
   review-arch: claude-fable
-  review-cli: codex-gpt-5-6-sol
+  review-cli: codex-gpt-6-1-sol
 model_origins:                  # required for every Pi route model
   openrouter/qwen/qwen3.7-plus:
     vendor: alibaba

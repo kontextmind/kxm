@@ -232,7 +232,7 @@ The same model shows up under different ids depending on the file:
 | `.kxm/models/inventory.yaml`, source `openrouter` | `x-ai/grok-4.7` | The OpenRouter catalog slug. The inventory stores OpenRouter ids without an `openrouter/` prefix. |
 | `.kxm/prices.yaml` | `id: xai/grok-4.7`, `provider: xai`, alias `x-ai/grok-4.7` | A list price that applies only to provider `xai`, because price lookup filters by provider. `xai/grok-4.6` remains a separate row. |
 
-An inventory id can also mean something else in `.kxm/routes.yaml`. For example, the inventory can list `openai/gpt-5.6-sol` from the OpenRouter feed with OpenRouter prices, while in `.kxm/routes.yaml` the same string means provider `openai` through native `codex`.
+An inventory id can also mean something else in `.kxm/routes.yaml`. For example, the inventory can list `openai/gpt-6.1-sol` from the OpenRouter feed with OpenRouter prices, while in `.kxm/routes.yaml` the same string means provider `openai` through native `codex`. `openai/gpt-5.6-sol` is the same kind of selector and stays admitted.
 
 ### What the brake refuses
 
@@ -249,7 +249,7 @@ The brake runs wherever KXM starts Pi on a model: in the dispatch probe that eac
 | How the id names the vendor | Refused examples | Message |
 |---|---|---|
 | The provider is the vendor | `anthropic/…`, `openai/…`, `xai/…`, `moonshot/…`, `google/…`, `deepseek/…` | `pi must not impersonate native provider xai; use the native harness` |
-| A Pi provider that belongs to the vendor | `openai-codex/…`, `moonshotai/…`, `moonshotai-cn/…`, `kimi-coding/…`, `google-vertex/…`, `claude-bridge/…`, and `antigravity/…` except Gemini ids | `pi provider openai-codex bills native vendor openai for gpt-5.6-sol; use the native harness` |
+| A Pi provider that belongs to the vendor | `openai-codex/…`, `moonshotai/…`, `moonshotai-cn/…`, `kimi-coding/…`, `google-vertex/…`, `claude-bridge/…`, and `antigravity/…` except Gemini ids | `pi provider openai-codex bills native vendor openai for gpt-6.1-sol; use the native harness` |
 | The vendor segment of an aggregator id, including the aliases `x-ai`, `moonshotai` and `google-ai` | `openrouter/x-ai/grok-4.6`, `openrouter/anthropic/claude-fable-5.1`, `nous-portal/google/…` | `pi must not bill native vendor xai through openrouter; use the native harness` |
 
 The brake accepts `antigravity/gemini-…` and any id whose vendor has no native harness, such as `openrouter/qwen/qwen3.7-plus`, `zai-coding-cn/glm-5.3` or `qwen-token-plan/qwen3.8-flash`. Passing the brake is not admission: the route must still be admitted. The hosting refusal at dispatch reads `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`.
@@ -367,18 +367,22 @@ pi auth check --provider xai --json --no-refresh
 {"status":"ready","provider":"xai","authType":"oauth"}
 ```
 
-### GPT-5.6 Sol
+### GPT-6.1 Sol
 
 | | Native `codex` | Pi + OpenRouter |
 |---|---|---|
-| Model file | `harness: codex`, `model: gpt-5.6-sol`, `vendor: openai` | `harness: pi`, `model: openrouter/openai/gpt-5.6-sol`, `vendor: openai` |
-| Selector | `openai/gpt-5.6-sol` | `openrouter/openai/gpt-5.6-sol` |
+| Model file | `harness: codex`, `model: gpt-6.1-sol`, `vendor: openai` | `harness: pi`, `model: openrouter/openai/gpt-6.1-sol`, `vendor: openai` |
+| Selector | `openai/gpt-6.1-sol`: admitted, the CLI critic | `openrouter/openai/gpt-6.1-sol` |
 | Readiness | Needs `codex` auth `yes` with `authMethod: ChatGPT` | Never reached: the brake refuses it first |
-| Billing | ChatGPT subscription | OpenRouter credit |
+| Billing | ChatGPT subscription. List price $2 / $10 per 1M tokens through 272,000 prompt tokens ($0.10 cached input, $2.50 cache write), then $4 / $15 | OpenRouter credit, same per-token list price |
 | Recorded `costBasis` | `unmetered`, `priceRef: subscription:codex` | None: refused before dispatch |
-| Mode | One-shot `codex exec --json -` | Refused |
+| Mode | One-shot `codex exec --json -`. Reasoning is mandatory (`low`, `medium`, `high`, `xhigh`, `max`) | Refused |
 
-**KXM picks the native route.** Two traps apply here. The first is `openai-codex/gpt-5.6-sol`, which is the same ChatGPT subscription driven through Pi. `pi auth check --provider openai-codex` can report `ready`, but readiness is not permission: the brake refuses `openai-codex` as OpenAI's own Pi provider. The second is a codex login made with an API key: the row shows `API key`, and the run records `unknown`.
+`codex-gpt-6-1-sol` is the `reviewer-cli` primary at effort `low`. `pi-qwen3-8-flash-openrouter` is the other-vendor fallback. `codex-gpt-5-6-sol` stays admitted as the last fallback. Architecture review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`.
+
+Pro is not a separate model. It is `gpt-6.1-sol` with reasoning mode `pro`. OpenRouter lists that mode as `openai/gpt-6.1-sol-pro` at the same per-token price. A route id is `<harness>-<model-slug>`, role `effort` has no `pro` value, and the codex harness ceiling is `reviewer-cli` only. There is no pro architecture-review fallback.
+
+**KXM picks the native route.** Two traps apply here. The first is `openai-codex/gpt-6.1-sol`, which is the same ChatGPT subscription driven through Pi. `pi auth check --provider openai-codex` can report `ready`, but readiness is not permission: the brake refuses `openai-codex` as OpenAI's own Pi provider. The second is a codex login made with an API key: the row shows `API key`, and the run records `unknown`. `openai/gpt-5.6-sol` is the same shape of selector and stays admitted. On OpenRouter it now lists at $4 / $20 per 1M tokens.
 
 ```bash
 pi auth check --provider openai-codex --json --no-refresh

@@ -146,6 +146,20 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
   `status: retired`, off every roster, and its alias `qwen-openrouter-pi` is
   removed. The last list-price row stays in `.kxm/prices.yaml`.
   `PI_ADMITTED_WRITER` is `openrouter/qwen/qwen3.7-plus`.
+- **CLI critic is Codex GPT-6.1 Sol (2026-10-17).** Eddie approved the
+  switch. `codex-gpt-6-1-sol` (`codex` / `gpt-6.1-sol`, vendor `openai`,
+  admitted, read-only, effort `low`) is the `reviewer-cli` primary.
+  `pi-qwen3-8-flash-openrouter` stays the other-vendor fallback.
+  `codex-gpt-5-6-sol` stays admitted as the last fallback. Architecture
+  review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`.
+  GPT-6.1 Sol Pro is the same API id with reasoning mode `pro`
+  (OpenRouter lists `openai/gpt-6.1-sol-pro` at the same per-token
+  price). Route ids are harness plus model, role effort has no `pro`,
+  and the codex ceiling is `reviewer-cli` only, so there is no pro
+  architecture fallback. List price is $2 / $10 per 1M tokens ($0.10
+  cached input, $2.50 cache write) through 272,000 prompt tokens, then
+  $4 / $15. Context is 1.05M (922K max input) and max output is 128K.
+  Reasoning is mandatory (`low`, `medium`, `high`, `xhigh`, `max`).
 
 - **Steel reachability and machine account names (2026-09-27).**
   Steel LXC 240 (startup order 40) is `steel.kontextmind.com`;
@@ -500,8 +514,10 @@ decisions, owners, start triggers and phase gates. Drafts cannot change a gate.
 - **Role rotation (operator, 2026-09-06):** choose agents per role from
   authenticated, supported helper routes using verified quality, total
   time/cost, and rework. Root may change agents without asking again.
-  Starting rotation: writer `grok`/`grok-4.6`, planner and architecture
-  critic `claude`/`fable`, CLI critic `codex`/`gpt-5.6-sol`. Grok remains
+  Starting rotation on that date: writer `grok`/`grok-4.6`, planner and
+  architecture critic `claude`/`fable`, CLI critic `codex`/`gpt-5.6-sol`.
+  The CLI critic primary is now `codex`/`gpt-6.1-sol` (see **CLI critic
+  is Codex GPT-6.1 Sol (2026-10-17)**). Grok remains
   the currently admitted native writer route; Codex session work is an
   authorized bootstrap route with unknown root usage/cost, never a forged
   native completion. Do not declare Codex and Grok interchangeable in

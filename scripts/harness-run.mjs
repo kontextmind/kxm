@@ -164,7 +164,7 @@ export const ROUTES = Object.freeze({
     provider: "openai",
     roles: Object.freeze(["reviewer-cli"]),
     permissions: Object.freeze(["read-only"]),
-    models: Object.freeze(["gpt-5.6-sol"]),
+    models: Object.freeze(["gpt-6.1-sol", "gpt-5.6-sol"]),
     efforts: Object.freeze(["low", "medium", "high"]),
     auth: Object.freeze({ args: ["login", "status"], loginHint: "codex login" }),
   },

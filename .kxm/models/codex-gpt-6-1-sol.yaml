@@ -1,0 +1,8 @@
+schema: kxm.model.v2
+id: codex-gpt-6-1-sol
+harness: codex
+model: gpt-6.1-sol
+vendor: openai
+status: admitted
+permissions:
+  - read-only
