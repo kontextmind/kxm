@@ -34,7 +34,7 @@ admits each route for specific roles and permissions:
 
 | Role | Admitted route (harness / model) | Vendor | Permission |
 |---|---|---|---|
-| `writer` | `grok` / `grok-4.7`; relief: `pi` / `openrouter/qwen/qwen3-coder-plus`; `agy` / `gemini-3.8-flash-high` | `xai`; `alibaba`; `google` | `edit` |
+| `writer` | `grok` / `grok-4.7`; relief: `pi` / `openrouter/qwen/qwen3-coder-plus`; `agy` / `gemini-4-argon-high`, then `gemini-4-argon-medium`, then `gemini-3.8-flash-medium`, then `gemini-3.8-flash-high` | `xai`; `alibaba`; `google` | `edit` |
 | `planner` | `claude` / `fable` | `anthropic` | `read-only` |
 | `reviewer-arch` | `claude` / `fable` | `anthropic` | `read-only` |
 | `reviewer-cli` | `codex` / `gpt-5.6-sol` | `openai` | `read-only` |

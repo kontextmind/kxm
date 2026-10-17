@@ -1,5 +1,5 @@
 schema: kxm.model-inventory.v1
-fetchedAt: 2026-09-28T14:02:09.052Z
+fetchedAt: 2026-10-17T13:45:00.000Z
 currency: USD
 sources:
   pi:
@@ -46,7 +46,7 @@ models:
       cacheWritePerMillion: 12.5
   - id: ~anthropic/claude-haiku-latest
     name: "Anthropic: Claude Haiku Latest"
-    contextLength: 200000
+    contextLength: 1000000
     capabilities:
       thinking:
         supported: true
@@ -58,15 +58,15 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 1
-      outputPerMillion: 5
-      cacheReadPerMillion: 0.09999999999999999
-      cacheWritePerMillion: 1.25
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.01
+      cacheWritePerMillion: 0.125
     discount:
-      inputPerMillion: 1
-      outputPerMillion: 5
-      cacheReadPerMillion: 0.09999999999999999
-      cacheWritePerMillion: 1.25
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.01
+      cacheWritePerMillion: 0.125
   - id: ~anthropic/claude-opus-latest
     name: "Anthropic: Claude Opus Latest"
     contextLength: 1000000
@@ -106,12 +106,12 @@ models:
     standard:
       inputPerMillion: 2
       outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
+      cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: 2.5
     discount:
       inputPerMillion: 2
       outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
+      cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: 2.5
   - id: ~deepseek/deepseek-flash-latest
     name: "DeepSeek: DeepSeek Flash Latest"
@@ -127,14 +127,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.014
-      outputPerMillion: 0.39999999999999997
-      cacheReadPerMillion: 0.004
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.002
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.014
-      outputPerMillion: 0.39999999999999997
-      cacheReadPerMillion: 0.004
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.002
       cacheWritePerMillion: null
   - id: ~deepseek/deepseek-pro-latest
     name: "DeepSeek: DeepSeek Pro Latest"
@@ -150,18 +150,18 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.22592
-      outputPerMillion: 1.9584000000000001
-      cacheReadPerMillion: 0.08832
+      inputPerMillion: 0.12
+      outputPerMillion: 8
+      cacheReadPerMillion: 0.12
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.22590000000000002
-      outputPerMillion: 1.9584000000000001
-      cacheReadPerMillion: 0.0883
+      inputPerMillion: 0.12
+      outputPerMillion: 8
+      cacheReadPerMillion: 0.12
       cacheWritePerMillion: null
   - id: ~deepseek/deepseek-v4-flash-latest
     name: "DeepSeek: DeepSeek V4 Flash Latest"
-    contextLength: 1310720
+    contextLength: 1048576
     capabilities:
       thinking:
         supported: true
@@ -173,14 +173,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.020999999999999998
-      outputPerMillion: 0.32
-      cacheReadPerMillion: 0.016
+      inputPerMillion: 0.0045
+      outputPerMillion: 1.28
+      cacheReadPerMillion: 0.0045
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.020999999999999998
-      outputPerMillion: 0.32
-      cacheReadPerMillion: 0.016
+      inputPerMillion: 0.0045
+      outputPerMillion: 1.28
+      cacheReadPerMillion: 0.0045
       cacheWritePerMillion: null
   - id: ~google/gemini-flash-latest
     name: "Google: Gemini Flash Latest"
@@ -220,14 +220,14 @@ models:
       - nous
     standard:
       inputPerMillion: 2
-      outputPerMillion: 12
-      cacheReadPerMillion: 0.19999999999999998
-      cacheWritePerMillion: 0.375
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 0.1875
     discount:
       inputPerMillion: 2
-      outputPerMillion: 12
-      cacheReadPerMillion: 0.19999999999999998
-      cacheWritePerMillion: 0.375
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 0.1875
   - id: ~moonshotai/kimi-latest
     name: "MoonshotAI: Kimi Latest"
     contextLength: 1048576
@@ -242,14 +242,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 1
-      outputPerMillion: 9
-      cacheReadPerMillion: 0.3
+      inputPerMillion: 0.27
+      outputPerMillion: 14
+      cacheReadPerMillion: 0.27
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 1
-      outputPerMillion: 9
-      cacheReadPerMillion: 0.3
+      inputPerMillion: 0.27
+      outputPerMillion: 14
+      cacheReadPerMillion: 0.27
       cacheWritePerMillion: null
   - id: ~openai/gpt-astra-latest
     name: "OpenAI: GPT Astra Latest"
@@ -336,12 +336,12 @@ models:
     standard:
       inputPerMillion: 2
       outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
+      cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: 2.5
     discount:
       inputPerMillion: 2
       outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
+      cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: 2.5
   - id: ~openai/gpt-terra-latest
     name: "OpenAI: GPT Terra Latest"
@@ -366,6 +366,29 @@ models:
       outputPerMillion: 12
       cacheReadPerMillion: 0.19999999999999998
       cacheWritePerMillion: 2.5
+  - id: ~unbiased/pareto-latest
+    name: Pareto Latest
+    contextLength: 262144
+    capabilities:
+      thinking:
+        supported: null
+        source: unknown
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 2.5
+      outputPerMillion: 7.5
+      cacheReadPerMillion: 0.25
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 2.5
+      outputPerMillion: 7.5
+      cacheReadPerMillion: 0.25
+      cacheWritePerMillion: null
   - id: ~x-ai/grok-latest
     name: "xAI: Grok Latest"
     contextLength: 500000
@@ -380,18 +403,18 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 1.5999999999999999
-      outputPerMillion: 4.8
-      cacheReadPerMillion: 0.39999999999999997
+      inputPerMillion: 2
+      outputPerMillion: 6
+      cacheReadPerMillion: 0.5
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 1.5999999999999999
-      outputPerMillion: 4.8
-      cacheReadPerMillion: 0.39999999999999997
+      inputPerMillion: 2
+      outputPerMillion: 6
+      cacheReadPerMillion: 0.5
       cacheWritePerMillion: null
   - id: ~z-ai/glm-flash-latest
     name: "Z.ai: GLM Flash Latest"
-    contextLength: 1310720
+    contextLength: 1048576
     capabilities:
       thinking:
         supported: true
@@ -403,18 +426,18 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.045
-      outputPerMillion: 0.14
-      cacheReadPerMillion: 0.01
+      inputPerMillion: 0.06
+      outputPerMillion: 1.5999999999999999
+      cacheReadPerMillion: 0.04
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.045
-      outputPerMillion: 0.14
-      cacheReadPerMillion: 0.01
+      inputPerMillion: 0.06
+      outputPerMillion: 1.5999999999999999
+      cacheReadPerMillion: 0.04
       cacheWritePerMillion: null
   - id: ~z-ai/glm-latest
     name: "Z.ai: GLM Latest"
-    contextLength: 1310720
+    contextLength: 1048576
     capabilities:
       thinking:
         supported: true
@@ -426,14 +449,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.1785
-      outputPerMillion: 2.8049999999999997
-      cacheReadPerMillion: 0.146625
+      inputPerMillion: 0.06319999999999999
+      outputPerMillion: 4.4
+      cacheReadPerMillion: 0.0588
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.1785
-      outputPerMillion: 2.8049999999999997
-      cacheReadPerMillion: 0.1466
+      inputPerMillion: 0.06319999999999999
+      outputPerMillion: 4.4
+      cacheReadPerMillion: 0.0588
       cacheWritePerMillion: null
   - id: aion-labs/aion-2.0
     name: "AionLabs: Aion-2.0"
@@ -837,6 +860,52 @@ models:
       outputPerMillion: 2.5
       cacheReadPerMillion: 0.049999999999999996
       cacheWritePerMillion: 0.625
+  - id: anthropic/claude-haiku-5.5
+    name: "Anthropic: Claude Haiku 5.5"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.01
+      cacheWritePerMillion: 0.125
+    discount:
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.01
+      cacheWritePerMillion: 0.125
+  - id: anthropic/claude-haiku-5.5:batch
+    name: "Anthropic: Claude Haiku 5.5 (batch)"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.25
+      cacheReadPerMillion: 0.005
+      cacheWritePerMillion: 0.0625
+    discount:
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.25
+      cacheReadPerMillion: 0.005
+      cacheWritePerMillion: 0.0625
   - id: anthropic/claude-opus-4.1
     name: "Anthropic: Claude Opus 4.1"
     contextLength: 200000
@@ -1159,29 +1228,6 @@ models:
       outputPerMillion: 10
       cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: 2.5
-  - id: anthropic/claude-sonnet-4
-    name: "Anthropic: Claude Sonnet 4"
-    contextLength: 200000
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 3
-      outputPerMillion: 15
-      cacheReadPerMillion: 0.3
-      cacheWritePerMillion: 3.75
-    discount:
-      inputPerMillion: 3
-      outputPerMillion: 15
-      cacheReadPerMillion: 0.3
-      cacheWritePerMillion: 3.75
   - id: anthropic/claude-sonnet-4.5
     name: "Anthropic: Claude Sonnet 4.5"
     contextLength: 1000000
@@ -1320,6 +1366,52 @@ models:
       outputPerMillion: 5
       cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: 1.25
+  - id: anthropic/claude-sonnet-5.5
+    name: "Anthropic: Claude Sonnet 5.5"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+    discount:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+  - id: anthropic/claude-sonnet-5.5:batch
+    name: "Anthropic: Claude Sonnet 5.5 (batch)"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
+    discount:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
   - id: arcee-ai/trinity-large-thinking
     name: "Arcee AI: Trinity Large Thinking"
     contextLength: 262144
@@ -1392,23 +1484,6 @@ models:
     discount:
       inputPerMillion: 0.01
       outputPerMillion: 0
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-  - id: baidu/ernie-4.5-vl-424b-a47b
-    name: "Baidu: ERNIE 4.5 VL 424B A47B "
-    contextLength: 123000
-    capabilities:
-      thinking:
-        supported: true
-        source: openrouter
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-    standard:
-      inputPerMillion: 0.42
-      outputPerMillion: 1.25
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: bytedance-seed/seed-1.6
@@ -1576,11 +1651,107 @@ models:
         source: unknown
     sources:
       - agy
+  - id: claude-opus-5-5-high
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - high
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: claude-opus-5-5-low
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - low
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: claude-opus-5-5-max
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - max
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: claude-opus-5-5-medium
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - medium
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
   - id: claude-sonnet-4-6
     capabilities:
       thinking:
         supported: null
         source: unknown
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: claude-sonnet-5-5-high
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - high
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: claude-sonnet-5-5-low
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - low
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: claude-sonnet-5-5-max
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - max
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: claude-sonnet-5-5-medium
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - medium
+        source: agy
       speed:
         fast: null
         source: unknown
@@ -1737,8 +1908,8 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.2574
-      outputPerMillion: 1.0287
+      inputPerMillion: 0.32
+      outputPerMillion: 0.8899999999999999
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
@@ -1765,9 +1936,9 @@ models:
       cacheReadPerMillion: 0.11
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.24
-      outputPerMillion: 0.8999999999999999
-      cacheReadPerMillion: 0.135
+      inputPerMillion: 0.25
+      outputPerMillion: 1
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: deepseek/deepseek-chat-v3.1
     name: "DeepSeek: DeepSeek V3.1"
@@ -1838,23 +2009,6 @@ models:
       outputPerMillion: 2.1500000000000004
       cacheReadPerMillion: 0.35
       cacheWritePerMillion: null
-  - id: deepseek/deepseek-r1-distill-llama-70b
-    name: "DeepSeek: R1 Distill Llama 70B"
-    contextLength: 8192
-    capabilities:
-      thinking:
-        supported: true
-        source: openrouter
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-    standard:
-      inputPerMillion: 0.7999999999999999
-      outputPerMillion: 0.7999999999999999
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
   - id: deepseek/deepseek-v3.1-terminus
     name: "DeepSeek: DeepSeek V3.1 Terminus"
     contextLength: 163840
@@ -1871,7 +2025,7 @@ models:
     standard:
       inputPerMillion: 0.27
       outputPerMillion: 1
-      cacheReadPerMillion: 0.135
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.27
@@ -1938,18 +2092,18 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.08232
-      outputPerMillion: 0.16464
-      cacheReadPerMillion: 0.016464
+      inputPerMillion: 0.091
+      outputPerMillion: 0.182
+      cacheReadPerMillion: 0.0182
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.049999999999999996
-      outputPerMillion: 0.14
-      cacheReadPerMillion: 0.014
+      inputPerMillion: 0.0171
+      outputPerMillion: 1.28
+      cacheReadPerMillion: 0.0171
       cacheWritePerMillion: null
   - id: deepseek/deepseek-v4-flash-0731
     name: "DeepSeek: DeepSeek V4 Flash 0731"
-    contextLength: 1310720
+    contextLength: 1048576
     capabilities:
       thinking:
         supported: true
@@ -1961,9 +2115,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.020999999999999998
-      outputPerMillion: 0.32
-      cacheReadPerMillion: 0.016
+      inputPerMillion: 0.0045
+      outputPerMillion: 1.28
+      cacheReadPerMillion: 0.0045
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.07
@@ -2001,9 +2155,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.44
-      outputPerMillion: 1.32
-      cacheReadPerMillion: 0.014
+      inputPerMillion: 0.21559999999999999
+      outputPerMillion: 0.6468
+      cacheReadPerMillion: 0.00686
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.21559999999999999
@@ -2024,9 +2178,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.9481259999999999
-      outputPerMillion: 1.8962519999999998
-      cacheReadPerMillion: 0.07901050000000001
+      inputPerMillion: 0.20879999999999999
+      outputPerMillion: 0.41759999999999997
+      cacheReadPerMillion: 0.0174
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.94
@@ -2047,14 +2201,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.3995
-      outputPerMillion: 4.199999999999999
-      cacheReadPerMillion: 0.399
+      inputPerMillion: 0.66
+      outputPerMillion: 1.9800000000000002
+      cacheReadPerMillion: 0.022
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.58
-      outputPerMillion: 1.74
-      cacheReadPerMillion: 0.02
+      inputPerMillion: 0.12
+      outputPerMillion: 8
+      cacheReadPerMillion: 0.12
       cacheWritePerMillion: null
   - id: deepseek/deepseek-v4.1-flash
     name: "DeepSeek: DeepSeek V4.1 Flash"
@@ -2070,14 +2224,37 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.014
-      outputPerMillion: 0.39999999999999997
-      cacheReadPerMillion: 0.004
+      inputPerMillion: 0.15
+      outputPerMillion: 0.6
+      cacheReadPerMillion: 0.003
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.014
-      outputPerMillion: 0.39999999999999997
+      inputPerMillion: 0.106
+      outputPerMillion: 0.513
       cacheReadPerMillion: 0.004
+      cacheWritePerMillion: null
+  - id: deepseek/deepseek-v4.1-flash-1017
+    name: "DeepSeek: DeepSeek V4.1 Flash 1017"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.15
+      outputPerMillion: 0.6
+      cacheReadPerMillion: 0.003
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.002
       cacheWritePerMillion: null
   - id: deepseek/deepseek-v4.1-flash:batch
     name: "DeepSeek: DeepSeek V4.1 Flash (batch)"
@@ -2093,14 +2270,31 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.112
-      outputPerMillion: 0.33599999999999997
-      cacheReadPerMillion: 0.00336
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.15
+      cacheReadPerMillion: 0.004
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.112
-      outputPerMillion: 0.33599999999999997
-      cacheReadPerMillion: 0.0034
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.15
+      cacheReadPerMillion: 0.004
+      cacheWritePerMillion: null
+  - id: deepseek/deepseek-v4.1-flash:US
+    name: "DeepSeek: DeepSeek V4.1 Flash"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - nous
+    discount:
+      inputPerMillion: 0.363
+      outputPerMillion: 1.089
+      cacheReadPerMillion: 0.0115
       cacheWritePerMillion: null
   - id: Default
     capabilities:
@@ -2128,6 +2322,29 @@ models:
       inputPerMillion: 0
       outputPerMillion: 0
       cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: elorian/glimpse
+    name: "Elorian: Glimpse"
+    contextLength: 262144
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.6
+      outputPerMillion: 3
+      cacheReadPerMillion: 0.06
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.6
+      outputPerMillion: 3
+      cacheReadPerMillion: 0.06
       cacheWritePerMillion: null
   - id: fireworks/ember-1
     name: "Fireworks: Ember-1"
@@ -2273,6 +2490,42 @@ models:
     sources:
       - agy
   - id: gemini-3.8-flash-medium
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - medium
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: gemini-4-argon-high
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - high
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: gemini-4-argon-low
+    capabilities:
+      thinking:
+        supported: true
+        levels:
+          - low
+        source: agy
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - agy
+  - id: gemini-4-argon-medium
     capabilities:
       thinking:
         supported: true
@@ -2935,9 +3188,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.75
-      outputPerMillion: 3.75
-      cacheReadPerMillion: 0.075
+      inputPerMillion: 0.8250000000000001
+      outputPerMillion: 4.125
+      cacheReadPerMillion: 0.0825
       cacheWritePerMillion: 0.0416666666666667
     discount:
       inputPerMillion: 0.75
@@ -2967,6 +3220,52 @@ models:
       outputPerMillion: 1.875
       cacheReadPerMillion: 0.0375
       cacheWritePerMillion: 0.0417
+  - id: google/gemini-4-argon
+    name: "Google: Gemini 4 Argon"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 0.1875
+    discount:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 0.1875
+  - id: google/gemini-4-argon:batch
+    name: "Google: Gemini 4 Argon (batch)"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 0.1875
+    discount:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 0.1875
   - id: google/gemini-embedding-001
     name: "Google: Gemini Embedding 001"
     contextLength: 20000
@@ -3033,6 +3332,29 @@ models:
     discount:
       inputPerMillion: 0.09999999999999999
       outputPerMillion: 0
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: google/gemini-nano-banana-2.1
+    name: "Google: Nano Banana 2.1"
+    contextLength: 65536
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1.5
+      outputPerMillion: 7.5
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 1.5
+      outputPerMillion: 7.5
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: google/gemma-2-27b-it
@@ -3129,14 +3451,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.09
-      outputPerMillion: 0.3
-      cacheReadPerMillion: 0.049999999999999996
+      inputPerMillion: 0.0675
+      outputPerMillion: 0.22499999999999998
+      cacheReadPerMillion: 0.0375
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.041999999999999996
       outputPerMillion: 0.22
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.020999999999999998
       cacheWritePerMillion: null
   - id: google/gemma-4-26b-a4b-it:free
     name: "Google: Gemma 4 26B A4B  (free)"
@@ -3169,14 +3491,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.09
-      outputPerMillion: 0.33999999999999997
-      cacheReadPerMillion: 0.049999999999999996
+      inputPerMillion: 0.19999999999999998
+      outputPerMillion: 0.39999999999999997
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.08
-      outputPerMillion: 0.3
-      cacheReadPerMillion: 0.049999999999999996
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.33999999999999997
+      cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: null
   - id: google/gemma-4-31b-it:free
     name: "Google: Gemma 4 31B (free)"
@@ -3367,77 +3689,31 @@ models:
       outputPerMillion: 0.063
       cacheReadPerMillion: 0.004200000000000001
       cacheWritePerMillion: null
-  - id: inclusionai/ling-3.0-flash-fin
-    name: "inclusionAI: Ling 3.0 Flash Fin"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.06
-      outputPerMillion: 0.18
-      cacheReadPerMillion: 0.012
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.06
-      outputPerMillion: 0.18
-      cacheReadPerMillion: 0.012
-      cacheWritePerMillion: null
-  - id: inclusionai/ling-3.0-flash-fin:free
-    name: "inclusionAI: Ling 3.0 Flash Fin (free)"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: 0
-      cacheWritePerMillion: null
-  - id: inclusionai/ling-3.0-flash-sante:free
-    name: "inclusionAI: Ling 3.0 Flash Sante (free)"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
   - id: inclusionai/ling-3.0-flash-vl
     name: "inclusionAI: Ling 3.0 Flash VL"
+    contextLength: 131072
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.06
+      outputPerMillion: 0.18
+      cacheReadPerMillion: 0.012
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.06
+      outputPerMillion: 0.18
+      cacheReadPerMillion: 0.012
+      cacheWritePerMillion: null
+  - id: inclusionai/ling-3.1-flash
+    name: "inclusionAI: Ling 3.1 Flash"
     contextLength: 262144
     capabilities:
       thinking:
@@ -3450,14 +3726,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.020999999999999998
-      outputPerMillion: 0.061599999999999995
-      cacheReadPerMillion: 0.004200000000000001
+      inputPerMillion: 0.075
+      outputPerMillion: 0.22499999999999998
+      cacheReadPerMillion: 0.015
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.020999999999999998
-      outputPerMillion: 0.061599999999999995
-      cacheReadPerMillion: 0.004200000000000001
+      inputPerMillion: 0.075
+      outputPerMillion: 0.22499999999999998
+      cacheReadPerMillion: 0.015
       cacheWritePerMillion: null
   - id: inference-net/schematron-v2-small
     name: "Inference.net: Schematron V2 Small"
@@ -3584,29 +3860,6 @@ models:
         source: unknown
     sources:
       - pi
-  - id: kwaipilot/kat-coder-pro-v2.5
-    name: "Kwaipilot: KAT-Coder-Pro V2.5"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: null
-        source: unknown
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.74
-      outputPerMillion: 2.96
-      cacheReadPerMillion: 0.15
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.74
-      outputPerMillion: 2.96
-      cacheReadPerMillion: 0.15
-      cacheWritePerMillion: null
   - id: liquid/lfm-2.5-2.6b:free
     name: "LiquidAI: LFM2.5-2.6B (free)"
     contextLength: 65536
@@ -3623,6 +3876,29 @@ models:
       inputPerMillion: 0
       outputPerMillion: 0
       cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: liquid/lfm-2.5-24b-a2b
+    name: "LiquidAI: LFM2.5-24B-A2B"
+    contextLength: 128000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.7
+      cacheReadPerMillion: 0.024999999999999998
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.7
+      cacheReadPerMillion: 0.024999999999999998
       cacheWritePerMillion: null
   - id: mancer/weaver
     name: "Mancer: Weaver (alpha)"
@@ -3680,6 +3956,23 @@ models:
       inputPerMillion: 0
       outputPerMillion: 0
       cacheReadPerMillion: 0
+      cacheWritePerMillion: null
+  - id: meituan/longcat-2.5-preview:free
+    name: "Meituan: LongCat 2.5 Preview"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - nous
+    discount:
+      inputPerMillion: 0
+      outputPerMillion: 0
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: meta-llama/llama-3.1-70b-instruct
     name: "Meta: Llama 3.1 70B Instruct"
@@ -3800,12 +4093,12 @@ models:
     standard:
       inputPerMillion: 0.1875
       outputPerMillion: 0.6525
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.049999999999999996
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.1875
       outputPerMillion: 0.6525
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.049999999999999996
       cacheWritePerMillion: null
   - id: meta-llama/llama-4-scout
     name: "Meta: Llama 4 Scout"
@@ -3867,7 +4160,7 @@ models:
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.3
-      outputPerMillion: 1.1
+      outputPerMillion: 1.2
       cacheReadPerMillion: 0.04
       cacheWritePerMillion: null
   - id: meta/muse-spark-1.1
@@ -3876,7 +4169,7 @@ models:
     capabilities:
       thinking:
         supported: true
-        source: openrouter
+        source: nous
       speed:
         fast: null
         source: unknown
@@ -3973,6 +4266,52 @@ models:
       outputPerMillion: 0.19999999999999998
       cacheReadPerMillion: 0.002
       cacheWritePerMillion: null
+  - id: meta/muse-spark-open
+    name: "Meta: Muse Spark Open"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1.25
+      outputPerMillion: 4.25
+      cacheReadPerMillion: 0.15
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 1.25
+      outputPerMillion: 4.25
+      cacheReadPerMillion: 0.15
+      cacheWritePerMillion: null
+  - id: meta/muse-wonder
+    name: "Meta: Muse Wonder"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: null
   - id: microsoft/phi-4
     name: "Microsoft: Phi 4"
     contextLength: 16384
@@ -4038,7 +4377,7 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.39999999999999997
+      inputPerMillion: 0.55
       outputPerMillion: 2.2
       cacheReadPerMillion: null
       cacheWritePerMillion: null
@@ -4061,8 +4400,8 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.3
-      outputPerMillion: 1.2
+      inputPerMillion: 0.255
+      outputPerMillion: 1.02
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
@@ -4125,8 +4464,8 @@ models:
       - nous
     standard:
       inputPerMillion: 0.27
-      outputPerMillion: 1.08
-      cacheReadPerMillion: 0.027
+      outputPerMillion: 0.95
+      cacheReadPerMillion: 0.03
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.27
@@ -4466,6 +4805,29 @@ models:
       outputPerMillion: 0.75
       cacheReadPerMillion: 0.024999999999999998
       cacheWritePerMillion: null
+  - id: mistralai/mistral-large-4-0
+    name: "Mistral: Mistral Large 4"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.6799999999999999
+      outputPerMillion: 2.09
+      cacheReadPerMillion: 0.07
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.6799999999999999
+      outputPerMillion: 2.09
+      cacheReadPerMillion: 0.07
+      cacheWritePerMillion: null
   - id: mistralai/mistral-medium-3
     name: "Mistral: Mistral Medium 3"
     contextLength: 131072
@@ -4595,14 +4957,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.019000000000000003
+      inputPerMillion: 0.029
       outputPerMillion: 0.03
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.018
-      outputPerMillion: 0.03
-      cacheReadPerMillion: null
+      inputPerMillion: 0.0166
+      outputPerMillion: 0.0216
+      cacheReadPerMillion: 0.0108
       cacheWritePerMillion: null
   - id: mistralai/mistral-saba
     name: "Mistral: Saba"
@@ -4782,6 +5144,40 @@ models:
       outputPerMillion: 0.3
       cacheReadPerMillion: 0.01
       cacheWritePerMillion: null
+  - id: moondream/moondream3-preview
+    name: "Moondream: Moondream 3 Preview"
+    contextLength: 32000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0.3
+      outputPerMillion: 2.5
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: moondream/moondream3.1-9b-a2b
+    name: "Moondream: Moondream 3.1"
+    contextLength: 32000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0.3
+      outputPerMillion: 2.5
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
   - id: moonshotai/kimi-k2
     name: "MoonshotAI: Kimi K2 0711"
     contextLength: 131072
@@ -4865,14 +5261,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.44999999999999996
-      outputPerMillion: 2.25
-      cacheReadPerMillion: 0.07
+      inputPerMillion: 0.5
+      outputPerMillion: 2.5
+      cacheReadPerMillion: 0.15
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.44999999999999996
-      outputPerMillion: 2.25
-      cacheReadPerMillion: 0.07
+      inputPerMillion: 0.49
+      outputPerMillion: 2.5
+      cacheReadPerMillion: 0.19999999999999998
       cacheWritePerMillion: null
   - id: moonshotai/kimi-k2.6
     name: "MoonshotAI: Kimi K2.6"
@@ -4893,9 +5289,9 @@ models:
       cacheReadPerMillion: 0.15
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.45699999999999996
-      outputPerMillion: 1.9240000000000002
-      cacheReadPerMillion: 0.077
+      inputPerMillion: 0.4323
+      outputPerMillion: 1.8199999999999998
+      cacheReadPerMillion: 0.0728
       cacheWritePerMillion: null
   - id: moonshotai/kimi-k2.7-code
     name: "MoonshotAI: Kimi K2.7 Code"
@@ -4911,13 +5307,13 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.6562
-      outputPerMillion: 3.3000000000000003
+      inputPerMillion: 0.6712
+      outputPerMillion: 3.35
       cacheReadPerMillion: 0.18
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.6562
-      outputPerMillion: 3.3000000000000003
+      inputPerMillion: 0.6712
+      outputPerMillion: 3.35
       cacheReadPerMillion: 0.18
       cacheWritePerMillion: null
   - id: moonshotai/kimi-k3
@@ -4934,14 +5330,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 3
-      outputPerMillion: 15
-      cacheReadPerMillion: 0.3
+      inputPerMillion: 0.30400000000000005
+      outputPerMillion: 11.936
+      cacheReadPerMillion: 0.21
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 1
-      outputPerMillion: 9
-      cacheReadPerMillion: 0.3
+      inputPerMillion: 0.27
+      outputPerMillion: 14
+      cacheReadPerMillion: 0.27
       cacheWritePerMillion: null
   - id: moonshotai/kimi-k3:batch
     name: "MoonshotAI: Kimi K3 (batch)"
@@ -5017,6 +5413,46 @@ models:
       outputPerMillion: 1.9
       cacheReadPerMillion: null
       cacheWritePerMillion: null
+  - id: nex-agi/nex-n2.5-mini
+    name: "Nex AGI: Nex-N2.5-Mini"
+    contextLength: 262144
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0.024999999999999998
+      outputPerMillion: 0.09999999999999999
+      cacheReadPerMillion: 0.0025
+      cacheWritePerMillion: null
+  - id: nex-agi/nex-n2.5-pro
+    name: "Nex AGI: Nex-N2.5-Pro"
+    contextLength: 262144
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.075
+      outputPerMillion: 0.25
+      cacheReadPerMillion: 0.015
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.075
+      outputPerMillion: 0.25
+      cacheReadPerMillion: 0.015
+      cacheWritePerMillion: null
   - id: nousresearch/hermes-3-llama-3.1-405b
     name: "Nous: Hermes 3 405B Instruct"
     contextLength: 131072
@@ -5082,14 +5518,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.049999999999999996
-      outputPerMillion: 0.19999999999999998
-      cacheReadPerMillion: 0.03
+      inputPerMillion: 0.06
+      outputPerMillion: 0.24
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.049999999999999996
       outputPerMillion: 0.19999999999999998
-      cacheReadPerMillion: 0.03
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
     name: "NVIDIA: Nemotron 3 Nano Omni (free)"
@@ -5224,7 +5660,7 @@ models:
       cacheWritePerMillion: null
   - id: nvidia/nemotron-3.5-lightning
     name: "NVIDIA: Nemotron 3.5 Lightning"
-    contextLength: 1000000
+    contextLength: 262144
     capabilities:
       thinking:
         supported: true
@@ -5236,14 +5672,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.08
+      inputPerMillion: 0.07
       outputPerMillion: 0.19999999999999998
       cacheReadPerMillion: 0.04
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.039
-      outputPerMillion: 0.18
-      cacheReadPerMillion: null
+      inputPerMillion: 0.024999999999999998
+      outputPerMillion: 0.12
+      cacheReadPerMillion: 0.012499999999999999
       cacheWritePerMillion: null
   - id: nvidia/nemotron-3.5-lightning:free
     name: "NVIDIA: Nemotron 3.5 Lightning (free)"
@@ -5262,6 +5698,58 @@ models:
       outputPerMillion: 0
       cacheReadPerMillion: null
       cacheWritePerMillion: null
+  - id: nvidia/nemotron-3.5-super-vl
+    name: "NVIDIA: Nemotron 3.5 Super VL"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.39999999999999997
+      cacheReadPerMillion: 0.08
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.09999999999999999
+      outputPerMillion: 0.39999999999999997
+      cacheReadPerMillion: 0.08
+      cacheWritePerMillion: null
+  - id: nvidia/nemotron-3.5-super-vl:free
+    name: "NVIDIA: Nemotron 3.5 Super VL (free)"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0
+      outputPerMillion: 0
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: nvidia/switchyard
+    name: "NVIDIA: Switchyard"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: null
+        source: unknown
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
   - id: openai-codex/gpt-5.3-codex-spark
     capabilities:
       thinking:
@@ -6735,15 +7223,15 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 2
-      outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
-      cacheWritePerMillion: 2.5
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.39999999999999997
+      cacheWritePerMillion: 5
     discount:
-      inputPerMillion: 2
-      outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
-      cacheWritePerMillion: 2.5
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.39999999999999997
+      cacheWritePerMillion: 5
   - id: openai/gpt-5.6-sol-pro
     name: "OpenAI: GPT-5.6 Sol Pro"
     contextLength: 1050000
@@ -6758,15 +7246,15 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 2
-      outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
-      cacheWritePerMillion: 2.5
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.39999999999999997
+      cacheWritePerMillion: 5
     discount:
-      inputPerMillion: 2
-      outputPerMillion: 10
-      cacheReadPerMillion: 0.19999999999999998
-      cacheWritePerMillion: 2.5
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.39999999999999997
+      cacheWritePerMillion: 5
   - id: openai/gpt-5.6-sol-pro:batch
     name: "OpenAI: GPT-5.6 Sol Pro (batch)"
     contextLength: 1050000
@@ -6781,15 +7269,15 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 1
-      outputPerMillion: 5
-      cacheReadPerMillion: 0.09999999999999999
-      cacheWritePerMillion: 1.25
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 2.5
     discount:
-      inputPerMillion: 1
-      outputPerMillion: 5
-      cacheReadPerMillion: 0.09999999999999999
-      cacheWritePerMillion: 1.25
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 2.5
   - id: openai/gpt-5.6-sol:batch
     name: "OpenAI: GPT-5.6 Sol (batch)"
     contextLength: 1050000
@@ -6804,15 +7292,15 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 1
-      outputPerMillion: 5
-      cacheReadPerMillion: 0.09999999999999999
-      cacheWritePerMillion: 1.25
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 2.5
     discount:
-      inputPerMillion: 1
-      outputPerMillion: 5
-      cacheReadPerMillion: 0.09999999999999999
-      cacheWritePerMillion: 1.25
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 2.5
   - id: openai/gpt-5.6-terra
     name: "OpenAI: GPT-5.6 Terra"
     contextLength: 1050000
@@ -7249,6 +7737,98 @@ models:
       outputPerMillion: 5
       cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: 1.25
+  - id: openai/gpt-6.1-sol
+    name: "OpenAI: GPT-6.1 Sol"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+    discount:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+  - id: openai/gpt-6.1-sol-pro
+    name: "OpenAI: GPT-6.1 Sol Pro"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+    discount:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+  - id: openai/gpt-6.1-sol-pro:batch
+    name: "OpenAI: GPT-6.1 Sol Pro (batch)"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
+    discount:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
+  - id: openai/gpt-6.1-sol:batch
+    name: "OpenAI: GPT-6.1 Sol (batch)"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
+    discount:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
   - id: openai/gpt-audio
     name: "OpenAI: GPT Audio"
     contextLength: 128000
@@ -7338,8 +7918,8 @@ models:
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.03
-      outputPerMillion: 0.16999999999999998
-      cacheReadPerMillion: 0.03
+      outputPerMillion: 0.15
+      cacheReadPerMillion: 0.015
       cacheWritePerMillion: null
   - id: openai/gpt-oss-120b:batch
     name: "OpenAI: gpt-oss-120b (batch)"
@@ -7380,12 +7960,12 @@ models:
     standard:
       inputPerMillion: 0.018
       outputPerMillion: 0.09
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.009
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.018
       outputPerMillion: 0.09
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.009
       cacheWritePerMillion: null
   - id: openai/gpt-oss-20b:batch
     name: "OpenAI: gpt-oss-20b (batch)"
@@ -7852,8 +8432,8 @@ models:
     contextLength: 2000000
     capabilities:
       thinking:
-        supported: null
-        source: unknown
+        supported: true
+        source: openrouter
       speed:
         fast: null
         source: unknown
@@ -8126,12 +8706,12 @@ models:
     standard:
       inputPerMillion: 0.075
       outputPerMillion: 0.5
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.0375
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.075
       outputPerMillion: 0.5
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.0375
       cacheWritePerMillion: null
   - id: provider
     capabilities:
@@ -8229,29 +8809,6 @@ models:
       outputPerMillion: 0.78
       cacheReadPerMillion: 0.052000000000000005
       cacheWritePerMillion: 0.325
-  - id: qwen/qwen-plus-2025-07-28
-    name: "Qwen: Qwen Plus 0728"
-    contextLength: 1000000
-    capabilities:
-      thinking:
-        supported: null
-        source: unknown
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.26
-      outputPerMillion: 0.78
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.26
-      outputPerMillion: 0.78
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
   - id: qwen/qwen2.5-vl-72b-instruct
     name: "Qwen: Qwen2.5 VL 72B Instruct"
     contextLength: 128000
@@ -8271,7 +8828,7 @@ models:
       cacheWritePerMillion: null
   - id: qwen/qwen3-14b
     name: "Qwen: Qwen3 14B"
-    contextLength: 131072
+    contextLength: 40960
     capabilities:
       thinking:
         supported: true
@@ -8292,29 +8849,6 @@ models:
       outputPerMillion: 0.22
       cacheReadPerMillion: null
       cacheWritePerMillion: null
-  - id: qwen/qwen3-235b-a22b
-    name: "Qwen: Qwen3 235B A22B"
-    contextLength: 131072
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.45499999999999996
-      outputPerMillion: 1.8199999999999998
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.45499999999999996
-      outputPerMillion: 1.8199999999999998
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
   - id: qwen/qwen3-235b-a22b-2507
     name: "Qwen: Qwen3 235B A22B Instruct 2507"
     contextLength: 262144
@@ -8329,9 +8863,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.0875
-      outputPerMillion: 0.35
-      cacheReadPerMillion: 0.0175
+      inputPerMillion: 0.09
+      outputPerMillion: 0.55
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.0875
@@ -8340,7 +8874,7 @@ models:
       cacheWritePerMillion: null
   - id: qwen/qwen3-235b-a22b-thinking-2507
     name: "Qwen: Qwen3 235B A22B Thinking 2507"
-    contextLength: 131072
+    contextLength: 128000
     capabilities:
       thinking:
         supported: true
@@ -8352,18 +8886,18 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.22999999999999998
-      outputPerMillion: 2.3
+      inputPerMillion: 0.44999999999999996
+      outputPerMillion: 3.5
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.22999999999999998
-      outputPerMillion: 2.3
+      inputPerMillion: 0.44999999999999996
+      outputPerMillion: 3.5
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: qwen/qwen3-30b-a3b
     name: "Qwen: Qwen3 30B A3B"
-    contextLength: 131072
+    contextLength: 40960
     capabilities:
       thinking:
         supported: true
@@ -8403,31 +8937,8 @@ models:
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.048100000000000004
-      outputPerMillion: 0.193
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-  - id: qwen/qwen3-30b-a3b-thinking-2507
-    name: "Qwen: Qwen3 30B A3B Thinking 2507"
-    contextLength: 81920
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.19999999999999998
-      outputPerMillion: 2.4
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.19999999999999998
-      outputPerMillion: 2.4
+      inputPerMillion: 0.09
+      outputPerMillion: 0.3
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: qwen/qwen3-32b
@@ -8451,29 +8962,6 @@ models:
     discount:
       inputPerMillion: 0.08
       outputPerMillion: 0.28
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-  - id: qwen/qwen3-8b
-    name: "Qwen: Qwen3 8B"
-    contextLength: 131072
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.117
-      outputPerMillion: 0.45499999999999996
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.117
-      outputPerMillion: 0.45499999999999996
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: qwen/qwen3-coder
@@ -8519,7 +9007,7 @@ models:
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.07
-      outputPerMillion: 0.27
+      outputPerMillion: 0.28
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: qwen/qwen3-coder-flash
@@ -8568,29 +9056,6 @@ models:
       outputPerMillion: 0.7999999999999999
       cacheReadPerMillion: 0.07
       cacheWritePerMillion: null
-  - id: qwen/qwen3-coder-plus
-    name: "Qwen: Qwen3 Coder Plus"
-    contextLength: 1000000
-    capabilities:
-      thinking:
-        supported: null
-        source: unknown
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.65
-      outputPerMillion: 3.25
-      cacheReadPerMillion: 0.13
-      cacheWritePerMillion: 0.8125
-    discount:
-      inputPerMillion: 0.65
-      outputPerMillion: 3.25
-      cacheReadPerMillion: 0.13
-      cacheWritePerMillion: 0.8125
   - id: qwen/qwen3-embedding-4b
     name: "Qwen: Qwen3 Embedding 4B"
     contextLength: 32768
@@ -8610,7 +9075,7 @@ models:
       cacheWritePerMillion: null
   - id: qwen/qwen3-embedding-8b
     name: "Qwen: Qwen3 Embedding 8B"
-    contextLength: 32768
+    contextLength: 40960
     capabilities:
       thinking:
         supported: null
@@ -8623,52 +9088,6 @@ models:
     discount:
       inputPerMillion: 0.01
       outputPerMillion: 0
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-  - id: qwen/qwen3-max
-    name: "Qwen: Qwen3 Max"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: null
-        source: unknown
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.78
-      outputPerMillion: 3.9
-      cacheReadPerMillion: 0.156
-      cacheWritePerMillion: 0.975
-    discount:
-      inputPerMillion: 0.78
-      outputPerMillion: 3.9
-      cacheReadPerMillion: 0.156
-      cacheWritePerMillion: 0.975
-  - id: qwen/qwen3-max-thinking
-    name: "Qwen: Qwen3 Max Thinking"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.78
-      outputPerMillion: 3.9
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.78
-      outputPerMillion: 3.9
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: qwen/qwen3-next-80b-a3b-instruct
@@ -8685,9 +9104,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.09999999999999999
+      inputPerMillion: 0.09
       outputPerMillion: 1.1
-      cacheReadPerMillion: 0.07
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.09
@@ -8740,29 +9159,6 @@ models:
       outputPerMillion: 0.88
       cacheReadPerMillion: 0.11
       cacheWritePerMillion: null
-  - id: qwen/qwen3-vl-235b-a22b-thinking
-    name: "Qwen: Qwen3 VL 235B A22B Thinking"
-    contextLength: 131072
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.39999999999999997
-      outputPerMillion: 4
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.39999999999999997
-      outputPerMillion: 4
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
   - id: qwen/qwen3-vl-30b-a3b-instruct
     name: "Qwen: Qwen3 VL 30B A3B Instruct"
     contextLength: 262144
@@ -8782,8 +9178,8 @@ models:
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.13
-      outputPerMillion: 0.52
+      inputPerMillion: 0.15
+      outputPerMillion: 0.6
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: qwen/qwen3-vl-30b-a3b-thinking
@@ -8800,36 +9196,13 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.19999999999999998
-      outputPerMillion: 2.4
+      inputPerMillion: 0.29
+      outputPerMillion: 1
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.19999999999999998
-      outputPerMillion: 2.4
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-  - id: qwen/qwen3-vl-32b-instruct
-    name: "Qwen: Qwen3 VL 32B Instruct"
-    contextLength: 131072
-    capabilities:
-      thinking:
-        supported: null
-        source: unknown
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.10400000000000001
-      outputPerMillion: 0.41600000000000004
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.10400000000000001
-      outputPerMillion: 0.41600000000000004
+      inputPerMillion: 0.29
+      outputPerMillion: 1
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: qwen/qwen3-vl-8b-instruct
@@ -8846,37 +9219,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.117
-      outputPerMillion: 0.45499999999999996
-      cacheReadPerMillion: null
+      inputPerMillion: 0.25
+      outputPerMillion: 0.75
+      cacheReadPerMillion: 0.12
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.117
-      outputPerMillion: 0.45499999999999996
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-  - id: qwen/qwen3-vl-8b-thinking
-    name: "Qwen: Qwen3 VL 8B Thinking"
-    contextLength: 131072
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0.18
-      outputPerMillion: 2.0999999999999996
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0.18
-      outputPerMillion: 2.0999999999999996
-      cacheReadPerMillion: null
+      inputPerMillion: 0.25
+      outputPerMillion: 0.75
+      cacheReadPerMillion: 0.12
       cacheWritePerMillion: null
   - id: qwen/qwen3.5-122b-a10b
     name: "Qwen: Qwen3.5-122B-A10B"
@@ -8915,8 +9265,8 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.195
-      outputPerMillion: 1.56
+      inputPerMillion: 0.26
+      outputPerMillion: 2.6
       cacheReadPerMillion: null
       cacheWritePerMillion: null
     discount:
@@ -8938,14 +9288,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.1625
-      outputPerMillion: 1.3
-      cacheReadPerMillion: null
+      inputPerMillion: 0.15
+      outputPerMillion: 1
+      cacheReadPerMillion: 0.049999999999999996
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.08
+      inputPerMillion: 0.065
       outputPerMillion: 0.75
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.0325
       cacheWritePerMillion: null
   - id: qwen/qwen3.5-397b-a17b
     name: "Qwen: Qwen3.5 397B A17B"
@@ -8961,9 +9311,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.55
-      outputPerMillion: 3.5
-      cacheReadPerMillion: 0.22499999999999998
+      inputPerMillion: 0.5
+      outputPerMillion: 3.5999999999999996
+      cacheReadPerMillion: 0.3
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.39
@@ -8991,7 +9341,7 @@ models:
     discount:
       inputPerMillion: 0.08
       outputPerMillion: 0.13
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.04
       cacheWritePerMillion: null
   - id: qwen/qwen3.5-flash-02-23
     name: "Qwen: Qwen3.5-Flash"
@@ -9076,14 +9426,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.32
-      outputPerMillion: 3.1999999999999997
-      cacheReadPerMillion: null
+      inputPerMillion: 0.25
+      outputPerMillion: 2
+      cacheReadPerMillion: 0.024999999999999998
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.3
+      inputPerMillion: 0.25
       outputPerMillion: 2
-      cacheReadPerMillion: 0.03
+      cacheReadPerMillion: 0.024999999999999998
       cacheWritePerMillion: null
   - id: qwen/qwen3.6-35b-a3b
     name: "Qwen: Qwen3.6 35B A3B"
@@ -9106,7 +9456,7 @@ models:
     discount:
       inputPerMillion: 0.049999999999999996
       outputPerMillion: 0.7
-      cacheReadPerMillion: null
+      cacheReadPerMillion: 0.024999999999999998
       cacheWritePerMillion: null
   - id: qwen/qwen3.6-flash
     name: "Qwen: Qwen3.6 Flash"
@@ -9131,29 +9481,6 @@ models:
       outputPerMillion: 1.125
       cacheReadPerMillion: null
       cacheWritePerMillion: 0.2344
-  - id: qwen/qwen3.6-max-preview
-    name: "Qwen: Qwen3.6 Max Preview"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 1.0270000000000001
-      outputPerMillion: 6.162
-      cacheReadPerMillion: null
-      cacheWritePerMillion: 1.28375
-    discount:
-      inputPerMillion: 1.0270000000000001
-      outputPerMillion: 6.162
-      cacheReadPerMillion: null
-      cacheWritePerMillion: 1.2837
   - id: qwen/qwen3.6-plus
     name: "Qwen: Qwen3.6 Plus"
     contextLength: 1000000
@@ -9246,6 +9573,29 @@ models:
       outputPerMillion: 1.28
       cacheReadPerMillion: 0.064
       cacheWritePerMillion: 0.39999999999999997
+  - id: qwen/qwen3.7-plus:batch
+    name: "Qwen: Qwen3.7 Plus (batch)"
+    contextLength: 262144
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 0.22999999999999998
+      outputPerMillion: 0.9199999999999999
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.22999999999999998
+      outputPerMillion: 0.9199999999999999
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
   - id: qwen/qwen3.8-2.4t-a95b
     name: "Qwen: Qwen3.8 2.4T A95B"
     contextLength: 1048576
@@ -9283,31 +9633,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.42
-      outputPerMillion: 3
-      cacheReadPerMillion: 0.08499999999999999
+      inputPerMillion: 0.24
+      outputPerMillion: 2.2
+      cacheReadPerMillion: 0.049999999999999996
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.049999999999999996
-      outputPerMillion: 2.2
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-  - id: qwen/qwen3.8-27b:free
-    name: "Qwen: Qwen3.8 27B (free)"
-    contextLength: 262144
-    capabilities:
-      thinking:
-        supported: true
-        source: openrouter
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-    standard:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: null
+      inputPerMillion: 0.02
+      outputPerMillion: 0.5
+      cacheReadPerMillion: 0.009
       cacheWritePerMillion: null
   - id: qwen/qwen3.8-flash
     name: "Qwen: Qwen3.8 Flash"
@@ -9326,12 +9659,12 @@ models:
       inputPerMillion: 0.15
       outputPerMillion: 0.47
       cacheReadPerMillion: 0.016
-      cacheWritePerMillion: 0.19999999999999998
+      cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.15
       outputPerMillion: 0.47
       cacheReadPerMillion: 0.016
-      cacheWritePerMillion: 0.19999999999999998
+      cacheWritePerMillion: null
   - id: qwen/qwen3.8-max-0902
     name: "Qwen: Qwen3.8 Max (0902)"
     contextLength: 1000000
@@ -9349,12 +9682,12 @@ models:
       inputPerMillion: 2
       outputPerMillion: 6
       cacheReadPerMillion: 0.25
-      cacheWritePerMillion: 2.5
+      cacheWritePerMillion: null
     discount:
       inputPerMillion: 2
       outputPerMillion: 6
       cacheReadPerMillion: 0.25
-      cacheWritePerMillion: 2.5
+      cacheWritePerMillion: null
   - id: qwen/qwen3.8-max-prime
     name: "Qwen: Qwen3.8 Max Prime"
     contextLength: 1000000
@@ -9400,6 +9733,46 @@ models:
       inputPerMillion: 0.15
       outputPerMillion: 0.47
       cacheReadPerMillion: 0.016
+      cacheWritePerMillion: null
+  - id: reflection/beam-1.0-501b-a23b
+    name: "Reflection: Beam 1.0 501B A23B"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 3
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 0.25
+      outputPerMillion: 1
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: reflection/beam-1.0-501b-a23b:free
+    name: "Reflection: Beam 1.0 501B A23B"
+    contextLength: 262144
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - nous
+    discount:
+      inputPerMillion: 0
+      outputPerMillion: 0
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: rekaai/reka-edge
     name: Reka Edge
@@ -9596,13 +9969,7 @@ models:
         source: unknown
     sources:
       - openrouter
-      - nous
     standard:
-      inputPerMillion: 0.85
-      outputPerMillion: 0.85
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
       inputPerMillion: 0.85
       outputPerMillion: 0.85
       cacheReadPerMillion: null
@@ -9622,6 +9989,40 @@ models:
     standard:
       inputPerMillion: 0.65
       outputPerMillion: 0.75
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: scaledown/extract
+    name: "ScaleDown: Extract"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: null
+        source: unknown
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0.04
+      outputPerMillion: 0
+      cacheReadPerMillion: null
+      cacheWritePerMillion: null
+  - id: scaledown/summarize
+    name: "ScaleDown: Summarize"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: null
+        source: unknown
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0.04
+      outputPerMillion: 0
       cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: sentence-transformers/all-minilm-l12-v2
@@ -9709,29 +10110,6 @@ models:
       outputPerMillion: 0
       cacheReadPerMillion: null
       cacheWritePerMillion: null
-  - id: stealth/space-bunny-alpha
-    name: Space Bunny Alpha
-    contextLength: 1000000
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - openrouter
-      - nous
-    standard:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
-    discount:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: null
-      cacheWritePerMillion: null
   - id: stepfun/step-3.5-flash
     name: "StepFun: Step 3.5 Flash"
     contextLength: 262144
@@ -9774,13 +10152,53 @@ models:
       cacheReadPerMillion: 0.04
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.16
-      outputPerMillion: 0.9199999999999999
-      cacheReadPerMillion: 0.032
+      inputPerMillion: 0.19999999999999998
+      outputPerMillion: 1.15
+      cacheReadPerMillion: 0.04
       cacheWritePerMillion: null
   - id: stepfun/step-3.7-flash:free
     name: "StepFun: Step 3.7 Flash"
     contextLength: 262144
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - nous
+    discount:
+      inputPerMillion: 0
+      outputPerMillion: 0
+      cacheReadPerMillion: 0
+      cacheWritePerMillion: null
+  - id: stepfun/step-5-preview
+    name: "StepFun: Step 5 Preview"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+      - nous
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 2.7
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: null
+    discount:
+      inputPerMillion: 1
+      outputPerMillion: 2.7
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: null
+  - id: stepfun/step-5-preview:free
+    name: "StepFun: Step 5 Preview"
+    contextLength: 1048576
     capabilities:
       thinking:
         supported: true
@@ -9882,8 +10300,8 @@ models:
       cacheReadPerMillion: 0.032999999999999995
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.13
-      outputPerMillion: 0.53
+      inputPerMillion: 0.13199999999999998
+      outputPerMillion: 0.5279999999999999
       cacheReadPerMillion: 0.032999999999999995
       cacheWritePerMillion: null
   - id: tencent/hy3-preview
@@ -10102,15 +10520,15 @@ models:
     contextLength: 1000000
     capabilities:
       thinking:
-        supported: null
-        source: unknown
+        supported: true
+        source: openrouter
       speed:
         fast: null
         source: unknown
     sources:
       - openrouter
-  - id: unbiased/pareto
-    name: Pareto
+  - id: unbiased/pareto-26.9
+    name: Pareto 26.9
     contextLength: 262144
     capabilities:
       thinking:
@@ -10172,6 +10590,23 @@ models:
       outputPerMillion: 0.19999999999999998
       cacheReadPerMillion: 0.005
       cacheWritePerMillion: null
+  - id: upstage/solar-mini4:free
+    name: "Upstage: Solar Mini 4"
+    contextLength: 524288
+    capabilities:
+      thinking:
+        supported: true
+        source: nous
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - nous
+    discount:
+      inputPerMillion: 0
+      outputPerMillion: 0
+      cacheReadPerMillion: 0
+      cacheWritePerMillion: null
   - id: upstage/solar-pro-3
     name: "Upstage: Solar Pro 3"
     contextLength: 131072
@@ -10217,23 +10652,6 @@ models:
       inputPerMillion: 0.09
       outputPerMillion: 0.36
       cacheReadPerMillion: 0.018
-      cacheWritePerMillion: null
-  - id: upstage/solar-pro4:free
-    name: "Upstage: Solar Pro 4"
-    contextLength: 524288
-    capabilities:
-      thinking:
-        supported: true
-        source: nous
-      speed:
-        fast: null
-        source: unknown
-    sources:
-      - nous
-    discount:
-      inputPerMillion: 0
-      outputPerMillion: 0
-      cacheReadPerMillion: 0
       cacheWritePerMillion: null
   - id: voyageai/voyage-4
     name: "VoyageAI by MongoDB: voyage-4"
@@ -10483,14 +10901,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 1.5999999999999999
-      outputPerMillion: 4.8
-      cacheReadPerMillion: 0.39999999999999997
+      inputPerMillion: 2
+      outputPerMillion: 6
+      cacheReadPerMillion: 0.5
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 1
-      outputPerMillion: 3
-      cacheReadPerMillion: 0.25
+      inputPerMillion: 2
+      outputPerMillion: 6
+      cacheReadPerMillion: 0.5
       cacheWritePerMillion: null
   - id: x-ai/grok-build-0.1
     name: "SpaceXAI: Grok Build 0.1"
@@ -10593,7 +11011,7 @@ models:
       cacheWritePerMillion: null
   - id: xiaomi/mimo-v2.6-flash
     name: "Xiaomi: MiMo-V2.6-Flash"
-    contextLength: 1048576
+    contextLength: 1050000
     capabilities:
       thinking:
         supported: true
@@ -10610,9 +11028,9 @@ models:
       cacheReadPerMillion: 0.0028
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.12
+      inputPerMillion: 0.09999999999999999
       outputPerMillion: 0.28
-      cacheReadPerMillion: 0.02
+      cacheReadPerMillion: 0.049999999999999996
       cacheWritePerMillion: null
   - id: xiaomi/mimo-v2.6-pro
     name: "Xiaomi: MiMo-V2.6-Pro"
@@ -10633,9 +11051,9 @@ models:
       cacheReadPerMillion: 0.0036
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.435
+      inputPerMillion: 0.43
       outputPerMillion: 0.87
-      cacheReadPerMillion: 0.004
+      cacheReadPerMillion: 0.0036
       cacheWritePerMillion: null
   - id: xiaomi/mimo-v2.6-pro-ultraspeed
     name: "Xiaomi: MiMo-V2.6-Pro-UltraSpeed"
@@ -10659,6 +11077,23 @@ models:
       inputPerMillion: 4.35
       outputPerMillion: 8.7
       cacheReadPerMillion: 0.036
+      cacheWritePerMillion: null
+  - id: xingchen-agi/xing4.0-29b-a4b:free
+    name: "XingChen: Xing4.0 29B A4B (free)"
+    contextLength: 262144
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0
+      outputPerMillion: 0
+      cacheReadPerMillion: null
       cacheWritePerMillion: null
   - id: You
     capabilities:
@@ -10753,9 +11188,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.43
-      outputPerMillion: 1.75
-      cacheReadPerMillion: 0.08
+      inputPerMillion: 0.5
+      outputPerMillion: 2
+      cacheReadPerMillion: 0.09999999999999999
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.43
@@ -10799,9 +11234,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.6
-      outputPerMillion: 2.2
-      cacheReadPerMillion: 0.11
+      inputPerMillion: 0.54
+      outputPerMillion: 1.9800000000000002
+      cacheReadPerMillion: 0.099
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.39999999999999997
@@ -10845,9 +11280,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.6
-      outputPerMillion: 1.92
-      cacheReadPerMillion: 0.12
+      inputPerMillion: 1
+      outputPerMillion: 3.1999999999999997
+      cacheReadPerMillion: 0.19999999999999998
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.6
@@ -10891,9 +11326,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.9646
-      outputPerMillion: 3.0316
-      cacheReadPerMillion: 0.17914
+      inputPerMillion: 0.966
+      outputPerMillion: 3.036
+      cacheReadPerMillion: 0.1794
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.9646
@@ -10914,9 +11349,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.6496
-      outputPerMillion: 2.0416
-      cacheReadPerMillion: 0.12064
+      inputPerMillion: 0.62
+      outputPerMillion: 2.42
+      cacheReadPerMillion: 0.14
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.8999999999999999
@@ -10925,7 +11360,7 @@ models:
       cacheWritePerMillion: null
   - id: z-ai/glm-5.3
     name: "Z.ai: GLM 5.3"
-    contextLength: 1310720
+    contextLength: 1048576
     capabilities:
       thinking:
         supported: true
@@ -10937,9 +11372,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 1.4
-      outputPerMillion: 4.4
-      cacheReadPerMillion: 0.26
+      inputPerMillion: 0.079
+      outputPerMillion: 4.8
+      cacheReadPerMillion: 0.078
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.9099999999999999
@@ -10948,7 +11383,7 @@ models:
       cacheWritePerMillion: null
   - id: z-ai/glm-5.3-flash
     name: "Z.ai: GLM 5.3 Flash"
-    contextLength: 1310720
+    contextLength: 1048576
     capabilities:
       thinking:
         supported: true
@@ -10983,14 +11418,14 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.06
-      outputPerMillion: 0.19999999999999998
-      cacheReadPerMillion: 0.012
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.18
+      cacheReadPerMillion: 0.01
       cacheWritePerMillion: null
     discount:
-      inputPerMillion: 0.06
-      outputPerMillion: 0.19999999999999998
-      cacheReadPerMillion: 0.012
+      inputPerMillion: 0.049999999999999996
+      outputPerMillion: 0.18
+      cacheReadPerMillion: 0.01
       cacheWritePerMillion: null
   - id: z-ai/glm-5.3-flash:US
     name: "Z.ai: GLM 5.3 Flash"

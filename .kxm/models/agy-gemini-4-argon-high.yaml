@@ -1,0 +1,10 @@
+schema: kxm.model.v2
+id: agy-gemini-4-argon-high
+aliases:
+  - gemini-agy
+harness: agy
+model: gemini-4-argon-high
+vendor: google
+status: admitted
+permissions:
+  - edit

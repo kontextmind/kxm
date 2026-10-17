@@ -1153,6 +1153,8 @@ kxm routes list
 admitted anthropic/fable
 admitted google/gemini-3.8-flash-high
 admitted google/gemini-3.8-flash-medium
+admitted google/gemini-4-argon-high
+admitted google/gemini-4-argon-medium
 admitted openai/gpt-5.6-sol
 admitted openrouter/qwen/qwen3-coder-plus
 admitted openrouter/qwen/qwen3.8-flash
@@ -1166,8 +1168,10 @@ reviewer-cli codex-gpt-5-6-sol
 reviewer-cli pi-qwen3-8-flash-openrouter
 writer grok-grok-4-7
 writer pi-qwen3-coder-plus-openrouter
-writer agy-gemini-3-8-flash-high
+writer agy-gemini-4-argon-high
+writer agy-gemini-4-argon-medium
 writer agy-gemini-3-8-flash-medium
+writer agy-gemini-3-8-flash-high
 ```
 
 ```bash
@@ -1175,7 +1179,7 @@ kxm routes list --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-27T00:00:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","openai/gpt-5.6-sol","openrouter/qwen/qwen3-coder-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","xai/grok-4.7"],"disabled":[]},"membership":["planner claude-fable","planner pi-qwen3-8-flash-openrouter","reviewer-arch claude-fable","reviewer-arch pi-glm-5-3-flash-openrouter","reviewer-cli codex-gpt-5-6-sol","reviewer-cli pi-qwen3-8-flash-openrouter","writer grok-grok-4-7","writer pi-qwen3-coder-plus-openrouter","writer agy-gemini-3-8-flash-high","writer agy-gemini-3-8-flash-medium"]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-10-17T00:00:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","google/gemini-4-argon-high","google/gemini-4-argon-medium","openai/gpt-5.6-sol","openrouter/qwen/qwen3-coder-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","xai/grok-4.7"],"disabled":[]},"membership":["planner claude-fable","planner pi-qwen3-8-flash-openrouter","reviewer-arch claude-fable","reviewer-arch pi-glm-5-3-flash-openrouter","reviewer-cli codex-gpt-5-6-sol","reviewer-cli pi-qwen3-8-flash-openrouter","writer grok-grok-4-7","writer pi-qwen3-coder-plus-openrouter","writer agy-gemini-4-argon-high","writer agy-gemini-4-argon-medium","writer agy-gemini-3-8-flash-medium","writer agy-gemini-3-8-flash-high"]}
 ```
 
 ### `kxm routes count`
@@ -1380,7 +1384,7 @@ kxm role get writer --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role get","roleId":"writer","scope":"local","filePath":"/work/kxm/.kxm/roles/writer.yaml","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":[],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-3-8-flash-high"},{"route":"agy-gemini-3-8-flash-medium"}]}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role get","roleId":"writer","scope":"local","filePath":"/work/kxm/.kxm/roles/writer.yaml","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":[],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-4-argon-high","effort":"medium"},{"route":"agy-gemini-4-argon-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-high","effort":"medium"}]}}
 ```
 
 Captured from this checkout with `node scripts/kxm.mjs role get writer --json`. The path is shortened to `/work/kxm`.
@@ -1390,7 +1394,7 @@ kxm role modify writer --add-skill kxm --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"writer","id":"writer","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":["kxm"],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-3-8-flash-high"},{"route":"agy-gemini-3-8-flash-medium"}]},"filePath":"/work/kxm/.kxm/roles/writer.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/kxm/.kxm/roles/writer.yaml"}]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"writer","id":"writer","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":["kxm"],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-4-argon-high","effort":"medium"},{"route":"agy-gemini-4-argon-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-high","effort":"medium"}]},"filePath":"/work/kxm/.kxm/roles/writer.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/kxm/.kxm/roles/writer.yaml"}]}
 ```
 
 Add an existing route to a role's roster (Not run):
