@@ -1,0 +1,155 @@
+name: Refresh models
+
+# Monday 13:00 UTC, plus manual runs. Refreshes OpenRouter list prices into
+# .kxm/prices.yaml and the OpenRouter slice of .kxm/models/inventory.yaml.
+# A non-empty diff is pushed to automation/model-refresh and opened as one PR.
+# Uses only GITHUB_TOKEN; no PAT is required. A push made with GITHUB_TOKEN
+# does not start CI, so this workflow dispatches ci.yml on the branch explicitly.
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+  actions: write
+
+concurrency:
+  group: refresh-models
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh model catalog
+    runs-on: kontextmind-doks
+    timeout-minutes: 20
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Refresh OpenRouter prices and inventory
+        id: refresh
+        shell: bash
+        run: |
+          set +e
+          node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs --json > "$RUNNER_TEMP/refresh.json"
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
+            echo "Refresh failed with exit $code" >&2
+            cat "$RUNNER_TEMP/refresh.json" >&2 || true
+            exit "$code"
+          fi
+          CODE="$code" node --input-type=module << 'NODE'
+          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+          const report = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/refresh.json`, "utf8"));
+          const summary = typeof report.summary === "string" ? report.summary : "";
+          writeFileSync(`${process.env.RUNNER_TEMP}/summary.md`, summary);
+          if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `code=${process.env.CODE}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `guard=${report.guardFailed ? "true" : "false"}\n`);
+          NODE
+
+      - name: Open or update the catalog pull request
+        if: steps.refresh.outputs.code == '0' || steps.refresh.outputs.code == '2'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          GUARD: ${{ steps.refresh.outputs.guard }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- .kxm/prices.yaml .kxm/models/inventory.yaml
+          if git diff --cached --quiet; then
+            echo "Model catalog matches main."
+            exit 0
+          fi
+          git config user.name "kxm-catalog[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch=automation/model-refresh
+          git checkout -B "$branch"
+          git commit -m "chore: refresh OpenRouter model prices and inventory"
+          if git ls-remote --exit-code origin "$branch" >/dev/null 2>&1; then
+            git fetch origin "$branch"
+            git push --force-with-lease="refs/heads/${branch}:refs/remotes/origin/${branch}" origin "HEAD:${branch}"
+          else
+            git push -u origin "HEAD:${branch}"
+          fi
+          node --input-type=module << 'NODE'
+          import { execFileSync } from "node:child_process";
+          import { readFileSync } from "node:fs";
+          const repo = process.env.REPO;
+          const token = process.env.GH_TOKEN;
+          const guard = process.env.GUARD === "true";
+          const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          const summary = readFileSync(`${process.env.RUNNER_TEMP}/summary.md`, "utf8").trim();
+          const headers = {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "User-Agent": "kxm-model-refresh",
+            "X-GitHub-Api-Version": "2022-11-28",
+          };
+          const body = [
+            summary,
+            "",
+            "The workflow keeps a model that `.kxm/routes.yaml` or a roster still names when OpenRouter drops it, and marks that inventory row `missingUpstream: true`. The `model-catalog-guard` check fails until a human removes the reference or restores the model.",
+            "",
+            "Run the same refresh locally with `node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs --dry-run`.",
+          ].join("\n");
+          const api = async (method, path, payload) => {
+            const response = await fetch(`https://api.github.com/repos/${repo}${path}`, {
+              method,
+              headers,
+              body: payload === undefined ? undefined : JSON.stringify(payload),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(`${method} ${path} failed: HTTP ${response.status} ${text}`);
+            return text ? JSON.parse(text) : {};
+          };
+          const owner = repo.split("/")[0];
+          const existing = await api("GET", `/pulls?head=${encodeURIComponent(`${owner}:automation/model-refresh`)}&state=open`);
+          const title = "chore: refresh OpenRouter model prices and inventory";
+          if (Array.isArray(existing) && existing.length > 0) {
+            await api("PATCH", `/pulls/${existing[0].number}`, { title, body });
+            console.log(`Updated pull request #${existing[0].number}`);
+          } else {
+            const created = await api("POST", "/pulls", {
+              title,
+              head: "automation/model-refresh",
+              base: "main",
+              body,
+              draft: false,
+            });
+            console.log(`Opened pull request #${created.number}`);
+          }
+          await api("POST", `/statuses/${sha}`, {
+            state: guard ? "failure" : "success",
+            context: "model-catalog-guard",
+            description: guard
+              ? "A referenced model disappeared from OpenRouter"
+              : "Referenced models are still in the catalog",
+          });
+          await api("POST", "/actions/workflows/ci.yml/dispatches", { ref: "automation/model-refresh" });
+          NODE
+
+      - name: Fail when a referenced model disappeared
+        if: steps.refresh.outputs.guard == 'true'
+        run: |
+          echo "A model referenced by .kxm/routes.yaml or a roster left the OpenRouter catalog. The previous row was kept. See the pull request body." >&2
+          exit 1

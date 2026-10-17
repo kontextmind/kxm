@@ -400,6 +400,28 @@ authentication are the protocol. A change to any of them needs:
 Prefer additive changes. KXM does not keep backward-compatible aliases for
 retired names: an old name fails closed instead.
 
+## Refresh model prices and inventory
+
+OpenRouter list prices and the model inventory are refreshed by
+`.github/workflows/refresh-models.yml` every Monday at 13:00 UTC. To run the
+same refresh before that, from the repository root:
+
+```bash
+node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs --dry-run
+```
+
+`--dry-run` prints models added, removed, and repriced, and writes nothing.
+Drop `--dry-run` to update `.kxm/prices.yaml` and `.kxm/models/inventory.yaml`.
+Exit 2 means a model named by `.kxm/routes.yaml` or a roster left the OpenRouter
+catalog; the refresh keeps that inventory row and sets `missingUpstream: true`.
+Review the diff and commit it yourself, or wait for the Monday pull request on
+`automation/model-refresh`. The field reference is
+[Weekly OpenRouter refresh](../reference/config-reference.md#weekly-openrouter-refresh).
+
+`kxm models inventory-refresh` still rewrites the whole inventory from Pi, Grok,
+agy, OpenRouter, and Nous, including a new `fetchedAt` timestamp. The weekly
+script does not call those local CLIs.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

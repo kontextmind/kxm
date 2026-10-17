@@ -6,6 +6,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **OpenRouter model prices and the inventory refresh weekly.**
+  `.github/workflows/refresh-models.yml` runs Monday at 13:00 UTC, or on
+  demand, and opens one pull request on `automation/model-refresh` when
+  `.kxm/prices.yaml` or the OpenRouter slice of `.kxm/models/inventory.yaml`
+  changes. A model still named by `.kxm/routes.yaml` or a roster is kept when
+  it leaves the catalog, and the `model-catalog-guard` check fails until a
+  human decides. Run it locally with
+  `node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs`.
+
 - **The witnessed MG1 Python control-plane foundation is now reproducible from this repository.**
   `python/kxm-control` provides the pinned Python 3.13 uv workspace, fixed
   `kxmd` Postgres/Temporal caller, Authentik user and runner verification

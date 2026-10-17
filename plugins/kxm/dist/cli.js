@@ -28793,6 +28793,32 @@ function rates(raw) {
 function modelId(id) {
   return id.trim().toLowerCase();
 }
+function blankModel(id, item) {
+  return {
+    id,
+    ...typeof item?.name === "string" ? { name: item.name } : {},
+    ...typeof item?.context_length === "number" ? { contextLength: item.context_length } : {},
+    capabilities: { thinking: { supported: null, source: "unknown" }, speed: { fast: null, source: "unknown" } },
+    sources: []
+  };
+}
+function applyAggregatorItem(current, item, source, kind) {
+  if (!current.sources.includes(source)) current.sources.push(source);
+  const parsed = rates(item.pricing);
+  if (parsed) {
+    if (kind === "standard") current.standard = parsed;
+    else current.discount = parsed;
+  }
+  if (!current.name && typeof item.name === "string") current.name = item.name;
+  if (!current.contextLength && typeof item.context_length === "number") current.contextLength = item.context_length;
+  const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters.filter((value) => typeof value === "string") : [];
+  if (parameters.some((value) => /reasoning|thinking/i.test(value))) current.capabilities.thinking = { supported: true, source };
+  if (parameters.some((value) => /speed|service.?tier|fast/i.test(value))) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+  if (Array.isArray(item.thinkingLevels) && item.thinkingLevels.length > 0) {
+    current.capabilities.thinking = { supported: true, levels: item.thinkingLevels, ...item.defaultThinking ? { default: item.defaultThinking } : {}, source };
+  }
+  if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+}
 async function fetchModels(url, authorization) {
   try {
     const headers = { Accept: "application/json" };
@@ -28814,20 +28840,8 @@ async function refreshModelInventory(options) {
   const add = (item, source, kind) => {
     if (!item || typeof item.id !== "string" || !item.id.trim()) return;
     const key = modelId(item.id);
-    const current = byId.get(key) ?? { id: item.id, ...typeof item.name === "string" ? { name: item.name } : {}, ...typeof item.context_length === "number" ? { contextLength: item.context_length } : {}, capabilities: { thinking: { supported: null, source: "unknown" }, speed: { fast: null, source: "unknown" } }, sources: [] };
-    if (!current.sources.includes(source)) current.sources.push(source);
-    const parsed = rates(item.pricing);
-    if (parsed) {
-      if (kind === "standard") current.standard = parsed;
-      else current.discount = parsed;
-    }
-    if (!current.name && typeof item.name === "string") current.name = item.name;
-    if (!current.contextLength && typeof item.context_length === "number") current.contextLength = item.context_length;
-    const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters.filter((value) => typeof value === "string") : [];
-    if (parameters.some((value) => /reasoning|thinking/i.test(value))) current.capabilities.thinking = { supported: true, source };
-    if (parameters.some((value) => /speed|service.?tier|fast/i.test(value))) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
-    if (Array.isArray(item.thinkingLevels) && item.thinkingLevels.length > 0) current.capabilities.thinking = { supported: true, levels: item.thinkingLevels, ...item.defaultThinking ? { default: item.defaultThinking } : {}, source };
-    if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+    const current = byId.get(key) ?? blankModel(item.id, item);
+    applyAggregatorItem(current, item, source, kind);
     byId.set(key, current);
   };
   const native2 = async (command, args, source) => {
@@ -28860,13 +28874,14 @@ async function refreshModelInventory(options) {
   writeFileSync18(join28(options.outputRoot, ".kxm", "models", "inventory.yaml"), (0, import_yaml17.stringify)(inventory), "utf8");
   return inventory;
 }
-var import_yaml17, OR_URL, NOUS_URL;
+var import_yaml17, OPENROUTER_MODELS_URL, OR_URL, NOUS_URL;
 var init_model_inventory = __esm({
   "plugins/kxm/src/model-inventory.ts"() {
     "use strict";
     import_yaml17 = __toESM(require_dist(), 1);
     init_oneshot_process();
-    OR_URL = "https://openrouter.ai/api/v1/models";
+    OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+    OR_URL = OPENROUTER_MODELS_URL;
     NOUS_URL = "https://inference-api.nousresearch.com/v1/models";
   }
 });

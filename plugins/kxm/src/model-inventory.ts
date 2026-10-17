@@ -23,6 +23,8 @@ export interface InventoryModel {
   standard?: InventoryPrice;
   discount?: InventoryPrice;
   sources: string[];
+  /** Set when a referenced model left the OpenRouter catalog and the refresh kept the previous row. */
+  missingUpstream?: true;
 }
 
 export interface ModelInventory {
@@ -33,7 +35,8 @@ export interface ModelInventory {
   models: InventoryModel[];
 }
 
-const OR_URL = "https://openrouter.ai/api/v1/models";
+export const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+const OR_URL = OPENROUTER_MODELS_URL;
 const NOUS_URL = "https://inference-api.nousresearch.com/v1/models";
 
 function price(value: unknown): number | null {
@@ -55,6 +58,42 @@ function rates(raw: any): InventoryPrice | undefined {
 }
 function modelId(id: string): string {
   return id.trim().toLowerCase();
+}
+
+function blankModel(id: string, item?: { name?: unknown; context_length?: unknown }): InventoryModel {
+  return {
+    id,
+    ...(typeof item?.name === "string" ? { name: item.name } : {}),
+    ...(typeof item?.context_length === "number" ? { contextLength: item.context_length } : {}),
+    capabilities: { thinking: { supported: null, source: "unknown" }, speed: { fast: null, source: "unknown" } },
+    sources: [],
+  };
+}
+
+function applyAggregatorItem(current: InventoryModel, item: any, source: string, kind: "standard" | "discount"): void {
+  if (!current.sources.includes(source)) current.sources.push(source);
+  const parsed = rates(item.pricing);
+  if (parsed) {
+    if (kind === "standard") current.standard = parsed;
+    else current.discount = parsed;
+  }
+  if (!current.name && typeof item.name === "string") current.name = item.name;
+  if (!current.contextLength && typeof item.context_length === "number") current.contextLength = item.context_length;
+  const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters.filter((value: unknown): value is string => typeof value === "string") : [];
+  if (parameters.some((value: string) => /reasoning|thinking/i.test(value))) current.capabilities.thinking = { supported: true, source };
+  if (parameters.some((value: string) => /speed|service.?tier|fast/i.test(value))) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+  if (Array.isArray(item.thinkingLevels) && item.thinkingLevels.length > 0) {
+    current.capabilities.thinking = { supported: true, levels: item.thinkingLevels, ...(item.defaultThinking ? { default: item.defaultThinking } : {}), source };
+  }
+  if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+}
+
+/** One OpenRouter or Nous payload row, using the same price and capability rules as inventory refresh. */
+export function inventoryModelFromAggregatorItem(item: any, source: string, kind: "standard" | "discount"): InventoryModel | undefined {
+  if (!item || typeof item.id !== "string" || !item.id.trim()) return undefined;
+  const current = blankModel(item.id, item);
+  applyAggregatorItem(current, item, source, kind);
+  return current;
 }
 async function fetchModels(url: string, authorization?: string): Promise<{ data: any[]; error?: string }> {
   try {
@@ -79,20 +118,8 @@ export async function refreshModelInventory(options: { outputRoot: string; env?:
   const add = (item: any, source: string, kind: "standard" | "discount") => {
     if (!item || typeof item.id !== "string" || !item.id.trim()) return;
     const key = modelId(item.id);
-    const current: InventoryModel = byId.get(key) ?? { id: item.id, ...(typeof item.name === "string" ? { name: item.name } : {}), ...(typeof item.context_length === "number" ? { contextLength: item.context_length } : {}), capabilities: { thinking: { supported: null, source: "unknown" }, speed: { fast: null, source: "unknown" } }, sources: [] };
-    if (!current.sources.includes(source)) current.sources.push(source);
-    const parsed = rates(item.pricing);
-    if (parsed) {
-      if (kind === "standard") current.standard = parsed;
-      else current.discount = parsed;
-    }
-    if (!current.name && typeof item.name === "string") current.name = item.name;
-    if (!current.contextLength && typeof item.context_length === "number") current.contextLength = item.context_length;
-    const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters.filter((value: unknown): value is string => typeof value === "string") : [];
-    if (parameters.some((value: string) => /reasoning|thinking/i.test(value))) current.capabilities.thinking = { supported: true, source };
-    if (parameters.some((value: string) => /speed|service.?tier|fast/i.test(value))) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
-    if (Array.isArray(item.thinkingLevels) && item.thinkingLevels.length > 0) current.capabilities.thinking = { supported: true, levels: item.thinkingLevels, ...(item.defaultThinking ? { default: item.defaultThinking } : {}), source };
-    if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+    const current = byId.get(key) ?? blankModel(item.id, item);
+    applyAggregatorItem(current, item, source, kind);
     byId.set(key, current);
   };
   const native = async (command: string, args: string[], source: string) => {
