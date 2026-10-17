@@ -141,7 +141,7 @@ export const ATTRIBUTION_CLASSES = Object.freeze(["orchestration", "model", "env
 export const ACCEPTED_NOTE = "developer record; not human approval, hub peer evidence, CI success, or merged/released status";
 export const REQUIRED_ACCEPT_CRITICS = Object.freeze({
   "review-arch": Object.freeze({ harness: "claude", model: "fable", role: "reviewer-arch" }),
-  "review-cli": Object.freeze({ harness: "codex", model: "gpt-5.6-sol", role: "reviewer-cli" }),
+  "review-cli": Object.freeze({ harness: "codex", model: "gpt-6.1-sol", role: "reviewer-cli" }),
 });
 export const ASSIGNMENT_KINDS = Object.freeze([
   "plan",

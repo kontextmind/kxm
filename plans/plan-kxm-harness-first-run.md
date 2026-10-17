@@ -539,7 +539,7 @@ Suggested commits, when a phase is selected:
 |---|---|---|
 | Plan | This draft | Scope and the option B recommendation |
 | Implement | Admitted writer from Tracking, starting rotation Grok | One phase per PR, after P0 |
-| Review | Fable and Codex gpt-5.6-sol | Both required before acceptance |
+| Review | Fable and Codex gpt-6.1-sol | Both required before acceptance |
 | Verify | Implementer | `npm run verify` |
 
 The writer of a phase is not a critic of that phase.

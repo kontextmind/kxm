@@ -9,7 +9,7 @@ This page records how the KXM repository applies [harness routing](../reference/
 
 The files use one id shape per kind. A route id is `<harness>-<model-slug>[-<provider>]`, with `.` written as `-`. An agent id equals its role. A workflow id is `default`, `land`, or `<role>-only`. An agent step id equals that role.
 
-This checkout's routes are `grok-grok-4-7`, `pi-qwen3-coder-plus-openrouter`, `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, `agy-gemini-3-8-flash-high`, `claude-fable`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Old ids resolve as aliases. Every roster entry names an effort. `reviewer-arch` dispatches `claude-fable`. #343's architecture critic ran on opus because the justfile recipe review-arch hardcoded that model; the role file on that commit listed only `fable-claude`. The helper now refuses `opus`.
+This checkout's routes are `grok-grok-4-7`, `pi-qwen3-coder-plus-openrouter`, `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, `agy-gemini-3-8-flash-high`, `claude-fable`, `codex-gpt-6-1-sol`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Old ids resolve as aliases. Every roster entry names an effort. `reviewer-arch` dispatches `claude-fable`. #343's architecture critic ran on opus because the justfile recipe review-arch hardcoded that model; the role file on that commit listed only `fable-claude`. The helper now refuses `opus`.
 
 ## This checkout's routes and roster
 
@@ -37,7 +37,7 @@ roster:
     effort: medium
 ```
 
-The writer role lists route ids, in order: `grok-grok-4-7`, then `pi-qwen3-coder-plus-openrouter`, then `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, and `agy-gemini-3-8-flash-high`. `grok-grok-4-7` is harness `grok`, model `grok-4.7`, vendor `xai`. An agent file does not declare `harness:`. Argon is writer #3 and #4. Flash medium is the safety net because Argon needs a paid Google AI Pro, Ultra, or Enterprise plan and `agy -p` exits when the pinned model is missing. Flash high stays on the roster so that admitted model file is still used. Planner and reviewer primaries stay `claude-fable` and `codex-gpt-5-6-sol`. Argon can serve as a planner or architecture-review fallback; it is not on those rosters.
+The writer role lists route ids, in order: `grok-grok-4-7`, then `pi-qwen3-coder-plus-openrouter`, then `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, and `agy-gemini-3-8-flash-high`. `grok-grok-4-7` is harness `grok`, model `grok-4.7`, vendor `xai`. An agent file does not declare `harness:`. Argon is writer #3 and #4. Flash medium is the safety net because Argon needs a paid Google AI Pro, Ultra, or Enterprise plan and `agy -p` exits when the pinned model is missing. Flash high stays on the roster so that admitted model file is still used. The planner primary stays `claude-fable`. The CLI critic primary is `codex-gpt-6-1-sol`, then `pi-qwen3-8-flash-openrouter`, then `codex-gpt-5-6-sol`. The architecture critic primary stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`. Argon can serve as a planner or architecture-review fallback; it is not on those rosters. GPT-6.1 Sol Pro is the same model with reasoning mode `pro`. The route id does not carry a reasoning mode, role effort has no `pro` value, and codex is limited to `reviewer-cli`, so that mode is not an architecture fallback.
 
 `node scripts/kxm.mjs routes list`:
 
@@ -48,6 +48,7 @@ admitted google/gemini-3.8-flash-medium
 admitted google/gemini-4-argon-high
 admitted google/gemini-4-argon-medium
 admitted openai/gpt-5.6-sol
+admitted openai/gpt-6.1-sol
 admitted openrouter/qwen/qwen3-coder-plus
 admitted openrouter/qwen/qwen3.8-flash
 admitted openrouter/z-ai/glm-5.3-flash
@@ -56,8 +57,9 @@ planner claude-fable
 planner pi-qwen3-8-flash-openrouter
 reviewer-arch claude-fable
 reviewer-arch pi-glm-5-3-flash-openrouter
-reviewer-cli codex-gpt-5-6-sol
+reviewer-cli codex-gpt-6-1-sol
 reviewer-cli pi-qwen3-8-flash-openrouter
+reviewer-cli codex-gpt-5-6-sol
 writer grok-grok-4-7
 writer pi-qwen3-coder-plus-openrouter
 writer agy-gemini-4-argon-high
@@ -129,16 +131,16 @@ These extend the generic examples on the reference page with this checkout's adm
 
 Pi's own `xai` provider reported `ready` (OAuth) on the capture machine. When the grok quota runs out, the next writer in the lineup is `pi-qwen3-coder-plus-openrouter`, a different vendor.
 
-### GPT-5.6 Sol
+### GPT-6.1 Sol
 
 | | Native `codex` | Pi + OpenRouter |
 |---|---|---|
-| Selector | `openai/gpt-5.6-sol`: admitted, the CLI critic | `openrouter/openai/gpt-5.6-sol`: not admitted |
-| Developer roster | `codex-gpt-5-6-sol`: `reviewer-cli`, `read-only` | Refused |
-| Billing | ChatGPT subscription | $4.00 input, $20.00 output, $0.40 cached input |
-| Context | Pi's `openai-codex` row, the same ChatGPT backend, lists 272K | 1,050,000 |
+| Selector | `openai/gpt-6.1-sol`: admitted, the CLI critic | `openrouter/openai/gpt-6.1-sol`: not admitted |
+| Developer roster | `codex-gpt-6-1-sol`: `reviewer-cli` primary, `read-only`, effort `low` | Refused |
+| Billing | ChatGPT subscription. List price $2.00 input, $10.00 output, $0.10 cached input, $2.50 cache write through 272,000 prompt tokens, then $4.00 / $15.00 | Same per-token list price. OpenRouter's `openai/gpt-6.1-sol-pro` row is reasoning mode `pro`, not a second model |
+| Context | 1,050,000 (922,000 max input, 128,000 max output). Reasoning is mandatory | 1,050,000 |
 
-In the inventory, `openai/gpt-5.6-sol` has sources `openrouter+nous` and carries OpenRouter prices. `pi auth check --provider openai-codex` reported `ready` on the capture machine.
+`codex-gpt-5-6-sol` stays on the `reviewer-cli` roster after the Qwen fallback. Its selector `openai/gpt-5.6-sol` stays admitted. OpenRouter lists that model at $4.00 input, $20.00 output, and $0.40 cached input. `pi auth check --provider openai-codex` reported `ready` on the capture machine. That readiness is not permission to bill OpenAI through Pi.
 
 ### Claude Fable
 

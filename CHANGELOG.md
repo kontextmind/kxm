@@ -216,6 +216,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **The CLI critic is Codex GPT-6.1 Sol.** `codex-gpt-6-1-sol` is the
+  `reviewer-cli` primary (`codex` / `gpt-6.1-sol`, effort `low`).
+  `pi-qwen3-8-flash-openrouter` stays the other-vendor fallback, and
+  `codex-gpt-5-6-sol` stays admitted as the last fallback. Architecture
+  review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`. Pro is
+  the same model with reasoning mode `pro`, not a separate route. List
+  price is $2 / $10 per 1M tokens through 272,000 prompt tokens ($0.10
+  cached input, $2.50 cache write), then $4 / $15.
+
 - **The writer rotation's agy routes are Gemini 4 Argon.** `agy-gemini-4-argon-high`
   (alias `gemini-agy`) and `agy-gemini-4-argon-medium` are writer #3 and #4.
   `agy-gemini-3-8-flash-medium` stays #5 because Argon needs a paid Google AI

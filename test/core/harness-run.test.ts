@@ -443,6 +443,31 @@ test("grok and codex argv match verified A4 flags", () => {
   assert.equal(codex.at(-1), "-");
 });
 
+test("codex helper admits GPT-6.1 Sol and keeps GPT-5.6 Sol on reviewer-cli only", () => {
+  const prompt = "/tmp/brief.md";
+  for (const model of ["gpt-6.1-sol", "gpt-5.6-sol"]) {
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "codex",
+      role: "reviewer-cli",
+      model,
+      permission: "read-only",
+      prompt_file: prompt,
+    });
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "codex",
+        role: "reviewer-arch",
+        model,
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /does not accept role/,
+    );
+  }
+});
+
 test("native Astra critic binds the requested model to safe Codex argv without launching on import", () => {
   const launch = nativeCriticLaunch("astra");
   assert.equal(launch.command, "codex");
