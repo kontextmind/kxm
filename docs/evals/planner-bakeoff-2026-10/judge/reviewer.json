@@ -1,0 +1,18 @@
+{
+  "planA": {
+    "correctness": 5,
+    "completeness": 4,
+    "risk": 5,
+    "sequencing": 5,
+    "conciseness": 4
+  },
+  "planB": {
+    "correctness": 3,
+    "completeness": 3,
+    "risk": 4,
+    "sequencing": 3,
+    "conciseness": 5
+  },
+  "winner": "A",
+  "rationale": "Plan A matches the shipped roster, role ownership, admission, pricing aliases, safeguards, and implementation sequence. Plan B incorrectly places reviewer-cli reordering in routes.yaml, omits the OpenRouter suffix from the Pi fallback, and leaves more shipped details unresolved. Both miss explicit workforce-name, generated-dist, review-template, and first-run-plan coverage."
+}

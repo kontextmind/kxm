@@ -1,0 +1,72 @@
+## Outcome
+
+A small, hand-authored Markdown knowledge wiki under `.kxm/knowledge/` that operators can read for current architecture, routing decisions, glossary pointers, CI/release patterns, and a few runbooks. It is explicitly authored, not compiled; it does not select wiki ingest or compile, touches no hub schema, routes, rosters, prices, npm scripts, or CI jobs, and passes markdownlint. Four existing docs gain one link line each.
+
+## Files
+
+New (all under `.kxm/knowledge/handbook/` to avoid colliding with the compiler's `.kxm/knowledge/wiki/` output):
+
+- `index.md` — table of contents; a header note stating these pages are authored by hand, not generated, and not the authoritative store.
+- `architecture-overview.md` — hub, local Runtime, SQLite at `.kxm/state/kxm.db`, single node, at-least-once.
+- `decisions/native-harness-wins.md` — Fable plans and reviews architecture; Grok writes; Codex reviews CLI/docs; Pi only for vendors without an authenticated native harness; Google route per Tracking (see open questions); fail closed when logged out.
+- `glossary.md` — short summary of key terms, each linking to `docs/glossary.md`; no new definitions.
+- `patterns/ci.md` — PRs run docs lint, typecheck, Node unit tests, Python control-plane suite; `CI / required` aggregates.
+- `runbooks/release.md` — npm package `@kontextmind/kxm`, changelog update, existing verify/CI gates; no new command.
+- `runbooks/failed-release.md` — high level: stop, inspect CI, do not re-tag, fix forward via normal PR loop.
+- `runbooks/model-routes.md` — `kxm routes list`; admit/disable are reviewed actions; `prices.yaml` hash must match or the route fails closed.
+- `runbooks/browser.md` — Obscura is the default Playwright browser; Steel is for human takeover, MFA, live viewer only; no flags beyond `KXM_BROWSER=steel`, which the packet supports.
+
+Edited (one line each):
+
+- `docs/README.md`
+- the architecture index under `docs/` (exact filename to confirm)
+- the context-and-memory guide
+- the config reference
+
+## Tests
+
+- No new test files. Run existing `npm run verify` (includes `lint:docs` / markdownlint and the docs brake for product names).
+- If the docs lint has a link checker, the four new relative links must resolve; the handbook's own relative links to `docs/glossary.md` must resolve from `.kxm/knowledge/handbook/`.
+- Manually confirm no page is picked up by anything that would treat it as compiled output (it lives outside `wiki/`).
+
+## Docs
+
+- The four link lines read, for example: "Hand-authored operator handbook: `.kxm/knowledge/handbook/index.md` (not generated)."
+- Sentence-case titles, relative links, product name KXM only. No "Mesh".
+- No links from `docs/` into `plans/`; the handbook also avoids linking into `plans/`.
+- Context-and-memory guide line must restate: wiki compile/ingest remain unselected; the handbook is not compiler output.
+
+## Risks and guards
+
+- **Authority confusion**: a reader may treat handbook pages as compiled truth. Guard: index banner plus a one-line footer on each page ("authored; verify against code and Tracking").
+- **Collision with compiler**: writing into `.kxm/knowledge/wiki/` would be overwritten or mistaken for generated. Guard: use `handbook/` subdirectory.
+- **Glossary fork**: duplicating definitions creates drift. Guard: summarize and link only; refuse to define new terms.
+- **Stale admissions**: listing admitted routes would repeat the drift AGENTS.md already suffered. Guard: the decision page names the rotation shape and points to Tracking → Decided and `kxm harness list` for current admissions.
+- **Invented facts**: refuse to add prices, model ids, release commands, or browser flags not in the packet.
+- **Secrets/hosts**: refuse hostnames, tokens, private box names.
+- **Scope creep**: refuse to fix the three known compiler gaps, add npm scripts, CI jobs, schema, or route changes.
+- markdownlint failure blocks commit; fix the Markdown, not the lint config.
+
+## Sequence
+
+1. Confirm exact filenames of the architecture index, context-and-memory guide, and config reference.
+2. Create `handbook/index.md` with authority banner.
+3. Write architecture, decision, glossary, CI pages.
+4. Write the four runbooks.
+5. Add the four one-line links.
+6. Run `npm run verify`; fix lint.
+7. Commit as `docs: seed hand-authored knowledge handbook`; push; PR via normal loop.
+
+## Non-goals
+
+- Running `kxm context wiki-compile` or `wiki-lint`; selecting ingest.
+- Fixing the `.kxm/memory` lookup path, unreviewed-journal inclusion, or temporal-state index link.
+- Editing routes, rosters, `prices.yaml`, hub schema, npm scripts, CI.
+- A second glossary or any Phase 4/11 router content.
+
+## Open questions
+
+- Exact filenames of the architecture index, context-and-memory guide, and config reference.
+- Google route wording: the packet says "agy, not OpenRouter"; current Tracking → Decided may phrase it as the `antigravity` Pi provider with `agy` as a catalog helper. Writer must copy the Tracking text verbatim rather than choose.
+- Whether `.kxm/` is excluded by `.gitignore` or markdownlint config, which would require an explicit include.
+- Whether docs lint resolves links in files outside `docs/`.

@@ -1,0 +1,23 @@
+# Task packet
+
+Product: KXM. List prices live in .kxm/prices.yaml (schema kxm.prices.v1, fields date, sha256, currency USD, models). The loader refuses a hash mismatch. If date is not today, producers mark priceCatalogStale and do not quote listCostUsd. The routing report can still show stale prices, so operators must check the date.
+
+.kxm/models/inventory.yaml is refreshed by `kxm models inventory-refresh` (alias `refresh`) from the OpenRouter and Nous catalogs. Flags: --dry-run, --json. It does not by itself edit .kxm/routes.yaml. Route admission stays a reviewed decision: `kxm routes admit` and `kxm routes disable` write routes.yaml and are operator actions.
+
+OpenRouter list prices and the inventory go stale as models are added, removed, and repriced. A stale catalog must not silently underquote. There is no weekly job today.
+
+Request: Plan a weekly refresh of OpenRouter model prices and the model inventory. The job opens one pull request when the catalog changed. A human reviews it. It does not merge itself and does not admit or disable routes.
+
+Constraints:
+- Fetch the public OpenRouter models API only. Do not put a token in the workflow if the API is public. If a token would be required, fail closed and say so.
+- The pull request body lists models added, removed, and repriced. It does not dump secrets.
+- Preserve CLI-only inventory rows when the refresh host has no pi, grok, or agy binary. A refresh that deletes those rows is a failed plan.
+- prices.yaml date and sha256 change only when the bytes change, and they change together.
+- Do not auto-promote a new model onto a roster. New ids can appear in the inventory without becoming admitted routes.
+- CI for this repo uses GitHub Actions. Pull requests already run docs lint, typecheck, and unit tests. Do not add a required status check that calls a model.
+- Schedule is weekly. The packet does not pick the weekday or hour. Choose one and mark it as a choice, not a discovered fact.
+- Document the job in docs/reference/harness-routing.md and the contributing CI page. Update CHANGELOG.md.
+- Tests must cover: no PR when unchanged, a PR body that names added and removed ids, refusal to drop CLI-only rows, and refusal to edit routes.yaml.
+- Do not change writer, planner, or reviewer rosters in this change.
+
+Deliver a plan a writer could implement without another architecture pass.

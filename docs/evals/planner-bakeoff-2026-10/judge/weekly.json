@@ -1,0 +1,18 @@
+{
+  "planA": {
+    "correctness": 4,
+    "completeness": 4,
+    "risk": 5,
+    "sequencing": 5,
+    "conciseness": 3
+  },
+  "planB": {
+    "correctness": 5,
+    "completeness": 4,
+    "risk": 5,
+    "sequencing": 4,
+    "conciseness": 4
+  },
+  "winner": "B",
+  "rationale": "Both are strong and cover the testable module, workflow, safety invariants, fixed-branch PR behavior, and key tests. Plan B is slightly closer to the shipped architecture and more concise, while Plan A has better test-first sequencing but adds some unnecessary detail and assumptions."
+}

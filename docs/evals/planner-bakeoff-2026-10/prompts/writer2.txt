@@ -1,0 +1,40 @@
+# Task packet
+
+Product: KXM. Qwen has no native harness in KXM. Pi is the right harness. Prefer an admitted OpenRouter selector when no authenticated vendor-plan provider is in this packet.
+
+Request: Writer #2 is pi-qwen3-coder-plus-openrouter. OpenRouter now returns 404 for qwen/qwen3-coder-plus. Plan the replacement of writer #2. Do not change writer #1.
+
+Current writer roster, effort medium:
+1. grok-grok-4-7
+2. pi-qwen3-coder-plus-openrouter (model openrouter/qwen/qwen3-coder-plus, vendor alibaba, permission edit, status admitted). Alias qwen-openrouter-pi.
+3. agy-gemini-4-argon-high
+4. agy-gemini-4-argon-medium
+5. agy-gemini-3-8-flash-medium (safety net because agy -p does not fall through)
+6. agy-gemini-3-8-flash-high (kept so the admitted model file stays on a roster)
+
+Live replacement candidates verified against the OpenRouter models API on 2026-10-17. Prices are USD per 1M tokens:
+
+| Model | Input / output | Context |
+| qwen/qwen3.7-plus | 0.32 / 1.28 | 1000000 |
+| qwen/qwen3-coder-next | 0.12 / 0.80 | 262144 |
+| qwen/qwen3-coder-flash | 0.195 / 0.975 | 1000000 |
+| meta/muse-spark-open | 1.25 / 4.25 | 1048576 |
+| moonshotai/kimi-k2.7-code | 0.6712 / 3.35 | 262144 |
+
+The packet does not say which candidate supports tools. A writer route needs edit permission. Fail closed if you cannot show tool support from this packet; put that gap in open questions and still recommend a default with the assumption labeled.
+
+qwen3.7-plus base tier is the price above. Prompts at or above 256000 tokens list at 0.96 / 3.84 if you select that model. supported_parameters is not in this packet.
+
+Rules:
+- Do not bill a native vendor through Pi. Qwen is allowed through OpenRouter. Moonshot has a native kimi harness, so a moonshot model through OpenRouter is the native-vendor case the brake refuses. Do not select it unless you explain the brake and refuse it.
+- Meta through OpenRouter is not a native-harness exception named in this packet. Treat it as an admission question, not an automatic writer.
+- Keep the old prices.yaml row for qwen/qwen3-coder-plus at its last list price. Do not delete history. Mark the old route retired in inventory and routes comments. Take it off the admitted list and off the writer roster.
+- New route id shape: pi-<model-slug>-openrouter, dots written as dashes.
+- Model file schema kxm.model.v2, harness pi, vendor alibaba for a Qwen model, permissions include edit. Add an evidence note under plans/evidence/.
+- .kxm/prices.yaml is dated and sha256-pinned. Update date and sha256 in the same change. The loader refuses a mismatch.
+- Inventory must contain the id before routes admit.
+- Same-change docs and tests that hardcode writer #2 or qwen3-coder-plus: harness-routing, config reference, CLI reference, assignment runner, glossary if it names the route, changelog, plans/implementation-plan.md Tracking, roster-policy tests, and generated dist only if a string is embedded there.
+- Do not change planner, reviewer-cli, or reviewer-arch. Do not reorder Argon or Flash.
+- Do not add a harness preferences overlay.
+
+Deliver a plan a writer could implement without another architecture pass. Pick one replacement and say why.

@@ -1,0 +1,18 @@
+{
+  "planA": {
+    "correctness": 3,
+    "completeness": 3,
+    "risk": 5,
+    "sequencing": 3,
+    "conciseness": 5
+  },
+  "planB": {
+    "correctness": 1,
+    "completeness": 2,
+    "risk": 5,
+    "sequencing": 3,
+    "conciseness": 5
+  },
+  "winner": "A",
+  "rationale": "Plan A captures both Argon roster variants, pricing, documentation, and key refusals, but misplaces the roster in routes.yaml, mishandles low, and gets safety-net ordering wrong. Plan B is clean and guarded but materially diverges by omitting Argon high and proposing the wrong final roster."
+}

@@ -1,0 +1,28 @@
+# Task packet
+
+Product: KXM. The CLI reviewer and the architecture reviewer are different roles and different providers from the writer.
+
+Request: Plan admission of Codex GPT-6.1 Sol as the reviewer-cli primary. The current primary is Codex GPT-5.6 Sol.
+
+Current reviewer-cli roster, permission read-only:
+1. codex-gpt-5-6-sol, effort low. Comment: required CLI critic. Native harness codex, model gpt-5.6-sol, vendor openai.
+2. pi-qwen3-8-flash-openrouter, effort low. Different vendor fallback.
+
+Facts:
+- GPT-6.1 Sol API id is gpt-6.1-sol. Pro is the same model with reasoning mode pro, not a separate model. OpenRouter lists that mode as openai/gpt-6.1-sol-pro at the same per-token price.
+- List price: $2 input and $10 output per 1M tokens through 272000 prompt tokens, then $4 and $15. Cache read $0.10 and cache write $2.50 on both tiers.
+- Native harness is codex. Billing is a ChatGPT subscription when authMethod is ChatGPT. Recorded costBasis is unmetered with priceRef subscription:codex. An API-key login records unknown, not unmetered.
+- The one-shot shape is codex exec --json. Reasoning effort is mandatory: low, medium, high, xhigh, or max. Role effort has no pro value.
+- Codex harness ceiling is reviewer-cli only. There is no pro architecture-review route.
+- Pi provider openai-codex is the same ChatGPT subscription through Pi. The native-vendor brake refuses it. OpenRouter openai/gpt-6.1-sol is also refused. Do not bill OpenAI through Pi or OpenRouter.
+- Architecture review stays claude-fable, then a different-vendor Pi fallback. Do not move GPT-6.1 Sol onto reviewer-arch.
+- reviewer-cli effort for this role stays low. Writer and planner rosters do not change.
+- A route id is <harness>-<model-slug>. Dots become dashes.
+- Model file schema kxm.model.v2. Routes file .kxm/routes.yaml schema kxm.routes.v2. The selector for a native OpenAI model is openai/<model>. The model must exist in inventory before kxm routes admit will accept it.
+- .kxm/prices.yaml is dated and sha256-pinned. The loader refuses a hash mismatch. Alias the pro id on the price row rather than adding a second model.
+- Pi fallback must stay a different vendor. GPT-5.6 Sol stays admitted as the last fallback, not deleted.
+- Same-change surfaces that name the CLI critic: AGENTS.md role table, docs/reference/harness-routing.md, docs/reference/config-reference.md, docs/reference/cli-reference.md, docs/contributing/assignment-runner.md, docs/contributing/harness-routing-internals.md, CHANGELOG.md, plans/implementation-plan.md Tracking, roster policy tests, and any harness-run script that hardcodes the critic model.
+- Two critics are required for acceptance on this runner. A single critic is triage only. Do not drop the architecture critic.
+- Do not add a harness preferences overlay.
+
+Deliver a plan a writer could implement without another architecture pass.

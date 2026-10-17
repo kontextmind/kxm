@@ -1,0 +1,60 @@
+## Outcome
+
+- Blocked now: any Runtime journal store, Runtime retrospective export, or Runtime signals in the improvement report. All three need a new store, and the queue forbids event-store or hub-store schema changes while S5 is open. Nothing in this slice lands a store or bumps a store version.
+- Designed now: a design note that fixes the shape of the future Runtime journal store, and tests that lock the current fail-closed behaviour so it cannot drift into a silent success or a relabel.
+- Honest user-facing state: `kxm workflow record` with a `kxm run` id keeps answering `workflow_not_found`. The CLI and tool explain that Runtime runs have no journal yet, without pretending to record anything.
+
+## Files
+
+Proposed locations; the writer should use the existing equivalents where they already exist.
+
+- `docs/design/runtime-journal.md` (new): design note, see Docs.
+- Hub journal route handler (`POST /v1/workflows/:id/journal`): no behaviour change. Only add a comment-free test around the existing `workflow_not_found` answer.
+- `kxm workflow record` CLI command and the `kxm_workflow_record` tool wrapper: when the hub answers `workflow_not_found` and the id matches the Runtime run id shape, surface a message stating Runtime runs have no journal store yet, and point to the design note. Exit non-zero. No retry, no local fallback write, no relabel.
+- Improvement report producer: add a test only, asserting that Runtime runs contribute zero ranked signals and the report says so explicitly rather than omitting them.
+- `plans/implementation-plan.md` Tracking: record this slice as "designed, blocked on S5", trigger and owner as in the packet.
+
+## Tests
+
+- Route refusal: POST journal with a Runtime run id returns `workflow_not_found`; the hub store contains no new row; the Runtime store is untouched.
+- No relabel brake: a Runtime run id is never looked up as a webhook run, even when a webhook run with the same id happens to exist (collision case returns the webhook run, and the test documents that the id spaces are distinct so this must not be relied on).
+- CLI and tool messaging: `kxm workflow record --json` with a Runtime run id emits a structured error naming the gap, exits non-zero, and does not write any local file.
+- Retrospective: a terminal Runtime run exports no retrospective and the export path refuses with a clear reason instead of an empty document.
+- Improvement report: Runtime runs are counted as excluded, listed under exclusions, and never ranked.
+- Schema freeze: snapshot test asserting event-store and hub-store schema versions are unchanged by this change. Values come from the existing fixtures, not from this plan.
+
+## Docs
+
+- Design note content: why Hub and Runtime are separate stores; the ten existing categories and stage-id binding carried over unchanged; a Runtime record is bound to a Runtime stage id; retrospective derives from the journal plus receipt; improvement report consumes Runtime signals only after the store lands; private handoff notes stay in summaries and sidecars, no schema field; no auto-promotion of skills or gates from telemetry; which store version would be bumped when S5 closes (left as a placeholder, filled by the writer from the current fixtures at that time).
+- `kxm workflow record` reference and the `kxm-workflow` skill: one sentence stating the Runtime limitation.
+- Tracking: add the blocked row and the trigger.
+
+## Risks and guards
+
+- Risk: a writer "fixes" the refusal by treating a Runtime run as a webhook run. Guard: the no-relabel test and the explicit decision in the design note.
+- Risk: a local JSON fallback journal sneaks in as "not a schema change". Guard: the CLI test asserts no file write; the design note states fallback stores are refused.
+- Risk: smuggling the store early via a store version bump. Refuse. I do not believe a store can land before S5 closes; any bump of either store is exactly what the queue rule forbids, and the packet gives no version numbers to reason about.
+- Risk: improvement report silently drops Runtime runs. Guard: exclusion is listed, not omitted.
+- Refuse: a schema field for handoff notes; auto-promotion from telemetry; any `--force` or alias that maps Runtime ids onto the webhook route.
+
+## Sequence
+
+1. Write the design note.
+2. Add route, retrospective, report, and schema-freeze tests; all pass against current code.
+3. Add the CLI and tool error message; add its test.
+4. Update reference docs, skill, and Tracking in the same change.
+5. `npm run verify`; commit.
+
+## Non-goals
+
+- Runtime journal store, retrospective export, Runtime ranked signals.
+- Any event-store or hub-store schema change.
+- Changing the hub route behaviour.
+- New CLI flags.
+
+## Open questions
+
+- Current event-store and hub-store schema version numbers for the freeze snapshot.
+- Whether Runtime run ids are distinguishable from webhook run ids by shape; if not, the CLI message must trigger on the hub error alone.
+- Where the retrospective export entry point lives for Runtime runs today, if anywhere.
+- Exact file paths for the route handler, report producer, and skill reference.
