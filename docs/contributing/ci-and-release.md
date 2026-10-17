@@ -46,6 +46,7 @@ together.
 | Push to `main`, or manual | `ci.yml` (Validate matrix) | `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24; not on a pull request |
 | Code pull request and code push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin |
 | Daily at 04:00 UTC, or manual | `nightly.yml` | `test:coverage:complete`, `check`, `check:generated`, `npm pack --dry-run` |
+| Monday at 13:00 UTC, or manual | `refresh-models.yml` | Fetches the public OpenRouter catalog, and opens or updates one pull request on `automation/model-refresh` when `.kxm/prices.yaml` or `.kxm/models/inventory.yaml` changes. Uses `GITHUB_TOKEN` only, then dispatches `ci.yml` on that branch |
 | Merged pull request | `auto-release.yml` | Tags the merge commit and dispatches `release.yml` |
 | Tag push or dispatch | `release.yml` | Verifies, packs and publishes (see [Release flow](#release-flow)) |
 | Manual only | `smoke.yml` | Real Pi smoke, currently disabled (see [Smoke tests](#smoke-tests)) |

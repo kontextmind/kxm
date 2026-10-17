@@ -1264,9 +1264,43 @@ file even when a source fails, and exits 1 if any source failed.
 | `models[].sources` | Which sources listed the model |
 | `models[].standard` | OpenRouter per-million rates: `inputPerMillion`, `outputPerMillion`, `cacheReadPerMillion`, `cacheWritePerMillion` |
 | `models[].discount` | Nous per-million rates, same fields |
+| `models[].missingUpstream` | `true` when the weekly refresh kept a row that OpenRouter no longer lists because a route or roster still names it |
 
 The inventory is discovery data, not admission. Admitting a route is a
 separate, reviewed change to `.kxm/routes.yaml`.
+
+### Weekly OpenRouter refresh
+
+`.github/workflows/refresh-models.yml` runs every Monday at 13:00 UTC and on
+`workflow_dispatch`. It fetches `https://openrouter.ai/api/v1/models` and
+updates the OpenRouter `standard` rates in this inventory, plus the matching
+single-tier rows in `.kxm/prices.yaml`. Nous `discount` rates and the `pi`,
+`grok`, and `agy` source blocks stay as the last `kxm models inventory-refresh`
+left them. Output is sorted by model id. `prices.yaml` `date` and the
+inventory `fetchedAt` (midnight UTC of that date) change only when the catalog
+content changes, so an unchanged week does not open a pull request.
+
+A model named by `.kxm/routes.yaml` (`admitted` or `disabled`) or by a roster
+entry in `.kxm/roles/*.yaml` is not deleted when it leaves OpenRouter. The
+refresh keeps the previous inventory row, sets `missingUpstream: true`, and
+the workflow's `model-catalog-guard` check fails. The pull request lists that
+model, and any referenced model whose input or output rate moved by more than
+20 percent, at the top. A multi-tier price row is left unchanged and called
+out the same way. `anthropic/fable` is matched through its aliases; when those
+OpenRouter rows disagree, the price row is left unchanged.
+
+Run the same refresh from a checkout:
+
+```bash
+node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs --dry-run
+node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs
+```
+
+`--dry-run` prints the summary and writes nothing. Exit 2 means a referenced
+model would be kept after leaving the catalog. The workflow pushes a non-empty
+diff to `automation/model-refresh` and opens or updates one pull request with
+`GITHUB_TOKEN`. It then dispatches `ci.yml` on that branch, because a push
+made with `GITHUB_TOKEN` does not start CI by itself.
 
 ## Personalization settings (`kxm.config.v1`)
 

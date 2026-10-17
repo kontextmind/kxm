@@ -520,6 +520,21 @@ kxm models refresh
 kxm routing report --equivalent-list-cost
 ```
 
+## Weekly price and inventory refresh
+
+OpenRouter list prices in `.kxm/prices.yaml` and `.kxm/models/inventory.yaml`
+go stale as models are added, removed, and repriced. A Monday 13:00 UTC
+workflow, `.github/workflows/refresh-models.yml`, fetches the public OpenRouter
+models API and opens one pull request on `automation/model-refresh` when the
+catalog changed. The pull request body lists models added, removed, and
+repriced. A route or roster model that disappeared, or whose input or output
+rate moved by more than 20 percent, is listed first. A disappeared referenced
+model stays in the inventory with `missingUpstream: true`, and the
+`model-catalog-guard` check fails until someone removes the reference or
+restores the model.
+
+Manual run, and the file fields, are in [Weekly OpenRouter refresh](config-reference.md#weekly-openrouter-refresh). `kxm models inventory-refresh` remains the local command that also queries Pi, Grok, agy, and Nous.
+
 ## Where the code is looser than the rules
 
 These are places where the code decides less than the [routing rules](#routing-rules) say. Each one is an open operator policy question, not a defect with an obvious fix. Until it is decided, follow the rule.
