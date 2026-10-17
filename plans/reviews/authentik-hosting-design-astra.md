@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-20"
-updated: "2026-10-01"
+updated: "2026-10-17"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Independent design pass behind plan-per-tenant-hosting.md: architecture A (Authentik at the edge; the hub stays a bearer-token resource server with an optional proxy-asserted browser boundary), verified baseline with eight corrections, two-mode behaviour, threat model, credential lifecycle, CLI grammar, UI/UX states, six slices, footprint budget. Design input and critic opinion, not assignment, witness or acceptance proof."
@@ -286,17 +286,17 @@ References describe the working tree on `fix/intake-review-round2`, including it
 
 | Brief claim | Verified finding |
 |---|---|
-| Hub credential precedence and persistence | Correct: environment → persisted record → generated admin token; project tokens use environment or record. Malformed records throw. See [hub-env.ts:140](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub-env.ts:140). **The launcher also independently implements this resolution**, so changing only that TypeScript function would miss `kxm hub start`: [kxm-hub.mjs:122](/Users/eddieflores/source/clients/kxm/scripts/kxm-hub.mjs:122). |
-| One-shot client resolution | Correct, with a qualification: explicit `KXM_AUTH_TOKEN` → persisted project token → persisted admin token. This function does **not** read `KXM_PROJECT_TOKENS` directly: [hub-env.ts:203](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub-env.ts:203). |
-| Hub auth guards | The stated project, admin, configured-admin, agent, and context-isolation guards are present: [hub.ts:495](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:495). `safeTokenEqual` delegates to the timing-safe helper: [hub.ts:126](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:126). |
-| Non-loopback requires a token | Correct: [hub.ts:468](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:468). The no-auth admin shortcut depends on the **configured listening host**, not request `Host`, source address, or forwarded headers: [hub.ts:533](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:533). |
-| Fresh local start can mean no auth | The lower-level server supports that convenience, but ordinary `kxm hub start` normally generates and persists an admin token first: [kxm-hub.mjs:129](/Users/eddieflores/source/clients/kxm/scripts/kxm-hub.mjs:129). Preserve both behaviors. |
-| `kxm auth token` manages hub bearer credentials | **Correction:** it manages a separate **local session token**, including `KXM_SESSION_TOKEN`; it does not rotate `KXM_AUTH_TOKEN`. See [cli/hub.ts:438](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/cli/hub.ts:438). Existing flags are `--status`, `--clear`, `--issue`, rather than positional verbs: [cli.ts:439](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/cli.ts:439). |
-| Studio behavior | Correct about the DOM input and bearer header: [studio-layout.ts:835](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/studio-layout.ts:835). **Studio is a separate server today.** `--host` takes a value. Token precedence is flag → session-token environment → session-token disk file: [cli/tasks.ts:281](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/cli/tasks.ts:281). No `localStorage` or `sessionStorage` use was found in this implementation. |
-| Studio already executes audited mutations | **Correction:** the CLI supplies no `onMutation` callback, while the server’s fallback returns `ok: true` and `mappedToCli: true` without execution. See [cli/tasks.ts:302](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/cli/tasks.ts:302) and [studio-layout.ts:410](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/studio-layout.ts:410). Hosted Studio must not inherit that success path. |
-| Live dash is a browser surface | **Correction:** `kxm dash` is a terminal UI. It uses SSE and snapshots, and currently rejects `--json`: [cli/hub.ts:112](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/cli/hub.ts:112). Browser equivalents would be new views. |
-| Redaction and server configuration | Correct for `KXM_AUTH_TOKEN=…`: [redact.ts:13](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/redact.ts:13). Server environment inputs match the brief: [server.ts:13](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/server.ts:13). |
-| Hub database is v5 with v6 pending | **Correction:** the hub store is v3: [store.ts:13](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/store.ts:13). The **Runtime event store** is v5: [runtime-store.ts:553](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/runtime-store.ts:553), with v6 follow-ups in [implementation-plan.md:1403](/Users/eddieflores/source/clients/kxm/plans/implementation-plan.md:1403). |
+| Hub credential precedence and persistence | Correct: environment → persisted record → generated admin token; project tokens use environment or record. Malformed records throw. See [hub-env.ts:140](../../plugins/kxm/src/hub-env.ts). **The launcher also independently implements this resolution**, so changing only that TypeScript function would miss `kxm hub start`: [kxm-hub.mjs:122](../../scripts/kxm-hub.mjs). |
+| One-shot client resolution | Correct, with a qualification: explicit `KXM_AUTH_TOKEN` → persisted project token → persisted admin token. This function does **not** read `KXM_PROJECT_TOKENS` directly: [hub-env.ts:203](../../plugins/kxm/src/hub-env.ts). |
+| Hub auth guards | The stated project, admin, configured-admin, agent, and context-isolation guards are present: [hub.ts:495](../../plugins/kxm/src/hub.ts). `safeTokenEqual` delegates to the timing-safe helper: [hub.ts:126](../../plugins/kxm/src/hub.ts). |
+| Non-loopback requires a token | Correct: [hub.ts:468](../../plugins/kxm/src/hub.ts). The no-auth admin shortcut depends on the **configured listening host**, not request `Host`, source address, or forwarded headers: [hub.ts:533](../../plugins/kxm/src/hub.ts). |
+| Fresh local start can mean no auth | The lower-level server supports that convenience, but ordinary `kxm hub start` normally generates and persists an admin token first: [kxm-hub.mjs:129](../../scripts/kxm-hub.mjs). Preserve both behaviors. |
+| `kxm auth token` manages hub bearer credentials | **Correction:** it manages a separate **local session token**, including `KXM_SESSION_TOKEN`; it does not rotate `KXM_AUTH_TOKEN`. See [cli/hub.ts:438](../../plugins/kxm/src/cli/hub.ts). Existing flags are `--status`, `--clear`, `--issue`, rather than positional verbs: [cli.ts:439](../../plugins/kxm/src/cli.ts). |
+| Studio behavior | Correct about the DOM input and bearer header: [studio-layout.ts:835](../../plugins/kxm/src/studio-layout.ts). **Studio is a separate server today.** `--host` takes a value. Token precedence is flag → session-token environment → session-token disk file: [cli/tasks.ts:281](../../plugins/kxm/src/cli/tasks.ts). No `localStorage` or `sessionStorage` use was found in this implementation. |
+| Studio already executes audited mutations | **Correction:** the CLI supplies no `onMutation` callback, while the server’s fallback returns `ok: true` and `mappedToCli: true` without execution. See [cli/tasks.ts:302](../../plugins/kxm/src/cli/tasks.ts) and [studio-layout.ts:410](../../plugins/kxm/src/studio-layout.ts). Hosted Studio must not inherit that success path. |
+| Live dash is a browser surface | **Correction:** `kxm dash` is a terminal UI. It uses SSE and snapshots, and currently rejects `--json`: [cli/hub.ts:112](../../plugins/kxm/src/cli/hub.ts). Browser equivalents would be new views. |
+| Redaction and server configuration | Correct for `KXM_AUTH_TOKEN=…`: [redact.ts:13](../../plugins/kxm/src/redact.ts). Server environment inputs match the brief: [server.ts:13](../../plugins/kxm/src/server.ts). |
+| Hub database is v5 with v6 pending | **Correction:** the hub store is v3: [store.ts:13](../../plugins/kxm/src/store.ts). The **Runtime event store** is v5: [runtime-store.ts:553](../../plugins/kxm/src/runtime-store.ts), with v6 follow-ups in [implementation-plan.md:1403](../implementation-plan.md). |
 
 I found no general `kxm doctor` command or `--token-stdin` convention in the KXM CLI sources searched. Both below are explicitly proposed additions.
 
@@ -391,9 +391,9 @@ Removing the proxy after activation leaves the hub in hosted mode. Browser acces
 |---|---|
 | Existing agents/workers | None. Preserve tokens, project names, agent IDs and reconnect behavior. Setup never rotates their credentials. |
 | One-shot CLI | None. Existing resolver and loopback binding remain. |
-| `kxm session brief` | None for access. It reads local hub snapshots and probes health, rather than obtaining its work through a browser session: [session-work.ts:438](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/session-work.ts:438). Add hosted status separately from cached work data. |
-| MCP server | None. Its existing resolver remains: [mcp-server.ts:84](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/mcp-server.ts:84). |
-| Pi extension | None. It currently uses environment → autostart token → persisted admin token, not the one-shot project-token resolver: [extension.ts:707](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/extension.ts:707). Preserve that distinction. |
+| `kxm session brief` | None for access. It reads local hub snapshots and probes health, rather than obtaining its work through a browser session: [session-work.ts:438](../../plugins/kxm/src/session-work.ts). Add hosted status separately from cached work data. |
+| MCP server | None. Its existing resolver remains: [mcp-server.ts:84](../../plugins/kxm/src/mcp-server.ts). |
+| Pi extension | None. It currently uses environment → autostart token → persisted admin token, not the one-shot project-token resolver: [extension.ts:707](../../plugins/kxm/src/extension.ts). Preserve that distinction. |
 | CI running on the VM | None. Keep existing machine credentials and URL. |
 | CI/agents outside the VM | No automatic migration. If they currently use a public hub listener, setup must flag that deployment conflict. Use an existing SSH tunnel, then `kxm hub bind http://127.0.0.1:<forwarded-port>`; credentials stay unchanged. |
 | Portal backend | Keep its existing machine integration if present. New embedded browser access uses the scoped credentials below. Never deliver the hub admin bearer to JavaScript. |
@@ -434,7 +434,7 @@ Externally copied proxy secrets cannot be recalled from disk, but rollback inval
 
 Use **`hub-auth.json`**, schema `kxm.hub-auth.v1`, beside the existing `hub-env.json`.
 
-On Linux the default directory is `$XDG_STATE_HOME/kxm` or `~/.local/state/kxm`; existing `KXM_STATE_HOME` overrides it. These paths follow [hub-env.ts:23](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub-env.ts:23).
+On Linux the default directory is `$XDG_STATE_HOME/kxm` or `~/.local/state/kxm`; existing `KXM_STATE_HOME` overrides it. These paths follow [hub-env.ts:23](../../plugins/kxm/src/hub-env.ts).
 
 Example shape; placeholders below are not credentials:
 
@@ -462,7 +462,7 @@ Example shape; placeholders below are not credentials:
 
 Keep both mode and credential metadata in one atomically replaced record. Reject unknown schema versions, incomplete hosted records, unsafe permissions, duplicate credential IDs, and invalid origins. Bound the credential list to 16 live/overlap entries.
 
-Files and secret output directories must be outside Git, with directory mode `0700` and file mode `0600`. Reject generated-secret destinations inside a Git worktree, including ignored files. Secret-free deployment templates and examples may be committed. This implements the existing prohibition in [migration.md:21](/Users/eddieflores/source/clients/kxm/docs/contracts/migration.md:21).
+Files and secret output directories must be outside Git, with directory mode `0700` and file mode `0600`. Reject generated-secret destinations inside a Git worktree, including ignored files. Secret-free deployment templates and examples may be committed. This implements the existing prohibition in [migration.md:21](../../docs/contracts/migration.md).
 
 Do not put hosting configuration in project YAML: it belongs to the tenant deployment, not a cloned repository.
 
@@ -474,7 +474,7 @@ Setup writes the plaintext **once** to the requested protected output file, or o
 
 Interactive setup defaults to a protected file. It never asks the operator to type a secret as an argument. Imported credentials use `--token-stdin`; minimum entropy/length requirements apply, and the managed default remains generation.
 
-There is one deliberate compatibility exception: existing unscoped `auth token` can re-echo its persisted session token today, at [cli/hub.ts:512](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/cli/hub.ts:512). Leave that untouched. “Never echoed twice” applies to the new hosted credentials.
+There is one deliberate compatibility exception: existing unscoped `auth token` can re-echo its persisted session token today, at [cli/hub.ts:512](../../plugins/kxm/src/cli/hub.ts). Leave that untouched. “Never echoed twice” applies to the new hosted credentials.
 
 ### Rotation and revocation
 
@@ -489,7 +489,7 @@ Do not present this as legacy admin-token rotation. That would require a separat
 
 ### Binding and startup
 
-`kxm hub bind <url>` remains a URL binding, with no credential import or new precedence. Today it persists the URL and probes health: [cli/hub.ts:194](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/cli/hub.ts:194).
+`kxm hub bind <url>` remains a URL binding, with no credential import or new precedence. Today it persists the URL and probes health: [cli/hub.ts:194](../../plugins/kxm/src/cli/hub.ts).
 
 | Condition | Result |
 |---|---|
@@ -710,7 +710,7 @@ If a request loses its response after dispatch, say:
 
 Only safe, existing idempotent command contracts may support a deliberate retry. An auth feature must not invent mutation idempotency.
 
-Hosted browser code holds **no bearer token**: none in a DOM field, local storage, session storage, URL, or generated HTML. The browser sends the edge-owned cookie; the proxy adds its credential upstream. Use same-origin JSON mutations, verify `Origin` against the configured HTTPS origin, require a non-simple application header, and omit wildcard CORS. Existing standalone Studio currently permits wildcard CORS at [studio-layout.ts:314](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/studio-layout.ts:314); do not reuse that policy for hosted requests.
+Hosted browser code holds **no bearer token**: none in a DOM field, local storage, session storage, URL, or generated HTML. The browser sends the edge-owned cookie; the proxy adds its credential upstream. Use same-origin JSON mutations, verify `Origin` against the configured HTTPS origin, require a non-simple application header, and omit wildcard CORS. Existing standalone Studio currently permits wildcard CORS at [studio-layout.ts:314](../../plugins/kxm/src/studio-layout.ts); do not reuse that policy for hosted requests.
 
 `hub view` adds separate **machine ready** and **browser verified/unverified** indicators in hosted mode. Terminal dash adds tenant and auth status to its existing connection line. Session brief refreshes these indicators independently of cached task summaries.
 
@@ -722,7 +722,7 @@ They must never display “Mutation applied” from today’s placeholder respon
 
 ## 6. Independently shippable slices
 
-These are a proposed handoff order, not a second execution tracker. The writer records accepted work in Tracking and the affected Phase 10 note, following [implementation-plan.md:1755](/Users/eddieflores/source/clients/kxm/plans/implementation-plan.md:1755). Explicitly document that this per-tenant deployment does not implement Phase 11 multi-user RBAC.
+These are a proposed handoff order, not a second execution tracker. The writer records accepted work in Tracking and the affected Phase 10 note, following [implementation-plan.md:1755](../implementation-plan.md). Explicitly document that this per-tenant deployment does not implement Phase 11 multi-user RBAC.
 
 Every slice runs the existing **`npm run verify`** gate. New tests below belong to the existing suite, not new npm gates.
 
@@ -764,16 +764,16 @@ No live tenant workload or memory sample was available, so the numbers below are
 
 | Component | Existing control and verified behavior | Hosted setting / implication |
 |---|---|---|
-| Hub DB | `KXM_DATA_PATH`; default `.kxm/state/kxm.db`. `KXM_STATE_DIR` changes its default directory, not its size. [server.ts:20](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/server.ts:20) | Pin absolute paths under the tenant’s existing data allocation. Path knobs impose no byte quota. |
-| Pending peer messages | Default TTL **24 hours**; requests may choose up to **7 days**. [protocol.ts:6](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/protocol.ts:6) | Keep `KXM_MESSAGE_TTL_MS=86400000` initially. Lowering it changes work-delivery semantics and needs workload evidence. |
-| Terminal peer messages | Default retention **7 days**; purge uses terminal timestamps. [store.ts:438](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/store.ts:438) | Set `KXM_MESSAGE_RETENTION_MS=604800000` explicitly. This is not a hard maximum message lifetime or DB size. |
-| Legacy hub runs/journal | Completed/failed runs have a **hardcoded seven-day** retention default; related journal entries are removed. [store.ts:483](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/store.ts:483) | No server environment knob for this retention was found. Active runs and live context can keep growing. |
-| Runtime events and intake | Separate per-project stores, outside the hub v3 DB. Event insertions and intake records accumulate. [runtime-store.ts:1026](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/runtime-store.ts:1026) | Include only Runtime stores actually colocated on this VM. Peer-message retention does not prune them. |
-| Intake plaintext | **There is no `intake_messages.content` SQL column.** Content is inside the JSON `record`. Only classification `secret` omits it; `sensitive` still persists plaintext. Default is `project`, and classification is caller-supplied. [runtime-store.ts:761](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/runtime-store.ts:761), [intake.ts:273](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/intake.ts:273) | Count these bytes and protect backups accordingly. Intake input is capped at **16 KiB**: [intake.ts:28](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/intake.ts:28). No 30-day retention guarantee. |
-| WAL and shared memory | Database helper enables WAL. [database.ts:114](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/database.ts:114) | Measure `-wal`/`-shm`; no existing hard WAL byte ceiling was found. Long readers can prevent reclamation. |
-| Hub JSONL log | Default **10 MiB per file**, three rotated files plus active file: approximately **40 MiB**, allowing an oversized-entry overshoot. [logger.ts:14](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/logger.ts:14), [logger.ts:44](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/logger.ts:44) | Keep defaults. `KXM_LOG_PATH` sets location, not retention. Count supervisor stdout logs separately; the logger can also emit stdout. |
-| Artifacts, retrospectives, improvements | Asset path controls location; terminal retrospectives export files, and improvement reports use timestamped filenames. [hub.ts:457](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:457), [improve.ts:339](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/improve.ts:339) | No general size/retention bound found. Preserve evidence; alert on growth rather than silently delete. |
-| Backup | Checkpoint attempt, integrity check, then `VACUUM INTO` a separate file. [database.ts:478](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/database.ts:478) | Reserve space for the new compact copies while originals, WAL, earlier backups, and ongoing writes remain. SQLite backup does not include artifact directories automatically. |
+| Hub DB | `KXM_DATA_PATH`; default `.kxm/state/kxm.db`. `KXM_STATE_DIR` changes its default directory, not its size. [server.ts:20](../../plugins/kxm/src/server.ts) | Pin absolute paths under the tenant’s existing data allocation. Path knobs impose no byte quota. |
+| Pending peer messages | Default TTL **24 hours**; requests may choose up to **7 days**. [protocol.ts:6](../../plugins/kxm/src/protocol.ts) | Keep `KXM_MESSAGE_TTL_MS=86400000` initially. Lowering it changes work-delivery semantics and needs workload evidence. |
+| Terminal peer messages | Default retention **7 days**; purge uses terminal timestamps. [store.ts:438](../../plugins/kxm/src/store.ts) | Set `KXM_MESSAGE_RETENTION_MS=604800000` explicitly. This is not a hard maximum message lifetime or DB size. |
+| Legacy hub runs/journal | Completed/failed runs have a **hardcoded seven-day** retention default; related journal entries are removed. [store.ts:483](../../plugins/kxm/src/store.ts) | No server environment knob for this retention was found. Active runs and live context can keep growing. |
+| Runtime events and intake | Separate per-project stores, outside the hub v3 DB. Event insertions and intake records accumulate. [runtime-store.ts:1026](../../plugins/kxm/src/runtime-store.ts) | Include only Runtime stores actually colocated on this VM. Peer-message retention does not prune them. |
+| Intake plaintext | **There is no `intake_messages.content` SQL column.** Content is inside the JSON `record`. Only classification `secret` omits it; `sensitive` still persists plaintext. Default is `project`, and classification is caller-supplied. [runtime-store.ts:761](../../plugins/kxm/src/runtime-store.ts), [intake.ts:273](../../plugins/kxm/src/intake.ts) | Count these bytes and protect backups accordingly. Intake input is capped at **16 KiB**: [intake.ts:28](../../plugins/kxm/src/intake.ts). No 30-day retention guarantee. |
+| WAL and shared memory | Database helper enables WAL. [database.ts:114](../../plugins/kxm/src/database.ts) | Measure `-wal`/`-shm`; no existing hard WAL byte ceiling was found. Long readers can prevent reclamation. |
+| Hub JSONL log | Default **10 MiB per file**, three rotated files plus active file: approximately **40 MiB**, allowing an oversized-entry overshoot. [logger.ts:14](../../plugins/kxm/src/logger.ts), [logger.ts:44](../../plugins/kxm/src/logger.ts) | Keep defaults. `KXM_LOG_PATH` sets location, not retention. Count supervisor stdout logs separately; the logger can also emit stdout. |
+| Artifacts, retrospectives, improvements | Asset path controls location; terminal retrospectives export files, and improvement reports use timestamped filenames. [hub.ts:457](../../plugins/kxm/src/hub.ts), [improve.ts:339](../../plugins/kxm/src/improve.ts) | No general size/retention bound found. Preserve evidence; alert on growth rather than silently delete. |
+| Backup | Checkpoint attempt, integrity check, then `VACUUM INTO` a separate file. [database.ts:478](../../plugins/kxm/src/database.ts) | Reserve space for the new compact copies while originals, WAL, earlier backups, and ongoing writes remain. SQLite backup does not include artifact directories automatically. |
 
 Deleting rows generally makes SQLite pages reusable; it does not promise that the main DB file shrinks.
 
@@ -808,9 +808,9 @@ The measurement that replaces the assumed factor of two is physical database all
 
 Current behavior differs materially:
 
-- Standalone Studio fetches layout every **3 seconds**: [studio-layout.ts:874](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/studio-layout.ts:874).
-- Terminal dash uses SSE, with **15-second heartbeat** frames: [hub.ts:1419](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:1419).
-- Each ops event can trigger a fresh snapshot cycle, including health, readiness, and metadata requests: [tui.ts:820](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/tui.ts:820), [tui.ts:1129](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/tui.ts:1129). “SSE” does not mean constant low bandwidth.
+- Standalone Studio fetches layout every **3 seconds**: [studio-layout.ts:874](../../plugins/kxm/src/studio-layout.ts).
+- Terminal dash uses SSE, with **15-second heartbeat** frames: [hub.ts:1419](../../plugins/kxm/src/hub.ts).
+- Each ops event can trigger a fresh snapshot cycle, including health, readiness, and metadata requests: [tui.ts:820](../../plugins/kxm/src/tui.ts), [tui.ts:1129](../../plugins/kxm/src/tui.ts). “SSE” does not mean constant low bandwidth.
 
 At **20 KiB per layout response**, a continuously open three-second polling tab transfers:
 
@@ -845,13 +845,13 @@ KXM_RATE_LIMIT_MAX=600
 KXM_RATE_LIMIT_WINDOW_MS=60000
 ```
 
-These are per agent-header/address bucket, not a tenant-wide byte limit; bucket selection precedes authentication. [hub.ts:572](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:572) They cannot substantiate a global bandwidth ceiling. The existing proxy’s fixed tenant bucket supplies the public-browser ceiling.
+These are per agent-header/address bucket, not a tenant-wide byte limit; bucket selection precedes authentication. [hub.ts:572](../../plugins/kxm/src/hub.ts) They cannot substantiate a global bandwidth ceiling. The existing proxy’s fixed tenant bucket supplies the public-browser ceiling.
 
 ### Process and RAM
 
-There is one hub server process, but **the normal launcher is also a resident wrapper process**: [kxm-hub.mjs:247](/Users/eddieflores/source/clients/kxm/scripts/kxm-hub.mjs:247). Count both PIDs when measuring the managed hub.
+There is one hub server process, but **the normal launcher is also a resident wrapper process**: [kxm-hub.mjs:247](../../scripts/kxm-hub.mjs). Count both PIDs when measuring the managed hub.
 
-The store loads agents, workflow runs, journal, and context records into memory: [store.ts:614](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/store.ts:614). Therefore a constant “RAM per hub” number cannot be established from source.
+The store loads agents, workflow runs, journal, and context records into memory: [store.ts:614](../../plugins/kxm/src/store.ts). Therefore a constant “RAM per hub” number cannot be established from source.
 
 Proposed feasibility budgets:
 
@@ -928,7 +928,7 @@ Implementation details that keep the numbers honest:
 - Count distinct files/inodes once; report apparent size and allocated blocks separately.
 - Include configured paths outside `.kxm/`; list inaccessible or undiscovered paths.
 - Discover colocated Runtime stores separately from the hub DB.
-- Add inexpensive in-memory byte counters at HTTP writes, including streaming writes. Current `kxm_requests_total` counts requests but is not a wire-byte metric: [hub.ts:1059](/Users/eddieflores/source/clients/kxm/plugins/kxm/src/hub.ts:1059).
+- Add inexpensive in-memory byte counters at HTTP writes, including streaming writes. Current `kxm_requests_total` counts requests but is not a wire-byte metric: [hub.ts:1059](../../plugins/kxm/src/hub.ts).
 - Report counter resets using process-start identity. Do not extrapolate across a restart.
 - Treat hub byte counts as application bytes before edge compression/TLS. Proxy and provider billing remain `unknown` unless their existing counters/logs are available.
 - Backup-size estimates are estimates: free pages, checkpoint contention, concurrent writes, and multiple retained backups alter peak space.

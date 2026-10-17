@@ -9,6 +9,7 @@ sources:
   - .github/workflows/nightly.yml
   - scripts/ci-classify.mjs
   - docs/contributing/ci-and-release.md
+  - scripts/check-plan-links.mjs
 ---
 
 # CI conventions
@@ -23,7 +24,7 @@ A code pull request runs:
 
 | Lane | What |
 |---|---|
-| Docs lint | `npm run lint:docs` and `npm run check:versions` |
+| Docs lint | `npm run lint:docs` (markdownlint and the `plans/` relative-link check) and `npm run check:versions` |
 | Engine | `engine.test.ts` in two shards, Linux Node 24 |
 | Unit | `serial`, `light-1`, and `light-2` on Linux Node 24 |
 | Python | Python 3.13 contracts against PostgreSQL 17 |

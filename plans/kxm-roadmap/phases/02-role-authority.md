@@ -14,13 +14,13 @@ Promote the passive kxm.role.v2 and kxm.model.v2 draft to the single role author
 
 `omp-p1`. Status: done. Detail: ready.
 
-Template: [feature](../../templates/feature.md).
+Template: [feature](../../../docs/templates/feature.md).
 
 Done criterion: just verify green; every .kxm/roles and .kxm/models file validates through validatePolicyDraft with the developer ceilings; role list, get, add, modify, remove read and write v2 only.
 
 Evidence needed: The validator test named in the P1 row and the CHANGELOG entry.
 
-Plan section: plans/plan-omp-config-alignment.md#5-phases.
+Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
 
 Evidence: `test/core/policy-draft.test.ts`.
 
@@ -28,13 +28,13 @@ Evidence: `test/core/policy-draft.test.ts`.
 
 `omp-p2`. Status: done. Detail: ready.
 
-Template: [feature](../../templates/feature.md).
+Template: [feature](../../../docs/templates/feature.md).
 
 Done criterion: roster-policy.mjs and engine.ts read roles and routes from the v2 files at origin/main; roster.yaml and the justfile literals are gone.
 
 Evidence needed: test/core/roster-policy.test.ts rewritten, one engine test per refusal path.
 
-Plan section: plans/plan-omp-config-alignment.md#5-phases.
+Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
 
 Evidence: `test/core/roster-policy.test.ts`.
 
@@ -42,13 +42,13 @@ Evidence: `test/core/roster-policy.test.ts`.
 
 `omp-p3`. Status: done. Detail: ready.
 
-Template: [feature](../../templates/feature.md).
+Template: [feature](../../../docs/templates/feature.md).
 
 Done criterion: A step whose tool preset is wider than its role permission is refused at load and again at dispatch, before a producer starts. Landed in #378, published v0.7.169.
 
 Evidence needed: A fixture per preset pair.
 
-Plan section: plans/plan-omp-config-alignment.md#5-phases.
+Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
 
 Evidence: `test/core/engine.test.ts`.
 
@@ -56,13 +56,13 @@ Evidence: `test/core/engine.test.ts`.
 
 `omp-p4`. Status: done. Detail: ready.
 
-Template: [feature](../../templates/feature.md).
+Template: [feature](../../../docs/templates/feature.md).
 
 Done criterion: An attempt continues on the next admitted route when the role opts in, and the reports show the switch.
 
 Evidence needed: Simulated 429 and transport fixtures.
 
-Plan section: plans/plan-omp-config-alignment.md#5-phases.
+Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
 
 Evidence: `test/core/route-fallback.test.ts`.
 

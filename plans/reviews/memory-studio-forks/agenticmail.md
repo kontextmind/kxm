@@ -165,8 +165,8 @@ gate-specific verifier, not a generic mail sender: do not append mail observatio
 to its existing gate event namespace. Add communication receipts under a reviewed
 schema while keeping one Runtime owner; the fork's task database must not become
 another workflow authority.
-[KXM acceptance](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/runtime-service.ts#L354-L440),
-[KXM evidence](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/engine-evidence.ts#L35-L84).
+[KXM acceptance](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/vnext-runtime.ts#L354-L440),
+[KXM evidence](https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/vnext-engine-evidence.ts#L35-L84).
 
 Memory body redaction and Studio's missing-handler success remain open in this
 baseline. Resolve those before importing message bodies or enabling send buttons.

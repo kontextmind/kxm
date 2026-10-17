@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-10-12"
+updated: "2026-10-17"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Proposed TypeScript-to-Python migration, central platform target, parity gates and project cutover; delivery authority stays in the active implementation tracker."
@@ -31,6 +31,8 @@ Read [the execution tracker](implementation-plan.md) first. MG0–MG8 describe a
 
 The open roadmap phase is
 [`kxm-roadmap/phases/03-python-migration.md`](kxm-roadmap/phases/03-python-migration.md).
+How the Python control API sits beside the Node hub is in the
+[architecture overview](../.kxm/knowledge/architecture/overview.md).
 
 **Prepared:** 2026-09-25
 

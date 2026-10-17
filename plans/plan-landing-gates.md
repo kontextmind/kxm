@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-26"
-updated: "2026-10-01"
+updated: "2026-10-17"
 authority: "hypothesis"
 confidence: "high"
 summary: "Standing instruction from the operator: every PR is monitored, rebased onto main, unblocked, merged, and followed through to the npm publish without asking; documentation is regenerated after a green pipeline and before the merge; every phase or milestone triggers the deep roadmap review. This slice adds kxm land (plugins/kxm/src/cli/land.ts over scripts/pr-land.mjs), which chains a green npm run verify, the roadmap and docs regeneration, push, PR creation or reuse, a bounded rebase loop with the known conflict unions, auto-merge or direct squash merge, a release watch, and the milestone trigger, and registers those stages as command gates in gates.yaml with a land workflow so kxm run land drives them with receipts. No just recipe is added; the repo is migrating off just. npm run verify stays the pre-push gate and is the first step of landing, not replaced by it."
@@ -116,7 +116,7 @@ evidence, which is what "this should be a gate" means.
 | Tests | `test/core/pr-land.test.ts`: the three unions on fixtures, the CLEAN-status fallback with a stubbed `gh`, the bounded rebase loop, and one refusal per stage |
 | Docs | `docs/contributing/assignment-runner.md` gains a "Landing" section; `docs/reference/workflow-catalog.md` lists `land` |
 
-One PR. The brief is [`.kxm/briefs/landing-gates.md`](../.kxm/briefs/landing-gates.md).
+One PR. The brief is `.kxm/briefs/landing-gates.md` (local workspace file, not checked in).
 
 ## 5. Solid versus interim
 

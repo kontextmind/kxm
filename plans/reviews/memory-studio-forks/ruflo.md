@@ -91,6 +91,6 @@ Inspected hybrid tests use synthetic embeddings/in-memory configuration and allo
 [20]: https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/context.ts#L250
 [21]: https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/memory.ts#L306
 [22]: https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/store.ts#L385
-[23]: https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/runtime-store.ts#L774
+[23]: https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/vnext-runtime-store.ts#L774
 [24]: https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/plugins/kxm/src/studio-layout.ts#L307
 [25]: https://github.com/kontextmind/kxm/blob/02aaed31fd6160a78378c677ab27d4119f039621/package.json#L54

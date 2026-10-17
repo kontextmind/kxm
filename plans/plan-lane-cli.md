@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-25"
-updated: "2026-10-12"
+updated: "2026-10-17"
 authority: "hypothesis"
 confidence: "high"
 summary: "Small slice. Add a kxm lane command group (create, list, status, drop, run) that manages one git worktree per unit of work, records the lane in the project state directory, and lets kxm run and kxm runs target a lane by name. Add --brief <file> to kxm run so a prompt is never passed inline. The just worktree recipes become wrappers. Lands before P1 of plan-omp-config-alignment.md, which is the first run that uses it. No push, merge, or PR behavior; no change to admission or the trusted roster read."
@@ -136,7 +136,7 @@ kxm lane run omp-align-p1 --brief .kxm/briefs/omp-align-p1.md --wait
 | Justfile | `worktree` and `worktree-drop` recipes call `kxm lane create` and `kxm lane drop` | literals gone |
 
 One PR. Roughly one afternoon for the writer. The brief is
-[`.kxm/briefs/lane-cli.md`](../.kxm/briefs/lane-cli.md).
+`.kxm/briefs/lane-cli.md` (local workspace file, not checked in).
 
 ## 4. Found during the first dispatch (2026-09-25)
 

@@ -161,7 +161,7 @@ function renderTask(task) {
   }
   const template = task.template || "none";
   const templateText = detail === "ready" && TEMPLATES.has(template)
-    ? `[${template}](../../templates/${template}.md)`
+    ? `[${template}](../../../docs/templates/${template}.md)`
     : `\`${template}\``;
   const parts = [
     `### ${task.title}`,
@@ -175,7 +175,12 @@ function renderTask(task) {
     `Evidence needed: ${recorded(task, "evidenceNeeded")}`,
   ];
   if (typeof task.planSection === "string" && task.planSection.trim()) {
-    parts.push("", `Plan section: ${task.planSection}.`);
+    const trimmed = task.planSection.trim();
+    const hash = trimmed.indexOf("#");
+    const pathPart = hash >= 0 ? trimmed.slice(0, hash) : trimmed;
+    const frag = hash >= 0 ? trimmed.slice(hash) : "";
+    const rel = pathPart.startsWith("plans/") ? `../../${pathPart.slice("plans/".length)}` : pathPart;
+    parts.push("", `Plan section: [${trimmed}](${rel}${frag}).`);
   }
   if (typeof task.evidence === "string" && task.evidence.trim()) {
     parts.push("", `Evidence: \`${task.evidence}\`.`);
