@@ -1733,6 +1733,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `the role files` | Tracked configuration outside the bundle | You and their commands |
 | `config.yaml` | Tracked if the project wants shared preferences; otherwise ignore it | `kxm config set` |
 | `memory/`, `skills/`, `candidates/`, `goals/` | Tracked durable records | Their commands |
+| `knowledge/` | Tracked authored wiki. `knowledge/wiki/` is the compiled view from `kxm context wiki-compile --out` | Maintainers, and `kxm context wiki-compile` for `wiki/` |
 | `models/inventory.yaml` | Generated; track it if you want a reviewed snapshot | `kxm models inventory-refresh` |
 | `assets/` | Tracked intentionally; `assets/generated/` is ignored | Workflows, `kxm improve`, `kxm session start` |
 | `tasks/` | Ignored in the KXM repository; your choice | `kxm task` |

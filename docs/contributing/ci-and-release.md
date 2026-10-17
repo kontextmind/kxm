@@ -299,3 +299,4 @@ implying automated coverage.
 - [Test matrix](test-matrix.md): which test proves which behavior
 - [Write KXM documentation](writing-docs.md): doc gates and pinned paths
 - [Upgrade KXM](../operations/upgrade.md): the operator side of a new version
+- [Project knowledge wiki](../../.kxm/knowledge/index.md): authored notes for [CI](../../.kxm/knowledge/patterns/ci.md) and [release](../../.kxm/knowledge/patterns/release-flow.md)
