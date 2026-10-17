@@ -18541,9 +18541,14 @@ function lintWorkforce(root) {
     if (!expected || model.id !== expected) {
       push(errors, "error", "route_id_convention", `.kxm/models/${model.id}.yaml`, `route id '${model.id}' must be '${expected ?? "<harness>-<model-slug>[-<provider>]"}'`);
     }
-    if (!used.has(model.id)) {
+    const retired = doc.status === "retired";
+    if (retired && used.has(model.id)) {
+      push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `retired route '${model.id}' is still on a role roster`);
+    }
+    if (!retired && !used.has(model.id)) {
       push(errors, "error", "route_unused", `.kxm/models/${model.id}.yaml`, `route '${model.id}' is not on any role roster`);
     }
+    if (retired) continue;
     const selectorHit = selectorsFor(doc).find((selector) => admitted.includes(selector));
     if (!selectorHit) {
       push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `model '${doc.model ?? ""}' is not an admitted selector`);
@@ -18614,9 +18619,9 @@ var init_workforce_names = __esm({
     ]);
     ROUTE_RENAMES = Object.freeze([
       ["grok-native", "grok-grok-4-7"],
-      ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
-      ["gemini-agy", "agy-gemini-3-8-flash-high"],
+      ["gemini-agy", "agy-gemini-4-argon-high"],
       ["fable-claude", "claude-fable"],
+      // sol-codex stays the GPT-5.6 route. codex-gpt-6-1-sol is a separate route.
       ["sol-codex", "codex-gpt-5-6-sol"],
       ["grok-default", "grok-grok-4-6"],
       ["fable-default", "claude-fable"]
@@ -28788,6 +28793,32 @@ function rates(raw) {
 function modelId(id) {
   return id.trim().toLowerCase();
 }
+function blankModel(id, item) {
+  return {
+    id,
+    ...typeof item?.name === "string" ? { name: item.name } : {},
+    ...typeof item?.context_length === "number" ? { contextLength: item.context_length } : {},
+    capabilities: { thinking: { supported: null, source: "unknown" }, speed: { fast: null, source: "unknown" } },
+    sources: []
+  };
+}
+function applyAggregatorItem(current, item, source, kind) {
+  if (!current.sources.includes(source)) current.sources.push(source);
+  const parsed = rates(item.pricing);
+  if (parsed) {
+    if (kind === "standard") current.standard = parsed;
+    else current.discount = parsed;
+  }
+  if (!current.name && typeof item.name === "string") current.name = item.name;
+  if (!current.contextLength && typeof item.context_length === "number") current.contextLength = item.context_length;
+  const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters.filter((value) => typeof value === "string") : [];
+  if (parameters.some((value) => /reasoning|thinking/i.test(value))) current.capabilities.thinking = { supported: true, source };
+  if (parameters.some((value) => /speed|service.?tier|fast/i.test(value))) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+  if (Array.isArray(item.thinkingLevels) && item.thinkingLevels.length > 0) {
+    current.capabilities.thinking = { supported: true, levels: item.thinkingLevels, ...item.defaultThinking ? { default: item.defaultThinking } : {}, source };
+  }
+  if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+}
 async function fetchModels(url, authorization) {
   try {
     const headers = { Accept: "application/json" };
@@ -28809,20 +28840,8 @@ async function refreshModelInventory(options) {
   const add = (item, source, kind) => {
     if (!item || typeof item.id !== "string" || !item.id.trim()) return;
     const key = modelId(item.id);
-    const current = byId.get(key) ?? { id: item.id, ...typeof item.name === "string" ? { name: item.name } : {}, ...typeof item.context_length === "number" ? { contextLength: item.context_length } : {}, capabilities: { thinking: { supported: null, source: "unknown" }, speed: { fast: null, source: "unknown" } }, sources: [] };
-    if (!current.sources.includes(source)) current.sources.push(source);
-    const parsed = rates(item.pricing);
-    if (parsed) {
-      if (kind === "standard") current.standard = parsed;
-      else current.discount = parsed;
-    }
-    if (!current.name && typeof item.name === "string") current.name = item.name;
-    if (!current.contextLength && typeof item.context_length === "number") current.contextLength = item.context_length;
-    const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters.filter((value) => typeof value === "string") : [];
-    if (parameters.some((value) => /reasoning|thinking/i.test(value))) current.capabilities.thinking = { supported: true, source };
-    if (parameters.some((value) => /speed|service.?tier|fast/i.test(value))) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
-    if (Array.isArray(item.thinkingLevels) && item.thinkingLevels.length > 0) current.capabilities.thinking = { supported: true, levels: item.thinkingLevels, ...item.defaultThinking ? { default: item.defaultThinking } : {}, source };
-    if (item.fast === true) current.capabilities.speed = { fast: true, tiers: ["fast"], source };
+    const current = byId.get(key) ?? blankModel(item.id, item);
+    applyAggregatorItem(current, item, source, kind);
     byId.set(key, current);
   };
   const native2 = async (command, args, source) => {
@@ -28834,7 +28853,7 @@ async function refreshModelInventory(options) {
       const parts = line.trim().split(/\s+/);
       const id = source === "pi" && parts.length >= 2 && parts[0] !== "provider" ? `${parts[0]}/${parts[1]}` : parts[0];
       if (id && /^[a-z0-9][a-z0-9._/-]+$/i.test(id) && id !== "Available") {
-        const effortMatch = source === "agy" ? id.match(/-(low|medium|high)$/i) : null;
+        const effortMatch = source === "agy" ? id.match(/-(low|medium|high|max)$/i) : null;
         add({ id, ...effortMatch?.[1] ? { thinkingLevels: [effortMatch[1].toLowerCase()] } : {} }, source, "standard");
       }
     }
@@ -28855,13 +28874,14 @@ async function refreshModelInventory(options) {
   writeFileSync18(join28(options.outputRoot, ".kxm", "models", "inventory.yaml"), (0, import_yaml17.stringify)(inventory), "utf8");
   return inventory;
 }
-var import_yaml17, OR_URL, NOUS_URL;
+var import_yaml17, OPENROUTER_MODELS_URL, OR_URL, NOUS_URL;
 var init_model_inventory = __esm({
   "plugins/kxm/src/model-inventory.ts"() {
     "use strict";
     import_yaml17 = __toESM(require_dist(), 1);
     init_oneshot_process();
-    OR_URL = "https://openrouter.ai/api/v1/models";
+    OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
+    OR_URL = OPENROUTER_MODELS_URL;
     NOUS_URL = "https://inference-api.nousresearch.com/v1/models";
   }
 });
@@ -45242,6 +45262,9 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   if (term.startsWith("screen")) {
     return { images: null, trueColor: hasTrueColorHint, hyperlinks: false };
   }
+  if (termProgram === "herdr") {
+    return { images: null, trueColor: hasTrueColorHint, hyperlinks: true };
+  }
   if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
     return { images: "kitty", trueColor: true, hyperlinks: true };
   }
@@ -46397,6 +46420,10 @@ var Box = class {
   setBgFn(bgFn) {
     this.bgFn = bgFn;
   }
+  setPaddingX(paddingX) {
+    this.paddingX = paddingX;
+    this.invalidateCache();
+  }
   invalidateCache() {
     this.cache = void 0;
   }
@@ -46506,11 +46533,11 @@ var TUI_KEYBINDINGS = {
     description: "Move cursor word right"
   },
   "tui.editor.cursorLineStart": {
-    defaultKeys: ["home", "ctrl+home", "ctrl+a"],
+    defaultKeys: ["home", "ctrl+a"],
     description: "Move to line start"
   },
   "tui.editor.cursorLineEnd": {
-    defaultKeys: ["end", "ctrl+end", "ctrl+e"],
+    defaultKeys: ["end", "ctrl+e"],
     description: "Move to line end"
   },
   "tui.editor.jumpForward": {
@@ -46615,8 +46642,8 @@ var TUI_KEYBINDINGS = {
     defaultKeys: "escape",
     description: "Close transcript search"
   },
-  "tui.altScreen.top": { defaultKeys: "home", description: "Scroll viewport to top" },
-  "tui.altScreen.bottom": { defaultKeys: "end", description: "Scroll viewport to bottom" }
+  "tui.altScreen.top": { defaultKeys: "ctrl+home", description: "Scroll viewport to top" },
+  "tui.altScreen.bottom": { defaultKeys: "ctrl+end", description: "Scroll viewport to bottom" }
 };
 function normalizeKeys(keys) {
   if (keys === void 0)
@@ -46736,6 +46763,10 @@ var Text = class {
     this.cachedText = void 0;
     this.cachedWidth = void 0;
     this.cachedLines = void 0;
+  }
+  setPaddingX(paddingX) {
+    this.paddingX = paddingX;
+    this.invalidate();
   }
   invalidate() {
     this.cachedText = void 0;
@@ -47850,6 +47881,40 @@ function getNativePlatformHelper() {
   return loadNativePlatformHelper(process.platform);
 }
 
+// node_modules/@earendil-works/pi-tui/dist/program-status.js
+var PROGRAM_STATUS_QUERY = "\x1B]7501;?\x1B\\";
+function isProgramStatusReply(sequence) {
+  return /^\x1b\]7501;\?[^\x07\x1b]*(?:\x07|\x1b\\)$/.test(sequence);
+}
+var APP_PATTERN = /^[A-Za-z0-9_.+-]{1,32}$/;
+var CONTROL_CHARACTERS2 = /[\u0000-\u001f\u007f-\u009f]+/g;
+var MAX_MESSAGE_BYTES = 2048;
+function truncateUtf8(text, maxBytes) {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes)
+    return text;
+  let bytes = 0;
+  let end = 0;
+  for (const char of text) {
+    const size = Buffer.byteLength(char, "utf8");
+    if (bytes + size > maxBytes)
+      break;
+    bytes += size;
+    end += char.length;
+  }
+  return text.slice(0, end);
+}
+function formatProgramStatus(status) {
+  const pairs = [`state=${status.state}`];
+  if (status.app !== void 0 && APP_PATTERN.test(status.app))
+    pairs.push(`app=${status.app}`);
+  if (status.state === "blocked" && status.kind)
+    pairs.push(`kind=${status.kind}`);
+  const message = truncateUtf8((status.message ?? "").replace(CONTROL_CHARACTERS2, " ").trim(), MAX_MESSAGE_BYTES);
+  if (message)
+    pairs.push(`msg=${Buffer.from(message, "utf8").toString("base64")}`);
+  return `\x1B]7501;${pairs.join(":")}\x1B\\`;
+}
+
 // node_modules/@earendil-works/pi-tui/dist/stdin-buffer.js
 import { EventEmitter as EventEmitter2 } from "events";
 var ESC = "\x1B";
@@ -48151,7 +48216,8 @@ var TERMINAL_PROGRESS_CLEAR_SEQUENCE = "\x1B]9;4;0\x07";
 var NATIVE_SHIFT_ENTER_SEQUENCE = "\x1B[13;2u";
 var DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS = 7;
 var KEYBOARD_PROTOCOL_RESPONSE_FRAGMENT_TIMEOUT_MS = 150;
-var KITTY_KEYBOARD_PROTOCOL_QUERY = `\x1B[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u\x1B[?u\x1B[c`;
+var KITTY_KEYBOARD_PROTOCOL_QUERY = `\x1B[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u\x1B[?u`;
+var DEVICE_ATTRIBUTES_QUERY = "\x1B[c";
 function parseKeyboardProtocolNegotiationSequence(sequence) {
   const kittyFlags = sequence.match(/^\x1b\[\?(\d+)u$/);
   if (kittyFlags) {
@@ -48207,6 +48273,12 @@ var ProcessTerminal = class {
   stdinBuffer;
   stdinDataHandler;
   progressInterval;
+  /** Latest program status, kept across stop() so start() can report it again. */
+  programStatus;
+  /** Whether the terminal confirmed OSC 7501 support since the last start(), or `PI_PROGRAM_STATUS=1`. */
+  programStatusSupported = false;
+  /** The support query was sent and its DA1 sentinel has not arrived yet. */
+  programStatusQueryPending = false;
   writeLogPath = (() => {
     const env = process.env.PI_TUI_WRITE_LOG || "";
     if (!env)
@@ -48253,6 +48325,14 @@ var ProcessTerminal = class {
   setupStdinBuffer() {
     this.stdinBuffer = new StdinBuffer({ escapeTimeout: resolveEscapeTimeoutMs() });
     this.stdinBuffer.on("data", (sequence) => {
+      if (isProgramStatusReply(sequence)) {
+        if (this.programStatusQueryPending) {
+          this.programStatusQueryPending = false;
+          this.programStatusSupported = true;
+          this.writeProgramStatus();
+        }
+        return;
+      }
       const negotiation = this.readKeyboardProtocolNegotiationSequence(sequence);
       if (negotiation === "pending") {
         this.scheduleKeyboardProtocolNegotiationBufferFlush();
@@ -48284,6 +48364,9 @@ var ProcessTerminal = class {
    * - 1 = disambiguate escape codes
    * - 2 = report event types (press/repeat/release)
    * - 4 = report alternate keys (shifted key, base layout key)
+   *
+   * The OSC 7501 program status query shares the DA sentinel: a terminal that supports it replies
+   * before DA. `PI_PROGRAM_STATUS=1` or `0` skips the query.
    */
   queryAndEnableKittyProtocol() {
     this.setupStdinBuffer();
@@ -48291,7 +48374,12 @@ var ProcessTerminal = class {
     this.keyboardProtocolPushed = true;
     this.pendingKeyboardProtocolDeviceAttributes += 1;
     this.clearKeyboardProtocolNegotiationBuffer();
-    process.stdout.write(KITTY_KEYBOARD_PROTOCOL_QUERY);
+    const programStatusOverride = process.env.PI_PROGRAM_STATUS;
+    this.programStatusSupported = programStatusOverride === "1";
+    this.programStatusQueryPending = programStatusOverride !== "1" && programStatusOverride !== "0";
+    const programStatusQuery = this.programStatusQueryPending ? PROGRAM_STATUS_QUERY : "";
+    process.stdout.write(`${KITTY_KEYBOARD_PROTOCOL_QUERY}${programStatusQuery}${DEVICE_ATTRIBUTES_QUERY}`);
+    this.writeProgramStatus();
   }
   handleKeyboardProtocolNegotiationSequence(negotiationSequence) {
     this.clearKeyboardProtocolNegotiationBuffer();
@@ -48299,6 +48387,8 @@ var ProcessTerminal = class {
       if (this.pendingKeyboardProtocolDeviceAttributes === 0)
         return false;
       this.pendingKeyboardProtocolDeviceAttributes -= 1;
+      if (this.pendingKeyboardProtocolDeviceAttributes === 0)
+        this.programStatusQueryPending = false;
     }
     if (negotiationSequence.type === "kitty-flags") {
       if (negotiationSequence.flags !== 0) {
@@ -48440,6 +48530,11 @@ var ProcessTerminal = class {
     if (this.clearProgressInterval()) {
       process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
     }
+    if (this.programStatusSupported && this.programStatus) {
+      process.stdout.write(formatProgramStatus({ state: "clear" }));
+    }
+    this.programStatusSupported = false;
+    this.programStatusQueryPending = false;
     process.stdout.write("\x1B[?2004l");
     const shouldDisableKittyProtocol = this.keyboardProtocolPushed || this._kittyProtocolActive;
     this.clearKeyboardProtocolNegotiationBuffer();
@@ -48507,6 +48602,16 @@ var ProcessTerminal = class {
   }
   setTitle(title) {
     process.stdout.write(`\x1B]0;${title}\x07`);
+  }
+  setProgramStatus(status) {
+    this.programStatus = status.state === "clear" ? void 0 : status;
+    if (this.programStatusSupported)
+      process.stdout.write(formatProgramStatus(status));
+  }
+  writeProgramStatus() {
+    if (this.programStatusSupported && this.programStatus) {
+      process.stdout.write(formatProgramStatus(this.programStatus));
+    }
   }
   setProgress(active) {
     if (active) {
@@ -49324,6 +49429,11 @@ var TuiAltScreen = class extends TuiBase {
     if (!text)
       return false;
     return this.copyTextToClipboard(text);
+  }
+  /** Drop the text selection and multi-click history, e.g. before the host replaces the transcript. */
+  resetTextSelection() {
+    this.clearTextSelection();
+    this.lastClick = void 0;
   }
   /** The lines of the last rendered frame, one per terminal row, as written to the terminal. */
   getScreenLines() {
@@ -56630,7 +56740,7 @@ var ADMITTED_GUIDE_BINDINGS = Object.freeze({
   "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
   "x-ai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
   "xai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
-  "qwen/qwen3-coder-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" }
+  "qwen/qwen3.7-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3.7-plus" }
 });
 var GUIDE_WORKFLOWS = [
   {
@@ -56661,7 +56771,7 @@ var GUIDE_WORKFLOWS = [
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-fable-5.1" }
         ]
       },
@@ -56673,7 +56783,7 @@ var GUIDE_WORKFLOWS = [
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
           { vendor: "mistralai", model: "devstral-2512" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" }
         ]
@@ -56685,7 +56795,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Implements domain entities, SQL queries/migrations, ORM persistence, concurrency primitives, and transactional boundaries.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" }
@@ -56712,7 +56822,7 @@ var GUIDE_WORKFLOWS = [
         candidates: [
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" }
         ]
@@ -56839,7 +56949,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Generates declarative Terraform/OpenTofu, Pulumi, Kubernetes CRDs, and VPC networking definitions.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "google", model: "gemini-3.8-flash" },
           { vendor: "mistralai", model: "devstral-2512" }
@@ -56899,7 +57009,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Authors concise, accurate developer and operator documentation with clear terminology, correct command flags, and consistent formatting without marketing drift.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-sonnet-5" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" }
@@ -57004,11 +57114,11 @@ function workflowDocument(workflow) {
   };
 }
 var GUIDE_PI_EVIDENCE_SOURCE = "plans/evidence/route-guide-qwen-pi.md";
-var GUIDE_PI_EVIDENCE_SHA256 = "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759";
+var GUIDE_PI_EVIDENCE_SHA256 = "8a24a7dc6db416df2153cfec7bccf1a4462f838e35c4e6707dc421ca84cf069b";
 var GUIDE_PI_NOTE = {
   harness: "pi",
   vendor: "openrouter",
-  model: "qwen/qwen3-coder-plus",
+  model: "qwen/qwen3.7-plus",
   reason: "Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup.",
   provingCommand: "pi auth check --provider openrouter"
 };
@@ -58010,7 +58120,7 @@ async function cmdRoutingReport(runtime, options) {
 }
 async function cmdRoutingBenchmark(runtime, options) {
   const task = options.task || "Deterministic benchmark task";
-  const armsStr = options.arms || "grok/grok-4.6,claude/fable,pi/qwen3-coder-plus";
+  const armsStr = options.arms || "grok/grok-4.6,claude/fable,pi/qwen3.7-plus";
   const armsList = armsStr.split(",").map((s) => s.trim()).filter(Boolean);
   const runsCount = Math.max(1, parseInt(options.runs || "1", 10) || 1);
   const arms = armsList.map((arm) => {

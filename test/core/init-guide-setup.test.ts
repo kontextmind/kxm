@@ -59,14 +59,14 @@ test("resolveCandidate prefers an admitted harness in guide order", () => {
 });
 
 test("resolveCandidate routes non-native vendors through pi/openrouter", () => {
-  const binding = resolveCandidate([{ vendor: "qwen", model: "qwen3-coder-plus" }], new Set(["pi"]));
-  assert.deepEqual(binding, { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" });
+  const binding = resolveCandidate([{ vendor: "qwen", model: "qwen3.7-plus" }], new Set(["pi"]));
+  assert.deepEqual(binding, { harness: "pi", provider: "openrouter", model: "qwen/qwen3.7-plus" });
 });
 
 test("resolveCandidate fails closed for unadmitted ids", () => {
   assert.equal(resolveCandidate([{ vendor: "deepseek", model: "deepseek-v4-pro-0813" }], new Set(["pi"])), undefined);
   assert.equal(resolveCandidate([{ vendor: "x-ai", model: "grok-4.6" }], new Set(["pi"])), undefined);
-  assert.equal(resolveCandidate([{ vendor: "qwen", model: "qwen3-coder-plus" }], new Set()), undefined);
+  assert.equal(resolveCandidate([{ vendor: "qwen", model: "qwen3.7-plus" }], new Set()), undefined);
   assert.equal(resolveCandidate([{ vendor: "anthropic", model: "claude-opus-5" }], new Set(["claude"])), undefined);
 });
 
@@ -77,8 +77,8 @@ test("resolveCandidate skips Google: drive cannot reach antigravity and agy is n
   }
   // A Google candidate ahead of an admitted one falls through to it.
   assert.deepEqual(
-    resolveCandidate([{ vendor: "google", model: "gemini-3.8-flash" }, { vendor: "qwen", model: "qwen3-coder-plus" }], new Set(["pi"])),
-    { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" },
+    resolveCandidate([{ vendor: "google", model: "gemini-3.8-flash" }, { vendor: "qwen", model: "qwen3.7-plus" }], new Set(["pi"])),
+    { harness: "pi", provider: "openrouter", model: "qwen/qwen3.7-plus" },
   );
 });
 

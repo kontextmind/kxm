@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
-date: "2026-09-28"
-sha256: 59a1fc4181cd90197fe56648fd013c25b32ad3cd6ddf483feb38b5cb0f287d4c
+date: "2026-10-17"
+sha256: 4fc0f82f68ccb1d80e0939fdf78e7c7b446853851a7fb010745b77cffb81a599
 currency: USD
 models:
   - id: anthropic/fable
@@ -18,9 +18,30 @@ models:
     provider: openai
     model: gpt-5.6-sol
     tiers:
-      - inputPerMillion: 2
+      - inputPerMillion: 4
+        outputPerMillion: 20
+        cacheReadPerMillion: 0.4
+        cacheWritePerMillion: 5
+  # GPT-6.1 Sol (released 2026-09-29). API id gpt-6.1-sol. Pro is the same
+  # model with reasoning mode pro; OpenRouter lists that mode as
+  # openai/gpt-6.1-sol-pro at the same per-token price. Above 272000 prompt
+  # tokens, input/output are $4 / $15. The published cache rates apply to
+  # both tiers.
+  - id: openai/gpt-6.1-sol
+    provider: openai
+    model: gpt-6.1-sol
+    aliases:
+      - gpt-6.1-sol-pro
+      - openai/gpt-6.1-sol-pro
+    tiers:
+      - upToContextTokens: 272000
+        inputPerMillion: 2
         outputPerMillion: 10
-        cacheReadPerMillion: 0.2
+        cacheReadPerMillion: 0.1
+        cacheWritePerMillion: 2.5
+      - inputPerMillion: 4
+        outputPerMillion: 15
+        cacheReadPerMillion: 0.1
         cacheWritePerMillion: 2.5
   - id: xai/grok-4.6
     provider: xai
@@ -38,10 +59,12 @@ models:
     aliases:
       - x-ai/grok-4.7
     tiers:
-      - inputPerMillion: 1.6
-        outputPerMillion: 4.8
-        cacheReadPerMillion: 0.4
+      - inputPerMillion: 2
+        outputPerMillion: 6
+        cacheReadPerMillion: 0.5
         cacheWritePerMillion: null
+  # Last OpenRouter list price. qwen/qwen3-coder-plus left the catalog (404).
+  # Route pi-qwen3-coder-plus-openrouter is retired and is not writer #2.
   - id: openrouter/qwen/qwen3-coder-plus
     provider: openrouter
     model: qwen/qwen3-coder-plus
@@ -50,6 +73,18 @@ models:
         outputPerMillion: 3.25
         cacheReadPerMillion: 0.13
         cacheWritePerMillion: 0.8125
+  # Verified 2026-10-17 on https://openrouter.ai/api/v1/models.
+  # Base tier is $0.32 / $1.28. Prompts at or above 256000 tokens list at
+  # $0.96 / $3.84 (cache read $0.192, cache write $1.20). This row is the base tier.
+  # Context length 1000000. supported_parameters includes tools.
+  - id: openrouter/qwen/qwen3.7-plus
+    provider: openrouter
+    model: qwen/qwen3.7-plus
+    tiers:
+      - inputPerMillion: 0.32
+        outputPerMillion: 1.28
+        cacheReadPerMillion: 0.064
+        cacheWritePerMillion: 0.4
   - id: openrouter/qwen/qwen3.8-flash
     provider: openrouter
     model: qwen/qwen3.8-flash
@@ -58,7 +93,7 @@ models:
         inputPerMillion: 0.15
         outputPerMillion: 0.47
         cacheReadPerMillion: 0.016
-        cacheWritePerMillion: 0.2
+        cacheWritePerMillion: null
   - id: openrouter/z-ai/glm-5.3-flash
     provider: openrouter
     model: z-ai/glm-5.3-flash
@@ -74,9 +109,9 @@ models:
     aliases:
       - z-ai/glm-5.3
     tiers:
-      - inputPerMillion: 1.4
-        outputPerMillion: 4.4
-        cacheReadPerMillion: 0.26
+      - inputPerMillion: 0.079
+        outputPerMillion: 4.8
+        cacheReadPerMillion: 0.078
         cacheWritePerMillion: null
   - id: zai-coding-cn/glm-5.3-flash
     provider: zai-coding-cn
@@ -90,15 +125,41 @@ models:
     model: gemini-3.8-flash-medium
     tiers:
       - &a2
-        inputPerMillion: 0.75
-        outputPerMillion: 3.75
-        cacheReadPerMillion: 0.075
-        cacheWritePerMillion: 0.041666667
+        inputPerMillion: 0.825
+        outputPerMillion: 4.125
+        cacheReadPerMillion: 0.0825
+        cacheWritePerMillion: 0.0416666666666667
   - id: google/gemini-3.8-flash-high
     provider: google
     model: gemini-3.8-flash-high
     tiers:
       - *a2
+  # List price is $2 / $10 through 2026-11-30, then $4 / $20. Batch is $1 / $5.
+  # Context is 1,048,576. Argon requires paid Google AI Pro, Ultra, or Enterprise.
+  - id: google/gemini-4-argon
+    provider: google
+    model: gemini-4-argon
+    tiers:
+      - &argon
+        inputPerMillion: 2
+        outputPerMillion: 10
+        cacheReadPerMillion: 0.1
+        cacheWritePerMillion: 0.1875
+  - id: google/gemini-4-argon-high
+    provider: google
+    model: gemini-4-argon-high
+    tiers:
+      - *argon
+  - id: google/gemini-4-argon-medium
+    provider: google
+    model: gemini-4-argon-medium
+    tiers:
+      - *argon
+  - id: google/gemini-4-argon-low
+    provider: google
+    model: gemini-4-argon-low
+    tiers:
+      - *argon
   - id: qwen-token-plan/qwen3.8-flash
     provider: qwen-token-plan
     model: qwen3.8-flash
@@ -113,14 +174,14 @@ models:
       - inputPerMillion: 2
         outputPerMillion: 6
         cacheReadPerMillion: 0.25
-        cacheWritePerMillion: 2.5
+        cacheWritePerMillion: null
   - id: qwen-token-plan/deepseek-v4.1-flash
     provider: qwen-token-plan
     model: deepseek-v4.1-flash
     aliases:
       - deepseek/deepseek-v4.1-flash
     tiers:
-      - inputPerMillion: 0.014
-        outputPerMillion: 0.4
-        cacheReadPerMillion: 0.004
+      - inputPerMillion: 0.15
+        outputPerMillion: 0.6
+        cacheReadPerMillion: 0.003
         cacheWritePerMillion: null

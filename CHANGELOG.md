@@ -6,6 +6,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Added
 
+- **OpenRouter model prices and the inventory refresh weekly.**
+  `.github/workflows/refresh-models.yml` runs Monday at 13:00 UTC, or on
+  demand, and opens one pull request on `automation/model-refresh` when
+  `.kxm/prices.yaml` or the OpenRouter slice of `.kxm/models/inventory.yaml`
+  changes. A model still named by `.kxm/routes.yaml` or a roster is kept when
+  it leaves the catalog, and the `model-catalog-guard` check fails until a
+  human decides. Run it locally with
+  `node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs`.
+
 - **The witnessed MG1 Python control-plane foundation is now reproducible from this repository.**
   `python/kxm-control` provides the pinned Python 3.13 uv workspace, fixed
   `kxmd` Postgres/Temporal caller, Authentik user and runner verification
@@ -215,6 +224,37 @@ All notable user-facing changes are documented here. The project follows [Semant
   and [mid-attempt fallback](docs/reference/harness-routing.md#mid-attempt-fallback).
 
 ### Changed
+
+- **Writer #2 is OpenRouter Qwen3.7 Plus.** `pi-qwen3-7-plus-openrouter`
+  (`openrouter/qwen/qwen3.7-plus`) replaces `pi-qwen3-coder-plus-openrouter`.
+  OpenRouter no longer lists `qwen/qwen3-coder-plus`. The live catalog on
+  2026-10-17 prices Qwen3.7 Plus at $0.32 input and $1.28 output per 1M
+  tokens, with a 1,000,000-token context and tool support. The old model
+  file stays `status: retired`, off every roster, and `qwen-openrouter-pi`
+  no longer resolves. `.kxm/prices.yaml` keeps the last Coder Plus row and
+  adds the Qwen3.7 Plus base tier. The dev helper's only Pi writer is
+  `openrouter/qwen/qwen3.7-plus`.
+- **The CLI critic is Codex GPT-6.1 Sol.** `codex-gpt-6-1-sol` is the
+  `reviewer-cli` primary (`codex` / `gpt-6.1-sol`, effort `low`).
+  `pi-qwen3-8-flash-openrouter` stays the other-vendor fallback, and
+  `codex-gpt-5-6-sol` stays admitted as the last fallback. Architecture
+  review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`. Pro is
+  the same model with reasoning mode `pro`, not a separate route. List
+  price is $2 / $10 per 1M tokens through 272,000 prompt tokens ($0.10
+  cached input, $2.50 cache write), then $4 / $15.
+
+- **The writer rotation's agy routes are Gemini 4 Argon.** `agy-gemini-4-argon-high`
+  (alias `gemini-agy`) and `agy-gemini-4-argon-medium` are writer #3 and #4.
+  `agy-gemini-3-8-flash-medium` stays #5 because Argon needs a paid Google AI
+  Pro, Ultra, or Enterprise plan and `agy -p` exits when the pinned model is
+  missing. `agy-gemini-3-8-flash-high` stays #6 so that admitted model file
+  remains on a roster. `.kxm/routes.yaml` admits `google/gemini-4-argon-high`
+  and `google/gemini-4-argon-medium`. `.kxm/prices.yaml` is dated 2026-10-17
+  and follows the live OpenRouter list, including Argon at $2 / $10 per 1M
+  tokens through 2026-11-30 ($4 / $20 after that). `.kxm/models/inventory.yaml`
+  was refreshed from OpenRouter and Nous. Pi, Grok, and agy were not installed,
+  so CLI-only rows stay, and the new agy Argon and Claude 5.5 rows were added
+  by hand.
 
 - **`kxm update --kxm` defaults to npm.** Missing or source-less `update.yaml` now
   uses the public `@kontextmind/kxm` package instead of the GitHub release tarball.

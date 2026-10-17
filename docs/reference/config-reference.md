@@ -686,7 +686,7 @@ Example (validated with `kxm init --json` and compiled with
 the `critic-claude` profile shown above, it needs a `planner` agent (the
 workflow coordinator; `coordinator` still resolves as an alias), a
 `reviewer-cli` agent, and a second profile tagged `critic`, `critic-sol`
-(`openai/gpt-5.6-sol`). Routes, not agent files, name the harness and model.
+(`openai/gpt-6.1-sol`). Routes, not agent files, name the harness and model.
 The two providers among the `critic` candidates satisfy
 `distinctBy: [provider]` with `target: 2`.
 
@@ -963,7 +963,7 @@ description: Primary implementation agent.
 roster:
   - route: grok-grok-4-7
     effort: medium
-  - route: pi-qwen3-coder-plus-openrouter
+  - route: pi-qwen3-7-plus-openrouter
     effort: medium
 ```
 
@@ -991,7 +991,7 @@ unknown keys are ignored).
 
 A route string is derived from the selected model file's `vendor` and
 `model`, joined by a slash: `xai/grok-4.6`, `anthropic/fable`,
-`openrouter/qwen/qwen3-coder-plus`. When the file is missing, nothing is
+`openrouter/qwen/qwen3.7-plus`. When the file is missing, nothing is
 admitted and every live attempt is refused (`producer_route_unsupported`, or
 `producer_route_not_admitted` from the live producer). A leftover
 `.kxm/producers.yaml` makes every reader fail with `retired
@@ -1002,7 +1002,7 @@ admitted and every live attempt is refused (`producer_route_unsupported`, or
 `model_selection_required`. Inventory IDs come in several shapes (bare
 `grok-4.6` from `grok models`, `vendor/model` from OpenRouter,
 `provider/model` from `pi --list-models`), so a route such as
-`openrouter/qwen/qwen3-coder-plus` or `anthropic/fable` usually has to be
+`openrouter/qwen/qwen3.7-plus` or `anthropic/fable` usually has to be
 added by editing the file.
 
 ```yaml
@@ -1011,8 +1011,9 @@ updatedAt: '2026-09-23T00:00:00.000Z'
 admitted:
   - anthropic/fable
   - openai/gpt-5.6-sol
+  - openai/gpt-6.1-sol
   - xai/grok-4.6
-  - openrouter/qwen/qwen3-coder-plus
+  - openrouter/qwen/qwen3.7-plus
 disabled: []
 ```
 
@@ -1067,9 +1068,9 @@ routes:
     roles: [writer]
     permissions: [edit]
     status: admitted            # admitted | retired
-  pi-qwen3-coder-plus-openrouter:
+  pi-qwen3-7-plus-openrouter:
     harness: pi
-    model: openrouter/qwen/qwen3-coder-plus   # Pi: allowed provider prefix + vendor/model
+    model: openrouter/qwen/qwen3.7-plus   # Pi: allowed provider prefix + vendor/model
     vendor: alibaba
     roles: [writer]
     permissions: [edit]
@@ -1081,6 +1082,13 @@ routes:
     roles: [planner, reviewer-arch]
     permissions: [read-only]
     status: admitted
+  codex-gpt-6-1-sol:
+    harness: codex
+    model: gpt-6.1-sol
+    vendor: openai
+    roles: [reviewer-cli]
+    permissions: [read-only]
+    status: admitted
   codex-gpt-5-6-sol:
     harness: codex
     model: gpt-5.6-sol
@@ -1089,19 +1097,19 @@ routes:
     permissions: [read-only]
     status: admitted
 lineup:                         # routes admitted for each role, preference order
-  writer: [grok-grok-4-7, pi-qwen3-coder-plus-openrouter, agy-gemini-3-8-flash-high, agy-gemini-3-8-flash-medium]
+  writer: [grok-grok-4-7, pi-qwen3-7-plus-openrouter, agy-gemini-4-argon-high, agy-gemini-4-argon-medium, agy-gemini-3-8-flash-medium, agy-gemini-3-8-flash-high]
   planner: [claude-fable, pi-qwen3-8-flash-openrouter]
   reviewer-arch: [claude-fable, pi-glm-5-3-flash-openrouter]
-  reviewer-cli: [codex-gpt-5-6-sol, pi-qwen3-8-flash-openrouter]
+  reviewer-cli: [codex-gpt-6-1-sol, pi-qwen3-8-flash-openrouter, codex-gpt-5-6-sol]
 required_critics:
   review-arch: claude-fable
-  review-cli: codex-gpt-5-6-sol
+  review-cli: codex-gpt-6-1-sol
 model_origins:                  # required for every Pi route model
-  openrouter/qwen/qwen3-coder-plus:
+  openrouter/qwen/qwen3.7-plus:
     vendor: alibaba
     evidence:
-      source: plans/evidence/route-qwen-openrouter-pi.md
-      sha256: b15f8a54adc398b33e75609e959076eee310bf4ff6623d0b8470ea3da95e6c54
+      source: plans/evidence/route-pi-qwen3-7-plus-openrouter.md
+      sha256: 10e11cfa572ef4891e514d229fa8b7f0f355b31e6481315a6dd763bbe44244a1
 ```
 
 Validated with `validateRosterDocument` from `scripts/roster-policy.mjs`,
@@ -1256,9 +1264,43 @@ file even when a source fails, and exits 1 if any source failed.
 | `models[].sources` | Which sources listed the model |
 | `models[].standard` | OpenRouter per-million rates: `inputPerMillion`, `outputPerMillion`, `cacheReadPerMillion`, `cacheWritePerMillion` |
 | `models[].discount` | Nous per-million rates, same fields |
+| `models[].missingUpstream` | `true` when the weekly refresh kept a row that OpenRouter no longer lists because a route or roster still names it |
 
 The inventory is discovery data, not admission. Admitting a route is a
 separate, reviewed change to `.kxm/routes.yaml`.
+
+### Weekly OpenRouter refresh
+
+`.github/workflows/refresh-models.yml` runs every Monday at 13:00 UTC and on
+`workflow_dispatch`. It fetches `https://openrouter.ai/api/v1/models` and
+updates the OpenRouter `standard` rates in this inventory, plus the matching
+single-tier rows in `.kxm/prices.yaml`. Nous `discount` rates and the `pi`,
+`grok`, and `agy` source blocks stay as the last `kxm models inventory-refresh`
+left them. Output is sorted by model id. `prices.yaml` `date` and the
+inventory `fetchedAt` (midnight UTC of that date) change only when the catalog
+content changes, so an unchanged week does not open a pull request.
+
+A model named by `.kxm/routes.yaml` (`admitted` or `disabled`) or by a roster
+entry in `.kxm/roles/*.yaml` is not deleted when it leaves OpenRouter. The
+refresh keeps the previous inventory row, sets `missingUpstream: true`, and
+the workflow's `model-catalog-guard` check fails. The pull request lists that
+model, and any referenced model whose input or output rate moved by more than
+20 percent, at the top. A multi-tier price row is left unchanged and called
+out the same way. `anthropic/fable` is matched through its aliases; when those
+OpenRouter rows disagree, the price row is left unchanged.
+
+Run the same refresh from a checkout:
+
+```bash
+node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs --dry-run
+node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/refresh-model-catalog.mjs
+```
+
+`--dry-run` prints the summary and writes nothing. Exit 2 means a referenced
+model would be kept after leaving the catalog. The workflow pushes a non-empty
+diff to `automation/model-refresh` and opens or updates one pull request with
+`GITHUB_TOKEN`. It then dispatches `ci.yml` on that branch, because a push
+made with `GITHUB_TOKEN` does not start CI by itself.
 
 ## Personalization settings (`kxm.config.v1`)
 
@@ -1691,6 +1733,7 @@ Everything under `.kxm/` at the project root falls into one of three groups.
 | `roles/`, `routes.yaml`, `prices.yaml`, `modes.yaml`, `the role files` | Tracked configuration outside the bundle | You and their commands |
 | `config.yaml` | Tracked if the project wants shared preferences; otherwise ignore it | `kxm config set` |
 | `memory/`, `skills/`, `candidates/`, `goals/` | Tracked durable records | Their commands |
+| `knowledge/` | Tracked authored wiki. `knowledge/wiki/` is the compiled view from `kxm context wiki-compile --out` | Maintainers, and `kxm context wiki-compile` for `wiki/` |
 | `models/inventory.yaml` | Generated; track it if you want a reviewed snapshot | `kxm models inventory-refresh` |
 | `assets/` | Tracked intentionally; `assets/generated/` is ignored | Workflows, `kxm improve`, `kxm session start` |
 | `tasks/` | Ignored in the KXM repository; your choice | `kxm task` |

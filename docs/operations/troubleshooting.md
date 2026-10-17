@@ -134,7 +134,7 @@ The [plugin troubleshooting guide](../../plugins/kxm/README.md#troubleshooting) 
 | The heartbeat is healthy but one tool never finishes | A tool exceeded `KXM_WORKER_TOOL_TIMEOUT_MS` (31 minutes by default, above the 30-minute fanout wait) | The worker logs `worker_tool_timeout` and restarts the child; raise the limit only above the longest legitimate call |
 | A long-lived worker keeps restarting | Pi is missing from the service `PATH`, the working directory is gone, or model credentials are missing | Read `worker_process_error` and `worker_exited`; set `KXM_PI_COMMAND` to an explicit path |
 | A read-only reviewer edits files | Prompt wording does not remove tools | Set `KXM_WORKER_TOOLS=read,grep,find,ls` |
-| The worker exits at once with `pi_native_impersonation_blocked` | `--model` or a `--fallback-models` entry is a model whose vendor has its own harness, such as `xai/…`, `openai-codex/…` or `openrouter/x-ai/…` | Run that model in its native harness, or pick an admitted Pi route such as `openrouter/qwen/qwen3-coder-plus`; see [Harness routing](../reference/harness-routing.md#what-the-brake-refuses) |
+| The worker exits at once with `pi_native_impersonation_blocked` | `--model` or a `--fallback-models` entry is a model whose vendor has its own harness, such as `xai/…`, `openai-codex/…` or `openrouter/x-ai/…` | Run that model in its native harness, or pick an admitted Pi route such as `openrouter/qwen/qwen3.7-plus`; see [Harness routing](../reference/harness-routing.md#what-the-brake-refuses) |
 
 Use `--fresh-start`, not `--no-continue`, when only the first launch must avoid old session state.
 

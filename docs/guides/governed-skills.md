@@ -61,7 +61,7 @@ Write the procedure as a Markdown file. KXM adds `name` and `description` front 
 ```bash
 kxm skills create --file flaky.md --name "Triage flaky test" \
   --description "Isolate and classify a flaky test before changing code" \
-  --created-by agent-a --harness pi --models openrouter/qwen/qwen3-coder-plus \
+  --created-by agent-a --harness pi --models openrouter/qwen/qwen3.7-plus \
   --journal journal_abc
 ```
 

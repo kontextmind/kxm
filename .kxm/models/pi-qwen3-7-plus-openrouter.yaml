@@ -1,0 +1,11 @@
+schema: kxm.model.v2
+id: pi-qwen3-7-plus-openrouter
+harness: pi
+model: openrouter/qwen/qwen3.7-plus
+vendor: alibaba
+status: admitted
+permissions:
+  - edit
+origin:
+  source: plans/evidence/route-pi-qwen3-7-plus-openrouter.md
+  sha256: 10e11cfa572ef4891e514d229fa8b7f0f355b31e6481315a6dd763bbe44244a1

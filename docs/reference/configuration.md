@@ -166,14 +166,14 @@ For example, a review-only worker that cannot edit the checkout:
 
 ```bash
 export KXM_WORKER_TOOLS="read,grep,find,ls,kxm_list,kxm_get,kxm_reply"
-kxm agent worker --name reviewer --project <project> --model openrouter/qwen/qwen3-coder-plus
+kxm agent worker --name reviewer --project <project> --model openrouter/qwen/qwen3.7-plus
 ```
 
 <details><summary>PowerShell</summary>
 
 ```powershell
 $env:KXM_WORKER_TOOLS = "read,grep,find,ls,kxm_list,kxm_get,kxm_reply"
-kxm agent worker --name reviewer --project <project> --model openrouter/qwen/qwen3-coder-plus
+kxm agent worker --name reviewer --project <project> --model openrouter/qwen/qwen3.7-plus
 ```
 
 </details>

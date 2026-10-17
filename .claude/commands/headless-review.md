@@ -1,12 +1,12 @@
 ---
-description: Dispatch review to a provider different from the writer (Fable and/or Codex gpt-5.6-sol)
+description: Dispatch review to a provider different from the writer (Fable and/or Codex gpt-6.1-sol)
 argument-hint: [arch|cli|both] <what to review>
 ---
 
 # Headless review
 
 Dispatch review to a provider **different from whoever wrote the code**. Per
-`AGENTS.md`: Fable reviews architecture and permissions, Codex `gpt-5.6-sol` reviews
+`AGENTS.md`: Fable reviews architecture and permissions, Codex `gpt-6.1-sol` reviews
 CLI and docs. Both designated critics are required for acceptance on this
 runner; a single critic is preliminary triage only. Read `.claude/harness-cli.md`
 for the invocation mechanics.

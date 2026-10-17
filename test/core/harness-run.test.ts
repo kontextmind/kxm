@@ -277,7 +277,7 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
     assert.equal(piModelId(PI_NOUS_PORTAL_HY4), "tencent/hy4-preview");
     assert.equal(piProviderOf("antigravity/gemini-3.8-flash"), "antigravity");
     assert.equal(piModelId("antigravity/gemini-3.8-flash"), "gemini-3.8-flash");
-    assert.equal(PI_ADMITTED_WRITER, "openrouter/qwen/qwen3-coder-plus");
+    assert.equal(PI_ADMITTED_WRITER, "openrouter/qwen/qwen3.7-plus");
     assert.deepEqual(
       piAuthCheckArgs({
         model: "openrouter/nous-research/deephermes-3-mistral-24b-preview",
@@ -379,7 +379,7 @@ test("Pi helper refuses a native vendor's model behind an aggregator prefix for 
           `${role} ${model}`,
         );
       }
-      preflightRequest({ schema: REQUEST_SCHEMA, harness: "pi", role, model: "openrouter/qwen/qwen3-coder-plus", permission: "read-only", prompt_file: prompt });
+      preflightRequest({ schema: REQUEST_SCHEMA, harness: "pi", role, model: "openrouter/qwen/qwen3.7-plus", permission: "read-only", prompt_file: prompt });
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -441,6 +441,31 @@ test("grok and codex argv match verified A4 flags", () => {
   assert(!codex.includes("--ignore-rules"));
   assert(codex.includes("--json"));
   assert.equal(codex.at(-1), "-");
+});
+
+test("codex helper admits GPT-6.1 Sol and keeps GPT-5.6 Sol on reviewer-cli only", () => {
+  const prompt = "/tmp/brief.md";
+  for (const model of ["gpt-6.1-sol", "gpt-5.6-sol"]) {
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "codex",
+      role: "reviewer-cli",
+      model,
+      permission: "read-only",
+      prompt_file: prompt,
+    });
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "codex",
+        role: "reviewer-arch",
+        model,
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /does not accept role/,
+    );
+  }
 });
 
 test("native Astra critic binds the requested model to safe Codex argv without launching on import", () => {
@@ -3608,7 +3633,7 @@ test("just binary integration is optional when the binary is installed", (t) => 
 test("Pi writer admits only Qwen edit and requires exact model auth before spawn", async () => {
   const dir = tempDir();
   try {
-    const request = { schema: REQUEST_SCHEMA, harness: "pi", role: "writer", model: "openrouter/qwen/qwen3-coder-plus", permission: "edit", prompt_file: promptFile(dir), output_dir: join(dir, "out") };
+    const request = { schema: REQUEST_SCHEMA, harness: "pi", role: "writer", model: "openrouter/qwen/qwen3.7-plus", permission: "edit", prompt_file: promptFile(dir), output_dir: join(dir, "out") };
     preflightRequest(request);
     for (const change of [{ permission: "read-only" }, { model: "openrouter/anthropic/fable" }, { model: "openrouter/openai/gpt-5.6-sol" }, { model: "openrouter/x-ai/grok-4.6" }, { model: "openrouter/qwen/unknown" }]) {
       assert.throws(() => preflightRequest({ ...request, ...change }), /pi writer/);
@@ -3619,13 +3644,13 @@ test("Pi writer admits only Qwen edit and requires exact model auth before spawn
     const deps = {
       env: { PATH: dir }, existsSync: () => true,
       spawnSync: (_command: string, args: string[]) => { authArgs.push(args); calls++; return { status: 0, stdout: JSON.stringify({ provider: "openrouter", status: "ready" }), stderr: "" }; },
-      spawn: () => { spawned++; return fakeChild({ stdout: piLine(piAssistantEnd({ model: "qwen/qwen3-coder-plus" })) }); },
+      spawn: () => { spawned++; return fakeChild({ stdout: piLine(piAssistantEnd({ model: "qwen/qwen3.7-plus" })) }); },
     };
     const result = await runHarness(request, deps);
     assert.equal(result.ok, true);
     assert.equal(spawned, 1);
     assert.equal(calls, 1);
-    assert.deepEqual(authArgs[0], ["auth", "check", "--provider", "openrouter", "--model", "qwen/qwen3-coder-plus", "--json"]);
+    assert.deepEqual(authArgs[0], ["auth", "check", "--provider", "openrouter", "--model", "qwen/qwen3.7-plus", "--json"]);
     for (const proof of ["openrouter ready", JSON.stringify({ provider: "other", status: "ready" }), JSON.stringify({ provider: "openrouter", status: "not_ready" })]) {
       await assert.rejects(() => runHarness({ ...request, output_dir: join(dir, `bad-${calls++}`) }, { ...deps, spawnSync: () => ({ status: 0, stdout: proof, stderr: "" }) }), /auth|readiness|ready/);
     }

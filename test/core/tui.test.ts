@@ -253,6 +253,7 @@ test("interactive dashboard registers a legacy observer when ops access is lost 
     clearScreen() {},
     setTitle() {},
     setProgress() {},
+    setProgramStatus() {},
   };
   try {
     assert.equal(await runMeshTui({

@@ -88,7 +88,7 @@ export const PI_ANTIGRAVITY_MODEL_ID = /^gemini-[a-z0-9.-]+$/;
 export const PI_NOUS_PORTAL_HY4 = "nous-portal/tencent/hy4-preview";
 
 /** Narrowly admitted Pi writer. Other Pi models need reviewed route admission. */
-export const PI_ADMITTED_WRITER = "openrouter/qwen/qwen3-coder-plus";
+export const PI_ADMITTED_WRITER = "openrouter/qwen/qwen3.7-plus";
 
 const REQUEST_KEYS = Object.freeze([
   "schema",
@@ -111,6 +111,9 @@ const REQUEST_KEYS = Object.freeze([
 const UNSUPPORTED_LAUNCHER = /\.(cmd|bat|ps1)$/i;
 
 const AGY_MODELS = Object.freeze([
+  "gemini-4-argon-high",
+  "gemini-4-argon-medium",
+  "gemini-4-argon-low",
   "gemini-3.8-flash-high",
   "gemini-3.8-flash-medium",
   "gemini-3.8-flash-low",
@@ -161,7 +164,7 @@ export const ROUTES = Object.freeze({
     provider: "openai",
     roles: Object.freeze(["reviewer-cli"]),
     permissions: Object.freeze(["read-only"]),
-    models: Object.freeze(["gpt-5.6-sol"]),
+    models: Object.freeze(["gpt-6.1-sol", "gpt-5.6-sol"]),
     efforts: Object.freeze(["low", "medium", "high"]),
     auth: Object.freeze({ args: ["login", "status"], loginHint: "codex login" }),
   },
@@ -1552,7 +1555,7 @@ export function preflightRequest(request) {
       }
     }
     if (request.role === "writer" && (request.model !== PI_ADMITTED_WRITER || request.permission !== "edit")) {
-      throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3-coder-plus with edit permission; other models need reviewed route admission");
+      throw failClosed("pi writer refuses unsupported route; allows only authenticated openrouter/qwen/qwen3.7-plus with edit permission; other models need reviewed route admission");
     }
     const segment = piProviderOf(piModelId(request.model));
     const vendor = segment && Object.hasOwn(PI_VENDOR_SEGMENT_ALIASES, segment) ? PI_VENDOR_SEGMENT_ALIASES[segment] : segment;

@@ -32,7 +32,7 @@ Installed ≠ auth-verified ≠ helper-eligible.
 |---|---|---|---|
 | `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter or Nous Portal may be `ready`; native-lab prefixes are braked | OpenRouter or Nous Portal, after JSONL usage parse |
 | `claude` | 2.1.281 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
-| `codex` | 0.156.1 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-5.6-sol`) |
+| `codex` | 0.156.1 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-6.1-sol`; `gpt-5.6-sol` remains the last fallback) |
 | `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.7`) |
 | `kimi` | 0.40.1 | oauth via `kimi provider list` | **no** — unverified helper dispatch |
 | `gemini` | 0.56.0 | **unknown** (installed only) | **no** — deprecated individual-tier CLI; catalog stays |
@@ -72,7 +72,7 @@ implementation, planning, and architecture review; **low** for CLI review.
 | Implement / write | `grok --prompt-file <brief> -m grok-4.7 --reasoning-effort medium --always-approve --no-subagents --disable-web-search --output-format json` |
 | Plan | `cat <brief> \| claude -p --model fable --effort medium --tools Read,Glob,Grep --safe-mode --strict-mcp-config --mcp-config <empty.json> --disable-slash-commands --output-format json` |
 | Review: architecture, permissions | same as Plan |
-| Review: CLI, docs | `codex exec -m gpt-5.6-sol -c 'model_reasoning_effort="low"' -C <dir> --sandbox read-only --ignore-user-config -c 'approval_policy="never"' --json - < <brief>` |
+| Review: CLI, docs | `codex exec -m gpt-6.1-sol -c 'model_reasoning_effort="low"' -C <dir> --sandbox read-only --ignore-user-config -c 'approval_policy="never"' --json - < <brief>` |
 
 `kxm lane run` with `implement-only`, `review-arch-only`, or `review-cli-only` is **low-level harness transport**.
 They do not mint assignment, witness, or acceptance proof. Normal entry is
@@ -97,7 +97,7 @@ optional `NOUS_PORTAL_BASE_URL` / `NOUS_INFERENCE_BASE_URL`). Example:
 `pi -p nous-portal -m tencent/hy4-preview`). Verify Hy4 availability and
 list prices on Portal `/models` (publicly cited Portal ~$0.67/$2.00, 20%
 off OpenRouter list ~$0.83/$2.50). Hy4 is experiment-only in this helper;
-the only admitted Pi writer is `openrouter/qwen/qwen3-coder-plus`.
+the only admitted Pi writer is `openrouter/qwen/qwen3.7-plus`.
 Native-lab prefixes (`anthropic`, `openai`, `xai`, `moonshot`, `google`,
 `deepseek`) fail closed on Pi. If the native harness is missing or logged
 out, fail closed — never silently bill a different provider's key. There

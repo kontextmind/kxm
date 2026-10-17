@@ -397,7 +397,7 @@ Project facts stored as state keys with a `proposed → current → superseded` 
 
 ### Wiki
 
-Markdown pages compiled from a project's context records by `kxm context wiki-compile` (a dry run unless you pass `--out`), with state, decisions, contradictions and history linked to their evidence. `kxm context wiki-lint` checks the result.
+Markdown pages compiled from a project's context records by `kxm context wiki-compile` (a dry run unless you pass `--out`), with state, decisions, contradictions and history linked to their evidence. `kxm context wiki-lint` checks the result. This repository's authored notes live at [`.kxm/knowledge/`](../.kxm/knowledge/index.md) and are not that compiled view.
 
 ## Configuration and routing
 
@@ -427,7 +427,7 @@ A list of allowed models. It means either a [role](#role)'s roster, or the devel
 
 ### Route
 
-A model selector, such as `xai/grok-4.6` or `openrouter/qwen/qwen3-coder-plus`, that a step can run on. The harness that runs it comes from the agent or the project default. See [Harness routing](reference/harness-routing.md).
+A model selector, such as `xai/grok-4.6` or `openrouter/qwen/qwen3.7-plus`, that a step can run on. The harness that runs it comes from the agent or the project default. See [Harness routing](reference/harness-routing.md).
 
 ### Session
 

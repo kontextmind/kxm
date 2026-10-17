@@ -34,10 +34,10 @@ admits each route for specific roles and permissions:
 
 | Role | Admitted route (harness / model) | Vendor | Permission |
 |---|---|---|---|
-| `writer` | `grok` / `grok-4.7`; relief: `pi` / `openrouter/qwen/qwen3-coder-plus`; `agy` / `gemini-3.8-flash-high` | `xai`; `alibaba`; `google` | `edit` |
+| `writer` | `grok` / `grok-4.7`; relief: `pi` / `openrouter/qwen/qwen3.7-plus`; `agy` / `gemini-4-argon-high`, then `gemini-4-argon-medium`, then `gemini-3.8-flash-medium`, then `gemini-3.8-flash-high` | `xai`; `alibaba`; `google` | `edit` |
 | `planner` | `claude` / `fable` | `anthropic` | `read-only` |
 | `reviewer-arch` | `claude` / `fable` | `anthropic` | `read-only` |
-| `reviewer-cli` | `codex` / `gpt-5.6-sol` | `openai` | `read-only` |
+| `reviewer-cli` | `codex` / `gpt-6.1-sol`; fallback `pi` / `openrouter/qwen/qwen3.8-flash`, then `codex` / `gpt-5.6-sol` | `openai`; `alibaba`; `openai` | `read-only` |
 
 The policy itself enforces three rules. Critics are read-only. The two
 designated critics have different vendors. No admitted writer shares a vendor
@@ -347,7 +347,7 @@ and exits with status 2. It refuses when:
   segment must not be a braked native vendor (`x-ai`, `moonshotai` and
   `google-ai` count as `xai`, `moonshot` and `google`);
 - a Pi `edit` request comes from a role other than `experiment` or `writer`, or
-  a Pi writer asks for anything but `openrouter/qwen/qwen3-coder-plus` with
+  a Pi writer asks for anything but `openrouter/qwen/qwen3.7-plus` with
   `edit`;
 - the request asks for hooks or skills, sets `max_cost_usd` for a harness other
   than Claude, or sets `max_turns` for a harness other than Grok;

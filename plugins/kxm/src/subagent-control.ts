@@ -77,7 +77,7 @@ export const SUBAGENT_TYPES: readonly SubagentType[] = Object.freeze([
 
 export const DEFAULT_SUBAGENT_MODELS: Readonly<Record<SubagentType, string>> = Object.freeze({
   general: "grok/grok-4.6",
-  Explore: "openrouter/qwen/qwen3-coder-plus",
+  Explore: "openrouter/qwen/qwen3.7-plus",
   Plan: "claude/fable",
   Reviewer: "openai/gpt-5.6-sol",
   Auditor: "claude/fable",

@@ -26,7 +26,7 @@ details:
     - kind: "review-cli"
       role: "reviewer-cli"
       harness: "codex"
-      model: "gpt-5.6-sol"
+      model: "gpt-6.1-sol"
       verdict: "PASS" # PASS | BLOCK
 ---
 

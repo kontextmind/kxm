@@ -1153,8 +1153,11 @@ kxm routes list
 admitted anthropic/fable
 admitted google/gemini-3.8-flash-high
 admitted google/gemini-3.8-flash-medium
+admitted google/gemini-4-argon-high
+admitted google/gemini-4-argon-medium
 admitted openai/gpt-5.6-sol
-admitted openrouter/qwen/qwen3-coder-plus
+admitted openai/gpt-6.1-sol
+admitted openrouter/qwen/qwen3.7-plus
 admitted openrouter/qwen/qwen3.8-flash
 admitted openrouter/z-ai/glm-5.3-flash
 admitted xai/grok-4.7
@@ -1162,12 +1165,15 @@ planner claude-fable
 planner pi-qwen3-8-flash-openrouter
 reviewer-arch claude-fable
 reviewer-arch pi-glm-5-3-flash-openrouter
-reviewer-cli codex-gpt-5-6-sol
+reviewer-cli codex-gpt-6-1-sol
 reviewer-cli pi-qwen3-8-flash-openrouter
+reviewer-cli codex-gpt-5-6-sol
 writer grok-grok-4-7
-writer pi-qwen3-coder-plus-openrouter
-writer agy-gemini-3-8-flash-high
+writer pi-qwen3-7-plus-openrouter
+writer agy-gemini-4-argon-high
+writer agy-gemini-4-argon-medium
 writer agy-gemini-3-8-flash-medium
+writer agy-gemini-3-8-flash-high
 ```
 
 ```bash
@@ -1175,7 +1181,7 @@ kxm routes list --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-09-27T00:00:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","openai/gpt-5.6-sol","openrouter/qwen/qwen3-coder-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","xai/grok-4.7"],"disabled":[]},"membership":["planner claude-fable","planner pi-qwen3-8-flash-openrouter","reviewer-arch claude-fable","reviewer-arch pi-glm-5-3-flash-openrouter","reviewer-cli codex-gpt-5-6-sol","reviewer-cli pi-qwen3-8-flash-openrouter","writer grok-grok-4-7","writer pi-qwen3-coder-plus-openrouter","writer agy-gemini-3-8-flash-high","writer agy-gemini-3-8-flash-medium"]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-10-17T14:30:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","google/gemini-4-argon-high","google/gemini-4-argon-medium","openai/gpt-5.6-sol","openai/gpt-6.1-sol","openrouter/qwen/qwen3.7-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","xai/grok-4.7"],"disabled":[]},"membership":["planner claude-fable","planner pi-qwen3-8-flash-openrouter","reviewer-arch claude-fable","reviewer-arch pi-glm-5-3-flash-openrouter","reviewer-cli codex-gpt-6-1-sol","reviewer-cli pi-qwen3-8-flash-openrouter","reviewer-cli codex-gpt-5-6-sol","writer grok-grok-4-7","writer pi-qwen3-7-plus-openrouter","writer agy-gemini-4-argon-high","writer agy-gemini-4-argon-medium","writer agy-gemini-3-8-flash-medium","writer agy-gemini-3-8-flash-high"]}
 ```
 
 ### `kxm routes count`
@@ -1380,7 +1386,7 @@ kxm role get writer --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role get","roleId":"writer","scope":"local","filePath":"/work/kxm/.kxm/roles/writer.yaml","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":[],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-3-8-flash-high"},{"route":"agy-gemini-3-8-flash-medium"}]}}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role get","roleId":"writer","scope":"local","filePath":"/work/kxm/.kxm/roles/writer.yaml","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":[],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-7-plus-openrouter","effort":"medium"},{"route":"agy-gemini-4-argon-high","effort":"medium"},{"route":"agy-gemini-4-argon-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-high","effort":"medium"}]}}
 ```
 
 Captured from this checkout with `node scripts/kxm.mjs role get writer --json`. The path is shortened to `/work/kxm`.
@@ -1390,7 +1396,7 @@ kxm role modify writer --add-skill kxm --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"writer","id":"writer","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":["kxm"],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-coder-plus-openrouter","effort":"medium"},{"route":"agy-gemini-3-8-flash-high"},{"route":"agy-gemini-3-8-flash-medium"}]},"filePath":"/work/kxm/.kxm/roles/writer.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/kxm/.kxm/roles/writer.yaml"}]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"role modify","roleId":"writer","id":"writer","role":{"schema":"kxm.role.v2","id":"writer","purpose":"writer","permission":"edit","description":"Primary implementation agent.","skills":["kxm"],"roster":[{"route":"grok-grok-4-7","effort":"medium"},{"route":"pi-qwen3-7-plus-openrouter","effort":"medium"},{"route":"agy-gemini-4-argon-high","effort":"medium"},{"route":"agy-gemini-4-argon-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-medium","effort":"medium"},{"route":"agy-gemini-3-8-flash-high","effort":"medium"}]},"filePath":"/work/kxm/.kxm/roles/writer.yaml","scope":"local","dryRun":true,"planned":[{"action":"write","target":"/work/kxm/.kxm/roles/writer.yaml"}]}
 ```
 
 Add an existing route to a role's roster (Not run):
@@ -2008,11 +2014,11 @@ Starts a long-lived, supervised Pi RPC worker in the foreground through `scripts
 - Needs Pi and a reachable hub. Runs until stopped (`kxm hub stop` stops managed workers too). The exit code is the worker's.
 - A name and project are required (exit 2 otherwise); an invalid isolation mode exits 2.
 - `--dry-run` prints a `kxm.worker-result.v1` envelope with `workspace`, `name`, `project`, `model`, `fallbackModels`, `tools`, `sessionIsolation`, `continue`, `freshStart`.
-- Before Pi starts, the worker runs `--model` and every `--fallback-models` entry through the Pi native-vendor brake. A model whose vendor has its own harness (for example `xai/…`, `openai-codex/…`, `openrouter/x-ai/…` or `antigravity/claude-…`) exits 1 with `pi_native_impersonation_blocked: <message>` on stderr; use the native harness, or an admitted Pi route such as `openrouter/qwen/qwen3-coder-plus`. `--dry-run` does not run this check. See [Harness routing](harness-routing.md#what-the-brake-refuses).
+- Before Pi starts, the worker runs `--model` and every `--fallback-models` entry through the Pi native-vendor brake. A model whose vendor has its own harness (for example `xai/…`, `openai-codex/…`, `openrouter/x-ai/…` or `antigravity/claude-…`) exits 1 with `pi_native_impersonation_blocked: <message>` on stderr; use the native harness, or an admitted Pi route such as `openrouter/qwen/qwen3.7-plus`. `--dry-run` does not run this check. See [Harness routing](harness-routing.md#what-the-brake-refuses).
 - The remaining worker variables are described in [Long-lived worker settings](configuration.md#long-lived-worker-settings).
 
 ```bash
-kxm agent worker --name reviewer --project demo --model openrouter/qwen/qwen3-coder-plus --tools read,grep,find,ls --session-isolation workflow --fresh-start --dry-run
+kxm agent worker --name reviewer --project demo --model openrouter/qwen/qwen3.7-plus --tools read,grep,find,ls --session-isolation workflow --fresh-start --dry-run
 ```
 
 ```text
@@ -2020,7 +2026,7 @@ would start worker
 ```
 
 ```bash
-kxm agent worker --name coordinator --project demo --model openrouter/qwen/qwen3-coder-plus --session-isolation workflow
+kxm agent worker --name coordinator --project demo --model openrouter/qwen/qwen3.7-plus --session-isolation workflow
 ```
 
 Not run: starts a long-lived Pi worker.
@@ -3356,7 +3362,7 @@ Submit a skill candidate from verified episodes.
 - Writes a candidate. Honors `--dry-run`. JSON keys: `metadata` (or `name` for a dry run).
 
 ```bash
-kxm skills create --file SKILL.md --name retry-backoff --created-by alice --harness pi --models openrouter/qwen/qwen3-coder-plus --run wf_123 --dry-run --json
+kxm skills create --file SKILL.md --name retry-backoff --created-by alice --harness pi --models openrouter/qwen/qwen3.7-plus --run wf_123 --dry-run --json
 ```
 
 ```text
@@ -3621,7 +3627,7 @@ Dedicated offline benchmark for side-by-side model comparison (Decision Q12). To
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--task` | `<fixture>` | `Deterministic benchmark task` | Task prompt or fixture path for benchmark comparison |
-| `--arms` | `<models>` | `grok/grok-4.6,claude/fable,pi/qwen3-coder-plus` | Comma-separated model routes to benchmark (e.g. grok/grok-4.6,claude/fable) |
+| `--arms` | `<models>` | `grok/grok-4.6,claude/fable,pi/qwen3.7-plus` | Comma-separated model routes to benchmark (e.g. grok/grok-4.6,claude/fable) |
 | `--runs` | `<count>` | `1` | Benchmark runs per arm |
 
 - Reads nothing. JSON keys: `task`, `runs`, `timestamp`, `arms` (`harness`, `model`, `latencyMs`, `tokensIn`, `tokensOut`, `costUsd`, `outcome`).
@@ -3635,7 +3641,7 @@ Routing Benchmark Results (task: Deterministic benchmark task, runs: 1)
 Harness    Model                     Latency(ms)   TokensIn  TokensOut    Cost($)    Outcome
 grok       grok-4.6                          420       1200        450      $0.17     passed
 claude     fable                             680       1200        450      $0.45     passed
-pi         qwen3-coder-plus                  560       1200        450      $0.12     passed
+pi         qwen3.7-plus                  560       1200        450      $0.12     passed
 ```
 
 ## `kxm prices`

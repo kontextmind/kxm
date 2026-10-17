@@ -40,6 +40,29 @@ test("workforce lint reports admission, roster, unused route, and id failures", 
   }
 });
 
+test("a retired model file may stay off the roster and off the admitted list", () => {
+  const root = mkdtempSync(join(tmpdir(), "kxm-workforce-retired-"));
+  try {
+    mkdirSync(join(root, ".kxm", "models"), { recursive: true });
+    mkdirSync(join(root, ".kxm", "roles"), { recursive: true });
+    mkdirSync(join(root, ".kxm", "agents"), { recursive: true });
+    mkdirSync(join(root, ".kxm", "workflows"), { recursive: true });
+    writeFileSync(join(root, ".kxm", "routes.yaml"), "schema: kxm.routes.v2\nadmitted:\n  - xai/grok-4.7\n  - openrouter/qwen/qwen3.7-plus\n");
+    writeFileSync(join(root, ".kxm", "models", "grok-grok-4-7.yaml"), "schema: kxm.model.v2\nid: grok-grok-4-7\nharness: grok\nmodel: grok-4.7\nvendor: xai\nstatus: admitted\npermissions:\n  - edit\n");
+    writeFileSync(join(root, ".kxm", "models", "pi-qwen3-7-plus-openrouter.yaml"), "schema: kxm.model.v2\nid: pi-qwen3-7-plus-openrouter\nharness: pi\nmodel: openrouter/qwen/qwen3.7-plus\nvendor: alibaba\nstatus: admitted\npermissions:\n  - edit\n");
+    writeFileSync(join(root, ".kxm", "models", "pi-qwen3-coder-plus-openrouter.yaml"), "schema: kxm.model.v2\nid: pi-qwen3-coder-plus-openrouter\nharness: pi\nmodel: openrouter/qwen/qwen3-coder-plus\nvendor: alibaba\nstatus: retired\npermissions:\n  - edit\n");
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\nroster:\n  - route: grok-grok-4-7\n    effort: medium\n  - route: pi-qwen3-7-plus-openrouter\n    effort: medium\n");
+    const clean = lintWorkforce(root);
+    assert.deepEqual(clean.errors, [], clean.errors.map((item) => item.message).join("\n"));
+    writeFileSync(join(root, ".kxm", "roles", "writer.yaml"), "schema: kxm.role.v2\nid: writer\npurpose: writer\npermission: edit\nroster:\n  - route: grok-grok-4-7\n    effort: medium\n  - route: pi-qwen3-coder-plus-openrouter\n    effort: medium\n");
+    const used = lintWorkforce(root);
+    assert.ok(used.errors.some((item) => item.code === "route_not_admitted" && item.message.includes("pi-qwen3-coder-plus-openrouter")));
+    assert.ok(used.errors.some((item) => item.code === "route_unused" && item.message.includes("pi-qwen3-7-plus-openrouter")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("an old route id resolves only when the canonical file is the one present", () => {
   resetDeprecatedIdWarnings();
   const previous = process.env.KXM_QUIET_ALIASES;
@@ -54,6 +77,7 @@ test("an old route id resolves only when the canonical file is the one present",
     assert.equal(kept?.record.id, "grok-native");
     assert.equal(kept?.viaAlias, false);
     assert.equal(lookupById(canonical, "opus-claude", "route"), undefined);
+    assert.equal(lookupById([{ id: "pi-qwen3-7-plus-openrouter", aliases: [] }], "qwen-openrouter-pi", "route"), undefined);
   } finally {
     if (previous === undefined) delete process.env.KXM_QUIET_ALIASES;
     else process.env.KXM_QUIET_ALIASES = previous;

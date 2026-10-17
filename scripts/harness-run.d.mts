@@ -19,7 +19,7 @@ export const PI_ALLOWED_PROVIDERS: readonly string[];
 export const PI_NATIVE_VENDOR_PROVIDERS: Readonly<Record<string, string>>;
 export const PI_ANTIGRAVITY_MODEL_ID: RegExp;
 export const PI_NOUS_PORTAL_HY4: "nous-portal/tencent/hy4-preview";
-export const PI_ADMITTED_WRITER: "openrouter/qwen/qwen3-coder-plus";
+export const PI_ADMITTED_WRITER: "openrouter/qwen/qwen3.7-plus";
 export const ROUTES: Record<string, {
   provider: string;
   roles: readonly string[];

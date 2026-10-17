@@ -12,7 +12,9 @@
  * the assignment runner reads at one commit. A tree that has already renamed
  * the files still accepts the old id. A mixed tree accepts either side.
  * `opus-claude` is not renamed: that route pointed at an unadmitted model and
- * was removed.
+ * was removed. `qwen-openrouter-pi` is not renamed either: it belonged to
+ * retired `pi-qwen3-coder-plus-openrouter` and does not resolve to
+ * `pi-qwen3-7-plus-openrouter`.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -32,9 +34,9 @@ export const ROLE_IDS = Object.freeze([
 /** Old id, canonical id. Listed once; lookup tries both directions. */
 export const ROUTE_RENAMES = Object.freeze([
   ["grok-native", "grok-grok-4-7"],
-  ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
-  ["gemini-agy", "agy-gemini-3-8-flash-high"],
+  ["gemini-agy", "agy-gemini-4-argon-high"],
   ["fable-claude", "claude-fable"],
+  // sol-codex stays the GPT-5.6 route. codex-gpt-6-1-sol is a separate route.
   ["sol-codex", "codex-gpt-5-6-sol"],
   ["grok-default", "grok-grok-4-6"],
   ["fable-default", "claude-fable"],
@@ -190,7 +192,9 @@ function selectorsFor(doc) {
 
 /**
  * Lint one project's `.kxm` workforce. Errors fail CI. An admitted model with
- * no route is a warning. Alias declarations are not uses; a roster or step
+ * no route is a warning. A model file with `status: retired` may stay off
+ * every roster and off `.kxm/routes.yaml`; a roster that still names it is
+ * `route_not_admitted`. Alias declarations are not uses; a roster or step
  * that still cites an old id is a `deprecated_id` warning.
  */
 export function lintWorkforce(root) {
@@ -256,9 +260,14 @@ export function lintWorkforce(root) {
     if (!expected || model.id !== expected) {
       push(errors, "error", "route_id_convention", `.kxm/models/${model.id}.yaml`, `route id '${model.id}' must be '${expected ?? "<harness>-<model-slug>[-<provider>]"}'`);
     }
-    if (!used.has(model.id)) {
+    const retired = doc.status === "retired";
+    if (retired && used.has(model.id)) {
+      push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `retired route '${model.id}' is still on a role roster`);
+    }
+    if (!retired && !used.has(model.id)) {
       push(errors, "error", "route_unused", `.kxm/models/${model.id}.yaml`, `route '${model.id}' is not on any role roster`);
     }
+    if (retired) continue;
     const selectorHit = selectorsFor(doc).find((selector) => admitted.includes(selector));
     if (!selectorHit) {
       push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `model '${doc.model ?? ""}' is not an admitted selector`);

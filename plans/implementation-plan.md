@@ -140,6 +140,31 @@ The open roadmap phase is
 
 ### Decided
 
+- **Writer relief route (2026-10-17).** Writer #2 moves from
+  `pi-qwen3-coder-plus-openrouter` (`openrouter/qwen/qwen3-coder-plus`) to
+  `pi-qwen3-7-plus-openrouter` (`openrouter/qwen/qwen3.7-plus`). OpenRouter
+  retired `qwen/qwen3-coder-plus` (the catalog returns 404). The replacement
+  was read from `https://openrouter.ai/api/v1/models` on 2026-10-17: $0.32
+  input and $1.28 output per million tokens, context length 1,000,000, and
+  `tools` in `supported_parameters`. The old model file stays with
+  `status: retired`, off every roster, and its alias `qwen-openrouter-pi` is
+  removed. The last list-price row stays in `.kxm/prices.yaml`.
+  `PI_ADMITTED_WRITER` is `openrouter/qwen/qwen3.7-plus`.
+- **CLI critic is Codex GPT-6.1 Sol (2026-10-17).** Eddie approved the
+  switch. `codex-gpt-6-1-sol` (`codex` / `gpt-6.1-sol`, vendor `openai`,
+  admitted, read-only, effort `low`) is the `reviewer-cli` primary.
+  `pi-qwen3-8-flash-openrouter` stays the other-vendor fallback.
+  `codex-gpt-5-6-sol` stays admitted as the last fallback. Architecture
+  review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`.
+  GPT-6.1 Sol Pro is the same API id with reasoning mode `pro`
+  (OpenRouter lists `openai/gpt-6.1-sol-pro` at the same per-token
+  price). Route ids are harness plus model, role effort has no `pro`,
+  and the codex ceiling is `reviewer-cli` only, so there is no pro
+  architecture fallback. List price is $2 / $10 per 1M tokens ($0.10
+  cached input, $2.50 cache write) through 272,000 prompt tokens, then
+  $4 / $15. Context is 1.05M (922K max input) and max output is 128K.
+  Reasoning is mandatory (`low`, `medium`, `high`, `xhigh`, `max`).
+
 - **Steel reachability and machine account names (2026-09-27).**
   Steel LXC 240 (startup order 40) is `steel.kontextmind.com`;
   `steel.theneuro.me` is an alias. The only path is Caddy on VM 230
@@ -493,16 +518,19 @@ The open roadmap phase is
 - **Role rotation (operator, 2026-09-06):** choose agents per role from
   authenticated, supported helper routes using verified quality, total
   time/cost, and rework. Root may change agents without asking again.
-  Starting rotation: writer `grok`/`grok-4.6`, planner and architecture
-  critic `claude`/`fable`, CLI critic `codex`/`gpt-5.6-sol`. Grok remains
+  Starting rotation on that date: writer `grok`/`grok-4.6`, planner and
+  architecture critic `claude`/`fable`, CLI critic `codex`/`gpt-5.6-sol`.
+  The CLI critic primary is now `codex`/`gpt-6.1-sol` (see **CLI critic
+  is Codex GPT-6.1 Sol (2026-10-17)**). Grok remains
   the currently admitted native writer route; Codex session work is an
   authorized bootstrap route with unknown root usage/cost, never a forged
   native completion. Do not declare Codex and Grok interchangeable in
   harness-run role mapping. Operator update (2026-09-07): after failed or
   exhausted attempts, immediately try the next suggested eligible authenticated
-  model. OpenRouter Qwen `qwen/qwen3-coder-plus` is narrowly admitted as a Pi
+  model. OpenRouter Qwen `qwen/qwen3.7-plus` is narrowly admitted as a Pi
   writer with exact model auth and edit permission; it has no supported native
-  route here. Nous Research Portal is a second Pi helper provider
+  route here. `qwen/qwen3-coder-plus` left that role on 2026-10-17 (catalog 404).
+  Nous Research Portal is a second Pi helper provider
   (`nous-portal/*` after `@jayteelabs/pi-nous-portal-provider` and
   `pi auth check --provider nous-portal`); `nous-portal/tencent/hy4-preview`
   is the reviewed experiment example, not a second writer. Other model
@@ -2332,8 +2360,10 @@ The open roadmap phase is
 - **Pi helper Nous Portal prefix (dev helper, not Phase 11):**
   `scripts/harness-run.mjs` allowlists `openrouter/*` and `nous-portal/*`.
   Auth is `pi auth check --provider openrouter|nous-portal`. Native-provider
-  Pi brake is unchanged. Writer remains exact
+  Pi brake is unchanged. At this slice the writer was exact
   `openrouter/qwen/qwen3-coder-plus` with edit and JSON readiness proof.
+  Tracking → Decided (2026-10-17) replaces that selector with
+  `openrouter/qwen/qwen3.7-plus`.
   `nous-portal/tencent/hy4-preview` is experiment/read-only (experiment may
   edit); it is not a second writer. Install
   `npm:@jayteelabs/pi-nous-portal-provider`; there is no Nous harness CLI.

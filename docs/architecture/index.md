@@ -18,3 +18,4 @@ against the current checkout.
 
 - [Roadmap](../roadmap/dashboard.md)
 - [Trust model](../concepts/trust-model.md)
+- [Project knowledge wiki](../../.kxm/knowledge/architecture/overview.md)

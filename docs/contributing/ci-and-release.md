@@ -46,6 +46,7 @@ together.
 | Push to `main`, or manual | `ci.yml` (Validate matrix) | `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24; not on a pull request |
 | Code pull request and code push | `ci.yml` (Plugin validation) | `claude plugin validate --strict` on the marketplace and the plugin |
 | Daily at 04:00 UTC, or manual | `nightly.yml` | `test:coverage:complete`, `check`, `check:generated`, `npm pack --dry-run` |
+| Monday at 13:00 UTC, or manual | `refresh-models.yml` | Fetches the public OpenRouter catalog, and opens or updates one pull request on `automation/model-refresh` when `.kxm/prices.yaml` or `.kxm/models/inventory.yaml` changes. Uses `GITHUB_TOKEN` only, then dispatches `ci.yml` on that branch |
 | Merged pull request | `auto-release.yml` | Tags the merge commit and dispatches `release.yml` |
 | Tag push or dispatch | `release.yml` | Verifies, packs and publishes (see [Release flow](#release-flow)) |
 | Manual only | `smoke.yml` | Real Pi smoke, currently disabled (see [Smoke tests](#smoke-tests)) |
@@ -269,7 +270,7 @@ The real Pi smoke calls paid models, so it never runs by default. Its workflow,
 `KXM_SMOKE_RUNNER` names a runner with Pi credentials. Both smoke models run as
 long-lived Pi workers, so each must pass the Pi native-vendor brake: pick two
 non-native routes such as
-`openrouter/qwen/qwen3-coder-plus,openrouter/z-ai/glm-5.3-flash`, never `xai/…`
+`openrouter/qwen/qwen3.7-plus,openrouter/z-ai/glm-5.3-flash`, never `xai/…`
 or `anthropic/…`. The container smoke needs
 Docker, a `pass-cli` session and a local Pi model store. It keeps secrets in a
 mode-600 file inside a temporary directory; set `KXM_SMOKE_VAULT` to read keys
@@ -298,3 +299,4 @@ implying automated coverage.
 - [Test matrix](test-matrix.md): which test proves which behavior
 - [Write KXM documentation](writing-docs.md): doc gates and pinned paths
 - [Upgrade KXM](../operations/upgrade.md): the operator side of a new version
+- [Project knowledge wiki](../../.kxm/knowledge/index.md): authored notes for [CI](../../.kxm/knowledge/patterns/ci.md) and [release](../../.kxm/knowledge/patterns/release-flow.md)
