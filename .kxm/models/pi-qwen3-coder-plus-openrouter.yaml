@@ -1,11 +1,10 @@
 schema: kxm.model.v2
 id: pi-qwen3-coder-plus-openrouter
-aliases:
-  - qwen-openrouter-pi
 harness: pi
 model: openrouter/qwen/qwen3-coder-plus
 vendor: alibaba
-status: admitted
+# OpenRouter retired this id (catalog 404) on 2026-10-17. Off every roster.
+status: retired
 permissions:
   - edit
 origin:

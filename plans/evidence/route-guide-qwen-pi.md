@@ -20,4 +20,4 @@ details:
 
 # route-guide-qwen-pi
 
-Dated 2026-09-26. Route ids are the guided role slugs. Harness `pi`. Model id `qwen/qwen3-coder-plus`. Vendor `openrouter`. Admitted because Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup. Auth was proved with `pi auth check --provider openrouter`.
+Dated 2026-09-26. Route ids are the guided role slugs. Harness `pi`. Model id `qwen/qwen3.7-plus`. Vendor `openrouter`. Admitted because Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup. Auth was proved with `pi auth check --provider openrouter`.

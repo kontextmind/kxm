@@ -463,7 +463,7 @@ export function createKxmPiProducer(options: KxmPiProducerOptions = {}): KxmPiPr
   function resolveModelForRequest(request: KxmProducerRequest): { provider: string; model: string; thinking?: string | undefined } {
     if (request.model) {
       // A separate provider field means the model id is bare and may itself be
-      // namespaced (`qwen/qwen3-coder-plus` under `openrouter`); reparsing it as a
+      // namespaced (`qwen/qwen3.7-plus` under `openrouter`); reparsing it as a
       // provider/model selector strips the namespace and sends the wrong model. Only
       // parse when the provider must come from the string itself.
       if (request.provider) {

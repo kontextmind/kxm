@@ -64,13 +64,13 @@ test("Plan Optimizer: detects concurrency fanout and cost downscaling proposals"
   const cost = result.proposals.find((p) => p.category === "cost");
   assert.ok(cost);
   assert.deepEqual(cost.targetTaskIds, ["t2"]);
-  assert.equal(cost.suggestedModel, "qwen/qwen3-coder-plus");
+  assert.equal(cost.suggestedModel, "qwen/qwen3.7-plus");
 
   // Apply optimizations
   const applied = applyPlanOptimizations(tasks, result.proposals);
   assert.equal(applied.appliedCount, result.proposals.length);
   const updatedDocTask = applied.tasks.find((t) => t.id === "t2");
-  assert.equal(updatedDocTask?.model, "qwen/qwen3-coder-plus");
+  assert.equal(updatedDocTask?.model, "qwen/qwen3.7-plus");
 });
 
 test("Workflow History: filters by category and search query, exports both Markdown and JSONL", () => {

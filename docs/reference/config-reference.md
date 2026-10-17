@@ -963,7 +963,7 @@ description: Primary implementation agent.
 roster:
   - route: grok-grok-4-7
     effort: medium
-  - route: pi-qwen3-coder-plus-openrouter
+  - route: pi-qwen3-7-plus-openrouter
     effort: medium
 ```
 
@@ -991,7 +991,7 @@ unknown keys are ignored).
 
 A route string is derived from the selected model file's `vendor` and
 `model`, joined by a slash: `xai/grok-4.6`, `anthropic/fable`,
-`openrouter/qwen/qwen3-coder-plus`. When the file is missing, nothing is
+`openrouter/qwen/qwen3.7-plus`. When the file is missing, nothing is
 admitted and every live attempt is refused (`producer_route_unsupported`, or
 `producer_route_not_admitted` from the live producer). A leftover
 `.kxm/producers.yaml` makes every reader fail with `retired
@@ -1002,7 +1002,7 @@ admitted and every live attempt is refused (`producer_route_unsupported`, or
 `model_selection_required`. Inventory IDs come in several shapes (bare
 `grok-4.6` from `grok models`, `vendor/model` from OpenRouter,
 `provider/model` from `pi --list-models`), so a route such as
-`openrouter/qwen/qwen3-coder-plus` or `anthropic/fable` usually has to be
+`openrouter/qwen/qwen3.7-plus` or `anthropic/fable` usually has to be
 added by editing the file.
 
 ```yaml
@@ -1012,7 +1012,7 @@ admitted:
   - anthropic/fable
   - openai/gpt-5.6-sol
   - xai/grok-4.6
-  - openrouter/qwen/qwen3-coder-plus
+  - openrouter/qwen/qwen3.7-plus
 disabled: []
 ```
 
@@ -1067,9 +1067,9 @@ routes:
     roles: [writer]
     permissions: [edit]
     status: admitted            # admitted | retired
-  pi-qwen3-coder-plus-openrouter:
+  pi-qwen3-7-plus-openrouter:
     harness: pi
-    model: openrouter/qwen/qwen3-coder-plus   # Pi: allowed provider prefix + vendor/model
+    model: openrouter/qwen/qwen3.7-plus   # Pi: allowed provider prefix + vendor/model
     vendor: alibaba
     roles: [writer]
     permissions: [edit]
@@ -1089,7 +1089,7 @@ routes:
     permissions: [read-only]
     status: admitted
 lineup:                         # routes admitted for each role, preference order
-  writer: [grok-grok-4-7, pi-qwen3-coder-plus-openrouter, agy-gemini-4-argon-high, agy-gemini-4-argon-medium, agy-gemini-3-8-flash-medium, agy-gemini-3-8-flash-high]
+  writer: [grok-grok-4-7, pi-qwen3-7-plus-openrouter, agy-gemini-4-argon-high, agy-gemini-4-argon-medium, agy-gemini-3-8-flash-medium, agy-gemini-3-8-flash-high]
   planner: [claude-fable, pi-qwen3-8-flash-openrouter]
   reviewer-arch: [claude-fable, pi-glm-5-3-flash-openrouter]
   reviewer-cli: [codex-gpt-5-6-sol, pi-qwen3-8-flash-openrouter]
@@ -1097,11 +1097,11 @@ required_critics:
   review-arch: claude-fable
   review-cli: codex-gpt-5-6-sol
 model_origins:                  # required for every Pi route model
-  openrouter/qwen/qwen3-coder-plus:
+  openrouter/qwen/qwen3.7-plus:
     vendor: alibaba
     evidence:
-      source: plans/evidence/route-qwen-openrouter-pi.md
-      sha256: b15f8a54adc398b33e75609e959076eee310bf4ff6623d0b8470ea3da95e6c54
+      source: plans/evidence/route-pi-qwen3-7-plus-openrouter.md
+      sha256: 10e11cfa572ef4891e514d229fa8b7f0f355b31e6481315a6dd763bbe44244a1
 ```
 
 Validated with `validateRosterDocument` from `scripts/roster-policy.mjs`,

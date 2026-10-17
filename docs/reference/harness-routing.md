@@ -12,11 +12,11 @@ These are KXM's routing rules. The code enforces them in layers: the Pi native-v
 - **Same model, prefer the subscription.** Prefer an authenticated native subscription for the same model.
 - **Quota exhaustion is not a license to cross-bill.** Take the **next best** authenticated option by quality, then cost, from the report, not a silent Pi API key for the same vendor.
 - **A harness is not a model, and it is not a worker.** A harness runs only the models it hosts. Only Pi is a long-lived worker. `grok` and `agy` are one-shot CLIs.
-- **Admission is a decision, not a config tweak.** A route that is not admitted is refused. Admit one precise selector, such as `openrouter/qwen/qwen3-coder-plus`, never a whole provider.
+- **Admission is a decision, not a config tweak.** A route that is not admitted is refused. Admit one precise selector, such as `openrouter/qwen/qwen3.7-plus`, never a whole provider.
 
 ## 1. Decision procedure: "I want model X"
 
-1. **Name the vendor of X.** The vendor is the lab that trained the model, not whoever bills you for it. `x-ai/grok-4.6` is xAI. `qwen/qwen3-coder-plus` is Alibaba. `z-ai/glm-5.3` is Z.ai.
+1. **Name the vendor of X.** The vendor is the lab that trained the model, not whoever bills you for it. `x-ai/grok-4.6` is xAI. `qwen/qwen3.7-plus` is Alibaba. `z-ai/glm-5.3` is Z.ai.
 2. **Check whether the vendor has a native harness.** KXM maps `anthropic→claude`, `openai→codex`, `xai→grok`, `google→agy`, `moonshot→kimi` and `deepseek→deepseek`. Google is an exception (section 4). If the vendor is not in this list, go to step 6.
 3. **Check that the native harness is installed and logged in.** In `kxm harness list`, the row must show `detected yes`, `auth yes` and `dispatch yes`. `no` and `unknown` are never eligible.
 4. **Check that the harness hosts X.** `claude` runs only Anthropic models. `grok` runs only `grok-*`. `agy` runs only `gemini-*`. `kimi` runs only `kimi-*` or `moonshot-*`. `deepseek` runs only `deepseek-*`. `codex` refuses other vendors' model prefixes. To see the exact ids, use the harness's own catalog: `grok models`, `agy models` or `kimi provider list`.
@@ -92,14 +92,14 @@ codex login status
 grok models
 agy models
 kimi provider list
-pi auth check --model openrouter/qwen/qwen3-coder-plus --json --no-refresh
+pi auth check --model openrouter/qwen/qwen3.7-plus --json --no-refresh
 ```
 
 ## 2. Which route will a config line use?
 
 ### How KXM builds a route
 
-- **Selector.** The selector is `<vendor>/<model>` from the selected `.kxm/models/<route>.yaml`. The agent names a `role`, `.kxm/roles/<role>.yaml` lists route ids, and the chosen roster entry names that model file. The model id may contain `/`, for example `openrouter/qwen/qwen3-coder-plus`.
+- **Selector.** The selector is `<vendor>/<model>` from the selected `.kxm/models/<route>.yaml`. The agent names a `role`, `.kxm/roles/<role>.yaml` lists route ids, and the chosen roster entry names that model file. The model id may contain `/`, for example `openrouter/qwen/qwen3.7-plus`.
 - **Harness.** The harness is the `harness` field on that model file. An agent file does not select it.
 - **Admission.** The selector must be admitted. The engine uses the first roster entry whose model file is readable and whose route is admitted.
 - **Dispatch probe.** Before spawning anything, the producer probes the exact harness, provider and model triple. It refuses unhosted pairs and the Pi brake.
@@ -135,7 +135,7 @@ model: openrouter/x-ai/grok-4.7
 vendor: xai
 ```
 
-The selector is `openrouter/x-ai/grok-4.7` and the harness is `pi`. The Pi brake refuses it before Pi starts, because the vendor segment `x-ai` is xAI, which has a native harness. A vendor with no native harness runs in the same shape: with `model: openrouter/qwen/qwen3-coder-plus`, Pi is spawned with `--model openrouter/qwen/qwen3-coder-plus`, its read-only flags (section 3) and `-p --mode json`. Write `model` exactly as the provider names it. For OpenRouter that is the vendor slug, so `x-ai`, not `xai`.
+The selector is `openrouter/x-ai/grok-4.7` and the harness is `pi`. The Pi brake refuses it before Pi starts, because the vendor segment `x-ai` is xAI, which has a native harness. A vendor with no native harness runs in the same shape: with `model: openrouter/qwen/qwen3.7-plus`, Pi is spawned with `--model openrouter/qwen/qwen3.7-plus`, its read-only flags (section 3) and `-p --mode json`. Write `model` exactly as the provider names it. For OpenRouter that is the vendor slug, so `x-ai`, not `xai`.
 
 The harness and the selector have to agree. Pi refuses `provider: xai` and `openrouter/x-ai/…`. `grok` refuses `provider: openrouter`. [What the brake refuses](#what-the-brake-refuses) has the exact messages.
 
@@ -153,7 +153,7 @@ description: Primary implementation agent.
 roster:
   - route: grok-grok-4-7
     effort: medium
-  - route: pi-qwen3-coder-plus-openrouter
+  - route: pi-qwen3-7-plus-openrouter
     effort: medium
   - route: agy-gemini-4-argon-high
     effort: medium
@@ -165,7 +165,7 @@ roster:
     effort: medium
 ```
 
-`grok-grok-4-7` resolves to `.kxm/models/grok-grok-4-7.yaml`: harness `grok`, model `grok-4.7`, vendor `xai`, status `admitted`, permission `edit`. `pi-qwen3-coder-plus-openrouter` is harness `pi`, model `openrouter/qwen/qwen3-coder-plus`, vendor `alibaba`. `agy-gemini-4-argon-high` is harness `agy`, model `gemini-4-argon-high`, vendor `google`. `kxm role list` prints the first route id as the primary, for example `(grok-grok-4-7)`. The previous ids (`grok-native`, `qwen-openrouter-pi`, `gemini-agy`) are aliases. `gemini-agy` resolves to `agy-gemini-4-argon-high`.
+`grok-grok-4-7` resolves to `.kxm/models/grok-grok-4-7.yaml`: harness `grok`, model `grok-4.7`, vendor `xai`, status `admitted`, permission `edit`. `pi-qwen3-7-plus-openrouter` is harness `pi`, model `openrouter/qwen/qwen3.7-plus`, vendor `alibaba`, and it is writer #2. `agy-gemini-4-argon-high` is harness `agy`, model `gemini-4-argon-high`, vendor `google`. `kxm role list` prints the first route id as the primary, for example `(grok-grok-4-7)`. The previous ids `grok-native` and `gemini-agy` are aliases. `gemini-agy` resolves to `agy-gemini-4-argon-high`. `qwen-openrouter-pi` is not an alias: it belonged to retired `pi-qwen3-coder-plus-openrouter` (`openrouter/qwen/qwen3-coder-plus`, catalog 404) and does not resolve to `pi-qwen3-7-plus-openrouter`.
 
 Dispatch resolves a step from the agent `role`, then `.kxm/roles/<role>.yaml`, then the selected `.kxm/models/<route>.yaml`. That model file carries `harness`, `model`, `vendor`, `status`, and `permissions`. The engine walks the roster in order and uses the first admitted route whose model file is readable. A missing or unreadable model file is a refusal (`roster_model_unreadable` at load, `producer_route_unsupported` at dispatch), not a skip to the next entry. A route file that names a harness the model cannot run on still fails closed with `harness_unhosted_model`.
 
@@ -176,7 +176,7 @@ Role files are what `kxm role` and the Runtime membership check use.
 `kxm routes list` prints one line per decision, for example:
 
 ```text
-admitted openrouter/qwen/qwen3-coder-plus
+admitted openrouter/qwen/qwen3.7-plus
 admitted xai/grok-4.7
 disabled openrouter/x-ai/grok-4.7
 ```
@@ -201,7 +201,7 @@ The first segment of an id is the provider, and the rest is the model id. A rout
 `kxm routes admit --model <id>` only takes an id that exists in `.kxm/models/inventory.yaml`. The inventory is a different namespace from these selectors (next section), and it never carries an `openrouter/…` selector, so a dry run refuses one:
 
 ```bash
-kxm routes admit --model openrouter/qwen/qwen3-coder-plus --dry-run
+kxm routes admit --model openrouter/qwen/qwen3.7-plus --dry-run
 ```
 
 ```text
@@ -252,7 +252,7 @@ The brake runs wherever KXM starts Pi on a model: in the dispatch probe that eac
 | A Pi provider that belongs to the vendor | `openai-codex/…`, `moonshotai/…`, `moonshotai-cn/…`, `kimi-coding/…`, `google-vertex/…`, `claude-bridge/…`, and `antigravity/…` except Gemini ids | `pi provider openai-codex bills native vendor openai for gpt-5.6-sol; use the native harness` |
 | The vendor segment of an aggregator id, including the aliases `x-ai`, `moonshotai` and `google-ai` | `openrouter/x-ai/grok-4.6`, `openrouter/anthropic/claude-fable-5.1`, `nous-portal/google/…` | `pi must not bill native vendor xai through openrouter; use the native harness` |
 
-The brake accepts `antigravity/gemini-…` and any id whose vendor has no native harness, such as `openrouter/qwen/qwen3-coder-plus`, `zai-coding-cn/glm-5.3` or `qwen-token-plan/qwen3.8-flash`. Passing the brake is not admission: the route must still be admitted. The hosting refusal at dispatch reads `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`.
+The brake accepts `antigravity/gemini-…` and any id whose vendor has no native harness, such as `openrouter/qwen/qwen3.7-plus`, `zai-coding-cn/glm-5.3` or `qwen-token-plan/qwen3.8-flash`. Passing the brake is not admission: the route must still be admitted. The hosting refusal at dispatch reads `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`.
 
 To run the load-time check, which covers only agents that declare a harness and select a profile or tag, run the read-only validation:
 
@@ -448,7 +448,7 @@ Admit an `antigravity/…` route only through a reviewed admission decision. The
 Pi is the right harness when the vendor has no native harness in KXM, for example Qwen (Alibaba) and GLM (Z.ai). The choice is then between the vendor's own plan provider in Pi and an aggregator:
 
 - Prefer the vendor-plan provider when `pi auth check` reports it `ready`, for example `qwen-token-plan/qwen3.8-flash` or `zai-coding-cn/glm-5.3`.
-- Otherwise use an aggregator selector, such as `openrouter/qwen/qwen3-coder-plus`.
+- Otherwise use an aggregator selector, such as `openrouter/qwen/qwen3.7-plus`.
 - Admit the exact selector, with the permission it needs, never a whole provider.
 
 DeepSeek has a native harness entry, but it is never eligible: its auth is always `unknown`, and it has no audited read-only profile. A DeepSeek model billed through another vendor's plan, such as `qwen-token-plan/deepseek-…`, passes the brake because its id names no vendor segment. It is an admission question, not a precedent.
@@ -493,7 +493,7 @@ Each of those is a fail-closed stop, or a new admission decision.
 | `pi auth check --provider nous-portal` or `--provider antigravity` returns `provider_not_found`. | The provider comes from a Pi package or the KXM Pi extension, and `pi auth check` never loads extensions, not even one passed with `-e`. | Confirm with `pi list` and `pi --list-models <id>`. The Runtime's Pi one-shot runs with `--no-extensions` and checks readiness with `pi auth check`, so it cannot reach extension providers. |
 | `producer_route_unsupported: model '<selector>' is not admitted`, or `producer_route_not_admitted`. | The selector is missing from `admitted` in `.kxm/routes.yaml`, or it is under `disabled`. | Check with `kxm routes list`. After a reviewed decision, run `kxm routes admit --model <id>`, or edit the file when the inventory lacks the id. |
 | `producer_route_unsupported: model '<selector>' not in role '<role>' roster` | The role file exists and does not list the selector. | Add it to `.kxm/roles/<role>.yaml` by Git review, and check with `kxm role get <role>`. |
-| `pi_native_impersonation_blocked`, at dispatch or when a worker starts. | A Pi agent or worker names a native vendor's model: directly, through that vendor's Pi provider, or behind an aggregator. | Use the native harness (`harness: grok` for `provider: xai`), or an admitted Pi route whose vendor has no native harness, such as `openrouter/qwen/qwen3-coder-plus`. |
+| `pi_native_impersonation_blocked`, at dispatch or when a worker starts. | A Pi agent or worker names a native vendor's model: directly, through that vendor's Pi provider, or behind an aggregator. | Use the native harness (`harness: grok` for `provider: xai`), or an admitted Pi route whose vendor has no native harness, such as `openrouter/qwen/qwen3.7-plus`. |
 | `grok_not_authenticated: grok harness not detected (harness_unhosted_model)`, or `harness grok does not host provider openrouter`. | A native-harness agent was given an aggregator or another vendor's selector, often from a mixed role roster. | Give that selector its own agent with `harness:` omitted. |
 | `routing report` shows every attempt under `Unk*`, and records carry `costBasis: unknown`. | Grok and every Pi route are recorded as `unknown` today. That is the design, not a missing price. | Nothing to fix per run. Compare quality and latency, and use list estimates for cost. |
 | `providerMetadata.priceCatalogStale: true`, and there is no `listCostUsd`. | `.kxm/prices.yaml` is not dated today, or no row matches the route's provider. | Edit `.kxm/prices.yaml` by Git review: add a row for the provider, then update `date` and `sha256`. The loader refuses a hash mismatch. |

@@ -1071,7 +1071,7 @@ export async function cmdRoutingBenchmark(
   options: { task?: string | undefined; arms?: string | undefined; runs?: string | undefined },
 ): Promise<number> {
   const task = options.task || "Deterministic benchmark task";
-  const armsStr = options.arms || "grok/grok-4.6,claude/fable,pi/qwen3-coder-plus";
+  const armsStr = options.arms || "grok/grok-4.6,claude/fable,pi/qwen3.7-plus";
   const armsList = armsStr.split(",").map((s) => s.trim()).filter(Boolean);
   const runsCount = Math.max(1, parseInt(options.runs || "1", 10) || 1);
 

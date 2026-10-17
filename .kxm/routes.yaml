@@ -6,6 +6,8 @@ updatedAt: '2026-10-17T00:00:00.000Z'
 # qwen-token-plan/qwen3.8-max — qwen-token-plan is not an allowlisted harness or Pi provider.
 # zai-coding-cn/glm-5.3 — zai-coding-cn is not an allowlisted harness or Pi provider.
 # zai-coding-cn/glm-5.3-flash — zai-coding-cn is not an allowlisted harness or Pi provider.
+# Removed 2026-10-17 because OpenRouter retired the id (catalog 404). The prices.yaml row stays.
+# openrouter/qwen/qwen3-coder-plus — route pi-qwen3-coder-plus-openrouter is status retired.
 admitted:
 - anthropic/fable
 - google/gemini-3.8-flash-high
@@ -13,7 +15,7 @@ admitted:
 - google/gemini-4-argon-high
 - google/gemini-4-argon-medium
 - openai/gpt-5.6-sol
-- openrouter/qwen/qwen3-coder-plus
+- openrouter/qwen/qwen3.7-plus
 - openrouter/qwen/qwen3.8-flash
 - openrouter/z-ai/glm-5.3-flash
 - xai/grok-4.7

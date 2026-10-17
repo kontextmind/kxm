@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
 date: "2026-10-17"
-sha256: 37f358f1fa1ce6a68cd4ec0f749875378a5a7d6a8c428c90719fc4c5b959dc03
+sha256: 81123b2bde527b99e5b8226bc7235e88743285aa4e89cb2dfdd9692b57797f24
 currency: USD
 models:
   - id: anthropic/fable
@@ -42,8 +42,8 @@ models:
         outputPerMillion: 6
         cacheReadPerMillion: 0.5
         cacheWritePerMillion: null
-  # Last OpenRouter list price. qwen/qwen3-coder-plus left the catalog (404) and
-  # writer #2 still names this route.
+  # Last OpenRouter list price. qwen/qwen3-coder-plus left the catalog (404).
+  # Route pi-qwen3-coder-plus-openrouter is retired and is not writer #2.
   - id: openrouter/qwen/qwen3-coder-plus
     provider: openrouter
     model: qwen/qwen3-coder-plus
@@ -52,6 +52,18 @@ models:
         outputPerMillion: 3.25
         cacheReadPerMillion: 0.13
         cacheWritePerMillion: 0.8125
+  # Verified 2026-10-17 on https://openrouter.ai/api/v1/models.
+  # Base tier is $0.32 / $1.28. Prompts at or above 256000 tokens list at
+  # $0.96 / $3.84 (cache read $0.192, cache write $1.20). This row is the base tier.
+  # Context length 1000000. supported_parameters includes tools.
+  - id: openrouter/qwen/qwen3.7-plus
+    provider: openrouter
+    model: qwen/qwen3.7-plus
+    tiers:
+      - inputPerMillion: 0.32
+        outputPerMillion: 1.28
+        cacheReadPerMillion: 0.064
+        cacheWritePerMillion: 0.4
   - id: openrouter/qwen/qwen3.8-flash
     provider: openrouter
     model: qwen/qwen3.8-flash

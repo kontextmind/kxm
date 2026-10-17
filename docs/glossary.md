@@ -427,7 +427,7 @@ A list of allowed models. It means either a [role](#role)'s roster, or the devel
 
 ### Route
 
-A model selector, such as `xai/grok-4.6` or `openrouter/qwen/qwen3-coder-plus`, that a step can run on. The harness that runs it comes from the agent or the project default. See [Harness routing](reference/harness-routing.md).
+A model selector, such as `xai/grok-4.6` or `openrouter/qwen/qwen3.7-plus`, that a step can run on. The harness that runs it comes from the agent or the project default. See [Harness routing](reference/harness-routing.md).
 
 ### Session
 

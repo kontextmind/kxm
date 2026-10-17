@@ -64,7 +64,7 @@ const ADMITTED_GUIDE_BINDINGS: Readonly<Record<string, AgentBinding>> = Object.f
   "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
   "x-ai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
   "xai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
-  "qwen/qwen3-coder-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3-coder-plus" },
+  "qwen/qwen3.7-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3.7-plus" },
 });
 
 /** Guide candidates are ordered by preference; the first eligible wins. */
@@ -97,7 +97,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-fable-5.1" },
         ],
       },
@@ -109,7 +109,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
           { vendor: "mistralai", model: "devstral-2512" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" },
         ],
@@ -121,7 +121,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         domain: "Implements domain entities, SQL queries/migrations, ORM persistence, concurrency primitives, and transactional boundaries.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" },
@@ -148,7 +148,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         candidates: [
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" },
         ],
@@ -275,7 +275,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         domain: "Generates declarative Terraform/OpenTofu, Pulumi, Kubernetes CRDs, and VPC networking definitions.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "google", model: "gemini-3.8-flash" },
           { vendor: "mistralai", model: "devstral-2512" },
@@ -335,7 +335,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         domain: "Authors concise, accurate developer and operator documentation with clear terminology, correct command flags, and consistent formatting without marketing drift.",
         candidates: [
           { vendor: "x-ai", model: "grok-4.6" },
-          { vendor: "qwen", model: "qwen3-coder-plus" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-sonnet-5" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
@@ -490,11 +490,11 @@ function workflowDocument(workflow: GuideWorkflow): Record<string, unknown> {
  * id, and harness gets no model file and no origin.
  */
 const GUIDE_PI_EVIDENCE_SOURCE = "plans/evidence/route-guide-qwen-pi.md";
-const GUIDE_PI_EVIDENCE_SHA256 = "109f39728b251dd0565e275ae689a6e1d9b889a488d996b157d500c538115759";
+const GUIDE_PI_EVIDENCE_SHA256 = "8a24a7dc6db416df2153cfec7bccf1a4462f838e35c4e6707dc421ca84cf069b";
 const GUIDE_PI_NOTE = {
   harness: "pi",
   vendor: "openrouter",
-  model: "qwen/qwen3-coder-plus",
+  model: "qwen/qwen3.7-plus",
   reason: "Qwen has no supported native harness on this runner, and the operator admitted that exact model for guided setup.",
   provingCommand: "pi auth check --provider openrouter",
 } as const;

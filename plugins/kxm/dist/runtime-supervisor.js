@@ -15543,7 +15543,6 @@ var ROLE_IDS = Object.freeze([
 ]);
 var ROUTE_RENAMES = Object.freeze([
   ["grok-native", "grok-grok-4-7"],
-  ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
   ["gemini-agy", "agy-gemini-4-argon-high"],
   ["fable-claude", "claude-fable"],
   ["sol-codex", "codex-gpt-5-6-sol"],
@@ -15734,9 +15733,14 @@ function lintWorkforce(root) {
     if (!expected || model.id !== expected) {
       push(errors, "error", "route_id_convention", `.kxm/models/${model.id}.yaml`, `route id '${model.id}' must be '${expected ?? "<harness>-<model-slug>[-<provider>]"}'`);
     }
-    if (!used.has(model.id)) {
+    const retired = doc.status === "retired";
+    if (retired && used.has(model.id)) {
+      push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `retired route '${model.id}' is still on a role roster`);
+    }
+    if (!retired && !used.has(model.id)) {
       push(errors, "error", "route_unused", `.kxm/models/${model.id}.yaml`, `route '${model.id}' is not on any role roster`);
     }
+    if (retired) continue;
     const selectorHit = selectorsFor(doc).find((selector) => admitted.includes(selector));
     if (!selectorHit) {
       push(errors, "error", "route_not_admitted", `.kxm/models/${model.id}.yaml`, `model '${doc.model ?? ""}' is not an admitted selector`);

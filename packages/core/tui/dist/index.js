@@ -1167,7 +1167,7 @@ function evaluatePlanOptimizations(tasks) {
         projectedTimeSavingsSeconds: 5,
         projectedCostSavingsPercent: 65,
         suggestedHarness: "pi",
-        suggestedModel: "qwen/qwen3-coder-plus",
+        suggestedModel: "qwen/qwen3.7-plus",
         selected: true
       });
     } else if (isFrontier && (task.category === "lint" || /lint|format|style/i.test(task.title))) {
