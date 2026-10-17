@@ -15544,7 +15544,7 @@ var ROLE_IDS = Object.freeze([
 var ROUTE_RENAMES = Object.freeze([
   ["grok-native", "grok-grok-4-7"],
   ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
-  ["gemini-agy", "agy-gemini-3-8-flash-high"],
+  ["gemini-agy", "agy-gemini-4-argon-high"],
   ["fable-claude", "claude-fable"],
   ["sol-codex", "codex-gpt-5-6-sol"],
   ["grok-default", "grok-grok-4-6"],

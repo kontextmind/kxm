@@ -18615,7 +18615,7 @@ var init_workforce_names = __esm({
     ROUTE_RENAMES = Object.freeze([
       ["grok-native", "grok-grok-4-7"],
       ["qwen-openrouter-pi", "pi-qwen3-coder-plus-openrouter"],
-      ["gemini-agy", "agy-gemini-3-8-flash-high"],
+      ["gemini-agy", "agy-gemini-4-argon-high"],
       ["fable-claude", "claude-fable"],
       ["sol-codex", "codex-gpt-5-6-sol"],
       ["grok-default", "grok-grok-4-6"],
@@ -28834,7 +28834,7 @@ async function refreshModelInventory(options) {
       const parts = line.trim().split(/\s+/);
       const id = source === "pi" && parts.length >= 2 && parts[0] !== "provider" ? `${parts[0]}/${parts[1]}` : parts[0];
       if (id && /^[a-z0-9][a-z0-9._/-]+$/i.test(id) && id !== "Available") {
-        const effortMatch = source === "agy" ? id.match(/-(low|medium|high)$/i) : null;
+        const effortMatch = source === "agy" ? id.match(/-(low|medium|high|max)$/i) : null;
         add({ id, ...effortMatch?.[1] ? { thinkingLevels: [effortMatch[1].toLowerCase()] } : {} }, source, "standard");
       }
     }

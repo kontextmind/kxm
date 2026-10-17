@@ -4,12 +4,19 @@ purpose: writer
 permission: edit
 description: Primary implementation agent.
 # Rotation priority = order. Effort default: medium for implementation.
+# Argon needs a paid Google AI Pro, Ultra, or Enterprise plan. agy -p exits
+# when a pinned model is unavailable, so Flash medium stays as the safety net.
+# Flash high stays last so that admitted model file remains on a roster.
 roster:
   - route: grok-grok-4-7
     effort: medium
   - route: pi-qwen3-coder-plus-openrouter
     effort: medium
-  - route: agy-gemini-3-8-flash-high
+  - route: agy-gemini-4-argon-high
+    effort: medium
+  - route: agy-gemini-4-argon-medium
     effort: medium
   - route: agy-gemini-3-8-flash-medium
+    effort: medium
+  - route: agy-gemini-3-8-flash-high
     effort: medium

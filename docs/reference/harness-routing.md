@@ -155,13 +155,17 @@ roster:
     effort: medium
   - route: pi-qwen3-coder-plus-openrouter
     effort: medium
-  - route: agy-gemini-3-8-flash-high
+  - route: agy-gemini-4-argon-high
+    effort: medium
+  - route: agy-gemini-4-argon-medium
     effort: medium
   - route: agy-gemini-3-8-flash-medium
     effort: medium
+  - route: agy-gemini-3-8-flash-high
+    effort: medium
 ```
 
-`grok-grok-4-7` resolves to `.kxm/models/grok-grok-4-7.yaml`: harness `grok`, model `grok-4.7`, vendor `xai`, status `admitted`, permission `edit`. `pi-qwen3-coder-plus-openrouter` is harness `pi`, model `openrouter/qwen/qwen3-coder-plus`, vendor `alibaba`. `agy-gemini-3-8-flash-high` is harness `agy`, model `gemini-3.8-flash-high`, vendor `google`. `kxm role list` prints the first route id as the primary, for example `(grok-grok-4-7)`. The previous ids (`grok-native`, `qwen-openrouter-pi`, `gemini-agy`) are aliases.
+`grok-grok-4-7` resolves to `.kxm/models/grok-grok-4-7.yaml`: harness `grok`, model `grok-4.7`, vendor `xai`, status `admitted`, permission `edit`. `pi-qwen3-coder-plus-openrouter` is harness `pi`, model `openrouter/qwen/qwen3-coder-plus`, vendor `alibaba`. `agy-gemini-4-argon-high` is harness `agy`, model `gemini-4-argon-high`, vendor `google`. `kxm role list` prints the first route id as the primary, for example `(grok-grok-4-7)`. The previous ids (`grok-native`, `qwen-openrouter-pi`, `gemini-agy`) are aliases. `gemini-agy` resolves to `agy-gemini-4-argon-high`.
 
 Dispatch resolves a step from the agent `role`, then `.kxm/roles/<role>.yaml`, then the selected `.kxm/models/<route>.yaml`. That model file carries `harness`, `model`, `vendor`, `status`, and `permissions`. The engine walks the roster in order and uses the first admitted route whose model file is readable. A missing or unreadable model file is a refusal (`roster_model_unreadable` at load, `producer_route_unsupported` at dispatch), not a skip to the next entry. A route file that names a harness the model cannot run on still fails closed with `harness_unhosted_model`.
 
@@ -410,6 +414,8 @@ A larger context window on the OpenRouter route does not make OpenRouter an allo
 | Effort | Part of the id: `-high`, `-medium` or `-low` | A thinking level: `low`, `medium` or `high` | — |
 
 **Never OpenRouter for Gemini**, and the brake refuses it. The Runtime can run the `agy` selector today; section 4 explains why it cannot reach `antigravity/…`.
+
+The writer rotation's `agy` routes are `agy-gemini-4-argon-high` (alias `gemini-agy`), `agy-gemini-4-argon-medium`, then `agy-gemini-3-8-flash-medium` as the safety net, then `agy-gemini-3-8-flash-high`. Argon is the only Gemini 4 model. `agy` pins it as `gemini-4-argon-high`, `-medium`, or `-low` (base `gemini-4-argon` with `--effort low|medium|high`). `agy -p` exits when a pinned model is not available. It does not fall through on its own, so Flash stays on the roster: Argon requires a paid Google AI Pro, Ultra, or Enterprise plan. The list price is $2 input and $10 output per 1M tokens through 2026-11-30, then $4 and $20. Batch is $1 and $5. Context is 1,048,576. Argon can also stand in as a planner or architecture-review fallback; those primaries stay `claude-fable`.
 
 ```bash
 pi auth check --provider antigravity --json --no-refresh

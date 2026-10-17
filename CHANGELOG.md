@@ -216,6 +216,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **The writer rotation's agy routes are Gemini 4 Argon.** `agy-gemini-4-argon-high`
+  (alias `gemini-agy`) and `agy-gemini-4-argon-medium` are writer #3 and #4.
+  `agy-gemini-3-8-flash-medium` stays #5 because Argon needs a paid Google AI
+  Pro, Ultra, or Enterprise plan and `agy -p` exits when the pinned model is
+  missing. `agy-gemini-3-8-flash-high` stays #6 so that admitted model file
+  remains on a roster. `.kxm/routes.yaml` admits `google/gemini-4-argon-high`
+  and `google/gemini-4-argon-medium`. `.kxm/prices.yaml` is dated 2026-10-17
+  and follows the live OpenRouter list, including Argon at $2 / $10 per 1M
+  tokens through 2026-11-30 ($4 / $20 after that). `.kxm/models/inventory.yaml`
+  was refreshed from OpenRouter and Nous. Pi, Grok, and agy were not installed,
+  so CLI-only rows stay, and the new agy Argon and Claude 5.5 rows were added
+  by hand.
+
 - **`kxm update --kxm` defaults to npm.** Missing or source-less `update.yaml` now
   uses the public `@kontextmind/kxm` package instead of the GitHub release tarball.
   `source: github` still selects the digest-checked tarball. When the working

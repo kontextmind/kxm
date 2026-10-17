@@ -1089,7 +1089,7 @@ routes:
     permissions: [read-only]
     status: admitted
 lineup:                         # routes admitted for each role, preference order
-  writer: [grok-grok-4-7, pi-qwen3-coder-plus-openrouter, agy-gemini-3-8-flash-high, agy-gemini-3-8-flash-medium]
+  writer: [grok-grok-4-7, pi-qwen3-coder-plus-openrouter, agy-gemini-4-argon-high, agy-gemini-4-argon-medium, agy-gemini-3-8-flash-medium, agy-gemini-3-8-flash-high]
   planner: [claude-fable, pi-qwen3-8-flash-openrouter]
   reviewer-arch: [claude-fable, pi-glm-5-3-flash-openrouter]
   reviewer-cli: [codex-gpt-5-6-sol, pi-qwen3-8-flash-openrouter]
