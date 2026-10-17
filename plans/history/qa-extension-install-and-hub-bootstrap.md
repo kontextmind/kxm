@@ -7,12 +7,14 @@ project: "kxm"
 status: "draft"
 owner: "@operator"
 created: "2026-09-17"
-updated: "2026-09-18"
+updated: "2026-10-17"
 authority: "instruction"
 confidence: "reviewed"
 summary: "Extension load attempts a hub connection and can auto-start a local hub with generated keys, but it does not bootstrap a global kxm CLI and failure warnings are diagnostic rather than actionable."
 tags: ["hub", "extension", "bootstrap", "cli"]
-related: ["docs/operations.md", "docs/getting-started.md"]
+related:
+  - ../../docs/operations.md
+  - ../../docs/start/install.md
 ---
 
 # Q&A: Extension install → kxm CLI bootstrap + hub auto-connect

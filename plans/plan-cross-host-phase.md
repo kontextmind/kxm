@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-22"
-updated: "2026-09-28"
+updated: "2026-10-17"
 authority: "instruction"
 confidence: "verified"
 summary: "Revised delivery plan for the cross-host A2A phase (P0–P6), replanned against delivered S0–S5 by Claude Fable at the operator's direction. P0 witnesses the existing transport cross-host; P1–P3 build presence, queued delivery and fenced leases; P4 stays behind its trigger; P5 is the sync-event outbox; P6 closes the Phase 8 gate."
@@ -19,6 +19,7 @@ related:
   - ../docs/contracts/synchronization.md
   - ../docs/contracts/architecture.md
   - research-jev-system-one.md
+  - kxm-roadmap/phases/06-cross-host.md
 depends_on: []
 blocked_by: []
 ---
@@ -26,6 +27,11 @@ blocked_by: []
 # KXM cross-host phase: revised delivery plan (post-S5)
 
 Proposed slice edits for Tracking. This document schedules nothing by itself: accepted slices, owners and status land in `plans/implementation-plan.md` under **Still open → The one queue**, and this file is a design record once they do. Baseline read: `df878d6` (S5 edge deployed, `studio.kxmd.dev`, interactive browser click-through open).
+
+The open roadmap phase is
+[`kxm-roadmap/phases/06-cross-host.md`](kxm-roadmap/phases/06-cross-host.md).
+The hub, Runtime, and control API split is in the
+[architecture overview](../.kxm/knowledge/architecture/overview.md).
 
 ## A. Governing rulings carried forward
 

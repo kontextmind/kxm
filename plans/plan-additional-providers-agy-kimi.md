@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-15"
+updated: "2026-10-17"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Historical Pi-provider migration superseded by native harness ownership; retain streaming, quota and schema integration research."
@@ -27,7 +27,9 @@ details:
 
 Task Reference: `task_providers_agy_kimi`  
 Status: Draft / Historical migration objective superseded
-Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
+Tracking: [`plans/implementation-plan.md`](implementation-plan.md).
+The current writer and reviewer rosters are in
+[harness routing](../.kxm/knowledge/decisions/harness-routing.md).
 
 **Partially superseded design.** Replacing native Kimi routes with Pi providers is not the
 current architecture — but **Google is the stated exception**: its admitted route is the

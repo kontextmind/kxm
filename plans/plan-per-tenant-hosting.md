@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-20"
-updated: "2026-10-01"
+updated: "2026-10-12"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Rationale and boundary for hosting KXM beside kxmd-portal: one tenant per box, Authentik at the edge, existing static-token auth unchanged, hub state stays SQLite, and the portal backend — not a new hub auth subsystem — is the hosted client of the loopback hub. Delivery order lives only in implementation-plan.md's queue (S0–S5); this file keeps no schedule of any kind, including slice counts."
@@ -25,6 +25,7 @@ related:
   - plan-1password-vaults.md
   - plan-studio-cloud-host.md
   - plan-greenfield-infra.md
+  - kxm-roadmap/phases/05-per-tenant-hosting.md
 depends_on: []
 blocked_by: []
 details:
@@ -37,6 +38,9 @@ details:
 Read [the execution tracker](implementation-plan.md) first. This document is proposed scope
 only: it does not change a phase gate, and it is not a second backlog. Decisions and slices
 land in **Tracking**; this file holds the reasoning and the shape.
+
+The open roadmap phase is
+[`kxm-roadmap/phases/05-per-tenant-hosting.md`](kxm-roadmap/phases/05-per-tenant-hosting.md).
 
 ## Why this exists
 

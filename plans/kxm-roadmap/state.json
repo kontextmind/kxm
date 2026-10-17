@@ -771,7 +771,7 @@
           "title": "Owner-validated kxm.config.v1 editor in the CLI and OMP/Pi",
           "status": "done",
           "evidence": "test/core/config-editor.test.ts",
-          "planSection": "plans/implementation-plan.md#tracking",
+          "planSection": "plans/implementation-plan.md#tracking-working-tree-not-a-release",
           "template": "feature",
           "detail": "ready"
         },

@@ -84,13 +84,13 @@ Evidence needed: None.
 
 `open-config-editor`. Status: done. Detail: ready.
 
-Template: [feature](../../templates/feature.md).
+Template: [feature](../../../docs/templates/feature.md).
 
 Done criterion: None.
 
 Evidence needed: None.
 
-Plan section: plans/implementation-plan.md#tracking.
+Plan section: [plans/implementation-plan.md#tracking-working-tree-not-a-release](../../implementation-plan.md#tracking-working-tree-not-a-release).
 
 Evidence: `test/core/config-editor.test.ts`.
 

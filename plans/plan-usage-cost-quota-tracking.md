@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-11"
-updated: "2026-09-26"
+updated: "2026-10-12"
 authority: "hypothesis"
 confidence: "uncertain"
 summary: "Technical reference for account-scoped quota observations and extensions to existing usage, price and budget contracts."
@@ -19,6 +19,7 @@ related:
   - plan-omp-config-alignment.md
   - research-jev-system-one.md
   - research-omp-config-schema.md
+  - kxm-roadmap/phases/08-usage-cost.md
 depends_on: []
 blocked_by: []
 details:
@@ -36,6 +37,9 @@ Tracking: [`plans/implementation-plan.md`](implementation-plan.md)
 **Related plans:** [`implementation-plan.md`](implementation-plan.md) (execution tracker);
 [`plan-additional-providers-agy-kimi.md`](plan-additional-providers-agy-kimi.md)
 (Antigravity / Kimi quota surfaces).
+
+The roadmap phase is
+[`kxm-roadmap/phases/08-usage-cost.md`](kxm-roadmap/phases/08-usage-cost.md).
 
 ## 1. Objective
 

@@ -297,8 +297,15 @@ exist only in prose, never in command form.
 
 ### Check links
 
-No CI job checks links yet. Before you open a pull request, run this check on
-the files you changed; it prints each relative link whose target is missing:
+`npm run lint:docs` runs markdownlint, then `scripts/check-plan-links.mjs`.
+That script checks every Markdown link under `plans/`. A relative target has
+to exist. A `#heading` on a Markdown file has to match a heading in that
+file. `related` entries in plan front matter are checked the same way, relative
+to the file. Docs lint runs this on every pull request.
+
+For a page outside `plans/`, run this check on the files you changed. It
+prints each relative link whose target is missing, and it does not check
+anchors:
 
 ```bash
 node --input-type=module -e '

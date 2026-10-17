@@ -255,7 +255,7 @@ It runs three scripts in order:
 | Step | Script | What it checks |
 |---|---|---|
 | 1 | `npm test` | Build, then `test/core/*.test.ts` and `packages/core/*/tests/unit/*.test.ts`. The script passes `--test-force-exit` so a finished run leaves the process even if a handle is still open; a failing test is still reported before that exit |
-| 2 | `npm run check` | `tsc --noEmit`, `markdownlint-cli2`, and version surfaces |
+| 2 | `npm run check` | `tsc --noEmit`, markdownlint, the `plans/` relative-link check, and version surfaces |
 | 3 | `npm run check:generated` | Generated artifacts are tracked and match the staged copy |
 
 Changes to the Python control plane also run its frozen-workspace contract
@@ -303,7 +303,7 @@ Other scripts you will use:
 | `npm run test:simulations` | `test/simulations/*.test.ts` |
 | `npm run test:coverage` | Core suite with coverage floors |
 | `npm run test:coverage:complete` | Core plus simulations with the higher nightly floors |
-| `npm run lint:docs` | Markdown lint only |
+| `npm run lint:docs` | Markdown lint, then the `plans/` relative-link and heading check |
 | `npm run e2e` | Start Obscura if needed, then Playwright in `test/e2e/` (`node --test` does not collect that directory) |
 | `npm run validate:pr` | The three-minute CI gate; see [CI and release](ci-and-release.md) |
 | `npm run validate:ci` | Coverage suite, `check` and a package dry run (not run by CI today) |

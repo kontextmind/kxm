@@ -7,7 +7,7 @@ project: "kxm"
 status: "draft"
 owner: "kxm"
 created: "2026-09-27"
-updated: "2026-09-28"
+updated: "2026-10-17"
 authority: "hypothesis"
 confidence: "medium"
 summary: "Draft plan. Bare kxm on a TTY opens the existing dashboard and, on a first run, a guided onboarding panel that probes harnesses, hands auth to each harness or to an op:// reference, and writes user defaults. It does not write secrets into .kxm. Static kxm.workflow.v1 files stay the trust anchor. A later hybrid may compose a workflow from a typed catalog, validate it, and persist it as a normal workflow file. Hub bind --cloud (#348), the naming validator, omp P3 (#378), and P4 are on main. Implementation still waits on omp-alignment P5 through P7. Execution tracking stays in implementation-plan.md."
@@ -21,6 +21,7 @@ related:
   - plan-studio-cloud-host.md
   - plan-1password-vaults.md
   - implementation-plan.md
+  - kxm-roadmap/phases/09-harness-first-run.md
 depends_on:
   - plan-omp-config-alignment.md
   - evidence/harness-first-run-2026-09-27.md
@@ -39,6 +40,13 @@ proposed work, not scheduled work. Research citations live in
 omp's config surfaces stay in
 [`research-omp-config-schema.md`](research-omp-config-schema.md). This plan
 does not restate them.
+
+The roadmap phase is
+[`kxm-roadmap/phases/09-harness-first-run.md`](kxm-roadmap/phases/09-harness-first-run.md).
+Current rosters are in
+[harness routing](../.kxm/knowledge/decisions/harness-routing.md);
+adding or retiring a route follows
+[model routes](../.kxm/knowledge/runbooks/model-routes.md).
 
 Operator request, 2026-09-27: running `kxm` with no subcommand should onboard
 config, set defaults and auth, use the existing TUI, and use current omp, Pi,

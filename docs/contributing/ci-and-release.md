@@ -39,7 +39,7 @@ together.
 |---|---|---|
 | Before you push | Local | `npm run verify` |
 | Pull request, push to `main`, or manual | `ci.yml` (`required`) | Aggregates the lanes below into one pass/fail check named `CI / required` |
-| Pull request and push | `ci.yml` (Docs lint) | `lint:docs` and `check:versions`, always |
+| Pull request and push | `ci.yml` (Docs lint) | `lint:docs` (markdownlint and the `plans/` relative-link check) and `check:versions`, always |
 | Code pull request and code push | `ci.yml` (Unit engine and Unit, Linux Node 24) | `engine.test.ts` split by test name; `permission.test.ts`, `runtime.test.ts`, and `package-install.test.ts` one file at a time; every other unit file in two light shards. Typecheck and `check-generated` run on `light-1` |
 | Code pull request and code push | `ci.yml` (Python control plane) | Python 3.13 `unittest` contracts from the frozen uv workspace against PostgreSQL 17 started by `scripts/ci-postgres-17.sh` |
 | Platform-sensitive pull request | `ci.yml` (Unit, Windows Node 24) | The same unit lanes on `windows-latest` |

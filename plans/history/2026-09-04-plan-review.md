@@ -459,7 +459,7 @@ Apply to `docs/contracts/implementation-plan.md`. Grok applies; tests verify.
 >   (Phase 8) replaces its store, not its role.
 > - **Critical path:** 3a → 4 → 0.6.0 → 5 → 7 → 8. Phase 3b and Phase 6 are
 >   off the critical path and may land whenever a writer is free.
-> - **Routing and cost contract** lives in [`routing.md`](routing.md) with
+> - **Routing and cost contract** lives in [`routing.md`](../../docs/contracts/routing.md) with
 >   phase tags. Routing records gain required `harness`, `provider`, and
 >   latency fields in Phase 4. Native-harness preference and quota failover
 >   become enforceable with the Phase 4b one-shot adapters.

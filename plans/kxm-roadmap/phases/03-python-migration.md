@@ -14,7 +14,7 @@ Waves MG0 through MG8 from plans/plan-python-migration.md, with status taken fro
 
 `py-mg0`. Status: done. Detail: ready.
 
-Template: [test-report](../../templates/test-report.md).
+Template: [test-report](../../../docs/templates/test-report.md).
 
 Done criterion: The baseline, restore witness, and redacted corpus are reproducible from checked-in evidence without exposing live credentials.
 
@@ -26,7 +26,7 @@ Evidence: `plans/evidence/python-migration-mg0.json`.
 
 `py-mg1`. Status: done. Detail: ready.
 
-Template: [test-report](../../templates/test-report.md).
+Template: [test-report](../../../docs/templates/test-report.md).
 
 Done criterion: Wrong-tenant and caller-selected infrastructure are denied; a published revision round-trips; OpenAPI and the Studio path inventory match the FastAPI app and the checked generator emits the revision helper; only an owner or admin can rename a tenant; tokens require exp; registration removal leaves source state untouched and later registry calls return registration_unavailable. Host and guest install changes are outside this slice.
 
