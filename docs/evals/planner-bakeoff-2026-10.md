@@ -158,7 +158,7 @@ Both refused a store and refused invented schema versions. Sonnet stopped at cha
 
 ## Related
 
-- [Harness routing](reference/harness-routing.md)
-- [Configuration reference](reference/config-reference.md)
-- [CLI reference](reference/cli-reference.md)
+- [Harness routing](../reference/harness-routing.md)
+- [Configuration reference](../reference/config-reference.md)
+- [CLI reference](../reference/cli-reference.md)
 - Raw plans, prompts, judge JSON, and `score.py` live in `docs/evals/planner-bakeoff-2026-10/`.
