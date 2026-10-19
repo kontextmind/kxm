@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
-date: "2026-10-17"
-sha256: 4fc0f82f68ccb1d80e0939fdf78e7c7b446853851a7fb010745b77cffb81a599
+date: "2026-10-19"
+sha256: 4d0fcde7f8d749b69374ecde36eb32242d49f9394f84aaf417ffeb99007fb410
 currency: USD
 models:
   - id: anthropic/fable
@@ -99,9 +99,9 @@ models:
     model: z-ai/glm-5.3-flash
     tiers:
       - &a1
-        inputPerMillion: 0.15
-        outputPerMillion: 0.5
-        cacheReadPerMillion: 0.03
+        inputPerMillion: 0.048
+        outputPerMillion: 0.16
+        cacheReadPerMillion: 0.006
         cacheWritePerMillion: null
   - id: zai-coding-cn/glm-5.3
     provider: zai-coding-cn
