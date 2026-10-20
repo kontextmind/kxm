@@ -528,8 +528,9 @@ OpenRouter list prices in `.kxm/prices.yaml` and `.kxm/models/inventory.yaml`
 go stale as models are added, removed, and repriced. A Monday 13:00 UTC
 workflow, `.github/workflows/refresh-models.yml`, fetches the public OpenRouter
 models API and opens one pull request on `automation/model-refresh` when the
-catalog changed. The pull request body lists models added, removed, and
-repriced. A route or roster model that disappeared, or whose input or output
+catalog changed. The pull request is opened with a GitHub App token. App
+setup is in [Refresh model prices and inventory](../contributing/development.md#refresh-model-prices-and-inventory).
+The pull request body lists models added, removed, and repriced. A route or roster model that disappeared, or whose input or output
 rate moved by more than 20 percent, is listed first. A disappeared referenced
 model stays in the inventory with `missingUpstream: true`, and the
 `model-catalog-guard` check fails until someone removes the reference or

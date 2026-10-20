@@ -714,6 +714,24 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **The weekly model refresh opens its pull request with a GitHub App.**
+  `.github/workflows/refresh-models.yml` uses `actions/create-github-app-token`
+  with repository secrets `KXM_REFRESH_APP_ID` and
+  `KXM_REFRESH_APP_PRIVATE_KEY`. The App is installed on `kontextmind/kxm`
+  only, with Contents read and write and Pull requests read and write. A
+  missing secret fails the job and names both. `GITHUB_TOKEN` is not used to
+  create the pull request. Setup is in
+  [Refresh model prices and inventory](docs/contributing/development.md#refresh-model-prices-and-inventory).
+- **GLM 5.3 prices no longer share one YAML anchor.**
+  `openrouter/z-ai/glm-5.3-flash` tracks the OpenRouter models API on
+  2026-10-20: $0.047076 input, $0.12 output, and $0.006 cache read per 1M
+  tokens. `zai-coding-cn/glm-5.3-flash` keeps the coding-plan rate of $0.15 /
+  $0.50 (cache read $0.03). `zai-coding-cn/glm-5.3` output is $1.40, matching
+  OpenRouter `z-ai/glm-5.3` (input $0.079 and cache read $0.078 were already
+  the same). The refresh does not rewrite a shared anchor that a
+  non-OpenRouter row depends on. `.kxm/prices.yaml` is dated 2026-10-20.
+  The OpenRouter `standard` rates for those two inventory rows match.
+
 - **`kxm improve report` and `kxm routing report` include attempts settled in a registered lane.**
   Inside a KXM project, a present user-state `registry.db` is opened read-only at schema version 2. One query loads the home row and every lane row for that project id. Event-store paths come from the stored project keys, so a stale checkout path cannot hide a lane. A missing store stays a zero-record source. An absent registry, or a checkout that is not registered, still reads only that checkout's own store. `--file` still reads only the named file. See
   [kxm improve report](docs/reference/cli-reference.md#kxm-improve-report).

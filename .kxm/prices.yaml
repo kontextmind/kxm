@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
-date: "2026-10-17"
-sha256: e767f9482886eab73bee6ddd30d2d6f095da017c60b425db89290a5607689a66
+date: "2026-10-20"
+sha256: 01783976c6d56b936ef3f17bd621fcdf8bc8e646e0ba72c855bd999253a46491
 currency: USD
 models:
   - id: anthropic/fable
@@ -106,15 +106,19 @@ models:
         outputPerMillion: 0.47
         cacheReadPerMillion: 0.016
         cacheWritePerMillion: null
+  # Verified 2026-10-20 on https://openrouter.ai/api/v1/models
+  # (z-ai/glm-5.3-flash: prompt 0.000000047076, completion 0.00000012,
+  # input_cache_read 0.000000006). Not anchored to the coding-plan row.
   - id: openrouter/z-ai/glm-5.3-flash
     provider: openrouter
     model: z-ai/glm-5.3-flash
     tiers:
-      - &a1
-        inputPerMillion: 0.15
-        outputPerMillion: 0.5
-        cacheReadPerMillion: 0.03
+      - inputPerMillion: 0.047076
+        outputPerMillion: 0.12
+        cacheReadPerMillion: 0.006
         cacheWritePerMillion: null
+  # Output matches OpenRouter z-ai/glm-5.3 on 2026-10-20 ($1.40 per 1M).
+  # Input $0.079 and cache read $0.078 already matched that response.
   - id: zai-coding-cn/glm-5.3
     provider: zai-coding-cn
     model: glm-5.3
@@ -122,16 +126,21 @@ models:
       - z-ai/glm-5.3
     tiers:
       - inputPerMillion: 0.079
-        outputPerMillion: 4.8
+        outputPerMillion: 1.4
         cacheReadPerMillion: 0.078
         cacheWritePerMillion: null
+  # Coding-plan rate. Kept off the OpenRouter anchor so a catalog refresh
+  # cannot move it when the OpenRouter list price changes.
   - id: zai-coding-cn/glm-5.3-flash
     provider: zai-coding-cn
     model: glm-5.3-flash
     aliases:
       - z-ai/glm-5.3-flash
     tiers:
-      - *a1
+      - inputPerMillion: 0.15
+        outputPerMillion: 0.5
+        cacheReadPerMillion: 0.03
+        cacheWritePerMillion: null
   - id: google/gemini-3.8-flash-medium
     provider: google
     model: gemini-3.8-flash-medium

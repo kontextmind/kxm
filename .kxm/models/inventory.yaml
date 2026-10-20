@@ -11373,7 +11373,7 @@ models:
       - nous
     standard:
       inputPerMillion: 0.079
-      outputPerMillion: 4.8
+      outputPerMillion: 1.4
       cacheReadPerMillion: 0.078
       cacheWritePerMillion: null
     discount:
@@ -11395,9 +11395,9 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 0.15
-      outputPerMillion: 0.5
-      cacheReadPerMillion: 0.03
+      inputPerMillion: 0.047076
+      outputPerMillion: 0.12
+      cacheReadPerMillion: 0.006
       cacheWritePerMillion: null
     discount:
       inputPerMillion: 0.12

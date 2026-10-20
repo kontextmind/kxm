@@ -1311,8 +1311,13 @@ node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/re
 `--dry-run` prints the summary and writes nothing. Exit 2 means a referenced
 model would be kept after leaving the catalog. The workflow pushes a non-empty
 diff to `automation/model-refresh` and opens or updates one pull request with
-`GITHUB_TOKEN`. It then dispatches `ci.yml` on that branch, because a push
-made with `GITHUB_TOKEN` does not start CI by itself.
+a GitHub App installation token (`KXM_REFRESH_APP_ID` and
+`KXM_REFRESH_APP_PRIVATE_KEY`). The App is installed on `kontextmind/kxm`
+only, with Contents read and write and Pull requests read and write. A missing
+secret fails the job and names both secrets. Setup is in
+[Refresh model prices and inventory](../contributing/development.md#refresh-model-prices-and-inventory).
+`GITHUB_TOKEN` posts the `model-catalog-guard` status and dispatches `ci.yml`
+on that branch. `ci.yml` does not run on a push to `automation/model-refresh`.
 
 ## Personalization settings (`kxm.config.v1`)
 
