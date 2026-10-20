@@ -1,8 +1,8 @@
 ---
 title: Harness routing and rosters
-summary: Writer, CLI-reviewer, and architecture-reviewer rosters as of the 2026-10-17 admissions.
-tags: [routing, roster, writer, reviewer]
-updated: "2026-10-17"
+summary: Writer, planner, CLI-reviewer, and architecture-reviewer rosters as of the 2026-10-20 planner fallback.
+tags: [routing, roster, writer, reviewer, planner]
+updated: "2026-10-20"
 sources:
   - .kxm/roles/writer.yaml
   - .kxm/roles/reviewer-cli.yaml
@@ -20,8 +20,10 @@ sources:
   - .kxm/models/codex-gpt-5-6-sol.yaml
   - .kxm/models/pi-qwen3-8-flash-openrouter.yaml
   - .kxm/models/claude-fable.yaml
+  - .kxm/models/claude-claude-sonnet-5-5.yaml
   - .kxm/models/pi-glm-5-3-flash-openrouter.yaml
   - docs/reference/harness-routing.md
+  - docs/evals/planner-bakeoff-2026-10.md
   - plugins/kxm/src/workforce-names.mjs
 ---
 
@@ -86,4 +88,14 @@ From `.kxm/roles/reviewer-arch.yaml`. Permission is `read-only`. Effort is `medi
 
 ## Planner
 
-`.kxm/roles/planner.yaml` is read-only: `claude-fable`, then `pi-qwen3-8-flash-openrouter`, both at effort `medium`. [PR #401](https://github.com/kontextmind/kxm/pull/401) left the planner primary unchanged. Argon is not on this roster.
+From `.kxm/roles/planner.yaml`. Permission is `read-only`. Effort on every entry is `medium`.
+
+| Order | Route | File |
+|---|---|---|
+| 1 | `claude-fable` | `.kxm/models/claude-fable.yaml` |
+| 2 | `claude-claude-sonnet-5-5` | `.kxm/models/claude-claude-sonnet-5-5.yaml` |
+| 3 | `pi-qwen3-8-flash-openrouter` | `.kxm/models/pi-qwen3-8-flash-openrouter.yaml` |
+
+`claude-fable` stays the primary. [PR #401](https://github.com/kontextmind/kxm/pull/401) left that primary unchanged. `claude-claude-sonnet-5-5` is harness `claude`, model `claude-sonnet-5.5`, vendor `anthropic`. `.kxm/routes.yaml` admits `anthropic/claude-sonnet-5.5`. It is the same-vendor fallback, placed immediately after Fable. `pi-qwen3-8-flash-openrouter` stays the other-vendor fallback. Argon is not on this roster.
+
+The [October 2026 planner bake-off](../../../docs/evals/planner-bakeoff-2026-10.md) scored Sonnet 5.5 at 126 and Fable at 110 out of 150. Sonnet won four of six tasks. List price is about one fifth of Fable ($2 / $10 versus $10 / $50 per 1M tokens). That sample kept Fable as primary and is the reason Sonnet is the fallback. OpenRouter's live catalog on 2026-10-20 listed `anthropic/claude-sonnet-5.5` at those rates (cache read $0.10, cache write $2.50). The `.kxm/prices.yaml` row uses that standard tier.

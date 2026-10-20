@@ -151,6 +151,19 @@ and [Playwright via Obscura](../.kxm/knowledge/runbooks/playwright-obscura.md).
 
 ### Decided
 
+- **Planner fallback is Claude Sonnet 5.5 (2026-10-20).** `claude-fable`
+  stays the planner primary. `claude-claude-sonnet-5-5` (`claude` /
+  `claude-sonnet-5.5`, vendor `anthropic`, selector
+  `anthropic/claude-sonnet-5.5`, read-only, effort `medium`) is the next
+  planner route, ahead of `pi-qwen3-8-flash-openrouter`. The October 2026
+  bake-off scored Sonnet 126 and Fable 110 out of 150 (Sonnet won four of
+  six tasks) at about one fifth the list cost, which was not enough to
+  replace the primary
+  ([planner-bakeoff-2026-10.md](../docs/evals/planner-bakeoff-2026-10.md)).
+  OpenRouter's live catalog on 2026-10-20 (`https://openrouter.ai/api/v1/models`,
+  id `anthropic/claude-sonnet-5.5`) lists $2 input and $10 output per 1M
+  tokens, cache read $0.10, cache write $2.50. That standard tier is the
+  `.kxm/prices.yaml` row. Architecture review stays `claude-fable`.
 - **Writer relief route (2026-10-17).** Writer #2 moves from
   `pi-qwen3-coder-plus-openrouter` (`openrouter/qwen/qwen3-coder-plus`) to
   `pi-qwen3-7-plus-openrouter` (`openrouter/qwen/qwen3.7-plus`). OpenRouter

@@ -1082,6 +1082,13 @@ routes:
     roles: [planner, reviewer-arch]
     permissions: [read-only]
     status: admitted
+  claude-claude-sonnet-5-5:
+    harness: claude
+    model: claude-sonnet-5.5
+    vendor: anthropic
+    roles: [planner]
+    permissions: [read-only]
+    status: admitted
   codex-gpt-6-1-sol:
     harness: codex
     model: gpt-6.1-sol
@@ -1098,7 +1105,7 @@ routes:
     status: admitted
 lineup:                         # routes admitted for each role, preference order
   writer: [grok-grok-4-7, pi-qwen3-7-plus-openrouter, agy-gemini-4-argon-high, agy-gemini-4-argon-medium, agy-gemini-3-8-flash-medium, agy-gemini-3-8-flash-high]
-  planner: [claude-fable, pi-qwen3-8-flash-openrouter]
+  planner: [claude-fable, claude-claude-sonnet-5-5, pi-qwen3-8-flash-openrouter]
   reviewer-arch: [claude-fable, pi-glm-5-3-flash-openrouter]
   reviewer-cli: [codex-gpt-6-1-sol, pi-qwen3-8-flash-openrouter, codex-gpt-5-6-sol]
 required_critics:
@@ -1111,6 +1118,11 @@ model_origins:                  # required for every Pi route model
       source: plans/evidence/route-pi-qwen3-7-plus-openrouter.md
       sha256: 10e11cfa572ef4891e514d229fa8b7f0f355b31e6481315a6dd763bbe44244a1
 ```
+
+The planner lineup is `claude-fable`, then `claude-claude-sonnet-5-5`
+(selector `anthropic/claude-sonnet-5.5`, list price $2 input and $10 output
+per 1M tokens), then `pi-qwen3-8-flash-openrouter`. Fable stays primary.
+The comparison is the [October 2026 planner bake-off](../evals/planner-bakeoff-2026-10.md).
 
 Validated with `validateRosterDocument` from `scripts/roster-policy.mjs`,
 reading evidence from this repository's history. The lineup order is not a

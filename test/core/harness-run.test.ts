@@ -367,6 +367,34 @@ test("preflight refuses role, mode, pair, and native-provider Pi routes before s
   }
 });
 
+test("claude accepts Sonnet 5.5 as a read-only planner model", () => {
+  const dir = tempDir();
+  try {
+    const prompt = promptFile(dir);
+    preflightRequest({
+      schema: REQUEST_SCHEMA,
+      harness: "claude",
+      role: "planner",
+      model: "claude-sonnet-5.5",
+      permission: "read-only",
+      prompt_file: prompt,
+    });
+    assert.throws(
+      () => preflightRequest({
+        schema: REQUEST_SCHEMA,
+        harness: "claude",
+        role: "writer",
+        model: "claude-sonnet-5.5",
+        permission: "read-only",
+        prompt_file: prompt,
+      }),
+      /does not accept role/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Pi helper refuses a native vendor's model behind an aggregator prefix for every non-writer role", () => {
   const dir = tempDir();
   try {

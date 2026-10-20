@@ -34,7 +34,7 @@ Keep claims tied to a source path. When a fact changes, edit the page, refresh `
 | Page | What it holds |
 |---|---|
 | [Architecture overview](architecture/overview.md) | Hub, harnesses, MCP plugin, Runtime engine, and how they connect |
-| [Harness routing and rosters](decisions/harness-routing.md) | Current writer and reviewer rosters and the pull requests that set them |
+| [Harness routing and rosters](decisions/harness-routing.md) | Current writer, planner, and reviewer rosters and the pull requests that set them |
 | [Model catalog refresh](decisions/model-catalog-refresh.md) | Monday OpenRouter price and inventory refresh, manual run, and the guard |
 | [Release flow](patterns/release-flow.md) | Squash auto-merge, `CI / required`, Auto-Release, GitHub release, and npm |
 | [CI conventions](patterns/ci.md) | Fast pull-request lane, full matrix after merge, Windows lanes |

@@ -1150,6 +1150,7 @@ kxm routes list
 ```
 
 ```text
+admitted anthropic/claude-sonnet-5.5
 admitted anthropic/fable
 admitted google/gemini-3.8-flash-high
 admitted google/gemini-3.8-flash-medium
@@ -1162,6 +1163,7 @@ admitted openrouter/qwen/qwen3.8-flash
 admitted openrouter/z-ai/glm-5.3-flash
 admitted xai/grok-4.7
 planner claude-fable
+planner claude-claude-sonnet-5-5
 planner pi-qwen3-8-flash-openrouter
 reviewer-arch claude-fable
 reviewer-arch pi-glm-5-3-flash-openrouter
@@ -1181,7 +1183,7 @@ kxm routes list --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-10-17T14:30:00.000Z","admitted":["anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","google/gemini-4-argon-high","google/gemini-4-argon-medium","openai/gpt-5.6-sol","openai/gpt-6.1-sol","openrouter/qwen/qwen3.7-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","xai/grok-4.7"],"disabled":[]},"membership":["planner claude-fable","planner pi-qwen3-8-flash-openrouter","reviewer-arch claude-fable","reviewer-arch pi-glm-5-3-flash-openrouter","reviewer-cli codex-gpt-6-1-sol","reviewer-cli pi-qwen3-8-flash-openrouter","reviewer-cli codex-gpt-5-6-sol","writer grok-grok-4-7","writer pi-qwen3-7-plus-openrouter","writer agy-gemini-4-argon-high","writer agy-gemini-4-argon-medium","writer agy-gemini-3-8-flash-medium","writer agy-gemini-3-8-flash-high"]}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"routes list","policy":{"schema":"kxm.routes.v2","updatedAt":"2026-10-20T22:40:00.000Z","admitted":["anthropic/claude-sonnet-5.5","anthropic/fable","google/gemini-3.8-flash-high","google/gemini-3.8-flash-medium","google/gemini-4-argon-high","google/gemini-4-argon-medium","openai/gpt-5.6-sol","openai/gpt-6.1-sol","openrouter/qwen/qwen3.7-plus","openrouter/qwen/qwen3.8-flash","openrouter/z-ai/glm-5.3-flash","xai/grok-4.7"],"disabled":[]},"membership":["planner claude-fable","planner claude-claude-sonnet-5-5","planner pi-qwen3-8-flash-openrouter","reviewer-arch claude-fable","reviewer-arch pi-glm-5-3-flash-openrouter","reviewer-cli codex-gpt-6-1-sol","reviewer-cli pi-qwen3-8-flash-openrouter","reviewer-cli codex-gpt-5-6-sol","writer grok-grok-4-7","writer pi-qwen3-7-plus-openrouter","writer agy-gemini-4-argon-high","writer agy-gemini-4-argon-medium","writer agy-gemini-3-8-flash-medium","writer agy-gemini-3-8-flash-high"]}
 ```
 
 ### `kxm routes count`

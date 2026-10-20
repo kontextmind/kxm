@@ -22,7 +22,8 @@ This catalog names common multi-agent workflows by area and lists, for each role
 
 The catalog is a four-level taxonomy: **Area → Workflow → Stage → Role**. Each area groups related workflows, each workflow lists its stages in order, and each role belongs to one stage, with a short domain description and up to five ranked candidate models.
 
-- **Candidates are dated research.** The lists come from a documentation snapshot taken on 2026-09-06. Prices (USD per million input and output tokens), context windows and capability notes were not re-verified after that date. Verify them before you dispatch work, and read every quality note as a research claim, not a guarantee.
+- **Candidates are dated research.** The lists come from a documentation snapshot taken on 2026-09-06. Prices (USD per million input and output tokens), context windows and capability notes were not re-verified after that date, except for the retired writer model below. Verify them before you dispatch work, and read every quality note as a research claim, not a guarantee.
+- **Writer #2 is Qwen3.7 Plus.** `qwen/qwen3-coder-plus` left the OpenRouter catalog (404) and is not a roster route. Candidate lines that named it now name `qwen/qwen3.7-plus` at the 2026-10-17 list price, $0.32 input and $1.28 output per 1M tokens, 1M context. This repository's writer #2 is the route `pi-qwen3-7-plus-openrouter` (model `openrouter/qwen/qwen3.7-plus`). The writer roster, in order, is `grok-grok-4-7`, `pi-qwen3-7-plus-openrouter`, `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, `agy-gemini-3-8-flash-high`. [Harness routing](harness-routing.md) is the admission record.
 - **Candidates are not admission.** A model ID here is a research identifier, not a route selector. Your project admits routes in `.kxm/routes.yaml`, and `kxm harness list` shows which harnesses are installed and signed in. [Harness routing](harness-routing.md) explains when to use a native harness and when an aggregator.
 - **Selection is per role.** Areas are navigation only; they never pool unrelated roles into one ranking. Model, harness, platform, modality and required tools are routing attributes, not areas.
 - **Gates stay deterministic.** Where a role is a critic next to a gate, the gate (tests, type checks, linters) decides pass or fail, and the model reviews what a gate cannot check.
@@ -34,7 +35,7 @@ An interactive `kxm init` offers to install the Software Engineering workflows w
 | Tier | Price band | Context window | Example models | Typical work |
 |---|---|---|---|---|
 | **Tier 0: Filter and ingestion** | $0.03 - $0.20 / M | 1.0M - 1.31M | DeepSeek-V4-Flash, Qwen-3.7-Flash, GLM-5.3-Flash, GPT-5.6-Luna | High-throughput telemetry, raw log ingestion, triage, video pre-filtering, and initial inbox classification. |
-| **Tier 1: Workhorse** | $0.30 - $1.00 / M | 262k - 1.05M | Gemini-3.8-Flash, Qwen-3-Coder-Plus, DeepSeek-V4-Pro, Devstral-2512 | Routine code generation, multimodal visual QA, Text-to-SQL, AST diff patching, and fast tool dispatching. |
+| **Tier 1: Workhorse** | $0.30 - $1.00 / M | 262k - 1.05M | Gemini-3.8-Flash, Qwen-3.7-Plus, DeepSeek-V4-Pro, Devstral-2512 | Routine code generation, multimodal visual QA, Text-to-SQL, AST diff patching, and fast tool dispatching. |
 | **Tier 2: Precision and critic** | $1.25 - $4.00 / M | 200k - 1.05M | GPT-5.6-Sol, Grok-4.6, Claude Sonnet 5, OpenAI o3, DeepSeek-R1, Codex 5.3 | Primary code writing, formal contract generation, concurrency race diagnosis, and causal inference. |
 | **Tier 3: Architecture** | $5.00 - $15.00 / M | 1.0M - 1.05M | Claude Fable 5.1, Claude Opus 5, GPT-6-Astra-Pro (escalation only) | Architecture review, executive briefs, high-stakes legal redlining, and RFC review. |
 
@@ -144,7 +145,7 @@ This cross-reference points each software and security workflow at the KXM pages
 1. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Premier schema contract generator; 100% compliant OpenAPI 3.1, Protobuf v3, and JSON schemas.
 2. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — High-throughput Zod/Pydantic validation pipeline synthesis.
 3. **`google/gemini-3.8-flash`** (1.05M ctx | $0.75 / $3.75) — Fast translation of data dictionaries into TypeScript interfaces.
-4. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — 1M-context contract verification across monorepo boundaries.
+4. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — 1M-context contract verification across monorepo boundaries.
 5. **`anthropic/claude-fable-5.1`** (1M ctx | $10.00 / $50.00) — Reserved for mission-critical authentication and security contract definitions.
 
 #### Role: Scaffold Build Specialist
@@ -155,7 +156,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Fast repository builder; resolves path aliases, links, and workspace configs cleanly.
 2. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Developer-focused open model; produces clean Makefiles, Taskfiles, and tool configs.
-3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — Coordinates cross-package build configs and dependency lockfiles in 1M context.
+3. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — Coordinates cross-package build configs and dependency lockfiles in 1M context.
 4. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Complex CI/CD workflows and multi-stage container build optimizations.
 5. **`kwaipilot/kat-coder-pro-v2.5`** (262k ctx | $0.74 / $2.96) — Resilient project scaffolding and bundler configuration.
 
@@ -166,7 +167,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Implements domain entities, SQL queries/migrations, ORM persistence, concurrency primitives, and transactional boundaries.
 
 1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Strong first-pass implementation that passes deterministic verification gates with minimal rework.
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — 1M-context open-weight anchor; generates performant database layers and CRUD services.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — 1M-context open-weight anchor; generates performant database layers and CRUD services.
 3. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Exceptional database logic, indexing, and edge-case domain implementation.
 4. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Algorithmic precision in Rust, Go, Python, and TypeScript concurrent systems.
 5. **`kwaipilot/kat-coder-pro-v2.5`** (262k ctx | $0.74 / $2.96) — Multi-file backend logic implementation adhering to project coding patterns.
@@ -191,7 +192,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 1. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Flawless SDK synthesis, webhook signature validation, and API adapter error handling.
 2. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Robust glue code, rate-limiting backoff algorithms, and token refresh loops.
-3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — Ingests full third-party API documentation to emit typed wrapper clients.
+3. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — Ingests full third-party API documentation to emit typed wrapper clients.
 4. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Low-cost mapping of disparate vendor payloads into internal domain models.
 5. **`google/gemini-3.8-flash`** (1.05M ctx | $0.75 / $3.75) — High-speed webhook listener and protocol transformation adapter.
 
@@ -310,7 +311,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Generates declarative Terraform/OpenTofu, Pulumi, Kubernetes CRDs, and VPC networking definitions.
 
 1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Fast, deterministic Terraform/Kubernetes manifest implementation.
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — 1M context whole-infrastructure state dependency resolution.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — 1M context whole-infrastructure state dependency resolution.
 3. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Complex cloud provider networking and peering configurations.
 4. **`google/gemini-3.8-flash`** (1.05M ctx | $0.75 / $3.75) — High-speed validation of cloud resources and linting.
 5. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Lightweight Helm chart and Docker Compose generator.
@@ -366,7 +367,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Authors concise, accurate developer and operator documentation, ensuring clear terminology, correct command flags, and consistent formatting without marketing drift.
 
 1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Rapid, structured Markdown authoring that follows repository conventions.
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-context technical writer; coordinates cross-file references across large documentation sets.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — High-context technical writer; coordinates cross-file references across large documentation sets.
 3. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Fluid technical documentation authoring with clear instructional hierarchy.
 4. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Accurate technical guides, CLI flag references, and runnable examples.
 5. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Cost-effective multi-page documentation generation and reference expansion.
@@ -412,7 +413,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 1. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Master design token taxonomist; color space (OKLCH) and scale hierarchy.
 2. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Multi-platform token transformation (W3C Design Tokens to CSS/iOS/Android).
-3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — Monorepo theme implementation and code generation.
+3. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — Monorepo theme implementation and code generation.
 4. **`google/gemini-3.8-flash`** (1.05M ctx | $0.75 / $3.75) — Fast token validation and contrast ratio auditing.
 5. **`openai/gpt-5.4`** (1.05M ctx | $2.50 / $15.00) — Enterprise design system cross-platform consistency.
 
@@ -455,7 +456,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Apple CoreHaptics (`.ahap` waveforms), Android `VibrationEffect` compositions, JSI hardware bridges, and tactile throttling.
 
 1. **`mistralai/codestral-2508`** (256k ctx | $0.30 / $0.90) — Low-latency, precise hardware API bindings (Swift/Kotlin/C++).
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-throughput cross-platform haptic wrapper synthesizer.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — High-throughput cross-platform haptic wrapper synthesizer.
 3. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Fine-grained haptic feedback design and event mapping.
 4. **`openai/gpt-5.4`** (1.05M ctx | $2.50 / $15.00) — Hardware sensor integration and battery lifecycle optimization.
 5. **`openai/gpt-5.6-luna`** (1.05M ctx | $0.20 / $1.20) — Fast AHAP waveform JSON serialization.
@@ -488,7 +489,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 1. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Flawless asynchronous event loop (Tokio/TEA) and POSIX termios handling.
 2. **`openai/gpt-5.6-sol`** (1.05M ctx | $2.00 / $10.00) — Flagship CLI and sub-process navigation specialist; signal cleanup.
-3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-precision Rust/Go async event handling and state dispatch.
+3. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — High-precision Rust/Go async event handling and state dispatch.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Complex modal keybinding architectures (Vim/Emacs emulation).
 5. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Clean command routing and keyboard navigation schemas.
 
@@ -520,7 +521,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 1. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Gold standard for semantic HTML, ARIA tree hierarchies, and focus management.
 2. **`google/gemini-3.8-flash`** (1.05M ctx | $0.75 / $3.75) — Automated WCAG 2.2 color contrast and visual touch-target auditor.
-3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-throughput AST accessibility linter and automated ARIA fixer.
+3. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — High-throughput AST accessibility linter and automated ARIA fixer.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Cognitive load and neurodiverse accessibility compliance evaluation.
 5. **`openai/gpt-5.4`** (1.05M ctx | $2.50 / $15.00) — Screen-reader script simulation and compliance reporting.
 
@@ -663,7 +664,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Emits executable FFmpeg filtergraphs, OpenTimelineIO (OTIO) JSON, and Remotion/DaVinci Resolve Python scripts.
 
 1. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Frontier code generation for complex multi-input FFmpeg filtergraphs and OTIO structures.
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — 1M-context Remotion/React-video and Python automation specialist at low cost.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — 1M-context Remotion/React-video and Python automation specialist at low cost.
 3. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Multi-track timecode arithmetic, drop-frame calculations, and nested timeline logic.
 4. **`google/gemini-3.8-flash`** (1.05M ctx | $0.75 / $3.75) — Inspects raw asset metadata directly and constructs execution CLI commands.
 5. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Lightweight Bash and Python timeline glue scripts.
@@ -707,7 +708,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Translates natural language questions into performant SQL queries (CTEs, window functions) across enterprise warehouses.
 
 1. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Complex nested SQL queries, CTEs, and window functions.
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — Ingests 1,000-table enterprise data dictionaries in 1M context.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — Ingests 1,000-table enterprise data dictionaries in 1M context.
 3. **`deepseek/deepseek-v4-pro`** (1.05M ctx | $0.63 / $1.25) — High-throughput Text-to-SQL generation.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Ambiguous business metric semantic translation.
 5. **`google/gemini-3.8-flash`** (1.05M ctx | $0.75 / $3.75) — Ultra-fast schema resolution and join mapping.
@@ -721,7 +722,7 @@ This cross-reference points each software and security workflow at the KXM pages
 1. **`openai/o3`** (200k ctx | $2.00 / $8.00) — Query execution plan optimization and index utilization logic.
 2. **`deepseek/deepseek-r1-0528`** (164k ctx | $0.50 / $2.15) — High-efficiency algorithmic query rewriting.
 3. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Database engine-specific syntax correction (Postgres/Snowflake/BigQuery).
-4. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — Cost-efficient automated query correction loop.
+4. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — Cost-efficient automated query correction loop.
 5. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Enterprise data governance and query compliance.
 
 #### Role: BI Dashboard Formatter
@@ -751,7 +752,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Writes vectorized, performant Python code for feature engineering, statistical modeling, and ML pipelines.
 
 1. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Complex numerical analysis, PyTorch/Scikit pipelines.
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-capacity Python data science code generator with 1M context.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — High-capacity Python data science code generator with 1M context.
 3. **`mistralai/codestral-2508`** (256k ctx | $0.30 / $0.90) — Extremely low-cost Polars/Pandas data pipeline implementation.
 4. **`anthropic/claude-opus-5`** (1M ctx | $5.00 / $25.00) — Complex econometric and Bayesian model formulation.
 5. **`deepseek/deepseek-v4-pro-0813`** (1.05M ctx | $0.58 / $1.74) — Large-scale data ingestion and transformation scripts.
@@ -1033,7 +1034,7 @@ This cross-reference points each software and security workflow at the KXM pages
 *Domain:* Translates trace observations into isolated, runnable reproduction unit/integration tests and scripts.
 
 1. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Fast, repo-accurate test writer; minimal boilerplate without hallucinating dependencies.
-2. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — Ingests full test frameworks; generates parameterized reproduction suites.
+2. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — Ingests full test frameworks; generates parameterized reproduction suites.
 3. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Specialized mocking of network calls, clocks, and internal database states.
 4. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Parameterized property-based regression test harnesses (Hypothesis/QuickCheck).
 5. **`mistralai/devstral-2512`** (262k ctx | $0.40 / $2.00) — Concise, executable unit-test reproductions.
@@ -1066,7 +1067,7 @@ This cross-reference points each software and security workflow at the KXM pages
 
 1. **`openai/gpt-5.3-codex`** (400k ctx | $1.75 / $14.00) — Surgical security patch generator using secure coding primitives.
 2. **`x-ai/grok-4.6`** (500k ctx | $2.00 / $6.00) — Rapid patch application that passes deterministic verification cleanly.
-3. **`qwen/qwen3-coder-plus`** (1M ctx | $0.65 / $3.25) — High-throughput defensive refactoring across large repos.
+3. **`qwen/qwen3.7-plus`** (1M ctx | $0.32 / $1.28) — High-throughput defensive refactoring across large repos.
 4. **`anthropic/claude-sonnet-5`** (1M ctx | $2.00 / $10.00) — Applies defensive validation without breaking valid user flows.
 5. **`bytedance-seed/seed-2.0-code`** (262k ctx | $0.50 / $3.00) — Web and client-side sanitization hardening.
 

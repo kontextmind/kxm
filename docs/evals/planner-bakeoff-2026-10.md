@@ -1,16 +1,18 @@
 # Planner bake-off, October 2026
 
-This page records a scored comparison of Claude Fable 5.1 and Claude Sonnet 5.5 on six KXM planning tasks. It is for maintainers deciding whether the planner primary should stay Fable. Routing is unchanged.
+This page records a scored comparison of Claude Fable 5.1 and Claude Sonnet 5.5 on six KXM planning tasks. It is for maintainers deciding whether the planner primary should stay Fable. Routing was unchanged during the scored run.
+
+The fallback recommended below is now admitted. Fable stays the planner primary. `claude-claude-sonnet-5-5` (selector `anthropic/claude-sonnet-5.5`) is the next planner route, ahead of `pi-qwen3-8-flash-openrouter`. The list price is a `.kxm/prices.yaml` row, verified on OpenRouter on 2026-10-20 at $2 input and $10 output per 1M tokens. The procedure is [Harness routing](../reference/harness-routing.md).
 
 ## Recommendation
 
-Keep Fable as the planner primary. Treat Sonnet 5.5 as a fallback candidate, not a replacement.
+Keep Fable as the planner primary. Treat Sonnet 5.5 as the fallback, not a replacement.
 
 Sonnet scored 126 and Fable scored 110, out of 150, on a blinded judge. Sonnet won four tasks and Fable won two. The two Fable wins include the Argon roster, which is the task closest to an admission decision, and Sonnet's Argon plan admitted only the medium pin and placed it after Flash. Six tasks, one judge, and a transport that is not the KXM planner route are not enough to replace the primary. List price favors Sonnet by about five to one, and a native Claude subscription records both as unmetered, so the invoice may not move.
 
 ## How this run was scored
 
-The planner roster in `.kxm/roles/planner.yaml` is `claude-fable` at effort medium, then `pi-qwen3-8-flash-openrouter`. The native one-shot is `claude -p --model <model> --effort medium --output-format json` with the read-only arguments in `oneShotReadOnlyArgs` for `claude`. There is no command flag that swaps the planner model without editing the role and admitting a route. `kxm routing benchmark` prints placeholder numbers and does not call a model.
+At the time of the run, the planner roster in `.kxm/roles/planner.yaml` was `claude-fable` at effort medium, then `pi-qwen3-8-flash-openrouter`. The native one-shot is `claude -p --model <model> --effort medium --output-format json` with the read-only arguments in `oneShotReadOnlyArgs` for `claude`. There is no command flag that swaps the planner model without editing the role and admitting a route. `kxm routing benchmark` prints placeholder numbers and does not call a model.
 
 This machine has no `claude` binary, no Claude auth directory, and no `ANTHROPIC_API_KEY`. The committed plans are from Cursor subagents pinned to `claude-fable-5-1-thinking-medium` and `claude-sonnet-5-5-medium`. Both received the same prompt. They were told not to read the checkout, because the landed change would leak the answer. The Argon plans still name `pi-qwen3-coder-plus-openrouter` as writer number two, which the current tree no longer has, so they do not look like a read of the solution.
 
@@ -49,7 +51,7 @@ Regenerate scores with `python3 docs/evals/planner-bakeoff-2026-10/score.py --sc
 | Model | List rate per 1M | List cost | Wins |
 | --- | --- | --- | --- |
 | Fable 5.1 | $10 / $50, from `.kxm/prices.yaml` | $0.460 | 2 |
-| Sonnet 5.5 | $2 / $10, from inventory, not `.kxm/prices.yaml` | $0.089 | 4 |
+| Sonnet 5.5 | $2 / $10. The scored estimate read the inventory, because `.kxm/prices.yaml` had no row yet. The admitted row is the same rate. | $0.089 | 4 |
 
 Input tokens are identical because the prompts were identical. Wall time for the wave is 154 seconds, shared.
 
@@ -151,7 +153,7 @@ Both refused a store and refused invented schema versions. Sonnet stopped at cha
 - The judge saw condensations. Weekly is a one-point result and could flip. Argon, the reviewer switch, writer number two, and the journal gap are wider.
 - The judge is one model, GPT-5.6 Sol, which is the CLI critic family. It was blind to the author and not blind to the shipped outcome.
 - Token counts and list cost are estimates. Provider usage was not returned. A Claude subscription would record `costBasis: unmetered` for both models.
-- Sonnet's price is not in `.kxm/prices.yaml`. Quoting it from the inventory is a list estimate, and the price loader would mark that row missing.
+- When these plans were scored, Sonnet's price was not in `.kxm/prices.yaml`. The list estimate came from the inventory. The admitted fallback now has that $2 / $10 row, verified on OpenRouter on 2026-10-20.
 - Cursor subagents are not `claude -p` and not the KXM planner route. Effort was medium on both, matching the roster.
 - Pull request 398, the plan-link repair, was not run. The six tasks are the five roster and docs slices from 401 through 405, plus the open Runtime journal gap.
 - Plans were instructed not to use tools. A subagent that ignored that instruction could have read the landed diff. The Argon plans still describe the pre-change writer number two, which argues against that leak, and it is not proof.

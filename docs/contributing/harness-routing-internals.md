@@ -9,7 +9,7 @@ This page records how the KXM repository applies [harness routing](../reference/
 
 The files use one id shape per kind. A route id is `<harness>-<model-slug>[-<provider>]`, with `.` written as `-`. An agent id equals its role. A workflow id is `default`, `land`, or `<role>-only`. An agent step id equals that role.
 
-This checkout's admitted routes are `grok-grok-4-7`, `pi-qwen3-7-plus-openrouter`, `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, `agy-gemini-3-8-flash-high`, `claude-fable`, `codex-gpt-6-1-sol`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. `pi-qwen3-coder-plus-openrouter` stays on disk with `status: retired` because OpenRouter removed `qwen/qwen3-coder-plus` (catalog 404); it is not admitted and not on a roster, and `qwen-openrouter-pi` does not resolve. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Other old ids resolve as aliases. Every roster entry names an effort. `reviewer-arch` dispatches `claude-fable`. #343's architecture critic ran on opus because the justfile recipe review-arch hardcoded that model; the role file on that commit listed only `fable-claude`. The helper now refuses `opus`.
+This checkout's admitted routes are `grok-grok-4-7`, `pi-qwen3-7-plus-openrouter`, `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, `agy-gemini-3-8-flash-high`, `claude-fable`, `claude-claude-sonnet-5-5`, `codex-gpt-6-1-sol`, `codex-gpt-5-6-sol`, `pi-qwen3-8-flash-openrouter`, and `pi-glm-5-3-flash-openrouter`. `pi-qwen3-coder-plus-openrouter` stays on disk with `status: retired` because OpenRouter removed `qwen/qwen3-coder-plus` (catalog 404); it is not admitted and not on a roster, and `qwen-openrouter-pi` does not resolve. Agents are `planner`, `writer`, `reviewer-arch`, and `reviewer-cli`. `opus-claude` was removed because `opus` is not an admitted selector. `qwen-token-plan/*` and `zai-coding-cn/*` left the admitted list because those harnesses are not allowlisted; their `prices.yaml` rows stay. Other old ids resolve as aliases. Every roster entry names an effort. `reviewer-arch` dispatches `claude-fable`. #343's architecture critic ran on opus because the justfile recipe review-arch hardcoded that model; the role file on that commit listed only `fable-claude`. The helper now refuses `opus`.
 
 ## This checkout's routes and roster
 
@@ -37,11 +37,12 @@ roster:
     effort: medium
 ```
 
-The writer role lists route ids, in order: `grok-grok-4-7`, then `pi-qwen3-7-plus-openrouter`, then `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, and `agy-gemini-3-8-flash-high`. `grok-grok-4-7` is harness `grok`, model `grok-4.7`, vendor `xai`. An agent file does not declare `harness:`. Argon is writer #3 and #4. Flash medium is the safety net because Argon needs a paid Google AI Pro, Ultra, or Enterprise plan and `agy -p` exits when the pinned model is missing. Flash high stays on the roster so that admitted model file is still used. The planner primary stays `claude-fable`. The CLI critic primary is `codex-gpt-6-1-sol`, then `pi-qwen3-8-flash-openrouter`, then `codex-gpt-5-6-sol`. The architecture critic primary stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`. Argon can serve as a planner or architecture-review fallback; it is not on those rosters. GPT-6.1 Sol Pro is the same model with reasoning mode `pro`. The route id does not carry a reasoning mode, role effort has no `pro` value, and codex is limited to `reviewer-cli`, so that mode is not an architecture fallback.
+The writer role lists route ids, in order: `grok-grok-4-7`, then `pi-qwen3-7-plus-openrouter`, then `agy-gemini-4-argon-high`, `agy-gemini-4-argon-medium`, `agy-gemini-3-8-flash-medium`, and `agy-gemini-3-8-flash-high`. `grok-grok-4-7` is harness `grok`, model `grok-4.7`, vendor `xai`. An agent file does not declare `harness:`. Argon is writer #3 and #4. Flash medium is the safety net because Argon needs a paid Google AI Pro, Ultra, or Enterprise plan and `agy -p` exits when the pinned model is missing. Flash high stays on the roster so that admitted model file is still used. The planner roster is `claude-fable`, then `claude-claude-sonnet-5-5` (`anthropic/claude-sonnet-5.5`), then `pi-qwen3-8-flash-openrouter`. Fable stays the primary. The [October 2026 planner bake-off](../evals/planner-bakeoff-2026-10.md) is why Sonnet is the fallback. The CLI critic primary is `codex-gpt-6-1-sol`, then `pi-qwen3-8-flash-openrouter`, then `codex-gpt-5-6-sol`. The architecture critic primary stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`. Argon can serve as a planner or architecture-review fallback; it is not on those rosters. GPT-6.1 Sol Pro is the same model with reasoning mode `pro`. The route id does not carry a reasoning mode, role effort has no `pro` value, and codex is limited to `reviewer-cli`, so that mode is not an architecture fallback.
 
 `node scripts/kxm.mjs routes list`:
 
 ```text
+admitted anthropic/claude-sonnet-5.5
 admitted anthropic/fable
 admitted google/gemini-3.8-flash-high
 admitted google/gemini-3.8-flash-medium
@@ -54,6 +55,7 @@ admitted openrouter/qwen/qwen3.8-flash
 admitted openrouter/z-ai/glm-5.3-flash
 admitted xai/grok-4.7
 planner claude-fable
+planner claude-claude-sonnet-5-5
 planner pi-qwen3-8-flash-openrouter
 reviewer-arch claude-fable
 reviewer-arch pi-glm-5-3-flash-openrouter
@@ -153,6 +155,8 @@ Pi's own `xai` provider reported `ready` (OAuth) on the capture machine. When th
 | Context | 1M (Pi's `anthropic` row) | 1,000,000 |
 
 `claude` was logged out on the capture machine, so the native route failed closed. Pi's `anthropic` provider reported `ready` (OAuth). The `anthropic/fable` row in `prices.yaml` gives a list estimate only when the catalog is dated today.
+
+The planner fallback is the same harness. `claude-claude-sonnet-5-5` is model `claude-sonnet-5.5`, selector `anthropic/claude-sonnet-5.5`, read-only, effort `medium`, and it sits immediately after Fable. `pi-qwen3-8-flash-openrouter` stays third. The [October 2026 planner bake-off](../evals/planner-bakeoff-2026-10.md) scored Sonnet 126 and Fable 110. OpenRouter listed the standard tier on 2026-10-20 at $2 input and $10 output per 1M tokens (cache read $0.10, cache write $2.50). That row is in `.kxm/prices.yaml`. Architecture review does not use Sonnet.
 
 ### Gemini 3.8 Flash
 
