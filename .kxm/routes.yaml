@@ -1,5 +1,5 @@
 schema: kxm.routes.v2
-updatedAt: '2026-10-17T14:30:00.000Z'
+updatedAt: '2026-10-20T22:40:00.000Z'
 # Removed 2026-09-27 because no allowlisted harness can run them. prices.yaml rows stay.
 # qwen-token-plan/deepseek-v4.1-flash — qwen-token-plan is not allowlisted, and deepseek is a native-vendor Pi brake.
 # qwen-token-plan/qwen3.8-flash — qwen-token-plan is not an allowlisted harness or Pi provider.
@@ -9,6 +9,7 @@ updatedAt: '2026-10-17T14:30:00.000Z'
 # Removed 2026-10-17 because OpenRouter retired the id (catalog 404). The prices.yaml row stays.
 # openrouter/qwen/qwen3-coder-plus — route pi-qwen3-coder-plus-openrouter is status retired.
 admitted:
+- anthropic/claude-sonnet-5.5
 - anthropic/fable
 - google/gemini-3.8-flash-high
 - google/gemini-3.8-flash-medium

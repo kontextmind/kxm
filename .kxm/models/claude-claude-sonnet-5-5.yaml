@@ -1,0 +1,8 @@
+schema: kxm.model.v2
+id: claude-claude-sonnet-5-5
+harness: claude
+model: claude-sonnet-5.5
+vendor: anthropic
+status: admitted
+permissions:
+  - read-only

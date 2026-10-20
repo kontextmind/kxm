@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
 date: "2026-10-17"
-sha256: 4fc0f82f68ccb1d80e0939fdf78e7c7b446853851a7fb010745b77cffb81a599
+sha256: e767f9482886eab73bee6ddd30d2d6f095da017c60b425db89290a5607689a66
 currency: USD
 models:
   - id: anthropic/fable
@@ -14,6 +14,18 @@ models:
         outputPerMillion: 50
         cacheReadPerMillion: 0.25
         cacheWritePerMillion: 12.5
+  # Verified 2026-10-20 on https://openrouter.ai/api/v1/models
+  # (anthropic/claude-sonnet-5.5). Standard tier is $2 / $10. Cache read
+  # is $0.10 and cache write is $2.50. Context length is 1000000.
+  # anthropic/claude-sonnet-5.5:batch is a separate catalog id.
+  - id: anthropic/claude-sonnet-5.5
+    provider: anthropic
+    model: claude-sonnet-5.5
+    tiers:
+      - inputPerMillion: 2
+        outputPerMillion: 10
+        cacheReadPerMillion: 0.1
+        cacheWritePerMillion: 2.5
   - id: openai/gpt-5.6-sol
     provider: openai
     model: gpt-5.6-sol

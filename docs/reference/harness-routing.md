@@ -406,6 +406,8 @@ A larger context window on the OpenRouter route does not make OpenRouter an allo
 
 **KXM picks the native route, and fails closed when `claude` is logged out.** Pi's `anthropic` provider may report `ready`, and OpenRouter lists the same model. Neither may stand in, and the brake refuses both. This is the motivating case for the whole rule. The operator runs `claude auth login`, and the run waits until then.
 
+The planner roster keeps `claude-fable` first. The next route is `claude-claude-sonnet-5-5`: harness `claude`, model `claude-sonnet-5.5`, vendor `anthropic`, selector `anthropic/claude-sonnet-5.5`, permission `read-only`, effort `medium`. `pi-qwen3-8-flash-openrouter` stays after that, and it is the other-vendor fallback. Architecture review stays `claude-fable`. The [October 2026 planner bake-off](../evals/planner-bakeoff-2026-10.md) scored Sonnet 5.5 at 126 and Fable at 110 out of 150. Sonnet won four of six tasks. List price favors Sonnet by about five to one, and that sample was not enough to replace the primary, so Sonnet is the fallback. OpenRouter's live catalog on 2026-10-20 (`https://openrouter.ai/api/v1/models`, id `anthropic/claude-sonnet-5.5`) lists $2 input and $10 output per 1M tokens, cache read $0.10, cache write $2.50, context 1,000,000. That standard tier is the `.kxm/prices.yaml` row. The batch id is a different catalog row and is not admitted.
+
 ### Gemini 3.8 Flash
 
 | | Native `agy` | `antigravity` Pi provider | Pi + OpenRouter |

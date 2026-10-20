@@ -3,9 +3,13 @@ id: planner
 purpose: planner
 permission: read-only
 description: Plans the change before implementation.
-# claude-fable is primary. The Pi fallback is a different vendor.
+# claude-fable is primary. claude-claude-sonnet-5-5 is the same-vendor
+# fallback (October 2026 bake-off: Sonnet 126, Fable 110, about 1/5 the
+# list cost). The Pi fallback is a different vendor.
 roster:
   - route: claude-fable
+    effort: medium
+  - route: claude-claude-sonnet-5-5
     effort: medium
   - route: pi-qwen3-8-flash-openrouter
     effort: medium

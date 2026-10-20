@@ -220,7 +220,11 @@ test("the checkout role and model files assemble a policy that validates", () =>
   const policy = assembleRosterPolicy(load(".kxm/models", true), load(".kxm/roles", false));
   const validated = validateRosterDocument(policy, (source: string) => existsSync(source) ? readFileSync(source) : undefined);
   assert.deepEqual(validated.lineup.writer, ["grok-grok-4-7", "pi-qwen3-7-plus-openrouter", "agy-gemini-4-argon-high", "agy-gemini-4-argon-medium", "agy-gemini-3-8-flash-medium", "agy-gemini-3-8-flash-high"]);
-  assert.deepEqual(validated.lineup.planner, ["claude-fable", "pi-qwen3-8-flash-openrouter"]);
+  assert.deepEqual(validated.lineup.planner, ["claude-fable", "claude-claude-sonnet-5-5", "pi-qwen3-8-flash-openrouter"]);
+  assert.equal(validated.routes["claude-claude-sonnet-5-5"]?.model, "claude-sonnet-5.5");
+  assert.equal(validated.routes["claude-claude-sonnet-5-5"]?.harness, "claude");
+  assert.deepEqual(validated.routes["claude-claude-sonnet-5-5"]?.permissions, ["read-only"]);
+  assert.deepEqual(validated.routes["claude-claude-sonnet-5-5"]?.roles, ["planner"]);
   assert.equal(validated.required_critics["review-arch"], "claude-fable");
   assert.deepEqual(validated.lineup["reviewer-arch"], ["claude-fable", "pi-glm-5-3-flash-openrouter"]);
   assert.deepEqual(validated.lineup["reviewer-cli"], ["codex-gpt-6-1-sol", "pi-qwen3-8-flash-openrouter", "codex-gpt-5-6-sol"]);

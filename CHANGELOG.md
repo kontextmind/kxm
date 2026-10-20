@@ -225,6 +225,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **The planner fallback is Claude Sonnet 5.5.** `claude-fable` stays the
+  planner primary. `claude-claude-sonnet-5-5` (`claude` / `claude-sonnet-5.5`,
+  selector `anthropic/claude-sonnet-5.5`, read-only, effort `medium`) is the
+  next route, ahead of `pi-qwen3-8-flash-openrouter`. The October 2026
+  bake-off scored Sonnet 126 and Fable 110 out of 150, at about one fifth
+  the list cost, which was not enough to replace the primary. OpenRouter
+  listed `anthropic/claude-sonnet-5.5` on 2026-10-20 at $2 input and $10
+  output per 1M tokens. See
+  [Planner bake-off, October 2026](docs/evals/planner-bakeoff-2026-10.md).
 - **Writer #2 is OpenRouter Qwen3.7 Plus.** `pi-qwen3-7-plus-openrouter`
   (`openrouter/qwen/qwen3.7-plus`) replaces `pi-qwen3-coder-plus-openrouter`.
   OpenRouter no longer lists `qwen/qwen3-coder-plus`. The live catalog on
