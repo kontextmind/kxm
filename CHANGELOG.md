@@ -225,6 +225,15 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **`kxm vision assert` defaults to the admitted OpenRouter GLM route.**
+  The built-in route is `openrouter/z-ai/glm-5.3-flash`, invoked as
+  `pi --model openrouter/z-ai/glm-5.3-flash`. The old default
+  `zai-coding-cn/glm-5.3-flash` is not allowlisted, and that id no longer
+  has a special argv. `kxm init` admits the vision route and does not add
+  a model file or a roster entry for it. A live accuracy witness is
+  `test/core/vision-accuracy.test.ts`. It calls Pi only when
+  `OPENROUTER_API_KEY` is set; otherwise it checks
+  `test/fixtures/vision/` and does not use the network.
 - **`kxm init` starts the writer on Grok 4.7.** The starter model file is
   `.kxm/models/grok-grok-4-7.yaml` (`grok` / `grok-4.7`, selector
   `xai/grok-4.7`, alias `grok-default`). The writer roster, the built-in

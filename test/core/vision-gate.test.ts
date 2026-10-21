@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runCli } from "../../plugins/kxm/src/cli.ts";
+import { renderKxmTemplate } from "../../plugins/kxm/src/template.ts";
 import {
   parseVisionVerdict,
   runVisionGate,
@@ -69,8 +70,8 @@ test("runVisionGate fails closed on unadmitted routes without calling transport"
     });
     assert.equal(called, false, "transport must not run for unadmitted routes");
     assert.equal(result.verdict, null);
-    assert.match(result.divergence ?? "", /route_not_admitted: zai-coding-cn\/glm-5\.3-flash/);
-    assert.match(result.divergence ?? "", /kxm routes admit --model zai-coding-cn\/glm-5\.3-flash/);
+    assert.match(result.divergence ?? "", /route_not_admitted: openrouter\/z-ai\/glm-5\.3-flash/);
+    assert.match(result.divergence ?? "", /kxm routes admit --model openrouter\/z-ai\/glm-5\.3-flash/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -123,15 +124,20 @@ test("runVisionGate validates the timeout bound", async () => {
 });
 
 
-test("vision Pi args keep the verified default and follow --route for other ids", () => {
+test("vision Pi args use --model for the default and for other ids", () => {
   assert.deepEqual(visionPiArgs(VISION_GATE_DEFAULT_ROUTE), {
-    ok: true,
-    args: ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session"],
-  });
-  assert.deepEqual(visionPiArgs("openrouter/z-ai/glm-5.3-flash"), {
     ok: true,
     args: ["--model", "openrouter/z-ai/glm-5.3-flash", "-p", "--no-session"],
   });
+  assert.deepEqual(visionPiArgs("openrouter/qwen/qwen3.7-plus"), {
+    ok: true,
+    args: ["--model", "openrouter/qwen/qwen3.7-plus", "-p", "--no-session"],
+  });
+  const legacy = visionPiArgs("zai-coding-cn/glm-5.3-flash");
+  assert.equal(legacy.ok, true);
+  if (legacy.ok) {
+    assert.deepEqual(legacy.args, ["--model", "zai-coding-cn/glm-5.3-flash", "-p", "--no-session"]);
+  }
   const blocked = visionPiArgs("xai/grok-4.7");
   assert.equal(blocked.ok, false);
   if (!blocked.ok) assert.match(blocked.divergence, /must not impersonate native provider xai/);
@@ -182,4 +188,26 @@ test("vision assert CLI: fail-closed on unreadable images, validates --expect", 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("vision assert help names the admitted default route", async () => {
+  let stdout = "";
+  const code = await runCli(
+    ["vision", "assert", "--help"],
+    {},
+    { stdout: (line: string) => { stdout += `${line}\n`; }, stderr: () => undefined },
+  );
+  assert.equal(code, 0);
+  assert.match(stdout, new RegExp(`default ${VISION_GATE_DEFAULT_ROUTE.replaceAll(".", "\\.")}`));
+  assert.doesNotMatch(stdout, /zai-coding-cn/);
+});
+
+test("kxm init admits the default vision route without a roster model file", () => {
+  const rendered = renderKxmTemplate("prj_01JVISIONINIT000000000000", "Vision init");
+  const routes = rendered.values.get(".kxm/routes.yaml") as { admitted?: string[] } | undefined;
+  assert.ok(routes?.admitted?.includes("xai/grok-4.7"));
+  assert.ok(routes?.admitted?.includes(VISION_GATE_DEFAULT_ROUTE));
+  assert.equal(rendered.files.has(".kxm/models/grok-grok-4-7.yaml"), true);
+  assert.equal(rendered.files.has(".kxm/models/grok-grok-4-6.yaml"), false);
+  assert.equal(rendered.files.has(".kxm/models/pi-glm-5-3-flash-openrouter.yaml"), false);
 });

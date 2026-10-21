@@ -106,5 +106,5 @@ kxm vision assert --image .kxm/artifacts/browser/shot.png \
 ```
 
 - Exit 0 only when the verdict resolves and matches `--expect`; fail-closed divergences (`route_not_admitted`, `image unreadable`, `verdict unreadable`, or the Pi native-vendor brake) exit 1.
-- The route must be admitted in `.kxm/routes.yaml`. The built-in default is `zai-coding-cn/glm-5.3-flash` (the verified Pi invocation `--provider zai-coding-cn --model glm-5.3-flash`). This checkout does not admit that id. Pass `--route openrouter/z-ai/glm-5.3-flash`, which is admitted here. `--route` selects the Pi model; a native-vendor id is refused before Pi starts.
+- The route must be admitted in `.kxm/routes.yaml`. The built-in default is `openrouter/z-ai/glm-5.3-flash`, invoked as `pi --model openrouter/z-ai/glm-5.3-flash`. `kxm init` admits that id, and this checkout already admits it. `--route` selects the Pi model; a native-vendor id is refused before Pi starts.
 - The gate is a supplement to deterministic Playwright assertions, never a replacement.

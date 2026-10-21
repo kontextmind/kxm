@@ -10,7 +10,7 @@ import { isRouteAdmitted } from "./routes.ts";
  * `divergence` reason. Transport is injectable so tests run without
  * network. */
 
-export const VISION_GATE_DEFAULT_ROUTE = "zai-coding-cn/glm-5.3-flash";
+export const VISION_GATE_DEFAULT_ROUTE = "openrouter/z-ai/glm-5.3-flash";
 const QUESTION_MAX_CHARS = 500;
 const RAW_MAX_CHARS = 2000;
 
@@ -54,13 +54,9 @@ export function parseVisionVerdict(raw: string): boolean | null {
 }
 
 /** Pi argv for an admitted vision route, without the prompt.
- * The verified default keeps `--provider zai-coding-cn --model glm-5.3-flash`.
- * Every other id is `pi --model <id>` after the native-vendor brake, so
- * `--route` selects the model instead of only the admission check. */
+ * Every id, including the default, is `pi --model <id>` after the
+ * native-vendor brake, so `--route` selects the model. */
 export function visionPiArgs(route: string): { ok: true; args: readonly string[] } | { ok: false; divergence: string } {
-  if (route === VISION_GATE_DEFAULT_ROUTE) {
-    return { ok: true, args: ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session"] };
-  }
   const validation = validateHarnessModelPair("pi", route);
   if (!validation.valid) {
     return { ok: false, divergence: validation.message ?? "route_not_pi" };

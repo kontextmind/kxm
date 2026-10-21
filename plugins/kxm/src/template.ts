@@ -209,14 +209,16 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
       });
       files.set(".kxm/workflows/default.yaml", { ...workflow, coordinator: "planner", limits, steps });
     }
-    // The two models the template names, and nothing else. A fresh project can
-    // be driven without falling through to an unadmitted default model.
+    // The two roster models the template names, plus the vision selector the
+    // built-in gate defaults to. That selector has no model file and is not a
+    // roster route. A fresh project can be driven without falling through to
+    // an unadmitted default model.
     // Route ids follow <harness>-<model-slug>. grok-default and fable-default
     // remain aliases so an existing --route flag still resolves.
     files.set(".kxm/routes.yaml", {
       schema: "kxm.routes.v2",
       updatedAt: "2026-10-21T00:00:00.000Z",
-      admitted: ["anthropic/fable", "xai/grok-4.7"],
+      admitted: ["anthropic/fable", "xai/grok-4.7", "openrouter/z-ai/glm-5.3-flash"],
       disabled: [],
     });
     files.set(".kxm/models/grok-grok-4-7.yaml", {

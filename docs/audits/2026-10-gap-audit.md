@@ -17,7 +17,7 @@ Each fix is a small pull request with squash auto-merge. None of them needs a se
 
 `kxm suggest` used to treat a keyword as a substring. "guide" and "build" took the feature workflow because they contain `ui`, "author" took vulnerability remediation because it contains `auth`, and "change" took bug-fix because it contains `hang`. Hyphenated keywords such as `circuit-breaker` still match as one token. A prompt with no keyword still selects `feature-implementation` at score 0.
 
-`kxm vision assert` accepted `--route` and then ignored it. The flag now selects that Pi model after admission. An unknown route names `kxm routes admit`. A native-vendor id is refused before `pi` starts. The CLI reference documents the command. The built-in default route is unchanged. See decision 2.
+`kxm vision assert` accepted `--route` and then ignored it. The flag now selects that Pi model after admission. An unknown route names `kxm routes admit`. A native-vendor id is refused before `pi` starts. The CLI reference documents the command. That pull request left the built-in default route unchanged. Decision 2 changes it.
 
 `kxm init` outside any Git worktree now says to run `git init` and then `kxm init` again. A directory that is not the worktree root still says to run from that root. `kxm hub view` says to start the hub when nothing is listening on a loopback URL, and names the tunnel and `kxm hub bind` for any other URL. An auth proxy or redirect keeps its existing probe note.
 
@@ -66,9 +66,7 @@ Observed on 2026-10-21, before the runner split:
 
 ### 2. The built-in vision route
 
-`kxm vision assert` still defaults to `zai-coding-cn/glm-5.3-flash` and, for that id only, still runs `pi --provider zai-coding-cn --model glm-5.3-flash`. `.kxm/routes.yaml` removed `zai-coding-cn/*` on 2026-09-27 because that provider is not allowlisted. The admitted replacement in this checkout is `openrouter/z-ai/glm-5.3-flash`. A vision call here with no `--route` still fail-closes, and pull request #412 names `kxm routes admit` in that message. `kxm init` does not admit a vision route.
-
-Changing the default needs a vision accuracy witness on the admitted id. This pass kept the verified default argv.
+Approved 2026-10-21 in [pull request #419](https://github.com/kontextmind/kxm/pull/419). `kxm vision assert` defaults to `openrouter/z-ai/glm-5.3-flash` and runs `pi --model <id>` for every route, including that default. `zai-coding-cn/glm-5.3-flash` no longer has a special argv. `kxm init` admits the vision selector and does not write a model file for it. The accuracy witness is `test/fixtures/vision/` and `test/core/vision-accuracy.test.ts`. That test calls Pi only when `OPENROUTER_API_KEY` is set.
 
 ### 3. The starter writer model
 
