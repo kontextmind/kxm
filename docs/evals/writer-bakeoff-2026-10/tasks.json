@@ -1,0 +1,67 @@
+{
+  "dispatch": "not_sent",
+  "reason": "OPENROUTER_API_KEY was unset, and the Cursor subagent catalog had no slug for reflection/beam-1.0-501b-a23b, inception/mercury-3, or qwen/qwen3.7-plus.",
+  "instructions": "A live run checks out parent, implements only that task, and runs the named tests. The landed commit is the oracle. Routes and rosters stay untouched. These statements were not sent to a model.",
+  "tasks": [
+    {
+      "id": "rate-limit-abort",
+      "title": "Rate-limit abort",
+      "pull_request": 414,
+      "landed": "e63907a31321582a65ecb23968235beb31f21037",
+      "parent": "477fc060a4b925d91773a1188afcaa4346816d50",
+      "sources": ["plugins/kxm/src/route-fallback.ts"],
+      "tests": ["test/core/route-fallback.test.ts"],
+      "statement": "A 429 body that says the request was aborted was classified as cancellation, so an opted-in role never walked the fallback chain. Walkable status codes are classified first. tool_policy stays its own non-walkable class."
+    },
+    {
+      "id": "suggest-whole-word",
+      "title": "Suggest whole words",
+      "pull_request": 411,
+      "landed": "477fc060a4b925d91773a1188afcaa4346816d50",
+      "parent": "9c51344cd1c3ddf56b70e9c4d67cafb6fc548502",
+      "sources": ["plugins/kxm/src/suggest.ts"],
+      "tests": ["test/core/suggest.test.ts"],
+      "statement": "Substring keyword matches sent prompts containing guide, author, or change to the wrong workflow. Hyphenated keywords still match as one token."
+    },
+    {
+      "id": "hub-down-hint",
+      "title": "Hub-down hint",
+      "pull_request": 413,
+      "landed": "9c51344cd1c3ddf56b70e9c4d67cafb6fc548502",
+      "parent": "e5c1b54f7ac148f369e0c0afbc114965c6b8da3c",
+      "sources": ["plugins/kxm/src/init.ts", "plugins/kxm/src/cli/hub.ts"],
+      "tests": ["test/core/cli.test.ts", "test/core/hub-bind-probe.test.ts"],
+      "statement": "kxm init outside a worktree now needs to say to run git init. kxm hub view needs a hint when nothing answers: start a loopback hub, or check a remote bind."
+    },
+    {
+      "id": "vision-admitted-route",
+      "title": "Vision admitted route",
+      "pull_request": 412,
+      "landed": "e5c1b54f7ac148f369e0c0afbc114965c6b8da3c",
+      "parent": "c11458e56cc4de3680b7b7ba4a9a99b817b06372",
+      "sources": ["plugins/kxm/src/vision-gate.ts"],
+      "tests": ["test/core/vision-gate.test.ts"],
+      "statement": "--route used to change only the admission check while Pi still ran the default provider. Other ids need to spawn as pi --model, native-vendor ids are refused first, and an unadmitted route names the admit command."
+    },
+    {
+      "id": "windows-cmd-shim",
+      "title": "Windows cmd shim",
+      "pull_request": 365,
+      "landed": "145a8db3403aa8070771b723dd01dae5cd18a7fc",
+      "parent": "2ea15a76312eee015dedfb8bb6d62b5d59f2df97",
+      "sources": ["plugins/kxm/src/harness.ts"],
+      "tests": ["test/core/harness.test.ts"],
+      "statement": "A missing Windows cmd.exe shim was counted as installed. The light-shard Windows tests were also asserting Unix file modes and forward-slash paths."
+    },
+    {
+      "id": "init-antigravity-guide",
+      "title": "Init Antigravity guide",
+      "pull_request": 309,
+      "landed": "8fb4aa51d22a9b249f78917403be54857501a19d",
+      "parent": "0ba4474752cfd01a45148caa78bc70f0d6ebcc63",
+      "sources": ["plugins/kxm/src/init-guide-setup.ts"],
+      "tests": ["test/core/init-guide-setup.test.ts"],
+      "statement": "Guided setup mapped Google Gemini guide candidates onto a Pi Antigravity selector. The Runtime Pi one-shot uses --no-extensions, and pi auth check does not load extensions, so a drive of those roles fails at dispatch."
+    }
+  ]
+}
