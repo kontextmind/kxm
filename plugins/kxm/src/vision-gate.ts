@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
+import { validateHarnessModelPair } from "./harness.ts";
 import { isRouteAdmitted } from "./routes.ts";
 
 /** Deterministic vision gate: judge a UI screenshot through an admitted
@@ -52,12 +53,27 @@ export function parseVisionVerdict(raw: string): boolean | null {
   return match ? match[1] === "true" : null;
 }
 
-function defaultTransport(prompt: string, timeoutMs: number): string {
-  return execFileSync(
-    "pi",
-    ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session", prompt],
-    { encoding: "utf8", timeout: timeoutMs, windowsHide: true },
-  );
+/** Pi argv for an admitted vision route, without the prompt.
+ * The verified default keeps `--provider zai-coding-cn --model glm-5.3-flash`.
+ * Every other id is `pi --model <id>` after the native-vendor brake, so
+ * `--route` selects the model instead of only the admission check. */
+export function visionPiArgs(route: string): { ok: true; args: readonly string[] } | { ok: false; divergence: string } {
+  if (route === VISION_GATE_DEFAULT_ROUTE) {
+    return { ok: true, args: ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session"] };
+  }
+  const validation = validateHarnessModelPair("pi", route);
+  if (!validation.valid) {
+    return { ok: false, divergence: validation.message ?? "route_not_pi" };
+  }
+  const trimmed = route.trim();
+  if (!trimmed.includes("/")) {
+    return { ok: false, divergence: `route_not_pi: ${trimmed} is not a provider-qualified Pi model id` };
+  }
+  return { ok: true, args: ["--model", trimmed, "-p", "--no-session"] };
+}
+
+function defaultTransport(args: readonly string[], timeoutMs: number): string {
+  return execFileSync("pi", [...args], { encoding: "utf8", timeout: timeoutMs, windowsHide: true });
 }
 
 export async function runVisionGate(options: VisionGateOptions): Promise<VisionGateResult> {
@@ -73,15 +89,20 @@ export async function runVisionGate(options: VisionGateOptions): Promise<VisionG
     return { ...base, divergence: "image unreadable" };
   }
   if (!isRouteAdmitted(projectRoot, route)) {
-    return { ...base, divergence: "route_not_admitted" };
+    return {
+      ...base,
+      divergence: `route_not_admitted: ${route} is not admitted; run kxm routes admit --model ${route} or pass --route <admitted-id>`,
+    };
   }
+  const piArgs = visionPiArgs(route);
+  if (!piArgs.ok) return { ...base, divergence: piArgs.divergence };
   const prompt = visionGatePrompt(options.question, options.imagePath);
 
   let raw: string;
   try {
     raw = options.transport
       ? await options.transport(prompt)
-      : defaultTransport(prompt, timeoutMs);
+      : defaultTransport([...piArgs.args, prompt], timeoutMs);
   } catch (error) {
     return { ...base, divergence: `transport failed: ${String((error as Error)?.message ?? error).slice(0, 200)}` };
   }
