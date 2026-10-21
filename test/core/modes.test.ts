@@ -20,6 +20,8 @@ describe("KXM Declarative Workflow Modes and Explain", () => {
     const config = loadModesConfig();
     assert.strictEqual(config.schema, "kxm.modes.v1");
     assert.ok(config.majorModes.coder);
+    assert.strictEqual(config.majorModes.coder?.model, "grok/grok-4.7");
+    assert.strictEqual(config.majorModes.browser?.model, "grok/grok-4.7");
     assert.ok(config.majorModes.planner);
     assert.ok(config.majorModes.auditor);
     assert.ok(config.majorModes.browser);

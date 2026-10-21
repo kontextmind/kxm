@@ -1255,7 +1255,7 @@ test("a producer that throws is recorded as itself, with its reason", async () =
     const bundle = loadKxmProject(root);
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
     try {
-      setRouteState(root, "xai/grok-4.6", "admitted");
+      setRouteState(root, "xai/grok-4.7", "admitted");
       const accepted = acceptKxmRun(context, bundle, { workflowId: "one-step", prompt: "producer error witness" });
       const scheduler = KxmRunScheduler.for(context, bundle);
       let throwWith = "pi_not_authenticated: pi harness not detected (pi_native_impersonation_blocked)";
@@ -1607,7 +1607,7 @@ resultSchema: kxm.assignment-result.v1
       assert.equal(result.handoff?.reason, "step_unsupported");
       assert.equal(result.handoff?.field, "model");
       assert.equal(result.handoff?.stepId, "only");
-      assert.deepEqual(seen, [{ agentId: "implementer", harness: "grok", provider: "xai", model: "grok-4.6" }]);
+      assert.deepEqual(seen, [{ agentId: "implementer", harness: "grok", provider: "xai", model: "grok-4.7" }]);
       const created = context.eventStore.events(accepted.run.runId, 0, 10_000)
         .filter((event) => event.eventType === "assignment.created");
       assert.equal(created.length, 1);
@@ -4561,9 +4561,9 @@ test("live route refuses a role whose first admitted route is disabled", () => {
 test("live write refuses a writer route without edit", () => {
   const { root, stateRoot } = engineProject("kxm-engine-writer-no-edit-");
   try {
-    writeFileSync(join(root, ".kxm", "models", "grok-grok-4-6.yaml"), "schema: kxm.model.v2\nid: grok-grok-4-6\naliases:\n  - grok-default\nharness: grok\nmodel: grok-4.6\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
+    writeFileSync(join(root, ".kxm", "models", "grok-grok-4-7.yaml"), "schema: kxm.model.v2\nid: grok-grok-4-7\naliases:\n  - grok-default\nharness: grok\nmodel: grok-4.7\nvendor: xai\nstatus: admitted\npermissions:\n  - read-only\n");
     writeFileSync(join(root, ".kxm", "workflows", "write-step.yaml"), "schema: kxm.workflow.v1\ndescription: Write\ncoordinator: coordinator\nlimits:\n  maxTransitions: 2\nsteps:\n  - id: write-step\n    kind: agent\n    agent: implementer\n    repositories:\n      control: write\n    on:\n      passed:\n        target: $terminal\n        terminalStatus: completed\n");
-    setRouteState(root, "xai/grok-4.6", "admitted");
+    setRouteState(root, "xai/grok-4.7", "admitted");
     const bundle = loadKxmProject(root);
     const found = kxmLiveRunPrerequisites(bundle, "write-step", root);
     assert.ok(found.some((entry) => entry.detail.includes("not an admitted edit route")));
@@ -4838,8 +4838,8 @@ steps:
 test("admission: demoted selector returns handoff before birth", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-adm-demoted-");
   try {
-    // implementer has model xai/grok-4.6 in engineProject; explicitly demote it
-    updateRouteState(root, "xai/grok-4.6", "disabled");
+    // implementer has model xai/grok-4.7 in engineProject; explicitly demote it
+    updateRouteState(root, "xai/grok-4.7", "disabled");
 
     const bundle = loadKxmProject(root);
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });
@@ -4902,9 +4902,9 @@ roster:
 test("admission: admitted route records producerId oneshot in capability row", async () => {
   const { root, stateRoot } = engineProject("kxm-engine-adm-cap-oneshot-");
   try {
-    // Ensure xai/grok-4.6 is enabled, promoted, and in writer roster
-    setRouteState(root, "xai/grok-4.6", "admitted", "writer");
-    updateRouteState(root, "xai/grok-4.6", "admitted");
+    // Ensure xai/grok-4.7 is enabled, promoted, and in writer roster
+    setRouteState(root, "xai/grok-4.7", "admitted", "writer");
+    updateRouteState(root, "xai/grok-4.7", "admitted");
 
     const bundle = loadKxmProject(root);
     const context = openKxmRuntimeContext(root, { stateRoot, homeRuntimeId: HOME });

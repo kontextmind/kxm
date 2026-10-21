@@ -53,6 +53,6 @@ export function committedProject(prefix: string): { root: string; stateRoot: str
 
 /** Admit the implementer fallback selector so live oneshot/pi producers can complete. */
 export function admitDefaultWriterRoute(root: string): void {
-  setRouteState(root, "xai/grok-4.6", "admitted", "writer");
-  updateRouteState(root, "xai/grok-4.6", "admitted");
+  setRouteState(root, "xai/grok-4.7", "admitted", "writer");
+  updateRouteState(root, "xai/grok-4.7", "admitted");
 }

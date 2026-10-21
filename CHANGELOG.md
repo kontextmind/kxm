@@ -234,6 +234,13 @@ All notable user-facing changes are documented here. The project follows [Semant
   `test/core/vision-accuracy.test.ts`. It calls Pi only when
   `OPENROUTER_API_KEY` is set; otherwise it checks
   `test/fixtures/vision/` and does not use the network.
+- **`kxm init` starts the writer on Grok 4.7.** The starter model file is
+  `.kxm/models/grok-grok-4-7.yaml` (`grok` / `grok-4.7`, selector
+  `xai/grok-4.7`, alias `grok-default`). The writer roster, the built-in
+  coder and browser modes, the general subagent default, the Pi producer
+  default, and the `kxm routing benchmark` arm list use the same model.
+  Guide candidates and selector examples may still show `grok-4.6`.
+  `.kxm/prices.yaml` keeps both price rows.
 
 - **The planner fallback is Claude Sonnet 5.5.** `claude-fable` stays the
   planner primary. `claude-claude-sonnet-5-5` (`claude` / `claude-sonnet-5.5`,

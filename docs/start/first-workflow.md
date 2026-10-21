@@ -258,7 +258,7 @@ The file is a `kxm.workflow.v1` definition. `coordinator` names the agent that o
 
 ### Why start with `first` and not `default`
 
-`kxm init` also writes a `default` workflow. Its coordinator plans on `claude` / `anthropic/fable`, its implementer writes the checkout on `grok` / `xai/grok-4.6`, and a `test` gate runs `npm test`. `kxm init` admits those two models and the vision route `openrouter/z-ai/glm-5.3-flash` in `.kxm/routes.yaml`. The vision id has no model file and is not on a roster. You can drive it, but even a simulated drive runs `npm test` in your checkout, and a live drive spends both subscriptions and passes the implement step only when Grok changes the checkout. `first` calls no model and runs no command, so it is the safer first run. [Steps the Runtime does not execute yet](../reference/config-reference.md#steps-the-runtime-does-not-execute-yet) lists every setting that makes a drive hand the run off.
+`kxm init` also writes a `default` workflow. Its coordinator plans on `claude` / `anthropic/fable`, its implementer writes the checkout on `grok` / `xai/grok-4.7`, and a `test` gate runs `npm test`. `kxm init` admits those two models and the vision route `openrouter/z-ai/glm-5.3-flash` in `.kxm/routes.yaml`. The vision id has no model file and is not on a roster. You can drive it, but even a simulated drive runs `npm test` in your checkout, and a live drive spends both subscriptions and passes the implement step only when Grok changes the checkout. `first` calls no model and runs no command, so it is the safer first run. [Steps the Runtime does not execute yet](../reference/config-reference.md#steps-the-runtime-does-not-execute-yet) lists every setting that makes a drive hand the run off.
 
 ### Two kinds of runs
 

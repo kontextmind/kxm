@@ -398,9 +398,9 @@ resultSchema: kxm.assignment-result.v1
 
 `kxm init` creates `planner` (`role: planner`, alias `coordinator`) and `writer`
 (`role: writer`, alias `implementer`) without `harness` or `model`, and admits
-`anthropic/fable`, `xai/grok-4.6`, and the vision route
+`anthropic/fable`, `xai/grok-4.7`, and the vision route
 `openrouter/z-ai/glm-5.3-flash` in `.kxm/routes.yaml`. The model files are
-`claude-fable` and `grok-grok-4-6`. The vision route has no model file and is
+`claude-fable` and `grok-grok-4-7`. The vision route has no model file and is
 not a roster entry. An interactive `kxm init` can add
 workflow-guide agents for reviewed pairs whose harness is authenticated, and
 admits their selectors too, but skips Google guide candidates because the

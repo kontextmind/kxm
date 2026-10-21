@@ -87,7 +87,7 @@ describe("subagent control and real-time steering", () => {
 
       const infoModels = manager.control({ action: "info", kind: "models" });
       assert.equal(infoModels.ok, true);
-      assert.ok(infoModels.result?.includes("grok-4.6"));
+      assert.ok(infoModels.result?.includes("grok-4.7"));
 
       const infoActive = manager.control({ action: "info", kind: "active" });
       assert.equal(infoActive.ok, true);

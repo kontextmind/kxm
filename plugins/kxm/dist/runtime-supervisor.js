@@ -15547,7 +15547,7 @@ var ROUTE_RENAMES = Object.freeze([
   ["fable-claude", "claude-fable"],
   // sol-codex stays the GPT-5.6 route. codex-gpt-6-1-sol is a separate route.
   ["sol-codex", "codex-gpt-5-6-sol"],
-  ["grok-default", "grok-grok-4-6"],
+  ["grok-default", "grok-grok-4-7"],
   ["fable-default", "claude-fable"]
 ]);
 var AGENT_RENAMES = Object.freeze([
@@ -15972,16 +15972,16 @@ function coreTemplate(projectId, projectName, variant) {
     }
     files.set(".kxm/routes.yaml", {
       schema: "kxm.routes.v2",
-      updatedAt: "2026-09-27T00:00:00.000Z",
-      admitted: ["anthropic/fable", "xai/grok-4.6", "openrouter/z-ai/glm-5.3-flash"],
+      updatedAt: "2026-10-21T00:00:00.000Z",
+      admitted: ["anthropic/fable", "xai/grok-4.7", "openrouter/z-ai/glm-5.3-flash"],
       disabled: []
     });
-    files.set(".kxm/models/grok-grok-4-6.yaml", {
+    files.set(".kxm/models/grok-grok-4-7.yaml", {
       schema: "kxm.model.v2",
-      id: "grok-grok-4-6",
+      id: "grok-grok-4-7",
       aliases: ["grok-default"],
       harness: "grok",
-      model: "grok-4.6",
+      model: "grok-4.7",
       vendor: "xai",
       status: "admitted",
       permissions: ["edit"]
@@ -16002,7 +16002,7 @@ function coreTemplate(projectId, projectName, variant) {
       purpose: "writer",
       permission: "edit",
       description: "Primary implementation agent.",
-      roster: [{ route: "grok-grok-4-6", effort: "medium" }]
+      roster: [{ route: "grok-grok-4-7", effort: "medium" }]
     });
     files.set(".kxm/roles/planner.yaml", {
       schema: "kxm.role.v2",

@@ -205,6 +205,9 @@ test("vision assert help names the admitted default route", async () => {
 test("kxm init admits the default vision route without a roster model file", () => {
   const rendered = renderKxmTemplate("prj_01JVISIONINIT000000000000", "Vision init");
   const routes = rendered.values.get(".kxm/routes.yaml") as { admitted?: string[] } | undefined;
+  assert.ok(routes?.admitted?.includes("xai/grok-4.7"));
   assert.ok(routes?.admitted?.includes(VISION_GATE_DEFAULT_ROUTE));
+  assert.equal(rendered.files.has(".kxm/models/grok-grok-4-7.yaml"), true);
+  assert.equal(rendered.files.has(".kxm/models/grok-grok-4-6.yaml"), false);
   assert.equal(rendered.files.has(".kxm/models/pi-glm-5-3-flash-openrouter.yaml"), false);
 });
