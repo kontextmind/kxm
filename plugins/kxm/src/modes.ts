@@ -80,7 +80,7 @@ export const DEFAULT_MODES_CONFIG: ModesConfig = Object.freeze({
       baseTools: ["read", "edit", "write", "bash"],
       contextFiles: ["AGENTS.md"],
       thinkingLevel: "medium" as const,
-      model: "grok/grok-4.6",
+      model: "grok/grok-4.7",
     },
     planner: {
       description: "High-level architectural planning, scoping, and decomposition",
@@ -101,7 +101,7 @@ export const DEFAULT_MODES_CONFIG: ModesConfig = Object.freeze({
       baseTools: ["read", "bash"],
       contextFiles: ["docs/guides/browser-automation.md"],
       thinkingLevel: "medium" as const,
-      model: "grok/grok-4.6",
+      model: "grok/grok-4.7",
     },
   },
   domains: {
@@ -201,7 +201,7 @@ export function resolveActiveMode(
     contextFiles: Array.from(contextFiles),
     promptSnippets,
     thinkingLevel: major.thinkingLevel,
-    model: major.model || "grok/grok-4.6",
+    model: major.model || "grok/grok-4.7",
   };
 }
 
@@ -330,7 +330,7 @@ export function calculatePromptFootprint(
     catalogDateForStatus(loaded, catalog, projectRoot),
   );
   const cat = loaded.catalog;
-  const rawModel = resolved.model || "grok/grok-4.6";
+  const rawModel = resolved.model || "grok/grok-4.7";
   const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [undefined, rawModel];
 
   const inputCost = cat
@@ -369,7 +369,7 @@ export function calculatePromptFootprint(
   return {
     majorMode: resolved.majorMode,
     enabledDomains: resolved.enabledDomains,
-    model: resolved.model || "grok/grok-4.6",
+    model: resolved.model || "grok/grok-4.7",
     breakdown,
     totalChars,
     totalTokens,

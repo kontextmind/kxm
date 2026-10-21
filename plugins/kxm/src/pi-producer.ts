@@ -448,7 +448,7 @@ export interface KxmPiProducer extends KxmProducer {
 
 export function createKxmPiProducer(options: KxmPiProducerOptions = {}): KxmPiProducer {
   const sessions = new Map<string, PiSession>();
-  const defaultModel = options.defaultModel ?? "xai/grok-4.6";
+  const defaultModel = options.defaultModel ?? "xai/grok-4.7";
   const defaultProvider = options.defaultProvider ?? "xai";
 
   function parseModelString(spec: string): { provider: string; model: string } {

@@ -201,7 +201,7 @@ kxm init --dry-run --json
 ```
 
 ```text
-{"schema":"kxm.cli-result.v1","ok":true,"command":"init","action":"planned","mode":"create","inspectedFrom":"/work/proj","projectRoot":"/work/proj","changesRequired":true,"legacyInputs":[],"issues":[],"files":[".kxm/agents/planner.yaml",".kxm/agents/writer.yaml",".kxm/gates.yaml",".kxm/models/claude-fable.yaml",".kxm/models/grok-grok-4-6.yaml",".kxm/project.yaml",".kxm/repo/repo.yaml",".kxm/roles/planner.yaml",".kxm/roles/writer.yaml",".kxm/routes.yaml",".kxm/template-provenance.yaml",".kxm/workflows/default.yaml"],"plannedOnly":true}
+{"schema":"kxm.cli-result.v1","ok":true,"command":"init","action":"planned","mode":"create","inspectedFrom":"/work/proj","projectRoot":"/work/proj","changesRequired":true,"legacyInputs":[],"issues":[],"files":[".kxm/agents/planner.yaml",".kxm/agents/writer.yaml",".kxm/gates.yaml",".kxm/models/claude-fable.yaml",".kxm/models/grok-grok-4-7.yaml",".kxm/project.yaml",".kxm/repo/repo.yaml",".kxm/roles/planner.yaml",".kxm/roles/writer.yaml",".kxm/routes.yaml",".kxm/template-provenance.yaml",".kxm/workflows/default.yaml"],"plannedOnly":true}
 ```
 
 Create the project:
@@ -3036,7 +3036,7 @@ KXM PRE-FLIGHT CONTEXT EXPLAIN
 ════════════════════════════════════════════════════════════
 Major Mode:       coder
 Enabled Domains:  (none)
-Target Model:     grok/grok-4.6
+Target Model:     grok/grok-4.7
 Catalog status:   price catalog missing
 
 CONTEXT BREAKDOWN:
@@ -3661,7 +3661,7 @@ Dedicated offline benchmark for side-by-side model comparison (Decision Q12). To
 | Option | Argument | Default | Description |
 |---|---|---|---|
 | `--task` | `<fixture>` | `Deterministic benchmark task` | Task prompt or fixture path for benchmark comparison |
-| `--arms` | `<models>` | `grok/grok-4.6,claude/fable,pi/qwen3.7-plus` | Comma-separated model routes to benchmark (e.g. grok/grok-4.6,claude/fable) |
+| `--arms` | `<models>` | `grok/grok-4.7,claude/fable,pi/qwen3.7-plus` | Comma-separated model routes to benchmark (e.g. grok/grok-4.6,claude/fable) |
 | `--runs` | `<count>` | `1` | Benchmark runs per arm |
 
 - Reads nothing. JSON keys: `task`, `runs`, `timestamp`, `arms` (`harness`, `model`, `latencyMs`, `tokensIn`, `tokensOut`, `costUsd`, `outcome`).
@@ -3673,7 +3673,7 @@ kxm routing benchmark
 ```text
 Routing Benchmark Results (task: Deterministic benchmark task, runs: 1)
 Harness    Model                     Latency(ms)   TokensIn  TokensOut    Cost($)    Outcome
-grok       grok-4.6                          420       1200        450      $0.17     passed
+grok       grok-4.7                          420       1200        450      $0.17     passed
 claude     fable                             680       1200        450      $0.45     passed
 pi         qwen3.7-plus                  560       1200        450      $0.12     passed
 ```

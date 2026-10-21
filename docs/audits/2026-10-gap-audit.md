@@ -72,7 +72,7 @@ Changing the default needs a vision accuracy witness on the admitted id. This pa
 
 ### 3. The starter writer model
 
-`kxm init` still admits `xai/grok-4.6`, writes `.kxm/models/grok-grok-4-6.yaml`, and puts that route on the writer roster. This repository admits `xai/grok-4.7`. `modes.ts`, `subagent-control.ts`, and the Pi producer default still name grok-4.6. Glossary and catalog examples that show grok-4.6 are selector shapes. Replacing the starter is an admission decision, with the tests and docs that pin 4.6 updated in the same change.
+Approved 2026-10-21 in [pull request #418](https://github.com/kontextmind/kxm/pull/418). `kxm init` admits `xai/grok-4.7`, writes `.kxm/models/grok-grok-4-7.yaml`, and puts that route on the writer roster. `modes.ts`, `subagent-control.ts`, and the Pi producer default name grok-4.7. Glossary and catalog examples that show grok-4.6 stay selector shapes.
 
 ### 4. Confirm or reverse the defaults already in Tracking
 
