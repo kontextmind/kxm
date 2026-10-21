@@ -2,7 +2,7 @@
 title: Model catalog refresh
 summary: Monday OpenRouter refresh of prices and inventory, the manual command, and the disappearance guard.
 tags: [models, prices, inventory, ci]
-updated: "2026-10-17"
+updated: "2026-10-20"
 sources:
   - .github/workflows/refresh-models.yml
   - scripts/refresh-model-catalog.mjs
@@ -19,9 +19,9 @@ sources:
 
 ## Schedule and token
 
-The workflow runs at `0 13 * * 1` (Monday 13:00 UTC) and on `workflow_dispatch`. It checks out `main`, installs locked dependencies with `npm ci --ignore-scripts`, and runs `scripts/refresh-model-catalog.mjs`. Permissions are `contents`, `pull-requests`, `statuses`, and `actions` write. The only token is `GITHUB_TOKEN`.
+The workflow runs at `0 13 * * 1` (Monday 13:00 UTC) and on `workflow_dispatch`. It checks out `main`, installs locked dependencies with `npm ci --ignore-scripts`, and runs `scripts/refresh-model-catalog.mjs`. The workflow `GITHUB_TOKEN` has `contents: read`, `statuses: write`, and `actions: write`. It does not create the pull request. `actions/create-github-app-token` mints an installation token from repository secrets `KXM_REFRESH_APP_ID` (numeric App ID, passed as `app-id`) and `KXM_REFRESH_APP_PRIVATE_KEY` (PEM). The token is limited to repository `kxm` and to contents write and pull requests write. The App itself is installed on `kontextmind/kxm` only, with Contents read and write and Pull requests read and write. If either secret is missing, the job fails and names both. Setup is in `docs/contributing/development.md`.
 
-An empty diff exits 0 and opens nothing. A non-empty diff is committed by `kxm-catalog[bot]` onto the fixed branch `automation/model-refresh` and force-with-lease pushed. The job opens or updates one pull request against `main`. Because a `GITHUB_TOKEN` push does not start pull-request CI, the job then dispatches `ci.yml` on that branch.
+An empty diff exits 0 and opens nothing, after the secrets check. A non-empty diff is committed by `kxm-catalog[bot]` onto the fixed branch `automation/model-refresh` and force-with-lease pushed with the App token. The job opens or updates one pull request against `main` with that same token. `GITHUB_TOKEN` posts the `model-catalog-guard` status and dispatches `ci.yml` on the branch, because `ci.yml` does not run on a push to `automation/model-refresh` and the App is not granted statuses or actions.
 
 ## What the refresh rewrites
 
@@ -29,7 +29,7 @@ The script fetches `https://openrouter.ai/api/v1/models` and updates the OpenRou
 
 Nous `discount` rates and the `pi`, `grok`, and `agy` source blocks stay as the last full `kxm models inventory-refresh` left them. An empty OpenRouter payload throws `OpenRouter catalog is empty` and writes nothing.
 
-Multi-tier price rows are not rewritten. `anthropic/fable` is matched through its aliases; when those OpenRouter rows disagree, the price row is left unchanged. A YAML anchor shared with a plan-price alias still moves when the OpenRouter owner row does.
+Multi-tier price rows are not rewritten. `anthropic/fable` is matched through its aliases; when those OpenRouter rows disagree, the price row is left unchanged. A YAML anchor that a non-OpenRouter row depends on is not rewritten. The OpenRouter row is detached onto its own tier and the plan row keeps the anchored rates. Two non-OpenRouter rows that share an anchor, such as the Gemini flash effort tiers, still update together.
 
 ## Guard
 

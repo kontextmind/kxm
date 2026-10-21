@@ -266,11 +266,132 @@ test("shared price anchors stay intact and a comment survives a real reprice", (
   });
   assert.match(result.pricesText, /# weekly refresh keeps this note/);
   assert.match(result.pricesText, /&a3/);
-  assert.match(result.pricesText, /\*a3/);
   assert.equal(parsePriceCatalog(result.pricesText).date, DATE);
+  const priced = parsePriceCatalog(result.pricesText);
+  assert.equal(priced.models.find((model) => model.id === "openrouter/qwen/qwen3.8-flash")?.tiers[0]?.inputPerMillion, 0.2);
+  assert.equal(priced.models.find((model) => model.id === "qwen-token-plan/qwen3.8-flash")?.tiers[0]?.inputPerMillion, 0.15);
   assert.ok(result.priceRepriced.some((row) => row.id === "openrouter/qwen/qwen3.8-flash"));
-  assert.ok(result.priceRepriced.some((row) => row.id === "qwen-token-plan/qwen3.8-flash"));
+  assert.equal(result.priceRepriced.some((row) => row.id === "qwen-token-plan/qwen3.8-flash"), false);
   assert.match(result.summary, /Repriced more than 20%:.*qwen\/qwen3\.8-flash/);
+});
+
+test("a shared anchor that a non-OpenRouter row depends on is not rewritten", () => {
+  const bare = [
+    "schema: kxm.prices.v1",
+    "date: \"2026-10-17\"",
+    "sha256: placeholder",
+    "currency: USD",
+    "models:",
+    "  - id: openrouter/z-ai/glm-5.3-flash",
+    "    provider: openrouter",
+    "    model: z-ai/glm-5.3-flash",
+    "    tiers:",
+    "      - &a1",
+    "        inputPerMillion: 0.15",
+    "        outputPerMillion: 0.5",
+    "        cacheReadPerMillion: 0.03",
+    "        cacheWritePerMillion: null",
+    "  - id: zai-coding-cn/glm-5.3-flash",
+    "    provider: zai-coding-cn",
+    "    model: glm-5.3-flash",
+    "    aliases:",
+    "      - z-ai/glm-5.3-flash",
+    "    tiers:",
+    "      - *a1",
+    "  - id: zai-coding-cn/glm-5.3",
+    "    provider: zai-coding-cn",
+    "    model: glm-5.3",
+    "    tiers:",
+    "      - &plan",
+    "        inputPerMillion: 0.079",
+    "        outputPerMillion: 4.8",
+    "        cacheReadPerMillion: 0.078",
+    "        cacheWritePerMillion: null",
+    "  - id: openrouter/z-ai/glm-5.3",
+    "    provider: openrouter",
+    "    model: z-ai/glm-5.3",
+    "    tiers:",
+    "      - *plan",
+    "",
+  ].join("\n");
+  const parsed = parse(bare) as { sha256?: string; schema: "kxm.prices.v1"; date: string; currency: string; models: unknown[] };
+  const { sha256: _ignored, ...rest } = parsed;
+  const prices = bare.replace("sha256: placeholder", `sha256: ${hashPriceCatalog(rest as unknown as Omit<PriceCatalog, "sha256">)}`);
+  parsePriceCatalog(prices);
+  const result = plan({
+    models: [
+      inventoryModel("z-ai/glm-5.3-flash", rates(0.15, 0.5, 0.03, null)),
+      inventoryModel("z-ai/glm-5.3", rates(0.079, 4.8, 0.078, null)),
+    ],
+    prices,
+    items: [
+      orItem("z-ai/glm-5.3-flash", 0.047076, 0.12, 0.006),
+      orItem("z-ai/glm-5.3", 0.079, 1.4, 0.078),
+    ],
+  });
+  const priced = parsePriceCatalog(result.pricesText);
+  const openRouterFlash = priced.models.find((model) => model.id === "openrouter/z-ai/glm-5.3-flash");
+  const planFlash = priced.models.find((model) => model.id === "zai-coding-cn/glm-5.3-flash");
+  const planFull = priced.models.find((model) => model.id === "zai-coding-cn/glm-5.3");
+  const openRouterFull = priced.models.find((model) => model.id === "openrouter/z-ai/glm-5.3");
+  assert.equal(openRouterFlash?.tiers[0]?.inputPerMillion, 0.047076);
+  assert.equal(openRouterFlash?.tiers[0]?.outputPerMillion, 0.12);
+  assert.equal(openRouterFlash?.tiers[0]?.cacheReadPerMillion, 0.006);
+  assert.equal(planFlash?.tiers[0]?.inputPerMillion, 0.15);
+  assert.equal(planFlash?.tiers[0]?.outputPerMillion, 0.5);
+  assert.equal(planFlash?.tiers[0]?.cacheReadPerMillion, 0.03);
+  assert.equal(planFull?.tiers[0]?.outputPerMillion, 4.8);
+  assert.equal(openRouterFull?.tiers[0]?.outputPerMillion, 1.4);
+  assert.match(result.pricesText, /&a1/);
+  assert.match(result.pricesText, /&plan/);
+  assert.equal(result.priceRepriced.some((row) => row.id === "zai-coding-cn/glm-5.3-flash"), false);
+  assert.equal(result.priceRepriced.some((row) => row.id === "zai-coding-cn/glm-5.3"), false);
+  assert.ok(result.priceRepriced.some((row) => row.id === "openrouter/z-ai/glm-5.3-flash"));
+  assert.ok(result.priceRepriced.some((row) => row.id === "openrouter/z-ai/glm-5.3"));
+  const doc = parse(result.pricesText) as { models: Array<{ id: string; tiers: Array<{ inputPerMillion: number; outputPerMillion: number }> }> };
+  const anchored = doc.models.find((model) => model.id === "zai-coding-cn/glm-5.3-flash");
+  assert.equal(anchored?.tiers[0]?.inputPerMillion, 0.15);
+  assert.equal(anchored?.tiers[0]?.outputPerMillion, 0.5);
+});
+
+test("non-OpenRouter rows that share an anchor still take one OpenRouter reprice", () => {
+  const bare = [
+    "schema: kxm.prices.v1",
+    "date: \"2026-10-17\"",
+    "sha256: placeholder",
+    "currency: USD",
+    "models:",
+    "  - id: google/gemini-3.8-flash-medium",
+    "    provider: google",
+    "    model: gemini-3.8-flash-medium",
+    "    tiers:",
+    "      - &a2",
+    "        inputPerMillion: 0.825",
+    "        outputPerMillion: 4.125",
+    "        cacheReadPerMillion: 0.0825",
+    "        cacheWritePerMillion: null",
+    "  - id: google/gemini-3.8-flash-high",
+    "    provider: google",
+    "    model: gemini-3.8-flash-high",
+    "    tiers:",
+    "      - *a2",
+    "",
+  ].join("\n");
+  const parsed = parse(bare) as { sha256?: string; schema: "kxm.prices.v1"; date: string; currency: string; models: unknown[] };
+  const { sha256: _ignored, ...rest } = parsed;
+  const prices = bare.replace("sha256: placeholder", `sha256: ${hashPriceCatalog(rest as unknown as Omit<PriceCatalog, "sha256">)}`);
+  parsePriceCatalog(prices);
+  const result = plan({
+    models: [inventoryModel("google/gemini-3.8-flash", rates(0.825, 4.125, 0.0825, null))],
+    prices,
+    items: [orItem("google/gemini-3.8-flash", 1, 5, 0.1)],
+  });
+  const priced = parsePriceCatalog(result.pricesText);
+  assert.equal(priced.models.find((model) => model.id === "google/gemini-3.8-flash-medium")?.tiers[0]?.inputPerMillion, 1);
+  assert.equal(priced.models.find((model) => model.id === "google/gemini-3.8-flash-high")?.tiers[0]?.inputPerMillion, 1);
+  assert.match(result.pricesText, /&a2/);
+  assert.match(result.pricesText, /\*a2/);
+  assert.equal(result.priceRepriced.length, 2);
 });
 
 test("a different provider's alias is not overwritten from the OpenRouter list price", () => {
@@ -380,11 +501,20 @@ test("repository routes and rosters name the admitted models and skip the retire
   assert.ok(refs.some((reference) => reference.label.includes("roster writer")));
 });
 
-test("the weekly workflow uses GITHUB_TOKEN and opens one fixed branch", () => {
+test("the weekly workflow opens the pull request with the model-refresh GitHub App", () => {
   const text = readFileSync(".github/workflows/refresh-models.yml", "utf8");
   assert.match(text, /cron: "0 13 \* \* 1"/);
   assert.match(text, /workflow_dispatch:/);
-  assert.match(text, /secrets\.GITHUB_TOKEN/);
+  assert.match(text, /actions\/create-github-app-token@v3/);
+  assert.match(text, /app-id: \$\{\{ secrets\.KXM_REFRESH_APP_ID \}\}/);
+  assert.match(text, /private-key: \$\{\{ secrets\.KXM_REFRESH_APP_PRIVATE_KEY \}\}/);
+  assert.match(text, /permission-contents: write/);
+  assert.match(text, /permission-pull-requests: write/);
+  assert.match(text, /repositories: kxm/);
+  assert.match(text, /Missing repository secret/);
+  assert.match(text, /KXM_REFRESH_APP_ID \(the GitHub App id\)/);
+  assert.match(text, /KXM_REFRESH_APP_PRIVATE_KEY \(the App PEM private key\)/);
+  assert.match(text, /steps\.app-token\.outputs\.token/);
   assert.match(text, /automation\/model-refresh/);
   assert.match(text, /model-catalog-guard/);
   assert.equal(text.includes("MODELS_TOKEN"), false);

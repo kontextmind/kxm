@@ -418,6 +418,43 @@ Review the diff and commit it yourself, or wait for the Monday pull request on
 `automation/model-refresh`. The field reference is
 [Weekly OpenRouter refresh](../reference/config-reference.md#weekly-openrouter-refresh).
 
+The Monday job opens that pull request with a GitHub App installation token,
+not the workflow's `GITHUB_TOKEN`. This repository does not permit GitHub
+Actions to create pull requests, and the workflow does not change that
+setting. The App is installed on `kontextmind/kxm` only. Its repository
+permissions are Contents read and write, and Pull requests read and write.
+No other repository is installed, and the token asks only for those two
+permissions on `kxm`.
+
+Create the App as an organization owner:
+
+1. Open [New GitHub App](https://github.com/organizations/kontextmind/settings/apps/new).
+   Set the homepage URL to `https://github.com/kontextmind/kxm`. Uncheck
+   Active under Webhook. The workflow only mints an installation token.
+2. Under Repository permissions, set **Contents** to Read and write and
+   **Pull requests** to Read and write. Leave every other permission at No
+   access.
+3. Under "Where can this GitHub App be installed?", choose **Only on this
+   account**. Create the App.
+4. On the App's settings page, copy the numeric **App ID**. Generate a
+   private key and keep the downloaded PEM.
+5. Install the App: **Install App**, then **Only select repositories**,
+   then `kontextmind/kxm`, then Install. Do not install it on any other
+   repository.
+6. On [Actions secrets](https://github.com/kontextmind/kxm/settings/secrets/actions)
+   for this repository, add `KXM_REFRESH_APP_ID` (the numeric App ID, not
+   the Client ID) and `KXM_REFRESH_APP_PRIVATE_KEY` (the full PEM, including
+   the `BEGIN` and `END` lines).
+
+`actions/create-github-app-token` reads those secrets as `app-id` and
+`private-key`. If either secret is missing, the job fails before it pushes
+and names both `KXM_REFRESH_APP_ID` and `KXM_REFRESH_APP_PRIVATE_KEY`. An
+unchanged catalog still requires the secrets: a Monday with no diff exits 0
+only after both are set. The workflow `GITHUB_TOKEN` still posts the
+`model-catalog-guard` commit status and dispatches `ci.yml`, because the App
+is not granted statuses or actions. Do not turn on "Allow GitHub Actions to
+create and approve pull requests."
+
 `kxm models inventory-refresh` still rewrites the whole inventory from Pi, Grok,
 agy, OpenRouter, and Nous, including a new `fetchedAt` timestamp. The weekly
 script does not call those local CLIs.

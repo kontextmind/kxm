@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isAlias, isMap, isSeq, parse, parseDocument, stringify, type YAMLMap } from "yaml";
+import { isAlias, isMap, isSeq, parse, parseDocument, stringify, type YAMLMap, type YAMLSeq } from "yaml";
 import type { PriceCatalog } from "./price-calc.ts";
 import { hashPriceCatalog, parsePriceCatalog } from "./prices.ts";
 import {
@@ -131,7 +131,9 @@ function priceRowTokens(row: LoosePriceRow): string[] {
   if (row.model.includes("/")) add(row.model);
   else add(`${row.provider}/${row.model}`);
   // Aliases on native and OpenRouter rows point at the catalog id. A different
-  // plan (qwen-token-plan, zai-coding-cn) keeps its own rate unless it shares a YAML anchor.
+  // plan (qwen-token-plan, zai-coding-cn) keeps its own rate. A YAML anchor that
+  // a non-OpenRouter row depends on is not rewritten: the OpenRouter row is
+  // detached onto its own tier and the plan row keeps the anchored rates.
   const trackAliases = new Set(["anthropic", "openai", "google", "xai", "openrouter"]);
   if (trackAliases.has(row.provider)) {
     for (const alias of row.aliases ?? []) add(alias.includes("/") ? alias : `${row.provider}/${alias}`);
@@ -250,6 +252,71 @@ function writeTierRates(map: YAMLMap, previous: InventoryPrice, incoming: Invent
   return changed;
 }
 
+function mapString(row: YAMLMap, key: string): string | undefined {
+  const value = row.get(key);
+  return typeof value === "string" ? value : undefined;
+}
+
+function soleTier(row: YAMLMap): { tiers: YAMLSeq; tier: unknown } | undefined {
+  const tiers = row.get("tiers", true);
+  if (!isSeq(tiers) || tiers.items.length !== 1) return undefined;
+  return { tiers, tier: tiers.items[0] };
+}
+
+function anchorName(tier: unknown): string | undefined {
+  if (isMap(tier) && tier.anchor) return tier.anchor;
+  if (isAlias(tier)) return tier.source;
+  return undefined;
+}
+
+function nonOpenRouterDependsOn(models: YAMLSeq, anchor: string): boolean {
+  for (const row of models.items) {
+    if (!isMap(row) || mapString(row, "provider") === "openrouter") continue;
+    const sole = soleTier(row);
+    if (sole && anchorName(sole.tier) === anchor) return true;
+  }
+  return false;
+}
+
+function rateTierNode(doc: ReturnType<typeof parseDocument>, rates: InventoryPrice, anchor?: string): YAMLMap {
+  const node = doc.createNode({
+    inputPerMillion: rates.inputPerMillion,
+    outputPerMillion: rates.outputPerMillion,
+    cacheReadPerMillion: rates.cacheReadPerMillion,
+    cacheWritePerMillion: rates.cacheWritePerMillion,
+  });
+  if (!isMap(node)) throw new Error("price tier must be a map");
+  if (anchor) node.anchor = anchor;
+  return node;
+}
+
+/**
+ * Gives an OpenRouter row its own tier. The shared anchor, and every
+ * non-OpenRouter row that uses it, keep the rates they had.
+ */
+function detachOpenRouterTier(doc: ReturnType<typeof parseDocument>, models: YAMLSeq, row: YAMLMap, anchor: string, incoming: InventoryPrice): boolean {
+  const sole = soleTier(row);
+  if (!sole) return false;
+  const { tiers, tier } = sole;
+  if (isAlias(tier)) {
+    tiers.items[0] = rateTierNode(doc, incoming);
+    return true;
+  }
+  if (!isMap(tier) || tier.anchor !== anchor) return false;
+  const previous = tierRates(tier.toJSON() as Record<string, unknown>);
+  if (!previous) return false;
+  for (const other of models.items) {
+    if (!isMap(other) || other === row || mapString(other, "provider") === "openrouter") continue;
+    const alias = soleTier(other);
+    if (!alias || !isAlias(alias.tier) || alias.tier.source !== anchor) continue;
+    delete tier.anchor;
+    alias.tiers.items[0] = rateTierNode(doc, previous, anchor);
+    tiers.items[0] = rateTierNode(doc, incoming);
+    return true;
+  }
+  return false;
+}
+
 function updatePrices(text: string, updates: Map<string, InventoryPrice>, date: string): { text: string; dateChanged: boolean } {
   if (updates.size === 0) return { text, dateChanged: false };
   const doc = parseDocument(text);
@@ -271,9 +338,14 @@ function updatePrices(text: string, updates: Map<string, InventoryPrice>, date: 
     if (typeof id !== "string" || !updates.has(id)) continue;
     const incoming = updates.get(id);
     if (!incoming) continue;
-    const tiers = row.get("tiers", true);
-    if (!isSeq(tiers) || tiers.items.length !== 1) continue;
-    const tier = tiers.items[0];
+    const sole = soleTier(row);
+    if (!sole) continue;
+    const { tier } = sole;
+    const name = anchorName(tier);
+    if (name && mapString(row, "provider") === "openrouter" && nonOpenRouterDependsOn(models, name)) {
+      if (detachOpenRouterTier(doc, models, row, name, incoming)) wrote = true;
+      continue;
+    }
     const target = isMap(tier) ? tier : (isAlias(tier) ? maps.get(String(tier.source)) : undefined);
     if (!target || seen.has(target)) continue;
     seen.add(target);
