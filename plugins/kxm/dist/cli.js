@@ -18825,7 +18825,7 @@ function coreTemplate(projectId, projectName, variant) {
     files.set(".kxm/routes.yaml", {
       schema: "kxm.routes.v2",
       updatedAt: "2026-09-27T00:00:00.000Z",
-      admitted: ["anthropic/fable", "xai/grok-4.6"],
+      admitted: ["anthropic/fable", "xai/grok-4.6", "openrouter/z-ai/glm-5.3-flash"],
       disabled: []
     });
     files.set(".kxm/models/grok-grok-4-6.yaml", {
@@ -28904,9 +28904,6 @@ function parseVisionVerdict(raw) {
   return match ? match[1] === "true" : null;
 }
 function visionPiArgs(route) {
-  if (route === VISION_GATE_DEFAULT_ROUTE) {
-    return { ok: true, args: ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session"] };
-  }
   const validation = validateHarnessModelPair("pi", route);
   if (!validation.valid) {
     return { ok: false, divergence: validation.message ?? "route_not_pi" };
@@ -28959,7 +28956,7 @@ var init_vision_gate = __esm({
     "use strict";
     init_harness();
     init_routes();
-    VISION_GATE_DEFAULT_ROUTE = "zai-coding-cn/glm-5.3-flash";
+    VISION_GATE_DEFAULT_ROUTE = "openrouter/z-ai/glm-5.3-flash";
     QUESTION_MAX_CHARS = 500;
     RAW_MAX_CHARS = 2e3;
   }
@@ -58732,7 +58729,7 @@ function createProgram(ctx, result, argv) {
   }
   const visionCmd = addGlobalOptions(program2.command("vision").description("Judge captured UI screenshots through the admitted vision gate"));
   visionCmd.helpCommand("help", "Show vision help");
-  addGlobalOptions(visionCmd.command("assert").description("Assert a UI state on a screenshot (deterministic vision gate)")).requiredOption("--image <path>", "Path to the captured screenshot").requiredOption("--question <text>", "Yes/no assertion to verify on the screenshot").option("--route <id>", `Vision route (default ${"zai-coding-cn/glm-5.3-flash"})`).option("--timeout-ms <n>", "Transport timeout in milliseconds (5000-300000)").option("--expect <bool>", "Exit 0 only when the verdict matches true|false").action(async function visionAssertAction(options) {
+  addGlobalOptions(visionCmd.command("assert").description("Assert a UI state on a screenshot (deterministic vision gate)")).requiredOption("--image <path>", "Path to the captured screenshot").requiredOption("--question <text>", "Yes/no assertion to verify on the screenshot").option("--route <id>", `Vision route (default ${"openrouter/z-ai/glm-5.3-flash"})`).option("--timeout-ms <n>", "Transport timeout in milliseconds (5000-300000)").option("--expect <bool>", "Exit 0 only when the verdict matches true|false").action(async function visionAssertAction(options) {
     result.code = await cmdVisionAssert(runtimeFrom(ctx, this), options ?? {});
   });
   const harnessCmd = addGlobalOptions(program2.command("harness").description("Detect coding-agent harnesses and authentication"));

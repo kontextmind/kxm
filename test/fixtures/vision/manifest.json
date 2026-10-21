@@ -1,0 +1,17 @@
+{
+  "schema": "kxm.vision-witness.v1",
+  "route": "openrouter/z-ai/glm-5.3-flash",
+  "witness": "Set OPENROUTER_API_KEY and have pi on PATH, then run: node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-force-exit test/core/vision-accuracy.test.ts",
+  "cases": [
+    {
+      "image": "red.png",
+      "question": "Is the image a solid red square?",
+      "expect": true
+    },
+    {
+      "image": "green.png",
+      "question": "Is the image a solid red square?",
+      "expect": false
+    }
+  ]
+}

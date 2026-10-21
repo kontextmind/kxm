@@ -15973,7 +15973,7 @@ function coreTemplate(projectId, projectName, variant) {
     files.set(".kxm/routes.yaml", {
       schema: "kxm.routes.v2",
       updatedAt: "2026-09-27T00:00:00.000Z",
-      admitted: ["anthropic/fable", "xai/grok-4.6"],
+      admitted: ["anthropic/fable", "xai/grok-4.6", "openrouter/z-ai/glm-5.3-flash"],
       disabled: []
     });
     files.set(".kxm/models/grok-grok-4-6.yaml", {

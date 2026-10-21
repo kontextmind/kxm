@@ -922,13 +922,13 @@ kxm vision assert --image <path> --question <text> [--route <id>] [--timeout-ms 
 |---|---|---|---|
 | `--image` | `<path>` | required | Screenshot file. A missing file fails closed with `image unreadable` |
 | `--question` | `<text>` | required | Yes/no assertion, trimmed to 500 characters inside the prompt |
-| `--route` | `<id>` | `zai-coding-cn/glm-5.3-flash` | Admitted route id. The default keeps the verified Pi command `--provider zai-coding-cn --model glm-5.3-flash`. Any other id is `pi --model <id>` after the native-vendor brake |
+| `--route` | `<id>` | `openrouter/z-ai/glm-5.3-flash` | Admitted route id. Pi is invoked as `pi --model <id>` after the native-vendor brake |
 | `--timeout-ms` | `<n>` | `90000` | Integer from 5000 through 300000 |
 | `--expect` | `true` or `false` | none | Exit 0 only when the verdict equals this value |
 
 - Global options apply, except `--dry-run`, which exits 2 with `dry_run_unsupported` because the command calls Pi.
-- The route must be listed under `admitted` in `.kxm/routes.yaml`. Otherwise the command exits 1 and the `divergence` names the id and `kxm routes admit --model <id>`.
-- This repository does not admit the default `zai-coding-cn/glm-5.3-flash` (`zai-coding-cn` is not an allowlisted harness). Pass `--route openrouter/z-ai/glm-5.3-flash`, which is admitted here, or admit the route you pass.
+- The route must be listed under `admitted` in `.kxm/routes.yaml`. Otherwise the command exits 1 and the `divergence` names the id and `kxm routes admit --model <id>`. `kxm init` admits the default. This repository already admits `openrouter/z-ai/glm-5.3-flash`.
+- A live accuracy witness for that id is `test/fixtures/vision/manifest.json` plus `test/core/vision-accuracy.test.ts`. It calls Pi only when `OPENROUTER_API_KEY` is set. Otherwise it checks the fixture set and does not call the network. Run it with `node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-force-exit test/core/vision-accuracy.test.ts`.
 - A native-vendor id such as `xai/grok-4.7` or `anthropic/fable` is refused before Pi starts, even when that id is admitted. The `divergence` is the Pi brake message.
 - Exit 0 when the verdict resolves and, if `--expect` is set, matches it. Exit 1 for a fail-closed divergence. Exit 2 when `--image` or `--question` is missing, `--expect` is not `true` or `false`, or `--timeout-ms` is not an integer.
 - JSON keys: `ok`, `command` (`vision assert`), `verdict` (`true`, `false`, or `null`), `route`, `raw`, `divergence` when the gate fails closed, and `expect` when `--expect` is set.

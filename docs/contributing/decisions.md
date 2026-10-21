@@ -2,7 +2,7 @@
 title: "Decisions"
 description: "Decisions of medium significance or higher made by automated KXM work in this repository. One entry per decision: the options evaluated with their weights, and why the selected option won. Recorded the turn the decision is taken."
 audience: "agents and maintainers"
-updated: "2026-10-11"
+updated: "2026-10-21"
 ---
 
 # Decisions
@@ -229,3 +229,26 @@ Evidence: `plugins/kxm/src/cli/plugins.ts`, `plugins/kxm/src/session-work.ts`, a
   unverified gate.
 Evidence: `plans/implementation-plan.md`, `plans/plan-python-migration.md`,
 `python/kxm-control/tests/test_mg1.py`, and `.github/workflows/ci.yml`.
+
+## 2026-10-21 — How `kxm init` admits the vision route (routing)
+
+- Context: Eddie approved moving `kxm vision assert` to
+  `openrouter/z-ai/glm-5.3-flash` and asked `kxm init` to admit that route
+  when the change stays small. The gate checks `.kxm/routes.yaml` only.
+  Workforce lint treats an admitted selector with no model file as a warning
+  (`admitted_unrouted`), and a model file that no roster names as an error
+  (`route_unused`).
+- Options:
+  - Admit the selector and skip the model file — weight 0.9. Vision works
+    on a fresh project, and dispatch rosters stay the writer and the planner.
+    The warning does not fail init or `workforce lint`.
+  - Add a model file and put it on a roster — weight 0.3. Clears the warning,
+    but it also makes GLM a dispatch candidate for whichever role receives it.
+  - Leave init unchanged — weight 0.2. A new project still fail-closes on the
+    new default until someone admits the route by hand.
+- Selected: admit the selector only. No model file, no roster entry.
+- Solid recommendation: when a vision role exists, give the route its own
+  read-only model file and roster so the warning goes away without sharing
+  the writer.
+- Interim recommendation: the admitted selector is enough for `kxm vision assert`.
+Evidence: `plugins/kxm/src/template.ts`, `plugins/kxm/src/workforce-names.mjs`, and `test/core/vision-gate.test.ts`.
