@@ -25960,10 +25960,10 @@ function classifyRouteFailure(input) {
     class: failureClass,
     walkable: WALKABLE_CLASSES.includes(failureClass)
   });
-  if (name === "aborterror" || /\b(?:user_cancelled|cancelled|cancellation)\b/.test(text) || code === "process_aborted" || text.includes("abort")) {
+  if (name === "aborterror" || /\b(?:user_cancelled|cancelled|cancellation)\b/.test(text) || code === "process_aborted") {
     return result("cancelled");
   }
-  if (/policy_refusal|content_policy|tool_policy|usage policy|safety/.test(text) || text.includes("policy refusal")) {
+  if (/policy_refusal|content_policy|usage policy|safety/.test(text) || text.includes("policy refusal")) {
     return result("policy_refusal");
   }
   if (code.includes("not_authenticated") || /unauthori[sz]ed|authentication|invalid api key|auth_failed|\bauth\b/.test(text) || status === 401 || status === 403) {
@@ -25993,6 +25993,7 @@ function classifyRouteFailure(input) {
   if (status === 500 || status === 503 || /provider_unavailable|model unavailable|service unavailable|overloaded|model_not_found|no available model/.test(text)) {
     return result("provider_unavailable");
   }
+  if (text.includes("abort")) return result("cancelled");
   return result("unknown");
 }
 function parseFallbackPolicy(value) {

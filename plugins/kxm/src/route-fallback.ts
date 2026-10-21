@@ -116,10 +116,10 @@ export function classifyRouteFailure(input: {
     walkable: (WALKABLE_CLASSES as readonly string[]).includes(failureClass),
   });
 
-  if (name === "aborterror" || /\b(?:user_cancelled|cancelled|cancellation)\b/.test(text) || code === "process_aborted" || text.includes("abort")) {
+  if (name === "aborterror" || /\b(?:user_cancelled|cancelled|cancellation)\b/.test(text) || code === "process_aborted") {
     return result("cancelled");
   }
-  if (/policy_refusal|content_policy|tool_policy|usage policy|safety/.test(text) || text.includes("policy refusal")) {
+  if (/policy_refusal|content_policy|usage policy|safety/.test(text) || text.includes("policy refusal")) {
     return result("policy_refusal");
   }
   if (code.includes("not_authenticated") || /unauthori[sz]ed|authentication|invalid api key|auth_failed|\bauth\b/.test(text) || status === 401 || status === 403) {
@@ -156,6 +156,9 @@ export function classifyRouteFailure(input: {
   ) {
     return result("provider_unavailable");
   }
+  // After the status classes. A 429 body that says the request was aborted is
+  // still a rate limit and may walk. A bare abort, with no walkable status, stays cancelled.
+  if (text.includes("abort")) return result("cancelled");
   return result("unknown");
 }
 

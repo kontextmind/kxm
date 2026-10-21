@@ -714,12 +714,19 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **A rate-limit response that mentions abort can still fall back.**
+  `classifyRouteFailure` treated any text containing `abort` as cancellation
+  before it read HTTP 429, so an opted-in role did not walk. Status 429, 408,
+  413, 500, 502, 503, and 504 are classified first. `AbortError`,
+  `process_aborted`, and an explicit cancellation stay cancelled.
+  `tool_policy` is its own class instead of `policy_refusal`. Neither class
+  walks.
+
 - **`kxm suggest` matches workflow keywords as whole words.**
   A substring match sent "guide" and "build" to the feature workflow because
   they contain `ui`, "author" to vulnerability remediation because it contains
   `auth`, and "change" to bug-fix because it contains `hang`. Hyphenated
   keywords such as `circuit-breaker` still match as one token.
-
 - **A first run says what to do next when Git or the hub is missing.**
   `kxm init` outside a Git worktree still exits 1 with `git_root_required` and
   now says to run `git init`, then `kxm init` again. `kxm hub view` adds
