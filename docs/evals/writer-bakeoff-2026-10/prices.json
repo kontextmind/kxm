@@ -1,0 +1,244 @@
+{
+  "source": "https://openrouter.ai/api/v1/models",
+  "endpoints_source": "https://openrouter.ai/api/v1/models/{id}/endpoints",
+  "fetched_at": "2026-10-21T08:34:25Z",
+  "note": "pricing fields are USD per token, as returned by OpenRouter. Multiply by 1e6 for USD per 1M tokens.",
+  "models": [
+    {
+      "id": "reflection/beam-1.0-501b-a23b",
+      "name": "Reflection: Beam 1.0 501B A23B",
+      "context_length": 1048576,
+      "created": 1792160499,
+      "pricing": {
+        "prompt": "0.0000003",
+        "completion": "0.000001",
+        "input_cache_read": "0.00000004"
+      },
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logit_bias",
+        "logprobs",
+        "max_tokens",
+        "min_p",
+        "presence_penalty",
+        "reasoning",
+        "reasoning_effort",
+        "repetition_penalty",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "architecture": {
+        "modality": "text->text"
+      }
+    },
+    {
+      "id": "inception/mercury-3",
+      "name": "Inception: Mercury 3",
+      "context_length": 1000000,
+      "created": 1792158337,
+      "pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.00000035",
+        "input_cache_read": "0.00000001"
+      },
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "reasoning_effort",
+        "response_format",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools"
+      ],
+      "architecture": {
+        "modality": "text->text"
+      }
+    },
+    {
+      "id": "qwen/qwen3.7-plus",
+      "name": "Qwen: Qwen3.7 Plus",
+      "context_length": 1000000,
+      "created": 1780491783,
+      "pricing": {
+        "prompt": "0.00000032",
+        "completion": "0.00000128",
+        "input_cache_read": "0.000000064",
+        "input_cache_write": "0.0000004",
+        "overrides": [
+          {
+            "min_prompt_tokens": 256000,
+            "prompt": "0.00000096",
+            "completion": "0.00000384",
+            "input_cache_read": "0.000000192",
+            "input_cache_write": "0.0000012"
+          }
+        ]
+      },
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "logprobs",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_k",
+        "top_logprobs",
+        "top_p"
+      ],
+      "architecture": {
+        "modality": "text+image->text"
+      }
+    }
+  ],
+  "endpoints": {
+    "reflection/beam-1.0-501b-a23b": [
+      {
+        "provider": "Nebius",
+        "tag": "nebius/fp8",
+        "name": "Nebius | reflection/beam-1.0-501b-a23b-20261016",
+        "context_length": 1048576,
+        "max_completion_tokens": 131072,
+        "pricing": {
+          "prompt": "0.00000025",
+          "completion": "0.000001",
+          "discount": 0
+        },
+        "tools": true,
+        "status": 0
+      },
+      {
+        "provider": "CoreWeave",
+        "tag": "coreweave/fp4",
+        "name": "CoreWeave | reflection/beam-1.0-501b-a23b-20261016",
+        "context_length": 1048576,
+        "max_completion_tokens": 943718,
+        "pricing": {
+          "prompt": "0.0000003",
+          "completion": "0.000001",
+          "input_cache_read": "0.00000004",
+          "discount": 0
+        },
+        "tools": true,
+        "status": 0
+      },
+      {
+        "provider": "BaseTen",
+        "tag": "baseten/fp4",
+        "name": "BaseTen | reflection/beam-1.0-501b-a23b-20261016",
+        "context_length": 1048576,
+        "max_completion_tokens": 131072,
+        "pricing": {
+          "prompt": "0.0000004",
+          "completion": "0.0000012",
+          "input_cache_read": "0.00000004",
+          "discount": 0
+        },
+        "tools": false,
+        "status": 0
+      },
+      {
+        "provider": "Together",
+        "tag": "together",
+        "name": "Together | reflection/beam-1.0-501b-a23b-20261016",
+        "context_length": 1048576,
+        "max_completion_tokens": 131072,
+        "pricing": {
+          "prompt": "0.0000004",
+          "completion": "0.0000012",
+          "input_cache_read": "0.00000004",
+          "discount": 0
+        },
+        "tools": true,
+        "status": 0
+      }
+    ],
+    "inception/mercury-3": [
+      {
+        "provider": "Inception",
+        "tag": "inception",
+        "name": "Inception | inception/mercury-3-20261019",
+        "context_length": 1000000,
+        "max_completion_tokens": 131072,
+        "pricing": {
+          "prompt": "0.0000001",
+          "completion": "0.00000035",
+          "input_cache_read": "0.00000001",
+          "discount": 0.5
+        },
+        "tools": true,
+        "status": 0
+      }
+    ],
+    "qwen/qwen3.7-plus": [
+      {
+        "provider": "Alibaba",
+        "tag": "alibaba/us-east-1",
+        "name": "Alibaba | qwen/qwen3.7-plus-20260602",
+        "context_length": 1000000,
+        "max_completion_tokens": 131072,
+        "pricing": {
+          "prompt": "0.00000032",
+          "completion": "0.00000128",
+          "input_cache_read": "0.000000064",
+          "input_cache_write": "0.0000004",
+          "discount": 0,
+          "overrides": [
+            {
+              "min_prompt_tokens": 256000,
+              "prompt": "0.00000096",
+              "completion": "0.00000384",
+              "input_cache_read": "0.000000192",
+              "input_cache_write": "0.0000012"
+            }
+          ]
+        },
+        "tools": true,
+        "status": 0
+      },
+      {
+        "provider": "Alibaba",
+        "tag": "alibaba",
+        "name": "Alibaba | qwen/qwen3.7-plus-20260602",
+        "context_length": 1000000,
+        "max_completion_tokens": 131072,
+        "pricing": {
+          "prompt": "0.00000032",
+          "completion": "0.00000128",
+          "input_cache_read": "0.000000064",
+          "input_cache_write": "0.0000004",
+          "discount": 0,
+          "overrides": [
+            {
+              "min_prompt_tokens": 256000,
+              "prompt": "0.00000096",
+              "completion": "0.00000384",
+              "input_cache_read": "0.000000192",
+              "input_cache_write": "0.0000012"
+            }
+          ]
+        },
+        "tools": true,
+        "status": 0
+      }
+    ]
+  }
+}
