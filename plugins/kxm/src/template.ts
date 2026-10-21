@@ -215,16 +215,16 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
     // remain aliases so an existing --route flag still resolves.
     files.set(".kxm/routes.yaml", {
       schema: "kxm.routes.v2",
-      updatedAt: "2026-09-27T00:00:00.000Z",
-      admitted: ["anthropic/fable", "xai/grok-4.6"],
+      updatedAt: "2026-10-21T00:00:00.000Z",
+      admitted: ["anthropic/fable", "xai/grok-4.7"],
       disabled: [],
     });
-    files.set(".kxm/models/grok-grok-4-6.yaml", {
+    files.set(".kxm/models/grok-grok-4-7.yaml", {
       schema: "kxm.model.v2",
-      id: "grok-grok-4-6",
+      id: "grok-grok-4-7",
       aliases: ["grok-default"],
       harness: "grok",
-      model: "grok-4.6",
+      model: "grok-4.7",
       vendor: "xai",
       status: "admitted",
       permissions: ["edit"],
@@ -245,7 +245,7 @@ function coreTemplate(projectId: string, projectName: string, variant: KxmTempla
       purpose: "writer",
       permission: "edit",
       description: "Primary implementation agent.",
-      roster: [{ route: "grok-grok-4-6", effort: "medium" }],
+      roster: [{ route: "grok-grok-4-7", effort: "medium" }],
     });
     files.set(".kxm/roles/planner.yaml", {
       schema: "kxm.role.v2",

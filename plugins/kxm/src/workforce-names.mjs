@@ -38,7 +38,7 @@ export const ROUTE_RENAMES = Object.freeze([
   ["fable-claude", "claude-fable"],
   // sol-codex stays the GPT-5.6 route. codex-gpt-6-1-sol is a separate route.
   ["sol-codex", "codex-gpt-5-6-sol"],
-  ["grok-default", "grok-grok-4-6"],
+  ["grok-default", "grok-grok-4-7"],
   ["fable-default", "claude-fable"],
 ]);
 

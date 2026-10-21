@@ -277,14 +277,14 @@ and [Playwright via Obscura](../.kxm/knowledge/runbooks/playwright-obscura.md).
   `kxmd-shared-system`, then `kxmd-system`. A missing scope is skipped. A
   vault the caller cannot read does not override.
 
-- **Writer route (2026-09-24).** The Grok writer moves from `grok-4.6` to
-  `grok-4.7`. This covers this repo's developer runner and this repo's own
-  `.kxm` config. Product defaults stay `grok-4.6`: the `kxm init` template,
-  the engine implementer fallback, guide candidates, role/modes/subagent
-  defaults, `.kxm/prices.yaml` and the inventory. The passive policy-draft
-  tests now use `grok-4.7` for fixtures validated against the developer
-  runner's code ceiling and explicitly reject `grok-4.6` there; this test
-  correction does not alter product defaults or authorize a new route.
+- **Writer route (2026-09-24, starter updated 2026-10-21).** The Grok writer
+  moves from `grok-4.6` to `grok-4.7` for this repo's developer runner and
+  its own `.kxm` config. The product starter now matches: `kxm init` admits
+  `xai/grok-4.7`, and the modes, subagent, and Pi producer defaults name
+  grok-4.7. Guide candidates and selector-shape examples may still show
+  grok-4.6. `.kxm/prices.yaml` keeps both rows. The passive policy-draft
+  tests use `grok-4.7` for fixtures validated against the developer runner's
+  code ceiling and explicitly reject `grok-4.6` there.
 
 - **CI lanes (2026-09-27).** The `CI` workflow is active again. Pull requests
   run docs lint, typecheck, and the unit suite on Linux Node 24: two

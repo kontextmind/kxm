@@ -15520,7 +15520,7 @@ var ROUTE_RENAMES = Object.freeze([
   ["fable-claude", "claude-fable"],
   // sol-codex stays the GPT-5.6 route. codex-gpt-6-1-sol is a separate route.
   ["sol-codex", "codex-gpt-5-6-sol"],
-  ["grok-default", "grok-grok-4-6"],
+  ["grok-default", "grok-grok-4-7"],
   ["fable-default", "claude-fable"]
 ]);
 var AGENT_RENAMES = Object.freeze([
@@ -15945,16 +15945,16 @@ function coreTemplate(projectId, projectName, variant) {
     }
     files.set(".kxm/routes.yaml", {
       schema: "kxm.routes.v2",
-      updatedAt: "2026-09-27T00:00:00.000Z",
-      admitted: ["anthropic/fable", "xai/grok-4.6"],
+      updatedAt: "2026-10-21T00:00:00.000Z",
+      admitted: ["anthropic/fable", "xai/grok-4.7"],
       disabled: []
     });
-    files.set(".kxm/models/grok-grok-4-6.yaml", {
+    files.set(".kxm/models/grok-grok-4-7.yaml", {
       schema: "kxm.model.v2",
-      id: "grok-grok-4-6",
+      id: "grok-grok-4-7",
       aliases: ["grok-default"],
       harness: "grok",
-      model: "grok-4.6",
+      model: "grok-4.7",
       vendor: "xai",
       status: "admitted",
       permissions: ["edit"]
@@ -15975,7 +15975,7 @@ function coreTemplate(projectId, projectName, variant) {
       purpose: "writer",
       permission: "edit",
       description: "Primary implementation agent.",
-      roster: [{ route: "grok-grok-4-6", effort: "medium" }]
+      roster: [{ route: "grok-grok-4-7", effort: "medium" }]
     });
     files.set(".kxm/roles/planner.yaml", {
       schema: "kxm.role.v2",
@@ -34555,7 +34555,7 @@ var PiSession = class {
 };
 function createKxmPiProducer(options = {}) {
   const sessions = /* @__PURE__ */ new Map();
-  const defaultModel = options.defaultModel ?? "xai/grok-4.6";
+  const defaultModel = options.defaultModel ?? "xai/grok-4.7";
   const defaultProvider = options.defaultProvider ?? "xai";
   function parseModelString(spec) {
     const trimmed = spec.trim();
@@ -35776,7 +35776,7 @@ var DEFAULT_MODES_CONFIG = Object.freeze({
       baseTools: ["read", "edit", "write", "bash"],
       contextFiles: ["AGENTS.md"],
       thinkingLevel: "medium",
-      model: "grok/grok-4.6"
+      model: "grok/grok-4.7"
     },
     planner: {
       description: "High-level architectural planning, scoping, and decomposition",
@@ -35797,7 +35797,7 @@ var DEFAULT_MODES_CONFIG = Object.freeze({
       baseTools: ["read", "bash"],
       contextFiles: ["docs/guides/browser-automation.md"],
       thinkingLevel: "medium",
-      model: "grok/grok-4.6"
+      model: "grok/grok-4.7"
     }
   },
   domains: {
@@ -35874,7 +35874,7 @@ function resolveActiveMode(config, majorModeName = "coder", domainNames = []) {
     contextFiles: Array.from(contextFiles),
     promptSnippets,
     thinkingLevel: major.thinkingLevel,
-    model: major.model || "grok/grok-4.6"
+    model: major.model || "grok/grok-4.7"
   };
 }
 var CATALOG_DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
@@ -35965,7 +35965,7 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
     catalogDateForStatus(loaded, catalog, projectRoot)
   );
   const cat = loaded.catalog;
-  const rawModel = resolved.model || "grok/grok-4.6";
+  const rawModel = resolved.model || "grok/grok-4.7";
   const [prov, mod] = rawModel.includes("/") ? rawModel.split("/", 2) : [void 0, rawModel];
   const inputCost = cat ? calculateModelCost(cat, {
     model: mod || rawModel,
@@ -35994,7 +35994,7 @@ function calculatePromptFootprint(resolved, projectRoot = process.cwd(), catalog
   return {
     majorMode: resolved.majorMode,
     enabledDomains: resolved.enabledDomains,
-    model: resolved.model || "grok/grok-4.6",
+    model: resolved.model || "grok/grok-4.7",
     breakdown,
     totalChars,
     totalTokens,
@@ -36451,7 +36451,7 @@ var SUBAGENT_TYPES = Object.freeze([
   "Auditor"
 ]);
 var DEFAULT_SUBAGENT_MODELS = Object.freeze({
-  general: "grok/grok-4.6",
+  general: "grok/grok-4.7",
   Explore: "openrouter/qwen/qwen3.7-plus",
   Plan: "claude/fable",
   Reviewer: "openai/gpt-5.6-sol",
@@ -36491,7 +36491,7 @@ var SubagentManager = class {
       throw new Error('Subagent "description" is required.');
     }
     const type = params.type ?? "general";
-    const model = params.model ?? DEFAULT_SUBAGENT_MODELS[type] ?? "grok/grok-4.6";
+    const model = params.model ?? DEFAULT_SUBAGENT_MODELS[type] ?? "grok/grok-4.7";
     const thinking = params.thinking ?? "low";
     const allowedTools = narrowSubagentTools(params.allowed_tools, params.parent_tools);
     const id = `ag_${randomUUID5().replaceAll("-", "").slice(0, 10)}`;

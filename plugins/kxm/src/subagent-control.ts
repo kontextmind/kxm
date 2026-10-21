@@ -76,7 +76,7 @@ export const SUBAGENT_TYPES: readonly SubagentType[] = Object.freeze([
 ]);
 
 export const DEFAULT_SUBAGENT_MODELS: Readonly<Record<SubagentType, string>> = Object.freeze({
-  general: "grok/grok-4.6",
+  general: "grok/grok-4.7",
   Explore: "openrouter/qwen/qwen3.7-plus",
   Plan: "claude/fable",
   Reviewer: "openai/gpt-5.6-sol",
@@ -135,7 +135,7 @@ export class SubagentManager {
     }
 
     const type = params.type ?? "general";
-    const model = params.model ?? DEFAULT_SUBAGENT_MODELS[type] ?? "grok/grok-4.6";
+    const model = params.model ?? DEFAULT_SUBAGENT_MODELS[type] ?? "grok/grok-4.7";
     const thinking = params.thinking ?? "low";
     const allowedTools = narrowSubagentTools(params.allowed_tools, params.parent_tools);
     const id = `ag_${randomUUID().replaceAll("-", "").slice(0, 10)}`;
