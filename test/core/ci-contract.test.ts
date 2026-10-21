@@ -17,6 +17,10 @@ const template = readFileSync(".github/pull_request_template.md", "utf8");
 const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { scripts?: Record<string, string> };
 const ARC_RUNNER = "kontextmind-doks";
 const SMOKE_IF = "${{ vars.KXM_SMOKE_RUNNER == 'kontextmind-doks' }}";
+// Pull requests only. Push and workflow_dispatch keep the scale set.
+const PR_HOSTED_RUNS_ON =
+  "${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'kontextmind-doks' }}";
+const PR_HOSTED_JOBS = ["changes", "docs", "unit", "plugin", "required"] as const;
 
 type WorkflowJobs = Record<
   string,
@@ -44,6 +48,18 @@ function assertArcScaleSetSelectors(docs: WorkflowDoc[]): void {
   assert.deepEqual(new Set(values), new Set([ARC_RUNNER]));
   for (const value of values) {
     assert.equal(typeof value, "string");
+  }
+}
+
+function assertApprovedPullRequestRunners(doc: WorkflowDoc): void {
+  const hostedJobs = new Set<string>(PR_HOSTED_JOBS);
+  for (const id of PR_HOSTED_JOBS) {
+    assert.equal(doc.jobs?.[id]?.["runs-on"], PR_HOSTED_RUNS_ON, id);
+  }
+  for (const [id, job] of Object.entries(doc.jobs ?? {})) {
+    if (hostedJobs.has(id)) continue;
+    assert.notEqual(job["runs-on"], "ubuntu-latest", id);
+    assert.notEqual(job["runs-on"], PR_HOSTED_RUNS_ON, id);
   }
 }
 
@@ -139,16 +155,13 @@ test("CI lanes keep one aggregate required check and the main validate matrix", 
   assert.equal(doc.jobs?.docs?.name, "Docs lint");
   assert.equal(doc.jobs?.required?.name, "required");
   assert.equal(doc.jobs?.required?.if, "${{ always() }}");
-  assert.equal(doc.jobs?.changes?.["runs-on"], ARC_RUNNER);
-  assert.equal(doc.jobs?.docs?.["runs-on"], ARC_RUNNER);
-  assert.equal(doc.jobs?.plugin?.["runs-on"], ARC_RUNNER);
+  assertApprovedPullRequestRunners(doc);
   assert.equal(doc.jobs?.python?.["runs-on"], ARC_RUNNER);
-  assert.equal(doc.jobs?.required?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.engine?.["runs-on"], ARC_RUNNER);
   assert.equal(doc.jobs?.engine?.if, "${{ needs.changes.outputs.code == 'true' }}");
   assert.equal(doc.jobs?.engine?.strategy?.["fail-fast"], true);
   assert.deepEqual(doc.jobs?.engine?.strategy?.matrix?.shard, [1, 2]);
-  assert.equal(doc.jobs?.unit?.["runs-on"], ARC_RUNNER);
+  assert.equal(doc.jobs?.unit?.["runs-on"], PR_HOSTED_RUNS_ON);
   assert.equal(doc.jobs?.unit?.["timeout-minutes"], 10);
   assert.equal(doc.jobs?.unit?.if, "${{ needs.changes.outputs.code == 'true' }}");
   assert.equal(doc.jobs?.unit?.name, "Unit (linux, Node 24, ${{ matrix.lane }})");
@@ -294,33 +307,48 @@ test("PR template asks for slice issue and verify, not a local plugin checkbox",
   assert.doesNotMatch(template, /npm pack --dry-run/);
 });
 
-test("Linux workflow selectors are the ARC scale set and old labels fail closed", () => {
+test("Linux workflow selectors keep the ARC scale set except approved pull-request jobs", () => {
   const ci = parse(ciText) as WorkflowDoc;
   const release = parse(releaseText) as WorkflowDoc;
   const smoke = parse(smokeText) as WorkflowDoc;
   const nightly = parse(nightlyText) as WorkflowDoc;
   assert.equal(ci.jobs?.validate?.["runs-on"], "${{ matrix.runner.labels }}");
+  assertApprovedPullRequestRunners(ci);
+  assert.equal(ci.jobs?.engine?.["runs-on"], ARC_RUNNER);
+  assert.equal(ci.jobs?.python?.["runs-on"], ARC_RUNNER);
   const linuxCi = structuredClone(ci);
   assert.ok(linuxCi.jobs?.validate);
   assert.ok(linuxCi.jobs?.["unit-windows"]);
   delete linuxCi.jobs.validate;
   delete linuxCi.jobs["unit-windows"];
+  for (const id of PR_HOSTED_JOBS) delete linuxCi.jobs?.[id];
   assertArcScaleSetSelectors([linuxCi, release, smoke, nightly]);
   assertSmokeEqualityGate(smoke);
   for (const text of [ciText, releaseText, smokeText, nightlyText]) {
     assert.doesNotMatch(text, /runs-on:[^\n]*self-hosted/);
-    assert.doesNotMatch(text, /ubuntu-latest/);
     assert.doesNotMatch(text, /km-gh-rn01/);
     assert.doesNotMatch(text, /\[[^\]]*doks[^\]]*\]/);
     assert.doesNotMatch(text, /runs-on:\s*\$\{\{\s*vars\./);
+  }
+  assert.equal((ciText.match(/ubuntu-latest/g) ?? []).length, PR_HOSTED_JOBS.length);
+  for (const text of [releaseText, smokeText, nightlyText]) {
+    assert.doesNotMatch(text, /ubuntu-latest/);
   }
   assert.match(ciText, /labels: windows-latest/);
   assert.doesNotMatch(releaseText, /windows-latest/);
   assert.doesNotMatch(smokeText, /windows-latest/);
   assert.doesNotMatch(nightlyText, /windows-latest/);
+  const bareHosted = structuredClone(ci);
+  assert.ok(bareHosted.jobs?.docs);
+  bareHosted.jobs.docs["runs-on"] = "ubuntu-latest";
+  assert.throws(() => assertApprovedPullRequestRunners(bareHosted));
+  const hostedEngine = structuredClone(ci);
+  assert.ok(hostedEngine.jobs?.engine);
+  hostedEngine.jobs.engine["runs-on"] = "ubuntu-latest";
+  assert.throws(() => assertApprovedPullRequestRunners(hostedEngine));
   const mutatedCi = structuredClone(linuxCi);
-  assert.ok(mutatedCi.jobs?.docs);
-  mutatedCi.jobs.docs["runs-on"] = ["self-hosted", "Linux", "X64", "doks"];
+  assert.ok(mutatedCi.jobs?.python);
+  mutatedCi.jobs.python["runs-on"] = ["self-hosted", "Linux", "X64", "doks"];
   assert.throws(() => assertArcScaleSetSelectors([mutatedCi, release, smoke, nightly]));
   const mutatedSmoke = structuredClone(smoke);
   assert.ok(mutatedSmoke.jobs?.smoke);
@@ -456,7 +484,7 @@ test("playwright e2e stays on Obscura outside node --test and outside ci.yml", (
   assert.match(e2eText, /obscura-v0\.2\.3/);
   assert.doesNotMatch(e2eText, /playwright install/);
   assert.doesNotMatch(ciText, /npm run e2e/);
-  assert.doesNotMatch(ciText, /ubuntu-latest/);
+  assert.equal((ciText.match(/ubuntu-latest/g) ?? []).length, PR_HOSTED_JOBS.length);
   assert.doesNotMatch(pkg.scripts?.test ?? "", /test\/e2e/);
   assert.equal(pkg.scripts?.e2e, "node scripts/obscura.mjs --ensure && playwright test");
   assert.doesNotMatch(JSON.stringify(pkg.scripts), /playwright install/);

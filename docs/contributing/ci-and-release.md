@@ -27,11 +27,14 @@ flowchart LR
   MAIN -->|"daily 04:00 UTC"| NIGHT[Nightly<br/>complete suite]
 ```
 
-All workflows live in `.github/workflows/`. Linux jobs run on the organization's
-ARC runner scale set. Validate also runs two Windows legs on GitHub-hosted
-`windows-latest`. `test/core/ci-contract.test.ts` pins the runner selectors, job
-names, coverage floors and release triggers. Change a workflow and that test
-together.
+All workflows live in `.github/workflows/`. On a pull request, Classify
+changes, Docs lint, the Linux unit lanes, Plugin validation, and `required`
+use GitHub-hosted `ubuntu-latest`. Engine shards, Python MG1, a push to
+`main`, `workflow_dispatch`, release, nightly, and smoke stay on the ARC
+scale set `kontextmind-doks`. Validate also runs two Windows legs on
+`windows-latest`. `test/core/ci-contract.test.ts` pins the runner selectors,
+job names, coverage floors, and release triggers. Change a workflow and that
+test together.
 
 ## What runs where
 
@@ -88,10 +91,15 @@ Code pull requests run Docs lint, two Linux Node 24 engine shards, a serial
 lane (`permission.test.ts`, then `runtime.test.ts`, then
 `package-install.test.ts`), two light shards for every other Node unit file,
 the Python 3.13 control-plane suite against PostgreSQL 17, and Plugin
-validation. The Python lane stays on `kontextmind-doks`. That scale set has
-no container-engine socket, so the job starts PostgreSQL 17 with
-`scripts/ci-postgres-17.sh` on `127.0.0.1:5432` and uses the same admin and
-test DSNs as the contributor procedure in [Develop KXM](development.md).
+validation.
+
+On that pull request, Docs lint, the serial lane, both light shards, Plugin
+validation, and `required` use `ubuntu-latest`. The engine shards stay on
+`kontextmind-doks` with the Python lane. The Python lane stays on
+`kontextmind-doks`. That scale set has no container-engine socket, so the
+job starts PostgreSQL 17 with `scripts/ci-postgres-17.sh` on `127.0.0.1:5432`
+and uses the same admin and test DSNs as the contributor procedure in
+[Develop KXM](development.md).
 `light-1` typechecks and checks generated bundles.
 `engine.test.ts` is split by test name because that file alone was 174
 seconds; the serial lane keeps the next longest files off the light pool,
@@ -127,14 +135,33 @@ scale set `kontextmind-doks` with a three-minute job timeout. Windows uses
 GitHub-hosted `windows-latest` with a fifteen-minute timeout so `npm ci` can
 finish. Those four job names are not the required check anymore.
 
+The Linux timeout stays at three minutes because that leg stays on the scale
+set. A cold `npm ci` on a GitHub-hosted runner would need a longer budget,
+and this job does not use one.
+
+### Which jobs use the ARC scale set
+
+On a pull request, Classify changes, Docs lint, the Linux unit lanes
+(`serial`, `light-1`, `light-2`), Plugin validation, and `required` use
+GitHub-hosted `ubuntu-latest`. The same five jobs use `kontextmind-doks` on
+a push to `main` and on `workflow_dispatch`.
+
+The Linux engine shards and Python MG1 use `kontextmind-doks` on every
+trigger. Python stays there because `scripts/ci-postgres-17.sh` installs a
+pinned PostgreSQL 17.11.0 archive that needs `libicu74`, and a newer
+`ubuntu-latest` image can drop that package. The engine shards stay there
+because they are the CPU-bound split of `engine.test.ts`. The scale set
+requests three CPUs so those jobs are not packed onto busy nodes. Release,
+nightly, and smoke also stay on `kontextmind-doks`.
+
 ### CI jobs stay queued while a runner is online
 
-Every Linux workflow targets the ARC runner scale set `kontextmind-doks`. That
-name is the scale set, not a custom label on a repository runner. The scale set
-belongs to the selected-repository runner group `KontextMind DOKS ARC`, which
-must allow this public repository. The legacy repository runner `km-gh-rn01`
-must not carry the `kontextmind-doks` label; adding it bypasses ARC and
-serializes the build queue.
+Jobs that still select `kontextmind-doks` can queue while a runner is online.
+That name is the scale set, not a custom label on a repository runner. The
+scale set belongs to the selected-repository runner group `KontextMind DOKS
+ARC`, which must allow this public repository. The legacy repository runner
+`km-gh-rn01` must not carry the `kontextmind-doks` label. Adding that label
+bypasses ARC and serializes the build queue. Do not relabel `km-gh-rn01`.
 
 Check GitHub routing first:
 

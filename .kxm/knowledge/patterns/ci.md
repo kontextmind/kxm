@@ -2,19 +2,24 @@
 title: CI conventions
 summary: What runs on a pull request, what runs after merge, and when Windows lanes run.
 tags: [ci, tests, windows]
-updated: "2026-10-17"
+updated: "2026-10-21"
 sources:
   - .github/workflows/ci.yml
   - .github/workflows/e2e.yml
   - .github/workflows/nightly.yml
   - scripts/ci-classify.mjs
   - docs/contributing/ci-and-release.md
+  - docs/audits/2026-10-gap-audit.md
   - scripts/check-plan-links.mjs
 ---
 
 # CI conventions
 
-Workflows live in `.github/workflows/`. Linux jobs use the ARC scale set `kontextmind-doks`. Windows jobs use GitHub-hosted `windows-latest`. `test/core/ci-contract.test.ts` pins runner selectors, job names, and release triggers. The aggregate status check to require is `CI / required`.
+Workflows live in `.github/workflows/`. On a pull request, Classify changes, Docs lint, the Linux unit lanes (`serial`, `light-1`, `light-2`), Plugin validation, and `required` use GitHub-hosted `ubuntu-latest`. The Linux engine shards and Python MG1 stay on the ARC scale set `kontextmind-doks` for every trigger. A push to `main`, `workflow_dispatch`, release, nightly, and smoke keep their Linux jobs on that scale set. Windows jobs use GitHub-hosted `windows-latest`.
+
+`test/core/ci-contract.test.ts` allows `ubuntu-latest` only on those pull-request jobs and refuses it in `release.yml`, `smoke.yml`, and `nightly.yml`. The aggregate status check to require is `CI / required`.
+
+Python stays on the scale set because `scripts/ci-postgres-17.sh` installs a pinned PostgreSQL 17.11.0 archive that needs `libicu74`. The engine shards stay there because they are the CPU-bound split of `engine.test.ts`, and each scale-set runner requests three CPUs. Linux Validate on `main` stays on `kontextmind-doks` with a three-minute timeout. Do not add the `kontextmind-doks` label to `km-gh-rn01`.
 
 ## Fast pull-request lane
 
@@ -42,7 +47,7 @@ A newer push cancels an older pull-request run. Runs on `main` are not cancelled
 
 ## Full matrix after merge
 
-A push to `main`, and `workflow_dispatch`, also run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24 when the push is classified as code. `validate:pr` is `build`, `typecheck`, nine `test/core` files, `check:versions`, workforce lint, and the generated-`dist` check. Linux validate jobs time out at three minutes on `kontextmind-doks`. Windows validate jobs time out at fifteen minutes.
+A push to `main`, and `workflow_dispatch`, also run `validate:pr` on Linux and Windows for Node 22.19.0 and Node 24 when the push is classified as code. `validate:pr` is `build`, `typecheck`, nine `test/core` files, `check:versions`, workforce lint, and the generated-`dist` check. Linux validate jobs stay on `kontextmind-doks` and time out at three minutes. Windows validate jobs time out at fifteen minutes. The same push runs Classify changes, Docs lint, the Linux unit lanes, Plugin validation, and `required` on `kontextmind-doks`, not on `ubuntu-latest`.
 
 Code pushes also run the Linux Node 24 unit lanes, the Python lane, and plugin validation. Node 22.19.0 does not run the full unit suite. It runs `validate:pr`.
 

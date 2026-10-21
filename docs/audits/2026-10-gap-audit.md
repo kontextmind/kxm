@@ -1,6 +1,6 @@
 # October 2026 gap audit
 
-This page records the gap audit of this repository on 2026-10-21, against `main` at `19ec8a5`. It is for the operator who still has to decide runner placement, route admission, and the witnesses already listed in Tracking. The four code fixes from this pass are separate pull requests.
+This page records the gap audit of this repository on 2026-10-21, against `main` at `19ec8a5`. Eddie approved decision 1, runner placement, on 2026-10-21. Route admission and the witnesses already listed in Tracking still need the operator. The four code fixes from this pass are separate pull requests.
 
 The pass compared the CLI, routing, and CI workflows with the docs, the tests, and `.kxm/knowledge`. It left `.kxm/prices.yaml` and `.github/workflows/refresh-models.yml` untouched because [pull request #410](https://github.com/kontextmind/kxm/pull/410) owns those files. Playwright stays on Obscura. [Playwright e2e](https://github.com/kontextmind/kxm/blob/main/.github/workflows/e2e.yml) already runs `npm run e2e` on `ubuntu-latest`.
 
@@ -29,7 +29,7 @@ Product TypeScript and Python sources have no `TODO` or `FIXME` markers outside 
 
 Phase pages under `docs/roadmap/phases/` are symlinks to `plans/kxm-roadmap/phases/`. Plan links such as `../../plan-lane-cli.md` resolve from the real file. A scan that does not follow the symlink reports nine missing targets under `docs/roadmap/phases/`. The generator was not changed.
 
-`.kxm/knowledge` has ten pages, last indexed 2026-10-17. It has no first-run page, and [CI conventions](../../.kxm/knowledge/patterns/ci.md) does not describe the runner queue below. Those notes should wait until the runner decision lands, so the wiki does not record a queue that the operator is about to move.
+`.kxm/knowledge` has ten pages, last indexed 2026-10-17. It has no first-run page. [CI conventions](../../.kxm/knowledge/patterns/ci.md) now records the runner split from decision 1.
 
 ## Decisions for the operator
 
@@ -37,16 +37,32 @@ Ranked by how often they block a pull request or a first run. Each one needs a s
 
 ### 1. Where pull-request Linux jobs run
 
-Pull-request jobs that select the ARC scale set `kontextmind-doks` are Classify changes, Docs lint, both Linux engine shards, the Linux unit lanes (`serial`, `light-1`, `light-2`), Python MG1, Plugin validation, and `required`. Windows unit lanes already use `windows-latest`, and only when the classifier marks the change platform-sensitive. The Validate matrix does not run on a pull request. On `main` its Linux cells use `kontextmind-doks` with a three-minute timeout, and its Windows cells use `windows-latest` with a fifteen-minute timeout.
+**Approved by Eddie on 2026-10-21.** On a pull request, these jobs use GitHub-hosted `ubuntu-latest`:
 
-[CI and release](../contributing/ci-and-release.md) records the capacity policy: one warm runner, a burst to four, three CPUs each. `test/core/ci-contract.test.ts` refuses `ubuntu-latest` inside `ci.yml`, `release.yml`, `smoke.yml`, and `nightly.yml`. The same page says the Python lane stays on `kontextmind-doks` because that scale set has no container-engine socket. `scripts/ci-postgres-17.sh` installs a pinned PostgreSQL 17.11.0 linux/x86_64 archive and maps ICU 74 to the `libicu74` apt package.
+- Classify changes
+- Docs lint
+- Linux Node 24 unit lanes `serial`, `light-1`, and `light-2`
+- Plugin validation
+- `required`
 
-Observed on 2026-10-21:
+The same five jobs stay on `kontextmind-doks` for a push to `main` and for `workflow_dispatch`. Release, nightly, and smoke stay on `kontextmind-doks`. Windows unit lanes stay on `windows-latest`. `km-gh-rn01` was not given the `kontextmind-doks` label.
+
+Python MG1 stays on `kontextmind-doks`. `scripts/ci-postgres-17.sh` installs a pinned PostgreSQL 17.11.0 linux/x86_64 archive and maps ICU 74 to the `libicu74` apt package. A newer `ubuntu-latest` image that drops `libicu74` fails that archive until the pin moves. A GitHub-hosted service container would be a different script, so this change does not move Python.
+
+The Linux engine shards stay on `kontextmind-doks`. They are the CPU-bound split of `engine.test.ts`. The scale set requests three CPUs so those jobs are not packed onto busy nodes. They do not use a container socket, and they were not in the set that can leave the cluster without a capacity question.
+
+Linux Validate on `main` stays on `kontextmind-doks` with the three-minute timeout. On the push for `e63907a` ([run 39547915383](https://github.com/kontextmind/kxm/actions/runs/39547915383)), Validate (linux, Node 22.19.0) ran from 2026-10-21T05:16:57Z to 05:18:06Z and Validate (linux, Node 24) ran from 05:25:47Z to 05:26:56Z, about 69 seconds each after a runner started. That budget is tight for a cold `npm ci` on a GitHub-hosted runner. This job does not use one, so the timeout stays at three minutes. Windows Validate stays at fifteen minutes.
+
+`test/core/ci-contract.test.ts` allows `ubuntu-latest` only for the five pull-request jobs above, and only inside the `pull_request` arm of the `runs-on` expression. It still refuses `ubuntu-latest` in `release.yml`, `smoke.yml`, and `nightly.yml`, and it still refuses a bare `ubuntu-latest` selector on any other `ci.yml` job.
+
+Before this move, every pull-request Linux job selected `kontextmind-doks`. Windows unit lanes already used `windows-latest`, and only when the classifier marked the change platform-sensitive. The Validate matrix did not run on a pull request.
+
+[CI and release](../contributing/ci-and-release.md) records the capacity policy: one warm runner, a burst to four, three CPUs each. The Python lane stays on `kontextmind-doks` because that scale set has no container-engine socket.
+
+Observed on 2026-10-21, before the runner split:
 
 - Workflow [39513962307](https://github.com/kontextmind/kxm/actions/runs/39513962307) (pull request #410, platform-sensitive) was created at 2026-10-20T23:16:53Z. Docs lint started at 2026-10-21T00:02:27Z, about 46 minutes later. Windows lanes started at 00:03:51Z, within seconds of Classify. Linux lanes then ran mostly one at a time through about 00:20Z.
 - Workflow [39510255392](https://github.com/kontextmind/kxm/actions/runs/39510255392) (planner fallback, code pull request) was created at 2026-10-20T22:44:14Z and completed at 2026-10-20T23:08:16Z, about 24 minutes, while the scale set was less busy.
-
-Classify, Docs lint, the Node unit lanes, Plugin validation, and `required` do not need the cluster. Moving those jobs to `ubuntu-latest` would drop the queue and would also edit the contract test, spend GitHub-hosted minutes, and reverse the pinned-runner rule. Python can stay on the scale set, or move to a GitHub-hosted service container, which is a different script than the pinned archive. A newer image that no longer ships `libicu74` fails that archive until the pin moves. Linux Validate on `main` has a three-minute timeout that is tight for a cold `npm ci` on a GitHub-hosted runner. Do not relabel `km-gh-rn01`. That bypasses ARC and serializes the queue.
 
 ### 2. The built-in vision route
 

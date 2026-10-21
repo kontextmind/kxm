@@ -24,10 +24,15 @@ concurrency:
 # package, or workflow files also runs the unit lanes on Windows.
 # `required` is the status check to mark required: it fails when a lane fails
 # or is cancelled, and succeeds when a lane was skipped on purpose.
+# On a pull request, Classify changes, Docs lint, the Linux unit lanes, Plugin
+# validation, and required use a GitHub-hosted runner. Those jobs stay on the
+# kontextmind-doks scale set for a push to main and for workflow_dispatch.
+# Engine shards and Python MG1 stay on that scale set for every event.
+# Release, nightly, and smoke are unchanged.
 jobs:
   changes:
     name: Classify changes
-    runs-on: kontextmind-doks
+    runs-on: "${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'kontextmind-doks' }}"
     timeout-minutes: 5
     outputs:
       code: ${{ steps.classify.outputs.code }}
@@ -67,7 +72,7 @@ jobs:
 
   docs:
     name: Docs lint
-    runs-on: kontextmind-doks
+    runs-on: "${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'kontextmind-doks' }}"
     timeout-minutes: 10
     steps:
       - name: Check out repository
@@ -115,7 +120,7 @@ jobs:
     name: Unit (linux, Node 24, ${{ matrix.lane }})
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: kontextmind-doks
+    runs-on: "${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'kontextmind-doks' }}"
     timeout-minutes: 10
     strategy:
       fail-fast: true
@@ -276,7 +281,7 @@ jobs:
     name: Plugin validation
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: kontextmind-doks
+    runs-on: "${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'kontextmind-doks' }}"
     timeout-minutes: 15
     permissions:
       contents: read
@@ -311,7 +316,7 @@ jobs:
     name: required
     needs: [changes, docs, engine, unit, unit-windows, validate, python, plugin]
     if: ${{ always() }}
-    runs-on: kontextmind-doks
+    runs-on: "${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'kontextmind-doks' }}"
     timeout-minutes: 5
     steps:
       - name: Aggregate lane results
