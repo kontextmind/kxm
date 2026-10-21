@@ -121,6 +121,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 | [Decisions](contributing/decisions.md) | Agents, maintainers | Medium-or-higher decisions from automated work, with weights and evidence |
 | [Learnings](contributing/learnings.md) | Agents, maintainers | Durable lessons from running the writer, landing, and docs loops |
 | [Planner bake-off, October 2026](evals/planner-bakeoff-2026-10.md) | Maintainers | Scored plans from two planner models on six KXM tasks, with cost and time |
+| [October 2026 gap audit](audits/2026-10-gap-audit.md) | Maintainers | What the 2026-10-21 pass fixed, and the decisions still waiting on the operator |
 | [Artifact templates](templates/README.md) | Workflow authors | Document templates and where workflows use them |
 
 The templates: [feature](templates/feature.md) · [bug fix](templates/bug-fix.md) · [ADR](templates/adr.md) · [architecture](templates/architecture.md) · [research](templates/research.md) · [review](templates/review.md) · [test plan](templates/test-plan.md) · [test report](templates/test-report.md) · [runbook](templates/runbook.md) · [postmortem](templates/postmortem.md) · [handoff](templates/handoff.md).
