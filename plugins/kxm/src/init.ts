@@ -390,7 +390,7 @@ function initializeKxmProjectAtGitRoot(
   }
 
   if (plan.projectRoot !== gitRoot) {
-    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);
+    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run from the Git worktree root")]);
   }
   const projectId = generatedProjectId(options.projectId);
   const projectName = normalizedProjectName(gitRoot, options.projectName);
@@ -416,7 +416,7 @@ export function initializeKxmProject(start = process.cwd(), options: KxmInitOpti
   assertNoRegisteredGates(options);
   const gitRoot = discoverGitRoot(start);
   if (!gitRoot) {
-    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);
+    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run inside a Git worktree. Run git init in this directory, then run kxm init again.")]);
   }
   if (options.projectId !== undefined) generatedProjectId(options.projectId);
   if (options.projectName !== undefined) normalizedProjectName(gitRoot, options.projectName);

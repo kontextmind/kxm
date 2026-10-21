@@ -30893,7 +30893,7 @@ function initializeKxmProjectAtGitRoot(start, gitRoot, options, mutationLock) {
     };
   }
   if (plan.projectRoot !== gitRoot) {
-    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);
+    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run from the Git worktree root")]);
   }
   const projectId = generatedProjectId(options.projectId);
   const projectName = normalizedProjectName(gitRoot, options.projectName);
@@ -30918,7 +30918,7 @@ function initializeKxmProject(start = process.cwd(), options = {}) {
   assertNoRegisteredGates(options);
   const gitRoot = discoverGitRoot(start);
   if (!gitRoot) {
-    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run inside the authoritative Git worktree")]);
+    throw new KxmConfigError([initIssue("git_root_required", ".", "kxm init must run inside a Git worktree. Run git init in this directory, then run kxm init again.")]);
   }
   if (options.projectId !== void 0) generatedProjectId(options.projectId);
   if (options.projectName !== void 0) normalizedProjectName(gitRoot, options.projectName);
@@ -53997,6 +53997,8 @@ async function cmdStatus(runtime) {
   const notHub = !proxyKind && (health.kind === "not_hub" || ready.kind === "not_hub");
   const probeNote = proxyKind === "redirect" ? " \xB7 auth proxy or redirect" : proxyKind === "auth_proxy" ? " \xB7 auth proxy (HTML login page)" : notHub ? " \xB7 not a kxm hub" : "";
   const effectiveScope = connection.scope;
+  const hubDown = (health.kind === "unreachable" || health.kind === "timeout") && (ready.kind === "unreachable" || ready.kind === "timeout");
+  const hint = !hubDown ? void 0 : effectiveScope === "loopback" ? "Nothing is listening on this loopback URL. Start a local hub with kxm hub start." : "Nothing answered this hub URL. Check the address, the tunnel, and kxm hub bind.";
   const overridden = connection.urlSource === "env";
   const identity = {
     mode: connection.mode,
@@ -54013,13 +54015,15 @@ async function cmdStatus(runtime) {
     target: { url: runtime.serverUrl, scope: effectiveScope, ...overridden ? { source: "env" } : {} },
     identity,
     health: health.body,
-    ready: ready.body
+    ready: ready.body,
+    ...hint ? { hint } : {}
   };
   print(
     runtime.io,
     runtime.json,
     payload,
-    `hub health=${health.ok} ready=${ready.ok} \xB7 ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} \xB7 mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}${probeNote}`
+    `hub health=${health.ok} ready=${ready.ok} \xB7 ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} \xB7 mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}${probeNote}${hint ? `
+${hint}` : ""}`
   );
   return payload.ok ? 0 : 1;
 }

@@ -19,6 +19,7 @@ Work from the smallest boundary outward:
 | Symptom | Cause | Fix |
 |---|---|---|
 | `kxm: command not found` | Only the Pi package or the Claude Code plugin was installed; neither installs the CLI | `npm install --global --omit=peer @kontextmind/kxm`; see [Install KXM](../start/install.md) |
+| `git_root_required` from `kxm init` | The current directory is not inside a Git worktree | Run `git init` in that directory, then `kxm init` again. If Git is present, run `kxm init` from the worktree root |
 | `kxm` works in one shell but not in another | npm's global bin directory is not on that shell's `PATH` | Run `kxm completion install` (bash and zsh also get a `PATH` entry), then open a new shell |
 | Tab completion does nothing | Completion is not installed for this shell | `kxm completion install --shell bash`, `zsh` or `fish`; it is idempotent, and `--dry-run` previews it |
 | Plugin tools fail on start | Node.js is older than 22.19 on the 22.x line, or older than 24 | Install a supported Node.js on the `PATH` the harness uses |
@@ -41,6 +42,10 @@ npm installs Claude Code as `claude.cmd` and an extensionless shim, not `claude.
 If it still reports `not_detected`, confirm that `%AppData%\Roaming\npm` is on the `PATH` of the process that runs `kxm`, then check `claude --version` and `claude auth status`. Assignment dispatch (`just assign`) runs the inner `claude.exe`, and Pi's `node.exe` with `cli.js`, without a shell; it refuses unverified `.cmd` launchers. The same shim miss can affect `pi`.
 
 ## Hub and authentication
+
+### Nothing is listening
+
+`kxm hub view` prints `hub health=false ready=false` and, for a loopback URL, `Nothing is listening on this loopback URL. Start a local hub with kxm hub start.` A remote URL names `kxm hub bind` instead. An HTML login page or a redirect is a different failure: the status line says `auth proxy`, and the fix is the proxy or the hub URL, not `kxm hub start`.
 
 ### The hub refuses to start
 
