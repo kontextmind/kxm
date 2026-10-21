@@ -45,6 +45,14 @@ function captureRuntime(cwd: string, dryRun = false) {
   return { runtime, read: () => ({ stdout, stderr }) };
 }
 
+test("suggest matches whole words so a substring does not steal the workflow", () => {
+  assert.equal(suggestWorkflowAndRoles("guide the cleanup").workflowId, "refactoring");
+  assert.equal(suggestWorkflowAndRoles("author the handbook").workflowId, "feature-implementation");
+  assert.equal(suggestWorkflowAndRoles("change the layout").workflowId, "feature-implementation");
+  assert.equal(suggestWorkflowAndRoles("Fix flaky playwright gate timeout").workflowId, "bug-fix");
+  assert.equal(suggestWorkflowAndRoles("Harden idempotency with a circuit-breaker").workflowId, "reliability-hardening");
+});
+
 test("suggest uses the probed Claude route exclusively for supported read-only work", () => {
   const availableHarnesses = inventory().harnesses;
   for (const constraint of ["using Claude only", "using only Claude Code", "Claude-only", "exclusively with Claude"]) {

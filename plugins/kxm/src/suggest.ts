@@ -96,6 +96,17 @@ const WORKFLOW_PATTERNS: WorkflowPattern[] = [
 ];
 
 type TemplateStep = { id: string; kind: string; agent?: string; repositories?: Record<string, string> };
+
+/** Whole tokens only. A substring match made `ui` hit `build` and `guide`,
+ * `auth` hit `author`, and `hang` hit `change`, so those prompts took the
+ * wrong workflow. Hyphenated keywords stay one token (`circuit-breaker`). */
+function keywordHit(normalized: string, words: readonly string[], keyword: string): boolean {
+  if (words.includes(keyword)) return true;
+  if (!keyword.includes("-")) return false;
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(normalized);
+}
+
 type SuggestionHarness = Pick<HarnessStatus, "id" | "detected" | "authenticated" | "dispatch">;
 
 export function suggestWorkflowAndRoles(
@@ -110,7 +121,7 @@ export function suggestWorkflowAndRoles(
   const reasons: string[] = [];
 
   for (const pattern of WORKFLOW_PATTERNS) {
-    const matchedWords = pattern.keywords.filter((keyword) => words.includes(keyword) || normalized.includes(keyword));
+    const matchedWords = pattern.keywords.filter((keyword) => keywordHit(normalized, words, keyword));
     if (matchedWords.length > bestScore) {
       bestScore = matchedWords.length;
       bestPattern = pattern;
