@@ -2361,8 +2361,8 @@ and [Playwright via Obscura](../.kxm/knowledge/runbooks/playwright-obscura.md).
 - **Assignment runner maintainer guide:** [`docs/assignment-runner.md`](../docs/contributing/assignment-runner.md) documents the developer assignment runner lifecycle (`just assign`, `witness`, `accept`, `attribute`, `observe-cost`, `change-report`), roster lineup admission, dual-critic quorum, vendor independence invariants, failure codes, and task directory layout. Dispatch and accept load trusted roster policy from control Git; the witness verifies the bound candidate and does not itself call the policy loader today. Raw-disk and null-policy acceptance are refused. Linked in `docs/README.md`. **Unified YAML roster cutover landed (2026-09-16):** trusted developer roster policy moved `.kxm/roster.json` → `.kxm/roster.yaml` (schema `kxm.developer-roster.v1`, routes/lineup/origins content-identical); the loader parses YAML and **brakes fail-closed** on the retired `.kxm/roster.json` name; docs, skills, and policy-draft tests updated to the live format. Remaining role-configuration consolidation (role-hosts seat mapping, runner guide sweep) stays open under task_d3e634858295.
 - **Three-minute merge gate (2026-09-23):** CI `Validate` legs run the same bounded `validate:pr` gate for pull requests and pushes to main: build, typecheck, a compact contract/smoke set, version parity, and generated-dist currency. Each Node 22.19.0/24 leg has a hard three-minute started-job budget. The exhaustive core/simulation/package suite, 93/80/93 coverage floors, full docs check, generated rebuild, and package dry-run stay in `nightly.yml`; they no longer delay merging. Documentation-only changes run Classify and Docs lint while the required Validate and Plugin jobs preserve their pinned names with explicit no-op steps. Job names and the two-Node matrix remain unchanged for ruleset `22251971`. AGENTS.md and the CI contract test enforce the split.
 
-- **ARC scale-set CI selectors:** all `ci.yml` / `release.yml` / `smoke.yml`
-  `runs-on` values are the scalar scale-set name `kontextmind-doks`. The
+- **ARC scale-set CI selectors (2026-09-23):** `ci.yml`, `release.yml`, and
+  `smoke.yml` `runs-on` values were the scalar scale-set name `kontextmind-doks`. The
   previous `[self-hosted, Linux, X64, doks]` label tuple selected singleton
   `km-gh-rn01` and queued. Manual smoke is equality-gated on
   `KXM_SMOKE_RUNNER == 'kontextmind-doks'` and stays disabled until Pi
@@ -2378,6 +2378,14 @@ and [Playwright via Obscura](../.kxm/knowledge/runbooks/playwright-obscura.md).
   four; each runner requests three CPUs so the autoscaling node pool (two to
   three 8-vCPU nodes) adds capacity under load. Live workflow jobs were
   verified on `kontextmind-doks-*` ephemeral runners in that runner group.
+
+  **Pull-request runners (2026-10-21):** Eddie approved decision 1 in
+  `docs/audits/2026-10-gap-audit.md`. On a pull request, Classify changes,
+  Docs lint, the Linux unit lanes (`serial`, `light-1`, `light-2`), Plugin
+  validation, and `required` use GitHub-hosted `ubuntu-latest`. Engine shards,
+  Python MG1, and Linux Validate stay on `kontextmind-doks`. A push to `main`,
+  `workflow_dispatch`, release, nightly, and smoke keep the scale set.
+  `km-gh-rn01` stays unlabeled. Linux Validate keeps the three-minute timeout.
 
   The first live ARC run exposed a fixture that relied on ambient Git identity for a conflicting merge; the fixture now sets a per-command identity and asserts the unmerged index exists before testing the refusal.
 
