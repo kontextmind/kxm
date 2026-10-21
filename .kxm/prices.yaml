@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
-date: "2026-10-20"
-sha256: 01783976c6d56b936ef3f17bd621fcdf8bc8e646e0ba72c855bd999253a46491
+date: "2026-10-21"
+sha256: ff887a30029ee2d2ec6947f219c8bf8158d3952b72a3ae264859b08eb257c594
 currency: USD
 models:
   - id: anthropic/fable
@@ -106,16 +106,19 @@ models:
         outputPerMillion: 0.47
         cacheReadPerMillion: 0.016
         cacheWritePerMillion: null
-  # Verified 2026-10-20 on https://openrouter.ai/api/v1/models
-  # (z-ai/glm-5.3-flash: prompt 0.000000047076, completion 0.00000012,
-  # input_cache_read 0.000000006). Not anchored to the coding-plan row.
+  # Verified 2026-10-21 on https://openrouter.ai/api/v1/models
+  # (z-ai/glm-5.3-flash: prompt 0.00000015, completion 0.0000005,
+  # input_cache_read 0.00000003). This list price is volatile: it has
+  # flipped between $0.047076 / $0.12 (cache read $0.006) and $0.15 / $0.50
+  # (cache read $0.03) for several days. Trust the weekly refresh over this
+  # static row. Not anchored to the coding-plan row.
   - id: openrouter/z-ai/glm-5.3-flash
     provider: openrouter
     model: z-ai/glm-5.3-flash
     tiers:
-      - inputPerMillion: 0.047076
-        outputPerMillion: 0.12
-        cacheReadPerMillion: 0.006
+      - inputPerMillion: 0.15
+        outputPerMillion: 0.5
+        cacheReadPerMillion: 0.03
         cacheWritePerMillion: null
   # Output matches OpenRouter z-ai/glm-5.3 on 2026-10-20 ($1.40 per 1M).
   # Input $0.079 and cache read $0.078 already matched that response.
