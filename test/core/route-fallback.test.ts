@@ -70,6 +70,11 @@ test("classifies retryable provider failures and refuses cancellation, policy, a
   }
   assert.equal(classifyRouteFailure({ name: "AbortError", text: "The operation was aborted" }).class, "cancelled");
   assert.equal(classifyRouteFailure({ httpStatus: 401, text: "unauthorized" }).class, "auth");
+  assert.equal(classifyRouteFailure({ httpStatus: 429, text: "request aborted by the provider" }).class, "rate_limit");
+  assert.equal(classifyRouteFailure({ httpStatus: 429, text: "request aborted by the provider" }).walkable, true);
+  assert.equal(classifyRouteFailure({ name: "AbortError", httpStatus: 429, text: "aborted" }).class, "cancelled");
+  assert.equal(classifyRouteFailure({ text: "The operation was aborted" }).class, "cancelled");
+  assert.equal(classifyRouteFailure({ code: "tool_policy", text: "tool_policy denied" }).class, "tool_policy");
 });
 
 test("selects the next admitted selector and skips a critic vendor collision", () => {
