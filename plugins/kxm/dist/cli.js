@@ -28903,12 +28903,22 @@ function parseVisionVerdict(raw) {
   const match = /"verdict"\s*:\s*(true|false)/i.exec(raw);
   return match ? match[1] === "true" : null;
 }
-function defaultTransport(prompt, timeoutMs) {
-  return execFileSync(
-    "pi",
-    ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session", prompt],
-    { encoding: "utf8", timeout: timeoutMs, windowsHide: true }
-  );
+function visionPiArgs(route) {
+  if (route === VISION_GATE_DEFAULT_ROUTE) {
+    return { ok: true, args: ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session"] };
+  }
+  const validation = validateHarnessModelPair("pi", route);
+  if (!validation.valid) {
+    return { ok: false, divergence: validation.message ?? "route_not_pi" };
+  }
+  const trimmed = route.trim();
+  if (!trimmed.includes("/")) {
+    return { ok: false, divergence: `route_not_pi: ${trimmed} is not a provider-qualified Pi model id` };
+  }
+  return { ok: true, args: ["--model", trimmed, "-p", "--no-session"] };
+}
+function defaultTransport(args, timeoutMs) {
+  return execFileSync("pi", [...args], { encoding: "utf8", timeout: timeoutMs, windowsHide: true });
 }
 async function runVisionGate(options) {
   const projectRoot = options.projectRoot ?? process.cwd();
@@ -28922,12 +28932,17 @@ async function runVisionGate(options) {
     return { ...base, divergence: "image unreadable" };
   }
   if (!isRouteAdmitted(projectRoot, route)) {
-    return { ...base, divergence: "route_not_admitted" };
+    return {
+      ...base,
+      divergence: `route_not_admitted: ${route} is not admitted; run kxm routes admit --model ${route} or pass --route <admitted-id>`
+    };
   }
+  const piArgs = visionPiArgs(route);
+  if (!piArgs.ok) return { ...base, divergence: piArgs.divergence };
   const prompt = visionGatePrompt(options.question, options.imagePath);
   let raw;
   try {
-    raw = options.transport ? await options.transport(prompt) : defaultTransport(prompt, timeoutMs);
+    raw = options.transport ? await options.transport(prompt) : defaultTransport([...piArgs.args, prompt], timeoutMs);
   } catch (error) {
     return { ...base, divergence: `transport failed: ${String(error?.message ?? error).slice(0, 200)}` };
   }
@@ -28942,6 +28957,7 @@ var VISION_GATE_DEFAULT_ROUTE, QUESTION_MAX_CHARS, RAW_MAX_CHARS;
 var init_vision_gate = __esm({
   "plugins/kxm/src/vision-gate.ts"() {
     "use strict";
+    init_harness();
     init_routes();
     VISION_GATE_DEFAULT_ROUTE = "zai-coding-cn/glm-5.3-flash";
     QUESTION_MAX_CHARS = 500;

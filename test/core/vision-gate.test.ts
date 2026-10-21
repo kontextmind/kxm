@@ -8,6 +8,7 @@ import {
   parseVisionVerdict,
   runVisionGate,
   visionGatePrompt,
+  visionPiArgs,
   VISION_GATE_DEFAULT_ROUTE,
 } from "../../plugins/kxm/src/vision-gate.ts";
 
@@ -68,7 +69,8 @@ test("runVisionGate fails closed on unadmitted routes without calling transport"
     });
     assert.equal(called, false, "transport must not run for unadmitted routes");
     assert.equal(result.verdict, null);
-    assert.equal(result.divergence, "route_not_admitted");
+    assert.match(result.divergence ?? "", /route_not_admitted: zai-coding-cn\/glm-5\.3-flash/);
+    assert.match(result.divergence ?? "", /kxm routes admit --model zai-coding-cn\/glm-5\.3-flash/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -120,6 +122,39 @@ test("runVisionGate validates the timeout bound", async () => {
   }
 });
 
+
+test("vision Pi args keep the verified default and follow --route for other ids", () => {
+  assert.deepEqual(visionPiArgs(VISION_GATE_DEFAULT_ROUTE), {
+    ok: true,
+    args: ["--provider", "zai-coding-cn", "--model", "glm-5.3-flash", "-p", "--no-session"],
+  });
+  assert.deepEqual(visionPiArgs("openrouter/z-ai/glm-5.3-flash"), {
+    ok: true,
+    args: ["--model", "openrouter/z-ai/glm-5.3-flash", "-p", "--no-session"],
+  });
+  const blocked = visionPiArgs("xai/grok-4.7");
+  assert.equal(blocked.ok, false);
+  if (!blocked.ok) assert.match(blocked.divergence, /must not impersonate native provider xai/);
+});
+
+test("runVisionGate refuses a native-vendor route before transport, even when it is admitted", async () => {
+  const { root, image } = projectWithRoutes(["anthropic/fable"]);
+  try {
+    let called = false;
+    const result = await runVisionGate({
+      projectRoot: root,
+      imagePath: image,
+      question: "error banner?",
+      route: "anthropic/fable",
+      transport: async () => { called = true; return '{"verdict": true}'; },
+    });
+    assert.equal(called, false);
+    assert.equal(result.verdict, null);
+    assert.match(result.divergence ?? "", /must not impersonate native provider anthropic/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("vision assert CLI: fail-closed on unreadable images, validates --expect", async () => {
   const { root, image } = projectWithRoutes([VISION_GATE_DEFAULT_ROUTE]);

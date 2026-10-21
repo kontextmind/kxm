@@ -13,7 +13,7 @@ Output shown under examples was captured from a source checkout, inside a throwa
 - [Task to command](#task-to-command)
 - Setup: [`init`](#kxm-init), [`config`](#kxm-config), [`completion`](#kxm-completion), [`trust`](#kxm-trust)
 - Hub and sessions: [`hub`](#kxm-hub-view), [`session`](#kxm-session), [`dash`](#kxm-dash), [`studio`](#kxm-studio)
-- Harnesses, models, and roles: [`harness`](#kxm-harness), [`plugin`](#kxm-plugin), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`role`](#kxm-role)
+- Harnesses, models, and roles: [`harness`](#kxm-harness), [`plugin`](#kxm-plugin), [`auth`](#kxm-auth), [`update`](#kxm-update), [`models`](#kxm-models), [`routes`](#kxm-routes), [`vision`](#kxm-vision), [`role`](#kxm-role)
 - Running work: [`lane`](#kxm-lane), [`land`](#kxm-land), [`assign`](#kxm-assign), [`run`](#kxm-run), [`runs`](#kxm-runs), [`docs`](#kxm-docs), [`runtime`](#kxm-runtime), [`agent`](#kxm-agent), [`workflow`](#kxm-workflow), [`gate`](#kxm-gate), [`peer`](#kxm-peer), [`task`](#kxm-task), [`goal`](#kxm-goal), [`suggest`](#kxm-suggest), [`explain`](#kxm-explain)
 - Context and learning: [`context`](#kxm-context), [`memory`](#kxm-memory), [`skills`](#kxm-skills), [`improve`](#kxm-improve), [`routing`](#kxm-routing), [`prices`](#kxm-prices)
 - Operations: [`backup`](#kxm-backup), [`restore`](#kxm-restore), [`tenant`](#kxm-tenant), [`ssh`](#kxm-ssh), [`help`](#kxm-help)
@@ -103,7 +103,7 @@ kxm -V
 - Plan with `planned`: `backup`, `restore`, `config set`, `role add|remove|modify|resume`, `workflow add|remove|modify`, `goal create`, `task create|run|sync`, `memory note|sync`, `skills evaluate|promote|reject`, `context promote`, `context wiki-compile --out`, `auth token`, `session token`, `session brief`, and `ssh run|file|close`. Each prints its normal result plus `dryRun: true` and `planned`, a list of `{action, target}` entries whose `action` is `write`, `delete`, `move`, `request`, or `ssh`. Text mode prints `dry run: <summary>` and one indented `would <action> <target>` line per entry (`session brief` appends `dry run: would write <file>` lines to the brief instead).
 - Plan in their own shape (described in each section): `init`, `run`, `runs drive|cancel`, `docs build|serve`, `runtime start|stop|sync-retry`, `hub start|stop|bind|unbind`, `session start|stop`, `agent worker`, `dash`, `studio serve`, `models inventory-refresh`, `routes admit|disable`, `update`, `completion install`, `workflow start|signal|export|checkpoint|record|wait`, every `peer` subcommand, `gate degrade|signal`, `skills create`, `improve report`, and `config edit`. `config edit --dry-run` prints one plain frame and writes nothing. `gate github watch --dry-run` still polls GitHub but does not post the signal.
 - Read-only commands run as usual, without leaving a trace: a local SQLite store is opened without creating `-wal` or `-shm` files, and `runs status|list|receipt` only attach to a running Runtime supervisor. With no supervisor running they exit 2 with `dry_run_unsupported` instead of starting one. `context wiki-compile --dry-run` still asks the hub to compile, which is a read.
-- Refused: `kxm models` (the interactive screen) and `kxm prices acknowledge` exit 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
+- Refused: `kxm models` (the interactive screen), `kxm vision assert`, and `kxm prices acknowledge` exit 2 with `dry_run_unsupported`. The CLI keeps one list of the commands that answer `--dry-run` and refuses every other command the same way before it runs, so a command added without dry-run support fails closed.
 
 ```bash
 kxm config set user.theme light --dry-run
@@ -907,6 +907,38 @@ kxm studio serve --port 5000
 ```
 
 Not run: starts a long-lived server.
+
+## `kxm vision`
+
+Judge one captured screenshot through an admitted Pi route. The gate sends a bounded yes/no prompt and accepts only `{"verdict": true}` or `{"verdict": false}`. Any other answer fails closed. It does not replace a Playwright assertion.
+
+### `kxm vision assert`
+
+```text
+kxm vision assert --image <path> --question <text> [--route <id>] [--timeout-ms <n>] [--expect <true|false>]
+```
+
+| Option | Argument | Default | Description |
+|---|---|---|---|
+| `--image` | `<path>` | required | Screenshot file. A missing file fails closed with `image unreadable` |
+| `--question` | `<text>` | required | Yes/no assertion, trimmed to 500 characters inside the prompt |
+| `--route` | `<id>` | `zai-coding-cn/glm-5.3-flash` | Admitted route id. The default keeps the verified Pi command `--provider zai-coding-cn --model glm-5.3-flash`. Any other id is `pi --model <id>` after the native-vendor brake |
+| `--timeout-ms` | `<n>` | `90000` | Integer from 5000 through 300000 |
+| `--expect` | `true` or `false` | none | Exit 0 only when the verdict equals this value |
+
+- Global options apply, except `--dry-run`, which exits 2 with `dry_run_unsupported` because the command calls Pi.
+- The route must be listed under `admitted` in `.kxm/routes.yaml`. Otherwise the command exits 1 and the `divergence` names the id and `kxm routes admit --model <id>`.
+- This repository does not admit the default `zai-coding-cn/glm-5.3-flash` (`zai-coding-cn` is not an allowlisted harness). Pass `--route openrouter/z-ai/glm-5.3-flash`, which is admitted here, or admit the route you pass.
+- A native-vendor id such as `xai/grok-4.7` or `anthropic/fable` is refused before Pi starts, even when that id is admitted. The `divergence` is the Pi brake message.
+- Exit 0 when the verdict resolves and, if `--expect` is set, matches it. Exit 1 for a fail-closed divergence. Exit 2 when `--image` or `--question` is missing, `--expect` is not `true` or `false`, or `--timeout-ms` is not an integer.
+- JSON keys: `ok`, `command` (`vision assert`), `verdict` (`true`, `false`, or `null`), `route`, `raw`, `divergence` when the gate fails closed, and `expect` when `--expect` is set.
+- Text mode prints `verdict true` or `verdict false`, or `vision gate fail-closed: <divergence>`.
+
+Not run. The command calls Pi.
+
+```bash
+kxm vision assert --image .kxm/artifacts/browser/shot.png --question "Does the page show the error banner?" --route openrouter/z-ai/glm-5.3-flash --expect false
+```
 
 ## `kxm harness`
 
