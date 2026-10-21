@@ -225,6 +225,17 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **OpenRouter GLM 5.3 Flash is $0.15 / $0.50 again.**
+  Checked 2026-10-21 against `https://openrouter.ai/api/v1/models`
+  (`z-ai/glm-5.3-flash`: prompt `0.00000015`, completion `0.0000005`,
+  cache read `0.00000003`). `openrouter/z-ai/glm-5.3-flash` moves from
+  $0.047076 input and $0.12 output (cache read $0.006) to $0.15 input and
+  $0.50 output (cache read $0.03) per 1M tokens. The coding-plan row
+  `zai-coding-cn/glm-5.3-flash` keeps its own tier at $0.15 / $0.50 (cache
+  read $0.03). This list price is volatile
+  and has flipped between those two tiers for several days. Trust the weekly
+  OpenRouter refresh over the static row. The inventory `standard` rates for
+  `z-ai/glm-5.3-flash` match. `.kxm/prices.yaml` is dated 2026-10-21.
 - **`kxm vision assert` defaults to the admitted OpenRouter GLM route.**
   The built-in route is `openrouter/z-ai/glm-5.3-flash`, invoked as
   `pi --model openrouter/z-ai/glm-5.3-flash`. The old default
