@@ -7,7 +7,7 @@ project: "kxm"
 status: "approved"
 owner: "kxm"
 created: "2026-09-02"
-updated: "2026-10-17"
+updated: "2026-10-21"
 authority: "instruction"
 confidence: "verified"
 summary: "Sole active execution tracker for KXM phase gates, Tracking, and Still open work."
@@ -46,6 +46,8 @@ related:
   - plan-kxm-harness-first-run.md
   - plan-studio-cloud-host.md
   - kxm-roadmap/phases/11-still-open.md
+  - ../docs/evals/planner-bakeoff-2026-10.md
+  - ../docs/audits/2026-10-gap-audit.md
 depends_on: []
 blocked_by: []
 details:
