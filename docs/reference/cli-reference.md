@@ -511,7 +511,7 @@ Calls `GET /health` and `GET /ready` on the target hub and reports whether the U
 No command-specific options.
 
 - Needs a hub to succeed. Reads only.
-- JSON keys: `target` (`url`, `scope`, and `source: "env"` when `KXM_SERVER_URL` overrides a binding), `identity` (`mode`, `modeSource`, `url`, `urlSource`, `project`, `projectSource`, `keySource`), `health`, `ready`. An unreachable hub reports `{"error":"hub_unreachable"}` for both probes. An auth proxy or redirect reports `{"error":"auth_proxy"}`.
+- JSON keys: `target` (`url`, `scope`, and `source: "env"` when `KXM_SERVER_URL` overrides a binding), `identity` (`mode`, `modeSource`, `url`, `urlSource`, `project`, `projectSource`, `keySource`), `health`, `ready`, and `hint` when both probes are unreachable or time out. An unreachable hub reports `{"error":"hub_unreachable"}` for both probes. On a loopback URL the hint is `Nothing is listening on this loopback URL. Start a local hub with kxm hub start.` A remote URL names `kxm hub bind`. An auth proxy or redirect reports `{"error":"auth_proxy"}` and has no hint.
 - Exit 0 when both probes succeed, 1 otherwise. A cloud mode with no resolvable key exits 2 with `cloud_token_missing`.
 
 ```bash

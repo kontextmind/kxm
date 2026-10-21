@@ -202,6 +202,11 @@ export async function cmdStatus(runtime: Runtime): Promise<number> {
   // A cloud mode is remote when the contacted URL is that endpoint, including a
   // loopback SSH forward.
   const effectiveScope = connection.scope;
+  const hubDown = (health.kind === "unreachable" || health.kind === "timeout")
+    && (ready.kind === "unreachable" || ready.kind === "timeout");
+  const hint = !hubDown ? undefined : effectiveScope === "loopback"
+    ? "Nothing is listening on this loopback URL. Start a local hub with kxm hub start."
+    : "Nothing answered this hub URL. Check the address, the tunnel, and kxm hub bind.";
   const overridden = connection.urlSource === "env";
   const identity = {
     mode: connection.mode,
@@ -219,9 +224,10 @@ export async function cmdStatus(runtime: Runtime): Promise<number> {
     identity,
     health: health.body,
     ready: ready.body,
+    ...(hint ? { hint } : {}),
   };
   print(runtime.io, runtime.json, payload,
-    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} · mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}${probeNote}`);
+    `hub health=${health.ok} ready=${ready.ok} · ${effectiveScope} hub${overridden ? " (KXM_SERVER_URL)" : ""} · mode=${identity.mode} project=${identity.project} (${connection.sourceLabel}) key=${identity.keySource}${probeNote}${hint ? `\n${hint}` : ""}`);
   return payload.ok ? 0 : 1;
 }
 

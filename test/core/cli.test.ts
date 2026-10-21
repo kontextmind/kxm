@@ -553,6 +553,7 @@ test("KXM init creates and revalidates project configuration without legacy envi
     const noGitIo = capture();
     assert.equal(await runCli(["init", "--json", "--dry-run"], stateEnv, noGitIo, legacyCwd), 1);
     assert.match(noGitIo.read().stderr, /git_root_required/);
+    assert.match(noGitIo.read().stderr, /Run git init in this directory, then run kxm init again/);
 
     makeGitRoot(legacyCwd);
     mkdirSync(join(legacyCwd, ".kxm", "config"), { recursive: true });

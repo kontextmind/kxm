@@ -714,6 +714,13 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Fixed
 
+- **A first run says what to do next when Git or the hub is missing.**
+  `kxm init` outside a Git worktree still exits 1 with `git_root_required` and
+  now says to run `git init`, then `kxm init` again. `kxm hub view` adds
+  `hint` when both probes are unreachable or time out: on loopback, start a
+  hub with `kxm hub start`; on a remote URL, check the address and
+  `kxm hub bind`.
+
 - **`kxm vision assert --route` selects the Pi model, and an unadmitted route names the fix.**
   The flag used to change only the admission check. Pi still ran
   `zai-coding-cn/glm-5.3-flash`. Another admitted id is now `pi --model <id>`
@@ -721,7 +728,6 @@ All notable user-facing changes are documented here. The project follows [Semant
   `route_not_admitted` includes the route id and `kxm routes admit --model`.
   This checkout does not admit the default; pass
   `--route openrouter/z-ai/glm-5.3-flash`.
-
 - **The weekly model refresh opens its pull request with a GitHub App.**
   `.github/workflows/refresh-models.yml` uses `actions/create-github-app-token`
   with repository secrets `KXM_REFRESH_APP_ID` and

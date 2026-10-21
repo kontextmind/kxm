@@ -104,6 +104,29 @@ test("hub view and bind reject an HTML 200 login page and a 302", async () => {
   }
 });
 
+test("hub view names kxm hub start when nothing is listening on loopback", async () => {
+  const state = mkdtempSync(join(tmpdir(), "kxm-hub-down-state-"));
+  const project = mkdtempSync(join(tmpdir(), "kxm-hub-down-project-"));
+  const env: NodeJS.ProcessEnv = { KXM_STATE_HOME: state, PATH: process.env.PATH, HOME: process.env.HOME };
+  const url = "http://127.0.0.1:1";
+  try {
+    const json = capture();
+    assert.equal(await runCli(["hub", "--json", "view"], { ...env, KXM_SERVER_URL: url }, json, project), 1);
+    const viewed = JSON.parse(json.read().stderr) as { ok?: boolean; hint?: string; health?: { error?: string } };
+    assert.equal(viewed.ok, false);
+    assert.equal(viewed.health?.error, "hub_unreachable");
+    assert.match(viewed.hint ?? "", /Start a local hub with kxm hub start/);
+
+    const text = capture();
+    assert.equal(await runCli(["hub", "view"], { ...env, KXM_SERVER_URL: url }, text, project), 1);
+    assert.match(text.read().stderr, /hub health=false ready=false/);
+    assert.match(text.read().stderr, /Nothing is listening on this loopback URL/);
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
 test("a cloud bind stays readable by a 0.7.159 three-key reader and a newer schema falls back", () => {
   const root = mkdtempSync(join(tmpdir(), "kxm-hub-legacy-"));
   const env: NodeJS.ProcessEnv = { KXM_STATE_HOME: root };
