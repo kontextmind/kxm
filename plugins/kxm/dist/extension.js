@@ -40794,7 +40794,7 @@ function extractSegments(line, beforeEnd, afterStart, afterLen, strictAfter = fa
       pooledStyleTracker.process(ansi.code);
       if (currentCol < beforeEnd) {
         pendingAnsiBefore += ansi.code;
-      } else if (currentCol >= afterStart && currentCol < afterEnd && afterStarted) {
+      } else if (currentCol >= afterStart && currentCol < afterEnd && (afterStarted || ansi.code.startsWith("\x1B_"))) {
         after += ansi.code;
       }
       i += ansi.length;
@@ -40972,6 +40972,8 @@ var SYMBOL_KEYS = /* @__PURE__ */ new Set([
   ">",
   "?"
 ]);
+var SHIFTED_SYMBOL_KEYS = new Set("~!@#$%^&*()_+|{}:<>?");
+var MODIFIER_NAMES = ["shift", "alt", "ctrl", "super"];
 var MODIFIERS = {
   shift: 1,
   alt: 2,
@@ -41057,6 +41059,14 @@ function normalizeShiftedLetterIdentityCodepoint(codepoint, modifier) {
     return codepoint + 32;
   }
   return codepoint;
+}
+function getLogicalShiftedSymbolCandidate(codepoint, modifier, allowedSymbols) {
+  if (codepoint === void 0 || (modifier & MODIFIERS.shift) === 0)
+    return void 0;
+  const normalizedCodepoint = normalizeKittyFunctionalCodepoint(codepoint);
+  if (!allowedSymbols.has(String.fromCharCode(normalizedCodepoint)))
+    return void 0;
+  return { codepoint: normalizedCodepoint, modifier: modifier & ~MODIFIERS.shift };
 }
 var LEGACY_KEY_SEQUENCES = {
   up: ["\x1B[A", "\x1BOA"],
@@ -41253,12 +41263,16 @@ function matchesKittySequence(data, expectedCodepoint, expectedModifier) {
     return false;
   const actualMod = parsed.modifier & ~LOCK_MASK;
   const expectedMod = expectedModifier & ~LOCK_MASK;
-  if (actualMod !== expectedMod)
-    return false;
   const normalizedCodepoint = normalizeShiftedLetterIdentityCodepoint(normalizeKittyFunctionalCodepoint(parsed.codepoint), parsed.modifier);
   const normalizedExpectedCodepoint = normalizeShiftedLetterIdentityCodepoint(normalizeKittyFunctionalCodepoint(expectedCodepoint), expectedModifier);
-  if (normalizedCodepoint === normalizedExpectedCodepoint)
+  if (actualMod === expectedMod && normalizedCodepoint === normalizedExpectedCodepoint)
     return true;
+  const logicalShiftedSymbol = getLogicalShiftedSymbolCandidate(parsed.shiftedKey, actualMod, SYMBOL_KEYS);
+  if (logicalShiftedSymbol && (logicalShiftedSymbol.modifier & ~LOCK_MASK) === expectedMod && logicalShiftedSymbol.codepoint === normalizeKittyFunctionalCodepoint(expectedCodepoint)) {
+    return true;
+  }
+  if (actualMod !== expectedMod)
+    return false;
   if (parsed.baseLayoutKey !== void 0 && parsed.baseLayoutKey === expectedCodepoint) {
     const cp = normalizedCodepoint;
     const isLatinLetter = cp >= 97 && cp <= 122;
@@ -41307,12 +41321,14 @@ function isDigitKey(key) {
   return key >= "0" && key <= "9";
 }
 function matchesPrintableModifyOtherKeys(data, expectedKeycode, expectedModifier) {
-  if (expectedModifier === 0)
-    return false;
   const parsed = parseModifyOtherKeysSequence(data);
-  if (!parsed || parsed.modifier !== expectedModifier)
+  if (!parsed)
     return false;
-  return normalizeShiftedLetterIdentityCodepoint(parsed.codepoint, parsed.modifier) === normalizeShiftedLetterIdentityCodepoint(expectedKeycode, expectedModifier);
+  const physicalMatch = parsed.modifier === expectedModifier && normalizeShiftedLetterIdentityCodepoint(parsed.codepoint, parsed.modifier) === normalizeShiftedLetterIdentityCodepoint(expectedKeycode, expectedModifier);
+  if (physicalMatch)
+    return true;
+  const logicalShiftedSymbol = getLogicalShiftedSymbolCandidate(parsed.codepoint, parsed.modifier, SHIFTED_SYMBOL_KEYS);
+  return logicalShiftedSymbol?.modifier === expectedModifier && logicalShiftedSymbol.codepoint === expectedKeycode;
 }
 function formatKeyNameWithModifiers(keyName, modifier) {
   const mods = [];
@@ -41331,16 +41347,25 @@ function formatKeyNameWithModifiers(keyName, modifier) {
   return mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName;
 }
 function parseKeyId(keyId) {
-  const parts = keyId.toLowerCase().split("+");
-  const key = parts[parts.length - 1];
-  if (!key)
+  let key = keyId.toLowerCase();
+  const modifiers = /* @__PURE__ */ new Set();
+  while (true) {
+    const modifier = MODIFIER_NAMES.find((name) => key.startsWith(`${name}+`));
+    if (!modifier)
+      break;
+    if (modifiers.has(modifier))
+      return null;
+    modifiers.add(modifier);
+    key = key.slice(modifier.length + 1);
+  }
+  if (!key || key.includes("+") && key !== "+")
     return null;
   return {
     key,
-    ctrl: parts.includes("ctrl"),
-    shift: parts.includes("shift"),
-    alt: parts.includes("alt"),
-    super: parts.includes("super")
+    ctrl: modifiers.has("ctrl"),
+    shift: modifiers.has("shift"),
+    alt: modifiers.has("alt"),
+    super: modifiers.has("super")
   };
 }
 function matchesKey(data, keyId) {
@@ -41582,7 +41607,7 @@ function matchesKey(data, keyId) {
     if (modifier !== 0) {
       return matchesKittySequence(data, codepoint, modifier) || matchesPrintableModifyOtherKeys(data, codepoint, modifier);
     }
-    return data === key || matchesKittySequence(data, codepoint, 0);
+    return data === key || matchesKittySequence(data, codepoint, 0) || matchesPrintableModifyOtherKeys(data, codepoint, 0);
   }
   return false;
 }
@@ -41637,11 +41662,13 @@ function formatParsedKey(codepoint, modifier, baseLayoutKey) {
 function parseKey(data) {
   const kitty = parseKittySequence(data);
   if (kitty) {
-    return formatParsedKey(kitty.codepoint, kitty.modifier, kitty.baseLayoutKey);
+    const logicalShiftedSymbol = getLogicalShiftedSymbolCandidate(kitty.shiftedKey, kitty.modifier, SYMBOL_KEYS);
+    return formatParsedKey(logicalShiftedSymbol?.codepoint ?? kitty.codepoint, logicalShiftedSymbol?.modifier ?? kitty.modifier, kitty.baseLayoutKey);
   }
   const modifyOtherKeys = parseModifyOtherKeysSequence(data);
   if (modifyOtherKeys) {
-    return formatParsedKey(modifyOtherKeys.codepoint, modifyOtherKeys.modifier);
+    const logicalShiftedSymbol = getLogicalShiftedSymbolCandidate(modifyOtherKeys.codepoint, modifyOtherKeys.modifier, SHIFTED_SYMBOL_KEYS);
+    return formatParsedKey(logicalShiftedSymbol?.codepoint ?? modifyOtherKeys.codepoint, logicalShiftedSymbol?.modifier ?? modifyOtherKeys.modifier);
   }
   if (_kittyProtocolActive) {
     if (data === "\x1B\r" || data === "\n")
@@ -41854,7 +41881,7 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
     return { images: null, trueColor: hasTrueColorHint, hyperlinks: false };
   }
   if (termProgram === "herdr") {
-    return { images: null, trueColor: hasTrueColorHint, hyperlinks: true };
+    return { images: "kitty", trueColor: hasTrueColorHint, hyperlinks: true };
   }
   if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
     return { images: "kitty", trueColor: true, hyperlinks: true };
@@ -42084,6 +42111,12 @@ function isFocusable(component) {
   return component !== null && "focused" in component;
 }
 var CURSOR_MARKER = "\x1B_pi:c\x07";
+var FAKE_CURSOR_START = "\x1B_pi:fc\x07";
+var FAKE_CURSOR_END = "\x1B_pi:/fc\x07";
+var FOCUSED_FAKE_CURSOR = /(\x1b_pi:c\x07)\x1b_pi:fc\x07(.*?)(?:\x1b_pi:\/fc\x07|$)/s;
+function renderFakeCursor(text) {
+  return `${FAKE_CURSOR_START}${text}${FAKE_CURSOR_END}`;
+}
 function parseSizeValue(value, referenceSize) {
   if (value === void 0)
     return void 0;
@@ -42886,7 +42919,7 @@ var TuiBase = class _TuiBase extends Container {
     for (const entry of visibleEntries) {
       const { component, options } = entry;
       const { width, maxHeight } = this.resolveOverlayLayout(options, 0, termWidth, termHeight);
-      let overlayLines = component.render(width);
+      let overlayLines = this.resolveFakeCursors(component.render(width));
       if (maxHeight !== void 0 && overlayLines.length > maxHeight) {
         overlayLines = overlayLines.slice(0, maxHeight);
       }
@@ -42952,6 +42985,19 @@ var TuiBase = class _TuiBase extends Container {
       }
     }
     return null;
+  }
+  /**
+   * Resolve fake cursor markers to reverse video. When the hardware cursor is shown, a fake cursor
+   * directly after CURSOR_MARKER is dropped because the terminal cursor is drawn there. Fake cursors
+   * of components without focus have no CURSOR_MARKER and stay visible.
+   */
+  resolveFakeCursors(lines) {
+    return lines.map((line) => {
+      if (!line.includes(FAKE_CURSOR_START))
+        return line;
+      const resolved = this.showHardwareCursor ? line.replace(FOCUSED_FAKE_CURSOR, "$1$2") : line;
+      return resolved.replaceAll(FAKE_CURSOR_START, "\x1B[7m").replaceAll(FAKE_CURSOR_END, "\x1B[27m");
+    });
   }
   /**
    * Query the terminal's theme colors: the default foreground (OSC 10), the default background
@@ -44002,7 +44048,7 @@ var Input = class {
       const atCursor2 = graphemes2[0]?.segment ?? " ";
       const afterCursor2 = placeholder.slice(atCursor2.length);
       const marker2 = this.focused ? CURSOR_MARKER : "";
-      const cursorChar2 = `\x1B[7m${this.placeholderStyle(atCursor2)}\x1B[27m`;
+      const cursorChar2 = renderFakeCursor(this.placeholderStyle(atCursor2));
       const textWithCursor2 = marker2 + cursorChar2 + this.placeholderStyle(afterCursor2);
       const padding2 = " ".repeat(Math.max(0, availableWidth - visibleWidth(textWithCursor2)));
       return [this.prompt + textWithCursor2 + padding2];
@@ -44041,7 +44087,7 @@ var Input = class {
     const atCursor = cursorGrapheme?.segment ?? " ";
     const afterCursor = visibleText.slice(cursorDisplay + atCursor.length);
     const marker = this.focused ? CURSOR_MARKER : "";
-    const cursorChar = `\x1B[7m${atCursor}\x1B[27m`;
+    const cursorChar = renderFakeCursor(atCursor);
     const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
     const visualLength = visibleWidth(textWithCursor);
     const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
@@ -45306,7 +45352,7 @@ var TuiAltScreen = class extends TuiBase {
       this.terminal.write(`${BEGIN_SYNCHRONIZED_OUTPUT}${EXIT_ALT_SCREEN}\x1B[?25h${END_SYNCHRONIZED_OUTPUT}`);
     } else {
       const width = Math.max(1, this.terminal.columns);
-      const documentLines = this.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX2, ""));
+      const documentLines = this.resolveFakeCursors(this.render(width)).map((line) => line.replace(OSC133_ZONE_PREFIX2, ""));
       this.lastDocument = this.applyLineResets(documentLines.map((line) => line.replaceAll(CURSOR_MARKER, ""))).map((line) => isImageLine(line) || visibleWidth(line) <= width ? line : sliceByColumn(line, 0, width, true));
       let buffer = `${BEGIN_SYNCHRONIZED_OUTPUT}${EXIT_ALT_SCREEN}${DISABLE_AUTOWRAP}`;
       for (let row = 0; row < this.lastDocument.length; row++) {
@@ -45591,8 +45637,6 @@ var TuiAltScreen = class extends TuiBase {
           this.requestRender();
         return { consume: true };
       }
-      if (this.shouldDeferViewportInputToOverlay())
-        return void 0;
       this.routeWheel(wheelEvent, wheelDelta);
       return { consume: true };
     }
@@ -46463,7 +46507,7 @@ var TuiAltScreen = class extends TuiBase {
     if (this.refreshSearch(nextLayout)) {
       nextLayout = renderLayoutFrame(root, width, height, () => this.requestRender());
     }
-    let screen = nextLayout.lines.map((line) => line.replace(OSC133_ZONE_PREFIX2, ""));
+    let screen = this.resolveFakeCursors(nextLayout.lines.map((line) => line.replace(OSC133_ZONE_PREFIX2, "")));
     screen = this.applySearchHighlights(screen, nextLayout);
     screen = this.compositeScrollToEndIndicator(screen, nextLayout, width);
     screen = this.compositeOverlays(screen, width, height);
