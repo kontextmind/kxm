@@ -66,7 +66,7 @@ Observed on 2026-10-21, before the runner split:
 
 ### 2. The built-in vision route
 
-Approved 2026-10-21. `kxm vision assert` defaults to `openrouter/z-ai/glm-5.3-flash` and runs `pi --model <id>` for every route, including that default. `zai-coding-cn/glm-5.3-flash` no longer has a special argv. `kxm init` admits the vision selector and does not write a model file for it. The accuracy witness is `test/fixtures/vision/` and `test/core/vision-accuracy.test.ts`. That test calls Pi only when `OPENROUTER_API_KEY` is set.
+Approved 2026-10-21 in [pull request #419](https://github.com/kontextmind/kxm/pull/419). `kxm vision assert` defaults to `openrouter/z-ai/glm-5.3-flash` and runs `pi --model <id>` for every route, including that default. `zai-coding-cn/glm-5.3-flash` no longer has a special argv. `kxm init` admits the vision selector and does not write a model file for it. The accuracy witness is `test/fixtures/vision/` and `test/core/vision-accuracy.test.ts`. That test calls Pi only when `OPENROUTER_API_KEY` is set.
 
 ### 3. The starter writer model
 
