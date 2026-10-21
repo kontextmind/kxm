@@ -4,6 +4,14 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ## Unreleased
 
+### Fixed
+
+- **`kxm suggest` matches workflow keywords as whole words.**
+  A substring match sent "guide" and "build" to the feature workflow because
+  they contain `ui`, "author" to vulnerability remediation because it contains
+  `auth`, and "change" to bug-fix because it contains `hang`. Hyphenated
+  keywords such as `circuit-breaker` still match as one token.
+
 ### Added
 
 - **OpenRouter model prices and the inventory refresh weekly.**

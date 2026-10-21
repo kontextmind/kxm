@@ -38624,6 +38624,12 @@ var WORKFLOW_PATTERNS = [
     skills: ["kxm-session", "kxm-context-memory", "kxm-routing-improve"]
   }
 ];
+function keywordHit(normalized, words, keyword) {
+  if (words.includes(keyword)) return true;
+  if (!keyword.includes("-")) return false;
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(normalized);
+}
 function suggestWorkflowAndRoles(prompt, options = {}) {
   const normalized = prompt.toLowerCase();
   const words = normalized.split(/\W+/).filter(Boolean);
@@ -38632,7 +38638,7 @@ function suggestWorkflowAndRoles(prompt, options = {}) {
   let bestScore = 0;
   const reasons = [];
   for (const pattern of WORKFLOW_PATTERNS) {
-    const matchedWords = pattern.keywords.filter((keyword) => words.includes(keyword) || normalized.includes(keyword));
+    const matchedWords = pattern.keywords.filter((keyword) => keywordHit(normalized, words, keyword));
     if (matchedWords.length > bestScore) {
       bestScore = matchedWords.length;
       bestPattern = pattern;
