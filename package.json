@@ -103,7 +103,7 @@
     "commander": "15.0.0",
     "esbuild": "0.28.2",
     "markdownlint-cli2": "0.23.3",
-    "nx": "23.3.0",
+    "nx": "24.0.1",
     "tsx": "^4.23.13",
     "typebox": "1.4.2",
     "typescript": "7.0.2"
