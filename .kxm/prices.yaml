@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
-date: "2026-10-21"
-sha256: ff887a30029ee2d2ec6947f219c8bf8158d3952b72a3ae264859b08eb257c594
+date: "2026-10-29"
+sha256: 4897c2ae9296840021b58d52eca17b9d7d5b687681c89a79396bf419009944e7
 currency: USD
 models:
   - id: anthropic/fable
@@ -106,12 +106,12 @@ models:
         outputPerMillion: 0.47
         cacheReadPerMillion: 0.016
         cacheWritePerMillion: null
-  # Verified 2026-10-21 on https://openrouter.ai/api/v1/models
+  # Verified 2026-10-29 on https://openrouter.ai/api/v1/models
   # (z-ai/glm-5.3-flash: prompt 0.00000015, completion 0.0000005,
-  # input_cache_read 0.00000003). This list price is volatile: it has
-  # flipped between $0.047076 / $0.12 (cache read $0.006) and $0.15 / $0.50
-  # (cache read $0.03) for several days. Trust the weekly refresh over this
-  # static row. Not anchored to the coding-plan row.
+  # input_cache_read 0.00000003, context_length 1048576). This list price is
+  # volatile: it has flipped between $0.047076 / $0.12 (cache read $0.006)
+  # and $0.15 / $0.50 (cache read $0.03) for several days. Trust the weekly
+  # refresh over this static row. Not anchored to the coding-plan row.
   - id: openrouter/z-ai/glm-5.3-flash
     provider: openrouter
     model: z-ai/glm-5.3-flash
@@ -120,17 +120,20 @@ models:
         outputPerMillion: 0.5
         cacheReadPerMillion: 0.03
         cacheWritePerMillion: null
-  # Output matches OpenRouter z-ai/glm-5.3 on 2026-10-20 ($1.40 per 1M).
-  # Input $0.079 and cache read $0.078 already matched that response.
+  # Verified 2026-10-29 on https://openrouter.ai/api/v1/models
+  # (z-ai/glm-5.3: prompt 0.0000000699, completion 0.0000014,
+  # input_cache_read 0.0000000689, context_length 1048576). This coding-plan
+  # id is not an OpenRouter anchor, so the weekly refresh does not rewrite it.
+  # The rates below are that day's public list price.
   - id: zai-coding-cn/glm-5.3
     provider: zai-coding-cn
     model: glm-5.3
     aliases:
       - z-ai/glm-5.3
     tiers:
-      - inputPerMillion: 0.079
+      - inputPerMillion: 0.0699
         outputPerMillion: 1.4
-        cacheReadPerMillion: 0.078
+        cacheReadPerMillion: 0.0689
         cacheWritePerMillion: null
   # Coding-plan rate. Kept off the OpenRouter anchor so a catalog refresh
   # cannot move it when the OpenRouter list price changes.
@@ -199,13 +202,18 @@ models:
         outputPerMillion: 6
         cacheReadPerMillion: 0.25
         cacheWritePerMillion: null
+  # Verified 2026-10-29 on https://openrouter.ai/api/v1/models
+  # (deepseek/deepseek-v4.1-flash: prompt 0.000000045, completion 0.0000005,
+  # input_cache_read 0.000000006, context_length 1048576). qwen-token-plan is
+  # not an OpenRouter anchor, so the weekly refresh does not rewrite it. The
+  # rates below are that day's public list price for the alias.
   - id: qwen-token-plan/deepseek-v4.1-flash
     provider: qwen-token-plan
     model: deepseek-v4.1-flash
     aliases:
       - deepseek/deepseek-v4.1-flash
     tiers:
-      - inputPerMillion: 0.15
-        outputPerMillion: 0.6
-        cacheReadPerMillion: 0.003
+      - inputPerMillion: 0.045
+        outputPerMillion: 0.5
+        cacheReadPerMillion: 0.006
         cacheWritePerMillion: null

@@ -225,6 +225,26 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Workflow catalog prices were re-verified against OpenRouter on 2026-10-29.**
+  Candidate context windows and list prices in
+  [the workflow catalog](docs/reference/workflow-catalog.md) match
+  `https://openrouter.ai/api/v1/models` from that day. `openai/o3-mini-high`
+  and `kwaipilot/kat-coder-pro-v2.5` are gone. The semantic equivalence
+  verifier ranks `openai/gpt-6.1-sol` first, the CLI critic, then
+  `openai/gpt-5.6-sol`. The old Kat Coder slots name `qwen/qwen3-coder`.
+  Catalog roles that named `x-ai/grok-4.6` now name `x-ai/grok-4.7`. The
+  writer roster is unchanged. Guided setup follows the software-engineering
+  lists, so a signed-in `grok` harness is admitted as `xai/grok-4.7`, and
+  the equivalence verifier can select `gpt-6.1-sol`. `.kxm/prices.yaml` is
+  dated 2026-10-29. `z-ai/glm-5.3-flash` is still $0.15 input and $0.50
+  output per 1M tokens (cache read $0.03), context 1,048,576. That list
+  price is volatile. `zai-coding-cn/glm-5.3` follows the public list price,
+  $0.0699 input and $1.40 output (cache read $0.0689).
+  `qwen-token-plan/deepseek-v4.1-flash` follows the public list price for
+  its alias, $0.045 input and $0.50 output (cache read $0.006). The weekly
+  refresh still does not rewrite those two non-OpenRouter rows. Inventory
+  `standard` rates were refreshed the same day. GLM 4.6 remains $0.50 / $2.00
+  at 204,800 context.
 - **OpenRouter GLM 5.3 Flash is $0.15 / $0.50 again.**
   Checked 2026-10-21 against `https://openrouter.ai/api/v1/models`
   (`z-ai/glm-5.3-flash`: prompt `0.00000015`, completion `0.0000005`,
@@ -234,8 +254,8 @@ All notable user-facing changes are documented here. The project follows [Semant
   `zai-coding-cn/glm-5.3-flash` keeps its own tier at $0.15 / $0.50 (cache
   read $0.03). This list price is volatile
   and has flipped between those two tiers for several days. Trust the weekly
-  OpenRouter refresh over the static row. The inventory `standard` rates for
-  `z-ai/glm-5.3-flash` match. `.kxm/prices.yaml` is dated 2026-10-21.
+  OpenRouter   refresh over the static row. The inventory `standard` rates for
+  `z-ai/glm-5.3-flash` match. The 2026-10-21 catalog recorded that move.
 - **`kxm vision assert` defaults to the admitted OpenRouter GLM route.**
   The built-in route is `openrouter/z-ai/glm-5.3-flash`, invoked as
   `pi --model openrouter/z-ai/glm-5.3-flash`. The old default
@@ -250,8 +270,8 @@ All notable user-facing changes are documented here. The project follows [Semant
   `xai/grok-4.7`, alias `grok-default`). The writer roster, the built-in
   coder and browser modes, the general subagent default, the Pi producer
   default, and the `kxm routing benchmark` arm list use the same model.
-  Guide candidates and selector examples may still show `grok-4.6`.
-  `.kxm/prices.yaml` keeps both price rows.
+  Selector examples may still show `grok-4.6`. Guide candidates name
+  `grok-4.7`. `.kxm/prices.yaml` keeps both price rows.
 
 - **The planner fallback is Claude Sonnet 5.5.** `claude-fable` stays the
   planner primary. `claude-claude-sonnet-5-5` (`claude` / `claude-sonnet-5.5`,

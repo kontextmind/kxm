@@ -61,9 +61,10 @@ export interface GuideWorkflow {
 const ADMITTED_GUIDE_BINDINGS: Readonly<Record<string, AgentBinding>> = Object.freeze({
   "anthropic/claude-fable-5.1": { harness: "claude", provider: "anthropic", model: "fable" },
   "anthropic/fable": { harness: "claude", provider: "anthropic", model: "fable" },
+  "openai/gpt-6.1-sol": { harness: "codex", provider: "openai", model: "gpt-6.1-sol" },
   "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
-  "x-ai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
-  "xai/grok-4.6": { harness: "grok", provider: "xai", model: "grok-4.6" },
+  "x-ai/grok-4.7": { harness: "grok", provider: "xai", model: "grok-4.7" },
+  "xai/grok-4.7": { harness: "grok", provider: "xai", model: "grok-4.7" },
   "qwen/qwen3.7-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3.7-plus" },
 });
 
@@ -84,7 +85,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
           { vendor: "anthropic", model: "claude-fable-5.1" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "openai", model: "gpt-6-astra-pro" },
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.8-max-0902" },
         ],
       },
@@ -107,11 +108,11 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         role: "scaffold-build-specialist",
         domain: "Provisions monorepo workspace topologies, linters, Docker multi-stage builds, and CI pipelines.",
         candidates: [
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "mistralai", model: "devstral-2512" },
           { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
-          { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" },
+          { vendor: "qwen", model: "qwen3-coder" },
         ],
       },
       {
@@ -120,11 +121,11 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         role: "backend-data-implementer",
         domain: "Implements domain entities, SQL queries/migrations, ORM persistence, concurrency primitives, and transactional boundaries.",
         candidates: [
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "openai", model: "gpt-5.3-codex" },
-          { vendor: "kwaipilot", model: "kat-coder-pro-v2.5" },
+          { vendor: "qwen", model: "qwen3-coder" },
         ],
       },
       {
@@ -135,7 +136,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         candidates: [
           { vendor: "anthropic", model: "claude-sonnet-5" },
           { vendor: "google", model: "gemini-3.8-flash" },
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "bytedance-seed", model: "seed-2.0-code" },
           { vendor: "openai", model: "gpt-5.3-codex" },
         ],
@@ -147,7 +148,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         domain: "Wires external APIs, authentication flows (OAuth2/OIDC), webhook validation, cloud SDKs, and async worker queues.",
         candidates: [
           { vendor: "openai", model: "gpt-5.6-sol" },
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" },
@@ -180,7 +181,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         role: "code-transform-implementer",
         domain: "Executes surgical multi-file edits, applying design patterns while preserving comments and formatting.",
         candidates: [
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "relace", model: "relace-apply-3" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "morph", model: "morph-v3-large" },
@@ -193,8 +194,8 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         role: "semantic-equivalence-verifier",
         domain: "Critic-with-gate: reviews public contract compliance and behavioral equivalence; deterministic checks remain the fixed witness gate and are never delegated to an LLM.",
         candidates: [
+          { vendor: "openai", model: "gpt-6.1-sol" },
           { vendor: "openai", model: "gpt-5.6-sol" },
-          { vendor: "openai", model: "o3-mini-high" },
           { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "anthropic", model: "claude-opus-5" },
           { vendor: "mistralai", model: "devstral-2512" },
@@ -252,7 +253,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
           { vendor: "openai", model: "gpt-6-astra-pro" },
           { vendor: "anthropic", model: "claude-fable-5.1" },
           { vendor: "qwen", model: "qwen3.8-2.4t-a95b" },
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
         ],
       },
       {
@@ -274,7 +275,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         role: "iac-cloud-topology-engineer",
         domain: "Generates declarative Terraform/OpenTofu, Pulumi, Kubernetes CRDs, and VPC networking definitions.",
         candidates: [
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "google", model: "gemini-3.8-flash" },
@@ -334,7 +335,7 @@ export const GUIDE_WORKFLOWS: readonly GuideWorkflow[] = [
         role: "documentation-writer",
         domain: "Authors concise, accurate developer and operator documentation with clear terminology, correct command flags, and consistent formatting without marketing drift.",
         candidates: [
-          { vendor: "x-ai", model: "grok-4.6" },
+          { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-sonnet-5" },
           { vendor: "openai", model: "gpt-5.3-codex" },
