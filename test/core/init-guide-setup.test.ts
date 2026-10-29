@@ -52,10 +52,10 @@ test("parseGuideSelection accepts numbers, slugs, all, and none", () => {
 test("resolveCandidate prefers an admitted harness in guide order", () => {
   const eligible = new Set(["grok"]);
   const binding = resolveCandidate(
-    [{ vendor: "anthropic", model: "claude-fable-5.1" }, { vendor: "x-ai", model: "grok-4.6" }],
+    [{ vendor: "anthropic", model: "claude-fable-5.1" }, { vendor: "x-ai", model: "grok-4.7" }],
     eligible,
   );
-  assert.deepEqual(binding, { harness: "grok", provider: "xai", model: "grok-4.6" });
+  assert.deepEqual(binding, { harness: "grok", provider: "xai", model: "grok-4.7" });
 });
 
 test("resolveCandidate routes non-native vendors through pi/openrouter", () => {
@@ -65,7 +65,7 @@ test("resolveCandidate routes non-native vendors through pi/openrouter", () => {
 
 test("resolveCandidate fails closed for unadmitted ids", () => {
   assert.equal(resolveCandidate([{ vendor: "deepseek", model: "deepseek-v4-pro-0813" }], new Set(["pi"])), undefined);
-  assert.equal(resolveCandidate([{ vendor: "x-ai", model: "grok-4.6" }], new Set(["pi"])), undefined);
+  assert.equal(resolveCandidate([{ vendor: "x-ai", model: "grok-4.7" }], new Set(["pi"])), undefined);
   assert.equal(resolveCandidate([{ vendor: "qwen", model: "qwen3.7-plus" }], new Set()), undefined);
   assert.equal(resolveCandidate([{ vendor: "anthropic", model: "claude-opus-5" }], new Set(["claude"])), undefined);
 });
@@ -304,9 +304,9 @@ test("mergeGuideRouteAdmission appends admitted selectors without writing role f
     const writer = planGuideSetup({ inventory: inventory(["claude", "grok"]), selected: ["maintain-documentation"] });
     const added = mergeGuideRouteAdmission(root, writer);
     assert.ok(added.includes("anthropic/fable"));
-    assert.ok(added.includes("xai/grok-4.6"));
+    assert.ok(added.includes("xai/grok-4.7"));
     assert.equal(isRouteAdmitted(root, "anthropic/fable"), true);
-    assert.equal(isRouteAdmitted(root, "xai/grok-4.6"), true);
+    assert.equal(isRouteAdmitted(root, "xai/grok-4.7"), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
