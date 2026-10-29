@@ -45311,6 +45311,9 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   if (termProgram === "herdr") {
     return { images: "kitty", trueColor: hasTrueColorHint, hyperlinks: true };
   }
+  if (termProgram === "rex") {
+    return { images: "kitty", trueColor: true, hyperlinks: true };
+  }
   if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
     return { images: "kitty", trueColor: true, hyperlinks: true };
   }
@@ -45677,6 +45680,26 @@ var TuiBase = class _TuiBase extends Container {
   }
   afterTerminalStop(_options) {
   }
+  /** Mode resets written before the terminal's own resets when the process exits without stop(). */
+  getExitRestorePrefix() {
+    return `${this.terminalColorSchemeNotificationsEnabled ? "\x1B[?2031l" : ""}\x1B[?25h`;
+  }
+  /** Mode resets written after the terminal's own resets when the process exits without stop(). */
+  getExitRestoreSuffix() {
+    return "";
+  }
+  /**
+   * Last-resort restore for exit paths that skip stop(), e.g. a direct process.exit() (#11170).
+   * Hard kills and native aborts run no JavaScript and cannot be covered.
+   */
+  exitRestoreHandler = () => {
+    if (this.stopped)
+      return;
+    try {
+      this.terminal.restoreOnExit?.(this.getExitRestorePrefix(), this.getExitRestoreSuffix());
+    } catch {
+    }
+  };
   get fullRedraws() {
     return this.fullRedrawCount;
   }
@@ -45993,6 +46016,8 @@ var TuiBase = class _TuiBase extends Container {
   }
   start() {
     this.stopped = false;
+    process.off("exit", this.exitRestoreHandler);
+    process.on("exit", this.exitRestoreHandler);
     this.beforeTerminalStart();
     this.terminal.start((data) => this.handleTerminalInput(data), () => this.requestRender());
     this.afterTerminalStart();
@@ -46035,6 +46060,7 @@ var TuiBase = class _TuiBase extends Container {
   }
   stop(options = {}) {
     this.stopped = true;
+    process.off("exit", this.exitRestoreHandler);
     this.cancelRenderTimer();
     if (this.terminalColorSchemeNotificationsEnabled) {
       this.terminal.write("\x1B[?2031l");
@@ -47524,6 +47550,183 @@ var Input = class {
   }
 };
 
+// node_modules/marked-cjk-friendly/dist/index.js
+var CJK = "\\u1100-\\u11ff\\u20a9\\u2329-\\u232a\\u2630-\\u2637\\u268a-\\u268f\\u2e80-\\u2e99\\u2e9b-\\u2ef3\\u2f00-\\u2fd5\\u2ff0-\\u303e\\u3041-\\u3096\\u3099-\\u30ff\\u3105-\\u312f\\u3131-\\u318e\\u3190-\\u31e5\\u31ef-\\u321e\\u3220-\\u3247\\u3250-\\ua48c\\ua490-\\ua4c6\\ua960-\\ua97c\\uac00-\\ud7a3\\ud7b0-\\ud7c6\\ud7cb-\\ud7fb\\uf900-\\ufaff\\ufe10-\\ufe19\\ufe30-\\ufe52\\ufe54-\\ufe66\\ufe68-\\ufe6b\\uff01-\\uffbe\\uffc2-\\uffc7\\uffca-\\uffcf\\uffd2-\\uffd7\\uffda-\\uffdc\\uffe0-\\uffe6\\uffe8-\\uffee\\u{16fe0}-\\u{16fe4}\\u{16ff0}-\\u{16ff6}\\u{17000}-\\u{18cda}\\u{18cff}-\\u{18d20}\\u{18d80}-\\u{18df2}\\u{18e00}-\\u{19191}\\u{191a0}-\\u{191d2}\\u{1aff0}-\\u{1aff3}\\u{1aff5}-\\u{1affb}\\u{1affd}-\\u{1affe}\\u{1b000}-\\u{1b128}\\u{1b132}\\u{1b150}-\\u{1b152}\\u{1b155}\\u{1b164}-\\u{1b168}\\u{1b170}-\\u{1b2fb}\\u{1d300}-\\u{1d356}\\u{1d360}-\\u{1d376}\\u{1f1ae}\\u{1f200}\\u{1f202}\\u{1f210}-\\u{1f219}\\u{1f21b}-\\u{1f22e}\\u{1f230}-\\u{1f231}\\u{1f237}\\u{1f23b}\\u{1f240}-\\u{1f248}\\u{1f260}-\\u{1f265}\\u{1f7da}\\u{20000}-\\u{3fffd}";
+var cjkTest = new RegExp(`[${CJK}]`, "u");
+var punctuationCjk = new RegExp(`^((?![*_])[\\s\\p{P}\\p{S}${CJK}])`, "u");
+function buildRDelimAst(punct, punctSpace, notPunctSpace) {
+  return new RegExp(`^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)${punct}(\\*+)(?=[\\s]|$)|${notPunctSpace}(\\*+)(?!\\*)(?=${punctSpace}|$)|(?!\\*)${punctSpace}(\\*+)(?=${notPunctSpace})|[\\s](\\*+)(?!\\*)(?=${punct})|(?!\\*)${punct}(\\*+)(?!\\*)(?=${punct})|${notPunctSpace}(\\*+)(?=${notPunctSpace})`, "gu");
+}
+function buildRDelimUnd(punct, punctSpace, notPunctSpace) {
+  return new RegExp(`^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)${punct}(_+)(?=[\\s]|$)|${notPunctSpace}(_+)(?!_)(?=${punctSpace}|$)|(?!_)${punctSpace}(_+)(?=${notPunctSpace})|[\\s](_+)(?!_)(?=${punct})|(?!_)${punct}(_+)(?!_)(?=${punct})`, "gu");
+}
+function buildRDelimDel(punct, punctSpace, notPunctSpace) {
+  return new RegExp(`^[^~]+(?=[^~])|(?!~)${punct}(~~?)(?=[\\s]|$)|${notPunctSpace}(~~?)(?!~)(?=${punctSpace}|$)|(?!~)${punctSpace}(~~?)(?=${notPunctSpace})|[\\s](~~?)(?!~)(?=${punct})|(?!~)${punct}(~~?)(?!~)(?=${punct})|${notPunctSpace}(~~?)(?=${notPunctSpace})`, "gu");
+}
+var cjkPunct = `[\\p{P}\\p{S}${CJK}]`;
+var cjkPunctSpace = `[\\s\\p{P}\\p{S}${CJK}]`;
+var cjkNotPunctSpace = `[^\\s\\p{P}\\p{S}${CJK}]`;
+var cjkDelPunct = `(?![*_])[\\p{P}\\p{S}${CJK}]`;
+var cjkDelPunctSpace = `(?![*_])[\\s\\p{P}\\p{S}${CJK}]`;
+var cjkDelNotPunctSpace = `(?:[^\\s\\p{P}\\p{S}${CJK}]|[*_])`;
+var cjkPunctGfm = `(?!~)[\\p{P}\\p{S}${CJK}]`;
+var cjkPunctSpaceGfm = `(?!~)[\\s\\p{P}\\p{S}${CJK}]`;
+var cjkNotPunctSpaceGfm = `(?:[^\\s\\p{P}\\p{S}${CJK}]|~)`;
+var emStrongRDelimAstCjk = buildRDelimAst(cjkPunct, cjkPunctSpace, cjkNotPunctSpace);
+var emStrongRDelimAstCjkGfm = buildRDelimAst(cjkPunctGfm, cjkPunctSpaceGfm, cjkNotPunctSpaceGfm);
+var emStrongRDelimUndCjk = buildRDelimUnd(cjkPunct, cjkPunctSpace, cjkNotPunctSpace);
+var delRDelimCjk = buildRDelimDel(cjkDelPunct, cjkDelPunctSpace, cjkDelNotPunctSpace);
+function isPrevCharCjk(prevChar, maskedSrc, src) {
+  let prevIsCjk = punctuationCjk.test(prevChar);
+  if (!prevIsCjk && prevChar) {
+    const prevIdx = maskedSrc.length - src.length;
+    if (prevIdx >= 1) {
+      let idx = prevIdx - 1;
+      let code = maskedSrc.charCodeAt(idx);
+      if (code >= 65024 && code <= 65038 && idx >= 1) {
+        idx--;
+        code = maskedSrc.charCodeAt(idx);
+      }
+      if ((code & 64512) === 56320 && idx >= 1) {
+        const cp = maskedSrc.codePointAt(idx - 1);
+        if (cp !== void 0 && cp > 65535) {
+          if (cp >= 917760 && cp <= 917999) prevIsCjk = true;
+          else prevIsCjk = cjkTest.test(String.fromCodePoint(cp));
+        }
+      } else prevIsCjk = cjkTest.test(String.fromCharCode(code));
+    }
+  }
+  return prevIsCjk;
+}
+function isCjkAdjacentToDelimiter(rightMatch, clippedMaskedSrc) {
+  if (!(rightMatch[1] || rightMatch[2] || rightMatch[3] || rightMatch[4])) return false;
+  const charBefore = String.fromCodePoint(rightMatch[0].codePointAt(0));
+  const afterPos = rightMatch.index + rightMatch[0].length;
+  const charAfter = afterPos < clippedMaskedSrc.length ? String.fromCodePoint(clippedMaskedSrc.codePointAt(afterPos)) : "";
+  return cjkTest.test(charBefore) || cjkTest.test(charAfter);
+}
+function usesModernEmStrongLayout(match) {
+  return match.length >= 5;
+}
+function hasEmStrongLeadContent(match) {
+  return Boolean(match[1] || match[2] || match[3] || match[4]);
+}
+function isEmStrongUnderscoreWordChar(match) {
+  return usesModernEmStrongLayout(match) ? Boolean(match[4]) : Boolean(match[3]);
+}
+function getEmStrongOpeningPunctuation(match) {
+  if (usesModernEmStrongLayout(match)) return match[1] || match[3] || "";
+  return match[1] || match[2] || "";
+}
+function markedCjkFriendly() {
+  return { tokenizer: {
+    emStrong(src, maskedSrc, prevChar = "") {
+      const { rules } = this;
+      const match = rules.inline.emStrongLDelim.exec(src);
+      if (!match) return false;
+      const modernEmStrongLayout = usesModernEmStrongLayout(match);
+      if (modernEmStrongLayout && !hasEmStrongLeadContent(match)) return;
+      if (isEmStrongUnderscoreWordChar(match) && prevChar.match(rules.other.unicodeAlphaNumeric)) return false;
+      const nextChar = getEmStrongOpeningPunctuation(match);
+      const prevIsCjk = isPrevCharCjk(prevChar, maskedSrc, src);
+      if (!nextChar || !prevChar || rules.inline.punctuation.exec(prevChar) || prevIsCjk || cjkTest.test(nextChar)) {
+        const lLength = [...match[0]].length - 1;
+        let rDelim;
+        let rLength;
+        let delimTotal = lLength;
+        let midDelimTotal = 0;
+        const prevCharIsSameDelimiter = modernEmStrongLayout && prevChar === match[0][0];
+        const isGfm = rules.inline.emStrongRDelimAst.source.includes("(?!~)");
+        let endReg;
+        if (match[0][0] === "*") endReg = isGfm ? emStrongRDelimAstCjkGfm : emStrongRDelimAstCjk;
+        else endReg = emStrongRDelimUndCjk;
+        endReg.lastIndex = 0;
+        const clippedMaskedSrc = maskedSrc.slice(-1 * src.length + lLength);
+        let rMatch;
+        while ((rMatch = endReg.exec(clippedMaskedSrc)) != null) {
+          rDelim = rMatch[1] || rMatch[2] || rMatch[3] || rMatch[4] || rMatch[5] || rMatch[6];
+          if (!rDelim) continue;
+          rLength = [...rDelim].length;
+          const isCjkAdjacent = isCjkAdjacentToDelimiter(rMatch, clippedMaskedSrc);
+          const isLeftOnly = Boolean(rMatch[3] || rMatch[4]);
+          const isBoth = Boolean(rMatch[5] || rMatch[6]);
+          if (isLeftOnly && !isCjkAdjacent) {
+            delimTotal += rLength;
+            continue;
+          }
+          if (isBoth || isCjkAdjacent) {
+            if (lLength % 3 && !((lLength + rLength) % 3)) {
+              midDelimTotal += rLength;
+              continue;
+            }
+            if (prevCharIsSameDelimiter && isBoth) break;
+          }
+          delimTotal -= rLength;
+          if (delimTotal > 0) continue;
+          rLength = Math.min(rLength, rLength + delimTotal + midDelimTotal);
+          const lastCharLength = rMatch[0].codePointAt(0) > 65535 ? 2 : 1;
+          const raw = src.slice(0, lLength + rMatch.index + lastCharLength + rLength);
+          if (Math.min(lLength, rLength) % 2) {
+            const text2 = raw.slice(1, -1);
+            return {
+              type: "em",
+              raw,
+              text: text2,
+              tokens: this.lexer.inlineTokens(text2)
+            };
+          }
+          const text = raw.slice(2, -2);
+          return {
+            type: "strong",
+            raw,
+            text,
+            tokens: this.lexer.inlineTokens(text)
+          };
+        }
+      }
+    },
+    del(src, maskedSrc, prevChar = "") {
+      const { rules } = this;
+      const match = rules.inline.delLDelim.exec(src);
+      if (!match) return false;
+      const nextChar = match[1] || "";
+      const prevIsCjk = isPrevCharCjk(prevChar, maskedSrc, src);
+      if (!nextChar || !prevChar || rules.inline.punctuation.exec(prevChar) || prevIsCjk || cjkTest.test(nextChar)) {
+        const lLength = [...match[0]].length - 1;
+        let rDelim;
+        let rLength;
+        let delimTotal = lLength;
+        delRDelimCjk.lastIndex = 0;
+        const clippedMaskedSrc = maskedSrc.slice(-1 * src.length + lLength);
+        let rMatch;
+        while ((rMatch = delRDelimCjk.exec(clippedMaskedSrc)) != null) {
+          rDelim = rMatch[1] || rMatch[2] || rMatch[3] || rMatch[4] || rMatch[5] || rMatch[6];
+          if (!rDelim) continue;
+          rLength = [...rDelim].length;
+          if (rLength !== lLength) continue;
+          const isCjkAdjacent = isCjkAdjacentToDelimiter(rMatch, clippedMaskedSrc);
+          if ((rMatch[3] || rMatch[4]) && !isCjkAdjacent) {
+            delimTotal += rLength;
+            continue;
+          }
+          delimTotal -= rLength;
+          if (delimTotal > 0) continue;
+          rLength = Math.min(rLength, rLength + delimTotal);
+          const lastCharLength = rMatch[0].codePointAt(0) > 65535 ? 2 : 1;
+          const raw = src.slice(0, lLength + rMatch.index + lastCharLength + rLength);
+          const text = raw.slice(lLength, -lLength);
+          return {
+            type: "del",
+            raw,
+            text,
+            tokens: this.lexer.inlineTokens(text)
+          };
+        }
+      }
+    }
+  } };
+}
+
 // node_modules/@earendil-works/pi-tui/dist/components/markdown.js
 var STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 var StrictStrikethroughTokenizer = class extends y {
@@ -47594,21 +47797,32 @@ function tokenizeInlineLatex(source) {
   const raw = source.slice(0, closingIndex + closing.length);
   return { type: "latex", raw, text };
 }
+var TABLE_DELIMITER_ROW_REGEX = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+function containsTableStart(source) {
+  const lines = source.split("\n");
+  for (let index = 0; index < lines.length - 1; index++) {
+    const delimiterRow = lines[index + 1];
+    if ((delimiterRow.includes("|") || lines[index].includes("|")) && TABLE_DELIMITER_ROW_REGEX.test(delimiterRow)) {
+      return true;
+    }
+  }
+  return false;
+}
 function tokenizeBlockLatex(source) {
   const dollarMatch = /^ {0,3}\$\$[ \t]*(?:\n)?([\s\S]*?)\$\$[ \t]*(?:\n|$)/.exec(source);
-  if (dollarMatch?.[1]) {
+  if (dollarMatch?.[1] && !containsTableStart(dollarMatch[1])) {
     return { type: "latexBlock", raw: dollarMatch[0], text: dollarMatch[1].trim() };
   }
   const bracketMatch = /^ {0,3}\\\[[ \t]*(?:\n)?([\s\S]*?)\\\][ \t]*(?:\n|$)/.exec(source);
-  if (bracketMatch?.[1]) {
+  if (bracketMatch?.[1] && !containsTableStart(bracketMatch[1])) {
     return { type: "latexBlock", raw: bracketMatch[0], text: bracketMatch[1].trim() };
   }
   const pendingBracket = /^ {0,3}\\\[[ \t]*(?:\n)?([\s\S]*)$/.exec(source);
-  if (pendingBracket) {
+  if (pendingBracket?.[1] && !containsTableStart(pendingBracket[1])) {
     return { type: "latexBlock", raw: pendingBracket[0], text: pendingBracket[1], pending: true };
   }
   const pendingDollar = /^ {0,3}\$\$[ \t]*(?:\n)?([\s\S]*)$/.exec(source);
-  if (pendingDollar?.[1] && looksLikePendingDollarMath(pendingDollar[1])) {
+  if (pendingDollar?.[1] && looksLikePendingDollarMath(pendingDollar[1]) && !containsTableStart(pendingDollar[1])) {
     return { type: "latexBlock", raw: pendingDollar[0], text: pendingDollar[1], pending: true };
   }
   return void 0;
@@ -47637,7 +47851,10 @@ var markdownParser = new Z();
 markdownParser.setOptions({
   tokenizer: new StrictStrikethroughTokenizer()
 });
-markdownParser.use({ extensions: [...LATEX_MARKDOWN_EXTENSIONS] });
+markdownParser.use({
+  tokenizer: { emStrong: markedCjkFriendly().tokenizer?.emStrong },
+  extensions: [...LATEX_MARKDOWN_EXTENSIONS]
+});
 
 // node_modules/@earendil-works/pi-tui/dist/components/scroll-view.js
 var ScrollView = class extends Container {
@@ -48651,6 +48868,21 @@ var ProcessTerminal = class {
       process.stdin.setRawMode(this.wasRaw);
     }
   }
+  restoreOnExit(before, after) {
+    let sequence = before;
+    if (this.progressInterval)
+      sequence += TERMINAL_PROGRESS_CLEAR_SEQUENCE;
+    sequence += "\x1B[?2004l";
+    if (this.keyboardProtocolPushed || this._kittyProtocolActive)
+      sequence += "\x1B[<u";
+    if (this._modifyOtherKeysActive)
+      sequence += "\x1B[>4;0m";
+    sequence += after;
+    try {
+      fs2.writeSync(process.stdout.fd, sequence);
+    } catch {
+    }
+  }
   write(data) {
     process.stdout.write(data);
     if (this.writeLogPath) {
@@ -49610,6 +49842,15 @@ var TuiAltScreen = class extends TuiBase {
       setCapabilities(this.savedCapabilities);
       this.savedCapabilities = void 0;
     }
+  }
+  getExitRestorePrefix() {
+    const prefix = super.getExitRestorePrefix();
+    if (!this.altScreenActive)
+      return prefix;
+    return `${END_SYNCHRONIZED_OUTPUT}${this.mouseEnabled ? DISABLE_MOUSE : ""}${ENABLE_AUTOWRAP}${prefix}`;
+  }
+  getExitRestoreSuffix() {
+    return `${super.getExitRestoreSuffix()}${this.altScreenActive ? `${EXIT_ALT_SCREEN}\x1B[?25h` : ""}`;
   }
   deleteKittyImages() {
     return this.imageProtocol === "kitty" ? deleteAllKittyImages() : "";
