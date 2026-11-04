@@ -1,6 +1,6 @@
 schema: kxm.prices.v1
-date: "2026-10-29"
-sha256: 4897c2ae9296840021b58d52eca17b9d7d5b687681c89a79396bf419009944e7
+date: "2026-11-04"
+sha256: ce24dce53d4e26bfb0839b5d936f059097212bf7467128a0a772ce717dc3a0ff
 currency: USD
 models:
   - id: anthropic/fable
@@ -37,8 +37,8 @@ models:
   # GPT-6.1 Sol (released 2026-09-29). API id gpt-6.1-sol. Pro is the same
   # model with reasoning mode pro; OpenRouter lists that mode as
   # openai/gpt-6.1-sol-pro at the same per-token price. Above 272000 prompt
-  # tokens, input/output are $4 / $15. The published cache rates apply to
-  # both tiers.
+  # tokens, input/output are $4 / $15 and cache read/write are $0.20 / $5.
+  # Verified 2026-11-04 on https://openrouter.ai/api/v1/models.
   - id: openai/gpt-6.1-sol
     provider: openai
     model: gpt-6.1-sol
@@ -53,6 +53,28 @@ models:
         cacheWritePerMillion: 2.5
       - inputPerMillion: 4
         outputPerMillion: 15
+        cacheReadPerMillion: 0.2
+        cacheWritePerMillion: 5
+  # GPT-6.1 Terra. Verified 2026-11-04 on https://openrouter.ai/api/v1/models
+  # (openai/gpt-6.1-terra). Base tier is $1 / $5. Above 272000 prompt tokens,
+  # input/output are $2 / $7.50 and cache read/write are $0.10 / $2.50.
+  # Pro is the same model with reasoning mode pro (openai/gpt-6.1-terra-pro)
+  # at the same per-token price. Third reviewer-cli fallback. Primary stays
+  # gpt-6.1-sol and the backup stays gpt-5.6-sol.
+  - id: openai/gpt-6.1-terra
+    provider: openai
+    model: gpt-6.1-terra
+    aliases:
+      - gpt-6.1-terra-pro
+      - openai/gpt-6.1-terra-pro
+    tiers:
+      - upToContextTokens: 272000
+        inputPerMillion: 1
+        outputPerMillion: 5
+        cacheReadPerMillion: 0.05
+        cacheWritePerMillion: 1.25
+      - inputPerMillion: 2
+        outputPerMillion: 7.5
         cacheReadPerMillion: 0.1
         cacheWritePerMillion: 2.5
   - id: xai/grok-4.6
@@ -75,8 +97,10 @@ models:
         outputPerMillion: 6
         cacheReadPerMillion: 0.5
         cacheWritePerMillion: null
-  # Last OpenRouter list price. qwen/qwen3-coder-plus left the catalog (404).
-  # Route pi-qwen3-coder-plus-openrouter is retired and is not writer #2.
+  # Historical/retired. Last OpenRouter list price before qwen/qwen3-coder-plus
+  # left the catalog (404, re-checked 2026-11-04). Route
+  # pi-qwen3-coder-plus-openrouter is status retired and is not writer #2.
+  # This row is not a live quote.
   - id: openrouter/qwen/qwen3-coder-plus
     provider: openrouter
     model: qwen/qwen3-coder-plus
@@ -106,34 +130,35 @@ models:
         outputPerMillion: 0.47
         cacheReadPerMillion: 0.016
         cacheWritePerMillion: null
-  # Verified 2026-10-29 on https://openrouter.ai/api/v1/models
-  # (z-ai/glm-5.3-flash: prompt 0.00000015, completion 0.0000005,
-  # input_cache_read 0.00000003, context_length 1048576). This list price is
-  # volatile: it has flipped between $0.047076 / $0.12 (cache read $0.006)
-  # and $0.15 / $0.50 (cache read $0.03) for several days. Trust the weekly
-  # refresh over this static row. Not anchored to the coding-plan row.
+  # Verified 2026-11-04 on https://openrouter.ai/api/v1/models
+  # (z-ai/glm-5.3-flash: prompt 0.0000000269, completion 0.0000000996,
+  # input_cache_read 0.0000000269, context_length 1048576). This list price is
+  # volatile: it has flipped among $0.0269 / $0.0996 (cache read $0.0269),
+  # $0.047076 / $0.12 (cache read $0.006), and $0.15 / $0.50 (cache read $0.03).
+  # Trust the weekly refresh over this static row. Not anchored to the
+  # coding-plan row.
   - id: openrouter/z-ai/glm-5.3-flash
     provider: openrouter
     model: z-ai/glm-5.3-flash
     tiers:
-      - inputPerMillion: 0.15
-        outputPerMillion: 0.5
-        cacheReadPerMillion: 0.03
+      - inputPerMillion: 0.0269
+        outputPerMillion: 0.0996
+        cacheReadPerMillion: 0.0269
         cacheWritePerMillion: null
-  # Verified 2026-10-29 on https://openrouter.ai/api/v1/models
-  # (z-ai/glm-5.3: prompt 0.0000000699, completion 0.0000014,
-  # input_cache_read 0.0000000689, context_length 1048576). This coding-plan
+  # Verified 2026-11-04 on https://openrouter.ai/api/v1/models
+  # (z-ai/glm-5.3: prompt 0.00000008, completion 0.0000036,
+  # input_cache_read 0.000000076, context_length 1048576). This coding-plan
   # id is not an OpenRouter anchor, so the weekly refresh does not rewrite it.
-  # The rates below are that day's public list price.
+  # The rates below are that day's public list price for the alias.
   - id: zai-coding-cn/glm-5.3
     provider: zai-coding-cn
     model: glm-5.3
     aliases:
       - z-ai/glm-5.3
     tiers:
-      - inputPerMillion: 0.0699
-        outputPerMillion: 1.4
-        cacheReadPerMillion: 0.0689
+      - inputPerMillion: 0.08
+        outputPerMillion: 3.6
+        cacheReadPerMillion: 0.076
         cacheWritePerMillion: null
   # Coding-plan rate. Kept off the OpenRouter anchor so a catalog refresh
   # cannot move it when the OpenRouter list price changes.

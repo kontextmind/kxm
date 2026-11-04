@@ -57070,6 +57070,7 @@ var ADMITTED_GUIDE_BINDINGS = Object.freeze({
   "anthropic/fable": { harness: "claude", provider: "anthropic", model: "fable" },
   "openai/gpt-6.1-sol": { harness: "codex", provider: "openai", model: "gpt-6.1-sol" },
   "openai/gpt-5.6-sol": { harness: "codex", provider: "openai", model: "gpt-5.6-sol" },
+  "openai/gpt-6.1-terra": { harness: "codex", provider: "openai", model: "gpt-6.1-terra" },
   "x-ai/grok-4.7": { harness: "grok", provider: "xai", model: "grok-4.7" },
   "xai/grok-4.7": { harness: "grok", provider: "xai", model: "grok-4.7" },
   "qwen/qwen3.7-plus": { harness: "pi", provider: "openrouter", model: "qwen/qwen3.7-plus" }
@@ -57088,7 +57089,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Decomposes requirements into an executable, dependency-ordered DAG of modules, tasks, and verification gates.",
         candidates: [
           { vendor: "anthropic", model: "claude-fable-5.1" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-6-astra-pro" },
           { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.8-max-0902" }
@@ -57100,8 +57101,7 @@ var GUIDE_WORKFLOWS = [
         role: "spec-contract-generator",
         domain: "Authors zero-ambiguity API contracts, type definitions, and schema validation rules before implementation begins.",
         candidates: [
-          { vendor: "openai", model: "gpt-5.6-sol" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "openai", model: "gpt-6.1-terra" },
           { vendor: "google", model: "gemini-3.8-flash" },
           { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-fable-5.1" }
@@ -57128,7 +57128,7 @@ var GUIDE_WORKFLOWS = [
         candidates: [
           { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.7-plus" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "google", model: "gemini-3.8-flash" },
           { vendor: "openai", model: "gpt-5.3-codex" },
           { vendor: "qwen", model: "qwen3-coder" }
         ]
@@ -57152,10 +57152,9 @@ var GUIDE_WORKFLOWS = [
         role: "sdk-integration-specialist",
         domain: "Wires external APIs, authentication flows (OAuth2/OIDC), webhook validation, cloud SDKs, and async worker queues.",
         candidates: [
-          { vendor: "openai", model: "gpt-5.6-sol" },
+          { vendor: "openai", model: "gpt-6.1-terra" },
           { vendor: "x-ai", model: "grok-4.7" },
           { vendor: "qwen", model: "qwen3.7-plus" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
           { vendor: "google", model: "gemini-3.8-flash" }
         ]
       }
@@ -57176,8 +57175,8 @@ var GUIDE_WORKFLOWS = [
           { vendor: "anthropic", model: "claude-fable-5.1" },
           { vendor: "z-ai", model: "glm-5.3" },
           { vendor: "anthropic", model: "claude-opus-5" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
-          { vendor: "moonshotai", model: "kimi-k3" }
+          { vendor: "qwen", model: "qwen3.7-plus" },
+          { vendor: "moonshotai", model: "kimi-k3.1-pro" }
         ]
       },
       {
@@ -57201,7 +57200,7 @@ var GUIDE_WORKFLOWS = [
         candidates: [
           { vendor: "openai", model: "gpt-6.1-sol" },
           { vendor: "openai", model: "gpt-5.6-sol" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "openai", model: "gpt-6.1-terra" },
           { vendor: "anthropic", model: "claude-opus-5" },
           { vendor: "mistralai", model: "devstral-2512" }
         ]
@@ -57245,7 +57244,7 @@ var GUIDE_WORKFLOWS = [
           { vendor: "openai", model: "o3" },
           { vendor: "openai", model: "gpt-6-astra-pro" },
           { vendor: "anthropic", model: "claude-opus-5" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" }
+          { vendor: "qwen", model: "qwen3.7-plus" }
         ]
       },
       {
@@ -57254,7 +57253,7 @@ var GUIDE_WORKFLOWS = [
         role: "scalability-database-topologist",
         domain: "Designs relational/NoSQL schemas, horizontal sharding keys, caching topologies, and zero-downtime migration plans.",
         candidates: [
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-6-astra-pro" },
           { vendor: "anthropic", model: "claude-fable-5.1" },
           { vendor: "qwen", model: "qwen3.8-2.4t-a95b" },
@@ -57271,7 +57270,7 @@ var GUIDE_WORKFLOWS = [
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "openai", model: "gpt-6-astra-pro" },
           { vendor: "anthropic", model: "claude-opus-5" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" }
+          { vendor: "qwen", model: "qwen3.7-plus" }
         ]
       },
       {
@@ -57295,9 +57294,9 @@ var GUIDE_WORKFLOWS = [
         candidates: [
           { vendor: "anthropic", model: "claude-fable-5.1" },
           { vendor: "openai", model: "o3" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-6-astra-pro" },
-          { vendor: "moonshotai", model: "kimi-k3" }
+          { vendor: "moonshotai", model: "kimi-k3.1-pro" }
         ]
       },
       {
@@ -57328,7 +57327,7 @@ var GUIDE_WORKFLOWS = [
         domain: "Read-only audit of developer and operator documentation against CLI --help outputs, source environment variables, tool schemas, and repository configuration.",
         candidates: [
           { vendor: "anthropic", model: "claude-fable-5.1" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "qwen", model: "qwen3.8-max-0902" },
           { vendor: "z-ai", model: "glm-5.3" }
@@ -57344,7 +57343,7 @@ var GUIDE_WORKFLOWS = [
           { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "anthropic", model: "claude-sonnet-5" },
           { vendor: "openai", model: "gpt-5.3-codex" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" }
+          { vendor: "google", model: "gemini-3.8-flash" }
         ]
       },
       {
@@ -57356,7 +57355,7 @@ var GUIDE_WORKFLOWS = [
           { vendor: "anthropic", model: "claude-fable-5.1" },
           { vendor: "openai", model: "gpt-5.6-sol" },
           { vendor: "anthropic", model: "claude-opus-5" },
-          { vendor: "deepseek", model: "deepseek-v4-pro-0813" },
+          { vendor: "qwen", model: "qwen3.7-plus" },
           { vendor: "mistralai", model: "devstral-2512" }
         ]
       }

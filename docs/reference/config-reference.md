@@ -1105,11 +1105,18 @@ routes:
     roles: [reviewer-cli]
     permissions: [read-only]
     status: admitted
+  codex-gpt-6-1-terra:
+    harness: codex
+    model: gpt-6.1-terra
+    vendor: openai
+    roles: [reviewer-cli]
+    permissions: [read-only]
+    status: admitted
 lineup:                         # routes admitted for each role, preference order
   writer: [grok-grok-4-7, pi-qwen3-7-plus-openrouter, agy-gemini-4-argon-high, agy-gemini-4-argon-medium, agy-gemini-3-8-flash-medium, agy-gemini-3-8-flash-high]
   planner: [claude-fable, claude-claude-sonnet-5-5, pi-qwen3-8-flash-openrouter]
   reviewer-arch: [claude-fable, pi-glm-5-3-flash-openrouter]
-  reviewer-cli: [codex-gpt-6-1-sol, pi-qwen3-8-flash-openrouter, codex-gpt-5-6-sol]
+  reviewer-cli: [codex-gpt-6-1-sol, pi-qwen3-8-flash-openrouter, codex-gpt-5-6-sol, codex-gpt-6-1-terra]
 required_critics:
   review-arch: claude-fable
   review-cli: codex-gpt-6-1-sol

@@ -225,6 +225,26 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Workflow catalog prices were re-verified against OpenRouter on 2026-11-04.**
+  Candidate prices in [the workflow catalog](docs/reference/workflow-catalog.md)
+  match `https://openrouter.ai/api/v1/models` from that day.
+  `deepseek/deepseek-v4-pro-0813` is $0.115 input and $4.60 output per 1M
+  tokens, so it leaves the Tier 1 workhorse picks for `qwen/qwen3.7-plus` or
+  `google/gemini-3.8-flash`. The adversarial security slot names
+  `moonshotai/kimi-k3.1-pro` ($2 / $10), which also replaces `kimi-k3` on long
+  agentic work. It is slow and not interactive. `openai/gpt-6.1-terra`
+  ($1 / $5, then $2 / $7.50 above 272,000 prompt tokens) is the cost-sensitive
+  Tier 1/2 workhorse and the third `reviewer-cli` fallback. Primary stays
+  GPT-6.1 Sol and the backup stays GPT-5.6 Sol. The planner stays Fable, then
+  Sonnet 5.5. The writer roster is unchanged. `openai/gpt-6-luna` ($0.10 / $0.50)
+  replaces GPT-5.6 Luna in Tier 0. `anthropic/claude-haiku-5.5` ($0.10 / $0.50,
+  1M context) replaces Haiku 4.5. `poolside/laguna-s-2.1` is gone; that slot
+  names `qwen/qwen3.8-flash`. `z-ai/glm-5.3-flash` is $0.0269 / $0.0996 and
+  the list price is volatile. `z-ai/glm-5.3` is $0.08 / $3.60.
+  `.kxm/prices.yaml` is dated 2026-11-04. The retired
+  `qwen/qwen3-coder-plus` row stays marked historical. The weekly refresh
+  still does not rewrite `zai-coding-cn/glm-5.3` or the flash coding-plan row.
+
 - **Workflow catalog prices were re-verified against OpenRouter on 2026-10-29.**
   Candidate context windows and list prices in
   [the workflow catalog](docs/reference/workflow-catalog.md) match

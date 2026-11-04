@@ -2,7 +2,7 @@
 title: Harness routing and rosters
 summary: Writer, planner, CLI-reviewer, and architecture-reviewer rosters as of the 2026-10-20 planner fallback.
 tags: [routing, roster, writer, reviewer, planner]
-updated: "2026-10-20"
+updated: "2026-11-04"
 sources:
   - .kxm/roles/writer.yaml
   - .kxm/roles/reviewer-cli.yaml
@@ -18,6 +18,7 @@ sources:
   - .kxm/models/agy-gemini-3-8-flash-high.yaml
   - .kxm/models/codex-gpt-6-1-sol.yaml
   - .kxm/models/codex-gpt-5-6-sol.yaml
+  - .kxm/models/codex-gpt-6-1-terra.yaml
   - .kxm/models/pi-qwen3-8-flash-openrouter.yaml
   - .kxm/models/claude-fable.yaml
   - .kxm/models/claude-claude-sonnet-5-5.yaml
@@ -70,8 +71,9 @@ From `.kxm/roles/reviewer-cli.yaml`. Permission is `read-only`. Effort on every 
 | 1 | `codex-gpt-6-1-sol` | `.kxm/models/codex-gpt-6-1-sol.yaml` |
 | 2 | `pi-qwen3-8-flash-openrouter` | `.kxm/models/pi-qwen3-8-flash-openrouter.yaml` |
 | 3 | `codex-gpt-5-6-sol` | `.kxm/models/codex-gpt-5-6-sol.yaml` |
+| 4 | `codex-gpt-6-1-terra` | `.kxm/models/codex-gpt-6-1-terra.yaml` |
 
-[PR #402](https://github.com/kontextmind/kxm/pull/402) switched the primary from Codex GPT-5.6 Sol to GPT-6.1 Sol. `codex-gpt-6-1-sol` is harness `codex`, model `gpt-6.1-sol`, vendor `openai`. The Pi fallback is a different vendor: `openrouter/qwen/qwen3.8-flash`. `codex-gpt-5-6-sol` stays admitted as the last fallback (alias `sol-codex`).
+[PR #402](https://github.com/kontextmind/kxm/pull/402) switched the primary from Codex GPT-5.6 Sol to GPT-6.1 Sol. `codex-gpt-6-1-sol` is harness `codex`, model `gpt-6.1-sol`, vendor `openai`. The Pi fallback is a different vendor: `openrouter/qwen/qwen3.8-flash`. `codex-gpt-5-6-sol` stays admitted as the backup (alias `sol-codex`). `codex-gpt-6-1-terra` is the third fallback. OpenRouter listed it on 2026-11-04 at $1 / $5 per 1M tokens through 272,000 prompt tokens.
 
 Pro is not a separate route. It is `gpt-6.1-sol` with reasoning mode `pro`. OpenRouter lists that mode as `openai/gpt-6.1-sol-pro` at the same per-token price. Role `effort` has no `pro` value, and the codex harness ceiling is `reviewer-cli` only (`docs/reference/harness-routing.md`).
 
