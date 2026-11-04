@@ -227,7 +227,7 @@ test("the checkout role and model files assemble a policy that validates", () =>
   assert.deepEqual(validated.routes["claude-claude-sonnet-5-5"]?.roles, ["planner"]);
   assert.equal(validated.required_critics["review-arch"], "claude-fable");
   assert.deepEqual(validated.lineup["reviewer-arch"], ["claude-fable", "pi-glm-5-3-flash-openrouter"]);
-  assert.deepEqual(validated.lineup["reviewer-cli"], ["codex-gpt-6-1-sol", "pi-qwen3-8-flash-openrouter", "codex-gpt-5-6-sol"]);
+  assert.deepEqual(validated.lineup["reviewer-cli"], ["codex-gpt-6-1-sol", "pi-qwen3-8-flash-openrouter", "codex-gpt-5-6-sol", "codex-gpt-6-1-terra"]);
   assert.equal(validated.required_critics["review-cli"], "codex-gpt-6-1-sol");
   assert.equal(validated.routes["codex-gpt-6-1-sol"]?.model, "gpt-6.1-sol");
   assert.equal(validated.routes["codex-gpt-5-6-sol"]?.status, "admitted");

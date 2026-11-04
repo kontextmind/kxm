@@ -473,7 +473,7 @@ test("grok and codex argv match verified A4 flags", () => {
 
 test("codex helper admits GPT-6.1 Sol and keeps GPT-5.6 Sol on reviewer-cli only", () => {
   const prompt = "/tmp/brief.md";
-  for (const model of ["gpt-6.1-sol", "gpt-5.6-sol"]) {
+  for (const model of ["gpt-6.1-sol", "gpt-5.6-sol", "gpt-6.1-terra"]) {
     preflightRequest({
       schema: REQUEST_SCHEMA,
       harness: "codex",

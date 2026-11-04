@@ -378,7 +378,7 @@ pi auth check --provider xai --json --no-refresh
 | Recorded `costBasis` | `unmetered`, `priceRef: subscription:codex` | None: refused before dispatch |
 | Mode | One-shot `codex exec --json -`. Reasoning is mandatory (`low`, `medium`, `high`, `xhigh`, `max`) | Refused |
 
-`codex-gpt-6-1-sol` is the `reviewer-cli` primary at effort `low`. `pi-qwen3-8-flash-openrouter` is the other-vendor fallback. `codex-gpt-5-6-sol` stays admitted as the last fallback. Architecture review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`.
+`codex-gpt-6-1-sol` is the `reviewer-cli` primary at effort `low`. `pi-qwen3-8-flash-openrouter` is the other-vendor fallback. `codex-gpt-5-6-sol` stays the backup. `codex-gpt-6-1-terra` is the third fallback: harness `codex`, model `gpt-6.1-terra`, vendor `openai`, selector `openai/gpt-6.1-terra`, read-only, effort `low`. OpenRouter listed that id on 2026-11-04 at $1 input and $5 output per 1M tokens through 272,000 prompt tokens ($0.05 cached input, $1.25 cache write), then $2 and $7.50. It is the cost-sensitive Tier 1/2 workhorse in the [workflow catalog](workflow-catalog.md). It does not replace the primary or the backup. Architecture review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`.
 
 Pro is not a separate model. It is `gpt-6.1-sol` with reasoning mode `pro`. OpenRouter lists that mode as `openai/gpt-6.1-sol-pro` at the same per-token price. A route id is `<harness>-<model-slug>`, role `effort` has no `pro` value, and the codex harness ceiling is `reviewer-cli` only. There is no pro architecture-review fallback.
 

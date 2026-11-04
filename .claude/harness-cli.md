@@ -32,7 +32,7 @@ Installed ≠ auth-verified ≠ helper-eligible.
 |---|---|---|---|
 | `pi` | 0.85.0 | `pi auth check --provider <p>`; OpenRouter or Nous Portal may be `ready`; native-lab prefixes are braked | OpenRouter or Nous Portal, after JSONL usage parse |
 | `claude` | 2.1.281 | `claude auth status` → `claude.ai` | read-only plan/review (`fable`) |
-| `codex` | 0.156.1 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-6.1-sol`; `gpt-5.6-sol` remains the last fallback) |
+| `codex` | 0.156.1 | `codex login status` → ChatGPT | read-only CLI/docs review (`gpt-6.1-sol` primary; `gpt-5.6-sol` backup; `gpt-6.1-terra` third fallback) |
 | `grok` | 1.0.5 | `grok models` → logged in with grok.com | writer only (`grok-4.7`) |
 | `kimi` | 0.40.1 | oauth via `kimi provider list` | **no** — unverified helper dispatch |
 | `gemini` | 0.56.0 | **unknown** (installed only) | **no** — deprecated individual-tier CLI; catalog stays |

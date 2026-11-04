@@ -180,7 +180,7 @@ and [Playwright via Obscura](../.kxm/knowledge/runbooks/playwright-obscura.md).
   switch. `codex-gpt-6-1-sol` (`codex` / `gpt-6.1-sol`, vendor `openai`,
   admitted, read-only, effort `low`) is the `reviewer-cli` primary.
   `pi-qwen3-8-flash-openrouter` stays the other-vendor fallback.
-  `codex-gpt-5-6-sol` stays admitted as the last fallback. Architecture
+  `codex-gpt-5-6-sol` stays admitted as the backup. Architecture
   review stays `claude-fable`, then `pi-glm-5-3-flash-openrouter`.
   GPT-6.1 Sol Pro is the same API id with reasoning mode `pro`
   (OpenRouter lists `openai/gpt-6.1-sol-pro` at the same per-token
@@ -190,6 +190,16 @@ and [Playwright via Obscura](../.kxm/knowledge/runbooks/playwright-obscura.md).
   cached input, $2.50 cache write) through 272,000 prompt tokens, then
   $4 / $15. Context is 1.05M (922K max input) and max output is 128K.
   Reasoning is mandatory (`low`, `medium`, `high`, `xhigh`, `max`).
+- **CLI critic third fallback is Codex GPT-6.1 Terra (2026-11-04).** Eddie
+  approved. Primary stays `codex-gpt-6-1-sol`. Backup stays
+  `codex-gpt-5-6-sol`. `pi-qwen3-8-flash-openrouter` stays the other-vendor
+  fallback between them. `codex-gpt-6-1-terra` (`codex` / `gpt-6.1-terra`,
+  vendor `openai`, admitted, read-only, effort `low`) is the third fallback.
+  OpenRouter on 2026-11-04 lists $1 input and $5 output per 1M tokens through
+  272,000 prompt tokens ($0.05 cached input, $1.25 cache write), then $2 and
+  $7.50. The writer roster and the planner (Fable, then Sonnet 5.5) are
+  unchanged. The same refresh moved DeepSeek V4 Pro 0813 off the Tier 1
+  workhorse picks: live output is $4.60 per 1M tokens.
 
 - **Steel reachability and machine account names (2026-09-27).**
   Steel LXC 240 (startup order 40) is `steel.kontextmind.com`;
