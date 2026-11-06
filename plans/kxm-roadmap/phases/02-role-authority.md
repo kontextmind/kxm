@@ -20,7 +20,7 @@ Done criterion: just verify green; every .kxm/roles and .kxm/models file validat
 
 Evidence needed: The validator test named in the P1 row and the CHANGELOG entry.
 
-Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
+Plan section: `plans/plan-omp-config-alignment.md#5-phases`.
 
 Evidence: `test/core/policy-draft.test.ts`.
 
@@ -34,7 +34,7 @@ Done criterion: roster-policy.mjs and engine.ts read roles and routes from the v
 
 Evidence needed: test/core/roster-policy.test.ts rewritten, one engine test per refusal path.
 
-Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
+Plan section: `plans/plan-omp-config-alignment.md#5-phases`.
 
 Evidence: `test/core/roster-policy.test.ts`.
 
@@ -48,7 +48,7 @@ Done criterion: A step whose tool preset is wider than its role permission is re
 
 Evidence needed: A fixture per preset pair.
 
-Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
+Plan section: `plans/plan-omp-config-alignment.md#5-phases`.
 
 Evidence: `test/core/engine.test.ts`.
 
@@ -62,7 +62,7 @@ Done criterion: An attempt continues on the next admitted route when the role op
 
 Evidence needed: Simulated 429 and transport fixtures.
 
-Plan section: [plans/plan-omp-config-alignment.md#5-phases](../../plan-omp-config-alignment.md#5-phases).
+Plan section: `plans/plan-omp-config-alignment.md#5-phases`.
 
 Evidence: `test/core/route-fallback.test.ts`.
 

@@ -20,7 +20,7 @@ Done criterion: None.
 
 Evidence needed: None.
 
-Plan section: [plans/plan-lane-cli.md#2-target-surface](../../plan-lane-cli.md#2-target-surface).
+Plan section: `plans/plan-lane-cli.md#2-target-surface`.
 
 Evidence: `test/core/cli.test.ts`.
 
@@ -34,7 +34,7 @@ Done criterion: None.
 
 Evidence needed: None.
 
-Plan section: [plans/plan-landing-gates.md#2-target](../../plan-landing-gates.md#2-target).
+Plan section: `plans/plan-landing-gates.md#2-target`.
 
 Evidence: `test/core/pr-land.test.ts`.
 
@@ -72,7 +72,7 @@ Done criterion: None.
 
 Evidence needed: None.
 
-Plan section: [plans/plan-lane-cli.md#4-found-during-the-first-dispatch-2026-09-25](../../plan-lane-cli.md#4-found-during-the-first-dispatch-2026-09-25).
+Plan section: `plans/plan-lane-cli.md#4-found-during-the-first-dispatch-2026-09-25`.
 
 Evidence: `test/core/engine.test.ts`.
 
@@ -110,7 +110,7 @@ Done criterion: A new process loads the same in-flight lanes, last-seen pull req
 
 Evidence needed: A restart-resume test that writes the state, exits, and reads it back from another process.
 
-Plan section: [plans/plan-lane-cli.md#6-persistent-supervisor-state](../../plan-lane-cli.md#6-persistent-supervisor-state).
+Plan section: `plans/plan-lane-cli.md#6-persistent-supervisor-state`.
 
 Evidence: `test/core/supervise.test.ts`.
 

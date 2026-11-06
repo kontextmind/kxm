@@ -114,6 +114,7 @@ KXM connects coding agents through a durable, authenticated [hub](glossary.md#hu
 | [Write KXM documentation](contributing/writing-docs.md) | Contributors | The style rules, the page template and the docs checks |
 | [Test matrix](contributing/test-matrix.md) | Maintainers | Features and use cases mapped to automated evidence |
 | [Assignment runner](contributing/assignment-runner.md) | Maintainers | Developer assignments, witness verification and dual-critic acceptance |
+| [Harness routing internals](contributing/harness-routing-internals.md) | Maintainers | Admitted routes, writer roster, and price catalog for this checkout |
 | [Packages and workspaces](contributing/packages.md) | Maintainers | Workspace layout, Nx targets, Bun task running and the layer gate |
 | [KXM terminal components](contributing/tui-components.md) | Maintainers, integrators | The panel kit behind `kxm dash` |
 | [Repository work delivery skill](contributing/repo-work-delivery.md) | Contributors | The repository-local skill for delivering a change |
