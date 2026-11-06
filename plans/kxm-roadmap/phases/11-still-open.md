@@ -90,7 +90,7 @@ Done criterion: None.
 
 Evidence needed: None.
 
-Plan section: [plans/implementation-plan.md#tracking-working-tree-not-a-release](../../implementation-plan.md#tracking-working-tree-not-a-release).
+Plan section: `plans/implementation-plan.md#tracking-working-tree-not-a-release`.
 
 Evidence: `test/core/config-editor.test.ts`.
 

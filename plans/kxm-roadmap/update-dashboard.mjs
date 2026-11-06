@@ -175,12 +175,10 @@ function renderTask(task) {
     `Evidence needed: ${recorded(task, "evidenceNeeded")}`,
   ];
   if (typeof task.planSection === "string" && task.planSection.trim()) {
-    const trimmed = task.planSection.trim();
-    const hash = trimmed.indexOf("#");
-    const pathPart = hash >= 0 ? trimmed.slice(0, hash) : trimmed;
-    const frag = hash >= 0 ? trimmed.slice(hash) : "";
-    const rel = pathPart.startsWith("plans/") ? `../../${pathPart.slice("plans/".length)}` : pathPart;
-    parts.push("", `Plan section: [${trimmed}](${rel}${frag}).`);
+    // These pages are symlinked under docs/roadmap/. A relative href resolves
+    // there to a missing docs/plan-*.md path, and writing-docs forbids a
+    // docs/ link into plans/. Name the repository path in code font.
+    parts.push("", `Plan section: \`${task.planSection.trim()}\`.`);
   }
   if (typeof task.evidence === "string" && task.evidence.trim()) {
     parts.push("", `Evidence: \`${task.evidence}\`.`);
