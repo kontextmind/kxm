@@ -94,7 +94,7 @@ jobs:
     name: Unit engine (linux, Node 24, shard ${{ matrix.shard }}/2)
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: kontextmind-doks
+    runs-on: halo-ci
     timeout-minutes: 8
     strategy:
       fail-fast: true
