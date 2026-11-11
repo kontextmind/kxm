@@ -40030,6 +40030,41 @@ function stripTerminalSequences(str) {
   }
   return result2;
 }
+function extractAnsiCodes(str) {
+  let result2 = "";
+  let i = str.indexOf("\x1B");
+  while (i !== -1) {
+    const length = ansiCodeLength(str, i);
+    if (length > 0) {
+      result2 += str.substring(i, i + length);
+      i += length;
+    } else {
+      i++;
+    }
+    i = str.indexOf("\x1B", i);
+  }
+  return result2;
+}
+var WHITESPACE_REGEX = /\s/;
+function isWhitespaceToken(token) {
+  let i = 0;
+  while (i < token.length) {
+    const code = token.charCodeAt(i);
+    if (code === 27) {
+      const length = ansiCodeLength(token, i);
+      if (length === 0)
+        return false;
+      i += length;
+    } else if (code === 32 || code >= 9 && code <= 13) {
+      i++;
+    } else if (code < 128 || !WHITESPACE_REGEX.test(token[i])) {
+      return false;
+    } else {
+      i++;
+    }
+  }
+  return true;
+}
 function getGraphemeCellRange(line, column) {
   let currentCol = 0;
   let i = 0;
@@ -40378,7 +40413,7 @@ var AnsiCodeTracker = class {
   }
   /**
    * Get reset codes for attributes that need to be turned off at line end.
-   * Underline must be closed to prevent bleeding into padding.
+   * Underline and strikethrough must be closed to prevent bleeding into padding.
    * Active OSC 8 hyperlinks must be closed and re-opened on the next line.
    * Returns empty string if no attributes need closing.
    */
@@ -40386,6 +40421,9 @@ var AnsiCodeTracker = class {
     let result2 = "";
     if (this.underline) {
       result2 += "\x1B[24m";
+    }
+    if (this.strikethrough) {
+      result2 += "\x1B[29m";
     }
     if (this.activeHyperlink) {
       result2 += formatOsc8Close(this.activeHyperlink.terminator);
@@ -40516,9 +40554,10 @@ function wrapSingleLine(line, width) {
   let currentVisibleLength = 0;
   for (const token of tokens) {
     const tokenVisibleLength = visibleWidth(token);
-    const isWhitespace = token.trim() === "";
+    const isWhitespace = isWhitespaceToken(token);
     if (tokenVisibleLength > width && !isWhitespace) {
       if (currentLine) {
+        currentLine = currentLine.trimEnd();
         const lineEndReset = tracker.getLineEndReset();
         if (lineEndReset) {
           currentLine += lineEndReset;
@@ -40538,6 +40577,10 @@ function wrapSingleLine(line, width) {
     const totalNeeded = currentVisibleLength + tokenVisibleLength;
     if (totalNeeded > width && currentVisibleLength > 0) {
       let lineToWrap = currentLine.trimEnd();
+      if (isWhitespace) {
+        lineToWrap += extractAnsiCodes(token);
+        updateTrackerFromText(token, tracker);
+      }
       const lineEndReset = tracker.getLineEndReset();
       if (lineEndReset) {
         lineToWrap += lineEndReset;
@@ -40546,10 +40589,12 @@ function wrapSingleLine(line, width) {
       if (isWhitespace) {
         currentLine = tracker.getActiveCodes();
         currentVisibleLength = 0;
-      } else {
-        currentLine = tracker.getActiveCodes() + token;
-        currentVisibleLength = tokenVisibleLength;
+        continue;
       }
+      currentLine = tracker.getActiveCodes() + token;
+      currentVisibleLength = tokenVisibleLength;
+    } else if (isWhitespace && totalNeeded > width && token.includes("\x1B")) {
+      currentLine += extractAnsiCodes(token);
     } else {
       currentLine += token;
       currentVisibleLength += tokenVisibleLength;
@@ -41011,8 +41056,22 @@ var FUNCTIONAL_CODEPOINTS = {
   pageUp: -12,
   pageDown: -13,
   home: -14,
-  end: -15
+  end: -15,
+  f1: -21,
+  f2: -22,
+  f3: -23,
+  f4: -24,
+  f5: -25,
+  f6: -26,
+  f7: -27,
+  f8: -28,
+  f9: -29,
+  f10: -30,
+  f11: -31,
+  f12: -32
 };
+var KITTY_FUNCTIONAL_PUA_START = 57344;
+var KITTY_FUNCTIONAL_PUA_END = 63743;
 var KITTY_FUNCTIONAL_KEY_EQUIVALENTS = /* @__PURE__ */ new Map([
   [57399, 48],
   // KP_0 -> 0
@@ -41203,7 +41262,7 @@ function isKeyRelease(data) {
   if (data.includes("\x1B[200~")) {
     return false;
   }
-  if (data.includes(":3u") || data.includes(":3~") || data.includes(":3A") || data.includes(":3B") || data.includes(":3C") || data.includes(":3D") || data.includes(":3H") || data.includes(":3F")) {
+  if (data.includes(":3u") || data.includes(":3~") || data.includes(":3A") || data.includes(":3B") || data.includes(":3C") || data.includes(":3D") || data.includes(":3H") || data.includes(":3F") || data.includes(":3P") || data.includes(":3Q") || data.includes(":3S")) {
     return true;
   }
   return false;
@@ -41248,7 +41307,19 @@ function parseKittySequence(data) {
       5: FUNCTIONAL_CODEPOINTS.pageUp,
       6: FUNCTIONAL_CODEPOINTS.pageDown,
       7: FUNCTIONAL_CODEPOINTS.home,
-      8: FUNCTIONAL_CODEPOINTS.end
+      8: FUNCTIONAL_CODEPOINTS.end,
+      11: FUNCTIONAL_CODEPOINTS.f1,
+      12: FUNCTIONAL_CODEPOINTS.f2,
+      13: FUNCTIONAL_CODEPOINTS.f3,
+      14: FUNCTIONAL_CODEPOINTS.f4,
+      15: FUNCTIONAL_CODEPOINTS.f5,
+      17: FUNCTIONAL_CODEPOINTS.f6,
+      18: FUNCTIONAL_CODEPOINTS.f7,
+      19: FUNCTIONAL_CODEPOINTS.f8,
+      20: FUNCTIONAL_CODEPOINTS.f9,
+      21: FUNCTIONAL_CODEPOINTS.f10,
+      23: FUNCTIONAL_CODEPOINTS.f11,
+      24: FUNCTIONAL_CODEPOINTS.f12
     };
     const codepoint = funcCodes[keyNum];
     if (codepoint !== void 0) {
@@ -41263,6 +41334,18 @@ function parseKittySequence(data) {
     const codepoint = homeEndMatch[3] === "H" ? FUNCTIONAL_CODEPOINTS.home : FUNCTIONAL_CODEPOINTS.end;
     _lastEventType = eventType;
     return { codepoint, modifier: modValue - 1, eventType };
+  }
+  const fKeyMatch = data.match(/^\x1b\[(?:1;(\d+)(?::(\d+))?)?([PQS])$/);
+  if (fKeyMatch) {
+    const modValue = fKeyMatch[1] ? parseInt(fKeyMatch[1], 10) : 1;
+    const eventType = parseEventType(fKeyMatch[2]);
+    const fKeyCodes = {
+      P: FUNCTIONAL_CODEPOINTS.f1,
+      Q: FUNCTIONAL_CODEPOINTS.f2,
+      S: FUNCTIONAL_CODEPOINTS.f4
+    };
+    _lastEventType = eventType;
+    return { codepoint: fKeyCodes[fKeyMatch[3]], modifier: modValue - 1, eventType };
   }
   return null;
 }
@@ -41580,11 +41663,11 @@ function matchesKey(data, keyId) {
     case "f10":
     case "f11":
     case "f12": {
-      if (modifier !== 0) {
-        return false;
-      }
       const functionKey = key;
-      return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES[functionKey]);
+      if (modifier === 0 && matchesLegacySequence(data, LEGACY_KEY_SEQUENCES[functionKey])) {
+        return true;
+      }
+      return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS[functionKey], modifier);
     }
   }
   if (key.length === 1 && (key >= "a" && key <= "z" || isDigitKey(key) || SYMBOL_KEYS.has(key))) {
@@ -41650,6 +41733,8 @@ function formatParsedKey(codepoint, modifier, baseLayoutKey) {
     keyName = "pageUp";
   else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.pageDown)
     keyName = "pageDown";
+  else if (effectiveCodepoint <= FUNCTIONAL_CODEPOINTS.f1 && effectiveCodepoint >= FUNCTIONAL_CODEPOINTS.f12)
+    keyName = `f${FUNCTIONAL_CODEPOINTS.f1 - effectiveCodepoint + 1}`;
   else if (effectiveCodepoint === ARROW_CODEPOINTS.up)
     keyName = "up";
   else if (effectiveCodepoint === ARROW_CODEPOINTS.down)
@@ -41788,6 +41873,9 @@ function decodeKittyPrintable(data) {
   effectiveCodepoint = normalizeKittyFunctionalCodepoint(effectiveCodepoint);
   if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32)
     return void 0;
+  if (effectiveCodepoint >= KITTY_FUNCTIONAL_PUA_START && effectiveCodepoint <= KITTY_FUNCTIONAL_PUA_END) {
+    return void 0;
+  }
   try {
     return String.fromCodePoint(effectiveCodepoint);
   } catch {
@@ -41895,6 +41983,9 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   if (termProgram === "rex") {
     return { images: "kitty", trueColor: true, hyperlinks: true };
   }
+  if (termProgram === "orca" && process.env.ORCA_IMAGE_PROTOCOL === "kitty") {
+    return { images: "kitty", trueColor: true, hyperlinks: true };
+  }
   if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
     return { images: "kitty", trueColor: true, hyperlinks: true };
   }
@@ -41971,6 +42062,10 @@ function deleteAllKittyPlacements() {
   return "\x1B_Ga=d,d=a,q=2\x1B\\";
 }
 var kittyImageMetadata = /* @__PURE__ */ new Map();
+var maxKittyImageRows = 0;
+function getMaxKittyImageRows() {
+  return maxKittyImageRows;
+}
 function getRegisteredKittyImageMetadataFromControls(controls) {
   const imageId = /(?:^|,)i=(\d+)(?:,|$)/.exec(controls)?.[1];
   return imageId === void 0 ? void 0 : kittyImageMetadata.get(Number.parseInt(imageId, 10));
@@ -43425,6 +43520,8 @@ var Text = class {
     this.customBgFn = customBgFn;
   }
   setText(text) {
+    if (text === this.text)
+      return;
     this.text = text;
     this.cachedText = void 0;
     this.cachedWidth = void 0;
@@ -44310,7 +44407,14 @@ function markedCjkFriendly() {
 
 // node_modules/@earendil-works/pi-tui/dist/components/markdown.js
 var STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
-var StrictStrikethroughTokenizer = class extends y {
+var MarkdownTokenizer = class extends y {
+  url(src) {
+    const token = super.url(src);
+    if (!token)
+      return void 0;
+    const punctuationIndex = token.raw.search(cjkPunctuationRegex);
+    return punctuationIndex < 0 ? token : super.url(token.raw.slice(0, punctuationIndex));
+  }
   del(src) {
     const match = STRICT_STRIKETHROUGH_REGEX.exec(src);
     if (!match) {
@@ -44430,7 +44534,7 @@ var LATEX_MARKDOWN_EXTENSIONS = [
 ];
 var markdownParser = new Z();
 markdownParser.setOptions({
-  tokenizer: new StrictStrikethroughTokenizer()
+  tokenizer: new MarkdownTokenizer()
 });
 markdownParser.use({
   tokenizer: { emStrong: markedCjkFriendly().tokenizer?.emStrong },
@@ -45240,21 +45344,23 @@ function paintBox(box, screen, totalWidth) {
   for (const child of box.children)
     paintBox(child, screen, totalWidth);
   if (box.scrollView && box.scrollContentLines && box.scrollView.scrollTop > 0 && box.rect.height > 0) {
-    for (let imageRow = box.scrollView.scrollTop - 1; imageRow >= 0; imageRow--) {
+    const scrollTop = box.scrollView.scrollTop;
+    const minRow = Math.max(0, scrollTop - getMaxKittyImageRows());
+    for (let imageRow = scrollTop - 1; imageRow >= minRow; imageRow--) {
       const imageLine = box.scrollContentLines[imageRow] ?? "";
+      if (!isImageLine(imageLine))
+        continue;
       const metadata = getKittyImageMetadata(imageLine);
-      if (metadata) {
-        const hiddenRows = box.scrollView.scrollTop - imageRow;
-        if (hiddenRows < metadata.rows) {
-          const visibleRows = Math.min(box.rect.height, metadata.rows - hiddenRows);
-          const cropped = cropKittyImageLine(imageLine, hiddenRows, visibleRows);
-          if (box.rect.x === 0 && box.rect.width >= totalWidth)
-            screen[box.rect.y] = cropped;
-        }
-        break;
+      if (!metadata)
+        continue;
+      const hiddenRows = scrollTop - imageRow;
+      if (hiddenRows < metadata.rows) {
+        const visibleRows = Math.min(box.rect.height, metadata.rows - hiddenRows);
+        const cropped = cropKittyImageLine(imageLine, hiddenRows, visibleRows);
+        if (box.rect.x === 0 && box.rect.width >= totalWidth)
+          screen[box.rect.y] = cropped;
       }
-      if (imageLine !== "")
-        break;
+      break;
     }
   }
   paintScrollbar(box, screen, totalWidth);
@@ -45404,7 +45510,7 @@ var MAX_CACHED_OFFSCREEN_KITTY_TRANSMISSION_BYTES = 32 * 1024 * 1024;
 var MAX_CACHED_OFFSCREEN_KITTY_DECODED_BYTES = 64 * 1024 * 1024;
 var DOUBLE_CLICK_INTERVAL_MS = 500;
 var COPY_ERROR_FLASH_DURATION_MS = 5e3;
-var TERMINAL_WORD_SELECTION_JOINERS = /* @__PURE__ */ new Set(["/", "-"]);
+var TERMINAL_WORD_SELECTION_JOINERS = /* @__PURE__ */ new Set(["/", "-", "+", "\\", "~", "_", "."]);
 var wordSegmenter4 = getWordSegmenter();
 var TuiAltScreen = class extends TuiBase {
   mode = "fullscreen";
@@ -45824,7 +45930,10 @@ var TuiAltScreen = class extends TuiBase {
   flash(message, durationMs) {
     this.flashes.flash(message, durationMs);
   }
-  shouldDeferViewportInputToOverlay() {
+  /** Focused overlays and components that capture viewport input receive viewport keys instead of the transcript. */
+  shouldDeferViewportInput() {
+    if (this.getFocusedComponent()?.capturesViewportInput)
+      return true;
     return this.isOverlayFocused() && this.activeSearch?.overlay?.isFocused() !== true;
   }
   clearComponentMouseGesture() {
@@ -45906,7 +46015,7 @@ var TuiAltScreen = class extends TuiBase {
         return { consume: true };
       }
     }
-    if (this.shouldDeferViewportInputToOverlay())
+    if (this.shouldDeferViewportInput())
       return void 0;
     if (keybindings.matches(data, "tui.altScreen.pageUp")) {
       if (!isRelease) {
