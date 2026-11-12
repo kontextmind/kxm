@@ -12,7 +12,7 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { Agent, createServer, request as httpRequest, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -103,6 +103,68 @@ function gitRoot(root: string): void {
   assert.equal(initialized.status, 0, initialized.stderr);
 }
 
+// One socket per upstream request. Node's global agent reuses keep-alive
+// sockets; after the hub's idle timeout the next probe writes to a dead
+// socket, gets ECONNRESET, and this proxy used to answer HTTP 502. `kxm hub
+// bind` correctly refuses that 502 as "not a hub". A fresh connection does
+// not reuse the dead socket. Coverage, which stalled the event loop on the
+// release run, is what made the window wide enough to flake.
+const upstreamAgent = new Agent({ keepAlive: false });
+const HOP_BY_HOP = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+]);
+const RETRYABLE_UPSTREAM = new Set(["ECONNRESET", "ECONNREFUSED", "EPIPE", "ECONNABORTED"]);
+
+function upstreamHeaders(headers: IncomingMessage["headers"], targetPort: number): OutgoingHttpHeaders {
+  const forwarded: OutgoingHttpHeaders = { host: `127.0.0.1:${targetPort}` };
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined || name.toLowerCase() === "host" || HOP_BY_HOP.has(name.toLowerCase())) continue;
+    forwarded[name] = value;
+  }
+  return forwarded;
+}
+
+function forwardUpstream(
+  targetPort: number,
+  req: IncomingMessage,
+  res: ServerResponse,
+  body: Buffer,
+  entry: HubCall,
+  attempt: number,
+): void {
+  const upstream = httpRequest({
+    agent: upstreamAgent,
+    hostname: "127.0.0.1",
+    port: targetPort,
+    method: req.method,
+    path: req.url,
+    headers: upstreamHeaders(req.headers, targetPort),
+  }, (up) => {
+    entry.status = up.statusCode ?? 0;
+    res.writeHead(up.statusCode ?? 502, up.headers);
+    up.pipe(res);
+  });
+  const retry = (error: NodeJS.ErrnoException): void => {
+    // A transport reset is not an HTTP 502 from a non-hub. Retry once on a
+    // new socket; a real upstream status (including 502) is still forwarded.
+    if (attempt === 0 && !res.headersSent && RETRYABLE_UPSTREAM.has(error.code ?? "")) {
+      forwardUpstream(targetPort, req, res, body, entry, attempt + 1);
+      return;
+    }
+    if (!res.headersSent) res.statusCode = 502;
+    res.end();
+  };
+  upstream.on("error", retry);
+  upstream.end(body);
+}
+
 function startProxy(targetPort: number): Promise<{ url: string; seen: HubCall[]; close(): Promise<void> }> {
   const seen: HubCall[] = [];
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -118,23 +180,7 @@ function startProxy(targetPort: number): Promise<{ url: string; seen: HubCall[];
         status: 0,
       };
       seen.push(entry);
-      const headers: Record<string, string | string[] | undefined> = { ...req.headers, host: `127.0.0.1:${targetPort}` };
-      const upstream = httpRequest({
-        hostname: "127.0.0.1",
-        port: targetPort,
-        method: req.method,
-        path: req.url,
-        headers,
-      }, (up) => {
-        entry.status = up.statusCode ?? 0;
-        res.writeHead(up.statusCode ?? 502, up.headers);
-        up.pipe(res);
-      });
-      upstream.on("error", () => {
-        if (!res.headersSent) res.statusCode = 502;
-        res.end();
-      });
-      upstream.end(body);
+      forwardUpstream(targetPort, req, res, body, entry, 0);
     });
   });
   return new Promise((resolve, reject) => {
@@ -149,6 +195,47 @@ function startProxy(targetPort: number): Promise<{ url: string; seen: HubCall[];
       });
     });
   });
+}
+
+const LOOPBACK_NO_PROXY = ["127.0.0.1", "localhost", "::1"];
+
+function bypassLoopbackProxy(): () => void {
+  // Undici's EnvHttpProxyAgent forwards every host, including 127.0.0.1, when
+  // NO_PROXY is empty. A runner HTTP_PROXY then returns 502 for loopback, and
+  // hub bind treats that as "not a kxm hub". Pin the bypass for this test.
+  const keys = ["NO_PROXY", "no_proxy"] as const;
+  const saved = new Map<string, string | undefined>(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) {
+    const have = new Set((process.env[key] ?? "").split(/[,\s]+/).filter((part) => part.length > 0));
+    for (const host of LOOPBACK_NO_PROXY) have.add(host);
+    process.env[key] = [...have].join(",");
+  }
+  return () => {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+}
+
+async function waitForProxiedHub(proxyUrl: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  let last = "no response";
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${proxyUrl}/health`, { redirect: "manual" });
+      const text = await response.text();
+      if (response.status === 200) {
+        const body = JSON.parse(text) as { ok?: unknown; agents?: unknown };
+        if (body.ok === true && typeof body.agents === "number") return;
+      }
+      last = `HTTP ${response.status} ${text.slice(0, 160)}`;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`proxied hub /health was not the kxm shape: ${last}`);
 }
 
 function yamlQuote(value: string): string {
@@ -341,9 +428,11 @@ test("project workflows, intake kinds, and peer attach use the mode credential",
   const address = await hub.start();
   const hubPort = Number(new URL(address.url).port);
   const proxy = await startProxy(hubPort);
+  const restoreProxyBypass = bypassLoopbackProxy();
   const restoreEnv = pushProcessEnv({ KXM_RUNTIME_SYNC_INTERVAL_MS: "250" });
   const temps: string[] = [];
   try {
+    await waitForProxiedHub(proxy.url);
     await exerciseMode({
       mode: "local",
       projectId: LOCAL_PROJECT,
@@ -366,6 +455,7 @@ test("project workflows, intake kinds, and peer attach use the mode credential",
     });
   } finally {
     restoreEnv();
+    restoreProxyBypass();
     await proxy.close();
     await hub.close();
     for (const path of temps) rmSync(path, { recursive: true, force: true });
@@ -413,6 +503,7 @@ async function exerciseMode(input: {
       projectTokens: { [input.projectId]: input.cloud ? DECOY : LOCAL_PROJECT_TOKEN },
     }, env);
 
+    await waitForProxiedHub(input.proxyUrl);
     const bound = capture();
     assert.equal(await runCli(input.bindArgs, env, bound, cwd), 0, bound.read().stderr);
     const binding = readHubBinding(env);
