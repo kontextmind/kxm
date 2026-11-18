@@ -225,6 +225,22 @@ All notable user-facing changes are documented here. The project follows [Semant
 
 ### Changed
 
+- **Model catalog prices for GPT-6.2, Fable 5.2, and Gemini 4 Hydrogen and Carbon.**
+  Verified against `https://openrouter.ai/api/v1/models` on 2026-11-18.
+  `.kxm/prices.yaml` is dated 2026-11-18. `openai/gpt-6.2-sol` and
+  `gpt-6.2-sol-pro` are $2 / $10 through 272,000 prompt tokens, then $4 / $15
+  (batch $1 / $5, 1.05M context). `openai/gpt-6.2-astra` and `gpt-6.2-astra-pro`
+  are $8 / $40, then $16 / $60 (batch $4 / $20). GPT-6.2 Astra Pro is the
+  current Tier 3 list option. Workflow-catalog role lines still name
+  GPT-6 Astra Pro. `anthropic/fable` follows Claude Fable 5.2 at $8 / $40
+  (batch $4 / $20, 1M context), including `~anthropic/claude-fable-latest`.
+  `claude-fable-5` and `claude-fable-5.1` stay resolvable at $10 / $50.
+  `google/gemini-4-hydrogen` is $1.50 / $7.50 (batch $0.75 / $3.75). Its
+  default effort setting can inflate cost. `google/gemini-4-carbon` is
+  $2 / $10 through 2026-11-30, then $4 / $20 (batch $1 / $5), and it uses
+  more thinking tokens. Planner, writer, reviewer-cli, and agy defaults are
+  unchanged. `docs/workflow-guide.md` points at the workflow catalog.
+
 - **Workflow catalog prices were re-verified against OpenRouter on 2026-11-04.**
   Candidate prices in [the workflow catalog](docs/reference/workflow-catalog.md)
   match `https://openrouter.ai/api/v1/models` from that day.

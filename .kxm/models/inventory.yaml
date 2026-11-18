@@ -1,5 +1,5 @@
 schema: kxm.model-inventory.v1
-fetchedAt: 2026-10-29T00:00:00.000Z
+fetchedAt: 2026-11-18T00:00:00.000Z
 currency: USD
 sources:
   pi:
@@ -35,10 +35,10 @@ models:
       - openrouter
       - nous
     standard:
-      inputPerMillion: 10
-      outputPerMillion: 50
-      cacheReadPerMillion: 0.25
-      cacheWritePerMillion: 12.5
+      inputPerMillion: 8
+      outputPerMillion: 40
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 10
     discount:
       inputPerMillion: 10
       outputPerMillion: 50
@@ -814,6 +814,40 @@ models:
       outputPerMillion: 25
       cacheReadPerMillion: 0.125
       cacheWritePerMillion: 6.25
+  - id: anthropic/claude-fable-5.2
+    name: "Anthropic: Claude Fable 5.2"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 8
+      outputPerMillion: 40
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 10
+  - id: anthropic/claude-fable-5.2:batch
+    name: "Anthropic: Claude Fable 5.2 (batch)"
+    contextLength: 1000000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 5
   - id: anthropic/claude-haiku-4.5
     name: "Anthropic: Claude Haiku 4.5"
     contextLength: 200000
@@ -3236,6 +3270,74 @@ models:
       outputPerMillion: 5
       cacheReadPerMillion: 0.049999999999999996
       cacheWritePerMillion: 0.1875
+  - id: google/gemini-4-carbon
+    name: "Google: Gemini 4 Carbon"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 0.1875
+  - id: google/gemini-4-carbon:batch
+    name: "Google: Gemini 4 Carbon (batch)"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 0.1875
+  - id: google/gemini-4-hydrogen
+    name: "Google: Gemini 4 Hydrogen"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 1.5
+      outputPerMillion: 7.5
+      cacheReadPerMillion: 0.075
+      cacheWritePerMillion: 0.0833333333333333
+  - id: google/gemini-4-hydrogen:batch
+    name: "Google: Gemini 4 Hydrogen (batch)"
+    contextLength: 1048576
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 0.75
+      outputPerMillion: 3.75
+      cacheReadPerMillion: 0.0375
+      cacheWritePerMillion: 0.0833333333333333
   - id: google/gemini-embedding-001
     name: "Google: Gemini Embedding 001"
     contextLength: 20000
@@ -7819,6 +7921,142 @@ models:
       outputPerMillion: 2.5
       cacheReadPerMillion: 0.024999999999999998
       cacheWritePerMillion: 0.625
+  - id: openai/gpt-6.2-astra
+    name: "OpenAI: GPT-6.2 Astra"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 8
+      outputPerMillion: 40
+      cacheReadPerMillion: 0.39999999999999997
+      cacheWritePerMillion: 10
+  - id: openai/gpt-6.2-astra-pro
+    name: "OpenAI: GPT-6.2 Astra Pro"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 8
+      outputPerMillion: 40
+      cacheReadPerMillion: 0.39999999999999997
+      cacheWritePerMillion: 10
+  - id: openai/gpt-6.2-astra-pro:batch
+    name: "OpenAI: GPT-6.2 Astra Pro (batch)"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 5
+  - id: openai/gpt-6.2-astra:batch
+    name: "OpenAI: GPT-6.2 Astra (batch)"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 4
+      outputPerMillion: 20
+      cacheReadPerMillion: 0.19999999999999998
+      cacheWritePerMillion: 5
+  - id: openai/gpt-6.2-sol
+    name: "OpenAI: GPT-6.2 Sol"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+  - id: openai/gpt-6.2-sol-pro
+    name: "OpenAI: GPT-6.2 Sol Pro"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 2
+      outputPerMillion: 10
+      cacheReadPerMillion: 0.09999999999999999
+      cacheWritePerMillion: 2.5
+  - id: openai/gpt-6.2-sol-pro:batch
+    name: "OpenAI: GPT-6.2 Sol Pro (batch)"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
+  - id: openai/gpt-6.2-sol:batch
+    name: "OpenAI: GPT-6.2 Sol (batch)"
+    contextLength: 1050000
+    capabilities:
+      thinking:
+        supported: true
+        source: openrouter
+      speed:
+        fast: null
+        source: unknown
+    sources:
+      - openrouter
+    standard:
+      inputPerMillion: 1
+      outputPerMillion: 5
+      cacheReadPerMillion: 0.049999999999999996
+      cacheWritePerMillion: 1.25
   - id: openai/gpt-audio
     name: "OpenAI: GPT Audio"
     contextLength: 128000
