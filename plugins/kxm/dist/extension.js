@@ -40804,7 +40804,7 @@ function sliceWithWidth(line, startCol, length, strict = false) {
       if (currentCol >= startCol && currentCol < endCol) {
         result2 += pendingAnsi + ansi.code;
         pendingAnsi = "";
-      } else if (currentCol < startCol)
+      } else if (currentCol < startCol && !ansi.code.startsWith("\x1B_"))
         pendingAnsi += ansi.code;
       i += ansi.length;
       continue;
@@ -42004,7 +42004,8 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink) {
   if (process.env.WT_SESSION) {
     return { images: null, trueColor: true, hyperlinks: true };
   }
-  if (termProgram === "alacritty" || termProgram === "vscode" || termProgram === "zed") {
+  const isAlacritty = termProgram === "alacritty" || term.startsWith("alacritty") || process.env.ALACRITTY_WINDOW_ID;
+  if (isAlacritty || termProgram === "vscode" || termProgram === "zed") {
     return { images: null, trueColor: true, hyperlinks: true };
   }
   if (terminalEmulator === "jetbrains-jediterm") {
@@ -43086,7 +43087,7 @@ var TuiBase = class _TuiBase extends Container {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (!isImageLine(line)) {
-        lines[i] = normalizeTerminalOutput(line) + reset;
+        lines[i] = normalizeTerminalOutput(line.replaceAll(CURSOR_MARKER, "")) + reset;
       }
     }
     return lines;
@@ -43110,7 +43111,7 @@ var TuiBase = class _TuiBase extends Container {
       if (markerIndex !== -1) {
         const beforeMarker = line.slice(0, markerIndex);
         const col = visibleWidth(beforeMarker);
-        lines[row] = line.slice(0, markerIndex) + line.slice(markerIndex + CURSOR_MARKER.length);
+        lines[row] = line.replaceAll(CURSOR_MARKER, "");
         return { row, col };
       }
     }
@@ -46868,8 +46869,7 @@ var TuiAltScreen = class extends TuiBase {
     const fullRedraw = this.previousScreen.length === 0 || this.previousScreenWidth !== width || this.previousScreenHeight !== height;
     const changedRows = screen.map((line, row) => line !== this.previousScreen[row]);
     const imageAnchorsNeedRedraw = screen.some((line, row) => changedRows[row] && (isImageLine(line) || isImageLine(this.previousScreen[row] ?? "")));
-    const isWezTerm = Boolean(process.env.WEZTERM_PANE) || process.env.TERM_PROGRAM?.toLowerCase() === "wezterm";
-    const imageCellsNeedRedraw = !imageAnchorsNeedRedraw && isWezTerm && this.imageProtocol === "kitty" && changedRows.some(Boolean) && screen.some((line, row) => {
+    const imageCellsNeedRedraw = !imageAnchorsNeedRedraw && this.imageProtocol === "kitty" && changedRows.some(Boolean) && screen.some((line, row) => {
       const placementRows = getKittyImagePlacementRows(line);
       if (placementRows === void 0)
         return false;
@@ -46895,7 +46895,7 @@ var TuiAltScreen = class extends TuiBase {
         buffer += deleteAllKittyPlacements();
     }
     buffer += preparedKittyScreen.evictedImageDeletion;
-    const drawKittyImagesLast = redrawImages && this.imageProtocol === "kitty" && screen.some(isImageLine) && isWezTerm;
+    const drawKittyImagesLast = redrawImages && this.imageProtocol === "kitty" && screen.some(isImageLine);
     if (drawKittyImagesLast) {
       for (let row = 0; row < height; row++) {
         if (!fullRedraw && !imagesNeedRedraw && screen[row] === this.previousScreen[row])
