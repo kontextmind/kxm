@@ -124,6 +124,7 @@ nav:
       - HTTP API: reference/http-api.md
       - Tools: reference/tools.md
       - Workflow catalog: reference/workflow-catalog.md
+      - Workflow guide: workflow-guide.md
       - Workflow definitions: reference/workflow-definitions.md
       - Contracts:
           - contracts/README.md

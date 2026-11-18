@@ -2,7 +2,7 @@
 title: Model catalog refresh
 summary: Monday OpenRouter refresh of prices and inventory, the manual command, and the disappearance guard.
 tags: [models, prices, inventory, ci]
-updated: "2026-10-20"
+updated: "2026-11-18"
 sources:
   - .github/workflows/refresh-models.yml
   - scripts/refresh-model-catalog.mjs
@@ -29,7 +29,7 @@ The script fetches `https://openrouter.ai/api/v1/models` and updates the OpenRou
 
 Nous `discount` rates and the `pi`, `grok`, and `agy` source blocks stay as the last full `kxm models inventory-refresh` left them. An empty OpenRouter payload throws `OpenRouter catalog is empty` and writes nothing.
 
-Multi-tier price rows are not rewritten. `anthropic/fable` is matched through its aliases; when those OpenRouter rows disagree, the price row is left unchanged. A YAML anchor that a non-OpenRouter row depends on is not rewritten. The OpenRouter row is detached onto its own tier and the plan row keeps the anchored rates. Two non-OpenRouter rows that share an anchor, such as the Gemini flash effort tiers, still update together.
+Multi-tier price rows are not rewritten. `anthropic/fable` aliases `claude-fable-5.2` and `~anthropic/claude-fable-latest`, which share the Fable 5.2 rate, so a refresh can update that row. `anthropic/claude-fable-5` and `anthropic/claude-fable-5.1` are separate rows. When one price row's OpenRouter alias targets disagree, that row is left unchanged. A YAML anchor that a non-OpenRouter row depends on is not rewritten. The OpenRouter row is detached onto its own tier and the plan row keeps the anchored rates. Two non-OpenRouter rows that share an anchor, such as the Gemini flash effort tiers, still update together.
 
 ## Guard
 

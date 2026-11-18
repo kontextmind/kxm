@@ -1,19 +1,62 @@
 schema: kxm.prices.v1
-date: "2026-11-04"
-sha256: ce24dce53d4e26bfb0839b5d936f059097212bf7467128a0a772ce717dc3a0ff
+date: "2026-11-18"
+sha256: a5c0956d32252388799aa1026bdf3d621a1e92708afa7b64985ab4039d2de658
 currency: USD
 models:
+  # Verified 2026-11-18 on https://openrouter.ai/api/v1/models.
+  # ~anthropic/claude-fable-latest redirects at the Claude Fable 5.2 rate:
+  # $8 / $40, cache read $0.20, cache write $10, context 1,000,000.
+  # Batch anthropic/claude-fable-5.2:batch is $4 / $20 (cache read $0.10,
+  # cache write $5). This row is the anthropic/fable list estimate. Planner
+  # and reviewer-arch still name claude-fable. claude-fable-5 and
+  # claude-fable-5.1 stay resolvable on the rows below, at their own rates,
+  # so this alias list is only the ids that share the 5.2 rate.
   - id: anthropic/fable
     provider: anthropic
     model: fable
     aliases:
+      - claude-fable-5.2
+      - ~anthropic/claude-fable-latest
+    tiers:
+      - inputPerMillion: 8
+        outputPerMillion: 40
+        cacheReadPerMillion: 0.2
+        cacheWritePerMillion: 10
+  # Verified 2026-11-18 (anthropic/claude-fable-5): $10 / $50, cache read $1,
+  # cache write $12.50, context 1,000,000. Batch is $5 / $25.
+  - id: anthropic/claude-fable-5
+    provider: anthropic
+    model: claude-fable-5
+    aliases:
       - claude-fable-5
+    tiers:
+      - inputPerMillion: 10
+        outputPerMillion: 50
+        cacheReadPerMillion: 1
+        cacheWritePerMillion: 12.5
+  # Verified 2026-11-18 (anthropic/claude-fable-5.1): $10 / $50, cache read
+  # $0.25, cache write $12.50, context 1,000,000. Batch is $5 / $25
+  # (cache read $0.125, cache write $6.25).
+  - id: anthropic/claude-fable-5.1
+    provider: anthropic
+    model: claude-fable-5.1
+    aliases:
       - claude-fable-5.1
     tiers:
       - inputPerMillion: 10
         outputPerMillion: 50
         cacheReadPerMillion: 0.25
         cacheWritePerMillion: 12.5
+  # Same standard rate as anthropic/fable. The id is listed on its own so
+  # anthropic/claude-fable-5.2 resolves directly. Batch is $4 / $20.
+  - id: anthropic/claude-fable-5.2
+    provider: anthropic
+    model: claude-fable-5.2
+    tiers:
+      - inputPerMillion: 8
+        outputPerMillion: 40
+        cacheReadPerMillion: 0.2
+        cacheWritePerMillion: 10
   # Verified 2026-10-20 on https://openrouter.ai/api/v1/models
   # (anthropic/claude-sonnet-5.5). Standard tier is $2 / $10. Cache read
   # is $0.10 and cache write is $2.50. Context length is 1000000.
@@ -77,6 +120,53 @@ models:
         outputPerMillion: 7.5
         cacheReadPerMillion: 0.1
         cacheWritePerMillion: 2.5
+  # GPT-6.2 Sol. Verified 2026-11-18 on https://openrouter.ai/api/v1/models
+  # (openai/gpt-6.2-sol and openai/gpt-6.2-sol-pro). Base tier is $2 / $10.
+  # Above 272000 prompt tokens, input/output are $4 / $15 and cache
+  # read/write are $0.20 / $5. Pro is the same model with reasoning mode pro,
+  # at the same per-token price. Context is 1,050,000. Batch
+  # (openai/gpt-6.2-sol:batch and openai/gpt-6.2-sol-pro:batch) is $1 / $5,
+  # then $2 / $7.50 above 272000 prompt tokens. Not a reviewer-cli route.
+  - id: openai/gpt-6.2-sol
+    provider: openai
+    model: gpt-6.2-sol
+    aliases:
+      - gpt-6.2-sol-pro
+      - openai/gpt-6.2-sol-pro
+    tiers:
+      - upToContextTokens: 272000
+        inputPerMillion: 2
+        outputPerMillion: 10
+        cacheReadPerMillion: 0.1
+        cacheWritePerMillion: 2.5
+      - inputPerMillion: 4
+        outputPerMillion: 15
+        cacheReadPerMillion: 0.2
+        cacheWritePerMillion: 5
+  # GPT-6.2 Astra. Verified 2026-11-18 on https://openrouter.ai/api/v1/models
+  # (openai/gpt-6.2-astra and openai/gpt-6.2-astra-pro). Base tier is $8 / $40.
+  # Above 272000 prompt tokens, input/output are $16 / $60 and cache
+  # read/write are $0.80 / $20. Pro is the same model with reasoning mode pro,
+  # at the same per-token price. Context is 1,050,000. Batch
+  # (openai/gpt-6.2-astra:batch and openai/gpt-6.2-astra-pro:batch) is $4 / $20,
+  # then $8 / $30 above 272000 prompt tokens. Catalog option only. It does not
+  # replace GPT-6 Astra Pro on workflow-catalog role lines, and it is not admitted.
+  - id: openai/gpt-6.2-astra
+    provider: openai
+    model: gpt-6.2-astra
+    aliases:
+      - gpt-6.2-astra-pro
+      - openai/gpt-6.2-astra-pro
+    tiers:
+      - upToContextTokens: 272000
+        inputPerMillion: 8
+        outputPerMillion: 40
+        cacheReadPerMillion: 0.4
+        cacheWritePerMillion: 10
+      - inputPerMillion: 16
+        outputPerMillion: 60
+        cacheReadPerMillion: 0.8
+        cacheWritePerMillion: 20
   - id: xai/grok-4.6
     provider: xai
     model: grok-4.6
@@ -186,6 +276,34 @@ models:
     model: gemini-3.8-flash-high
     tiers:
       - *a2
+  # Verified 2026-11-18 on https://openrouter.ai/api/v1/models
+  # (google/gemini-4-hydrogen). Standard tier is $1.50 / $7.50. Cache read is
+  # $0.075 and cache write is $0.0833333333333333. Context is 1,048,576.
+  # Batch google/gemini-4-hydrogen:batch is $0.75 / $3.75. The default effort
+  # setting can inflate cost above this list rate, because thinking tokens
+  # bill at the output rate. Not on the writer roster. Argon stays the agy default.
+  - id: google/gemini-4-hydrogen
+    provider: google
+    model: gemini-4-hydrogen
+    tiers:
+      - inputPerMillion: 1.5
+        outputPerMillion: 7.5
+        cacheReadPerMillion: 0.075
+        cacheWritePerMillion: 0.0833333333333333
+  # Verified 2026-11-18 on https://openrouter.ai/api/v1/models
+  # (google/gemini-4-carbon). Introductory list price is $2 / $10 through
+  # 2026-11-30, then $4 / $20. Batch is $1 / $5 through that date. Cache read
+  # is $0.10 and cache write is $0.1875. Context is 1,048,576. Carbon uses
+  # more thinking tokens than the sticker rate suggests; internal reasoning
+  # bills at the completion rate. Not on the writer roster.
+  - id: google/gemini-4-carbon
+    provider: google
+    model: gemini-4-carbon
+    tiers:
+      - inputPerMillion: 2
+        outputPerMillion: 10
+        cacheReadPerMillion: 0.1
+        cacheWritePerMillion: 0.1875
   # List price is $2 / $10 through 2026-11-30, then $4 / $20. Batch is $1 / $5.
   # Context is 1,048,576. Argon requires paid Google AI Pro, Ultra, or Enterprise.
   - id: google/gemini-4-argon
